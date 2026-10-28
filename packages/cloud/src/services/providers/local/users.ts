@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { MutationResult, UserProfile } from "../../../contracts/shared";
+import { coreUserEventPublisher } from "../../../events/core-user-created";
 import { isAccountCategoryAllowed } from "../../account-category-policy";
 import { writeDeletedAccountAudit } from "../../account-lifecycle/audit";
 import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../../accounts/email-write";
@@ -96,6 +97,10 @@ export const create = async (params: {
       )
       RETURNING id
     `;
+      await coreUserEventPublisher().publish(tx, "user.created", {
+        subject: rows[0]!.id,
+        data: { userId: rows[0]!.id, provider: "local" },
+      });
       return { ok: true, data: { id: rows[0]!.id } };
     }, params.actor);
   } catch (error) {

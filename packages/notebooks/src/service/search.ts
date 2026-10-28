@@ -1,5 +1,5 @@
 import type { PaginationParams } from "@k2b/cloud/contracts";
-import { logger, toPgTextArray } from "@k2b/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 import type { Note } from "./notes";
@@ -89,7 +89,7 @@ export const isBm25CapabilityError = (error: unknown): boolean => {
   return BM25_CAPABILITY_ERROR_CODES.has(String(error.code));
 };
 
-const normalizeFilters = (filters: SearchFilters) => ({
+export const normalizeFilters = (filters: SearchFilters) => ({
   query: filters.query?.trim() ?? "",
   tags: [...new Set((filters.tags ?? []).map((tag) => tag.replace(/^#/, "").trim().toLowerCase()).filter(Boolean))],
   createdAfter: filters.createdAfter ?? null,
@@ -118,7 +118,7 @@ export const splitPrefixQuery = (query: string): { rest: string; prefix: string 
   return { rest: query.slice(0, -token.length).trim(), prefix: `${word}:*` };
 };
 
-const buildTextQuery = (query: string) => {
+export const buildTextQuery = (query: string) => {
   const { rest, prefix } = splitPrefixQuery(query);
   // Union with the original websearch query so prefix matching keeps every old match.
   return prefix === null
@@ -152,126 +152,104 @@ const mapHit = (row: DbSearchHit): SearchHit => ({
   snippet: row.snippet,
 });
 
-const searchInNotebookRows = async (params: {
-  notebookId: string;
-  filters: SearchFilters;
+export const searchCondition = (filters: ReturnType<typeof normalizeFilters>, notebookId?: string) => {
+  let condition = sql`
+    ${filters.query ? sql`n.search_document @@ ${buildTextQuery(filters.query)}` : sql`true`}
+    AND ${filters.createdAfter ? sql`n.created_at >= ${filters.createdAfter}::timestamptz` : sql`true`}
+    AND ${filters.createdBefore ? sql`n.created_at <= ${filters.createdBefore}::timestamptz` : sql`true`}
+    AND ${filters.updatedAfter ? sql`n.updated_at >= ${filters.updatedAfter}::timestamptz` : sql`true`}
+    AND ${filters.updatedBefore ? sql`n.updated_at <= ${filters.updatedBefore}::timestamptz` : sql`true`}
+  `;
+  for (const tag of filters.tags) {
+    condition = sql`${condition} AND n.id IN (
+      SELECT nt.note_id FROM notebooks.note_tags nt
+      WHERE nt.tag = ${tag} AND ${notebookId ? sql`nt.notebook_id = ${notebookId}::uuid` : sql`true`}
+    )`;
+  }
+  return condition;
+};
+
+export const searchPageQuery = (params: {
+  filters: ReturnType<typeof normalizeFilters>;
+  condition: ReturnType<typeof searchCondition>;
   pagination: PaginationParams;
   backend: SearchBackend;
-}): Promise<DbSearchHit[]> => {
-  const filters = normalizeFilters(params.filters);
+}) => {
+  const { filters } = params;
   const textQuery = buildTextQuery(filters.query);
-  const { offset, perPage } = params.pagination;
+  const bm25 = params.backend === "bm25" && Boolean(filters.query);
+  const ranking = filters.query
+    ? sql`lower(n.title) = lower(${filters.query}) AS sort_exact,
+        starts_with(lower(n.title), lower(${filters.query})) AS sort_prefix,
+        ${
+          bm25
+            ? sql`(COALESCE(n.title, '') || ' ' || COALESCE(n.title, '') || ' ' || COALESCE(n.content_md, ''))
+                <@> to_bm25query(${filters.query}, ${BM25_INDEX})`
+            : sql`0`
+        } AS sort_bm25,
+        ts_rank_cd(n.search_document, ${textQuery}) AS sort_rank,`
+    : sql``;
+  const order = filters.query
+    ? sql`sort_exact DESC, sort_prefix DESC, sort_bm25, sort_rank DESC, sort_updated_at DESC, sort_id ASC`
+    : sql`sort_updated_at DESC, sort_id ASC`;
 
-  if (params.backend === "bm25" && filters.query) {
-    return sql<DbSearchHit[]>`
-      SELECT
-        n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-        n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
-        EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
-        nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
-        LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360) AS snippet
-      FROM notebooks.notes n
-      JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
-      WHERE n.notebook_id = ${params.notebookId}::uuid
-        AND n.search_document @@ ${textQuery}
-        AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
-        AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
-        AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
-        AND (${filters.updatedBefore}::timestamptz IS NULL OR n.updated_at <= ${filters.updatedBefore}::timestamptz)
-        AND NOT EXISTS (
-          SELECT 1 FROM unnest(${toPgTextArray(filters.tags)}::text[]) wanted(tag)
-          WHERE NOT EXISTS (
-            SELECT 1 FROM notebooks.note_tags nt
-            WHERE nt.note_id = n.id AND nt.tag = wanted.tag
-          )
-        )
-      ORDER BY
-        (${filters.query} <> '' AND lower(n.title) = lower(${filters.query})) DESC,
-        (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
-        (COALESCE(n.title, '') || ' ' || COALESCE(n.title, '') || ' ' || COALESCE(n.content_md, ''))
-          <@> to_bm25query(${filters.query}, ${BM25_INDEX}),
-        ts_rank_cd(n.search_document, ${textQuery}) DESC,
-        n.updated_at DESC,
-        n.id ASC
-      LIMIT ${perPage} OFFSET ${offset}
-    `;
-  }
-
+  // The materialized page is the boundary for content reads, child lookups and headlines.
+  // Empty searches have no rank expressions, so the updated_at index supplies their order.
   return sql<DbSearchHit[]>`
+    WITH page AS MATERIALIZED (
+      SELECT n.id AS sort_id, n.updated_at AS sort_updated_at, ${ranking} n.notebook_id
+      FROM notebooks.notes n
+      WHERE ${params.condition}
+      ORDER BY ${order}
+      LIMIT ${params.pagination.perPage} OFFSET ${params.pagination.offset}
+    )
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
       n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
       nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
-      CASE
-        WHEN ${filters.query} = '' THEN NULL
-        ELSE LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360)
-      END AS snippet
-    FROM notebooks.notes n
+      ${
+        filters.query
+          ? sql`LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360)`
+          : sql`NULL::text`
+      } AS snippet
+    FROM page
+    JOIN notebooks.notes n ON n.id = page.sort_id
     JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
-    WHERE n.notebook_id = ${params.notebookId}::uuid
-      AND (${filters.query} = '' OR n.search_document @@ ${textQuery})
-      AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
-      AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
-      AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
-      AND (${filters.updatedBefore}::timestamptz IS NULL OR n.updated_at <= ${filters.updatedBefore}::timestamptz)
-      AND NOT EXISTS (
-        SELECT 1 FROM unnest(${toPgTextArray(filters.tags)}::text[]) wanted(tag)
-        WHERE NOT EXISTS (
-          SELECT 1 FROM notebooks.note_tags nt
-          WHERE nt.note_id = n.id AND nt.tag = wanted.tag
-        )
-      )
-    ORDER BY
-      (${filters.query} <> '' AND lower(n.title) = lower(${filters.query})) DESC,
-      (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
-      CASE WHEN ${filters.query} = '' THEN 0 ELSE ts_rank_cd(n.search_document, ${textQuery}) END DESC,
-      n.updated_at DESC,
-      n.id ASC
-    LIMIT ${perPage} OFFSET ${offset}
+    ORDER BY ${order}
   `;
 };
 
-const countInNotebook = async (params: { notebookId: string; filters: SearchFilters }): Promise<number> => {
+const searchWithCondition = async (params: {
+  notebookId?: string;
+  filters: SearchFilters;
+  condition: ReturnType<typeof searchCondition>;
+  pagination: PaginationParams;
+}): Promise<{ hits: SearchHit[]; total: number }> => {
   const filters = normalizeFilters(params.filters);
-  const textQuery = buildTextQuery(filters.query);
-  const [row] = await sql<{ count: number }[]>`
-    SELECT COUNT(*)::int AS count
-    FROM notebooks.notes n
-    WHERE n.notebook_id = ${params.notebookId}::uuid
-      AND (${filters.query} = '' OR n.search_document @@ ${textQuery})
-      AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
-      AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
-      AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
-      AND (${filters.updatedBefore}::timestamptz IS NULL OR n.updated_at <= ${filters.updatedBefore}::timestamptz)
-      AND NOT EXISTS (
-        SELECT 1 FROM unnest(${toPgTextArray(filters.tags)}::text[]) wanted(tag)
-        WHERE NOT EXISTS (
-          SELECT 1 FROM notebooks.note_tags nt
-          WHERE nt.note_id = n.id AND nt.tag = wanted.tag
-        )
-      )
-  `;
-  return row?.count ?? 0;
+  const condition = sql`(${params.condition}) AND ${searchCondition(filters, params.notebookId)}`;
+  const backend = await getSearchBackend();
+  const rowsPromise = searchPageQuery({ ...params, filters, condition, backend }).catch((error) => {
+    if (backend !== "bm25" || !isBm25CapabilityError(error)) throw error;
+    log.warn("BM25 query failed; falling back to native PostgreSQL FTS", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    backendPromise = Promise.resolve("native");
+    return searchPageQuery({ ...params, filters, condition, backend: "native" });
+  });
+  const [rows, counts] = await Promise.all([
+    rowsPromise,
+    sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM notebooks.notes n WHERE ${condition}`,
+  ]);
+  return { hits: rows.map(mapHit), total: counts[0]?.count ?? 0 };
 };
 
 export const searchInNotebook = async (params: {
   notebookId: string;
   filters: SearchFilters;
   pagination: PaginationParams;
-}): Promise<{ hits: SearchHit[]; total: number }> => {
-  const backend = await getSearchBackend();
-  const rowsPromise = searchInNotebookRows({ ...params, backend }).catch((error) => {
-    if (backend !== "bm25" || !isBm25CapabilityError(error)) throw error;
-    log.warn("BM25 query failed; falling back to native PostgreSQL FTS", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    backendPromise = Promise.resolve("native");
-    return searchInNotebookRows({ ...params, backend: "native" });
-  });
-  const [rows, total] = await Promise.all([rowsPromise, countInNotebook({ notebookId: params.notebookId, filters: params.filters })]);
-  return { hits: rows.map(mapHit), total };
-};
+}): Promise<{ hits: SearchHit[]; total: number }> =>
+  searchWithCondition({ ...params, condition: sql`n.notebook_id = ${params.notebookId}::uuid` });
 
 export const searchAcross = async (params: {
   userId: string | null;
@@ -285,121 +263,20 @@ export const searchAcross = async (params: {
   if (params.boundNotebookId && params.notebookId && params.boundNotebookId !== params.notebookId) {
     return { hits: [], total: 0 };
   }
-  const filters = normalizeFilters(params.filters);
-  const textQuery = buildTextQuery(filters.query);
   const principalMatch = buildNotebookVisibleAccessCondition({
     userId: params.userId,
     serviceAccountId: params.serviceAccountId,
   });
-  const notebookId = params.notebookId ?? params.boundNotebookId ?? null;
-  const { offset, perPage } = params.pagination;
-  const backend = await getSearchBackend();
-
-  const [countRow] = await sql<{ count: number }[]>`
-    SELECT COUNT(*)::int AS count
-    FROM notebooks.notes n
-    JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
-    WHERE (${notebookId}::uuid IS NULL OR nb.id = ${notebookId}::uuid)
+  const notebookId = params.notebookId ?? params.boundNotebookId ?? undefined;
+  return searchWithCondition({
+    ...params,
+    notebookId,
+    condition: sql`
+      ${notebookId ? sql`n.notebook_id = ${notebookId}::uuid` : sql`true`}
       AND EXISTS (
-        SELECT 1
-        FROM notebooks.notebook_access na
-        JOIN auth.access a ON a.id = na.access_id
-        WHERE na.notebook_id = nb.id
-          AND ${principalMatch}
+        SELECT 1 FROM notebooks.notebook_access na JOIN auth.access a ON a.id = na.access_id
+        WHERE na.notebook_id = n.notebook_id AND ${principalMatch}
       )
-      AND (${filters.query} = '' OR n.search_document @@ ${textQuery})
-      AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
-      AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
-      AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
-      AND (${filters.updatedBefore}::timestamptz IS NULL OR n.updated_at <= ${filters.updatedBefore}::timestamptz)
-      AND NOT EXISTS (
-        SELECT 1 FROM unnest(${toPgTextArray(filters.tags)}::text[]) wanted(tag)
-        WHERE NOT EXISTS (
-          SELECT 1 FROM notebooks.note_tags nt
-          WHERE nt.note_id = n.id AND nt.tag = wanted.tag
-        )
-      )
-  `;
-
-  const select =
-    backend === "bm25" && filters.query
-      ? sql<DbSearchHit[]>`
-        SELECT
-          n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-          n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
-          EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
-          nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
-          LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360) AS snippet
-        FROM notebooks.notes n
-        JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
-        WHERE (${notebookId}::uuid IS NULL OR nb.id = ${notebookId}::uuid)
-          AND EXISTS (
-            SELECT 1 FROM notebooks.notebook_access na JOIN auth.access a ON a.id = na.access_id
-            WHERE na.notebook_id = nb.id AND ${principalMatch}
-          )
-          AND n.search_document @@ ${textQuery}
-          AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
-          AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
-          AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
-          AND (${filters.updatedBefore}::timestamptz IS NULL OR n.updated_at <= ${filters.updatedBefore}::timestamptz)
-          AND NOT EXISTS (
-            SELECT 1 FROM unnest(${toPgTextArray(filters.tags)}::text[]) wanted(tag)
-            WHERE NOT EXISTS (SELECT 1 FROM notebooks.note_tags nt WHERE nt.note_id = n.id AND nt.tag = wanted.tag)
-          )
-        ORDER BY
-          (${filters.query} <> '' AND lower(n.title) = lower(${filters.query})) DESC,
-          (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
-          (COALESCE(n.title, '') || ' ' || COALESCE(n.title, '') || ' ' || COALESCE(n.content_md, ''))
-            <@> to_bm25query(${filters.query}, ${BM25_INDEX}),
-          ts_rank_cd(n.search_document, ${textQuery}) DESC,
-          n.updated_at DESC,
-          n.id ASC
-        LIMIT ${perPage} OFFSET ${offset}
-      `
-      : sql<DbSearchHit[]>`
-        SELECT
-          n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-          n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
-          EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
-          nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
-          CASE WHEN ${filters.query} = '' THEN NULL
-            ELSE LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360)
-          END AS snippet
-        FROM notebooks.notes n
-        JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
-        WHERE (${notebookId}::uuid IS NULL OR nb.id = ${notebookId}::uuid)
-          AND EXISTS (
-            SELECT 1 FROM notebooks.notebook_access na JOIN auth.access a ON a.id = na.access_id
-            WHERE na.notebook_id = nb.id AND ${principalMatch}
-          )
-          AND (${filters.query} = '' OR n.search_document @@ ${textQuery})
-          AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
-          AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
-          AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
-          AND (${filters.updatedBefore}::timestamptz IS NULL OR n.updated_at <= ${filters.updatedBefore}::timestamptz)
-          AND NOT EXISTS (
-            SELECT 1 FROM unnest(${toPgTextArray(filters.tags)}::text[]) wanted(tag)
-            WHERE NOT EXISTS (SELECT 1 FROM notebooks.note_tags nt WHERE nt.note_id = n.id AND nt.tag = wanted.tag)
-          )
-        ORDER BY
-          (${filters.query} <> '' AND lower(n.title) = lower(${filters.query})) DESC,
-          (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
-          CASE WHEN ${filters.query} = '' THEN 0 ELSE ts_rank_cd(n.search_document, ${textQuery}) END DESC,
-          n.updated_at DESC,
-          n.id ASC
-        LIMIT ${perPage} OFFSET ${offset}
-      `;
-
-  let rows: DbSearchHit[];
-  try {
-    rows = await select;
-  } catch (error) {
-    if (backend !== "bm25" || !isBm25CapabilityError(error)) throw error;
-    log.warn("BM25 query failed; falling back to native PostgreSQL FTS", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    backendPromise = Promise.resolve("native");
-    return searchAcross(params);
-  }
-  return { hits: rows.map(mapHit), total: countRow?.count ?? 0 };
+    `,
+  });
 };

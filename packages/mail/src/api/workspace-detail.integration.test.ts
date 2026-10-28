@@ -7,7 +7,6 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { messageForwardTextOf } from "../forward-text";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import * as access from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import * as mailboxes from "../service/mailboxes";
@@ -165,13 +164,13 @@ suite("Mail workspace conversation detail", () => {
 
   beforeAll(async () => {
     setSystemTime(anchor);
-    await migrate();
     owner = await createUser("owner");
     reader = await createUser("reader");
     revokedReader = await createUser("revoked");
     tokenSpy = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) => {
-      const user = token === "owner" ? owner : token === "reader" ? reader : token === "revoked" ? revokedReader : null;
-      return user ? { kind: "user", payload: {}, user, scopes: [] } : null;
+      const user =
+        token === "owner" || token === "owner-write" ? owner : token === "reader" ? reader : token === "revoked" ? revokedReader : null;
+      return user ? { kind: "user", payload: {}, user, scopes: token === "owner-write" ? ["read", "write"] : [] } : null;
     });
     mailboxId = unwrap(await mailboxes.createMailbox(contextFor(owner), { name: "Workspace detail fixture" })).id;
     mailboxIds.push(mailboxId);
@@ -310,7 +309,7 @@ suite("Mail workspace conversation detail", () => {
       const detail = await request(`workspace-detail/${visible.shortId}?folder=${folderId}`);
       const folder = await app.request(`/mailboxes/${mailboxShortId}/folders/${folderId}`, {
         method: "PATCH",
-        headers: { authorization: "Bearer owner", "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
+        headers: { authorization: "Bearer owner-write", "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
         body: JSON.stringify({ display: "everywhere" }),
       });
       expect(detail.status).toBe(404);

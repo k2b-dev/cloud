@@ -7,6 +7,7 @@ import {
   CapabilityStreamStatusSchema,
   capabilityResultSchema,
 } from "../contracts/capabilities";
+import { hasOAuthScope } from "../server/oauth-scope";
 import type { CompiledCapabilities } from "./capabilities";
 import { capabilityActionReceiptIssues } from "./capability-reviews";
 
@@ -19,6 +20,8 @@ export async function invokeCapabilityStream(params: {
   request: Request;
   context: CapabilityExecutionContext;
 }): Promise<Response> {
+  if (!hasOAuthScope(params.context.authority, params.kind === "queries" ? "read" : "write", "admin"))
+    return failure(403, "FORBIDDEN", "Insufficient OAuth scope");
   const operation = params.compiled[params.kind].get(params.localId);
   const definition = operation?.definition.stream;
   if (!operation || !definition) return failure(404, "STREAM_NOT_FOUND", "Stream operation not found");

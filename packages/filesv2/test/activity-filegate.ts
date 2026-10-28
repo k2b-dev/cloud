@@ -9,6 +9,9 @@ import { localFilegateToken } from "./private-database";
 /** Explicit local test target, or an isolated daemon in CI; never silently skip storage assertions. */
 export async function activityFilegate(): Promise<{ url: string; token: string; stop(): Promise<void> }> {
   if (testInfra.filegate) return { url: testInfra.filegate, token: await localFilegateToken(), stop: async () => {} };
+  const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+  const port = reservation.port;
+  reservation.stop(true);
   const name = `filesv2-activity-${randomUUID()}`;
   const volume = `${name}-data`;
   const directory = await mkdtemp(join(tmpdir(), "filesv2-activity-"));
@@ -52,7 +55,7 @@ export async function activityFilegate(): Promise<{ url: string; token: string; 
       join(directory, "conf.yaml"),
       `server:
   listen: "0.0.0.0:4000"
-  public_url: "http://127.0.0.1:4000"
+  public_url: "http://127.0.0.1:${port}"
 auth:
   token_file: /config/token
 state_dir: /data/state
@@ -114,7 +117,7 @@ roots:
       "--security-opt",
       "no-new-privileges:true",
       "-p",
-      "127.0.0.1::4000",
+      `127.0.0.1:${port}:4000`,
       "-v",
       `${volume}:/data`,
       "-v",

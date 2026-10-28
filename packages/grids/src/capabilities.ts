@@ -1480,19 +1480,33 @@ export const gridsCapabilities = defineCapabilities({
   presentation: gridsCapabilityPresentation,
   types: {
     ...dailyCapabilities.types,
-    base: { title: "Grids base", description: "A permission-scoped Grids workspace.", icon: "ti ti-table", reader: "base.read" },
+    base: {
+      title: "Grids base",
+      description: "A permission-scoped Grids workspace.",
+      icon: "ti ti-table",
+      reader: "base.read",
+      pages: ["/app/grids/:id"],
+    },
     table: {
       title: "Grids Table",
       description: "A readable stored or Combined table in a base.",
       icon: "ti ti-table-column",
       reader: "table.read",
+      pages: ["/app/grids/:base/table/:id"],
     },
-    view: { title: "Grids View", description: "A permission-scoped saved GQL data view.", icon: "ti ti-layout-list", reader: "view.read" },
+    view: {
+      title: "Grids View",
+      description: "A permission-scoped saved GQL data view.",
+      icon: "ti ti-layout-list",
+      reader: "view.read",
+      pages: ["/app/grids/:base/table/:table/view/:id"],
+    },
     record: {
       title: "Grids Record",
       description: "One stable record in a Grids Table.",
       icon: "ti ti-row-insert-bottom",
       reader: "record.read",
+      pages: ["/app/grids/:base/table/:table?record=:id"],
     },
   },
   queries: {

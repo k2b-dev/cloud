@@ -16,7 +16,9 @@ COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
 COPY packages/ui/test packages/ui/test
 COPY pwas/pwa-auth pwas/pwa-auth
-COPY scripts/fixtures/test-infra.ts scripts/fixtures/test-infra-env.ts scripts/fixtures/test-nats.ts scripts/fixtures/test-sync.ts scripts/fixtures/
+# Keep the shared gate's static imports available to typecheck and unit tests.
+COPY scripts/workspace.ts scripts/
+COPY scripts/fixtures/test-infra.ts scripts/fixtures/test-infra-env.ts scripts/fixtures/test-database-template.ts scripts/fixtures/test-nats.ts scripts/fixtures/test-sync.ts scripts/fixtures/
 ARG CLOUD_VERSION=0.0.0-local
 ARG CLOUD_RELEASE=local
 ENV CLOUD_VERSION=$CLOUD_VERSION CLOUD_RELEASE=$CLOUD_RELEASE

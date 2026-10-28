@@ -6,6 +6,8 @@ import { phoneAuth } from "../phone";
 
 /** One automatic return to Start per this window, so a phone that cannot keep cookies never loops. */
 const RETRY_MARKER = "cloud.pwa.unavailable-retry";
+/** A recovered app opens where the person left it, as a cold start does. */
+const LAUNCH = `${PWA_SCOPE}?launch`;
 const RETRY_WINDOW_MS = 30_000;
 
 const mayRetry = (): boolean => {
@@ -46,11 +48,11 @@ export default function Unavailable() {
         });
         renewed = await renew();
       }
-      if (renewed && mayRetry()) location.replace(PWA_SCOPE);
+      if (renewed && mayRetry()) location.replace(LAUNCH);
     })();
   });
   return (
-    <Button onClick={() => location.replace(PWA_SCOPE)}>
+    <Button onClick={() => location.replace(LAUNCH)}>
       <i class="ti ti-refresh" aria-hidden="true" />
       {t().tryAgain}
     </Button>

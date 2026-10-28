@@ -48,12 +48,12 @@ and durable data.
   Read **App access** (`/en/docs/identity/app-access`) for public routes and migration.
 - Keep declared prefixes, mounted routes, and registration aligned. A running
   process alone does not prove route readiness.
-- Cloud authenticates and resolves access subjects. The application checks
-  resource permissions in every service path: `actor` for identity and audit,
-  `accessSubject` for grants; UI visibility and page context refs are not
-  authorization. Grant changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
-  service account carries `appId`, `resourceType`, and `resourceId`;
-  `standalone` and `agent` accounts hold their own grants, capped by scopes.
+- Cloud authenticates requests and resolves `actor` (identity and audit) and `accessSubject` (grants). Application services enforce resource permissions on every path;
+  UI visibility and page context refs never grant access. Grant changes keep a manager (`ensureManagerRemains()`).
+  Only `resource_bound` service accounts carry `appId`, `resourceType`, and `resourceId`; `standalone` and `agent` accounts use their own grants, capped by scopes.
+- OAuth mutations require `write` or `admin`, including resource routes and forwarded capabilities; sessions and personal API keys keep their contracts.
+  For read-only POST routes, put `auth.readOnly` first in the route's handlers; never use it for mutations or subtrees.
+  Read **Route policies** (`/en/docs/identity/route-policies`).
 - Send an interactive credential only to Core. Framework-owned cross-app calls
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.
@@ -149,6 +149,7 @@ callers `cli.plugins.access` allows; `cld` installs them per profile and writes 
 Read **Ship Assistant Skills** (`/en/docs/platform/assistant-skills`) first: keep each Skill in `src/skills/<name>/SKILL.md` (+ `references/*.md`), import the files `with { type: "text" }` in `src/skills.ts`, export `SKILLS = [skill({ markdown, references })]` from `@k2b/cloud`, and pass `skills: SKILLS` to `defineApp()`.
 Cloud validates Skills at start, updates them by content hash, and offers them only while their app runs and its access rule (legacy: Help audience) permits use. Skills grant nothing; never seed or rewrite Skill rows from code.
 
+Request AI through `model: { class: "fast" | "balanced" | "thorough" | "maximum" }`; omitted requests mean balanced, and only empty assignments fall back. Read **Models and providers** and **Structured and background AI** for policy, explicit variant IDs and errors.
 ## Build and verify one complete slice
 For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
 especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
@@ -174,6 +175,5 @@ speculative paths, one-off abstractions, and unrelated cleanup. Start with the
 fastest relevant check, then verify each affected permission, data,
 registration, and SSR/browser boundary. Integration tests gate on `CLOUD_TEST_*`
 variables and never touch a database whose name does not end in `_test`. Before
-release, test against the target Cloud version with the production package
-version. Update the application's docs when observable behavior changes; finish
+release, test against the target Cloud version with the production package version. Update the application's docs when observable behavior changes; finish
 when code, focused tests, and documentation describe one contract.

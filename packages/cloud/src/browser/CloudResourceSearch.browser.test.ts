@@ -360,7 +360,7 @@ describe("streamed search in a browser", () => {
 });
 
 for (const lang of ["en", "de"]) {
-  test(`app launcher uses localized shell names, aliases and normal/new-tab navigation (${lang})`, async () => {
+  test(`app launcher uses localized shell names, aliases and keyboard/new-tab navigation (${lang})`, async () => {
     searches.length = 0;
     const view = await open(views[0]!, `/?launcher&public&admin&lang=${lang}`);
     const { page } = view;
@@ -397,7 +397,8 @@ for (const lang of ["en", "de"]) {
     } finally {
       await view.close();
     }
-
+  });
+  test(`app launcher opens the selected admin app by click (${lang})`, async () => {
     const admin = await open(views[0]!, `/?launcher&public&admin&lang=${lang}&q=admin`);
     try {
       await waitForRows(admin.page, 1);
@@ -406,6 +407,8 @@ for (const lang of ["en", "de"]) {
     } finally {
       await admin.close();
     }
+  });
+  test(`app launcher hides admin from public discovery and accepts a fuzzy alias (${lang})`, async () => {
     const publicView = await open(views[1]!, `/?launcher&public&lang=${lang}&q=admin`);
     try {
       await publicView.page

@@ -1,7 +1,6 @@
 // Named renderers, not the `charts` namespace, so bundles leave out the map and state timeline renderers.
 import {
   autoBin,
-  bar,
   barGauge,
   boxplot,
   type ChartDatum,
@@ -21,11 +20,14 @@ import {
   sparkline,
   stat,
 } from "@k2b/stdlib";
+import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { z } from "zod";
 import type { CloudAiChartInput, CloudAiFormat, CloudAiNumberFormat } from "./default-tool-contracts";
 
 type RenderOptions = {
-  [K in CloudAiChartInput["kind"]]: { kind: K } & Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">;
+  [K in CloudAiChartInput["kind"]]: { kind: K } & (K extends "bar"
+    ? BarChartOptions
+    : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[CloudAiChartInput["kind"]];
 
 /**
@@ -205,18 +207,26 @@ type Formats = {
   x: { tick: (value: number) => string; value: (value: number) => string };
 };
 
-/** Value precision and tick precision share the same style and units; ticks must remain distinct. */
-export const cloudAiNumberFormatters = (format: CloudAiNumberFormat | undefined, locale: string) => {
+/**
+ * Value precision and tick precision share the same style and units; ticks must remain distinct. A currency without
+ * `decimals` or compact notation writes cents only when one of the formatted `values` has them: 418,000 € rather than
+ * 418,000.00 €.
+ */
+export const cloudAiNumberFormatters = (format: CloudAiNumberFormat | undefined, locale: string, values?: readonly number[]) => {
   const common: Intl.NumberFormatOptions = {
     style: format?.style === "number" ? "decimal" : format?.style,
     currency: format?.currency,
   };
+  // Compact notation keeps its fraction: 1.2K and 1.4K must not both read 1K.
+  const decimals =
+    format?.decimals ??
+    (format?.style === "currency" && !format.compact && values?.length && values.every(Number.isInteger) ? 0 : undefined);
   const value = new Intl.NumberFormat(
     locale,
     format
       ? {
           ...common,
-          ...(format.decimals === undefined ? {} : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals }),
+          ...(decimals === undefined ? {} : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
           ...(format.compact ? { notation: "compact" } : {}),
         }
       : { maximumSignificantDigits: 15 },
@@ -234,10 +244,37 @@ export const cloudAiNumberFormatters = (format: CloudAiNumberFormat | undefined,
   return { value: (v: number) => `${value.format(v)}${unit}`, tick: (v: number) => `${tickValue(v)}${unit}` };
 };
 const numberFormat = (format: CloudAiFormat | undefined) => (format && !("date" in format) ? format : undefined);
+/** The values a chart writes with its value format, for whole-number currency. */
+const formattedValues = (input: CloudAiChartInput): number[] => {
+  switch (input.kind) {
+    case "line":
+    case "scatter":
+      return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...referencesOf(input, "y")];
+    case "bar":
+      return [...input.data.map((item) => item.value), ...referencesOf(input, "y")];
+    case "pie":
+    case "donut":
+    case "heatmap":
+      return input.data.map((item) => item.value);
+    case "barGauge":
+      return [...input.data.flatMap((item) => [item.value, item.min, item.max]), input.min, input.max].filter(
+        (value) => value !== undefined,
+      );
+    case "stat":
+      return [input.value, ...(input.delta === undefined ? [] : [input.delta]), ...(input.sparkline ?? [])];
+    case "gauge":
+      return [input.value, input.min, input.max].filter((value) => value !== undefined);
+    case "sparkline":
+      return input.data;
+    // Box plots write quartiles they compute, and histograms bin edges: those keep their cents.
+    default:
+      return [];
+  }
+};
 const formats = (input: CloudAiChartInput, locale: string): Formats => {
   const yFormat = "yAxis" in input ? numberFormat(input.yAxis?.format) : "format" in input ? input.format : undefined;
-  const y = cloudAiNumberFormatters(yFormat, locale);
-  const xFormat = "xAxis" in input ? input.xAxis?.format : undefined;
+  const y = cloudAiNumberFormatters(yFormat, locale, formattedValues(input));
+  const xFormat = "xAxis" in input && input.kind !== "bar" ? input.xAxis?.format : undefined;
   const x = cloudAiNumberFormatters(numberFormat(xFormat), locale);
   // An unformatted x axis often counts years or steps, which compact notation would turn into 2.02K.
   const xTick = new Intl.NumberFormat(locale, { maximumSignificantDigits: 15, useGrouping: "min2" });
@@ -268,7 +305,7 @@ const leftPadding = (values: number[], value: ChartAxisInput | undefined, tick: 
 };
 
 /**
- * Category labels never shorten: when they would overlap in the narrowest column, every n-th label shows in full and
+ * Box plot labels never shorten: when they would overlap in the narrowest column, every n-th label shows in full and
  * the others stay empty, as in `cloud.chart()`. Table and tooltips keep every label.
  */
 const thinned = <T extends { label: string }>(data: T[], left: number, width = WIDTH, factor = NARROW): T[] => {
@@ -327,31 +364,27 @@ export function cloudAiChartRenderOptions(
   switch (input.kind) {
     case "bar":
     case "boxplot": {
-      const values = input.kind === "bar" ? input.data.map((item) => item.value) : input.data.flatMap((item) => item.values);
       const yAxis = referencedAxis(input, "y");
-      // The renderer prints bar values with the axis format, so printed values take the value precision for both.
-      const yFormat = options.formats?.y ?? (input.kind === "bar" && input.showValues ? format.value : format.tick);
-      const left = leftPadding(
-        [...values, ...referencesOf(input, "y"), ...(input.kind === "bar" && input.yAxis?.scale !== "log" ? [0] : [])],
-        yAxis,
-        yFormat,
-        factor,
-      );
-      if (input.kind === "boxplot")
+      // The bar renderer places every category label and printed value itself, sized for the narrowest column.
+      if (input.kind === "bar")
         return {
-          kind: "boxplot",
-          groups: thinned(input.data, left, width, factor),
-          yAxis: axis(yAxis, format.tick),
+          kind: "bar",
+          data: input.data,
+          xAxis: input.xAxis,
+          yAxis: axis(yAxis, options.formats?.y ?? format.tick),
+          // A host's own function format writes printed values like its ticks and table cells.
+          valueFormat: options.formats?.value ?? options.formats?.y ?? format.value,
+          colorByBar: input.colorByBar,
+          showValues: input.showValues,
+          legend: options.legend === "outside" ? false : input.legend,
           references,
-          padding: { left },
+          ...(options.width === undefined ? {} : { displayWidth: options.width }),
         };
+      const left = leftPadding([...input.data.flatMap((item) => item.values), ...referencesOf(input, "y")], yAxis, format.tick, factor);
       return {
-        kind: "bar",
-        data: input.colorByBar && input.legend && options.legend !== "outside" ? input.data : thinned(input.data, left, width, factor),
-        yAxis: axis(yAxis, yFormat),
-        colorByBar: input.colorByBar,
-        showValues: input.showValues,
-        legend: options.legend === "outside" ? false : input.legend,
+        kind: "boxplot",
+        groups: thinned(input.data, left, width, factor),
+        yAxis: axis(yAxis, format.tick),
         references,
         padding: { left },
       };
@@ -478,7 +511,7 @@ const draw = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
     case "bar":
-      return bar({ ...options, ...common });
+      return renderBarChartSvg({ ...options, ...common, height: barChartLayout(options).height });
     case "line":
       return line({ ...options, ...common });
     case "scatter":
@@ -554,7 +587,7 @@ export function cloudAiChartRows(
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
-    ? cloudAiNumberFormatters(input.tooltip.format, locale).value
+    ? cloudAiNumberFormatters(input.tooltip.format, locale, formattedValues(input)).value
     : (options.formats?.value ?? (input.kind === "histogram" ? undefined : options.formats?.y) ?? format.value);
   const xFormat = options.formats?.x ?? format.x.value;
   const series = seriesOf(input);
