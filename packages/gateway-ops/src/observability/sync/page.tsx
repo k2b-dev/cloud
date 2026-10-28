@@ -1,10 +1,10 @@
 import { listApps } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
+import { areaText, NatsSyncTabs, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import SyncNatsFilterBar from "../_components/SyncNatsFilterBar.island";
 import DeadLetterActions from "./_components/DeadLetterActions.island";
 import DeadLetterDetail from "./_components/DeadLetterDetail";
@@ -139,13 +139,11 @@ export default ssr<AuthContext>(async (c) => {
     { id: "actions", header: t.actions, value: () => null, align: "right" },
   ];
 
+  const areaAttention = await readAttention();
   return () => (
-    <AdminLayout c={c} title="Sync">
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-sync-title">
-          <h1 class="text-base font-semibold text-primary">Sync</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.syncDescription}</p>
-        </div>
+    <ObservabilityArea c={c} locale={locale} section="nats" attention={areaAttention}>
+      <ObservabilityPane label={areaText(locale).nats} description={t.syncDescription}>
+        <NatsSyncTabs current="sync" locale={locale} />
 
         <div class="flex flex-wrap items-end gap-3">
           <p class="text-xs text-dimmed">
@@ -399,7 +397,7 @@ export default ssr<AuthContext>(async (c) => {
             }}
           />
         </section>
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });

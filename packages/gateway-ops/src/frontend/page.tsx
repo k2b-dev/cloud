@@ -1,7 +1,7 @@
 import { readAppRegistrySnapshot } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
-import { AdminLayout } from "@k2b/cloud/ssr";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../observability/_components/ObservabilityArea";
 import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "../observability/telemetry/contracts";
 
 const TELEMETRY_RANGE_KEYS = Object.keys(TELEMETRY_RANGES) as TelemetryRange[];
@@ -17,7 +17,7 @@ const rangeUrl = (url: URL, range: TelemetryRange): string => {
 
 import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatRatio as fmtRatio, formatDateTime } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge, ViewTabs } from "@k2b/ui";
 import { type AppRuntimeStatus, buildAppRuntimeStatuses } from "../app-runtime-status";
 import { ssr } from "../config";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
@@ -206,15 +206,21 @@ export default ssr<AuthContext>(async (c) => {
     },
     { id: "errors", header: t.errors, value: (route) => route.errors, headerClass: "text-right", cellClass: "text-right tabular-nums" },
   ];
-  const title = isRoutesPage ? t.gatewayRoutesTitle : t.gatewayAppsTitle;
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title={title}>
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-gateway-title">
-          <h1 class="text-base font-semibold text-primary">{title}</h1>
-          <p class="mt-1 text-xs text-dimmed">{isRoutesPage ? t.gatewayRoutesDescription : t.gatewayAppsDescription}</p>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="gateway" attention={attention}>
+      <ObservabilityPane
+        label={areaText(locale).gateway}
+        description={isRoutesPage ? t.gatewayRoutesDescription : t.gatewayAppsDescription}
+      >
+        <ViewTabs
+          label={areaText(locale).gateway}
+          current={isRoutesPage ? "routes" : "apps"}
+          items={[
+            { id: "apps", label: t.gatewayAppsTitle, href: rangeUrl(new URL("/admin/gateway/apps", url), range) },
+            { id: "routes", label: t.gatewayRoutesTitle, href: rangeUrl(new URL("/admin/gateway/routes", url), range) },
+          ]}
+        />
         <RangeTabs
           caption={t.trafficWindow}
           label={t.trafficWindow}
@@ -440,7 +446,7 @@ export default ssr<AuthContext>(async (c) => {
             />
           </DataTable.Panel>
         ) : null}
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });

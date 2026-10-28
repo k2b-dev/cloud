@@ -9,6 +9,7 @@ import { gatewayOpsApiErrorMessage } from "./messages";
 import alertsPage from "./observability/alerts/page";
 import capabilitiesApiRoutes from "./observability/capabilities/api";
 import capabilitiesPage from "./observability/capabilities/page";
+import healthCheckPage from "./observability/health-check/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
 import jobsApiRoutes from "./observability/jobs/api";
 import jobsPage from "./observability/jobs/page";
@@ -24,6 +25,7 @@ import notificationsPage from "./observability/notifications/page";
 import observabilityOverviewPage from "./observability/page";
 import postgresPage from "./observability/postgres/page";
 import redisPage from "./observability/redis/page";
+import retentionPage from "./observability/retention/page";
 import syncApiRoutes from "./observability/sync/api";
 import syncPage from "./observability/sync/page";
 import telemetryApiRoutes from "./observability/telemetry/api";
@@ -93,6 +95,8 @@ export const router = new Hono<AuthContext>()
   .get("/admin/observability/sync", auth.requireRole("admin", ssr.access), ...syncPage)
   .get("/admin/observability/alerts", auth.requireRole("admin", ssr.access), ...alertsPage)
   .get("/admin/observability/notifications", auth.requireRole("admin", ssr.access), ...notificationsPage)
+  .get("/admin/observability/health-check", auth.requireRole("admin", ssr.access), ...healthCheckPage)
+  .get("/admin/observability/retention", auth.requireRole("admin", ssr.access), ...retentionPage)
   .get("/metrics", auth.requireRole("*"), metricsEndpoint)
   .use("/api/*", localizeApiError)
   .route("/api/gateway/widget", widgetRoutes)

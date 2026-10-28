@@ -2,7 +2,8 @@ import { normalizeRedirectTo } from "../shared";
 import { platformMessages } from "./platform-messages";
 import type { RuntimeContext } from "./runtime";
 
-export type AdminLink = { href: string; icon: string; label: string };
+/** `match` lists further paths the link stands for, such as the pages of an area. */
+export type AdminLink = { href: string; icon: string; label: string; match?: string[] };
 export type AdminGroup = { label: string; links: AdminLink[] };
 
 const normalizeAdminHref = (href: string | undefined): string | undefined => {
@@ -21,8 +22,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     { href: "/admin/settings?tab=security", icon: "ti-shield-lock", label: t.security },
     { href: "/admin/settings?tab=legal", icon: "ti-file-text", label: t.legal },
   ];
-  // One AI area: providers, models, classes, settings and the AI pages apps contribute all live under /admin/ai.
-  const aiLinks: AdminLink[] = [{ href: "/admin/ai", icon: "ti-sparkles", label: t.ai }];
+  // Areas show as one entry each. The AI area belongs to Core; Observability exists when an app contributes it.
   const contributedApps = apps
     .map((app) => ({
       app,
@@ -48,6 +48,16 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
+  const observabilityPaths = contributedApps.flatMap(({ groups }) =>
+    groups.filter((group) => group.section === "observability").flatMap((group) => group.links.map((link) => link.href)),
+  );
+  const areaLinks: AdminLink[] = [
+    { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
+    ...(observabilityPaths.length > 0
+      ? [{ href: "/admin/observability", icon: "ti-heart-rate-monitor", label: t.observability, match: observabilityPaths }]
+      : []),
+  ];
+
   return [
     {
       label: t.general,
@@ -59,8 +69,9 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
         { href: "/admin/announcements", icon: "ti-speakerphone", label: t.announcements },
       ],
     },
+    { label: t.cloudAreas, links: areaLinks },
     ...contributedApps.flatMap(({ groups }) =>
-      groups.filter((group) => group.section !== "ai").map(({ label, links }) => ({ label, links })),
+      groups.filter((group) => group.section === undefined).map(({ label, links }) => ({ label, links })),
     ),
     {
       label: t.userManagement,
@@ -72,7 +83,6 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
         { href: "/admin/settings?tab=freeipa", icon: "ti-building-fortress", label: "FreeIPA" },
       ],
     },
-    { label: t.ai, links: aiLinks },
     { label: t.settings, links: settingsLinks },
     ...(appLinks.length > 0 ? [{ label: t.appAdmin, links: appLinks }] : []),
   ];

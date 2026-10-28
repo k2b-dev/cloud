@@ -144,8 +144,14 @@ Each group needs a `label` and `links`. Each link needs a `label`, `href`, and
 Tabler `icon`. Add a stable group `id` when its label is translated through
 `presentation`.
 
-An application contributing AI administration can set `section: "ai"` on its
-group. The layout adds those links to the existing AI administration section.
+Set `section` on a group to contribute to a platform administration area
+instead of adding a group of its own:
+
+| `section` | Area | What the sidebar shows |
+| --- | --- | --- |
+| `"ai"` | AI | The AI area lists the links among its own sections. |
+| `"observability"` | Observability | One entry, Observability, that stays active on every contributed link. The owning app renders the area's columns itself. |
+
 Route and resource authorization still belong to the application; this field
 only selects where authorized navigation is displayed.
 

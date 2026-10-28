@@ -1,27 +1,15 @@
 import { type AuthContext, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { read } from "@k2b/cloud/services";
-import { formatNumber } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
-import { Placeholder, StatCell, StatGrid } from "@k2b/ui";
+import { requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import OperationalCharts from "../../frontend/OperationalCharts.island";
-import { prepareOperationalCharts } from "../../frontend/operational-charts";
-import RangeTabs from "../../frontend/RangeTabs";
-import LogTable from "./_components/LogTable.island";
-import { buildLogFilterUrl, LOG_WINDOWS } from "./_components/types";
-
-const LOGS_PAGE_PATH = "/admin/observability/logs";
-
-const LOG_WINDOW_KEYS = Object.keys(LOG_WINDOWS) as (keyof typeof LOG_WINDOWS)[];
-
-import { gatewayOpsMessages } from "../../messages";
-import { parseLogFilterFromUrl } from "./_components/types";
+import { readAttention } from "../_components/ObservabilityArea";
+import { buildLogFilterUrl, LOG_WINDOWS, parseLogFilterFromUrl } from "./_components/types";
 import { createPagination } from "./contracts";
 import { loggingService } from "./service";
+import { LOGS_PAGE_PATH, LogsView } from "./view";
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
-  const { t } = gatewayOpsMessages.resolve([locale]);
   const url = new URL(c.req.url);
   const filter = parseLogFilterFromUrl(url);
 
@@ -54,30 +42,7 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   const { items: entries, total } = listResult.result;
   const loadError = listResult.error;
-  const timeseries = timeseriesResult.points;
-  const statsUnavailable = Boolean(loadError || timeseriesResult.error);
   const topSource = sourceStats[0] ?? null;
-  const windowTotals = timeseries.reduce(
-    (sum, point) => ({
-      total: sum.total + point.total,
-      warn: sum.warn + point.warn,
-      error: sum.error + point.error,
-    }),
-    { total: 0, warn: 0, error: 0 },
-  );
-  const levelSeries = (
-    [
-      [t.debug, "debug"],
-      [t.info, "info"],
-      [t.warn, "warn"],
-      [t.error, "error"],
-    ] as const
-  )
-    .filter(([, level]) => filter.level === "all" || filter.level === level)
-    .map(([label, level]) => ({
-      label,
-      data: timeseries.map((point) => ({ x: point.at.getTime(), y: point[level] })),
-    }));
 
   const paginationResult = createPagination(pagination, total);
   const baseUrl = (() => {
@@ -88,106 +53,38 @@ export default ssr<AuthContext>(async (c) => {
   const retentionState = await read("logs.retention_days");
   const retentionDays = Number(retentionState.value);
 
+  // The entry open in the detail column. Ids are row numbers; anything else opens nothing.
+  const entryParam = url.searchParams.get("entry");
+  const selectedId = entryParam && /^\d{1,19}$/.test(entryParam) ? entryParam : null;
+  const [attention, selected] = await Promise.all([
+    readAttention(),
+    selectedId
+      ? loggingService.entry
+          .get({ id: selectedId })
+          .then((entry) => ({ entry, error: null as string | null }))
+          .catch((error) => ({ entry: null, error: error instanceof Error ? error.message : String(error) }))
+      : Promise.resolve(null),
+  ]);
   return () => (
-    <AdminLayout c={c} title={t.logs}>
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-logs-title">
-          <h1 class="text-base font-semibold text-primary">{t.logs}</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.logsDescription}</p>
-        </div>
-
-        <RangeTabs
-          caption={t.window}
-          label={t.logWindow}
-          current={filter.window}
-          items={LOG_WINDOW_KEYS.map((option) => ({
-            id: option,
-            href: buildLogFilterUrl(LOGS_PAGE_PATH, { window: option, page: 1 }, filter),
-          }))}
-        />
-
-        {/* Stat cards — see skills/cloud-app/references/frontend.md § Stats */}
-        <StatGrid columns={5}>
-          <StatCell
-            label={t.errors}
-            value={statsUnavailable ? "—" : windowTotals.error.toLocaleString(locale)}
-            sub={statsUnavailable ? t.unavailable : filter.window}
-            valueClass={windowTotals.error > 0 ? "text-red-500" : "text-primary"}
-            href={buildLogFilterUrl(LOGS_PAGE_PATH, { level: "error", page: 1 }, filter)}
-            accent={windowTotals.error > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
-          />
-          <StatCell
-            label={t.warnings}
-            value={statsUnavailable ? "—" : windowTotals.warn.toLocaleString(locale)}
-            sub={statsUnavailable ? t.unavailable : filter.window}
-            valueClass={windowTotals.warn > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-            href={buildLogFilterUrl(LOGS_PAGE_PATH, { level: "warn", page: 1 }, filter)}
-            accent={windowTotals.warn > 0 ? { tone: "amber", icon: "ti ti-alert-triangle" } : undefined}
-          />
-          <StatCell
-            label={t.volume}
-            value={statsUnavailable ? "—" : windowTotals.total.toLocaleString(locale)}
-            sub={t.matchingFilters({ window: filter.window })}
-          />
-          <StatCell
-            label={t.noisiestSource}
-            value={topSource ? topSource.key : "—"}
-            sub={
-              topSource
-                ? t.logEntriesCount({ count: topSource.count, formattedCount: formatNumber(topSource.count, { locale }) })
-                : t.noEntriesInWindow
-            }
-            href={topSource ? buildLogFilterUrl(LOGS_PAGE_PATH, { sources: [topSource.key], page: 1 }, filter) : undefined}
-            accent={{ tone: "blue", icon: "ti ti-stack-3" }}
-          />
-          <StatCell
-            label={t.retained}
-            value={summary ? summary.total.toLocaleString(locale) : "—"}
-            sub={t.autoPruneDays({ days: retentionDays })}
-          />
-        </StatGrid>
-
-        <section>
-          {timeseriesResult.error ? (
-            <Placeholder state="error" variant="compact" description={timeseriesResult.error} />
-          ) : (
-            <OperationalCharts
-              columns={2}
-              charts={prepareOperationalCharts(
-                [
-                  {
-                    kind: "line",
-                    title: t.volumeOverTime,
-                    description: t.volumeOverTimeDescription,
-                    series: levelSeries,
-                    maxGap: timeseries.length > 1 ? timeseries[1]!.at.getTime() - timeseries[0]!.at.getTime() : undefined,
-                  },
-                  {
-                    kind: "line",
-                    title: `${t.warn} / ${t.error}`,
-                    series: levelSeries.filter((series) => series.label === t.warn || series.label === t.error),
-                    maxGap: timeseries.length > 1 ? timeseries[1]!.at.getTime() - timeseries[0]!.at.getTime() : undefined,
-                  },
-                ],
-                locale,
-              )}
-            />
-          )}
-        </section>
-
-        <LogTable
-          entries={entries}
-          total={total}
-          filter={filter}
-          sources={sources}
-          retentionDays={retentionDays}
-          retentionUnreadable={retentionState.stored === "unreadable"}
-          timeZone={getTimeZone(c)}
-          totalPages={paginationResult.total_pages}
-          baseUrl={baseUrl}
-          loadError={loadError}
-        />
-      </div>
-    </AdminLayout>
+    <LogsView
+      c={c}
+      locale={locale}
+      timeZone={getTimeZone(c)}
+      attention={attention}
+      filter={filter}
+      entries={entries}
+      total={total}
+      totalPages={paginationResult.total_pages}
+      baseUrl={baseUrl}
+      sources={sources}
+      loadError={loadError}
+      summary={summary}
+      topSource={topSource}
+      timeseriesResult={timeseriesResult}
+      retentionDays={retentionDays}
+      selectedId={selectedId}
+      selected={selected}
+      retryHref={requestPath(c)}
+    />
   );
 });

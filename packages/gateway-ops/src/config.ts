@@ -58,6 +58,7 @@ export const app = defineApp({
   adminHref: "/admin/gateway",
   adminNav: [
     {
+      section: "observability",
       id: "gateway",
       label: "Gateway",
       links: [
@@ -66,6 +67,7 @@ export const app = defineApp({
       ],
     },
     {
+      section: "observability",
       id: "observability",
       label: "Observability",
       links: [

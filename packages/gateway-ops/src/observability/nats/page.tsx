@@ -1,8 +1,8 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatusBadge } from "@k2b/ui";
 import { ssr } from "../../config";
+import { areaText, NatsSyncTabs, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import SyncNatsFilterBar from "../_components/SyncNatsFilterBar.island";
 import { NatsQuerySchema, readNatsDiagnostics } from "./diagnostics";
 import { natsMessages } from "./messages";
@@ -87,24 +87,23 @@ export default ssr<AuthContext>(async (c) => {
       },
     },
   ];
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title="NATS">
-      <div class="app-rows">
-        <div>
-          <h1 class="text-base font-semibold text-primary">NATS</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.description}</p>
-          <p class="mt-1 text-xs text-dimmed">
-            {t.sampledAt}: <time datetime={diagnostics.sampledAt}>{formatDateTime(diagnostics.sampledAt, dateConfig)}</time>
-          </p>
-        </div>
-        <div class="flex gap-2">
+    <ObservabilityArea c={c} locale={locale} section="nats" attention={attention}>
+      <ObservabilityPane
+        label={areaText(locale).nats}
+        description={
+          <>
+            {t.description} {t.sampledAt}: <time datetime={diagnostics.sampledAt}>{formatDateTime(diagnostics.sampledAt, dateConfig)}</time>
+          </>
+        }
+        actions={
           <ButtonLink href={href({})} variant="secondary" size="sm">
             {t.refresh}
           </ButtonLink>
-          <ButtonLink href="/admin/observability/sync" variant="secondary" size="sm">
-            {t.sync}
-          </ButtonLink>
-        </div>
+        }
+      >
+        <NatsSyncTabs current="nats" locale={locale} />
         {!parsed.success ? <NoticeCard tone="warning" title={t.invalidFilters} /> : null}
         {cluster.status === "not_configured" ? (
           <NoticeCard tone="info" title={t.cluster} detail={t.notConfigured} />
@@ -231,7 +230,7 @@ export default ssr<AuthContext>(async (c) => {
             ) : null}
           </div>
         </section>
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });
