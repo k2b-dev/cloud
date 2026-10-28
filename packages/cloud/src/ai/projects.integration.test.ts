@@ -148,7 +148,7 @@ databaseSuite()("aiProjects (integration)", () => {
         subject: userResourceContext(owner),
         name: "Support",
         instructions: "Answer with the support policy.",
-        defaultModelProfileId: "model-support",
+        defaultModel: { id: "model-support" },
       });
       expect(project).not.toHaveProperty("ownerUserId");
       expect(await aiProjects.listAccess(project.id, userResourceContext(owner))).toMatchObject([
@@ -193,7 +193,7 @@ databaseSuite()("aiProjects (integration)", () => {
 
       const snapshot = await aiProjects.snapshot(project.id, userResourceContext(member));
       expect(snapshot?.instructions).toBe("Answer with the support policy.");
-      expect(snapshot?.defaultModelProfileId).toBe("model-support");
+      expect(snapshot?.defaultModel).toEqual({ id: "model-support" });
       expect(snapshot?.context).toContain("Escalation");
       expect(snapshot?.context).toContain("/project/guides/triage.md");
       expect(snapshot?.context).toContain("notebooks.notebook/support-runbook");

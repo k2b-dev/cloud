@@ -141,3 +141,12 @@
   .pulse-overview__attention-action { grid-column: 2; justify-self: start; }
   .pulse-overview__activity-row { grid-template-columns: 64px minmax(0, 1fr); }
 }
+
+/* Source detail: the header's main action reads in the panel accent, as in every app's details panel. */
+.k2b-ui .k2b-button.pulse-details-main {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+.k2b-ui .k2b-button.pulse-details-main:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}

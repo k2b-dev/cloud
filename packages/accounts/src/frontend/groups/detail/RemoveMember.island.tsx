@@ -11,7 +11,7 @@ type RemoveMemberProps = {
   /** "members" or "managers" */
   membershipRole: "members" | "managers";
   /** Type of entity to remove */
-  type: "user" | "group";
+  type: "user" | "group" | "service_account";
   /** UID or CN of the entity */
   id: string;
   /** Display label for the confirmation */
@@ -22,12 +22,13 @@ export default function RemoveMember(props: RemoveMemberProps) {
   const messages = useAccountsMessages();
   const mutation = mutations.create<void, void>({
     mutation: async () => {
-      const endpoint =
-        props.membershipRole === "members" ? apiClient.groups[":id"].members.$delete : apiClient.groups[":id"].managers.$delete;
-      const res = await endpoint({
-        param: { id: props.groupId },
-        json: { type: props.type, id: props.id },
-      });
+      const res =
+        props.membershipRole === "members"
+          ? await apiClient.groups[":id"].members.$delete({ param: { id: props.groupId }, json: { type: props.type, id: props.id } })
+          : props.type !== "service_account"
+            ? await apiClient.groups[":id"].managers.$delete({ param: { id: props.groupId }, json: { type: props.type, id: props.id } })
+            : undefined;
+      if (!res) throw new Error(messages().removeFailed);
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.message ?? messages().removeFailed);

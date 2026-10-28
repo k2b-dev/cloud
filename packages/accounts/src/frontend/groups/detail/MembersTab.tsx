@@ -16,6 +16,7 @@ type MembersTabProps = {
   groupProvider: "ipa" | "local";
   allMemberIds: string[];
   allMemberGroupIds: string[];
+  allMemberServiceAccountIds?: string[];
   isAdmin: boolean;
   canManage: boolean;
   indirect: boolean;
@@ -29,7 +30,8 @@ type MembersTabProps = {
 export default function MembersTab(props: MembersTabProps) {
   const messages = useAccountsMessages();
   const locale = useLocale();
-  const isEmpty = props.items.length === 0;
+  // The total decides: an empty page of a non-empty list is not an empty list.
+  const isEmpty = props.pagination.total === 0;
   const columns: DataTableColumn<EntityListItem>[] = [
     { id: "type", header: messages().type, value: (item) => item.kind, cellClass: "whitespace-nowrap" },
     {
@@ -82,6 +84,7 @@ export default function MembersTab(props: MembersTabProps) {
               searchGroups={props.isAdmin}
               excludeUserIds={props.allMemberIds}
               excludeGroups={props.allMemberGroupIds}
+              excludeServiceAccountIds={props.allMemberServiceAccountIds}
             />
           ) : undefined
         }
@@ -177,7 +180,17 @@ export default function MembersTab(props: MembersTabProps) {
                 if (col.id === "name") {
                   const content = (
                     <>
-                      <Avatar name={serviceAccount.name} icon="ti ti-user-key" size="xs" />
+                      <Avatar
+                        name={serviceAccount.name}
+                        icon={
+                          serviceAccount.kind === "agent"
+                            ? "ti ti-robot"
+                            : serviceAccount.kind === "standalone"
+                              ? "ti ti-key"
+                              : "ti ti-user-key"
+                        }
+                        size="xs"
+                      />
                       <span class="truncate font-medium">{serviceAccount.name}</span>
                     </>
                   );
@@ -205,6 +218,16 @@ export default function MembersTab(props: MembersTabProps) {
                 }
                 if (col.id === "access") return <Tag>{kindLabel}</Tag>;
                 if (col.id === "membership") return <Tag>{isIndirect ? messages().indirect : messages().direct}</Tag>;
+                if (col.id === "actions")
+                  return props.canManage && !isIndirect ? (
+                    <RemoveMember
+                      groupId={props.groupId}
+                      membershipRole="members"
+                      type="service_account"
+                      id={serviceAccount.id}
+                      label={serviceAccount.name}
+                    />
+                  ) : null;
                 return null;
               }
 

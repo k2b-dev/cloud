@@ -48,6 +48,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { accessRevision, isAppSessionActor, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
 import { type AuditActor, accountsAppService, audit, coreGeo, coreGeoMap } from "@k2b/cloud/services";
+import { coreUserEvents, coreUserEventTypes } from "@k2b/cloud/services/core-user-events";
 import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -680,7 +681,9 @@ const readableOwnedChat = async (chatId: string, userId: string): Promise<AiConv
 export const aiCapabilities = defineCapabilities({
   protocolVersion: 2,
   presentation: coreCapabilityPresentation,
+  events: coreUserEvents,
   types: {
+    ...coreUserEventTypes,
     "ai.chat": {
       title: "AI conversation",
       description: "A private AI conversation owned by the current user.",

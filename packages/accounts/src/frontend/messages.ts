@@ -538,6 +538,7 @@ export const accountsMessages = i18n.define({
       addMemberFailed: "The member could not be added.",
       addManagerFailed: "The manager could not be added.",
       searchUsersOrGroups: "Search users or groups…",
+      searchMembers: "Search members…",
       removeFailed: "The entry could not be removed.",
       removeMember: "Remove member",
       removeManager: "Remove manager",
@@ -814,8 +815,6 @@ export const accountsMessages = i18n.define({
       origin: "Origin",
       allOrigins: "All origins",
       view: "View",
-      linuxSection: "Linux",
-      showPersonalGroups: "Personal groups",
       personalGroupOf: ({ name }: { name: string }) => `Personal · of ${name}`,
       personalGroupDeleteBlocked: ({ name }: { name: string }) =>
         `This is ${name}'s personal Linux group. It can't be deleted while it is their primary group.`,
@@ -1392,6 +1391,7 @@ export const accountsMessages = i18n.define({
       addMemberFailed: "Das Mitglied konnte nicht hinzugefügt werden.",
       addManagerFailed: "Der Verantwortliche konnte nicht hinzugefügt werden.",
       searchUsersOrGroups: "Benutzer oder Gruppen durchsuchen…",
+      searchMembers: "Mitglieder suchen…",
       removeFailed: "Der Eintrag konnte nicht entfernt werden.",
       removeMember: "Mitglied entfernen",
       removeManager: "Verantwortlichen entfernen",
@@ -1665,8 +1665,6 @@ export const accountsMessages = i18n.define({
       origin: "Herkunft",
       allOrigins: "Alle Herkünfte",
       view: "Ansicht",
-      linuxSection: "Linux",
-      showPersonalGroups: "Persönliche Gruppen",
       personalGroupOf: ({ name }) => `Persönlich · von ${name}`,
       personalGroupDeleteBlocked: ({ name }) =>
         `Das ist die persönliche Linux-Gruppe von ${name}. Sie kann nicht gelöscht werden, solange sie deren primäre Gruppe ist.`,

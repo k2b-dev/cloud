@@ -14,6 +14,10 @@ const BROWSER_ENTRY = /\.(?:island|client)\.tsx$/;
 const ALLOWED_RENDERERS = new Map([
   ["packages/ui/src/content/Chart.tsx", "The shared Chart wrapper renders with inspect: true and attaches createChartInspection."],
   [
+    "packages/ui/src/content/chart-bar.ts",
+    "The shared bar renderer behind Chart; Chart calls it with inspect: true and attaches createChartInspection.",
+  ],
+  [
     "packages/assistant/src/artifacts/runtime/lib.ts",
     "Studio cloud.chart() runs in a sandbox whose frame prelude enhances SVG with inspectChart.",
   ],

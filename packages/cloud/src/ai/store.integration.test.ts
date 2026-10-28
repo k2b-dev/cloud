@@ -61,6 +61,50 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("resource presentation survives indexing, updates and user listings", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(conversation.id);
+      const ref = { type: "spaces.item", id: "Itm001" };
+      await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: "mock",
+        runConfig,
+        userMessage: userMessage("Read the plan"),
+        resources: [{ ref, title: "Plan", context: "Task in Planning", status: "Open" }],
+      });
+      expect((await aiConversations.listConversationResources({ conversationId: conversation.id })).resources[0]).toMatchObject({
+        ref,
+        context: "Task in Planning",
+        status: "Open",
+      });
+      await aiConversations.indexConversationResources({
+        conversationId: conversation.id,
+        resources: [{ ref, context: "Aufgabe in Planung", status: "Erledigt" }],
+      });
+      await aiConversations.indexConversationResources({ conversationId: conversation.id, resources: [{ ref }] });
+      expect((await aiConversations.listUserConversationResources({ ownerUserId: userId })).resources[0]).toMatchObject({
+        ref,
+        title: "Plan",
+        context: "Aufgabe in Planung",
+        status: "Erledigt",
+      });
+      expect(
+        (await aiConversations.listConversationSources({ conversationId: conversation.id })).sources.find(
+          (source) => source.kind === "resource",
+        ),
+      ).toMatchObject({
+        ref,
+        context: "Aufgabe in Planung",
+        status: "Erledigt",
+      });
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
   test("creation request identity survives concurrency, changed input, archive and deletion", async () => {
     const userId = await insertUser();
     const otherUserId = await insertUser();
@@ -110,7 +154,7 @@ suite("AI conversation store integration", () => {
           : (
               await aiConversations.submitChatTurn({
                 conversationId: chat.id,
-                modelProfileId: "test-model",
+                modelId: "test-model",
                 runConfig,
                 userMessage: userMessage("Send"),
               })
@@ -150,7 +194,7 @@ suite("AI conversation store integration", () => {
           expect(await aiConversations.completeTurn({ ...target, leaseOwner, status: "completed" })).toBe("completed");
           const later = await aiConversations.submitChatTurn({
             conversationId: chat.id,
-            modelProfileId: "test-model",
+            modelId: "test-model",
             runConfig,
             userMessage: userMessage("What happened?"),
           });
@@ -188,7 +232,7 @@ suite("AI conversation store integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig,
         userMessage: userMessage("Run"),
       });
@@ -245,7 +289,7 @@ suite("AI conversation store integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig,
         userMessage: userMessage("Run"),
       });
@@ -313,7 +357,7 @@ suite("AI conversation store integration", () => {
       for (const chat of [defaultChat, renamedChat]) {
         await aiConversations.submitChatTurn({
           conversationId: chat.id,
-          modelProfileId: "test-model",
+          modelId: "test-model",
           runConfig,
           userMessage: userMessage("First message"),
         });
@@ -378,7 +422,7 @@ suite("AI conversation store integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Hello"),
       });
@@ -416,7 +460,7 @@ suite("AI conversation store integration", () => {
       await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", status: "completed" });
       const next = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Next"),
       });
@@ -454,7 +498,7 @@ suite("AI conversation store integration", () => {
       expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
       const foreground = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Interact now"),
       });
@@ -522,7 +566,7 @@ suite("AI conversation store integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: source.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Review"),
       });
@@ -585,7 +629,7 @@ suite("AI conversation store integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: source.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
         userMessage: userMessage("Send"),
       });
@@ -625,7 +669,7 @@ suite("AI conversation store integration", () => {
     const otherUserId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
-      const session = aiConversations.createSessionStore({ conversationId: chat.id, modelProfileId: "test-model" });
+      const session = aiConversations.createSessionStore({ conversationId: chat.id, modelId: "test-model" });
       await session.append({
         role: "tool_result",
         callId: "plan",
@@ -640,7 +684,7 @@ suite("AI conversation store integration", () => {
       });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Continue"),
       });
@@ -697,7 +741,7 @@ suite("AI conversation store integration", () => {
       });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Working"),
       });
@@ -718,7 +762,7 @@ suite("AI conversation store integration", () => {
       expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(21);
       await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Keep active"),
       });
@@ -776,7 +820,7 @@ suite("AI conversation store integration", () => {
       await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Continue"),
       });
@@ -1061,7 +1105,7 @@ suite("AI conversation store integration", () => {
     try {
       const conversation = await aiConversations.createConversation({ ownerUserId: userId });
       conversationIds.push(conversation.id);
-      const store = aiConversations.createSessionStore({ conversationId: conversation.id, modelProfileId: "test-model" });
+      const store = aiConversations.createSessionStore({ conversationId: conversation.id, modelId: "test-model" });
       const turnUsage = { input: 15_876, output: 32, total: 15_908 };
       const loopUsage = { input: 69_944, output: 819, total: 70_763 };
 
@@ -1162,7 +1206,7 @@ suite("AI conversation store integration", () => {
 
       const submitted = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Hello turn"),
       });
@@ -1190,7 +1234,7 @@ suite("AI conversation store integration", () => {
       await expect(
         aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: "test-model",
+          modelId: "test-model",
           runConfig,
           userMessage: userMessage("Second"),
         }),
@@ -1213,7 +1257,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("claim me"),
       });
@@ -1320,7 +1364,7 @@ suite("AI conversation store integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("JSON arguments"),
       });
@@ -1366,7 +1410,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("suspend me"),
       });
@@ -1585,7 +1629,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("List local files"),
       });
@@ -1692,7 +1736,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Start"),
       });
@@ -1792,7 +1836,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("abort me"),
       });
@@ -1841,7 +1885,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("send the offer"),
       });
@@ -1856,7 +1900,7 @@ suite("AI conversation store integration", () => {
       });
       const session = aiConversations.createSessionStore({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         turnId: turn.id,
         leaseOwner: "worker-a",
       });
@@ -1925,7 +1969,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("go"),
       });
@@ -2052,7 +2096,7 @@ suite("AI conversation store integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("run it"),
       });
@@ -2107,7 +2151,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(crashConv.id);
       const { turn: crashTurn } = await aiConversations.submitChatTurn({
         conversationId: crashConv.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("crash"),
       });
@@ -2127,7 +2171,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(budgetConv.id);
       const { turn: budgetTurn } = await aiConversations.submitChatTurn({
         conversationId: budgetConv.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("budget"),
       });
@@ -2151,7 +2195,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(waitConv.id);
       const { turn: waitTurn } = await aiConversations.submitChatTurn({
         conversationId: waitConv.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("wait"),
       });
@@ -2179,7 +2223,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(resumeConv.id);
       const { turn: resumeTurn } = await aiConversations.submitChatTurn({
         conversationId: resumeConv.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("resume"),
       });
@@ -2224,7 +2268,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(cappedConv.id);
       const { turn: cappedTurn } = await aiConversations.submitChatTurn({
         conversationId: cappedConv.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("exhausted"),
       });
@@ -2262,7 +2306,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("session"),
       });
@@ -2279,7 +2323,7 @@ suite("AI conversation store integration", () => {
       const rejectedToolCallIds = new Set(["call-1"]);
       const session = aiConversations.createSessionStore({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         turnId: turn.id,
         leaseOwner: "worker-a",
         turnInput: [
@@ -2329,7 +2373,7 @@ suite("AI conversation store integration", () => {
       // A non-owner session store must fail loudly instead of writing.
       const stranger = aiConversations.createSessionStore({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         turnId: turn.id,
         leaseOwner: "worker-zzz",
       });
@@ -2531,7 +2575,7 @@ suite("AI conversation store integration", () => {
       conversationIds.push(conversation.id);
       await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig,
         userMessage: userMessage("Investigate the zygomatic quasar incident"),
       });

@@ -122,7 +122,7 @@ suite("global AI conversation boundaries", () => {
       await gate;
       const accepted = await aiConversations.submitChatTurn({
         conversationId: input.conversationId,
-        modelProfileId: "fixture-model",
+        modelId: "fixture-model",
         runConfig: { kind: "chat", input: "Send once", toolSource: { kind: "none" } },
         userMessage: input.userMessage,
         expectedDraftRevision: input.expectedDraftRevision,
@@ -135,7 +135,7 @@ suite("global AI conversation boundaries", () => {
       aiRoutes.request(`/conversations/${chat.shortId}/turns`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ draftRevision: chat.draft.revision, modelProfileId: "fixture-model" }),
+        body: JSON.stringify({ draftRevision: chat.draft.revision, model: { id: "fixture-model" } }),
       });
     try {
       await Promise.all([post(), post()]);
@@ -167,7 +167,7 @@ suite("global AI conversation boundaries", () => {
     const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
     const deniedHeaders = { Authorization: `Bearer ${await createTestSession(stranger)}`, "Content-Type": "application/json" };
     const queueId = crypto.randomUUID();
-    const body = JSON.stringify({ draftRevision: chat.draft.revision, queueId, modelProfileId: "fixture-model" });
+    const body = JSON.stringify({ draftRevision: chat.draft.revision, queueId, model: { id: "fixture-model" } });
     let arrived = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -179,7 +179,7 @@ suite("global AI conversation boundaries", () => {
       await gate;
       return {
         conversationId: input.conversationId,
-        modelProfileId: "fixture-model",
+        modelId: "fixture-model",
         runConfig: { kind: "chat", input: "Queue once", toolSource: { kind: "none" } },
         userMessage: input.userMessage,
         expectedDraftRevision: input.expectedDraftRevision,
@@ -315,11 +315,11 @@ suite("global AI conversation boundaries", () => {
   test.each([false, true])("message retry uses the retrying client's local context: local=%p", async (local) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
-    const model = spyOn(assistantModels, "selectAssistantAiModelId").mockResolvedValue("test-model");
+    const model = spyOn(assistantModels, "selectAssistantAiModel").mockResolvedValue({ id: "test-model" });
     const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) =>
       aiConversations.submitChatTurn({
         conversationId: submission.conversationId,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         userMessage: submission.userMessage,
         truncateFromSeq: submission.truncateFromSeq,
         runConfig: {
@@ -341,7 +341,7 @@ suite("global AI conversation boundaries", () => {
     try {
       const first = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         userMessage: { role: "user", content: [{ type: "text", text: "Retry me" }] },
         runConfig: {
           kind: "chat",
@@ -492,7 +492,7 @@ suite("global AI conversation boundaries", () => {
     try {
       const first = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: "ja", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "ja" }] },
       });
@@ -507,7 +507,7 @@ suite("global AI conversation boundaries", () => {
 
       const retry = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: "ja", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "ja" }] },
         truncateFromSeq: first.message.seq,
@@ -753,7 +753,7 @@ suiteFor(
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: "hi", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "hi" }] },
       });
@@ -836,7 +836,7 @@ suiteFor("database", "nats")("chat and website approvals", () => {
 
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: { kind: "chat", input: "Read the quotes", signedInSession: true },
         userMessage: { role: "user", content: [{ type: "text", text: "Read the quotes" }] },
       });
@@ -989,7 +989,7 @@ suite("local client actions and preview", () => {
       try {
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: chat.id,
-          modelProfileId: "mock",
+          modelId: "mock",
           runConfig: { kind: "chat", input: "Send", locale: "de", timeZone: "Europe/Berlin" },
           userMessage: { role: "user", content: ["Send"] },
         });
@@ -1086,7 +1086,7 @@ suite("local client actions and preview", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: { kind: "chat", input: "Send", locale: "de", timeZone: "Europe/Berlin" },
         userMessage: { role: "user", content: ["Send"] },
       });
@@ -1162,7 +1162,7 @@ suite("local client actions and preview", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: { kind: "chat", input: "List files" },
         userMessage: { role: "user", content: ["List files"] },
       });
@@ -1212,7 +1212,7 @@ suite("local client actions and preview", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: { kind: "chat", input: "Store a secret" },
         userMessage: { role: "user", content: ["Store a secret"] },
       });
@@ -1251,9 +1251,10 @@ suite("local client actions and preview", () => {
     const token = await createTestSession(userId);
     const headers = { Authorization: `Bearer ${token}` };
     const settings = spyOn(aiSettings, "readAiSettingsState").mockResolvedValue({
+      assignments: [{ slot: "balanced", variantId: "", revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: false,
-      defaultModelId: "",
+
       globalInstructions: "",
       localClientInstructions: "Literal {{ cwd }}.",
       compactionInstructions: "",
@@ -1332,7 +1333,7 @@ suiteFor(
       try {
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: "test-model",
+          modelId: "test-model",
           runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
         });
@@ -1439,7 +1440,7 @@ suiteFor(
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
       });
@@ -1553,7 +1554,7 @@ suiteFor(
       try {
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: "test-model",
+          modelId: "test-model",
           runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
         });

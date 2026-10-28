@@ -55,7 +55,7 @@ const fixture = async (kind: CallerKind) => {
       name: "Original name",
       description: "Original description",
       instructions: "Original instructions",
-      defaultModelProfileId: "original-model",
+      defaultModel: { id: "original-model" },
     });
     projectId = project.id;
     const grant = await aiProjects.grantAccess(project.id, owner, { principal, permission: "admin" });
@@ -141,7 +141,7 @@ const mutations: { name: string; run: (f: Fixture) => Promise<unknown>; denied: 
   },
   {
     name: "trusted instructions and default model update",
-    run: (f) => aiProjects.update(f.projectId, f.caller, { instructions: "Changed", defaultModelProfileId: "changed-model" }),
+    run: (f) => aiProjects.update(f.projectId, f.caller, { instructions: "Changed", defaultModel: { id: "changed-model" } }),
     denied: null,
   },
   {
@@ -192,7 +192,7 @@ databaseSuite()("Project mutations queued behind revocation", () => {
         expect(
           await afterRevocation(
             f,
-            () => aiProjects.update(f.projectId, f.caller, { instructions: "Changed", defaultModelProfileId: "changed-model" }),
+            () => aiProjects.update(f.projectId, f.caller, { instructions: "Changed", defaultModel: { id: "changed-model" } }),
             "demote",
           ),
         ).toBeNull();

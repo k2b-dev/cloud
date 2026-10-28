@@ -12,6 +12,7 @@ import {
 } from "../server/services/access";
 import { stripImageMetadata } from "../services/image-metadata";
 import { toPgUuidArray } from "../services/postgres";
+import { type AiModelRequest, AiModelRequestSchema } from "../shared/ai-models";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { isAiImage } from "./file-media-type";
 import { mountAiProjectFilePath } from "./file-mount";
@@ -49,7 +50,7 @@ export type AiProject = {
   description: string;
   icon: string;
   instructions: string;
-  defaultModelProfileId: string | null;
+  defaultModel: AiModelRequest | null;
   permission: AiProjectPermission;
   revision: number;
   createdAt: string;
@@ -122,7 +123,7 @@ type ProjectRow = {
   description: string;
   icon: string;
   instructions: string;
-  default_model_profile_id: string | null;
+  default_model: AiModelRequest | null;
   revision: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -227,7 +228,7 @@ const toProject = async (row: ProjectRow, subject: AiResourceContext | null, db:
     description: row.description,
     icon: row.icon,
     instructions: row.instructions,
-    defaultModelProfileId: row.default_model_profile_id,
+    defaultModel: row.default_model ? AiModelRequestSchema.parse(row.default_model) : null,
     permission,
     revision: Number(row.revision),
     createdAt: iso(row.created_at),
@@ -424,7 +425,7 @@ export const aiProjects = {
     description?: string;
     icon?: string;
     instructions?: string;
-    defaultModelProfileId?: string | null;
+    defaultModel?: AiModelRequest | null;
   }): Promise<AiProject> {
     requireAiResourceCreation(input.subject);
     return sql.begin(async (tx) => {
@@ -432,10 +433,10 @@ export const aiProjects = {
         tx,
         "idx_ai_projects_short_id",
         (attempt, shortId) => attempt<ProjectRow[]>`
-        INSERT INTO ai.projects (short_id, name, description, icon, instructions, default_model_profile_id)
+        INSERT INTO ai.projects (short_id, name, description, icon, instructions, default_model)
         VALUES (
           ${shortId}, ${input.name.trim()}, ${input.description?.trim() ?? ""}, ${input.icon?.trim() || "ti ti-folders"},
-          ${input.instructions?.trim() ?? ""}, ${input.defaultModelProfileId?.trim() || null}
+          ${input.instructions?.trim() ?? ""}, ${input.defaultModel ? JSON.stringify(AiModelRequestSchema.parse(input.defaultModel)) : null}::text::jsonb
         )
         RETURNING *
       `,
@@ -496,9 +497,9 @@ export const aiProjects = {
   async update(
     projectId: string,
     subject: AiResourceContext | null,
-    input: Partial<Pick<AiProject, "name" | "description" | "icon" | "instructions" | "defaultModelProfileId">>,
+    input: Partial<Pick<AiProject, "name" | "description" | "icon" | "instructions" | "defaultModel">>,
   ): Promise<AiProject | null> {
-    const changesTrustedInstructions = Object.hasOwn(input, "instructions") || Object.hasOwn(input, "defaultModelProfileId");
+    const changesTrustedInstructions = Object.hasOwn(input, "instructions") || Object.hasOwn(input, "defaultModel");
     return sql.begin(async (tx) => {
       const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
       if (!project || !hasPermission(await permissionFor(project, subject, tx), changesTrustedInstructions ? "admin" : "write"))
@@ -509,9 +510,9 @@ export const aiProjects = {
             description = COALESCE(${input.description?.trim() ?? null}, description),
             icon = COALESCE(${input.icon?.trim() ?? null}, icon),
             instructions = COALESCE(${input.instructions?.trim() ?? null}, instructions),
-            default_model_profile_id = CASE
-              WHEN ${Object.hasOwn(input, "defaultModelProfileId")} THEN ${input.defaultModelProfileId?.trim() || null}
-              ELSE default_model_profile_id
+            default_model = CASE
+              WHEN ${Object.hasOwn(input, "defaultModel")} THEN ${input.defaultModel ? JSON.stringify(AiModelRequestSchema.parse(input.defaultModel)) : null}::text::jsonb
+              ELSE default_model
             END,
             revision = revision + 1,
             updated_at = now()
@@ -575,7 +576,7 @@ export const aiProjects = {
         instructions: project.instructions,
         context: lines.join("\n").slice(0, AI_PROJECT_PROMPT_MANIFEST_MAX_CHARS),
         references: references.map((reference) => reference.ref),
-        defaultModelProfileId: project.defaultModelProfileId,
+        defaultModel: project.defaultModel,
       };
     });
   },

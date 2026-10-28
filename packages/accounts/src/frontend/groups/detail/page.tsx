@@ -2,7 +2,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
 import { canManageGroup, getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { NoticeCard, Tag, ViewTabs } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { z } from "zod";
@@ -44,7 +44,6 @@ export default ssr<AuthContext>(async (c) => {
       page: c.req.query("list_page"),
       provider: c.req.query("list_provider"),
       scope: c.req.query("list_scope"),
-      personal: c.req.query("list_personal"),
     },
     { keys: GROUPS_CONTEXT_QUERY_KEYS, defaultScope },
   );
@@ -128,6 +127,7 @@ export default ssr<AuthContext>(async (c) => {
   let parentItems = [] as Awaited<ReturnType<typeof accountsService.entity.list>>["items"];
   let directMemberUserIds: string[] = [];
   let directMemberGroupIds: string[] = [];
+  let directMemberServiceAccountIds: string[] = [];
   let directManagerUserIds: string[] = [];
   let directManagerGroupIds: string[] = [];
   let membersPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, 0);
@@ -151,6 +151,9 @@ export default ssr<AuthContext>(async (c) => {
     ]);
 
     memberItems = membersPage.items;
+    directMemberServiceAccountIds = directMembersPage.items
+      .filter((member) => member.type === "service_account")
+      .map((member) => member.id);
     directMemberUserIds = directMembersPage.items.filter((member) => member.type === "user").map((member) => member.id);
     directMemberGroupIds = directMembersPage.items.filter((member) => member.type === "group").map((member) => member.id);
     membersPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, membersPage.total);
@@ -183,6 +186,18 @@ export default ssr<AuthContext>(async (c) => {
 
     parentItems = parentGroupsPage.items;
     memberOfPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, parentGroupsPage.total);
+  }
+
+  // A page past the end, from an old link or after the last entries of a page were removed, opens the last page instead
+  // of an empty one that reads as "no members". The URL then names the page shown, so a reload or Back shows it again.
+  const activeTotal =
+    tab === "members" ? membersPagination.total : tab === "managers" ? managersPagination.total : memberOfPagination.total;
+  const lastPage = Math.max(1, Math.ceil(activeTotal / perPage));
+  if (page > lastPage) {
+    const url = new URL(requestPath(c), "https://local.invalid");
+    if (lastPage === 1) url.searchParams.delete("page");
+    else url.searchParams.set("page", String(lastPage));
+    return c.redirect(`${url.pathname}${url.search}`);
   }
 
   const facts: Array<{ label: string; value: JSX.Element }> = [
@@ -314,6 +329,7 @@ export default ssr<AuthContext>(async (c) => {
               groupProvider={group.provider}
               allMemberIds={directMemberUserIds}
               allMemberGroupIds={directMemberGroupIds}
+              allMemberServiceAccountIds={directMemberServiceAccountIds}
               isAdmin={isAdmin}
               canManage={canManageMutations}
               indirect={indirect}

@@ -2,7 +2,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQLQuery, sql } from "bun";
 import { type ManagerCandidate, removesLastManager } from "../../access/managers";
 import { accessMessages } from "../../access/messages";
-import { recursiveGroupIdsSubquery } from "../../services/accounts/group-sql";
+import { recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } from "../../services/accounts/group-sql";
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";
 
@@ -265,19 +265,26 @@ export const ensureManagerRemains = (params: {
   return fail({ code: "LAST_MANAGER", message: t.lastManager({ level: params.level ?? t.manage }), status: 409 });
 };
 
-/** Resolve direct and nested group memberships from the authoritative database mirror. */
-export const getEffectiveGroups = async (params: { userId: string | null }, db: AccessDb = sql): Promise<EffectiveGroup[]> => {
-  if (!params.userId) return [];
+type EffectiveGroupParams = { userId: string | null; serviceAccountId?: never } | { serviceAccountId: string | null; userId?: never };
+
+/** Resolve authoritative memberships; machine recipients inherit local groups only. */
+export const getEffectiveGroups = async (params: EffectiveGroupParams, db: AccessDb = sql): Promise<EffectiveGroup[]> => {
+  const groupIds = params.userId
+    ? recursiveGroupIdsSubquery(params.userId)
+    : params.serviceAccountId
+      ? recursiveServiceAccountGroupIdsSubquery(params.serviceAccountId)
+      : null;
+  if (!groupIds) return [];
   const rows = await db<{ id: string; name: string }[]>`
     SELECT g.id, g.name
     FROM auth.groups g
-    WHERE g.id IN (${recursiveGroupIdsSubquery(params.userId)})
+    WHERE g.id IN (${groupIds})
     ORDER BY g.name
   `;
   return rows;
 };
 
-export const getEffectiveGroupIds = async (params: { userId: string | null }, db: AccessDb = sql): Promise<string[]> =>
+export const getEffectiveGroupIds = async (params: EffectiveGroupParams, db: AccessDb = sql): Promise<string[]> =>
   (await getEffectiveGroups(params, db)).map((group) => group.id);
 
 /**
@@ -321,7 +328,7 @@ export type ResourceAccessAdapter<TResourceId = string> = {
  *
  * Apps provide column fragments because access rows are commonly joined under
  * different aliases. The subject is authoritative: group membership is always
- * resolved recursively from its user id and never accepted from a caller.
+ * resolved recursively from its user or service-account id and never accepted from a caller.
  * Resource binding, credential scopes, and permission precedence remain the
  * responsibility of the app using the predicate.
  */
@@ -338,8 +345,13 @@ export const buildAccessPrincipalTierConditions = (params: {
     serviceAccount: sql`${columns.serviceAccountId} = ${serviceAccountId}::uuid`,
     user: sql`${columns.userId} = ${userId}::uuid`,
     group: sql`(
-      ${userId}::uuid IS NOT NULL
-      AND ${columns.groupId} IN (${userId ? recursiveGroupIdsSubquery(userId) : sql`SELECT NULL::uuid WHERE FALSE`})
+      ${columns.groupId} IN (${
+        userId
+          ? recursiveGroupIdsSubquery(userId)
+          : serviceAccountId
+            ? recursiveServiceAccountGroupIdsSubquery(serviceAccountId)
+            : sql`SELECT NULL::uuid WHERE FALSE`
+      })
     )`,
     authenticated: sql`${authenticated} AND ${columns.authenticatedOnly} = true`,
     public: sql`(
@@ -361,7 +373,7 @@ export const buildAccessPrincipalCondition = (params: { subject: AccessSubject |
  * Get the effective permission level for an actor on a resource.
  * Returns the highest permission from:
  * - Direct user or service-account access
- * - Direct and nested user group memberships resolved from the database
+ * - Direct and nested group memberships for users and active standalone/agent accounts
  * - Authenticated access for every authenticated subject
  * - Public access for every subject, including anonymous callers
  *
@@ -457,6 +469,7 @@ export const getEffectivePermissions = async (params: {
           a.service_account_id = s.service_account_id
           OR a.user_id = s.user_id
           OR (s.user_id IS NOT NULL AND a.group_id IN (${recursiveGroupIdsSubquery(sql`s.user_id`)}))
+          OR (s.service_account_id IS NOT NULL AND a.group_id IN (${recursiveServiceAccountGroupIdsSubquery(sql`s.service_account_id`)}))
           OR a.authenticated_only = true
           OR (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND a.authenticated_only = false)
         )

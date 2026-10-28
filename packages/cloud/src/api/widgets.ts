@@ -353,6 +353,7 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
       })
       .post(
         "/widgets/v1",
+        auth.readOnly,
         bodyLimit({ maxSize: WIDGET_REQUEST_MAX_BYTES, onError: (c) => c.json({ message: "Widget request is too large" }, 400) }),
         async (c) => {
           let raw: unknown;

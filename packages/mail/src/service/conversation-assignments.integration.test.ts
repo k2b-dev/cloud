@@ -3,7 +3,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
@@ -93,7 +92,6 @@ suite("mail conversation assignment", () => {
     `;
 
   beforeAll(async () => {
-    await migrate();
     owner = await createUser("owner");
     writer = await createUser("writer");
     reader = await createUser("reader");

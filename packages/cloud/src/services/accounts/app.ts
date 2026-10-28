@@ -415,6 +415,7 @@ export const accountsAppService = {
         const userGroups = await users.getGroups({
           id: config.userId,
           recursive: config.recursive,
+          includePersonal: false,
         });
         const query = config.filter?.query?.trim().toLowerCase();
         const filtered = query ? userGroups.filter((groupName) => groupName.toLowerCase().includes(query)) : userGroups;
@@ -1015,7 +1016,14 @@ export const accountsAppService = {
         });
         return paginateItems(filtered, config.pagination);
       },
-      add: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      add: async (config: {
+        actor: AccountsActor;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1034,17 +1042,25 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.member.add",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
-      remove: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      remove: async (config: {
+        actor: AccountsActor;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1063,13 +1079,14 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.member.remove",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
@@ -1254,6 +1271,7 @@ export const accountsAppService = {
       profile?: UserProfile;
       userIds?: string[];
       groupIds?: string[];
+      serviceAccountIds?: string[];
       serviceAccountKinds?: ServiceAccountKind[];
       serviceAccountStatus?: ServiceAccountStatus;
       excludeUserIds?: string[];
@@ -1287,6 +1305,7 @@ export const accountsAppService = {
         profile: config.profile,
         userIds: config.userIds,
         groupIds: config.groupIds,
+        serviceAccountIds: config.serviceAccountIds,
         serviceAccountKinds: config.serviceAccountKinds,
         serviceAccountStatus: config.serviceAccountStatus,
         excludeUserIds: config.excludeUserIds,
@@ -1660,9 +1679,9 @@ export const accountsAppService = {
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local') AS local_accounts_total,
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local' AND profile = 'user') AS local_user_accounts_total,
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local' AND profile = 'guest') AS local_guest_accounts_total,
-          (SELECT COUNT(*)::int FROM auth.groups) AS groups_total,
-          (SELECT COUNT(*)::int FROM auth.groups WHERE provider = 'ipa') AS ipa_groups_total,
-          (SELECT COUNT(*)::int FROM auth.groups WHERE provider = 'local') AS local_groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id)) AS groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE provider = 'ipa' AND NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id)) AS ipa_groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE provider = 'local' AND NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id)) AS local_groups_total,
           (SELECT COUNT(*)::int FROM auth.account_requests WHERE status = 'pending') AS open_requests,
           (
             SELECT COUNT(*)::int

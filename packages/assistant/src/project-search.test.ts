@@ -13,7 +13,7 @@ const project = (shortId: string, name: string, description = ""): AiProject => 
   description,
   icon: "ti ti-folders",
   instructions: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: "read",
   revision: 1,
   createdAt: "",

@@ -6,6 +6,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import { parseGraphViewState } from "../graph/view-state";
+import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import { BookGraphFixture, type BookGraphFixtureProps } from "./book-graph.browser-harness";
 
 const noteHref = "/app/notebooks/book01/notes/note03?mode=book";
@@ -86,7 +87,7 @@ beforeAll(async () => {
           canWrite: false,
           locked: false,
           navigationHidden: false,
-          tree,
+          navigation: bookNavigationState(tree, noteId),
           tags: [],
           current: isGraph ? "graph" : undefined,
           graphBack: isGraph ? (url.searchParams.get("back") ?? undefined) : undefined,

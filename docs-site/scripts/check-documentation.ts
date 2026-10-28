@@ -1,5 +1,6 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
+import { lessonPrefix, lessonsSlug, renderLessons } from "../src/docs/lessons";
 import { catalogContextFiles, standaloneUiContextFiles } from "../src/ui/context";
 import {
   conventionCatalogErrors,
@@ -108,9 +109,24 @@ export const checkDocumentation = async ({
   const errors: string[] = [];
   const allFiles = await collectMarkdown(docsRoot);
   const pages = new Map<string, Page>();
+  const lessonFiles = allFiles.filter((file) => routeFor(docsRoot, file).startsWith(`/en/docs${lessonPrefix}`));
+  const lessonFragments = await Promise.all(
+    lessonFiles.map(async (file) => ({
+      path: path.relative(path.join(docsRoot, "contributing", "lessons"), file).replaceAll(path.sep, "/"),
+      body: await Bun.file(file).text(),
+    })),
+  );
 
   for (const absolutePath of allFiles) {
-    const source = await Bun.file(absolutePath).text();
+    if (lessonFiles.includes(absolutePath)) continue;
+    let source = await Bun.file(absolutePath).text();
+    if (routeFor(docsRoot, absolutePath) === `/en/docs${lessonsSlug}`) {
+      try {
+        source = renderLessons(source, lessonFragments);
+      } catch (error) {
+        errors.push(`${path.relative(siteRoot, absolutePath)}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     const { meta, body } = parseDocument(absolutePath, source, errors);
     const prose = withoutFencedCode(body);
     const headings = new Map<string, number>();
@@ -147,8 +163,15 @@ export const checkDocumentation = async ({
 
   const selectedPages = [...pages.values()].filter((page) => {
     if (requestedPaths.length === 0) return true;
-    return requestedPaths.some(
-      (requestedPath) => page.absolutePath === requestedPath || page.absolutePath.startsWith(`${requestedPath}${path.sep}`),
+    return (
+      requestedPaths.some(
+        (requestedPath) =>
+          page.route === `/en/docs${lessonsSlug}` &&
+          lessonFiles.some((file) => file === requestedPath || file.startsWith(`${requestedPath}${path.sep}`)),
+      ) ||
+      requestedPaths.some(
+        (requestedPath) => page.absolutePath === requestedPath || page.absolutePath.startsWith(`${requestedPath}${path.sep}`),
+      )
     );
   });
 
