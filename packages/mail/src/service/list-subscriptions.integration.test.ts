@@ -4,7 +4,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
@@ -96,7 +95,6 @@ suite("mailing-list subscriptions", () => {
   let outsiderContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const createUser = async (label: string) => {
       const uid = `mail-list-${label}-${suffix}`;
       const [user] = await sql<{ id: string }[]>`

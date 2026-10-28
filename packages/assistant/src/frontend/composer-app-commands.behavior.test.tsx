@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, setSystemTime, test } from "bun:test";
-import type { AiConversation, AiProject, AiPublicModelProfile } from "@k2b/cloud/ai";
+import type { AiConversation, AiPeopleModels, AiProject } from "@k2b/cloud/ai";
 import type { CloudComposerCommand } from "@k2b/cloud/browser/composer-insert";
 import { batch } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
@@ -57,15 +57,16 @@ const project: AiProject = {
   description: "",
   icon: "ti ti-tent",
   instructions: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: "write",
   revision: 1,
   createdAt: now,
   updatedAt: now,
 };
-const models: AiPublicModelProfile[] = [
-  { id: "standard", label: "Standard", provider: "ollama", model: "standard", capabilities: ["streaming"], dataBoundary: "private" },
+const models: AiPeopleModels["options"] = [
+  { id: "standard", label: "Standard", description: "", icon: { kind: "mark", text: "AI", color: "0" }, classes: ["balanced"] },
 ];
+
 const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
@@ -211,9 +212,18 @@ const mount = async (
           embedded={options.embedded}
           userId="user01"
           cloudUrl="http://localhost"
-          status={{ ok: true, enabled: true, defaultModelId: "standard", visionModelConfigured: false, error: null, models }}
+          status={{
+            ok: true,
+            enabled: true,
+            status: "ok",
+            selection: null,
+            effectiveDefault: { class: "balanced" },
+            classes: [],
+            visionModelConfigured: false,
+            error: null,
+            options: models,
+          }}
           models={models}
-          lastModelId="standard"
           timeZone="UTC"
           renderedAt={now}
           initialLiveCursor="s6t.cloud-live-core.0"

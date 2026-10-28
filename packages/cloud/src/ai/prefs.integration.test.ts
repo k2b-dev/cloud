@@ -79,7 +79,7 @@ databaseSuite()("aiUserPrefs (integration)", () => {
   test("a row written for another preference leaves learning on the default", async () => {
     const userId = await insertUser();
     try {
-      expect((await aiUserPrefs.update(userId, { lastModelId: "model-a" })).memoryLearningEnabled).toBe(true);
+      expect((await aiUserPrefs.update(userId, { selection: { id: "model-a" } })).memoryLearningEnabled).toBe(true);
       expect((await aiUserPrefs.update(userId, { memoryEnabled: false })).memoryLearningEnabled).toBe(true);
       expect(await storedLearning(userId)).toBeNull();
       expect(await learningChosenAt(userId)).toBeNull();
@@ -94,7 +94,7 @@ databaseSuite()("aiUserPrefs (integration)", () => {
       expect((await aiUserPrefs.update(userId, { memoryLearningEnabled: false })).memoryLearningEnabled).toBe(false);
       const chosenAt = await learningChosenAt(userId);
       expect(chosenAt).not.toBeNull();
-      await aiUserPrefs.update(userId, { lastModelId: "model-a" });
+      await aiUserPrefs.update(userId, { selection: { id: "model-a" } });
       await aiUserPrefs.update(userId, { memoryEnabled: true });
       expect((await aiUserPrefs.get(userId)).memoryLearningEnabled).toBe(false);
       expect(await storedLearning(userId)).toBe(false);
@@ -104,6 +104,20 @@ databaseSuite()("aiUserPrefs (integration)", () => {
       expect((await aiUserPrefs.update(userId, { memoryLearningEnabled: true })).memoryLearningEnabled).toBe(true);
       expect((await aiUserPrefs.update(userId, { memoryLearningEnabled: false })).memoryLearningEnabled).toBe(false);
       expect(await storedLearning(userId)).toBe(false);
+    } finally {
+      await cleanupUser(userId);
+    }
+  });
+
+  test("model choices round-trip as objects, survive other edits, and clear explicitly", async () => {
+    const userId = await insertUser();
+    try {
+      expect((await aiUserPrefs.update(userId, { selection: { class: "thorough" } })).selection).toEqual({ class: "thorough" });
+      expect((await aiUserPrefs.update(userId, { memoryEnabled: false })).selection).toEqual({ class: "thorough" });
+      expect((await aiUserPrefs.get(userId)).selection).toEqual({ class: "thorough" });
+      expect((await aiUserPrefs.update(userId, { selection: { id: "model-a:deep" } })).selection).toEqual({ id: "model-a:deep" });
+      expect((await aiUserPrefs.update(userId, { selection: null })).selection).toBeNull();
+      expect((await aiUserPrefs.get(userId)).selection).toBeNull();
     } finally {
       await cleanupUser(userId);
     }
@@ -127,7 +141,7 @@ databaseSuite()("aiUserPrefs (integration)", () => {
     const legacyNoRow = await insertUser();
     const afterMigration = await insertUser();
     try {
-      await sql`INSERT INTO ai.user_prefs (user_id, last_model_id) VALUES (${legacyDefault}::uuid, 'model-a')`;
+      await sql`INSERT INTO ai.user_prefs (user_id, model_choice) VALUES (${legacyDefault}::uuid, '{"id":"model-a"}'::jsonb)`;
       await sql`INSERT INTO ai.user_prefs (user_id, memory_learning_enabled) VALUES (${legacyOn}::uuid, TRUE)`;
       const defaultTurn = await insertLegacyTurn(legacyDefault);
       const onTurn = await insertLegacyTurn(legacyOn);
@@ -157,7 +171,7 @@ databaseSuite()("aiUserPrefs (integration)", () => {
       await migrateCloudAi();
       expect(await considered(laterTurn)).toEqual({ learned: false, reviewed: false });
 
-      await sql`INSERT INTO ai.user_prefs (user_id, last_model_id) VALUES (${afterMigration}::uuid, 'model-a')`;
+      await sql`INSERT INTO ai.user_prefs (user_id, model_choice) VALUES (${afterMigration}::uuid, '{"id":"model-a"}'::jsonb)`;
       expect(await storedLearning(afterMigration)).toBeNull();
       expect((await aiUserPrefs.get(afterMigration)).memoryLearningEnabled).toBe(true);
     } finally {

@@ -14,6 +14,14 @@
 import { existsSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 
+/** Validate before SQL interpolation, including PostgreSQL's identifier truncation boundary. */
+export const quoteTestDatabase = (name: string): string => {
+  if (!name.endsWith("_test") || Buffer.byteLength(name) > 63 || name.includes("\0")) {
+    throw new Error("Integration database names must end in _test and fit within 63 bytes");
+  }
+  return `"${name.replaceAll('"', '""')}"`;
+};
+
 export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql" | "clickhouse";
 
 export type InfraMapping = { test: string; runtime: string[]; unset?: string };

@@ -26,6 +26,8 @@ import type { AiConversationService, AiRecentResource } from "./types";
 export const AiRecentResourceSchema: z.ZodType<AiRecentResource> = z
   .object({
     ref: CloudResourceRefSchema,
+    context: LinkedCloudResourceReferenceSchema.shape.context,
+    status: LinkedCloudResourceReferenceSchema.shape.status,
     title: LinkedCloudResourceReferenceSchema.shape.title.unwrap(),
     icon: LinkedCloudResourceReferenceSchema.shape.icon,
     href: LinkedCloudResourceReferenceSchema.shape.href,
@@ -183,6 +185,8 @@ export const listAiRecentResources = async (input: {
             ref,
             count,
             title: data.title,
+            context: ownRef?.context,
+            status: ownRef?.status,
             icon: ownRef?.icon ?? data.icon,
             href,
             preview: recentResourcePreview(ownRef?.preview ?? data.description),
@@ -229,6 +233,8 @@ export const listAiRecentResources = async (input: {
           ref,
           count,
           title: ownRef.title,
+          context: ownRef.context,
+          status: ownRef.status,
           icon: (ownRef.icon ?? type.icon ?? app.appIcon)?.slice(0, 120),
           href: ownRef.href,
           kind: type.title.slice(0, 120),

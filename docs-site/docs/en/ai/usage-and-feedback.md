@@ -5,7 +5,7 @@ section: AI
 order: 1065
 description: Inspect AI reference costs, configure Assistant budgets and a background emergency stop, and investigate workflow costs.
 tags: [ai, usage, feedback, administration]
-updated: 2026-10-11
+updated: 2026-10-27
 ---
 
 # Usage and feedback
@@ -239,10 +239,10 @@ Assistant calls remain unaffected.
 All administration uses the same APIs and authorization as the GUI:
 
 ```bash
-cld admin ai models settings get --id MODEL_ID --json
-cld admin ai models settings set --id MODEL_ID --thinking-level low --yes --json
-cld admin ai models pricing get --json
-cld admin ai models pricing set --id MODEL_ID --pricing-file prices.json --yes --json
+cld admin ai models list --json
+cld admin ai models show MODEL_ID --json
+cld admin ai models update MODEL_ID --input-file model-patch.json --yes --json
+cld admin ai variants update MODEL_ID:deep --input-file variant-patch.json --yes --json
 cld admin ai quotas config get --json > quotas.json
 cld admin ai quotas config set --config-file quotas.json --yes --json
 cld admin ai quotas background status --json
@@ -257,11 +257,18 @@ cld admin ai usage runs --workflow WORKFLOW_UUID --workflow-run RUN_UUID --json
 cld admin ai usage report --range 7d --json
 ```
 
-`prices.json` is `{"inputPerMillion":0.5,"outputPerMillion":2}`; JSON `null` removes
-prices. The command reads current prices and sends them as an optimistic update
-precondition. It never replaces credentials or access grants. Configuration export
-includes `enabled`, `revision`, `unit`, `background` and `rules`. Preserve its
-revision and save the full edited document; `--stdin` is also supported.
+For example, `model-patch.json` is
+`{"pricing":{"inputPerMillion":0.5,"outputPerMillion":2}}`; `{"pricing":null}`
+removes model pricing. A variant patch can override prices or set
+`reasoningEffort`, such as `{"reasoningEffort":"low"}`. Variant `pricing: null`
+restores inherited model pricing. Commands read the model or variant revision
+before writing and leave omitted fields unchanged. Read again and reconcile
+on conflict. See [Models and providers](/en/docs/ai/models-and-providers) for
+request settings.
+
+Quota configuration export includes `enabled`, `revision`, `unit`, `background`
+and `rules`. Preserve its revision and save the full edited document; `--stdin`
+is also supported.
 `background` is `{ "enabled": true, "warnAt": 5, "stopAt": 10 }`; `warnAt: null`
 disables the warning. Limits and thresholds accept up to six decimal places.
 
@@ -298,7 +305,9 @@ Administrator endpoints:
 - `GET /api/admin/core/ai-usage/runs/{chat|background}/{callUuid}`
 - `GET|PUT /api/admin/core/ai-quotas`
 - `GET /api/admin/core/ai-quotas/models`, `/users`, `/balance`, `/report`
-- `PUT /api/admin/core/ai-quotas/models/{id}/pricing` with `{pricing,expected}`
+- `GET /api/admin/core/ai/models` and `/models/{id}`
+- `PATCH /api/admin/core/ai/models/{id}` with `{pricing,revision}`
+- `PATCH /api/admin/core/ai/variants/{id}` with `{pricing,revision}`
 - `POST /api/admin/core/ai-quotas/reset`
 - `GET /api/admin/core/ai-quotas/background`
 - `POST /api/admin/core/ai-quotas/background/release`
