@@ -93,7 +93,7 @@ export type ChatConversationProps = {
    * The head from a 1800 px window, where the threads stand in their own column: the open thread as the title and its
    * description below, instead of the chat's title and the picker.
    */
-  wideTitle?: { title: string; subtitle: string };
+  wideTitle?: { title: string; chat: string; subtitle: string };
   /** Where the back button leads below 64 rem; the list by default. */
   backHref?: string;
   /** Each part of a chat keeps its own draft. */
@@ -436,6 +436,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             <div class="chat-conversation__wide-title">
               <h1 class="chat-conversation__wide-name">{wide().title}</h1>
               <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
+              <p class="chat-conversation__phone-subtitle">
+                {wide().chat} · {props.subtitle ?? t().members({ count: props.memberCount })}
+              </p>
             </div>
           )}
         </Show>
