@@ -1931,3 +1931,11 @@ apply, and each user holds at most 16 disposable check copies at a time. Disposa
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
 See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for data-copy and output limits. No new configuration is required.
+
+## Capability content provenance after the upgrade
+
+Capability Query, Action, review, and stream handlers receive the framework-derived `via`
+metadata (`assistant`, `mcp`, or `null`). Application authors must persist and display it when implementing Actions that
+create or change visible content. Existing stored content is not backfilled.
+This adds no permission and needs no operator configuration. See
+[App capabilities](/en/docs/platform/capabilities).
