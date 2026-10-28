@@ -5,12 +5,12 @@ section: Accounts & sign-in
 order: 1081
 description: Configure Guest, local Login and FreeIPA access independently from login-page visibility.
 tags: [accounts, authentication, administration, freeipa]
-updated: 2026-10-17
+updated: 2026-10-28
 ---
 
 # Configure account types and sign-in
 
-Open **Administration → Accounts & sign-in → Sign-in** to choose which
+Open **Administration → Sign-in & security → Sign-in** to choose which
 account types are allowed and which appear on the general login page.
 Individual accounts and groups remain in **Accounts**.
 

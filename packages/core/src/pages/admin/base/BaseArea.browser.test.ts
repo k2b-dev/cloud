@@ -138,3 +138,25 @@ test("a phone shows one level and the save status at the bottom", async () => {
   expect(box && box.y > 400).toBe(true);
   expect(errors).toEqual([]);
 }, 30_000);
+
+test("Sign-in shows the options of an account type only while it is on; FreeIPA tests the saved connection", async () => {
+  await goto("/admin/signin");
+  expect(await page.getByRole("navigation", { name: "Sign-in & security sections" }).getByRole("link").allInnerTexts()).toEqual([
+    "Sign-in",
+    "Registration",
+    "Security",
+    "Linux identities",
+    "FreeIPA",
+    "Account operations",
+  ]);
+  expect(await page.getByText("Show guest sign-in").count()).toBe(0);
+  await page.getByRole("switch", { name: "Guest accounts" }).click();
+  await page.getByText("Show guest sign-in").waitFor();
+  expect(await state()).toBe("draft");
+
+  await goto("/admin/signin/freeipa");
+  expect(await visible("Test connection").isDisabled()).toBe(false);
+  await page.getByRole("textbox", { name: "FreeIPA address" }).fill("https://ipa2.example.org");
+  expect(await visible("Test connection").isDisabled()).toBe(true);
+  expect(errors).toEqual([]);
+}, 30_000);

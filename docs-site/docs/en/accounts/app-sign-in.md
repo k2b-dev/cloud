@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1084
 description: Connect Cloud to its trusted authenticator website and prepare a first sign-in.
 tags: [accounts, administration, authentication]
-updated: 2026-10-19
+updated: 2026-10-28
 ---
 
 # Set up app sign-in
@@ -35,7 +35,7 @@ method if directory-side changes must block access immediately.
 
 ## Configure the website
 
-1. Open **Administration → Accounts & sign-in → Sign-in**.
+1. Open **Administration → Sign-in & security → Sign-in**.
 2. Turn on **Enable app sign-in**.
 3. Enter the authenticator origin: its scheme, host and optional port,
    for example `https://auth.example.org`. Do not include a path, wildcard,

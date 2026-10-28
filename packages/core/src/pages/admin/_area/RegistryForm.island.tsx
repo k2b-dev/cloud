@@ -16,7 +16,7 @@ export type RegistryFormSection = {
   title: string;
   description?: string;
   keys: string[];
-  shownWhen?: Record<string, { key: string; value: string }>;
+  shownWhen?: Record<string, { key: string; value: string | boolean }>;
   link?: { label: string; href: string };
 };
 

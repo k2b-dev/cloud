@@ -17,7 +17,7 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       color: "blue",
     },
     {
-      href: "/admin/settings?tab=security",
+      href: "/admin/signin/security",
       title: t.security,
       description: t.securityDescription,
       icon: "ti ti-shield-lock",
@@ -144,7 +144,7 @@ export default ssr<AuthContext>(async (c) => {
                 />
               )}
               <LinkCard
-                href="/admin/settings?tab=user"
+                href="/admin/signin"
                 title={t.peopleAndAccess}
                 description={t.peopleAndAccessDescription}
                 icon="ti ti-users"
