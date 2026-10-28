@@ -6,13 +6,14 @@ import {
   formatPercent as fmtPercent,
   formatRatio as fmtRatio,
 } from "@k2b/cloud/shared";
-import { AdminLayout, requestPath } from "@k2b/cloud/ssr";
+import { requestPath } from "@k2b/cloud/ssr";
 import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { listAppSloWindows } from "../../grids-operational-health";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import RouteDetailPanel from "./_components/RouteDetailPanel";
 import TelemetryFilterBar, { type TelemetryAppFilterOption } from "./_components/TelemetryFilterBar.island";
 import {
@@ -122,14 +123,10 @@ export default ssr<AuthContext>(async (c) => {
     { id: "duration", header: <SortableHeader filter={filter} sort="duration" label={t.averageMaximum} t={t} />, align: "right" },
   ];
 
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title={t.telemetry}>
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-telemetry-title">
-          <h1 class="text-base font-semibold text-primary">{t.telemetry}</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.telemetryDescription}</p>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="telemetry" attention={attention}>
+      <ObservabilityPane label={areaText(locale).telemetry} description={t.telemetryDescription}>
         <ModeNav path={requestPath(c)} locale={locale} />
         <TelemetryFilterBar filter={filter} apps={appOptions} />
 
@@ -312,7 +309,7 @@ export default ssr<AuthContext>(async (c) => {
             />
           ) : null}
         </div>
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });
