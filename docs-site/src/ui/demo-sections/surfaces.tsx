@@ -791,6 +791,7 @@ const ProgressDemo = () => (
 <ProgressRing value={35} label="Usage" />
 <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
 <ProgressRing value={100} tone="danger" label="Usage, used up" />
+<ProgressRing value={60} tone="accent" label="Today's work done" />
 <DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
 <DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />`}
   >
@@ -802,6 +803,7 @@ const ProgressDemo = () => (
         <ProgressRing value={35} label="Usage" />
         <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
         <ProgressRing value={100} tone="danger" label="Usage, used up" />
+        <ProgressRing value={60} tone="accent" label="Today's work done" />
       </div>
       <DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
       <DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />

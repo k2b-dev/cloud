@@ -551,6 +551,7 @@
 .k2b-ui .k2b-dot-strip__dot[data-state="waiting"] { background: color-mix(in srgb, var(--k2b-border-strong) 55%, transparent); }
 .k2b-ui .k2b-dot-strip__dot[data-selected] { box-shadow: 0 0 0 2px var(--k2b-surface), 0 0 0 3.5px var(--k2b-text); }
 .k2b-ui .k2b-progress-ring { display: block; width: 1rem; height: 1rem; flex: 0 0 auto; color: var(--k2b-action-solid); }
+.k2b-ui .k2b-progress-ring[data-tone="accent"] { color: var(--app-accent, var(--k2b-action-solid)); }
 .k2b-ui .k2b-progress-ring[data-tone="warning"] { color: var(--k2b-warning-500); }
 .k2b-ui .k2b-progress-ring[data-tone="danger"] { color: var(--k2b-danger-500); }
 .k2b-ui .k2b-progress-ring__track { stroke: var(--k2b-border-strong); }
