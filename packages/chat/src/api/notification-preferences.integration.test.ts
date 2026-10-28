@@ -244,7 +244,9 @@ suiteFor(
       { level: "none", for: "1h", until: "2030-01-01" },
     ])
       expect((await set(owner, chat.shortId, input)).status).toBe(400);
-    await expect(sql`UPDATE chat.participants SET notify_until = now() WHERE conversation_id = ${chat.id}::uuid`).rejects.toThrow();
+    await expect(
+      sql`UPDATE chat.participants SET notify_until = now() WHERE conversation_id = ${chat.id}::uuid`.execute(),
+    ).rejects.toMatchObject({ errno: "23514", constraint: "notify_until_only_none" });
   });
 
   test("mentionsUnread deduplicates a mention plus reply, tracks reads, and remains visible when muted", async () => {

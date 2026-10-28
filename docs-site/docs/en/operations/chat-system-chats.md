@@ -398,4 +398,8 @@ with the PUT body above; the follow Action accepts `{ conversation, thread,
 following }`. Results contain the same notification object or `{ following }`
 in the capability data envelope.
 
+Resource checks inside these capabilities use the parent invocation's query
+authority and bypass the HTTP decision cache. They do not forward the person's
+cookie or token.
+
 This API stores preferences and follows. It does not send notifications yet.
