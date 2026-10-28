@@ -165,7 +165,12 @@ export default function RecordsView(props: Props) {
   const [fields, setFields] = createSignal<Field[]>([...props.fields].sort((a, b) => a.position - b.position));
   // A saved view narrows `fields` to its output columns, which for a grouped view can be just the group field.
   // Group members are whole table records, so the group panel reads the table's own fields.
-  const tableFields = () => (props.activeView ? (props.fieldsByTable[props.tableId] ?? fields()) : fields());
+  const viewTableFieldsFromProps = props.activeView ? props.fieldsByTable[props.tableId] : undefined;
+  const [viewTableFields, setViewTableFields] = createSignal<Field[] | null>(
+    viewTableFieldsFromProps ? [...viewTableFieldsFromProps].sort((a, b) => a.position - b.position) : null,
+  );
+  const tableFields = () => viewTableFields() ?? fields();
+  const setTableFields = viewTableFieldsFromProps ? (next: Field[]) => setViewTableFields(next) : undefined;
   const [forms, setForms] = createSignal<Form[]>(props.forms);
   const isSavedView = () => props.viewMode || !!props.activeView || !!props.viewId;
   const canUseEditMode = () => (isSavedView() ? !!props.canEditActiveView : props.canManageTable);
@@ -674,6 +679,7 @@ export default function RecordsView(props: Props) {
     },
     fields,
     setFields,
+    setTableFields,
     tableColumns,
     setTableColumns,
     tableUpdatedAt,
@@ -716,6 +722,8 @@ export default function RecordsView(props: Props) {
     setDisableDirectInsert,
     fields,
     setFields,
+    tableFields,
+    setTableFields,
     hiddenFields: hiddenFlatFields,
     showColumns: showFlatViewColumns,
     forms,
@@ -828,6 +836,8 @@ export default function RecordsView(props: Props) {
                 hiddenViewColumnCount={hiddenViewColumnCount()}
                 allowForms={props.tableKind === "stored"}
                 formsButtonLabel={formsButtonLabel()}
+                tableFields={tableFields()}
+                onFieldSettings={props.canManageTable && (!props.activeView || setTableFields) ? openFieldSettings : undefined}
                 onOpenTableSettings={openTableSettings}
                 onAddField={() => void openAddField()}
                 onOpenForms={openForms}
