@@ -47,6 +47,7 @@ import inputAutocomplete from "./input/autocomplete.md" with { type: "text" };
 import inputAutocompleteSelect from "./input/autocomplete-select.md" with { type: "text" };
 import inputBoolean from "./input/boolean.md" with { type: "text" };
 import inputChoiceChips from "./input/choice-chips.md" with { type: "text" };
+import inputChoiceList from "./input/choice-list.md" with { type: "text" };
 import inputChoiceSlider from "./input/choice-slider.md" with { type: "text" };
 import inputChoiceTiles from "./input/choice-tiles.md" with { type: "text" };
 import inputColor from "./input/color.md" with { type: "text" };
@@ -117,6 +118,7 @@ const catalogContextSources = {
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
+  "input/choice-list": { file: "input/choice-list.md", content: inputChoiceList },
   "input/choice-tiles": { file: "input/choice-tiles.md", content: inputChoiceTiles },
   "input/combobox": { file: "input/combobox.md", content: inputCombobox },
   "input/color": { file: "input/color.md", content: inputColor },
