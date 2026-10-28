@@ -13,7 +13,6 @@ export const CustomAppChartEditor = (props: { block: ChartBlock; update: (update
     <DetailPanel.Group label={text("Chart settings")}>
       <DetailPanel.Section
         title={text("Chart")}
-        icon="ti ti-chart-bar"
         description={text("Choose the chart presentation and result limit.")}
         collapsible
         defaultOpen
@@ -51,7 +50,6 @@ export const CustomAppChartEditor = (props: { block: ChartBlock; update: (update
       </DetailPanel.Section>
       <DetailPanel.Section
         title={text("Appearance")}
-        icon="ti ti-palette"
         description={text("Optional axis labels and value formatting.")}
         collapsible
         defaultOpen={Boolean(props.block.valueFormat || props.block.xAxisLabel || props.block.yAxisLabel)}

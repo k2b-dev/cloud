@@ -58,6 +58,8 @@ export type FrozenMailConversation = {
   subject: string;
   summary: string | null;
   summaryRevision: number;
+  /** Internal projection metadata; not a workflow-language field. */
+  summarySource?: "person" | "workflow" | "manual_ai" | null;
   messageCount: number;
   assigneeUserIds: string[];
   workStatus: "needs_action" | "waiting" | "done";
@@ -125,6 +127,7 @@ type WorkflowSnapshotRow = {
   conversation_subject: string | null;
   conversation_summary: string | null;
   summary_revision: string | number | null;
+  summary_source?: "person" | "workflow" | "manual_ai" | null;
   message_count: number;
   collaboration_revision: string | number | null;
   link_snapshot: string;
@@ -187,6 +190,7 @@ const snapshotColumns = sql`
   conversation.subject AS conversation_subject,
   conversation.summary AS conversation_summary,
   conversation.summary_revision,
+  conversation.summary_metadata->>'source' AS summary_source,
   (SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = conversation.id) AS message_count,
   conversation.revision AS collaboration_revision,
   pg_current_snapshot()::text AS link_snapshot,
@@ -256,6 +260,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
           subject: row.conversation_subject ?? "",
           summary: row.conversation_summary,
           summaryRevision: Number(row.summary_revision ?? 1),
+          summarySource: row.summary_source ?? null,
           messageCount: row.message_count,
           assigneeUserIds: row.assignee_user_ids,
           workStatus: row.work_status,

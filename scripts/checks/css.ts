@@ -21,6 +21,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "input.css",
   "resource-search.css",
   "file-chooser.css",
+  "profile-picture.css",
   "panel.css",
 ];
 
@@ -268,6 +269,7 @@ export const rule: Rule = {
       "--k2b-chart-height", // @k2b/ui Chart.tsx and ChartSnapshotView.tsx: the rendered chart height
       "--notebook-chart-height", // notebooks chart-blocks.ts: the height of a drawing taller than its frame
       "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar
+      "--annotation-color", // Notebooks lib/editor/annotations.ts and NotePreview: the person color of a commented passage
     ]);
     // Cloud imports the UI package stylesheet. Its defaults are valid owners,
     // while Cloud and application styles may override those theme tokens.

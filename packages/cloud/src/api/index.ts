@@ -21,6 +21,7 @@ import { aiProjectsRoutes } from "../ai/projects-routes";
 import { aiRoutes } from "../ai/routes";
 import { aiSkillsRoutes } from "../ai/skills-routes";
 import accountsEntitiesRoutes from "./accounts-entities";
+import adminAiRoutes from "./admin-ai";
 import adminAiProjectsRoutes from "./admin-ai-projects";
 import adminAiQuotaRoutes from "./admin-ai-quotas";
 import adminAiSkillsRoutes from "./admin-ai-skills";
@@ -36,6 +37,7 @@ import adminOutgoingMailRoutes from "./admin-outgoing-mail";
 import adminRailRoutes from "./admin-rail";
 import { adminAnnouncementRoutes, announcementRoutes } from "./announcements";
 import { createAppApprovalRoutes } from "./app-approval";
+import { createAppEventRoutes } from "./app-events";
 import { approvalRoutes } from "./approvals";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
@@ -45,6 +47,7 @@ import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
 import { createPwaRoutes } from "./pwa";
+import { createResourceResolveRoutes } from "./resource-resolve";
 import { createSearchRoutes } from "./search";
 import { createSyncOpsProxyRoutes } from "./sync-ops";
 import { createWidgetRoutes } from "./widgets";
@@ -85,8 +88,11 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/accounts", accountsEntitiesRoutes)
     .route("/geo", geoRoutes)
     .route("/apps", appDiscoveryRoutes)
+    .route("/app-events", createAppEventRoutes())
+    .route("/resources", createResourceResolveRoutes())
     .route("/approvals", approvalRoutes)
     .route("/announcements", announcementRoutes)
+    .route("/admin/core/ai", adminAiRoutes)
     .route("/admin/core/ai-usage", adminAiUsageRoutes)
     .route("/admin/core/ai-quotas", adminAiQuotaRoutes)
     .route("/admin/core/ai-projects", adminAiProjectsRoutes)
@@ -136,4 +142,4 @@ export {
   createMcpRoutes,
   publicCloudOrigin,
 } from "./mcp";
-export { resolveCloudResourceHref } from "./resource-links";
+export { resolveCloudResourceHref, resolveCloudResourceUrl } from "./resource-links";

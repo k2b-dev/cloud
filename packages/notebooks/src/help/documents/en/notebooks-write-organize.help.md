@@ -25,6 +25,22 @@ Keep lasting handbook content in the note itself. Use comments to discuss that c
 
 **Edit with AI** opens Assistant with the page and its discussion. After a review, Assistant can also correct or delete your recent comments. The same author and ten-minute rules apply. Assistant can check query and contents drafts without saving them. This check does not cover every Markdown feature or table formula.
 
+## Comment on the text {icon="message-plus"}
+
+Select a passage in the text. A small bar with **Bold**, **Italic**, **Link** and **Comment** appears above the selection. On a phone it appears below the selection. You can also press ⌘⌥M (Windows and Linux: Ctrl+Alt+M). Without a selection, you comment on the word at the cursor.
+
+:::reference
+- **Margin:** The comment stands to the right of the text, level with its passage. The passage stays marked in your color. When there is too little room or the detail panel is open, a colored dot stands next to the line. Choose it to open the comment. On a phone, choose the passage; the comment opens at the bottom of the screen.
+- **Suggestion:** **Suggest a change** opens a field with the selected text. Below it you see the difference. **Accept** changes the text for everyone, like a normal edit in the versions. **Undo** works while nobody has changed the new text.
+- **Reply and resolve:** Choose the passage or the comment to open it. There you reply or mark it as resolved. At the top of the margin, **n resolved** shows the resolved comments again.
+- **Correct:** You can edit or delete your own comment for ten minutes. You can delete it only while it has no replies.
+- **Deleted passage:** When someone deletes the marked text, the comment stays with a dot at that place. It shows the old text struck through.
+- **Keyboard:** Alt+Enter goes from a marked passage to its comment. Escape goes back. The arrow keys move between the comments in the margin.
+- **Who can do what:** With **Edit** access, you comment, suggest, accept and resolve. With **View** access, you read the comments in **Read-only**.
+- **Where comments show:** In **Write** and **Read-only**. **Book**, print, PDF and Markdown export show no comments. In **Book**, **n comments** at the top opens the note in **Read-only** at the first comment.
+- **Chat:** The page's chat shows a quiet line with a link to the passage for each new comment.
+:::
+
 ## Restore a saved version {icon="history"}
 
 Open the note details and choose **Version history**. Pick a version to see its content or the changes.
@@ -86,6 +102,7 @@ The heading and list shortcuts use the physical digit keys on every keyboard lay
 :::reference
 - `/` at a line start or after whitespace opens the insert menu. Type a command name to filter it.
 - `[[` opens note suggestions. Choosing a note replaces the typed brackets with a Markdown link to it.
+- Pasting a link to something in this Cloud, for example from the address bar or **Copy Cloud ID**, turns it into a link with its title once it is recognized; a note becomes a note link. Links you may not open, links in code, and pastes with **Ctrl+Shift+V** (**⌘+Shift+V** on a Mac) stay as pasted. Undo brings back the plain link.
 - `![[` opens attachment suggestions. Choosing an image embeds it; choosing another file inserts a download link.
 - `==text==` highlights text. Highlight stays within one line.
 - On touch screens, **Undo** and **Redo** sit at the start of the toolbar.

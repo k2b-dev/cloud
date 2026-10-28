@@ -20,6 +20,7 @@ const entry = (key: string, label: string, value: string, unreadable: boolean): 
   isCustom: true,
   unreadable,
   group: "app",
+  updatedAt: "2026-10-27T10:00:00.000Z",
 });
 
 async function setup() {
@@ -111,7 +112,12 @@ describe("unreadable stored settings", () => {
       try {
         await ui.type("Contact", "help@example.org");
         await ui.save();
-        expect(ui.requests.at(-1)).toEqual({ "app.contact_email": "help@example.org" });
+        expect(ui.requests.at(-1)).toEqual({
+          updates: { "app.contact_email": "help@example.org" },
+          resets: [],
+          replaceUnreadable: [],
+          expectedUpdatedAt: { "app.contact_email": "2026-10-27T10:00:00.000Z" },
+        });
 
         await ui.type("Cloud name", "Example Cloud");
         await ui.save();
@@ -119,6 +125,7 @@ describe("unreadable stored settings", () => {
           updates: { "app.name": "Example Cloud", "app.contact_email": "help@example.org" },
           resets: [],
           replaceUnreadable: ["app.name"],
+          expectedUpdatedAt: { "app.name": "2026-10-27T10:00:00.000Z", "app.contact_email": "2026-10-27T10:00:00.000Z" },
         });
       } finally {
         ui.cleanup();
@@ -138,7 +145,12 @@ describe("unreadable stored settings", () => {
         await tick();
         expect(ui.buttons("Use default for Cloud name").every((button) => button.disabled)).toBe(true);
         await ui.save();
-        expect(ui.requests.at(-1)).toEqual({ updates: {}, resets: ["app.name"], replaceUnreadable: [] });
+        expect(ui.requests.at(-1)).toEqual({
+          updates: {},
+          resets: ["app.name"],
+          replaceUnreadable: [],
+          expectedUpdatedAt: { "app.name": "2026-10-27T10:00:00.000Z" },
+        });
       } finally {
         ui.cleanup();
       }

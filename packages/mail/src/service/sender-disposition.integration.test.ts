@@ -7,7 +7,6 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";
 import type { FolderRole, SenderDispositionInput } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { DISPOSITION_LIMIT } from "./bulk-disposition";
@@ -121,7 +120,6 @@ suite("sender bulk disposition", () => {
     });
 
   beforeAll(async () => {
-    await migrate();
     for (const role of ["owner", "reader", "writer", "assigned-writer"]) {
       const [row] = await sql<{ id: string; uid: string }[]>`
         INSERT INTO auth.users (uid, provider, profile, display_name, admin)

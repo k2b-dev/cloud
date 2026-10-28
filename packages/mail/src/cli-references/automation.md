@@ -1,6 +1,6 @@
 # Mail automation
 
-Read this reference when configuring managed automatic replies, conversation references, or Mail workflow YAML. Start with [Mail CLI](index.md) for mailbox setup, permissions, search, and collaboration.
+Read this reference when configuring managed automatic replies, conversation references, Mail workflow YAML, or inspecting the automation log. Start with [Mail CLI](index.md) for mailbox setup, permissions, search, and collaboration.
 
 ## Choose the right automation surface
 
@@ -22,6 +22,39 @@ cld mail configure --automatic-replies admins
 ```
 
 This delegation does not grant access to identity configuration, references, or arbitrary YAML workflows.
+
+## Inspect the automation log
+
+Use the mailbox id or exact name with `--mailbox`, or first select a default with `cld mail use`. Log entry ids come from the list; they are not conversation or automation ids.
+
+```bash
+cld mail automation log --mailbox Support --day 2026-10-27
+cld --json mail automation log --mailbox Support --day 2026-10-27 --filter assignments --q invoice --limit 50
+cld --json mail automation log --mailbox Support --day 2026-10-27 --before '<nextCursor>'
+cld --json mail automation log show <entry-id> --mailbox Support
+cld mail automation log undo <entry-id> --mailbox Support
+```
+
+- `--day` is a UTC calendar date as `YYYY-MM-DD`; omit it for today in UTC. Mailboxes do not have a separate timezone setting.
+- `--filter` is `all`, `assignments`, `uncertain`, `skipped`, or `manual`.
+- `--q` accepts at most 200 characters and searches subject, sender, rule, and target without case sensitivity.
+- `--limit` accepts 1–50 entries and defaults to 50. Copy `nextCursor` to `--before` and keep the same day, search, and filter. The text output prints a next-page command pinned to the returned day.
+
+The list returns `{ day, counts, items, nextCursor }`. `counts` contains `all`, `assignments`, `uncertain`, `skipped`, and `manual` for the selected day and search, independent of the selected filter. JSON and JSONL preserve this page envelope, including the cursor and counts. Each entry has a `conversation.href`; rule entries also have `by.href`.
+
+`automation log show` returns the entry with its decision `chain` and `aiCalls` (`run`, `today`, `limit`). It shows recorded conditions, AI choices and extracted values, the fixed rule row, targets, and effects without another AI call. A missing source quote is `evidence: null`. Reading needs mailbox read access and includes only conversations the caller may read. The log covers the existing 30-day activity window.
+
+Rules never replace existing assignees, including manually assigned people: any assignee makes the step skip with `already_assigned`. A skip due to an upper rule is recorded as `skipped_upper_rule` in the log reasons. A manual change does not edit the rule.
+
+`automation log undo` reverses every still-current reversible effect of one entry and returns `{ item }`. It requires mailbox-wide write access and has no confirmation. Reversible effects are assignment, added/removed local tags, moves/archive, status, read/unread, other flags, and provider keywords. Comments remain records; summaries have their own version history and are not undone.
+
+`item.undo.kept` lists effects left unchanged as `{ kind, reason: "changed_by_person" | "gone" }`; `item.undo.reverted` lists the original effects actually reversed. Both are arrays, empty when there is nothing to report; legacy snapshots may omit them. Text output prints both lists. `undo.state` is `available` when at least one effect remains current, `done` after an accepted undo, `not_possible` when no reversible effect is still current or provider commands are pending, and `none` for entries without reversible effects. A partial undo is `done`, with `kept` explaining the preserved effects.
+
+When nothing can be reversed, HTTP 409 `mail.automation.undo_not_possible` returns `{ code, reason, item }` with the refreshed entry and changes nothing. `reason` is `changed_by_person`, `conversation_gone`, or `provider_pending`. The last reason is temporary: a group with queued, executing, or ambiguous provider commands cannot transition until those commands finish. Refresh the entry and retry; an accepted Undo stays `done` while its commands run. `undo.at` is the undo time, or a known manual assignment-change time for `not_possible`; `undo.by` identifies that person when known. Other attribution and times remain `null`.
+
+Provider changes are accepted as normal durable commands. Their later failures appear in command outcomes; inspect `cld mail command list --state failed`. Redo by the same actor reapplies only effects actually reverted and still safe to restore. Wait for provider Undo commands to finish before redoing those effects. The CLI exposes list, show, and undo; redo uses the existing API/UI operation.
+
+Undo persists an exclusion per workflow, conversation, and reverted effect class beyond log retention. Later replies skip those classes with `undone_before`. Redo removes the markers for classes it restores. AI classification still chooses among configured categories; the rule supplies the assignee.
 
 ## Manage automatic replies
 
@@ -163,7 +196,7 @@ The incoming-automation file is strict: unknown fields are rejected. An invalid 
 - An `if` condition references an earlier AI `sourceStepId`: use `equals` for generated text or single classification and `includes` for multi-classification. Its `value` accepts 1–500 characters and must name a declared choice for classification. Both `then` and `else` are step arrays of at most 12 items.
 - A definition starts with 1–20 top-level steps, contains at most 40 steps across branches, has at most 4 branch levels, and makes at most 10 AI calls. One reachable path may change flags and keywords before at most one placement (`junk`, `trash`, or `move_to_folder`); put `mark_read` and `add_keyword` before that placement. Repeated flag or keyword actions are allowed. No provider message change may follow the placement. A path may contain one assignment, one status change, and one summary replacement; it cannot add the same local tag twice. Consecutive `if` steps are on the same path because both can match; put mutually exclusive actions in the `then` and `else` branches of one `if`. `set_status` is a local status change, not a provider message action, so it can share a path with `mark_read`.
 
-When several incoming automations match, the oldest decides the folder; an automation skips read or keyword steps when the message has left its folder or a move of it is pending, and confirmed sibling flag or keyword changes count as expected state.
+When several rules match one incoming message, they use mailbox priority order: lower `priority` first, then workflow UUID ascending for equal priorities. The order is fixed when the message event is accepted. Assignment, placement (move, archive, trash, junk), and status each have one winner: the first rule that claims that effect class. A lower rule waits for upper rules, including slower AI steps. If an upper rule finishes without claiming that class, a lower rule may apply it. Tags, comments, and summaries can come from every matching rule. An incoming automation still skips read or keyword steps when the message has left its folder or a move is pending; confirmed sibling flag or keyword changes count as expected state.
 
 Automations apply to incoming mail only; positive sender-address conditions cannot target a mailbox's own active identities. Negated sender conditions can exclude those identities. Destructive flows must restrict every possible match to an external sender or domain and reject configured internal domains, subdomains, and unsafe parent domains. `automation get` exposes the exact generated workflow YAML.
 
@@ -382,7 +415,7 @@ The shared parser understands `forEach`, but the Mail binder rejects it because 
 | `junkMessage` | `message` | Move to the configured Junk role |
 | `addFlag` | `message`, `seen`, `answered`, `flagged`, or `draft` in `flag` | Add one standard provider flag |
 | `removeFlag` | `message`, `seen`, `answered`, `flagged`, or `draft` in `flag` | Remove one standard provider flag |
-| `assignConversation` | `conversation`, assignable user name, id, expression, or `null` in `user` | Replace assignees with this user, or clear the set with `null` |
+| `assignConversation` | `conversation`, assignable user name, id, expression, or `null` in `user` | Assign this user only when nobody is assigned; `null` leaves an unassigned conversation unassigned |
 | `setConversationStatus` | `conversation`, `needs_action`, `waiting`, or `done` in `status` | Change work state transactionally |
 | `setConversationSummary` | `conversation`, `summary` | Replace the editable conversation summary transactionally |
 | `ensureConversationReference` | `conversation`; optional identifier in `saveAs` | Allocate or return the immutable reference |
@@ -403,7 +436,9 @@ The shared parser understands `forEach`, but the Mail binder rejects it because 
 
 Literal folder, tag, sender, and user names are bound to accessible stable ids when a version is created. Unknown, inaccessible, or ambiguous names fail validation.
 
-`createDraft` and `createReplyDraft` default `format` to `markdown`; subject text is limited to 998 characters and body text to 2 MiB. `aiGenerateText.maxOutputChars` defaults to 4,000 and accepts 1–20,000. AI prompts accept 1–20,000 characters, model profile ids and identifiers accept at most 120 characters, and classification choices accept 1–200 characters each. `aiClassifyMany.minChoices` defaults to `0`; `maxChoices` defaults to the number of declared choices. Every selected variable name must be a valid identifier and is visible only to later steps in the same scope.
+`createDraft` and `createReplyDraft` default `format` to `markdown`; subject text is limited to 998 characters and body text to 2 MiB. `aiGenerateText.maxOutputChars` defaults to 4,000 and accepts 1–20,000. AI prompts accept 1–20,000 characters, identifiers accept at most 120 characters, and classification choices accept 1–200 characters each. `aiClassifyMany.minChoices` defaults to `0`; `maxChoices` defaults to the number of declared choices. Every selected variable name must be a valid identifier and is visible only to later steps in the same scope.
+
+The optional AI `model` field accepts `{ class: balanced }` or `{ id: "model:variant" }`. Classes are `fast`, `balanced`, `thorough`, and `maximum`; an explicit variant ID accepts at most 241 characters. Omitting `model` requests `balanced`. Only empty class assignments fall back to another class; access, budget, disabled-model, and capability failures stop the action. An explicit variant ID never falls back.
 
 Reference a value stored by `setVariable` or an action result as `${{ <name> }}` in later steps in the same scope. Mail validation reserves `inputs` and `trigger`.
 
@@ -622,3 +657,34 @@ The Mail API manages definitions and activations only. Runtime observability and
 | References | `reference-number config show|set`, `reference-number list|ensure|find` |
 | Workflow lifecycle | `workflow list|get|validate|create|update|export|activate|deactivate`, `workflow version list|get|create|restore` |
 | Runtime operations | `cld admin workflows health|runs|show|cancel|effects|resolve|events` |
+
+Successful inference is reused for unchanged mail, input, instructions and model
+configuration within its mailbox. To deliberately request fresh inference on
+failed messages, add `--recompute-ai` to `automation backfill start --retry-failed`.
+The API equivalent is `{ retryFailed: true, recomputeAi: true }`. This bypass
+requires the existing backfill permissions and still consumes the mailbox AI
+budget; it cannot bypass capacity, rate, daily, or two-step limits. Check
+**Automations > Activity** for failures and inspect the original message or retry
+after capacity recovers.
+
+## Try a workflow without AI
+
+```bash
+cld mail workflow try <workflow-id> --last 50
+cld --json mail workflow try <workflow-id> --last 100
+cld mail workflow try --file workflow.yaml --last 50
+```
+
+Use a stable workflow ID for the current saved version, or `--file` for unsaved
+YAML. Unsaved YAML requires mailbox administration permission. Saved versions
+require the existing workflow read permission. `--last` accepts 1–100 and
+defaults to 50. Only visible messages are checked, newest first.
+
+The command collects batches and prints a count and one line per message.
+`--json` returns the merged items and AI call range. A dry run changes no mail,
+sends nothing, creates no drafts and calls no AI. AI-dependent actions are
+marked as uncertain; no category or generated result is predicted.
+
+`match` means an action or AI step would run. `skipped` means an explicit
+exclusion matched. `none` means the conditions did not match. Target problems
+are shown per item; the preflight also checks static targets in other branches.

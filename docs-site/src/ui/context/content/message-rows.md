@@ -372,7 +372,9 @@ is about, such as "Mara set the status to “In review”". It takes the sentenc
 as children, an `icon` for the kind of change, an optional `origin` chip where
 several threads mix, and `time` with `dateTime`. It has no bubble and no rule,
 starts where the messages' text starts, and keeps its time at the end; a long
-sentence ends in an ellipsis. An event is no message: do not count it as
+sentence ends in an ellipsis. With `href`, the sentence becomes a link to what
+the event is about, such as a comment's passage; only its ink responds to
+hover. An event is no message: do not count it as
 unread or use it as a preview, and pass `system: true` to `startsMessageGroup`
 for it.
 

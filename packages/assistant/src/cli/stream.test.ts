@@ -33,7 +33,7 @@ const stored = (seq: number, message: AiStoredMessage["message"]): AiStoredMessa
   kind: "message",
   loopId: "turn",
   message,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -57,7 +57,7 @@ const state = (blocks: AiTurnBlock[]): AiStreamSseEvent => ({
   type: "state",
   conversation,
   messages: [],
-  activeTurn: { turnId: "turn", attempt: 1, seq, status: "running", blocks, modelProfileId: null, createdAt: "" },
+  activeTurn: { turnId: "turn", attempt: 1, seq, status: "running", blocks, modelId: null, createdAt: "" },
 });
 const finished = (text: string[]): AiStreamSseEvent => ({
   ...wire(),
@@ -319,7 +319,7 @@ describe("Assistant CLI stream", () => {
         {
           ...wire(),
           type: "turn_started",
-          modelProfileId: "model",
+          modelId: "model",
           providerModel: "fixture",
           blocks: [{ id: "saved", kind: "text", text: "Checking." }],
         },
@@ -377,7 +377,7 @@ describe("Assistant CLI stream", () => {
         {
           ...wire(),
           type: "turn_started",
-          modelProfileId: "model",
+          modelId: "model",
           providerModel: "fixture",
           blocks: [{ id: "saved-answer", kind: "text", text: "Found it." }],
         },

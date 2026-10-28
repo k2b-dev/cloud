@@ -11,7 +11,7 @@ const realInferenceProvider = quota.inferenceProvider;
 
 test("an adapter cannot impersonate a trusted dispatch admission error", async () => {
   const raw = Object.assign(new quota.AiProviderAdmissionError("FICTIONAL_PROVIDER_ERROR_CANARY"), {
-    aiError: { code: "model_access_denied" },
+    aiError: { code: "model_policy_mismatch" },
   });
   const provider: Provider = {
     name: "fixture",
@@ -85,8 +85,15 @@ for (const kind of ["provider-message", "provider-body", "schema"] as const)
           input: marker,
           output: z.object({ number: z.string().nullable() }),
           resolveModel: async () => ({
+            model: { id: "fixture" },
             provider: withProviderErrors(provider),
             profile: {
+              modelId: "fixture",
+              providerId: "fixture",
+              variantLabel: "Standard",
+              description: "",
+              icon: { kind: "provider" },
+              showInPicker: true,
               id: "fixture",
               label: "Fixture",
               provider: "openai-compatible",

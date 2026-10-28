@@ -120,7 +120,7 @@ Während du in einem Feld oder Editor schreibst, bleiben diese Einzeltasten-Kür
 
 ## Aufgabe übernehmen und übergeben {icon="notes"}
 
-Aufgaben können eine Fortschrittsnotiz und ein Abschlussergebnis enthalten. Die Aufgabendetails zeigen beides als **Letzter Stand** und **Letztes Ergebnis** unter der Liste **Zuständig**. Beim Wiederöffnen bleibt das letzte Ergebnis erhalten.
+Aufgaben können eine Fortschrittsnotiz und ein Abschlussergebnis enthalten. Die Aufgabendetails zeigen beides als **Letzter Stand** und **Letztes Ergebnis** unter der Checkliste. Beim Wiederöffnen bleibt das letzte Ergebnis erhalten.
 
 Wähle **Ich übernehme** auf einer Karte im Board oder in den Aufgabendetails, um eine Aufgabe zu übernehmen. Wähle **Freigeben**, um die Übernahme freizugeben. In den Details kannst du dabei eine kurze Übergabenotiz hinterlassen.
 
@@ -128,7 +128,7 @@ Solange eine Aufgabe übernommen ist, sehen andere, wer daran arbeitet:
 
 - Board-Karten, Listenzeilen und Tabellenzellen zeigen die arbeitende Person zuerst im Avatar-Stapel mit einem grünen Ring. Sie erscheint einmal und nie im `+N`-Überlauf.
 - Der Filter **In Arbeit** listet übernommene Aufgaben.
-- In den Details ist **Zuständig** eine gemeinsame Liste. Die Zeile der arbeitenden Person steht zuerst und zeigt den grünen Ring, **arbeitet daran** und seit wann sie daran arbeitet.
+- In den Details zeigt die Zeile **Zugewiesen** unter **Eigenschaften** alle Zuständigen. Die arbeitende Person steht zuerst und zeigt den grünen Ring, **arbeitet daran** und seit wann sie daran arbeitet.
 
 Gehört die Übernahme zu keinem der Zuständigen, etwa bei einem persönlichen Automatisierungsschlüssel oder einem gelöschten Konto, zeigt die Liste dieses Konto trotzdem zuerst mit seinem Arbeitsstatus. Diese Zeile kannst du nicht entfernen.
 
@@ -136,7 +136,7 @@ Wenn du eine Aufgabe übernimmst, wirst du ihr auch zugewiesen. Die Übernahme z
 
 **Übernehmen** verschiebt die Übernahme und die Zuständigkeit zu dir. Im CLI entfernt `release --force` auch die Zuweisung des bisherigen Kontos. War es allein zuständig, ist die Aufgabe danach nicht zugewiesen.
 
-Entfernst du eine arbeitende Person oder ein Dienstkonto aus **Zuständig**, endet die Übernahme. Bei einem anderen Konto bestätigst du das einmal. Hat jemand die Aufgabe inzwischen übernommen, lehnt Spaces eine Liste ohne dieses Konto ab. Lies die Aufgabe erneut. Gib im CLI die Übernahme frei, bevor du das Konto mit `assign` oder `set` entfernst.
+Entfernst du eine arbeitende Person oder ein Dienstkonto aus **Zugewiesen**, endet die Übernahme. Bei einem anderen Konto bestätigst du das einmal. Hat jemand die Aufgabe inzwischen übernommen, lehnt Spaces eine Liste ohne dieses Konto ab. Lies die Aufgabe erneut. Gib im CLI die Übernahme frei, bevor du das Konto mit `assign` oder `set` entfernst.
 
 Übernahmen laufen nicht ab. Sie koordinieren die Arbeit, sperren sie aber nicht: Mit Zugriff **Bearbeiten** kannst du eine übernommene Aufgabe zwischen offenen Spalten verschieben, und gewöhnliche gemeinsame Bearbeitungen bleiben möglich. Erledigst du deine eigene übernommene Aufgabe, auch per Ziehen in eine Erledigt-Spalte, wird die Übernahme freigegeben. Mit Zugriff **Bearbeiten** siehst du bei der Übernahme eines anderen Kontos **Übernehmen**. Du bestätigst das in einem Dialog, der das bisherige Konto nennt. Erledigst du eine Aufgabe, die jemand anderes übernommen hat, etwa per Ziehen in eine Erledigt-Spalte, fragt Spaces einmal nach, zum Beispiel „Von Jana Berger übernommen – übernehmen und abschließen?“. Danach übernimmt und erledigt Spaces die Aufgabe in einem Schritt. Die Zuweisungen ändern sich nicht. **Abbrechen** lässt die Karte an ihrem Platz. Schickst du eine Aufgabe durch ein Wormhole in einen anderen Space, endet die Übernahme auf dieselbe Weise: Deine eigene Übernahme endet ohne Nachfrage, eine fremde übernimmst du nach einer Bestätigung. Die Aktivität zeigt, wer eine Aufgabe von wem übernommen hat.
 

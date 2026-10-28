@@ -721,3 +721,17 @@ describe("MessageEventRow", () => {
     expect(open).toContain("ti ti-chevron-up");
   });
 });
+
+describe("MessageEventRow link", () => {
+  test("makes the sentence a link to what the event is about, and stays plain text without one", () => {
+    const linked = renderToString(() =>
+      createComponent(MessageEventRow, { href: "/app/notebooks/book01/notes/note01?annotation=a1", children: "Mara left a comment" }),
+    );
+    expect(linked).toContain(
+      '<a class="k2b-message-event-row__text k2b-message-event-row__link" href="/app/notebooks/book01/notes/note01?annotation=a1">',
+    );
+    expect(linked).toContain("Mara left a comment</a>");
+    const plain = renderToString(() => createComponent(MessageEventRow, { children: "Mara set the status" }));
+    expect(plain).not.toContain("<a ");
+  });
+});

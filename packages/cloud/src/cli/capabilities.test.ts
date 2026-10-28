@@ -160,6 +160,17 @@ describe("capabilities CLI", () => {
     expect(requests).toEqual(["/api/capabilities/v1/queries/contacts/search"]);
   });
 
+  test("keeps resource card facts and ignores unfamiliar reference presentation in CLI JSON output", async () => {
+    const ref = { type: "contacts.contact", id: "one", context: "Contact in Team", status: "Active" };
+    const { ctx, lines } = createContext(["query", "contacts", "read"], { input: '{"id":"one"}' }, async (path) =>
+      path.includes("catalog")
+        ? Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } })
+        : Response.json({ data: {}, refs: [{ ...ref, futurePresentation: "ignored" }] }),
+    );
+    await capabilitiesCliModule.run(ctx);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ refs: [ref] });
+  });
+
   test("omits an idempotency key for actions that do not require one", async () => {
     const keys: Array<string | null> = [];
     const { ctx } = createContext(["action", "example", "refresh"], { input: "{}" }, async (_path, init) => {
@@ -367,4 +378,74 @@ test("generic CLI review returns the complete unsaved proposal without executing
   await capabilitiesCliModule.run(ctx);
   expect(calls).toEqual(["/api/capabilities/v1/actions/demo/write/review"]);
   expect(lines.map((line) => JSON.parse(line))).toEqual([review]);
+});
+
+test.each(["json", "jsonl", "text"] as const)("catalog retains event and subscription manifests in %s", async (output) => {
+  const schema = z.object({ userId: z.string().max(256), provider: z.string().max(80) }).strict();
+  const manifest = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { user: { title: "User", description: "A local user." } },
+      events: { "user.created": { version: 1, title: "User created", description: "A user was created.", subject: "user", schema } },
+      subscribes: { "core.user.created": { version: 1, schema, run: async () => undefined } },
+    }),
+  ).manifest;
+  const events = [
+    {
+      type: "demo.user.created",
+      version: 1,
+      title: "User created",
+      description: "A user was created.",
+      subject: "demo.user",
+      place: null,
+      automation: true,
+      dataSchema: manifest.events![0]!.dataSchema,
+      subscribers: [{ appId: "consumer", subscriptionId: "consumer:demo.user.created@1", state: "active", reason: null }],
+    },
+  ];
+  const page = {
+    protocolVersion: 2,
+    apps: [{ appId: "demo", appName: "Demo", appIcon: "ti ti-app", appDescription: "Demo", manifest, events }],
+    page: { hasMore: false },
+  };
+  const { ctx, lines } = createContext(["catalog"], {}, async () => Response.json(page));
+  const tables: unknown[] = [];
+  ctx.options.output = output;
+  ctx.table = (rows) => {
+    tables.push(rows);
+  };
+  await capabilitiesCliModule.run(ctx);
+  if (output === "text") {
+    expect(tables).toEqual([[{ app: "demo", name: "Demo", types: 1, queries: 0, actions: 0, events: 1, subscribes: 1 }]]);
+  } else {
+    const result = JSON.parse(lines[0]!);
+    expect(result).toEqual(page);
+    expect(result.apps[0].manifest.events).toHaveLength(1);
+    expect(result.apps[0].manifest.subscribes).toHaveLength(1);
+    expect(result.apps[0].events).toEqual(events);
+  }
+});
+
+test.each(["text", "json", "jsonl"] as const)(
+  "resolve prints the authorized identity, title and absolute permalink in %s",
+  async (output) => {
+    const result = { ref: { type: "demo.item", id: "a/b" }, title: "Item", href: "/app/demo/a%2Fb" };
+    const { ctx, lines } = createContext(["resolve", "https://cloud.test/app/demo/a%2Fb"], {}, async (path, init) => {
+      expect(path).toBe("/api/resources/resolve");
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toEqual({ url: "https://cloud.test/app/demo/a%2Fb" });
+      return Response.json(result);
+    });
+    ctx.options.output = output;
+    await capabilitiesCliModule.run(ctx);
+    expect(JSON.parse(lines.join("\n"))).toEqual({ ...result, permalink: "http://cloud.test/open/demo.item/~a%2Fb" });
+  },
+);
+
+test("resolve reports the same failure for inaccessible resources without echoing the URL", async () => {
+  const { ctx } = createContext(["resolve", "https://foreign.example/private"], {}, async () =>
+    Response.json({ error: "Resource not found" }, { status: 404 }),
+  );
+  await expect(capabilitiesCliModule.run(ctx)).rejects.toThrow("Resource not found.");
 });

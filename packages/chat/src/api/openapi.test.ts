@@ -39,6 +39,9 @@ test("publishes every conversation operation with typed request and response sch
   for (const [path, method] of [
     ["/people", "get"],
     ["/people/{userId}", "get"],
+    ["/search", "get"],
+    ["/for-you", "get"],
+    ["/conversations/{conversation}/mention-candidates", "get"],
     ["/channels", "get"],
     ["/channels/options", "get"],
     ["/channels/preview", "post"],
@@ -270,6 +273,33 @@ test("reactions document read projection, empty writes and stable budget errors"
   }
 });
 
+test("attachments expose typed multipart upload, guarded download, and message/shared projections", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const base = "/api/chat/conversations/{conversation}";
+  const upload = spec.paths[`${base}/attachments`]?.post;
+  const multipart = z
+    .object({
+      content: z.object({
+        "multipart/form-data": z.object({
+          schema: z.object({
+            required: z.array(z.string()),
+            properties: z.record(z.string(), z.unknown()),
+          }),
+        }),
+      }),
+    })
+    .parse(upload?.requestBody);
+  expect(multipart.content["multipart/form-data"].schema.required).toContain("file");
+  expect(multipart.content["multipart/form-data"].schema.properties.file).toMatchObject({ type: "string", format: "binary" });
+  expect(multipart.content["multipart/form-data"].schema.properties.thread).toMatchObject({ type: "string" });
+  for (const code of ["201", "400", "403", "404", "409", "413", "422", "429"]) expect(upload?.responses[code]).toBeDefined();
+  expect(spec.paths[`${base}/attachments/{attachment}`]?.get?.responses["200"]).toBeDefined();
+  expect(spec.paths[`${base}/attachments/{attachment}`]?.get?.responses["404"]).toBeDefined();
+  expect(JSON.stringify(spec.paths[`${base}/messages`]?.post?.requestBody)).toContain('"attachments"');
+  expect(JSON.stringify(spec.paths[`${base}/messages/{message}`]?.get?.responses["200"])).toContain('"attachments"');
+  expect(JSON.stringify(spec.paths[`${base}/shared`]?.get?.responses["200"])).toContain('"document"');
+});
+
 test("item events document selection, bounded paging and unavailable responses", async () => {
   const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
   const operation = spec.paths["/api/chat/conversations/{conversation}/events"]?.get;
@@ -278,4 +308,63 @@ test("item events document selection, bounded paging and unavailable responses",
   const parameters = z.array(z.object({ name: z.string() })).parse(operation?.parameters);
   for (const name of ["conversation", "thread", "before", "after", "cursor", "limit"])
     expect(parameters.some((parameter) => parameter.name === name)).toBeTrue();
+});
+
+test("search documents the required bounded query, eight-hit response and partial owner failure", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const operation = spec.paths["/api/chat/search"]?.get;
+  expect(operation?.responses["400"]).toBeDefined();
+  expect(operation?.responses["429"]).toBeDefined();
+  const params = z.array(z.object({ name: z.string(), in: z.string(), required: z.boolean().optional() })).parse(operation?.parameters);
+  expect(params).toContainEqual({ name: "q", in: "query", required: true });
+  const response = z
+    .object({
+      content: z.object({
+        "application/json": z.object({
+          schema: z.object({
+            required: z.array(z.string()),
+            properties: z.object({ items: z.object({ maxItems: z.number() }), systemUnavailable: z.unknown() }),
+          }),
+        }),
+      }),
+    })
+    .parse(operation?.responses["200"]);
+  expect(response.content["application/json"].schema.required).toEqual(["items"]);
+  expect(response.content["application/json"].schema.properties.items.maxItems).toBe(8);
+});
+
+test("mention send, views and candidates publish principal identity while membership keeps grant identity", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const body = z.object({
+    content: z.object({
+      "application/json": z.object({ schema: z.object({ properties: z.record(z.string(), z.unknown()) }) }),
+    }),
+  });
+  const send = spec.paths["/api/chat/conversations/{conversation}/messages"]!.post!;
+  const input = body.parse(send.requestBody).content["application/json"].schema.properties.mentions;
+  const view = body.parse(send.responses["201"]).content["application/json"].schema.properties.mentions;
+  for (const mentions of [input, view]) {
+    expect(mentions).toMatchObject({
+      maxItems: 20,
+      items: {
+        required: expect.arrayContaining(["start", "end", "principal"]),
+        properties: {
+          principal: {
+            required: ["type", "id"],
+            properties: { type: { enum: ["user", "service_account"] }, id: { type: "string", format: "uuid" } },
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(mentions)).not.toContain('"accessId"');
+  }
+  const candidates = body.parse(spec.paths["/api/chat/conversations/{conversation}/mention-candidates"]!.get!.responses["200"]).content[
+    "application/json"
+  ].schema.properties.items;
+  expect(candidates).toMatchObject({
+    maxItems: 20,
+    items: { required: ["principal", "name", "agent"] },
+  });
+  expect(JSON.stringify(candidates)).not.toContain('"accessId"');
+  expect(spec.paths["/api/chat/conversations/{conversation}/members/{accessId}"]?.delete).toBeDefined();
 });

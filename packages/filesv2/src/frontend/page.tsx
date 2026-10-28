@@ -1,6 +1,5 @@
 import { type AuthContext, getLocale, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server";
-import { AccountIdentityError, coreSettings } from "@k2b/cloud/services";
-import { publicCloudOrigin } from "@k2b/cloud/shared";
+import { AccountIdentityError } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import type { Context } from "hono";
@@ -106,12 +105,11 @@ export default ssr<AuthContext>(async (c) => {
       initial.errorCode = error.status === 404 ? "not_found" : "unavailable";
     } else throw error;
   }
-  const cloudUrl = publicCloudOrigin(await coreSettings.get<string>("app.url"));
   const locale = getLocale(c);
   const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
   return () => (
     <Layout c={c} title={title} fullWidth fullPage>
-      <Workspace initial={initial} preferences={preferences} cloudUrl={cloudUrl} />
+      <Workspace initial={initial} preferences={preferences} />
     </Layout>
   );
 });

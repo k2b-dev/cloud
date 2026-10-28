@@ -73,6 +73,13 @@ const portableSections = [
       ),
       page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
       page(
+        "choice-tiles",
+        "ChoiceTiles",
+        "ti ti-layout-grid",
+        "A labeled single choice of tiles with a preview, for picking how something looks.",
+      ),
+      page("color-choices", "ColorChoices", "ti ti-palette", "A labeled single choice from a fixed palette of named colour swatches."),
+      page(
         "autocomplete-select",
         "AutocompleteSelect",
         "ti ti-input-search",
@@ -85,6 +92,12 @@ const portableSections = [
       page("color", "ColorInput", "ti ti-palette", "Native color selection with controlled value and optional transparency."),
       page("pin", "PinInput", "ti ti-password", "Grouped one-time-code entry with paste and arrow-key navigation."),
       page("slider", "Slider", "ti ti-adjustments-horizontal", "Range input with value labels and optional centered scale."),
+      page(
+        "choice-slider",
+        "ChoiceSlider",
+        "ti ti-adjustments-alt",
+        "A slider over a few named stops with a fixed description line and unavailable stops.",
+      ),
       page("icon", "IconInput", "ti ti-icons", "Searchable controlled icon selection."),
       page("image", "ImageInput", "ti ti-photo", "Controlled image selection, preview, transform, and removal."),
       page(
@@ -203,6 +216,12 @@ const portableSections = [
       page("tab-bar", "TabBar", "ti ti-layout-navbar", "Bottom navigation between a phone app's top-level pages."),
       page("panel-dialog", "PanelDialog", "ti ti-app-window", "Contained or floating composition for complex editors."),
       page("floating-window", "FloatingWindow", "ti ti-window", "Movable and resizable utility content with mobile fallback."),
+      page(
+        "anchored-popover",
+        "AnchoredPopover",
+        "ti ti-message-2",
+        "A card anchored to a control that keeps its side while open and is a bottom sheet on a phone.",
+      ),
     ],
   },
   {
@@ -404,7 +423,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 159;
+export const portableUiComponentCount = 164;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

@@ -1,0 +1,6 @@
+### Passive tooltips blocked detail keyboard navigation
+
+- **What happened:** Spaces could ignore J/K while a Kanban card had focus, an item detail was open, and a passive tooltip was visible. CI also timed out waiting for the missing-item error dialog, without recording whether the detail request had started.
+- **Root cause:** The workspace controller treated every open popover as a keyboard owner, including passive tooltips. A hover hint opens after a delay, so the same key could step or be ignored depending on when it arrived. Suspected for the original CI failure: an open tooltip swallowed the step. That log captured neither open popovers nor requests. The regression test explicitly opens a real Kanban tooltip to exercise the confirmed product defect.
+- **Error class:** Passive tooltips intercept keyboard navigation through a timing-dependent overlay guard.
+- **Guard:** `workspace-step.browser-suite.ts` checks missing-item recovery both with and without an open tooltip. It focuses the card, waits for the actual tooltip state and detail request, holds the 404 until the pending highlight is visible, then checks the error dialog, restored highlight, URL and detail. A second browser case checks that menus keep J/K and Escape dismisses a tooltip without closing the detail. Dialogs retain the controller's keyboard guard.

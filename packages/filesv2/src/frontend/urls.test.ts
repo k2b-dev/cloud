@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { adminHref, parseAdminLocation } from "./admin-location";
 import { searchState } from "./search-state";
-import { filesUrl, pathCrumbs, referenceHref, showsOverview } from "./urls";
+import { filesUrl, pathCrumbs, showsOverview } from "./urls";
 
 test("navigation retains opaque identities and filenames as query values", () => {
   const url = new URL(filesUrl("freeipa:group:123", "Budget #1/über uns?", "next/+="), "https://cloud.test");
@@ -82,14 +82,6 @@ test("a search keeps its query, filters and order instead of the folder's option
   expect(searchState(new URLSearchParams("kind=image"))).toMatchObject({ q: "", kind: "image" });
   expect(searchState(new URLSearchParams("q=%20%20&kind=unknown&sort=relevance"))).toBeNull();
   expect(showsOverview(new URLSearchParams("modified=day"), 2)).toBe(false);
-});
-
-test("a copied stable reference links through the deep link; path refs link to their folder and file", () => {
-  const baseId = "cloud:users:6f1c2e4a-1b2c-4d3e-8f90-1234567890ab";
-  const stable = `n:${baseId}:019b72cf-5200-7000-8000-000000000001`;
-  expect(referenceHref(baseId, { path: "Docs/a.txt", directory: false }, stable)).toBe(`/app/filesv2/ref/${encodeURIComponent(stable)}`);
-  expect(referenceHref(baseId, { path: "Docs/a.txt", directory: false }, "inline")).toBe(filesUrl(baseId, "Docs", null, "Docs/a.txt"));
-  expect(referenceHref(baseId, { path: "Docs", directory: true }, "inline")).toBe(filesUrl(baseId, "Docs"));
 });
 
 test("the plain Files address shows all storage only with multiple roots", () => {

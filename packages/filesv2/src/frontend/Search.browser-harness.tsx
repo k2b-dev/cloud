@@ -90,7 +90,6 @@ render(() => {
           <Browser
             directory={shown()}
             bases={[base]}
-            cloudUrl="https://cloud.example"
             source={`/app/filesv2?${current().filters}`}
             pending={current().state === "loading"}
             pendingSearch={current().state === "loading"}

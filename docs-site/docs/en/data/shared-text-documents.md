@@ -304,3 +304,17 @@ before applying it with origin `replay:<cursor>`. Malformed updates raise
 and transport. `parseStreamCursor`, `compareStreamCursor`, and
 `maxStreamCursor` validate and compare resource-bound cursors; cursors from
 different logs cannot be compared.
+
+### Apply a prepared transaction
+
+The `edit()` callback may return `{ update: Uint8Array }` instead of a new
+string. Build that Yjs update from `current.state()` and apply exact range
+changes to the `SHARED_TEXT_NAME` text. This preserves inserted item IDs when
+an application must persist relative positions before publishing. The normal
+actor attribution, log publication, replay, and store save still apply.
+
+Only trusted application code supplies this update. Keep a stable operation
+ID and evidence in the same Yjs transaction when retrying a prepared edit.
+Returning an unchanged string skips publication and persistence; an application
+recovering a previous `persistFailed` must still materialize its snapshot
+before acknowledging completion.
