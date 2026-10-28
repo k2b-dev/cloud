@@ -145,6 +145,7 @@ class World {
       reactions: [],
       mentions: [],
       refs: [],
+      attachments: [],
       thread: null,
       replyTo: null,
       id: id + String(m.seq).padStart(4, "0"),
