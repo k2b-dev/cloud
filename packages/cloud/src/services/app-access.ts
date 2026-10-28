@@ -1,9 +1,10 @@
 import { type SQL, sql } from "bun";
 import type { Context } from "hono";
+import { RESOURCE_ACCESS_TIMEOUT_MS, resourceAppAccess } from "../_internal/app-access-resources";
 import type { AppMeta } from "../contracts/app";
 import { AppAccessRuleSchema, type FixedAppAccessRule } from "../contracts/app-access";
 import { userFromActor } from "../server/actor";
-import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
+import { type AuthContext, auth, type RequestAuthority } from "../server/middleware/auth";
 import { buildAccessPrincipalCondition } from "../server/services/access";
 import { logger } from "./logging";
 import { toPgTextArray } from "./postgres";
@@ -17,7 +18,7 @@ export const appAccessAuthority = <E extends AuthContext>(c: Context<E>): Reques
   const accessSubject = c.get("accessSubject");
   const credentialKind = c.get("credentialKind");
   if (!actor || !accessSubject || !credentialKind) return null;
-  return { actor, accessSubject, credentialKind, scopes: c.get("credentialScopes") ?? [] };
+  return auth.getAuthority(c);
 };
 
 const credentialAllows = (authority: RequestAuthority, appId: string): boolean => {
@@ -65,6 +66,7 @@ export const evaluateAppAccess = (authority: RequestAuthority | null, app: Acces
   const parsed = AppAccessRuleSchema.safeParse(app.access);
   if (!parsed.success) return false;
   const rule = parsed.data;
+  if (rule.kind === "resources") return false; // Asynchronous adapter decision only.
   if (rule.kind !== "grants") return fixedAllows(authority, rule);
   if (!state?.configured) return !!rule.until && fixedAllows(authority, rule.until);
   return state.permission === "read" || state.permission === "admin";
@@ -74,11 +76,12 @@ let lastFailureLog = -Infinity;
 const reportFailure = () => {
   if (Date.now() - lastFailureLog < 60_000) return;
   lastFailureLog = Date.now();
-  logger("app-access").error("Application access could not be resolved; configurable applications are unavailable");
+  logger("app-access").error("Application access could not be resolved; affected applications are unavailable");
 };
 
 /**
- * One authoritative SQL read for all configurable apps. No grant cache: revocation applies on the next request.
+ * One authoritative SQL read for all configurable lists; resource rules query the owning adapters.
+ * No cross-request grant cache: revocation applies on the next request.
  * Pass the reserved transaction as `db` when checking access inside a guarded operation.
  */
 export const usableAppIds = async (
@@ -89,6 +92,16 @@ export const usableAppIds = async (
   const db = options.db ?? sql;
   const allowed = new Set(apps.filter((app) => app.access?.kind !== "grants" && evaluateAppAccess(authority, app)).map((app) => app.id));
   if (!authority) return allowed;
+  const resourceSignal = AbortSignal.timeout(RESOURCE_ACCESS_TIMEOUT_MS);
+  // Sequential: one existence probe in flight per decision, no resource enumeration.
+  for (const app of apps) {
+    if (app.access?.kind !== "resources" || !credentialAllows(authority, app.id)) continue;
+    try {
+      if (await resourceAppAccess(authority, app, { ...options, signal: resourceSignal })) allowed.add(app.id);
+    } catch {
+      reportFailure();
+    }
+  }
   const configurable = apps.filter((app) => app.access?.kind === "grants" && credentialAllows(authority, app.id));
   if (configurable.length === 0) return allowed;
   try {

@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, describe, expect, mock, setSystemTime, test } from "bun:test";
+import { sql } from "bun";
+import { bindAppAccessRequest } from "../_internal/app-access-request";
+import { bindResourceAppAccess, resourceAppAccess } from "../_internal/app-access-resources";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import type { User } from "../contracts/shared";
 import type { RequestAuthority } from "../server/middleware/auth";
@@ -138,4 +141,147 @@ describe("application entry rules", () => {
       ]),
     ).toEqual(new Set(["legacy", "notes"]));
   });
+});
+
+describe("resource-derived app access", () => {
+  test("compiles only adapter names; a missing existence query fails at startup", () => {
+    const hasAnyRight = mock(async () => true);
+    const declaration = appAccess.resources({ adapters: { workspace: { hasAnyRight } }, publicRoutes: ["/shared/:token"] });
+    expect(compileAppAccess(declaration)).toEqual({ kind: "resources", adapters: ["workspace"], publicRoutes: ["/shared/:token"] });
+    expect(() => compileAppAccess(appAccess.resources({ adapters: {} }))).toThrow();
+    // A JavaScript consumer must get the same startup validation as TypeScript.
+    expect(() => compileAppAccess(JSON.parse('{"kind":"resources","adapters":{"workspace":{}}}'))).toThrow("hasAnyRight");
+    expect(hasAnyRight).not.toHaveBeenCalled();
+  });
+
+  test("any selected scope suffices; no identity or admin role grants access by itself", async () => {
+    let right = false;
+    const hasAnyRight = mock(async () => right);
+    const declaration = appAccess.resources({ adapters: { workspace: { hasAnyRight }, project: { hasAnyRight: async () => false } } });
+    const app = { id: "resource-unit", access: compileAppAccess(declaration) };
+    const stop = bindResourceAppAccess(app.id, declaration);
+    try {
+      expect(await canUseApp(null, app)).toBe(false);
+      expect(hasAnyRight).not.toHaveBeenCalled();
+      expect(await canUseApp(person({ roles: ["admin"] }), app)).toBe(false);
+      right = true;
+      expect(await canUseApp(person(), app)).toBe(true);
+      expect(await canUseApp(person({ profile: "guest", roles: ["guest"] }), app)).toBe(true);
+      expect(await canUseApp(service(), app)).toBe(true);
+      right = false;
+      expect(await canUseApp(person(), app)).toBe(false);
+    } finally {
+      stop();
+    }
+  });
+
+  test("credential ceilings are checked before the adapter; a bound account selects only its resource type", async () => {
+    setSystemTime(new Date("2026-10-28T12:00:00Z"));
+    const workspace = mock(async () => true);
+    const project = mock(async () => true);
+    const declaration = appAccess.resources({ adapters: { workspace: { hasAnyRight: workspace }, project: { hasAnyRight: project } } });
+    const app = { id: "resource-unit", access: compileAppAccess(declaration) };
+    const stop = bindResourceAppAccess(app.id, declaration);
+    const authority = service();
+    if (authority.actor.kind !== "service_account") throw new Error("fixture");
+    try {
+      for (const scopes of [[], ["other:read"], ["ai:inference"]]) expect(await canUseApp({ ...authority, scopes }, app)).toBe(false);
+      expect(workspace).not.toHaveBeenCalled();
+      authority.actor.serviceAccount = {
+        ...authority.actor.serviceAccount,
+        kind: "resource_bound",
+        appId: "other",
+        resourceType: "project",
+        resourceId: "one",
+      };
+      expect(await canUseApp(authority, app)).toBe(false);
+      authority.actor.serviceAccount.appId = app.id;
+      expect(await canUseApp(authority, app)).toBe(true);
+      expect(workspace).not.toHaveBeenCalled();
+      expect(project).toHaveBeenCalledTimes(1);
+      authority.actor.credentialExpiresAt = "2026-10-28T12:00:00Z";
+      expect(await canUseApp(authority, app)).toBe(false);
+      expect(project).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+    }
+  });
+
+  test("shares one decision only within a request; transactions and new requests read again", async () => {
+    let right = true;
+    const hasAnyRight = mock(async (_subject: import("../server/services/access").AccessSubject, context: { db: typeof sql }) => {
+      expect(context.db).toBe(sql);
+      return right;
+    });
+    const declaration = appAccess.resources({ adapters: { workspace: { hasAnyRight } } });
+    const app = { id: "resource-unit", access: compileAppAccess(declaration) };
+    const stop = bindResourceAppAccess(app.id, declaration);
+    const request = new Request("http://app.test/");
+    const authority = bindAppAccessRequest(person(), request);
+    try {
+      expect(await canUseApp(authority, app)).toBe(true);
+      right = false;
+      expect(await canUseApp(bindAppAccessRequest(person(), request), app)).toBe(true);
+      expect(hasAnyRight).toHaveBeenCalledTimes(1);
+      expect(await canUseApp(authority, app, { db: sql })).toBe(false);
+      expect(await canUseApp(bindAppAccessRequest(person(), new Request(request)), app)).toBe(false);
+      expect(hasAnyRight).toHaveBeenCalledTimes(3);
+    } finally {
+      stop();
+    }
+  });
+
+  test("adapter failures deny entry and discovery", async () => {
+    const declaration = appAccess.resources({
+      adapters: {
+        workspace: {
+          hasAnyRight: async () => {
+            throw new Error("unavailable");
+          },
+        },
+      },
+    });
+    const app = { id: "resource-unit", access: compileAppAccess(declaration) };
+    const stop = bindResourceAppAccess(app.id, declaration);
+    try {
+      expect(await usableAppIds(person(), [app])).toEqual(new Set());
+    } finally {
+      stop();
+    }
+  });
+});
+
+test("an aborted existence check releases the caller and starts no further scope", async () => {
+  const controller = new AbortController();
+  const second = mock(async () => true);
+  let observed = false;
+  const declaration = appAccess.resources({
+    adapters: {
+      workspace: {
+        hasAnyRight: async (_subject, { signal }) =>
+          new Promise<boolean>((resolve) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                observed = true;
+                resolve(false);
+              },
+              { once: true },
+            );
+          }),
+      },
+      project: { hasAnyRight: second },
+    },
+  });
+  const app = { id: "resource-abort", access: compileAppAccess(declaration) };
+  const stop = bindResourceAppAccess(app.id, declaration);
+  try {
+    const pending = resourceAppAccess(person(), app, { signal: controller.signal });
+    controller.abort(new Error("cancelled"));
+    await expect(pending).rejects.toThrow("cancelled");
+    expect(observed).toBe(true);
+    expect(second).not.toHaveBeenCalled();
+  } finally {
+    stop();
+  }
 });

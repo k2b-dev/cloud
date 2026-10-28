@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # API surface
@@ -530,7 +530,9 @@ for consent, ordering, and the rule that refs never grant access.
 addresses and normalize shared network budgets. See
 [Limit requests](/en/docs/server/middleware#limit-requests).
 
-Application entry declarations use `appAccess` from `@k2b/cloud`; see
+Application entry declarations use `appAccess` from `@k2b/cloud`, including
+`appAccess.resources()` and `ResourceAppAccessAdapter` for deriving entry from
+existing resource rights; see
 [App access](/en/docs/identity/app-access). The batch resolver and registry
 filtering helpers are platform-owned.
 

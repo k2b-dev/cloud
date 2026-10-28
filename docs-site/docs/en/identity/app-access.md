@@ -5,7 +5,7 @@ section: Identity and access
 order: 315
 description: Declare who may use an application and keep entry and discovery decisions consistent.
 tags: [identity, applications, authorization]
-updated: 2026-10-22
+updated: 2026-10-28
 ---
 
 # App access
@@ -36,6 +36,7 @@ export const app = defineApp({
 | `appAccess.signedIn()` | Any resolved signed-in identity, including service accounts |
 | `appAccess.noGuests()` | Signed-in identities except people with a guest profile, including credentials delegated by a guest |
 | `appAccess.roles(["admin"])` | Identities whose effective user has one of the listed Cloud roles |
+| `appAccess.resources({ adapters })` | Accounts with an effective resource right in at least one selected adapter |
 | `appAccess.grants()` | Identities with `read` or `admin` on the application's access list |
 
 `roles()` accepts Cloud roles, not application-defined roles. Use a group grant
@@ -45,6 +46,112 @@ session never regains the Cloud administrator role through this check.
 
 Credentials retain their scopes and resource binding. App access opens the
 application; it does not widen a key or replace route and resource checks.
+
+## Derive entry from existing resource permissions
+
+Use `appAccess.resources()` when the application's existing resource rights
+should also decide who sees and enters it. Select one or more existing
+`ResourceAccessAdapter`s by resource type. Cloud admits an account when at
+least one adapter reports an effective `read`, `write`, or `admin` right.
+No app-access list is created or synchronized. Resource checks inside the app
+continue to authorize each operation.
+
+Each selected adapter must implement `hasAnyRight(subject, context)`. The
+method is optional on existing adapters, but required for this declaration.
+A missing method fails application startup. Cloud cannot derive a correct
+existence query from `list(resourceId)` without enumerating resources, so it
+provides no scanning fallback.
+
+Add the query to the adapter that already owns the rights. This example uses
+an application's existing `inventory.workspace_access` junction and its
+`inventory.workspaces` table with UUID resource IDs. Substitute the tables,
+ID type and eligibility predicates
+used by your resource service:
+
+```ts
+import { appAccess, type ResourceAppAccessAdapter } from "@k2b/cloud";
+import {
+  buildAccessPrincipalCondition,
+  type ResourceAccessAdapter,
+} from "@k2b/cloud/server";
+import { workspaceAccess } from "./service/access";
+
+const workspace = {
+  ...workspaceAccess,
+  async hasAnyRight(subject, { authority, db, signal }) {
+    signal.throwIfAborted();
+    const bound = authority.actor.kind === "service_account"
+      && authority.actor.serviceAccount.kind === "resource_bound"
+      ? authority.actor.serviceAccount.resourceId : null;
+    const principal = buildAccessPrincipalCondition({
+      subject,
+      columns: {
+        userId: db`a.user_id`,
+        groupId: db`a.group_id`,
+        serviceAccountId: db`a.service_account_id`,
+        authenticatedOnly: db`a.authenticated_only`,
+      },
+    });
+    const query = db<{ allowed: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM inventory.workspace_access r
+        JOIN inventory.workspaces w ON w.id = r.workspace_id
+        JOIN auth.access a ON a.id = r.access_id
+        WHERE NOT w.archived
+          AND a.permission IN ('read', 'write', 'admin')
+          AND ${principal}
+          AND (${bound}::uuid IS NULL OR w.id = ${bound}::uuid)
+      ) AS allowed
+    `;
+    const cancel = () => query.cancel();
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      signal.throwIfAborted();
+      return (await query)[0]?.allowed === true;
+    } finally {
+      signal.removeEventListener("abort", cancel);
+    }
+  },
+} satisfies ResourceAccessAdapter & ResourceAppAccessAdapter;
+
+// Pass this to defineApp({ ..., access }). Keys are the resourceType values
+// used by this app's resource-bound service accounts.
+export const access = appAccess.resources({
+  adapters: { workspace },
+});
+```
+
+Use an indexed existence query and the same effective-right semantics as the
+resource service, including inherited rights, domain eligibility and nested
+groups. A positive grant on an archived or otherwise inaccessible resource
+must not admit the caller. For a bound service account, inspect only its bound
+resource ID. Cloud also restricts it to its app and the matching adapter key;
+standalone and agent accounts use their own grants. Delegated credentials use
+their resolved access subject. Guests receive no implicit right and can enter
+only when the resource service grants them a right. Credential scopes remain
+in force.
+
+Queries run in the owning application. Discovery reaches them through Core
+with a dedicated signed token restricted to an app-access existence check;
+reusable credentials go only to Core. Core receives exactly the credential
+admitted by the source route, including an app session's administrator ceiling.
+Invocation and probe tokens cannot be exchanged for discovery probes by other
+apps. Local entry checks still accept authorized invocations. Cross-app
+discovery through Core requires an OAuth token with the existing `cloud`
+audience; an app-specific OAuth audience does not become Core authority.
+A background authority without the originating request credential can query
+local adapters but cannot discover resource-derived apps in other processes.
+Run cross-app discovery through Core with an admitted credential; an
+invocation handler cannot exchange its token for a broader app catalog. An unavailable app, failed query or expired
+credential denies access. Resource probes share a ten-second decision budget,
+run sequentially and are not retried. The adapter must observe `signal` and
+cancel outstanding work when it aborts.
+
+Cloud reuses an identical decision only within the originating request.
+There is no cache between requests: removing the last right or group
+membership removes visibility and entry on the next request. Existing live
+connections close within the existing one-minute revalidation window.
+Public-route exemptions keep their own authentication as described below.
 
 ## Preserve public routes
 
@@ -277,13 +384,20 @@ role, group, and credential state. Failed revalidation closes the connection.
 
 Use `canUseApp(authority, app)` or `usableAppIds(authority, apps)` from
 `@k2b/cloud/services` when a service needs the same app-entry decision as the
-platform. Pass the resolved request authority so credential limits remain in
-effect; continue to check the operation's resource permissions separately.
+platform. Pass `auth.getAuthority(c)` or `appAccessAuthority(c)` so credential
+limits and the request transport to Core remain available. Continue to check
+the operation's resource permissions separately.
 
 Inside a SQL transaction, pass its connection as the optional third argument:
 `canUseApp(authority, app, { db })` or `usableAppIds(authority, apps, { db })`.
-This keeps grant reads in the transaction and avoids waiting for a second
-pooled connection. Outside a transaction, omit the option. Framework-managed
+This keeps list grants and local adapter reads in the transaction and avoids
+waiting for a second pooled connection. A remote adapter runs in its owning
+application and reads committed rights there; it cannot share the caller's SQL
+transaction. The caller retains its transaction connection and locks during
+the bounded network check (up to ten seconds per app-access decision).
+Keep this cost in mind when calling the resolver from a transaction; moving
+authorization outside a guarded write would introduce a separate race.
+Outside a transaction, omit the option. Framework-managed
 invocation issuance carries its transaction through identity and access checks
 automatically.
 

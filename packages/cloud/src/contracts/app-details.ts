@@ -21,7 +21,7 @@ export const AppDetailsSchema = z.object({
   }),
   access: z.object({
     /** Null means Core has no current access declaration for an offline app. */
-    kind: z.enum(["grants", "signedIn", "noGuests", "roles", "legacy"]).nullable(),
+    kind: z.enum(["grants", "signedIn", "noGuests", "roles", "resources", "legacy"]).nullable(),
     roles: z.array(RoleSchema),
     grantCount: count.nullable(),
     platformPermissions: z.array(PlatformPermissionSchema),
