@@ -234,7 +234,9 @@ test("the detail page keeps access repair at its address and shows what the app 
           expect(text).toContain(de ? "Neu" : "New");
           expect(text).toContain(de ? "12 zugestellt · 1 wartet · 1 fehlgeschlagen" : "12 delivered · 1 waiting · 1 failed");
           expect(text).toContain(
-            de ? "Apps erhalten nur Dienstereignisse; Ressourcenereignisse gehen nur an Abos, hinter denen eine Person steht." : "Apps receive service events only; resource events go to subscriptions a person stands behind.",
+            de
+              ? "Apps erhalten nur Dienstereignisse; Ressourcenereignisse gehen nur an Abos, hinter denen eine Person steht."
+              : "Apps receive service events only; resource events go to subscriptions a person stands behind.",
           );
           expect(text).toContain(de ? "2 Abonnenten" : "2 subscribers");
           // Only an active subscription can deliver again; each button names its event.
