@@ -151,12 +151,16 @@ suite("App-PWA durable service", () => {
     let geoCall: ReturnType<typeof spyOn<typeof coreGeo, "autocompleteForAppPwa">>;
     let rate: ReturnType<typeof spyOn<typeof settings, "get">>;
     let plan: ReturnType<typeof spyOn<typeof geoSettings, "readGeoConfig">>;
+    const resetOwnerGeoBudget = () =>
+      sql.begin(async (tx) => {
+        await tx`DELETE FROM geo.shares WHERE subject=${`user:${ownerId}`}`;
+        await tx`DELETE FROM geo.usage WHERE subject=${`user:${ownerId}`}`;
+      });
     beforeAll(async () => {
       await allowed.setup();
     });
     beforeEach(async () => {
-      await sql`DELETE FROM geo.usage WHERE subject=${`user:${ownerId}`}`;
-      await sql`DELETE FROM geo.shares WHERE subject=${`user:${ownerId}`}`;
+      await resetOwnerGeoBudget();
       const geo = createGeoService({
         now: () => instant,
         config: async () => ({ ...geoTestConfig, personDailyCredits: 1 }),
@@ -174,10 +178,7 @@ suite("App-PWA durable service", () => {
       rate.mockRestore();
       plan.mockRestore();
     });
-    afterAll(async () => {
-      await sql`DELETE FROM geo.usage WHERE subject=${`user:${ownerId}`}`;
-      await sql`DELETE FROM geo.shares WHERE subject=${`user:${ownerId}`}`;
-    });
+    afterAll(resetOwnerGeoBudget);
     test("valid visit charges its owner, preserves provenance, audits via, and never renews idle time", async () => {
       const current = await visiting();
       const before = await idle(current.visit.id);
@@ -251,7 +252,7 @@ suite("App-PWA durable service", () => {
         allowed.coreQuery(ended.boot.credential, ended.visit.id, "address.autocomplete", { text: "Orle" }),
       ).rejects.toMatchObject({ code: "REVOKED" });
       // Reset this test's owner budget to exercise another valid device-mode request.
-      await sql`DELETE FROM geo.usage WHERE subject=${`user:${ownerId}`}`;
+      await resetOwnerGeoBudget();
       await allowed.coreQuery(ended.boot.credential, undefined, "address.autocomplete", { text: "Orle" });
       expect(geoCall.mock.calls[1]?.[1].actor.kind).toBe("device");
     });
