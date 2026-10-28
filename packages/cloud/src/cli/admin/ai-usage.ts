@@ -7,7 +7,7 @@ const filters = {
   range: flag.enum(AI_USAGE_RANGES, { default: "30d", description: "Response/run period" }),
   until: flag.string({ description: "Fixed ISO end time; reuse report.query.until across pages" }),
   userId: flag.string({ name: "user", description: "User UUID or unassigned" }),
-  modelProfileId: flag.string({ name: "model", description: "Model profile ID" }),
+  modelId: flag.string({ name: "model", description: "Model profile ID" }),
   providerModel: flag.string({ name: "provider-model", description: "Actual provider model" }),
   workflowId: flag.string({ name: "workflow", description: "Workflow definition UUID" }),
   workflowRunId: flag.string({ name: "workflow-run", description: "Workflow run UUID" }),
@@ -75,7 +75,7 @@ export const aiUsageCommands = [
               { key: "task" },
               { key: "status" },
               { key: "userLabel" },
-              { key: "modelProfileId" },
+              { key: "modelId" },
               { key: "cost" },
               { key: "unit" },
               { key: "error" },
@@ -85,7 +85,7 @@ export const aiUsageCommands = [
           ctx.table(report.feedback.items, [
             { key: "id" },
             { key: "userLabel" },
-            { key: "modelProfileId" },
+            { key: "modelId" },
             { key: "rating" },
             { key: "comment" },
           ]);
@@ -125,7 +125,7 @@ export const aiUsageCommands = [
   command("ai usage facets", {
     summary: "Find user IDs, model profiles, provider models, apps or tasks for filtering",
     flags: {
-      field: flag.enum(["userId", "modelProfileId", "providerModel", "appId", "task"] as const, { required: true }),
+      field: flag.enum(["userId", "modelId", "providerModel", "appId", "task"] as const, { required: true }),
       search: flag.string(),
       range: filters.range,
     },

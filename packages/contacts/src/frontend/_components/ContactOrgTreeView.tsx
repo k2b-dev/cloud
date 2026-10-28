@@ -67,7 +67,7 @@ export default function ContactOrgTreeView(props: Props) {
   return (
     <DetailPanel>
       <DetailPanel.Header
-        icon="ti ti-hierarchy"
+        kind={<span>{t().organization}</span>}
         title={t().orgTree}
         subtitle={t().hierarchyOfThisContact}
         actions={
@@ -78,7 +78,7 @@ export default function ContactOrgTreeView(props: Props) {
       />
       <DetailPanel.Body scrollPreserveKey="contacts-org-tree">
         <DetailPanel.Group label={t().organizationContext}>
-          <DetailPanel.Section title={t().hierarchy} icon="ti ti-sitemap" tone="accent">
+          <DetailPanel.Section title={t().hierarchy}>
             <ul class="flex flex-col gap-1">
               <ContactOrgTreeNode node={props.tree.root} selectedId={props.tree.selectedId} onSelect={props.onSelect} />
             </ul>

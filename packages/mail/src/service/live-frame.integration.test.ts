@@ -9,7 +9,6 @@ import {
   type RemoteFolder,
   unavailableProviderLimitSnapshot,
 } from "../contracts";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { attachProviderBinding, rediscoverProviderBinding } from "./bindings";
 import { imapSmtpConnector } from "./connectors";
@@ -76,7 +75,6 @@ suite("Mail frame writers invalidate open mailboxes", () => {
   let restore = () => {};
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-frame-${crypto.randomUUID()}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

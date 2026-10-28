@@ -4,6 +4,7 @@ import * as settingsCache from "@k2b/cloud/services/settings";
 import { SQL, sql } from "bun";
 import { testActor, testCall } from "../../test/files-call";
 import { app } from "../config";
+import * as maintenance from "../maintenance-schedule";
 import { readConfiguration, resetConfiguration, writeConfiguration } from "./configuration";
 
 function storedString(value: unknown): string {
@@ -20,6 +21,7 @@ const tx = Object.assign(new SQL("postgres://localhost/unused_test"), {
 let committed = false;
 beforeEach(() => {
   committed = false;
+  spyOn(maintenance, "requestHomeReconciliation").mockResolvedValue();
   spyOn(sql, "begin").mockImplementation(async (run) => {
     if (typeof run !== "function") throw new Error("Expected transaction callback");
     await run(tx);
@@ -39,7 +41,7 @@ const input = {
   activityRetentionDays: 365,
   url: "http://filegate.test",
   cloud: { ...area, autoCreate: false, autoArchive: true },
-  freeipa: { ...area, root: "freeipa" },
+  freeipa: { ...area, root: "freeipa", autoCreate: false },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 
@@ -58,10 +60,12 @@ test("unreadable configuration exposes disabled defaults and refuses a merge wit
 });
 
 test("a new token is a complete explicit replacement and needs no read", async () => {
+  const reconcile = spyOn(maintenance, "requestHomeReconciliation").mockResolvedValue();
   const read = spyOn(app.settings, "read").mockRejectedValue(new Error("Must not read before replacement"));
   const write = spyOn(settings, "set").mockResolvedValue();
   await writeConfiguration({ ...input, token: "new-token" }, call);
   expect(read).not.toHaveBeenCalled();
+  expect(reconcile).toHaveBeenCalledTimes(1);
   expect(write.mock.calls).toEqual([
     ["filesv2.configuration", JSON.stringify({ ...input, token: "new-token" }), tx, { replaceUnreadable: true }],
   ]);
@@ -76,17 +80,36 @@ test("token retention uses the safe default and maps a concurrent unreadable row
 });
 
 test("reset deletes the override without reading it", async () => {
+  const reconcile = spyOn(maintenance, "requestHomeReconciliation").mockResolvedValue();
   const read = spyOn(app.settings, "read").mockRejectedValue(new Error("Must not read"));
   const remove = spyOn(settings, "remove").mockResolvedValue();
   await resetConfiguration(call);
   expect(remove).toHaveBeenCalledWith("filesv2.configuration", tx);
   expect(read).not.toHaveBeenCalled();
+  expect(reconcile).toHaveBeenCalledTimes(1);
 });
 
 test("older stored configuration reads with 365 days of history retention", async () => {
   const { activityRetentionDays: _retention, ...older } = input;
   spyOn(app.settings, "read").mockResolvedValue({ stored: "readable", value: JSON.stringify({ ...older, token: "saved-token" }) });
   expect((await readConfiguration()).activityRetentionDays).toBe(365);
+});
+test("older Files settings default FreeIPA automatic creation off independently of Cloud", async () => {
+  const { autoCreate: _autoCreate, ...freeipa } = input.freeipa;
+  spyOn(app.settings, "read").mockResolvedValue({
+    stored: "readable",
+    value: JSON.stringify({ ...input, cloud: { ...input.cloud, autoCreate: true }, freeipa, token: "saved-token" }),
+  });
+  expect(await readConfiguration()).toMatchObject({ cloud: { autoCreate: true }, freeipa: { autoCreate: false } });
+});
+test("FreeIPA automatic creation round-trips in the existing Files settings and requests reconciliation", async () => {
+  const write = spyOn(settings, "set").mockResolvedValue();
+  await writeConfiguration({ ...input, freeipa: { ...input.freeipa, autoCreate: true }, token: "replacement" }, call);
+  const stored = storedString(write.mock.calls[0]![1]);
+  expect(write.mock.calls[0]![0]).toBe("filesv2.configuration");
+  spyOn(app.settings, "read").mockResolvedValue({ stored: "readable", value: stored });
+  expect(await readConfiguration()).toMatchObject({ cloud: { autoCreate: false }, freeipa: { autoCreate: true } });
+  expect(maintenance.requestHomeReconciliation).toHaveBeenCalledTimes(1);
 });
 test("history retention round-trips through configuration serialization", async () => {
   const write = spyOn(settings, "set").mockResolvedValue();

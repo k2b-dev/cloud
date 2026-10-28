@@ -99,7 +99,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
       autoCreate: false,
       autoArchive: true,
     },
-    freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "home", groups: "groups", archive: "archive" },
+    freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix: "", homes: "home", groups: "groups", archive: "archive" },
     collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
   };
   const transport: typeof fetch = Object.assign(

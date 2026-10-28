@@ -8,11 +8,11 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrate } from "../migrate";
-import type { ChatContext } from "../service/access";
+import type { ChatRequestContext } from "../request-context";
 import { CreateOutcomeSchema } from "../service/contracts";
 import chatApi from ".";
 
-export type Person = { id: string; name: string; headers: Record<string, string>; context: ChatContext };
+export type Person = { id: string; name: string; headers: Record<string, string>; context: ChatRequestContext };
 export const messageFixtures = () => {
   const server = new Hono<AuthContext>().route("/api/chat", chatApi);
   const users: string[] = [];
@@ -37,11 +37,14 @@ export const messageFixtures = () => {
     users.push(row.id);
     const user = await accounts.users.get({ id: row.id });
     if (!user) throw new Error("Missing fixture identity");
+    const cookie = `session_token=${await createTestSession(row.id)}`;
     return {
       ...row,
       name,
-      headers: { cookie: `session_token=${await createTestSession(row.id)}` },
+      headers: { cookie },
       context: {
+        caller: { cookie },
+        credentialPrincipal: `user:${row.id}`,
         actor: { kind: "user", user },
         accessSubject: { type: "user", userId: row.id },
         locale: "en",
@@ -121,7 +124,7 @@ export const messageFixtures = () => {
         { access_id: string }[]
       >`SELECT access_id FROM chat.conversation_access ca JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ${shortId}`;
       accessIds.push(...rows.map((row) => row.access_id));
-      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key IN (${"c:" + shortId}, ${"l:" + shortId})`;
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND (ordering_key IN (${"c:" + shortId}, ${"l:" + shortId}) OR ordering_key LIKE ${"t:" + shortId + ":%"} OR ordering_key LIKE ${"s:" + shortId + ":%"})`;
       await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${shortId}`;
       await sql`DELETE FROM chat.conversations WHERE short_id = ${shortId}`;
     }

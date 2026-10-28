@@ -48,13 +48,12 @@ test("the authorized route snapshot carries authors into soft-navigation detail"
   const author = { kind: "user" as const, id: base.userId, displayName: "Jana Berger", avatarHash: "avatar" };
   const authors = { createdBy: author, lastEditedBy: author };
   const noteId = "33333333-3333-4333-8333-333333333333";
-  const note = spyOn(notebooksService.note, "getWithContentByShortId").mockResolvedValue({
+  const note = spyOn(notebooksService.note, "getByShortId").mockResolvedValue({
     id: noteId,
     shortId: "note01",
     notebookId: base.notebookId,
     title: "Test",
     contentMd: "# Test",
-    yjsSnapshot: null,
     historyIncomplete: false,
     lockedAt: null,
     parentId: null,

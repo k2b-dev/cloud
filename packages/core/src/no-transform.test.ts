@@ -22,6 +22,8 @@ describe("Core compression boundaries", () => {
     "/admin/settings?tab=ai-skills",
     "/admin/settings?tab=ai-jobs",
     "/admin/settings?tab=ai-providers",
+    "/admin/ai",
+    "/admin/ai?sec=providers&p=example",
     "/admin/settings/__new_route__",
   ]) {
     test(`${path} opts out before authentication`, async () => {
@@ -44,5 +46,13 @@ test("profile, access and notification settings pages stay eligible for compress
     const response = await pages.request(path);
     expect(response.status).toBeLessThan(500);
     expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
+  }
+});
+
+// A page that only a browser fixture mounts is unreachable in Cloud: the real router sends the sign-in redirect, not a 404.
+test("every admin page the sidebar links is mounted in the pages router", async () => {
+  for (const path of ["/admin", "/admin/ai", "/admin/settings", "/admin/outgoing-mail", "/admin/places-and-maps", "/admin/apps"]) {
+    const response = await pages.request(path);
+    expect({ path, status: response.status }).toEqual({ path, status: 302 });
   }
 });

@@ -11,6 +11,12 @@ describe("conversation keep protections", () => {
     for (const flags of [[], ["seen", "flagged"], ["\\Seen", "\\Flagged"], ["not-deleted"], null, "\\Deleted"])
       expect(containsDeletedFlag(flags)).toBeFalse();
   });
+  test("localizes the Cloud-admin-only release refusal", () => {
+    expect(
+      localizeMailError({ code: "FORBIDDEN", status: 403, message: "Only a Cloud administrator can stop keeping a conversation" }, "de")
+        .message,
+    ).toBe("Nur eine Cloud-Administratorin oder ein Cloud-Administrator kann die Aufbewahrung aufheben.");
+  });
   test("preserves stable conflicts in localized errors and workflow failures", () => {
     const german = {
       CONVERSATION_KEPT:

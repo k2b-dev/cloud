@@ -40,9 +40,8 @@ describe("the Links graph of a 20,000-page notebook", () => {
       const { value: view, ms } = await timed(() => buildNotebookGraphView({ notebookId: notebook.id, noteId: around.id }));
       console.info(JSON.stringify({ around: around.shortId, nodes: view.nodes.length, edges: view.edges.length, ms: Math.round(ms) }));
       expect(view.scope).toEqual({ around: around.shortId, total: 20_000 });
-      // The pages around it plus their way up the tree, never the notebook.
-      expect(view.nodes.length).toBeLessThanOrEqual(GRAPH_AROUND_NOTES + 5 * GRAPH_AROUND_NOTES);
-      expect(view.nodes.length).toBeLessThan(2500);
+      // The pages around it with their ways up the tree, never more than the bound.
+      expect(view.nodes.length).toBeLessThanOrEqual(GRAPH_AROUND_NOTES);
       expect(view.nodes.some((node) => node.id === around.shortId)).toBe(true);
       const ids = new Set(view.nodes.map((node) => node.id));
       expect(view.edges.every((edge) => ids.has(edge.source) && ids.has(edge.target))).toBe(true);

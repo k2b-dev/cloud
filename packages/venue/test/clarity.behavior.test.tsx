@@ -343,6 +343,7 @@ describe("Venue clarity behavior", () => {
   });
 
   test("free time starts on a quarter hour and adds itself from the dialog footer", async () => {
+    setSystemTime(new Date("2026-09-28T10:07:12.345Z"));
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     const bodies: { startsAt: string; endsAt: string }[] = [];
@@ -362,7 +363,7 @@ describe("Venue clarity behavior", () => {
       add.click();
       await flush();
       const [body] = bodies;
-      expect(new Date(body!.startsAt).getTime() % (15 * 60_000)).toBe(0);
+      expect(new Date(body!.startsAt).toISOString()).toBe("2026-09-28T10:15:00.000Z");
       expect(new Date(body!.endsAt).getTime() - new Date(body!.startsAt).getTime()).toBe(2 * 60 * 60_000);
       expect(closes).toEqual([true]);
     } finally {

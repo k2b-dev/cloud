@@ -28,7 +28,7 @@ export const ConfigurationSchema = z.object({
   activityRetentionDays: z.number().int().min(30).max(3650).default(365),
   url: z.string().url().or(z.literal("")),
   cloud: AreaConfigurationSchema.extend({ autoCreate: z.boolean().default(false), autoArchive: z.boolean().default(true) }),
-  freeipa: AreaConfigurationSchema,
+  freeipa: AreaConfigurationSchema.extend({ autoCreate: z.boolean().default(false) }),
   collabora: CollaboraConfigurationSchema.default({ url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" }),
 });
 export const ConfigurationInputSchema = ConfigurationSchema.extend({ token: z.string().max(4096).optional() });
@@ -276,6 +276,7 @@ export type AdminResult = {
   items: InventoryEntry[];
   next: string | null;
   issue: string | null;
+  provisioning?: HomeProvisioningOverview;
 };
 export const BrowseOptionsSchema = z.object({
   sort: z.enum(["name", "modified", "size"]).default("name"),
@@ -298,6 +299,7 @@ export const SearchQuerySchema = BrowseQuerySchema.extend({
   scope: z.enum(["folder", "tree"]).default("tree"),
 });
 export const AdminQuerySchema = z.object({
+  view: z.enum(["overview", "directories", "archive", "settings", "shares", "templates"]).optional(),
   area: AreaSchema.default("cloud"),
   kind: KindSchema.default("users"),
   includeEntries: z.enum(["true", "false"]).default("true"),
@@ -305,6 +307,50 @@ export const AdminQuerySchema = z.object({
   q: z.string().max(200).optional(),
   status: InventoryStateSchema.optional(),
 });
+export const HomeProvisioningStateSchema = z.enum(["not_configured", "auto_create_off", "posix_incomplete", "done", "failed", "inactive"]);
+export type HomeProvisioningState = z.infer<typeof HomeProvisioningStateSchema>;
+export const HomeProvisioningQuerySchema = z.object({
+  area: AreaSchema.optional(),
+  after: z.uuid().optional(),
+  state: HomeProvisioningStateSchema.optional(),
+});
+export const HomeProvisioningStatusSchema = z.object({
+  userId: z.uuid(),
+  username: z.string().nullable(),
+  area: AreaSchema,
+  state: HomeProvisioningStateSchema,
+  operationId: z.uuid().nullable(),
+  eventId: z.uuid().nullable(),
+  errorCode: z.string().nullable(),
+  updatedAt: z.iso.datetime(),
+});
+export type HomeProvisioningStatus = z.infer<typeof HomeProvisioningStatusSchema>;
+export const HomeReconciliationResultSchema = z.object({
+  processed: z.number().int().nonnegative(),
+  done: z.number().int().nonnegative(),
+  pending: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+export type HomeReconciliationResult = z.infer<typeof HomeReconciliationResultSchema>;
+export const HomeProvisioningResultSchema = z.object({
+  items: z.array(HomeProvisioningStatusSchema).max(50),
+  nextCursor: z.uuid().nullable(),
+  counts: z.object({
+    cloud: z.partialRecord(HomeProvisioningStateSchema, z.number().int().nonnegative()),
+    freeipa: z.partialRecord(HomeProvisioningStateSchema, z.number().int().nonnegative()),
+  }),
+  reconcile: z.object({
+    lastRunAt: z.iso.datetime().nullable(),
+    lastResult: HomeReconciliationResultSchema.nullable(),
+    running: z.boolean(),
+  }),
+});
+export type HomeProvisioningResult = z.infer<typeof HomeProvisioningResultSchema>;
+export const HomeProvisioningOverviewSchema = HomeProvisioningResultSchema.extend({
+  area: AreaSchema,
+  counts: z.partialRecord(HomeProvisioningStateSchema, z.number().int().nonnegative()),
+});
+export type HomeProvisioningOverview = z.infer<typeof HomeProvisioningOverviewSchema>;
 export const AdoptInputSchema = z.object({ area: AreaSchema, kind: KindSchema, identityId: z.string().uuid() });
 export const ErrorSchema = z.object({ code: z.string(), message: z.string() });
 

@@ -43,6 +43,9 @@ export const detailMessages = i18n.define({
 
       // Detail panel sections
       overview: "Overview",
+      kindContact: "Contact",
+      properties: "Properties",
+      moreAboutContact: "More about this contact",
       quickEdit: "Quick edit",
       name: "Name",
       company: "Company",
@@ -236,6 +239,9 @@ export const detailMessages = i18n.define({
 
       // Detail panel sections
       overview: "Überblick",
+      kindContact: "Kontakt",
+      properties: "Eigenschaften",
+      moreAboutContact: "Mehr zu diesem Kontakt",
       quickEdit: "Schnell bearbeiten",
       name: "Name",
       company: "Firma",

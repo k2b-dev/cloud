@@ -1,4 +1,4 @@
-import { CloudAiViewSummarySchema } from "@k2b/cloud/ai/browser";
+import { CloudAiViewSummarySchema } from "@k2b/cloud/ai/app-frame";
 import { computeDomain, niceStep } from "@k2b/stdlib";
 import { z } from "zod";
 import type { RuntimeContext } from "./cloud";

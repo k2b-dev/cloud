@@ -22,6 +22,7 @@ const catalogs = {
   Signature: (await import("../inputs/signature-messages")).checkSignatureMessages,
   FileBrowser: (await import("../content/file-browser-messages")).checkFileBrowserMessages,
   FileView: (await import("../content/file-view-messages")).checkFileViewMessages,
+  FileList: (await import("../content/file-list-messages")).checkFileListMessages,
   FileInput: (await import("../inputs/file-input-messages")).checkFileInputMessages,
   DragAndDrop: (await import("../actions/drag-and-drop-messages")).checkDragAndDropMessages,
   FileDrop: (await import("../inputs/file-drop-messages")).checkFileDropMessages,
