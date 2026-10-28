@@ -136,7 +136,7 @@ export const app = defineApp({
   openapi: "/api/openapi.json",
   // Core owns the platform's top-level paths plus the catch-all "/" so
   // unmatched URLs fall through to its 404 page. Per-app admin pages
-  // (`/admin/spaces`, `/admin/gateway`, …) are owned by their respective
+  // (`/admin/spaces`, `/admin/observability`, …) are owned by their respective
   // apps and have their own longer-prefix entries in the trie.
   routes: [
     "/",
