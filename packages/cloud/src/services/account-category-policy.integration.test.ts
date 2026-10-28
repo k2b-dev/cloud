@@ -23,6 +23,7 @@ import { session } from "./session";
 import { createTestBrowserSignIn, createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
 import { encryptValue } from "./settings/crypto";
+import { preserveTestSettings } from "./settings/settings.test-fixture";
 
 const suite = suiteFor("database", "valkey");
 const policyKeys = ["guest", "login", "freeipa"]
@@ -45,6 +46,7 @@ const sender: AuthNotificationSender = {
 };
 
 suite("isolated account category policy", () => {
+  preserveTestSettings(["app.url", "user.allow_self_registration", ...policyKeys]);
   useTestAppRegistry(["mail", "spaces"]);
   let server: Server<unknown>;
   const user = async (provider = "local", profile = "user") => {

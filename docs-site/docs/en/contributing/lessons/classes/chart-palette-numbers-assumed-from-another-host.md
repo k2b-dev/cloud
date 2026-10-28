@@ -1,0 +1,1 @@
+| Chart palette numbers assumed from another host | An application uses standalone UI palette indices while its host overrides those indices, so the actual chart has different colors. | Pulse overview browser tests read rendered sparkline strokes against the Cloud palette. Application composition uses the host palette through public Chart wrapper styles. |

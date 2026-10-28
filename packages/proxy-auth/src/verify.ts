@@ -43,7 +43,7 @@ export const forwardedRequestUrl = (headers: Headers, fallback: string): string 
  * - 302 = not authenticated, redirect to login
  * - 403 = authenticated but not authorized for this client
  */
-const app = new Hono<AuthContext>().get("/verify/:clientId", auth.requireRole("*"), async (c) => {
+const app = new Hono<AuthContext>().get("/verify/:clientId", auth.requireRole("*"), auth.requireOAuthScope("write", "admin"), async (c) => {
   const actor = c.get("actor") as AuthContext["Variables"]["actor"] | undefined;
   const user = getUserBackedActor(c);
   const clientId = c.req.param("clientId");

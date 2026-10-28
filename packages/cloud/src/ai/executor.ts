@@ -7,10 +7,11 @@ import { CapabilityActionReviewDataSchema, capabilityActionPolicy } from "../con
 import type { AccessSubject, RequestActor } from "../server";
 import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
-import { logger } from "../services/logging";
+import { logger, trace } from "../services/logging";
 import { getMandate } from "../services/mandates";
 import type { MandatePolicyV1 } from "../services/mandates/policy";
 import { coreSettings } from "../services/settings/api";
+import type { AiModelRequest } from "../shared/ai-models";
 import { normalizeLocale } from "../shared/locale";
 import { type AiActionCheck, type AiStoredActionReview, storedActionReview } from "./action-review";
 import {
@@ -99,6 +100,7 @@ import {
   AiTurnFailure,
   type AiTurnFailureInfo,
   type AiTurnFailureReason,
+  aiIssueDiagnostic,
   aiTurnFailureFromThrown,
   aiTurnReasonFromThrown,
   rememberProviderErrors,
@@ -702,7 +704,7 @@ type MaterializedChatConfig = {
   tools: AiRuntimeTool[];
   toolApprovalContext?: AiToolApprovalContext;
   modelPolicy: AiChatTurnRunConfig["modelPolicy"];
-  requestedModelId?: string;
+  model?: AiModelRequest;
 };
 
 const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortSignal, turnId: string): Promise<MaterializedChatConfig> => {
@@ -722,7 +724,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
         : [],
     toolApprovalContext: config.toolApprovalContext,
     modelPolicy: config.modelPolicy,
-    requestedModelId: config.requestedModelId,
+    model: config.model,
   };
 };
 
@@ -752,7 +754,7 @@ export class AiTurnExecutor {
     const runConfig = claim.runConfig;
     if (!runConfig) {
       pipeline.seedBaseline(claim.liveBlocks ?? []);
-      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitTurnStarted(claim.turn.modelId ?? "");
       await pipeline.emitBaseline();
       await this.finalize(
         conversationId,
@@ -767,7 +769,7 @@ export class AiTurnExecutor {
 
     if (runConfig.kind === "compact") {
       pipeline.seedBaseline(claim.liveBlocks ?? []);
-      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitTurnStarted(claim.turn.modelId ?? "");
       await pipeline.emitBaseline();
       await this.runCompaction(conversationId, turnId, pipeline, runConfig, signal);
       return;
@@ -778,7 +780,7 @@ export class AiTurnExecutor {
       attemptState = await loadChatAttemptState(conversationId, turnId);
     } catch (error) {
       pipeline.seedBaseline(claim.liveBlocks ?? []);
-      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitTurnStarted(claim.turn.modelId ?? "");
       await pipeline.emitBaseline();
       await this.finalize(
         conversationId,
@@ -792,15 +794,15 @@ export class AiTurnExecutor {
       return;
     }
     pipeline.seedBaseline(rebuildAttemptBaseline(attemptState));
-    await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+    await pipeline.emitTurnStarted(claim.turn.modelId ?? "");
     await pipeline.emitBaseline();
     await this.runChat(conversationId, turnId, claim, runConfig, pipeline, signal, false, attemptState);
   }
 
   /**
    * Ends the turn. A failure stores its reason twice: as a code on the turn's last message, which the chat words in
-   * the reader's language, and as text in the turn's language for readers without the chat view. The raw cause, such
-   * as a provider's own message, goes only to the log. A failed compaction left the chat as it was, so its text names
+   * the reader's language, and as text in the turn's language for readers without the chat view. The diagnostic cause,
+   * with provider and loop issues reduced to fixed text, goes only to the log. A failed compaction left the chat as it was, so its text names
    * only the reason.
    */
   private async finalize(
@@ -888,9 +890,6 @@ export class AiTurnExecutor {
         }
         resolvedProjectId = project.id;
       }
-      if (isAssistantChatTurn(config) && claim.turn.modelProfileId) {
-        await aiModelAccess.assertAllowed(claim.turn.modelProfileId, accessSubjectForActor(material.actor));
-      }
       validated = await (this.config.validateTurn ?? validateAiTurnRequest)({
         input: config.input,
         hasImageAttachments: config.files?.attached.some((file) => isAiImageMediaType(file.mediaType)),
@@ -898,12 +897,10 @@ export class AiTurnExecutor {
           material.tools.some((tool) => tool.def.name === "view_image") &&
           (await isAiVisionModelConfigured(material.modelPolicy?.allowedDataBoundaries)),
         modelPolicy: material.modelPolicy,
-        requestedModelId: isAssistantChatTurn(config)
-          ? (claim.turn.modelProfileId ?? material.requestedModelId)
-          : material.requestedModelId,
+        model: claim.turn.modelId ? { id: claim.turn.modelId } : material.model,
       });
       if (isAssistantChatTurn(config)) {
-        await aiModelAccess.assertAllowed(validated.resolved.profile.id, accessSubjectForActor(material.actor));
+        await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(material.actor));
       }
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
@@ -919,6 +916,11 @@ export class AiTurnExecutor {
       return;
     }
     const { settings, resolved } = validated;
+    if (config.modelResolved?.id === resolved.profile.id) resolved.model = config.modelResolved;
+    await trace.record({
+      event: "model.resolved",
+      attributes: { ...resolved.model, resolvedClass: resolved.model.class, turnId, conversationId },
+    });
 
     const defaultToolSource = config.toolSource?.kind === "default" ? config.toolSource : null;
     const toolActor =
@@ -1186,7 +1188,7 @@ export class AiTurnExecutor {
         await pipeline.emitMessage(message);
       },
       conversationId,
-      modelProfileId: resolved.profile.id,
+      modelId: resolved.profile.id,
       turnId,
       leaseOwner: this.config.leaseOwner,
       turnInput,
@@ -1590,7 +1592,9 @@ export class AiTurnExecutor {
       provider: acceptCanonicalToolNames(
         retryTransientProviderErrors(
           rememberProviderErrors(
-            answerOpenToolCalls(assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId)),
+            answerOpenToolCalls(
+              assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId, resolved.model),
+            ),
             remember,
           ),
           {
@@ -1658,7 +1662,7 @@ export class AiTurnExecutor {
         : createCloudCompactFn({
             conversationId,
             turnId,
-            modelProfileId: resolved.profile.id,
+            modelId: resolved.profile.id,
             additionalInstructions: settings.compactionInstructions,
             maxOutputTokens: resolved.profile.maxOutputTokens,
             signal: abortController.signal,
@@ -1885,8 +1889,9 @@ export class AiTurnExecutor {
           if (!abortController.signal.aborted && isToolRound(event.message)) noteToolRound();
         } else if (event.type === "issue") {
           if (event.issue.kind === "malformed_tool_call" && event.issue.callId) malformedCallIds.add(event.issue.callId);
-          lastIssueMessage = event.issue.message;
-          log.warn("AI turn issue", { conversationId, turnId, kind: event.issue.kind, message: event.issue.message });
+          const diagnostic = aiIssueDiagnostic(event.issue);
+          lastIssueMessage = diagnostic.message;
+          log.warn("AI turn issue", { conversationId, turnId, ...diagnostic });
         } else if (event.type === "loop_end") {
           const stoppedAfterFailure =
             event.reason === "stop" &&
@@ -2218,7 +2223,7 @@ export class AiTurnExecutor {
       validated = await (this.config.validateTurn ?? validateAiTurnRequest)({
         input: "",
         modelPolicy: config.modelPolicy,
-        requestedModelId: config.requestedModelId,
+        model: config.model,
       });
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
@@ -2226,10 +2231,15 @@ export class AiTurnExecutor {
       return;
     }
     const { settings, resolved } = validated;
+    if (config.modelResolved?.id === resolved.profile.id) resolved.model = config.modelResolved;
+    await trace.record({
+      event: "model.resolved",
+      attributes: { ...resolved.model, resolvedClass: resolved.model.class, turnId, conversationId },
+    });
 
     const store = aiConversations.createSessionStore({
       conversationId,
-      modelProfileId: resolved.profile.id,
+      modelId: resolved.profile.id,
       turnId,
       leaseOwner: this.config.leaseOwner,
     });
@@ -2242,6 +2252,7 @@ export class AiTurnExecutor {
         inferenceProvider(resolved.provider, resolved.profile, {
           kind: "background",
           task: "chat-compaction",
+          modelRef: resolved.model,
           conversationId,
           turnId,
           appId: "core",
@@ -2255,7 +2266,7 @@ export class AiTurnExecutor {
       compact: createCloudCompactFn({
         conversationId,
         turnId,
-        modelProfileId: resolved.profile.id,
+        modelId: resolved.profile.id,
         additionalInstructions: settings.compactionInstructions,
         maxOutputTokens: resolved.profile.maxOutputTokens,
         signal: abortController.signal,
@@ -2274,7 +2285,7 @@ export class AiTurnExecutor {
       for await (const event of loop as AsyncIterable<CompactEvent>) {
         if (event.type === "compaction_start") await pipeline.applyCompaction("running");
         else if (event.type === "compaction_end") await pipeline.applyCompaction("completed");
-        else if (event.type === "issue") issueMessage = event.issue.message;
+        else if (event.type === "issue") issueMessage = aiIssueDiagnostic(event.issue).message;
         else if (event.type === "loop_end") {
           status = event.reason === "stop" ? "completed" : event.reason === "aborted" ? "aborted" : "failed";
           await pipeline.applyCompaction(status === "failed" ? "failed" : "completed", event.result);
@@ -2428,10 +2439,10 @@ class StreamPipeline {
     await this.maybeSnapshot();
   }
 
-  async emitTurnStarted(modelProfileId: string): Promise<void> {
+  async emitTurnStarted(modelId: string): Promise<void> {
     const seq = this.nextSeq();
     await this.publish(
-      this.envelope({ type: "turn_started" as const, seq, modelProfileId, providerModel: "", blocks: this.blocks }) as AiWireEvent,
+      this.envelope({ type: "turn_started" as const, seq, modelId, providerModel: "", blocks: this.blocks }) as AiWireEvent,
     );
   }
 

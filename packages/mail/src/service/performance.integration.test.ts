@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { encryptSecret } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
 import { getConversationViewCounts, listConversations } from "./messages";
@@ -28,7 +27,6 @@ suite("mail large-mailbox performance", () => {
   let context: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-perf-${suffix}`}, 'local', 'user', 'Mail Performance Test', true)

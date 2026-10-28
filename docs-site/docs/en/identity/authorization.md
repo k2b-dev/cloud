@@ -580,8 +580,9 @@ Public selection requires `allowPublic`. `PrincipalPicker` leaves service-accoun
 kinds and status unrestricted unless `serviceAccountKinds` or
 `serviceAccountStatus` is supplied. `PermissionEditor` forwards both options
 and defaults grant selection to active accounts; existing grant rows remain
-visible. Use the filters to match the resource's accepted recipients. They
-never widen directory visibility. This picker grants no access itself.
+visible. Use the filters to match the resource's accepted recipients. `serviceAccountFilter` narrows the offered service accounts further on the
+client, for example to accounts bound to this resource. They never widen
+directory visibility; the service still checks every assignment. This picker grants no access itself.
 
 ### Keep the editor mounted across refetches
 

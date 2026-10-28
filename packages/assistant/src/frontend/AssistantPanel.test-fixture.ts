@@ -1,16 +1,69 @@
-import type { AiConversation, AiPublicModelProfile, AiStoredMessage } from "@k2b/cloud/ai";
+import type { AiConversation, AiPeopleModels, AiStoredMessage } from "@k2b/cloud/ai";
 
 const now = "2026-10-21T12:00:00.000Z";
-const models: AiPublicModelProfile[] = [
-  {
-    id: "standard",
-    label: "Standard",
-    provider: "ollama",
-    model: "standard",
-    capabilities: ["streaming", "vision"],
-    dataBoundary: "private",
-  },
+const models: AiPeopleModels["options"] = [
+  { id: "standard", label: "Standard", description: "", icon: { kind: "mark", text: "AI", color: "0" }, classes: ["balanced"] },
 ];
+
+/** The approved AI area prototype's catalog: four classes and two models outside them; `?models=v9`. */
+const classModels = (state: string | null): Pick<AiPeopleModels, "classes" | "options"> => {
+  const mark = (text: string, color: string) => ({ kind: "mark" as const, text, color });
+  const budget = { code: "budget_exhausted" as const, resetsAt: "2026-11-02T00:00:00.000Z" };
+  const options: AiPeopleModels["options"] = [
+    {
+      id: "mistral-small",
+      label: "Mistral Small",
+      description: "Kurze Antworten, schnell",
+      icon: mark("CO", "#0f766e"),
+      classes: ["fast"],
+    },
+    {
+      id: "gpt-oss-120b",
+      label: "GPT-OSS",
+      variantLabel: "Ausgewogen",
+      description: "Für die meisten Aufgaben",
+      icon: mark("CO", "#0f766e"),
+      classes: ["balanced"],
+    },
+    {
+      id: "gpt-oss-120b:gruendlich",
+      label: "GPT-OSS",
+      variantLabel: "Gründlich",
+      description: "Für komplexe Aufgaben",
+      icon: mark("CO", "#0f766e"),
+      classes: ["thorough"],
+    },
+    {
+      id: "claude:maximal",
+      label: "Claude",
+      variantLabel: "Maximal",
+      description: "Lange Texte und Code",
+      icon: mark("OR", "#6d28d9"),
+      classes: ["maximum"],
+      ...(state === "budget" ? { unavailable: budget } : {}),
+    },
+    { id: "gemini-flash", label: "Gemini Flash", description: "Schnell bei Bildern", icon: mark("OR", "#6d28d9"), classes: [] },
+    {
+      id: "qwen",
+      label: "Qwen",
+      variantLabel: "Gründlich",
+      description: "Wenn Inhalte im Haus bleiben sollen",
+      icon: mark("RE", "#475569"),
+      classes: [],
+    },
+  ];
+  const classes: AiPeopleModels["classes"] = [
+    { class: "fast", variantId: "mistral-small" },
+    { class: "balanced", variantId: "gpt-oss-120b" },
+    { class: "thorough", variantId: "gpt-oss-120b:gruendlich" },
+    ...(state === "unassigned"
+      ? []
+      : [{ class: "maximum" as const, variantId: "claude:maximal", ...(state === "budget" ? { unavailable: budget } : {}) }]),
+  ];
+  if (state === "empty") return { classes: [], options: [] };
+  return { classes, options };
+};
+
 const conversation = (id: string): AiConversation => ({
   id,
   shortId: id,
@@ -80,7 +133,7 @@ export function assistantPanelFixture() {
           seq: 1,
           status: "running" as const,
           blocks: [],
-          modelProfileId: "standard",
+          modelId: "standard",
           createdAt: now,
         }
       : null,
@@ -93,9 +146,21 @@ export function assistantPanelFixture() {
       embedded: url.pathname.includes("/panel"),
       userId: "fixture-user",
       cloudUrl: url.origin,
-      status: { ok: true, enabled: true, defaultModelId: "standard", visionModelConfigured: false, error: null, models },
+      status: {
+        ok: true,
+        enabled: true,
+        status: "ok" as const,
+        selection:
+          url.searchParams.get("models") === "v9" && url.searchParams.get("state") === "budget" ? { class: "maximum" as const } : null,
+        effectiveDefault: { class: "balanced" as const },
+        classes: [],
+        visionModelConfigured: false,
+        error: null,
+        options: models,
+        ...(url.searchParams.get("models") === "v9" ? classModels(url.searchParams.get("state")) : {}),
+      },
       models,
-      lastModelId: "standard",
+      selection: null,
       timeZone: "UTC",
       renderedAt: now,
       initialLiveCursor: "s6t.cloud-live-core.0",
@@ -199,7 +264,7 @@ export function assistantPanelFixture() {
         kind: "message",
         message: { role: "user", content: chat.draft.content.filter((part) => part.type === "text") },
         loopId: `Turn${seq}`,
-        modelProfileId: "standard",
+        modelId: "standard",
         providerModel: "standard",
         usage: null,
         stopReason: null,
@@ -224,7 +289,7 @@ export function assistantPanelFixture() {
         lostSend = false;
         return new Response("Lost turn response", { status: 502 });
       }
-      return Response.json({ message, turn: { id: message.loopId, modelProfileId: "standard" } });
+      return Response.json({ message, turn: { id: message.loopId, modelId: "standard" } });
     }
     if (suffix.startsWith("/submission/")) {
       const revision = Number(suffix.split("/").at(-1));
@@ -241,6 +306,28 @@ export function assistantPanelFixture() {
       chat.title = title;
       conversations.set(id, chat);
       return chat;
+    },
+    /** One earlier question and answer, so the chat opens as an ongoing conversation instead of the empty start. */
+    addExchange: (id: string) => {
+      const message = (seq: number, role: "user" | "assistant", text: string): AiStoredMessage => ({
+        id: `Msg${seq}`,
+        shortId: `Msg${seq}`,
+        conversationId: id,
+        seq,
+        kind: "message",
+        message: { role, content: [{ type: "text", text }] },
+        loopId: "Turn1",
+        modelId: "standard",
+        providerModel: "standard",
+        usage: null,
+        stopReason: null,
+        loopAggregate: null,
+        loopDoneReason: null,
+        compactedAt: null,
+        meta: null,
+        createdAt: now,
+      });
+      messages.set(id, [message(1, "user", "What is open in the project plan?"), message(2, "assistant", "Two review steps are open.")]);
     },
     run: (id: string) => {
       running.add(id);

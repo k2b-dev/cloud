@@ -90,6 +90,14 @@ Choose **Details** in the mailbox head to open team context, local tags, ownersh
 
 Next to a composer, the conversation history contains only messages. Operational activity does not distract you while you write.
 
+## Choose your inbox view {icon="layout-grid"}
+
+Use **View** in a mailbox to choose how its list and reader appear. On large screens, **Automatic** shows columns until you open a conversation, then shows the list beside the reader. You can also keep **Columns** or **List + reader**. On a phone, choose **Compact** or **Detailed**.
+
+Mail remembers each choice for you and this mailbox, separately for phones and large screens. A choice on one phone applies on your other phones too. Without a saved choice, Mail uses Automatic on large screens and Compact on phones. Administrators do not set your default.
+
+**Done today** counts the conversations you can see that became done during the current day in Cloud's time zone. Each conversation counts once, even if reopened. The automation count uses the actor of its latest completion today.
+
 ## Answer calendar invitations {icon="calendar-event"}
 
 Mail recognizes `.ics` and `text/calendar` attachments up to a size limit, but **Spaces remains the calendar**. Expand an invitation to see its organizer, schedule, location, and current status.

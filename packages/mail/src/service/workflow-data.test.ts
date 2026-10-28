@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { extractMessageProtocolFacts } from "./message-protocol";
 import type { MailWorkflowTargetSnapshot } from "./workflow-data";
 import { getWorkflowSnapshot, getWorkflowSnapshots, mailWorkflowEventContext, normalizeWorkflowKeywords } from "./workflow-data";
 import { mailWorkflowMessagePrecondition } from "./workflow-message-preconditions";
@@ -69,7 +70,7 @@ test("hydrated snapshot contexts omit bodies and preserve the view's own xid and
       attachments: [],
       internal_date: "2026-10-01T08:00:00.000Z",
       sent_at: null,
-      protocol_facts: {},
+      protocol_facts: extractMessageProtocolFacts((name) => (name === "list-id" ? "Updates <updates.example.test>" : null)),
       folder_id: "folder",
       folder_short_id: "fld001",
       modseq: null,
@@ -79,6 +80,7 @@ test("hydrated snapshot contexts omit bodies and preserve the view's own xid and
       conversation_subject: "Snapshot",
       conversation_summary: null,
       summary_revision: "1",
+      message_count: 4,
       collaboration_revision: "3",
       assignee_user_ids: [],
       work_status: "needs_action",
@@ -99,8 +101,12 @@ test("hydrated snapshot contexts omit bodies and preserve the view's own xid and
         bodyText: "",
         bodyHtml: "",
         bodyAvailable: false,
+        textLength: null,
         attachmentsAvailable: true,
+        attachmentCount: 0,
+        isBulk: true,
       });
+      expect(snapshot.source.conversation?.messageCount).toBe(4);
       expect(snapshot?.preconditions.conversation).toEqual({
         id: "conversation",
         revision: 3,

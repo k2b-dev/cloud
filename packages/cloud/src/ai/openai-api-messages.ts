@@ -14,8 +14,6 @@ const catalog = i18n.define({
       context_length_exceeded: "Your messages exceed this model's context window. Shorten them and try again.",
       request_too_large: "The request body exceeds the limit derived from your available models' context windows.",
       ai_disabled: "AI is turned off. Contact an administrator.",
-      model_access_denied: "You do not have access to this model. Contact an administrator.",
-      missing_provider_credential: "This model's provider is not configured. Contact an administrator.",
       insufficient_quota:
         "Your Assistant usage limit is reached, or your usage could not be measured. Wait for the reset or contact an administrator.",
       too_many_concurrent_requests: "You have too many simultaneous requests. Wait for a request to finish and try again.",
@@ -35,8 +33,6 @@ const catalog = i18n.define({
       context_length_exceeded: "Deine Nachrichten überschreiten das Kontextfenster dieses Modells. Kürze sie und versuche es erneut.",
       request_too_large: "Deine Anfrage überschreitet die aus den Kontextfenstern deiner verfügbaren Modelle abgeleitete Größenbegrenzung.",
       ai_disabled: "KI ist ausgeschaltet. Wende dich an einen Administrator.",
-      model_access_denied: "Dieses Modell ist nicht für dich freigegeben. Wende dich an einen Administrator.",
-      missing_provider_credential: "Der Anbieter dieses Modells ist nicht eingerichtet. Wende dich an einen Administrator.",
       insufficient_quota:
         "Dein Nutzungslimit im Assistenten ist erreicht, oder deine Nutzung konnte nicht gemessen werden. Warte auf das Zurücksetzen oder wende dich an einen Administrator.",
       too_many_concurrent_requests: "Du hast zu viele gleichzeitige Anfragen. Warte, bis eine Anfrage beendet ist, und versuche es erneut.",

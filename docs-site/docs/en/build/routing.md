@@ -43,6 +43,12 @@ Do not list `/pwa` paths. An application adds pages to the mobile app with
 > application router and returns a terminal asset response. Use a separate
 > prefix such as `/share/<id>` for anonymous pages.
 
+The gateway reserves `/app/<id>` and all descendants for app `<id>`, including
+claims from older registry records. A root or ancestor route cannot answer for
+a missing or rejected owner. An independent [App-PWA](/en/docs/frontend/app-pwa)
+uses this namespace and requires an explicitly declared route covering its
+neutral start path.
+
 ## Mount the same paths in Hono
 
 The gateway forwards the original path and query to the host and port of

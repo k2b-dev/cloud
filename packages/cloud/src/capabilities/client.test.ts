@@ -69,7 +69,7 @@ describe("public capability client", () => {
     expect(result.ok).toBeTrue();
     const [read] = result.ok ? result.data.apps : [];
     expect(read).not.toHaveProperty("appAccent");
-    expect(read?.manifest).not.toHaveProperty("events");
+    expect(read?.manifest).not.toHaveProperty("futureSignals");
     expect(read?.manifest.queries.map((query) => query.localId)).toEqual(["book.read"]);
     expect(read?.manifest.actions.map((action) => action.localId)).toEqual(["book.rename"]);
   });

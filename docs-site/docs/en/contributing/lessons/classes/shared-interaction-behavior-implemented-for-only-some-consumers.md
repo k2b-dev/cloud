@@ -1,0 +1,1 @@
+| Shared interaction behavior implemented for only some consumers | Resize handles differ in cue, keyboard behavior, or reset depending on the region. | Tests: UI `resize-cue.browser.test.ts` covers every workspace edge and standalone separator; separator, workspace controller, and Cloud panel behavior tests cover reset callbacks and saved-size removal. |

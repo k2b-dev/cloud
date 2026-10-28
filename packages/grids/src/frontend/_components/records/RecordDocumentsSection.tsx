@@ -1,18 +1,23 @@
-import { fileIcons } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   announce,
   Button,
+  DescriptionList,
   DetailPanel,
   Dropdown,
+  FileGrid,
+  FileTypeIcon,
+  fileKindLabel,
+  formatFileViewSize,
+  IconButton,
   isStructuredDataValue,
-  Placeholder,
   prompts,
   StructuredDataPreview,
+  Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { openDocumentDetailsDialog } from "../documents/DocumentDetailsDialog";
 import { openDocumentGenerateDialog } from "../documents/DocumentGenerateDialog";
@@ -39,7 +44,6 @@ import {
 } from "./record-snapshot-model";
 
 export default function RecordDocumentsSection(props: {
-  cloudUrl: string;
   tableId: string;
   tableName: string;
   recordId: string;
@@ -48,6 +52,8 @@ export default function RecordDocumentsSection(props: {
   templates: PublicDocumentTemplateSummary[];
   initialDocuments: { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
   initialSnapshots: PublicRecordSnapshotSummary[];
+  /** Places the generated documents with the record's files and the snapshots under "More about this record". */
+  children?: (parts: { documents: JSX.Element; snapshots: JSX.Element }) => JSX.Element;
 }) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
@@ -154,7 +160,6 @@ export default function RecordDocumentsSection(props: {
         () => (
           <div class="h-[70vh] min-h-0">
             <RecordReadView
-              cloudUrl={props.cloudUrl}
               baseId={snapshot.baseId}
               tableId={snapshot.tableId}
               tableName={snapshotTableName(snapshot)}
@@ -162,51 +167,38 @@ export default function RecordDocumentsSection(props: {
               record={snapshotRecord}
               mode="snapshot"
               relationLabels={relationLabels}
-              headerMeta={
-                <div class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-dimmed">
-                  <span class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
-                    <i class="ti ti-camera" /> {t().snapshotLabel}
-                  </span>
-                  <span>·</span>
-                  <span class="truncate">{snapshotTableName(snapshot)}</span>
-                  <span>·</span>
-                  <span>{formatRecordRelativeTime(snapshot.createdAt)}</span>
-                  <span>·</span>
-                  <span class="font-mono">{snapshotRecord.id.slice(0, 8)}</span>
-                </div>
+              subtitle={t().snapshotFrom({ date: formatRecordRelativeTime(snapshot.createdAt) })}
+              more={
+                <>
+                  <DetailPanel.Section title={t().metadata} collapsible summary={t().snapshotSummary}>
+                    <DescriptionList
+                      layout="rows"
+                      size="sm"
+                      items={[
+                        { term: t().snapshot, description: <span class="block truncate">{snapshot.id}</span> },
+                        { term: t().recordId, description: <span class="block truncate">{snapshot.recordId}</span> },
+                        { term: t().created, description: new Date(snapshot.createdAt).toLocaleString(locale()) },
+                        { term: t().createdBy, description: snapshot.createdBy ?? t().system },
+                      ]}
+                    />
+                  </DetailPanel.Section>
+                  <DetailPanel.Section title={t().rawSnapshotData} collapsible summary={`${t().rootRecord}, ${t().recordGraph}`}>
+                    <div class="flex flex-col gap-3">
+                      <StructuredDataPreview
+                        title={t().rootRecord}
+                        data={isStructuredDataValue(snapshot.root) ? snapshot.root : { error: t().invalidSnapshotRoot }}
+                        defaultMode="raw"
+                      />
+                      <StructuredDataPreview
+                        title={t().recordGraph}
+                        data={isStructuredDataValue(snapshot.graph) ? snapshot.graph : { error: t().invalidSnapshotGraph }}
+                        defaultMode="raw"
+                      />
+                    </div>
+                  </DetailPanel.Section>
+                </>
               }
-            >
-              <DetailPanel.Group label={t().snapshotMetadata}>
-                <DetailPanel.Section title={t().metadata} icon="ti ti-info-circle">
-                  <StructuredDataPreview
-                    data={{
-                      id: snapshot.id,
-                      tableId: snapshot.tableId,
-                      recordId: snapshot.recordId,
-                      createdAt: snapshot.createdAt,
-                      createdBy: snapshot.createdBy,
-                    }}
-                    maxRows={8}
-                  />
-                </DetailPanel.Section>
-              </DetailPanel.Group>
-              <DetailPanel.Group label={t().rawSnapshotData}>
-                <DetailPanel.Section title={t().rawSnapshotData} icon="ti ti-code" collapsible>
-                  <div class="flex flex-col gap-3">
-                    <StructuredDataPreview
-                      title={t().rootRecord}
-                      data={isStructuredDataValue(snapshot.root) ? snapshot.root : { error: t().invalidSnapshotRoot }}
-                      defaultMode="raw"
-                    />
-                    <StructuredDataPreview
-                      title={t().recordGraph}
-                      data={isStructuredDataValue(snapshot.graph) ? snapshot.graph : { error: t().invalidSnapshotGraph }}
-                      defaultMode="raw"
-                    />
-                  </div>
-                </DetailPanel.Section>
-              </DetailPanel.Group>
-            </RecordReadView>
+            />
           </div>
         ),
         { title: t().recordSnapshot, icon: "ti ti-camera", size: "large" },
@@ -245,118 +237,145 @@ export default function RecordDocumentsSection(props: {
       action: () => void generate(template),
     }));
 
-  return (
-    <>
-      <Show when={props.live || manualSnapshots().length > 0}>
-        <DetailPanel.Group label={t().recordSnapshots}>
-          <DetailPanel.Section
-            title={t().snapshots}
-            icon="ti ti-camera"
-            count={manualSnapshots().length}
-            actions={
-              <Show when={props.live}>
-                <Button
-                  variant="secondary"
+  const primaryArtifact = (document: PublicDocument) =>
+    document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey) ?? document.artifacts[0];
+  const documentMeta = (document: PublicDocument) => {
+    const artifact = primaryArtifact(document);
+    return [
+      fileKindLabel({ name: artifact?.filename ?? document.filename, mediaType: artifact?.mimeType }, locale()),
+      artifact ? formatFileViewSize(artifact.sizeBytes, locale()) : null,
+      formatRecordRelativeTime(document.createdAt),
+      (document.sourceRecordCount ?? 0) > 1 ? dt().sourceRecordCount({ count: document.sourceRecordCount! }) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  };
+  const snapshotTitle = (snapshot: PublicRecordSnapshotSummary) => `SNAP-${snapshot.id.slice(0, 8).toUpperCase()}`;
+
+  const documentsSection = (
+    <Show when={generatedDocuments().length > 0 || (props.live && props.canWrite && availableTemplates().length > 0)}>
+      <DetailPanel.Section
+        title={t().documents}
+        count={hasMoreDocuments() || generatedDocuments().length === 0 ? undefined : generatedDocuments().length}
+        meta={hasMoreDocuments() ? `${generatedDocuments().length}+` : undefined}
+        actions={
+          <Show when={props.live && props.canWrite && availableTemplates().length > 0}>
+            <Dropdown.Root position="bottom-left" width="16rem" items={generationActions()}>
+              <Dropdown.Trigger variant="ghost" size="xs" type="button" disabled={refreshDocumentsMut.loading()}>
+                <i class="ti ti-file-plus" aria-hidden="true" />
+                {t().generate}
+                <i class="ti ti-chevron-down text-xs" aria-hidden="true" />
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+          </Show>
+        }
+      >
+        <Show when={generatedDocuments().length > 0} fallback={<p class="grids-details-none">{t().noGeneratedDocuments}</p>}>
+          <FileGrid
+            rows={generatedDocuments()}
+            getRowId={(document) => document.id}
+            label={t().generatedDocuments}
+            layout="list"
+            limit={5}
+            actionVisibility="progressive"
+            renderPreview={(document) => (
+              <FileTypeIcon
+                name={primaryArtifact(document)?.filename ?? document.filename}
+                mediaType={primaryArtifact(document)?.mimeType}
+              />
+            )}
+            renderLabel={(document) => document.filename}
+            renderMeta={documentMeta}
+            renderActions={(document) => (
+              <Tooltip.Anchor content={t().downloadNamed({ name: document.filename })}>
+                <IconButton
+                  variant="ghost"
                   size="sm"
                   type="button"
-                  onClick={() => createSnapshotMut.mutate(undefined)}
-                  disabled={createSnapshotMut.loading()}
-                  aria-busy={createSnapshotMut.loading()}
+                  label={t().downloadNamed({ name: document.filename })}
+                  aria-busy={activeDownloadId() === document.id || undefined}
+                  disabled={activeDownloadId() === document.id}
+                  onClick={() => redownloadMut.mutate(document)}
                 >
-                  {createSnapshotMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-camera" />}
-                  {t().createSnapshot}
-                </Button>
-              </Show>
-            }
+                  <i class={activeDownloadId() === document.id ? "ti ti-loader-2 animate-spin" : "ti ti-download"} aria-hidden="true" />
+                </IconButton>
+              </Tooltip.Anchor>
+            )}
+            onOpen={inspectDocument}
+          />
+        </Show>
+        <Show when={hasMoreDocuments()}>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="mt-2 w-fit"
+            loading={loadMoreDocumentsMut.loading()}
+            loadingLabel={t().loadingDocuments}
+            onClick={() => loadMoreDocumentsMut.mutate(undefined)}
           >
-            <Show when={manualSnapshots().length === 0}>
-              <Placeholder align="left" description={t().noSnapshots} />
-            </Show>
-            <For each={manualSnapshots()}>
-              {(snapshot) => (
-                <DetailPanel.Action
-                  type="button"
-                  title={`SNAP-${snapshot.id.slice(0, 8).toUpperCase()}`}
-                  description={formatRecordRelativeTime(snapshot.createdAt)}
-                  leading={
-                    <i aria-hidden="true" class={activeSnapshotId() === snapshot.id ? "ti ti-loader-2 animate-spin" : "ti ti-camera"} />
-                  }
-                  trailing={<i aria-hidden="true" class="ti ti-chevron-right" />}
-                  aria-label={t().inspectSnapshot({ id: snapshot.id })}
-                  onClick={() => inspectSnapshotMut.mutate(snapshot)}
-                  disabled={inspectSnapshotMut.loading()}
-                  aria-busy={activeSnapshotId() === snapshot.id}
-                />
-              )}
-            </For>
-          </DetailPanel.Section>
-        </DetailPanel.Group>
-      </Show>
+            {t().loadMore}
+          </Button>
+        </Show>
+      </DetailPanel.Section>
+    </Show>
+  );
 
-      <Show when={generatedDocuments().length > 0 || (props.live && props.canWrite && availableTemplates().length > 0)}>
-        <DetailPanel.Group label={t().generatedDocuments}>
-          <DetailPanel.Section
-            title={t().documents}
-            icon="ti ti-file-type-pdf"
-            count={hasMoreDocuments() ? undefined : generatedDocuments().length}
-            meta={hasMoreDocuments() ? `${generatedDocuments().length}+` : undefined}
-            actions={
-              <Show when={props.live && props.canWrite && availableTemplates().length > 0}>
-                <Dropdown.Root position="bottom-left" width="16rem" items={generationActions()}>
-                  <Dropdown.Trigger variant="secondary" size="sm" type="button" disabled={refreshDocumentsMut.loading()}>
-                    <i class="ti ti-file-plus" />
-                    {t().generate}
-                    <i class="ti ti-chevron-down text-xs" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </Show>
-            }
-          >
-            <Show when={generatedDocuments().length === 0}>
-              <Placeholder align="left" description={t().noGeneratedDocuments} />
-            </Show>
-            <For each={generatedDocuments()}>
-              {(document) => (
-                <DetailPanel.Action
-                  type="button"
-                  title={document.filename}
-                  description={`${formatRecordRelativeTime(document.createdAt)}${(document.sourceRecordCount ?? 0) > 1 ? ` · ${dt().sourceRecordCount({ count: document.sourceRecordCount! })}` : ""}`}
-                  leading={
-                    <i
-                      aria-hidden="true"
-                      class={
-                        activeDownloadId() === document.id
-                          ? "ti ti-loader-2 animate-spin"
-                          : `ti ${fileIcons.getFileIcon({
-                              name: document.filename,
-                              type: "file",
-                              mimeType: document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey)?.mimeType,
-                            })}`
-                      }
-                    />
-                  }
-                  trailing={<i aria-hidden="true" class="ti ti-chevron-right" />}
-                  aria-label={t().openNamed({ name: document.filename })}
-                  onClick={() => inspectDocument(document)}
-                />
-              )}
-            </For>
-            <Show when={hasMoreDocuments()}>
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                class="mt-2"
-                loading={loadMoreDocumentsMut.loading()}
-                loadingLabel={t().loadingDocuments}
-                onClick={() => loadMoreDocumentsMut.mutate(undefined)}
-              >
-                {t().loadMore}
-              </Button>
-            </Show>
-          </DetailPanel.Section>
-        </DetailPanel.Group>
-      </Show>
-    </>
+  const snapshotsSection = (
+    <Show when={props.live || manualSnapshots().length > 0}>
+      <DetailPanel.Section
+        title={t().snapshots}
+        count={manualSnapshots().length || undefined}
+        collapsible
+        summary={
+          manualSnapshots()[0]
+            ? `${snapshotTitle(manualSnapshots()[0]!)} · ${formatRecordRelativeTime(manualSnapshots()[0]!.createdAt)}`
+            : t().noSnapshots
+        }
+      >
+        <For each={manualSnapshots()}>
+          {(snapshot) => (
+            <DetailPanel.Action
+              type="button"
+              title={snapshotTitle(snapshot)}
+              description={formatRecordRelativeTime(snapshot.createdAt)}
+              leading={<i aria-hidden="true" class={activeSnapshotId() === snapshot.id ? "ti ti-loader-2 animate-spin" : "ti ti-camera"} />}
+              aria-label={t().inspectSnapshot({ id: snapshot.id })}
+              onClick={() => inspectSnapshotMut.mutate(snapshot)}
+              disabled={inspectSnapshotMut.loading()}
+              aria-busy={activeSnapshotId() === snapshot.id}
+            />
+          )}
+        </For>
+        <Show when={manualSnapshots().length === 0}>
+          <p class="grids-details-none">{t().noSnapshots}</p>
+        </Show>
+        <Show when={props.live}>
+          <DetailPanel.Action
+            type="button"
+            class="grids-details-add"
+            leading={<i aria-hidden="true" class={createSnapshotMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-camera-plus"} />}
+            title={t().createSnapshot}
+            onClick={() => createSnapshotMut.mutate(undefined)}
+            disabled={createSnapshotMut.loading()}
+            aria-busy={createSnapshotMut.loading()}
+          />
+        </Show>
+      </DetailPanel.Section>
+    </Show>
+  );
+
+  return (
+    <Show
+      when={props.children}
+      fallback={
+        <>
+          {documentsSection}
+          {snapshotsSection}
+        </>
+      }
+    >
+      {(render) => render()({ documents: documentsSection, snapshots: snapshotsSection })}
+    </Show>
   );
 }
