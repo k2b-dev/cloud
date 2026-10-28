@@ -103,11 +103,11 @@ const transact = <T>(
   db: IDBDatabase,
   mode: IDBTransactionMode,
   body: (tx: IDBTransaction, result: (value: T) => void, read: <V>(request: IDBRequest<V>, next: (value: V) => void) => void) => void,
-  active?: Set<IDBTransaction>,
+  active?: Map<IDBTransaction, (error: unknown) => void>,
 ): Promise<T> =>
   new Promise((resolve, reject) => {
     const tx = db.transaction(stores, mode, mode === "readwrite" ? { durability: "strict" } : undefined);
-    active?.add(tx);
+    active?.set(tx, reject);
     let result: { value: T } | undefined;
     let failure: { error: unknown } | undefined;
     const fail = (error: unknown) => {
@@ -181,14 +181,19 @@ export const openSharedTextOffline = async (identity: SharedTextOfflineIdentity)
   const key = [userId, draftId, generation];
   const db = await openDatabase();
   const controller = new AbortController();
-  const active = new Set<IDBTransaction>();
+  const active = new Map<IDBTransaction, (error: unknown) => void>();
   let channel: BroadcastChannel | undefined;
   let epoch: number | undefined;
   let observedLogout = 0;
 
   const close = (reason: Error) => {
     if (controller.signal.aborted) return;
-    for (const tx of active) abort(tx);
+    // WebKit may never fire `abort` for a transaction still queued behind another connection; settle it here.
+    for (const [tx, reject] of active) {
+      abort(tx);
+      reject(new DOMException("Shared text offline transaction aborted.", "AbortError"));
+    }
+    active.clear();
     db.close();
     channel?.close();
     controller.abort(reason);

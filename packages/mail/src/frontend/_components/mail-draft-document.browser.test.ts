@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { basename } from "node:path";
 import { createTrustedTextAwareness } from "@k2b/cloud/shared-text";
 import { encoding } from "@k2b/stdlib";
 import type { ServerWebSocket } from "bun";
@@ -36,8 +37,8 @@ const draft = (): MailDraft => ({
   derivedFromMessageId: null,
   derivationKind: null,
   attachments: [],
-  createdBy: { kind: "user", userId: "Usr001" },
-  lastEditedBy: { kind: "user", userId: "Usr001" },
+  createdBy: { kind: "user", userId: "11111111-1111-4111-8111-111111111111" },
+  lastEditedBy: { kind: "user", userId: "11111111-1111-4111-8111-111111111111" },
   lastEditedByDisplayName: "Ada",
   recoveryCopyCount: 0,
   revision,
@@ -98,7 +99,11 @@ const buildHarness = async () => {
   const build = await Bun.build({
     entrypoints: [new URL("./mail-draft-document.browser-harness.tsx", import.meta.url).pathname],
     target: "browser",
-    format: "iife",
+    // Split ES modules as production islands build them: a single IIFE wraps lazily loaded
+    // modules and drops the initializers of side-effect-free packages such as @k2b/stdlib.
+    format: "esm",
+    splitting: true,
+    naming: { entry: "harness.js", chunk: "[name]-[hash].js" },
     conditions: ["browser"],
     plugins: [
       {
@@ -118,7 +123,9 @@ const buildHarness = async () => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "Shared Mail browser build failed");
-  return build.outputs[0]!.text();
+  return new Map<string, string>(
+    await Promise.all(build.outputs.map(async (output) => [`/${basename(output.path)}`, await output.text()] as const)),
+  );
 };
 const harness = await buildHarness();
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", new URL("../../../../cloud/", import.meta.url).pathname))).default;
@@ -135,7 +142,8 @@ const server = Bun.serve<{ document: boolean }>({
       if (server.upgrade(request, { data: { document: path.endsWith("/document/socket") } })) return;
       return new Response(null, { status: 400 });
     }
-    if (path === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript" } });
+    const script = harness.get(path);
+    if (script) return new Response(script, { headers: { "Content-Type": "text/javascript" } });
     if (path === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css" } });
     if (path === "/fixture/draft") return Response.json(draft());
     if (denied && path.includes("/document")) return Response.json({ message: "Zugriff entzogen" }, { status: 403 });
@@ -167,7 +175,7 @@ const server = Bun.serve<{ document: boolean }>({
       }
     }
     return new Response(
-      '<!doctype html><html class="light"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><div id="root" style="height:90vh"></div><script src="/harness.js"></script></body></html>',
+      '<!doctype html><html class="light"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><div id="root" style="height:90vh"></div><script type="module" src="/harness.js"></script></body></html>',
       { headers: { "Content-Type": "text/html" } },
     );
   },
@@ -309,7 +317,8 @@ for (const width of [1440, 390])
       await page.keyboard.press("Control+z");
       await page.waitForFunction(() => !window.mailSharedFixture.content().body.includes("Local "));
       expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Peer footer");
-      await page.keyboard.press("Control+Shift+z");
+      // A real keyboard reports Shift+Z as "Z"; Playwright keeps the given case.
+      await page.keyboard.press("Control+Shift+Z");
       await page.waitForFunction(() => window.mailSharedFixture.content().body.includes("Local Hello"));
       expect(requests.filter((value) => value.includes("/lease"))).toEqual([]);
       saveFails = true;

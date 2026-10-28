@@ -1592,6 +1592,14 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
     if (event.key === "Escape") {
       event.preventDefault();
       leave(view, wrap, "after");
+      return;
+    }
+    // Mod-Home/End leave the grid for the note's start or end; the browser would only move inside the cell's page region.
+    if (mod && !event.shiftKey && !event.altKey && (event.key === "Home" || event.key === "End")) {
+      event.preventDefault();
+      if (event.key === "End" && t.to === view.state.doc.length) return leave(view, wrap, "after");
+      view.focus();
+      view.dispatch({ selection: { anchor: event.key === "Home" ? 0 : view.state.doc.length }, scrollIntoView: true });
     }
   });
 };

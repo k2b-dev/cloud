@@ -151,8 +151,11 @@ export function createTextEditor(options: TextEditorOptions) {
     setMode: (mode: TextEditorMode) => view.dispatch({ effects: modeSlot.reconfigure(modeExtensions(mode)) }),
     setLabel: (label: string) =>
       view.dispatch({ effects: labelSlot.reconfigure(EditorView.contentAttributes.of({ "aria-label": label })) }),
-    setReadOnly: (readOnly: boolean) =>
-      view.dispatch({ effects: readOnlySlot.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]) }),
+    // Hosts re-run this from reactive state that may change inside an editor update; an unchanged value must not dispatch.
+    setReadOnly: (readOnly: boolean) => {
+      if (view.state.readOnly === readOnly && view.state.facet(EditorView.editable) === !readOnly) return;
+      view.dispatch({ effects: readOnlySlot.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]) });
+    },
     destroy: () => {
       view.contentDOM.removeEventListener("keydown", enter, true);
       view.destroy();
