@@ -5595,13 +5595,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     display: none;
   }
 
+  /* Marks the collapsed rail for its entries, which then name themselves in a
+     hint beside the icon (`inSidebarRail`). */
+  .k2b-ui .k2b-app-workspace[data-sidebar-collapsed="true"] .k2b-app-workspace__sidebar[data-workspace-collapsible="true"] {
+    --k2b-sidebar-rail: 1;
+  }
+
   .k2b-ui
     .k2b-app-workspace[data-sidebar-collapsed="true"]
     .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
     :is(
       .k2b-app-workspace__sidebar-section-header,
       .k2b-app-workspace__sidebar-icon-grid-wrap > h2,
-      .k2b-app-workspace__sidebar-item-label,
       .k2b-app-workspace__sidebar-item-meta,
       .k2b-app-workspace__sidebar-item-action,
       .k2b-app-workspace__sidebar-item-actions,
@@ -15054,7 +15059,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @container k2b-app-area (min-width: 64rem) {
-  .k2b-ui .k2b-app-workspace[data-sidebar-collapsed="true"] .k2b-app-workspace__sidebar-item-copy:not(.k2b-app-workspace__sidebar-preview *) { display: none; }
+  /* The rail hides an entry's label from view but keeps it as the entry's accessible name. */
+  .k2b-ui
+    .k2b-app-workspace[data-sidebar-collapsed="true"]
+    :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label):not(.k2b-app-workspace__sidebar-preview *) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    margin: -1px;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
 }
 
 @media (max-width: 47.999rem) {

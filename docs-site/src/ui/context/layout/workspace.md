@@ -297,6 +297,19 @@ The selected level ends the window unless the first levels already fit.
 For three levels, selecting level 3 shows level 3 on a phone, levels 2–3 at
 1024 px, and levels 1–3 at 1440 px. Selecting level 1 shows levels 1, 1–2,
 or 1–3 at those widths. An unknown id selects the first level.
+
+A level that needs more room, such as a wide log list, declares it with
+`minSize` in px. A class shows its levels only while their minimum widths fit
+its narrowest host (768 px for class 2, 1280 px for class 3); otherwise the
+shallowest of them gives way, and its back step moves to the next level. A
+first level with `minSize={280}` beside a log list with `minSize={900}` and a
+240 px middle level therefore shows levels 2–3 at 1440 px and the log list
+alone at 1024 px. Beside other levels, the last visible level keeps at least
+its `minSize` (320 px without one), and resizing an earlier level stops there;
+on a phone and in a narrow `MobileShell` a single level always takes the
+available width. Levels without `minSize` keep the table above. The
+decision depends only on the props, so the server and the first client frame
+show the same levels.
 Hidden levels stay mounted; CSS hides them without losing local state.
 
 The width classes count the host, not the room beside the sidebar: from a
@@ -760,6 +773,19 @@ The sidebar compound members cover these jobs:
   `NavTree` also serves a filtered list with the same rows and keys; an item's
   `description` adds a passive second line, such as a date and tags;
 - `SidebarIconGrid` and `SidebarIconAction` provide compact icon-only actions.
+
+In the collapsed rail, every entry names itself in the hint the Cloud app rail
+uses: right beside its icon, at once, on hover and on visible keyboard focus,
+never on touch. This covers `SidebarItem` rows, `NavTree` items,
+`SidebarSwitcher`, and `SidebarIconAction`. The hint shows a row's `title`, or
+its plain text label. The rail hides labels from view but keeps them as the
+accessible names. With the sidebar expanded, a row shows the hint only when it
+says more than the visible label: a label cut off, or a `title` with details
+such as exact counts. It then opens above the row after the usual delay. A
+`title` stays in the server HTML for pages without browser code; the first
+hover or focus replaces it, so no name shows twice. `SidebarIconAction` shows
+its `label` as a hint in every state, beside the icon in the rail. Entries
+mount their hint only on the first hover or focus that needs it.
 
 Desktop sidebars are action-first: begin with primary actions or navigation,
 not a repeated application title. Put persistent secondary navigation in

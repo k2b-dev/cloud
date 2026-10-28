@@ -349,6 +349,10 @@ window.mountMailList = (options) => {
                     onManageTags={noop}
                     onMergeConversation={noop}
                     onReassignMessage={noop}
+                    automationTrace={[]}
+                    onUndoAutomation={noop}
+                    onAssignConversation={noop}
+                    onAssignConversationToMe={noop}
                     onSplitMessage={noop}
                     onKeep={noop}
                     onStopKeeping={noop}
