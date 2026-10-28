@@ -53,6 +53,7 @@ import {
   type CapabilitySearchTagDefinition,
   type CapabilityStreamDefinition,
   type CapabilityUniversalSearchDefinition,
+  CloudResourceViewSchema,
   capabilityActionPolicy,
   capabilityResultSchema,
   UniversalSearchDataSchema,
@@ -1163,15 +1164,25 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
   if (operation.schemaHash !== expectedSchemaHash) throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
   if ("universalSearch" in operation && operation.universalSearch) {
     const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
-    const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
     if (
       capabilityHash(operation.inputSchema) !== capabilityHash(expectedInput) ||
-      capabilityHash(operation.dataSchema) !== capabilityHash(expectedData)
+      !universalSearchDataHashes().includes(capabilityHash(operation.dataSchema))
     ) {
       throw new Error(`Operation ${operation.localId} advertises Universal Search with non-canonical schemas`);
     }
   }
 };
+
+/**
+ * The Universal Search data schemas a live manifest may declare: the current one, and the one before results gained
+ * `context` and `status`, so an app built by the previous release keeps its search while Core is already newer. Its
+ * results still parse, because both fields are optional.
+ */
+let searchDataHashes: string[] | undefined;
+const universalSearchDataHashes = () =>
+  (searchDataHashes ??= [UniversalSearchDataSchema, z.array(CloudResourceViewSchema.omit({ context: true, status: true })).max(100)].map(
+    (schema) => capabilityHash(projectSchema(schema, "Universal Search data", "output")),
+  ));
 
 const assertUsableCommand = (command: CapabilityCommandManifest): void => {
   z.fromJSONSchema(structuredClone(command.inputSchema));
