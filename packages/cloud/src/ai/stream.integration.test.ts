@@ -40,7 +40,7 @@ const createChat = async (): Promise<AiConversation> => {
 const startTurn = async (chat: AiConversation, text = "Build the report") => {
   const { turn } = await aiConversations.submitChatTurn({
     conversationId: chat.id,
-    modelProfileId: "test-model",
+    modelId: "test-model",
     runConfig: { kind: "chat", input: text, toolSource: { kind: "none" } },
     userMessage: userMessage(text),
   });
@@ -217,7 +217,7 @@ suite("AI conversation stream repair", () => {
     await aiConversations.completeTurn({ conversationId: chat.id, turnId: first.turn.id, leaseOwner, status: "completed", error: null });
     const second = await startTurn(chat, "Second");
     await second.save([], 1);
-    await publishAiWireEvent(second.event(1, { type: "turn_started", modelProfileId: "test-model", providerModel: "", blocks: [] }));
+    await publishAiWireEvent(second.event(1, { type: "turn_started", modelId: "test-model", providerModel: "", blocks: [] }));
 
     const state = expectState(await stream.next());
     expect(state.activeTurn?.turnId).toBe(second.turn.shortId);
@@ -242,7 +242,7 @@ suite("AI conversation stream repair", () => {
     // A new turn runs and the draft moves on in another session.
     const { turn, event, save } = await startTurn(chat, "Again");
     await save([], 1);
-    await publishAiWireEvent(event(1, { type: "turn_started", modelProfileId: "test-model", providerModel: "", blocks: [] }));
+    await publishAiWireEvent(event(1, { type: "turn_started", modelId: "test-model", providerModel: "", blocks: [] }));
     expect(await stream.next()).toMatchObject({ type: "turn_started", turnId: turn.shortId });
     const draft = await aiConversations.saveDraft({
       conversationId: chat.id,
@@ -300,7 +300,7 @@ suite("AI conversation stream repair", () => {
     await aiConversations.completeTurn({ conversationId: chat.id, turnId: first.turn.id, leaseOwner, status: "completed", error: null });
     const second = await startTurn(chat, "Second");
     await aiConversations.completeTurn({ conversationId: chat.id, turnId: second.turn.id, leaseOwner, status: "completed", error: null });
-    await publishAiWireEvent(second.event(1, { type: "turn_started", modelProfileId: "test-model", providerModel: "", blocks: [] }));
+    await publishAiWireEvent(second.event(1, { type: "turn_started", modelId: "test-model", providerModel: "", blocks: [] }));
     await publishAiWireEvent(second.event(2, { type: "block_set", block: text("t1", "Done.") }));
     await publishAiWireEvent(second.event(3, { type: "turn_finished", status: "completed", error: null }));
 

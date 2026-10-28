@@ -45,9 +45,11 @@ app-owned sidebar, tree, rail, tab, chip, and launcher labels inside `.k2b-ui`:
   height of at least 1.3, or glyphs that reach past the line box count as
   overflow and fade a label that fits.
 - `--k2b-truncate-fade-inset` reserves the covered end when hover actions
-  overlay the text. It inherits from the row and includes the fade before the
-  actions. A fading label inside another one or inside row metadata resets it
-  to `0px`, because it does not end where the actions start.
+  overlay the text. It includes the 0.75rem fade before the actions. A sidebar
+  row measures its revealed actions and sets the inset of its label and count
+  from them, so a label fades right before the actions, also when a count
+  sits between them. A fading label inside another one or inside row metadata
+  resets it to `0px`, because it does not end where the actions start.
 
 Put the class on a non-focusable inner text element that is a block or flex
 item. A mask on a link, button, or focusable heading would clip its focus

@@ -96,7 +96,7 @@ const typeLabel = (schema: z.ZodType<unknown, unknown>): string => {
   if (schema === envList) return "list";
   if (schema === envBoolean) return "boolean";
   if (schema instanceof z.ZodEnum) return Object.keys(schema.enum).join(" \\| ");
-  if (schema instanceof z.ZodPipe) return typeLabel(schema.in);
+  if (schema instanceof z.ZodPipe) return schema.out instanceof z.ZodObject ? "JSON" : typeLabel(schema.in);
   return schema.def.type;
 };
 
@@ -105,7 +105,7 @@ const defaultLabel = (spec: EnvSpec<unknown>): string => {
   const value = typeof spec.default === "function" ? "computed" : spec.default;
   if (Array.isArray(value) && value.length === 0) return "empty list";
   if (value === "") return "empty";
-  return `\`${String(value)}\``;
+  return `\`${typeof value === "object" && value !== null && !Array.isArray(value) ? JSON.stringify(value) : String(value)}\``;
 };
 
 const comment = (text: string) =>

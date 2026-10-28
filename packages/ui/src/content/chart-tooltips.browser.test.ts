@@ -18,6 +18,8 @@ render(() => <>
   <Chart kind="line" class="top-tiny" style={{height:"80px"}} series={topSeries} legend legendPlacement="top-start" />
   <Chart kind="line" class="top-linked" style={{height:"160px"}} series={topSeries} cursor={linkedTopCursor} />
   <Chart kind="line" class="top-natural" series={topSeries.slice(1,2)} legend legendPlacement="top-start" />
+  <Chart kind="bar" class="rows-bar" style={{height:"200px"}} xAxis={{label:"Region"}} yAxis={{label:"Revenue"}}
+    data={Array.from({length:20}, (_,i) => ({label:"Northwestern coastal region " + (i + 1), value:(i + 1) * 1000}))} />
 </>, topHost);
 `;
 
@@ -119,6 +121,33 @@ test("a plain bar chart shows label and value on hover without shifting layout",
     expect(await page.evaluate(() => document.activeElement?.id)).toBe("after");
     await closed(page);
     expect(await chart.boundingBox()).toEqual(before);
+  } finally {
+    await page.close();
+  }
+});
+
+test("bar rows label every category and keep their geometry while a bar is inspected", async () => {
+  const page = await open({ viewport: { width: 390, height: 800 } });
+  try {
+    const chart = page.locator(".rows-bar");
+    await chart.scrollIntoViewIfNeeded();
+    await settled(page);
+    const geometry = () =>
+      chart.evaluate((node) =>
+        [node, ...node.querySelectorAll(".stdlib-chart-category-label, .stdlib-chart-bar, .stdlib-chart-bar-value")].map((element) => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return [x, y, width, height].map(Math.round);
+        }),
+      );
+    const labels = await chart.locator(".stdlib-chart-category-label").allTextContents();
+    expect(labels.join(" ")).toBe(Array.from({ length: 20 }, (_, i) => `Northwestern coastal region ${i + 1}`).join(" "));
+    // Rows keep their pixel height: the fixed 200px box scrolls instead of squeezing labels onto each other.
+    const box = await chart.evaluate((node) => ({ client: node.clientHeight, scroll: node.scrollHeight }));
+    expect(box.scroll).toBeGreaterThan(box.client);
+    const before = await geometry();
+    await chart.locator(".stdlib-chart-bar").first().hover();
+    expect(await tooltipText(page, ".rows-bar", "Northwestern coastal region 1")).toContain("1000");
+    expect(await geometry()).toEqual(before);
   } finally {
     await page.close();
   }

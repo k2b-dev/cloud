@@ -30,19 +30,17 @@ describe("buildAdminGroups", () => {
     }
   });
 
-  it("links to AI usage in both supported locales", () => {
+  it("links to the one AI area in both supported locales", () => {
     for (const [locale, label] of [
-      ["en", "Usage"],
-      ["de", "Nutzung"],
+      ["en", "AI"],
+      ["de", "KI"],
     ] as const) {
-      expect(buildAdminGroups([], locale).flatMap((group) => group.links)).toContainEqual({
-        href: "/admin/settings?tab=ai-usage",
-        icon: "ti-chart-histogram",
-        label,
-      });
+      expect(buildAdminGroups([], locale).find((group) => group.label === label)?.links).toEqual([
+        { href: "/admin/ai", icon: "ti-sparkles", label },
+      ]);
     }
   });
-  it("places declared AI tools in the shared AI section without app-specific rules", () => {
+  it("leaves declared AI tools to the AI area instead of the sidebar", () => {
     const groups = buildAdminGroups([
       app({
         adminHref: "/admin/example",
@@ -55,13 +53,9 @@ describe("buildAdminGroups", () => {
         ],
       }),
     ]);
-    expect(groups.find((group) => group.label === "AI")?.links).toContainEqual({
-      href: "/admin/example",
-      icon: "ti-tool",
-      label: "Script tools",
-    });
+    expect(groups.find((group) => group.label === "AI")?.links).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label: "AI" }]);
     expect(groups.some((group) => group.label === "Example tools")).toBe(false);
-    expect(groups.flatMap((group) => group.links).filter((link) => link.href === "/admin/example")).toHaveLength(1);
+    expect(groups.flatMap((group) => group.links).filter((link) => link.href === "/admin/example")).toHaveLength(0);
   });
 
   it("renders app-declared groups in the existing core group order", () => {
@@ -79,11 +73,7 @@ describe("buildAdminGroups", () => {
 
     expect(groups.map((group) => group.label)).toEqual(["General", "Operations", "Accounts & sign-in", "AI", "Settings"]);
     expect(groups[1]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
-    expect(groups.find((group) => group.label === "AI")?.links).toContainEqual({
-      href: "/admin/settings?tab=ai-projects",
-      icon: "ti-folders",
-      label: "Projects",
-    });
+    expect(groups.find((group) => group.label === "AI")?.links).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label: "AI" }]);
   });
 
   it("keeps adminHref as the single-link fallback", () => {

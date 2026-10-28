@@ -1,0 +1,6 @@
+### App sidebar overlaps its header after a reload
+
+- **What happened:** After a person scrolled the app sidebar and reloaded the page, the sticky header drew on top of the scrolled list until the first interaction. It was seen in Mail on iPad Safari ([#1154](https://github.com/k2b-dev/cloud/issues/1154)).
+- **Root cause:** The sidebar restored its offset only in an inline script for the server HTML. When an island mounted, it replaced that HTML with a new list at offset 0, so the list jumped right after the first paint, and its scroll fade came late. Chromium and Playwright WebKit show this jump; the overlap itself was seen only on iPad Safari. The inline restore could also run before the final layout, and the scroll listener stored those cut values, so the offset shrank on every reload. The memory key used the first path segment, which is `app` for every Cloud app, so apps restored each other's offsets.
+- **Error class:** Server render vs. mount.
+- **Guard:** `SidebarBody` runs one restore inline and again on mount, and stores the offset only when the page is left. `sidebar-reload.browser.test.ts` in `@k2b/ui` reloads a scrolled island sidebar in Chromium and WebKit, at desktop and iPad sizes, flat and framed, and checks that the server frame, the mount frame, and the settled frame are the same and that header and list do not overlap.

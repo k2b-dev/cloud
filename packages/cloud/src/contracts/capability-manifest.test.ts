@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
 import { currentLibrary, futureLibrary } from "../../test/future-capability-manifest";
+import { capabilityHash, parseCapabilityManifest } from "../_internal/capabilities";
 import { CapabilityCatalogSchema, CapabilityManifestSchema, resolveCapabilityResourceReader } from "./capabilities";
 
 const catalogPage = (manifest: unknown) => ({
@@ -11,7 +12,15 @@ const catalogPage = (manifest: unknown) => ({
 });
 
 test("a manifest without newer fields reads unchanged", () => {
-  expect(CapabilityManifestSchema.parse(structuredClone(currentLibrary.manifest))).toEqual(currentLibrary.manifest);
+  const { manifestHash, ...legacyBase } = currentLibrary.manifest;
+  expect(legacyBase).not.toHaveProperty("events");
+  expect(legacyBase).not.toHaveProperty("subscribes");
+  const parsed = CapabilityManifestSchema.parse(structuredClone(currentLibrary.manifest));
+  expect(parsed).toEqual(currentLibrary.manifest);
+  expect(parsed).not.toHaveProperty("events");
+  expect(parsed).not.toHaveProperty("subscribes");
+  expect(parseCapabilityManifest(structuredClone(currentLibrary.manifest), "library")).toEqual(currentLibrary.manifest);
+  expect(capabilityHash(legacyBase)).toBe(manifestHash);
 });
 
 test("a catalog page from a newer release keeps every entry this release can read", () => {
@@ -23,7 +32,8 @@ test("a catalog page from a newer release keeps every entry this release can rea
 
   const manifest = page.apps[0]!.manifest;
   expect(manifest).not.toHaveProperty("fileProvider");
-  expect(manifest).not.toHaveProperty("events");
+  expect(manifest).not.toHaveProperty("calendarSource");
+  expect(manifest).not.toHaveProperty("futureSignals");
   expect(manifest.manifestHash).toBe(future.manifestHash);
   // Readable entries stay exactly as sent.
   expect(manifest.queries.map((query) => query.localId)).toEqual(["book.read"]);
@@ -77,4 +87,20 @@ test("the documented catalog response stays the shape this release produces", ()
       },
     },
   });
+});
+
+test("calendar source declarations remain whole when a newer operation is unreadable", () => {
+  const future = futureLibrary().manifest;
+  const calendarSource = { calendars: "book.search", events: "book.read" };
+  const read = (sent: unknown) => CapabilityManifestSchema.parse({ ...future, calendarSource: sent });
+  expect(read(calendarSource).calendarSource).toEqual(calendarSource);
+  for (const sent of [
+    { ...calendarSource, subscribe: "book.archive" },
+    { ...calendarSource, update: 1 },
+  ]) {
+    const parsed = read(sent);
+    expect(parsed).not.toHaveProperty("calendarSource");
+    expect(parsed.queries.map((query) => query.localId)).toEqual(["book.read"]);
+    expect(parsed.manifestHash).toBe(future.manifestHash);
+  }
 });

@@ -92,6 +92,23 @@ describe("capability v1 compilation", () => {
     expect(() => compileCapabilities("example_app", example())).toThrow();
   });
 
+  test("a type keeps its icon colour from the shared palette and rejects any other", () => {
+    const coloured = example();
+    const compiled = compileCapabilities("example", {
+      ...coloured,
+      types: { item: { ...coloured.types.item, color: "emerald" } },
+    });
+    expect(compiled.manifest.types[0]?.color).toBe("emerald");
+    expect(compileCapabilities("example", example()).manifest.types[0]).not.toHaveProperty("color");
+    expect(() =>
+      compileCapabilities("example", {
+        ...coloured,
+        // @ts-expect-error a colour outside the palette
+        types: { item: { ...coloured.types.item, color: "#ff0000" } },
+      }),
+    ).toThrow();
+  });
+
   test("builds deterministic namespaced manifests and schemas", () => {
     const first = compileCapabilities("example", example());
     const second = compileCapabilities("example", example());
@@ -721,8 +738,12 @@ describe("capability v1 compilation", () => {
       compileCapabilities("example", defineCapabilities({ ...base, queries: { ...base.queries, search }, commands: { open } })),
     ).not.toThrow();
     rejects(
-      defineCapabilities({ ...base, events: { changed: { title: "Changed" } } }),
-      'Capability declaration contains unsupported field "events"',
+      defineCapabilities({ ...base, futureEvents: { changed: { title: "Changed" } } }),
+      'Capability declaration contains unsupported field "futureEvents"',
+    );
+    rejects(
+      defineCapabilities({ ...base, calendarSource: { calendars: "get", events: "get", subscribe: "rename" } }),
+      'calendarSource contains unsupported field "subscribe"',
     );
     rejects(
       defineCapabilities({ ...base, fileProvider: { list: "get", read: "get", trash: "rename" } }),
@@ -1698,3 +1719,31 @@ for (const kind of ["query", "action", "review"] as const) {
     expect(review).not.toHaveBeenCalled();
   });
 }
+
+test("capability execution caps OAuth actions even for direct and delegated callers", async () => {
+  const compiled = compileCapabilities("example", example());
+  for (const credentialKind of ["oauth", "invocation", "session", "api_key"] as const) {
+    for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
+      const actor = {
+        ...context.actor,
+        delegation: { kind: "invocation" as const, callingAppId: "core", credentialKind: "oauth" as const, invocationId: "scope-test" },
+      };
+      const result = await invokeCompiledCapability({
+        compiled,
+        kind: "action",
+        localId: "rename",
+        input: { id: "one", name: "renamed" },
+        expectedSchemaHash: compiled.actions.get("rename")!.manifest.schemaHash,
+        context: {
+          ...context,
+          actor,
+          idempotencyKey: "scope-test-action",
+          authority: { actor, accessSubject: context.accessSubject, credentialKind, scopes },
+        },
+      });
+      const allowed = credentialKind === "session" || credentialKind === "api_key" || scopes.includes("write") || scopes.includes("admin");
+      expect(result.ok).toBe(allowed);
+      if (!allowed) expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+    }
+  }
+});

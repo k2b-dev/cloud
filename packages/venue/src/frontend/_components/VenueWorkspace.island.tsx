@@ -910,6 +910,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       kind="bar"
                       class="min-h-0 flex-1"
                       data={feedbackCountData()}
+                      xAxis={{ ordered: true }}
                       yAxis={{ ticks: 3, format: (value) => (Number.isInteger(value) ? String(value) : "") }}
                       tooltip={feedbackCountChartTooltip()}
                     />

@@ -10,11 +10,13 @@
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { type Browser, type BrowserContext, type BrowserContextOptions, chromium, type Page, type Request } from "playwright";
+import { relayGridsLiveSocket, watchGridsLiveSocket } from "./browser-smoke-live";
 
 const { values: options } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
     "base-url": { type: "string", default: "http://localhost:3000" },
+    "app-url": { type: "string" },
     "admin-token-file": { type: "string" },
     "session-token-file": { type: "string" },
     headed: { type: "boolean", default: false },
@@ -28,6 +30,7 @@ if (options.help) {
 
 Options:
   --base-url <url>             Running Cloud dev server (default http://localhost:3000)
+  --app-url <url>              Public Cloud origin for session live sockets (default base URL)
   --admin-token-file <path>    File containing the dev admin token (default token "dev-admin")
   --session-token-file <path>  File containing an existing session token (skips admin login)
   --headed                     Show the browser window
@@ -40,6 +43,7 @@ Options:
 const readSecret = async (path: string | undefined): Promise<string | undefined> =>
   path ? (await readFile(path, "utf8")).trim() : undefined;
 const BASE_URL = options["base-url"];
+const APP_ORIGIN = new URL(options["app-url"] ?? BASE_URL).origin;
 const ADMIN_TOKEN = (await readSecret(options["admin-token-file"])) ?? "dev-admin";
 const SESSION_TOKEN = await readSecret(options["session-token-file"]);
 const HEADLESS = !options.headed;
@@ -301,6 +305,7 @@ const addSessionCookie = async (context: BrowserContext, sessionToken: string) =
 };
 
 const watchPage = (page: Page, errors: string[]) => {
+  watchGridsLiveSocket(page, log);
   page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
   page.on("console", (msg) => {
     if (msg.type() === "error" && !msg.text().startsWith("Failed to load resource:")) {
@@ -326,6 +331,7 @@ const createWatchedPages = async (browser: Browser, options: BrowserContextOptio
   // Cloud reloads a browser once when it learns a new timezone; that reload can land mid-step and reset what a page shows.
   await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: BASE_URL, sameSite: "Lax" }]);
   if (sessionToken) await addSessionCookie(context, sessionToken);
+  await relayGridsLiveSocket(context, BASE_URL, APP_ORIGIN, sessionToken, log);
   const errors: string[] = [];
   const pages = await Promise.all(Array.from({ length: pageCount }, () => context.newPage()));
   for (const page of pages) {

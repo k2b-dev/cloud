@@ -1,0 +1,1 @@
+| Navigation asserted before browser completion | Keyboard dispatch completes before the activated link changes the URL. | Test: `data-table-focus.browser.test.ts` waits for the expected URL before checking navigation and callback counts ([#1749](https://github.com/k2b-dev/cloud/issues/1749)). |
