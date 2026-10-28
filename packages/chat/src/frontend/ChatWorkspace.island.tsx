@@ -2330,7 +2330,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           <AppWorkspace.Main
             scroll={false}
             aria-busy={busy()}
-            class={threaded() && !route().threads ? "chat-main chat-main--threads" : "chat-main"}
+            class={`chat-workspace__main ${threaded() && !route().threads ? "chat-main chat-main--threads" : "chat-main"}`}
           >
             {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
                 render and the first frame agree, and crossing the width moves nothing in the reading column. The pane
