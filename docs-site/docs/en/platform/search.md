@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-10-19
+updated: 2026-10-23
 ---
 
 # Universal search
@@ -483,7 +483,13 @@ results in the browser; the consumer still authorizes the chosen resource.
 Pass `scope: { appId, tag?, label, icon? }` to narrow the search on the server
 to one app and, optionally, one of its search tags. The removable chip shows
 `label` and `icon`; `scope` takes precedence over `initialAppId`.
-Pass `query` to prefill the search text. An app scope starts searching at once,
+Alternatively, pass `scope: { ref, label, icon? }` to search within a resource
+context supported by its provider. A `spaces.space` ref finds that Space's
+tasks and events; a `notebooks.notebook` ref finds that Notebook's notes.
+The resource scope takes precedence over `initialAppId`. Removing its chip
+widens the search; the consuming service still checks container membership.
+An unavailable scope fails instead of searching every resource.
+Pass `query` to prefill the search text. An app or resource scope starts searching at once,
 even with empty text. Server filtering by app and tag happens before the
 per-app result limit, so other resource kinds do not crowd out matching
 results as they can with the browser-only `resourceType` filter.

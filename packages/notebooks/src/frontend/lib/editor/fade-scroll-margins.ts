@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { measureScrollFade } from "@k2b/ui";
 
 /**
  * The note editor grows inside a `ScrollArea`, whose fades cover its top and
@@ -17,6 +18,8 @@ export const fadeScrollMarginsExtension = (container: () => HTMLElement | undefi
   EditorView.scrollMargins.of(() => {
     const element = container();
     if (!element) return null;
+    // The scroll area updates its fades once per frame; CodeMirror measures in the same frame as the edit.
+    measureScrollFade(element);
     const style = getComputedStyle(element);
     return { top: Number.parseFloat(style.scrollPaddingTop) || 0, bottom: Number.parseFloat(style.scrollPaddingBottom) || 0 };
   });

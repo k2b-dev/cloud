@@ -3,7 +3,6 @@ import { Readable } from "node:stream";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import {
   grantMailboxAccess,
   grantMailboxAccessAsPlatformAdmin,
@@ -58,7 +57,6 @@ suite("reversible mailbox lifecycle", () => {
   let platformContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const users = await sql<{ id: string; uid: string; admin: boolean }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES

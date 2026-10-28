@@ -1,0 +1,1 @@
+| Read fallback written back | A read fallback hides an unreadable row and a later merge writes that fallback over saved data. | Guard: settings store refuses unreadable rows by default; `unreadable.integration.test.ts` and Files configuration tests cover explicit recovery ([#1303](https://github.com/k2b-dev/cloud/issues/1303)). |

@@ -1,4 +1,4 @@
-import { buildRuntimeFromRegistry, listApps, type ProcessSync, startProcessSync, watchAppRegistry } from "@k2b/cloud";
+import { buildRuntimeFromRegistry, type ProcessSync, readAppRegistrySnapshot, startProcessSync, watchAppRegistry } from "@k2b/cloud";
 import {
   buildGatewayRouteSnapshot,
   logger,
@@ -48,10 +48,14 @@ const publishSnapshot = async (routeHash: string, routeWarnings: AppRouteWarning
 export const refreshRoutes = async (): Promise<void> => {
   const generation = ++refreshGeneration;
   try {
-    const apps = await listApps();
+    // A confirmed invalid snapshot closes its routes, even when every record was rejected.
+    // Transport failures still retain the last table through the catch below.
+    const { apps } = await readAppRegistrySnapshot();
     if (generation !== refreshGeneration) return;
     const { routes: appRoutes, warnings } = buildAppRoutesDetailed(apps);
-    const routeHash = JSON.stringify(appRoutes.map((r) => `${r.prefix}:${r.baseUrl}`).sort());
+    const routeHash = JSON.stringify(
+      appRoutes.map((r) => [r.prefix, r.appId, r.baseUrl, r.installable]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    );
     const warningsHash = JSON.stringify(warnings);
 
     if (routeHash !== lastRouteHash) {
