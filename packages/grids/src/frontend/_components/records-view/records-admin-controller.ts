@@ -58,8 +58,8 @@ type RecordsAdminControllerOptions = {
   setFields: Setter<Field[]>;
   /** The table's own fields, which field settings edit; a saved view narrows `fields` to its output columns. */
   tableFields: Accessor<Field[]>;
-  /** Keeps `tableFields` current where it is a list of its own. */
-  setTableFields: (next: Field[]) => void;
+  /** Given in a saved view, where `tableFields` is a list of its own, to keep it current. */
+  setTableFields?: (next: Field[]) => void;
   /** Fields the current table view hides and "Add column" can show again. */
   hiddenFields: Accessor<Field[]>;
   showColumns: (fieldIds: string[]) => void;
@@ -119,7 +119,7 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
       }),
       dateConfig: options.dateConfig,
       onSaved: (updated) => {
-        options.setTableFields(replaceField(options.tableFields(), updated));
+        options.setTableFields?.(replaceField(options.tableFields(), updated));
         syncFields(replaceField(options.fields(), updated));
       },
       onTableColumnsSaved: applyTableColumns,
@@ -130,7 +130,7 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
         // The server removes the field from the table's columns and display settings and changes the table version.
         options.setTableColumns((columns) => columns.filter((column) => column.fieldId !== field.id));
         options.setTableDisplayConfig((config) => withoutDisplayField(config, field.id));
-        options.setTableFields(withoutField(options.tableFields()));
+        options.setTableFields?.(withoutField(options.tableFields()));
         syncFields(withoutField(options.fields()));
         // The editor stays open until the new version is known, so a column change right after it does not conflict.
         await options.reloadTableColumns();

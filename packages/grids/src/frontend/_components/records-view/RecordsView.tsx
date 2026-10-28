@@ -170,6 +170,7 @@ export default function RecordsView(props: Props) {
     viewTableFieldsFromProps ? [...viewTableFieldsFromProps].sort((a, b) => a.position - b.position) : null,
   );
   const tableFields = () => viewTableFields() ?? fields();
+  const setTableFields = viewTableFieldsFromProps ? (next: Field[]) => setViewTableFields(next) : undefined;
   const [forms, setForms] = createSignal<Form[]>(props.forms);
   const isSavedView = () => props.viewMode || !!props.activeView || !!props.viewId;
   const canUseEditMode = () => (isSavedView() ? !!props.canEditActiveView : props.canManageTable);
@@ -678,6 +679,7 @@ export default function RecordsView(props: Props) {
     },
     fields,
     setFields,
+    setTableFields,
     tableColumns,
     setTableColumns,
     tableUpdatedAt,
@@ -721,9 +723,7 @@ export default function RecordsView(props: Props) {
     fields,
     setFields,
     tableFields,
-    setTableFields: (next) => {
-      if (viewTableFields()) setViewTableFields(next);
-    },
+    setTableFields,
     hiddenFields: hiddenFlatFields,
     showColumns: showFlatViewColumns,
     forms,
@@ -837,7 +837,7 @@ export default function RecordsView(props: Props) {
                 allowForms={props.tableKind === "stored"}
                 formsButtonLabel={formsButtonLabel()}
                 tableFields={tableFields()}
-                onFieldSettings={props.canManageTable ? openFieldSettings : undefined}
+                onFieldSettings={props.canManageTable && (!props.activeView || setTableFields) ? openFieldSettings : undefined}
                 onOpenTableSettings={openTableSettings}
                 onAddField={() => void openAddField()}
                 onOpenForms={openForms}

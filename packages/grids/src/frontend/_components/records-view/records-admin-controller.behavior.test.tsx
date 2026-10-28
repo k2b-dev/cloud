@@ -230,7 +230,6 @@ const createDefaultTableView = async (initial: {
     fields,
     setFields,
     tableFields: fields,
-    setTableFields: () => {},
     hiddenFields: columns.hiddenFlatFields,
     showColumns: columns.showFlatViewColumns,
     forms,

@@ -820,3 +820,28 @@ domTest("only people who manage the table get the fields menu", async () => {
     page.cleanup();
   }
 });
+
+domTest("deleting a field from a saved view's fields menu updates the menu and keeps the view's own columns", async () => {
+  const api = installFieldApi(tableFields);
+  const page = await mountFieldsMenu({ ...titleOnlyView(), canWrite: true });
+  const { dialogCore } = await import("@k2b/ui");
+  const buttonNamed = (label: string) =>
+    Array.from(page.document.querySelectorAll("button")).findLast((node) => node.textContent?.trim() === label);
+  const cardsText = () => page.document.querySelector(".grids-record-card-grid")?.textContent ?? "";
+  try {
+    await waitFor(() => page.trigger() !== undefined && cardsText().includes("Draft the brochure"));
+    await page.openMenu();
+    expect(await page.choose("Status")).toBe(true);
+    buttonNamed("Delete field")!.click();
+    await waitFor(() => Boolean(buttonNamed("Delete")));
+    buttonNamed("Delete")!.click();
+    await waitFor(() => !dialogCore.isOpen());
+
+    expect(await page.openMenu()).toEqual(["Field settings for Title", "Field settings for People"]);
+    // The table's reloaded fields do not become the view's: its cards still show only the Title column.
+    expect(cardsText()).not.toContain("Mara Lind");
+  } finally {
+    page.cleanup();
+    api.uninstall();
+  }
+});
