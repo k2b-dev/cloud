@@ -231,7 +231,7 @@ suiteFor(
     });
     expect(response.status).toBe(200);
     const [message] = await sql<{ id: string; notification_added_users: string[] }[]>`
-      SELECT id, notification_added_users FROM chat.messages WHERE conversation_id = ${chat.id}::uuid AND system_code = 'groups_added'`;
+      SELECT id, to_jsonb(notification_added_users) AS notification_added_users FROM chat.messages WHERE conversation_id = ${chat.id}::uuid AND system_code = 'groups_added'`;
     expect(message!.notification_added_users).toEqual([newcomer.id]);
     await deliverMessage(message!.id);
     await sendPush(newcomer.id, chat.id, message!.id);
@@ -422,7 +422,7 @@ suiteFor(
     }
   });
   test("notification kinds expose browser recommendations and the email exclusion reason", () => {
-    expect(app.notifications.message.delivery).toEqual({ recommended: ["browser"], excluded: ["email"] });
+    expect(app.notifications.message.delivery).toEqual({ recommended: ["browser"], required: [], excluded: ["email"] });
     expect(app.notifications.message.presentation?.translations.de?.excludedReason).toBe(
       "Nicht verfügbar: Jede Nachricht als E-Mail wäre zu viel.",
     );
