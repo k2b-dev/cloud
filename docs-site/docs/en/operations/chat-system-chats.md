@@ -316,3 +316,19 @@ base and the current list and thread selection. System-chat addresses use
 `listFilter=all|unread` for the personal list; `filter=open|done|unread` remains
 the independent system-thread directory filter.
 All is the default personal list mode and is omitted from generated system-chat URLs.
+
+## Edit or delete a message
+
+`PATCH /conversations/:conversation/messages/:message` accepts `clientId`,
+`revision` (the current message `contentRevision`, initially zero), and `body`. `DELETE` on that path accepts
+`clientId` and `revision`. Both require the author's current Write or Manage
+access and a write-capable credential, within ten minutes of sending. Archived
+threads cannot be changed. They apply to ordinary chats and item threads.
+
+Use a fresh `clientId` per edit or deletion and retain it with the same input
+when retrying a lost response. Receipts remain replayable for 24 hours, then bounded maintenance batches remove them. Reactions never change the content revision. A stale revision returns `MESSAGE_CHANGED`;
+an expired window returns `MESSAGE_MUTATION_EXPIRED`. Both are HTTP 409.
+Successful message views include `editedAt` and `deletedAt`. Deletion clears
+text and attachments while preserving the message's position and a placeholder
+for replies. The revision stream and live invalidation refresh other tabs
+without counting the edit as a new message.

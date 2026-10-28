@@ -104,3 +104,13 @@ The list shows the chat's members and the people who wrote in it. In a Space or 
 - Choose a reaction under a message to add yours or to take it back.
 - Everyone who can read a message can react to it, also readers of a channel who cannot write there.
 :::
+
+## Edit or delete your message {icon="pencil"}
+
+For ten minutes after sending, open **…** on your message and choose **Edit message** or **Delete message**. On a phone, touch and hold the message to open its menu. You still need **Write** or **Manage** access.
+
+Editing shows an **edited** mark. Deleting removes its text, files, shared elements, and reactions for everyone; a deleted-message placeholder keeps the conversation and replies in place. Deletion cannot be undone.
+
+If saving fails, the dialog keeps your text. Choose **Try again** for the same attempt. If the message changed elsewhere or the ten minutes passed, close the dialog and open the current message again.
+
+Existing mentions remain linked when their text and position stay unchanged. Other mention links are removed; mention the person again in a new message if needed.
