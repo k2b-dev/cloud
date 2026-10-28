@@ -73,7 +73,7 @@ export const resourceAppAccess = async (
   if (request && cache) requestDecisions.set(request, cache);
   const key = JSON.stringify([app.id, rule, authority]);
   const previous = cache?.get(key);
-  if (previous) return previous;
+  if (previous) return options.signal ? waitWithin(previous, options.signal) : previous;
   const deadline = options.signal ?? AbortSignal.timeout(RESOURCE_ACCESS_TIMEOUT_MS);
   const signal = request ? AbortSignal.any([deadline, request.signal]) : deadline;
   signal.throwIfAborted();

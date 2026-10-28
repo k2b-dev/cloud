@@ -144,7 +144,11 @@ local adapters but cannot discover resource-derived apps in other processes.
 Run cross-app discovery through Core with an admitted credential; an
 invocation handler cannot exchange its token for a broader app catalog. An unavailable app, failed query or expired
 credential denies access. Resource probes share a ten-second decision budget,
-run sequentially and are not retried. The adapter must observe `signal` and
+or the caller's deadline. A caller that supplies a signal must bound it.
+Universal Search shares one eight-second signal across resource access checks,
+invocation signing and provider requests. Registry reads and grants SQL are not
+cancelled by that signal.
+Probes run sequentially and are not retried. The adapter must observe `signal` and
 cancel outstanding work when it aborts.
 
 Cloud reuses an identical decision only within the originating request.

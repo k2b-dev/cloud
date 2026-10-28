@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, setSystemTime, test } from "bun:test";
+import { afterEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { bindAppAccessRequest } from "../_internal/app-access-request";
 import { bindResourceAppAccess, resourceAppAccess } from "../_internal/app-access-resources";
@@ -57,6 +57,18 @@ const service = (): RequestAuthority => ({
 afterEach(() => setSystemTime());
 
 describe("application entry rules", () => {
+  test("fixed rules do not allocate a resource-probe deadline", async () => {
+    const timeout = spyOn(AbortSignal, "timeout");
+    try {
+      expect(await usableAppIds(person(), [{ id: "legacy" }, { id: "signed-in", access: appAccess.signedIn() }])).toEqual(
+        new Set(["legacy", "signed-in"]),
+      );
+      expect(timeout).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   test("legacy applications retain entry behavior; declared rules require resolved identity", async () => {
     expect(await canUseApp(null, { id: "legacy" })).toBe(true);
     expect(await canUseApp(null, { id: "declared", access: appAccess.signedIn() })).toBe(false);
@@ -222,6 +234,9 @@ describe("resource-derived app access", () => {
       expect(await canUseApp(authority, app)).toBe(true);
       right = false;
       expect(await canUseApp(bindAppAccessRequest(person(), request), app)).toBe(true);
+      expect(hasAnyRight).toHaveBeenCalledTimes(1);
+      // A cached allow must still honor the current caller's shorter budget.
+      expect(await canUseApp(authority, app, { signal: AbortSignal.abort(new Error("deadline")) })).toBe(false);
       expect(hasAnyRight).toHaveBeenCalledTimes(1);
       expect(await canUseApp(authority, app, { db: sql })).toBe(false);
       expect(await canUseApp(bindAppAccessRequest(person(), new Request(request)), app)).toBe(false);

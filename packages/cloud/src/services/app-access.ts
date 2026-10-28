@@ -83,23 +83,25 @@ const reportFailure = () => {
  * One authoritative SQL read for all configurable lists; resource rules query the owning adapters.
  * No cross-request grant cache: revocation applies on the next request.
  * Pass the reserved transaction as `db` when checking access inside a guarded operation.
+ * A supplied `signal` replaces the default resource budget; the caller must bound it.
  */
 export const usableAppIds = async (
   authority: RequestAuthority | null,
   apps: readonly AccessApp[],
-  options: { db?: SQL } = {},
+  options: { db?: SQL; signal?: AbortSignal } = {},
 ): Promise<Set<string>> => {
   const db = options.db ?? sql;
   const allowed = new Set(apps.filter((app) => app.access?.kind !== "grants" && evaluateAppAccess(authority, app)).map((app) => app.id));
   if (!authority) return allowed;
-  const resourceSignal = AbortSignal.timeout(RESOURCE_ACCESS_TIMEOUT_MS);
+  let resourceSignal = options.signal;
   // Sequential: one existence probe in flight per decision, no resource enumeration.
   for (const app of apps) {
     if (app.access?.kind !== "resources" || !credentialAllows(authority, app.id)) continue;
+    resourceSignal ??= AbortSignal.timeout(RESOURCE_ACCESS_TIMEOUT_MS);
     try {
       if (await resourceAppAccess(authority, app, { ...options, signal: resourceSignal })) allowed.add(app.id);
     } catch {
-      reportFailure();
+      if (!options.signal?.aborted) reportFailure();
     }
   }
   const configurable = apps.filter((app) => app.access?.kind === "grants" && credentialAllows(authority, app.id));
@@ -132,5 +134,8 @@ export const usableAppIds = async (
   return allowed;
 };
 
-export const canUseApp = async (authority: RequestAuthority | null, app: AccessApp, options: { db?: SQL } = {}): Promise<boolean> =>
-  (await usableAppIds(authority, [app], options)).has(app.id);
+export const canUseApp = async (
+  authority: RequestAuthority | null,
+  app: AccessApp,
+  options: { db?: SQL; signal?: AbortSignal } = {},
+): Promise<boolean> => (await usableAppIds(authority, [app], options)).has(app.id);
