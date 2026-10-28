@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.20.0...npm-ssr-v0.20.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ssr:** a skipped view transition raises no unhandled error ([#1918](https://github.com/k2b-dev/cloud/issues/1918)) ([e21b7e6](https://github.com/k2b-dev/cloud/commit/e21b7e6d1e4d608f0185c08a4d1a79883854f576))
+
 ## [0.20.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.19.0...npm-ssr-v0.20.0) (2026-10-23)
 
 

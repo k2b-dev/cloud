@@ -7,12 +7,13 @@ import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
 import { Button, FileDropTarget, NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { TextEditor, type TextEditorControls } from "@k2b/ui/text-editor";
-import { type Accessor, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { yCollab } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
 import type { NoteAuthors } from "../../../../lib/activity-actions";
+import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
 import { extractHeadingLines, headingAtLine } from "../../../../lib/note-insights";
 import { deriveNoteTitle } from "../../../../lib/note-title";
@@ -40,6 +41,7 @@ import { yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
 import { notebookWorkspaceMessages } from "../../messages";
+import { createEditorComments } from "../comments/EditorComments";
 import {
   ACTIVE_HEADING_EVENT,
   type ActiveHeadingEventDetail,
@@ -120,6 +122,10 @@ type EditorInstanceProps = {
   initialPanelOpen: boolean;
   initialRichMode: "rich" | "source";
   readOnly?: boolean;
+  /** Write access to the note: commenting needs it, also where the editor only shows the text. */
+  canWrite: boolean;
+  /** The note's comments from the server response; a note opened in the page loads its own. */
+  initialAnnotations?: AnnotationProjection | null;
 };
 
 const CURSOR_IDLE_TIMEOUT_MS = 8_000;
@@ -209,6 +215,7 @@ export default function NoteEditor(props: Props) {
         noteLockedAt: note.lockedAt,
         historyIncomplete: note.historyIncomplete,
         initialContent: note.contentMd,
+        initialAnnotations: null,
       },
       eventDetail: detail,
     };
@@ -466,6 +473,25 @@ function EditorInstance(
   const [tableControls, setTableControls] = createSignal<TextEditorControls>();
   let openTablePicker = () => {};
   const tablePresentation = createNotebookTablePresentation({ notebookId: props.notebookId, locale });
+  const comments = createEditorComments({
+    notebookId: props.notebookId,
+    noteId: props.noteId,
+    me: { id: props.userId, name: props.displayName },
+    canWrite: props.canWrite,
+    editable: () => !props.readOnly && !syncEnded.ended(),
+    readOnly: !!props.readOnly,
+    initial: props.initialAnnotations,
+    view: editorView,
+  });
+  addExtension(comments.extension);
+  let commentsHost: HTMLDivElement | undefined;
+  const [commentsExtent, setCommentsExtent] = createSignal(0);
+  // With the detail panel open, comments show as dots beside the lines (the server renders the first state).
+  createEffect(
+    on(panelOpen, (open) => commentsHost?.closest(".notebook-document-surface")?.toggleAttribute("data-detail-open", open), {
+      defer: true,
+    }),
+  );
   /** The visible saved text, then the live collaborative text after replay. */
   const currentText = () => editorView()?.state.doc.toString() ?? baseText;
 
@@ -1337,36 +1363,44 @@ function EditorInstance(
         tabIndex={-1}
         aria-label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
       >
-        <TextEditor
-          label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
-          initialValue={baseText}
-          mode={richMode() ? "formatted" : "source"}
-          onModeChange={(mode) => changeRichMode(mode === "formatted")}
-          readOnly={!!props.readOnly || !!syncEnded.ended()}
-          // Notebook keeps its own Markdown presentation, toolbar and view menu; the engine adds the shared table grid.
-          presentation={() => []}
-          toolbar={false}
-          extensions={extensions.extension()}
-          maxLength={NOTE_EDITOR_MAX_LENGTH}
-          host={{
-            undo: () => runHistory("undo"),
-            redo: () => runHistory("redo"),
-            boundary: () => undoManager?.stopCapturing(),
-            structure: tableStructure,
-            tabMovesFocus: () => !tabKeys.indents(),
-            renderCell: tablePresentation.renderCell,
-            onCellSelection: publishCellSelection,
-          }}
-          // Clipboard image files upload through the surface's paste handler; only images without a file need the hint.
-          onDroppedImages={(count, files) => files.length >= count}
-          onAttachImages={() => openAttachmentPicker(props.notebookId, locale())}
-          onReady={(controller, controls) => {
-            extensions.attach(controller.view);
-            setTableControls(controls);
-            setEditorView(controller.view);
-          }}
-        />
+        <div ref={commentsHost} class="notebook-comments-host" style={{ "min-height": `${commentsExtent()}px` }}>
+          <TextEditor
+            label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
+            initialValue={baseText}
+            mode={richMode() ? "formatted" : "source"}
+            onModeChange={(mode) => changeRichMode(mode === "formatted")}
+            readOnly={!!props.readOnly || !!syncEnded.ended()}
+            // Notebook keeps its own Markdown presentation, toolbar and view menu; the engine adds the shared table grid.
+            presentation={() => []}
+            toolbar={false}
+            extensions={extensions.extension()}
+            maxLength={NOTE_EDITOR_MAX_LENGTH}
+            host={{
+              undo: () => runHistory("undo"),
+              redo: () => runHistory("redo"),
+              boundary: () => undoManager?.stopCapturing(),
+              structure: tableStructure,
+              tabMovesFocus: () => !tabKeys.indents(),
+              renderCell: tablePresentation.renderCell,
+              onCellSelection: publishCellSelection,
+            }}
+            // Clipboard image files upload through the surface's paste handler; only images without a file need the hint.
+            onDroppedImages={(count, files) => files.length >= count}
+            onAttachImages={() => openAttachmentPicker(props.notebookId, locale())}
+            onReady={(controller, controls) => {
+              extensions.attach(controller.view);
+              setTableControls(controls);
+              setEditorView(controller.view);
+            }}
+          />
+          {comments.margin(
+            () => commentsHost,
+            () => commentsHost?.closest<HTMLElement>(".notebook-document-surface") ?? undefined,
+            setCommentsExtent,
+          )}
+        </div>
       </ScrollArea>
+      {comments.toolbar(() => scrollPort)}
       {/* Files dropped anywhere on the note's page upload and land at the cursor. */}
       <FileDropTarget
         label={t().dropToInsert}
@@ -1397,6 +1431,7 @@ function EditorInstance(
               onTablePickerReady={(open) => {
                 openTablePicker = open;
               }}
+              comments={{ open: comments.openCount(), onOpen: comments.ui.requestList }}
             />
           }
         >

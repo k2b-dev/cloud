@@ -13,6 +13,9 @@ const unusedMemberRequest = async () => {
 };
 const memberApi = {
   threads: async () => noThreads,
+  react: async () => {},
+  reactions: async () => ({ items: [] }),
+  shared: async () => ({ items: [], nextCursor: null }),
   createThread: async () => {
     throw new Error("Unused thread request");
   },
@@ -33,7 +36,12 @@ const memberApi = {
 class ManualConnection implements LiveConnection {
   channels = new Map<string, (data: unknown) => Promise<void>>();
   subscribe<T>(channel: string, _scope: unknown, handlers: LiveSubscriptionHandlers<T>) {
-    this.channels.set(channel, async (data) => handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }]));
+    this.channels.set(channel, async (data) => {
+      handlers.caughtUp?.(false);
+      await handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }]);
+      handlers.caughtUp?.(true);
+    });
+    handlers.caughtUp?.(true);
     return { close() {} };
   }
   apply(channel: string, data: unknown) {
@@ -67,12 +75,16 @@ test("real store converges to V5 under per-key FIFO, random cross-key order, dup
       const latest = model.msgs.findLast((m) => m.kind === "text");
       return ConversationSchema.parse({
         threads: 0,
+        channel: false,
+        member: true,
         id: cid,
         name: null,
         icon: null,
         purpose: null,
         title: "Other",
         memberCount: 2,
+        archived: false,
+        pinnedRank: null,
         withGuests: false,
         peerDeactivated: false,
         rev: model.rev,
@@ -95,6 +107,11 @@ test("real store converges to V5 under per-key FIFO, random cross-key order, dup
     const connection = new ManualConnection();
     const api: ChatStoreApi = {
       ...memberApi,
+      personal: async () => {
+        throw new Error("Unused personal write");
+      },
+      preferences: async () => ({ collapsed: [] }),
+      savePreferences: async (collapsed) => ({ collapsed }),
       conversations: async () => ({ items: [row()], nextCursor: null }),
       conversation: async () => row(),
       messages: async () => null,

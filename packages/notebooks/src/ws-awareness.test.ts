@@ -1,10 +1,11 @@
 import { expect, mock, test } from "bun:test";
 import { encoding } from "@k2b/stdlib";
+import { personColor } from "@k2b/ui";
 import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { getNotebookPresenceColor, notebooksYjs } from "./lib/yjs";
+import { notebooksYjs } from "./lib/yjs";
 
 // Isolate module mocks from the real service suites, as in ws-lineage.test.ts.
 if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
@@ -33,6 +34,7 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
     guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
     getLocale: () => "en",
     auth: {
+      requireRole: () => async (_c: Context, next: () => Promise<void>) => next(),
       session: {
         resolveToken: async () => "session",
         authenticate: async () => (authenticated ? { user: { id: "alice", displayName: "Alice", avatarHash: null } } : null),
@@ -180,7 +182,7 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       const victimId = [...observer.getStates().keys()][0]!;
       expect(victimId).toBe(2 ** 32 + 1);
       expect(observer.getStates().get(victimId)).toEqual({
-        user: { userId: "alice", name: "Alice", color: getNotebookPresenceColor("alice") },
+        user: { userId: "alice", name: "Alice", color: personColor("Alice") },
         writerId: 42,
         cursor,
       });

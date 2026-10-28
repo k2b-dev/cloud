@@ -1,3 +1,4 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
@@ -39,6 +40,7 @@ import {
 } from "../contracts";
 import { isMarkdown } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
+import { ENTRY_TYPE, entryRefId } from "../resource-ref";
 import { useAssetMessages } from "./asset-messages";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
@@ -85,7 +87,6 @@ const relativeName = uploadRelativePath;
 export default function Browser(props: {
   directory: Directory;
   bases: readonly BaseSummary[];
-  cloudUrl: string;
   after?: string;
   source?: string;
   detail?: EntryResult | null;
@@ -1056,6 +1057,11 @@ export default function Browser(props: {
       },
     ];
   };
+  const cloudId = useCloudIdCopy();
+  const entryRef = (item: FileEntry) => {
+    const id = item.resourceId ?? entryRefId(baseId(), item.path);
+    return id ? { type: ENTRY_TYPE, id } : null;
+  };
   const contextItems = () => {
     const items = selected();
     if (!items.length) return addItems();
@@ -1071,6 +1077,7 @@ export default function Browser(props: {
             { disabled: !canCreate(), label: b().duplicate, icon: "ti ti-copy", action: () => duplicate(item) },
           ]),
       ...selectionItems(),
+      ...cloudId.section(entryRef(item)),
     ];
   };
 
@@ -1598,7 +1605,6 @@ export default function Browser(props: {
         <Show when={detailOpen()}>
           <FileInspector
             base={props.directory.base}
-            cloudUrl={props.cloudUrl}
             paths={selectedPaths().length > 1 ? selected().map((row) => row.path) : selectedPaths()}
             selected={selected()}
             initial={props.detail}

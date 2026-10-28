@@ -73,6 +73,7 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: Spa
         current: { kind: "space", id: props.ctx.space.id },
         canCreate: Boolean(props.ctx.userId),
         myWorkLabel: overview.myWork,
+        calendarLabel: overview.calendar,
         newSpaceLabel: overview.newSpace,
       }),
     onAction: async (action) => {

@@ -596,3 +596,60 @@ catalog, including Administration for administrators. Application aliases reuse
 data migration. Deploy the shared Cloud package and application declarations
 together through the normal image release. Destination routes continue to
 enforce their own authorization. See [Universal search](/en/docs/platform/search).
+
+## Workflow inference budgets
+
+Workflow AI uses `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` and
+`WORKFLOW_AI_QUEUE_TIMEOUT_MS` (both 60,000 ms by default). Keep these budgets
+consistent across workers. Queue overload rejects new work; failed run details
+provide the recovery path after capacity recovers. The queue deadline includes
+application downtime: pending tasks older than the queue budget fail visibly on
+restart and require a workflow retry. Graceful shutdown requeues interrupted
+attempts before draining the worker.
+
+The reject-on-full policy uses the new `cloud.workflow-ai.v2` Sync resource,
+because an existing discard-oldest stream cannot change that policy in place.
+On upgrade, Postgres recovery submits pending tasks to the new resource and
+expires missing deliveries visibly. Drain old workers before starting v2 workers:
+legacy workers do not maintain the database heartbeat, so mixed versions can
+expire healthy legacy attempts. Then remove the legacy
+`cloud.workflow-ai` resource through the installation's NATS administration;
+retain its diagnostics until every associated Postgres task is terminal. Do not
+delete pending domain tasks to clear a queue.
+
+`MAIL_WORKFLOW_AI_BODY_MAX_CHARS` defaults to 20,000, the long-input pilot budget.
+The complete request still has to fit the existing 100,000-byte JSONB limit.
+Increasing the body allowance does not bypass that storage constraint. Oversize
+messages require narrower workflow input or manual inspection, followed by retry;
+the stored mail remains intact.
+
+`WORKFLOW_AI_BUDGET` is one JSON registry entry. Its default is
+`{"maxStepsPerSource":2,"tasksPerMinute":10,"burst":20,"sourcesPer24Hours":2000,"scopeConcurrent":1,"globalConcurrent":4}`.
+Deploy the same value to all Mail workers. Postgres serializes short admission
+transactions across replicas; reservations count queued and running work.
+Capacity and rate admission rejections use bounded workflow retries; source and
+daily limits are terminal. Exhaustion remains visible in run details. The rolling ledger
+survives deletion of a workflow run and is pruned after 24 hours. Failed or
+canceled tasks release their logical source slot; minute/day accounting stays
+charged. Non-message Mail runs use the run identity as source, within the same
+mailbox and installation budget. Successful
+cache entries live with their source task, rather than acquiring a second
+retention policy.
+
+The defaults are a pilot operating budget, not a measured production SLA: two
+steps allow classification and optional extraction; the benchmark exercised four
+concurrent calls. The mailbox minute/day limits constrain spend and isolate a
+burst until real arrival rates and configured prices justify a change. Existing
+priced background cost stops still apply. Check run details for the stable
+capacity, rate, daily, source and provider failure codes, then inspect or retry
+messages. Exhausted capacity/rate retries retain their AI error code with
+`details.retryExhausted: true`; a large backfill may require another retry.
+`--retry-failed --recompute-ai` deliberately bypasses successful-result
+reuse while preserving every admission limit and permission check.
+
+The shared Workflow AI consumer also uses the registry budget’s `globalConcurrent`
+value as its global NATS in-flight bound and each process's worker concurrency,
+including unscoped callers. This prevents one slow call from blocking other
+admitted work behind a serial worker. Changing
+that resource setting requires the same deliberate Sync migration as other
+durable consumer configuration changes.

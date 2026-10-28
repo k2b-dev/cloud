@@ -92,7 +92,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
         {
           topic,
           replay,
-          maxEventBytes: topicConfig.maxPayloadBytes,
+          maxPayloadBytes: topicConfig.maxPayloadBytes,
           async *events(docId, after, until, signal) {
             const handle = topic();
             const exact = after === until;

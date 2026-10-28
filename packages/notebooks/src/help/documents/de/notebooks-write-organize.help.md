@@ -25,6 +25,22 @@ Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um die
 
 **Mit KI bearbeiten** öffnet Assistant mit der Seite und ihrer Diskussion. Nach einer Prüfung kann Assistant auch deine neuen Kommentare korrigieren oder löschen. Es gelten dieselben Regeln für Autor und zehn Minuten. Assistant kann Entwürfe für Abfragen und Inhaltsverzeichnisse prüfen, ohne sie zu speichern. Diese Prüfung deckt nicht alle Markdown-Funktionen oder Tabellenformeln ab.
 
+## Text direkt kommentieren {icon="message-plus"}
+
+Markiere eine Stelle im Text. Über der Auswahl erscheint eine kleine Leiste mit **Fett**, **Kursiv**, **Link** und **Kommentieren**. Auf dem Telefon erscheint sie unter der Auswahl. Du kannst auch ⌘⌥M drücken (Windows und Linux: Strg+Alt+M). Ohne Auswahl kommentierst du das Wort am Cursor.
+
+:::reference
+- **Rand:** Der Kommentar steht rechts neben dem Text, auf Höhe seiner Stelle. Die Stelle bleibt in deiner Farbe markiert. Ist zu wenig Platz oder der Detailbereich offen, steht ein farbiger Punkt neben der Zeile. Wähle ihn, um den Kommentar zu öffnen. Auf dem Telefon wählst du die Stelle; der Kommentar öffnet sich unten am Bildschirm.
+- **Vorschlag:** **Änderung vorschlagen** öffnet ein Feld mit dem markierten Text. Darunter siehst du den Unterschied. **Übernehmen** ändert den Text für alle, wie eine normale Bearbeitung in den Versionen. **Rückgängig** geht, solange niemand den neuen Text geändert hat.
+- **Antworten und Erledigen:** Wähle die Stelle oder den Kommentar, um ihn ganz zu öffnen. Dort antwortest du oder markierst ihn als erledigt. Oben am Rand zeigt **n erledigt** die erledigten Kommentare wieder.
+- **Korrigieren:** Deinen eigenen Kommentar bearbeitest oder löschst du zehn Minuten lang. Löschen geht nur ohne Antworten.
+- **Gelöschte Stelle:** Löscht jemand den markierten Text, bleibt der Kommentar mit einem Punkt an der Stelle. Er zeigt den alten Text durchgestrichen.
+- **Tastatur:** Alt+Enter springt von einer markierten Stelle zum Kommentar. Escape springt zurück. Die Pfeiltasten wechseln zwischen den Kommentaren am Rand.
+- **Wer was darf:** Mit Zugriff **Bearbeiten** kommentierst, schlägst vor, übernimmst und erledigst du. Mit Zugriff **Ansehen** liest du die Kommentare in **Schreibgeschützt**.
+- **Wo Kommentare erscheinen:** In **Bearbeiten** und **Schreibgeschützt**. **Buch**, Druck, PDF und Markdown-Export zeigen keine Kommentare. Im **Buch** öffnet **n Kommentare** oben die Notiz in **Schreibgeschützt** beim ersten Kommentar.
+- **Chat:** Der Chat der Seite zeigt zu jedem neuen Kommentar eine ruhige Zeile mit Link zur Stelle.
+:::
+
 ## Eine gespeicherte Version wiederherstellen {icon="history"}
 
 Öffne die Notizdetails und wähle **Versionsverlauf**. Wähle eine Version, um ihren Inhalt oder die Änderungen anzusehen.
@@ -131,6 +147,7 @@ Die Seitenleiste zeigt die Notizen des Notizbuchs als Baum, mit der Startseite z
 :::reference
 - **Name des Notizbuchs:** Wähle den Namen oben, um zu einem anderen Notizbuch zu wechseln oder **Alle Notizbücher** zu öffnen.
 - **Suche und neue Notizen:** Wähle **Notizen durchsuchen** oder drücke **Cmd/Strg+Umschalt+K**. Mit Zugriff **Bearbeiten** oder **Verwalten** erstellst du mit dem Stift neben dem Namen oder mit **Cmd/Strg+Alt+N** eine Notiz. Das letzte Wort deiner Eingabe findet auch Wortanfänge: *Bespr* findet *Besprechungen*. Notizen, deren Titel deiner Eingabe entspricht oder damit beginnt, stehen oben.
+- **Große Notizbücher:** In einem Notizbuch mit mehr als 100 Notizen öffnet der Baum nur den Weg zur offenen Notiz. Öffne eine Notiz mit Unternotizen, um sie zu laden. Um die offene Notiz zeigt eine Ebene zuerst 20 Notizen. Wähle an ihrem Ende **… weitere Notizen** oder an ihrem Anfang **… vorherige Notizen**, um bis zu 100 weitere zu zeigen.
 - **Favoriten, Zuletzt und Tags:** Diese Filter zeigen statt des Baums eine Liste, die zuletzt geänderte Notiz zuerst. **Zuletzt** zeigt die 12 zuletzt geänderten Notizen. Jede Notiz zeigt, wann sie sich geändert hat, und ihre ersten zwei Tags. Wähle den Filter erneut oder **×** über der Liste, um wieder den Baum zu sehen.
 - **Die Liste bleibt ruhig:** Solange die Liste offen ist, verschieben Änderungen von dir oder anderen ihre Notizen nicht. Eine Notiz, die neu zum Filter passt, kommt ans Ende. Um die Liste neu zu sortieren, wähle den Filter zweimal.
 - **Deine Favoriten:** Wähle im Menü einer Notiz **Zu Favoriten hinzufügen**. Nur du siehst deine Favoriten.

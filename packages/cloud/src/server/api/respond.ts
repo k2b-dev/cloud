@@ -49,6 +49,11 @@ export async function respond<D extends Record<string, unknown>, S extends Legac
   resultOrFn: ResultOrFn<LegacyErrorResult<S>>,
   options: { errorDetails: D },
 ): Promise<JsonTypedResponse<Omit<D, keyof ApiErrorBody> & ApiErrorBody, S>>;
+export async function respond<T>(
+  c: Context,
+  resultOrFn: ResultOrFn<AnyResult<T>>,
+  successStatus: 202,
+): Promise<JsonTypedResponse<T, 202> | ApiErrorResponse>;
 export async function respond<E extends ServiceError>(
   c: Context,
   resultOrFn: ResultOrFn<Result<never, E>>,
@@ -77,8 +82,8 @@ export async function respond<T>(
 export async function respond<T>(
   c: Context,
   resultOrFn: ResultOrFn<AnyResult<T>>,
-  statusOrOptions: SuccessStatus | { errorDetails: Record<string, unknown> } = 200,
-): Promise<JsonTypedResponse<T, SuccessStatus> | ApiErrorResponse> {
+  statusOrOptions: SuccessStatus | 202 | { errorDetails: Record<string, unknown> } = 200,
+): Promise<JsonTypedResponse<T, SuccessStatus | 202> | ApiErrorResponse> {
   const result = typeof resultOrFn === "function" ? await resultOrFn() : await resultOrFn;
 
   if (!result.ok) {
@@ -88,7 +93,7 @@ export async function respond<T>(
   }
 
   const successStatus = typeof statusOrOptions === "number" ? statusOrOptions : 200;
-  return c.json(result.data, successStatus as 200 | 201) as JsonTypedResponse<T, SuccessStatus>;
+  return c.json(result.data, successStatus) as JsonTypedResponse<T, SuccessStatus | 202>;
 }
 
 export const respondMessage = (c: Context, resultPromise: Promise<Result<void>>, message: string) =>

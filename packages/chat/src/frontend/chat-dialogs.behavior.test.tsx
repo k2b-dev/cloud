@@ -38,6 +38,8 @@ const personId = "22222222-2222-4222-8222-222222222222";
 const now = "2026-10-12T10:30:00.000Z";
 const conversation: Conversation = {
   threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Planning",
   title: "Planning",
@@ -46,6 +48,8 @@ const conversation: Conversation = {
   memberCount: 2,
   unread: 0,
   read: null,
+  archived: false,
+  pinnedRank: null,
   withGuests: false,
   peerDeactivated: false,
   permission: "admin",
@@ -1004,7 +1008,7 @@ describe("chat dialogs and info", () => {
     for (const managers of [1, 2]) {
       test(`leaving with ${managers} managers ${managers === 1 ? "requires a successor" : "needs no successor"} in ${locale}`, async () => {
         const members = mock<ChatDialogStore["members"]>(async () => ({ items: [nora], self, managers, nextCursor: null }));
-        const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
+        const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false, canRejoin: false }));
         const close = mock<(left?: boolean) => void>();
         await mount(locale, () =>
           createComponent(modules!.LeaveChatDialog, {
@@ -1040,7 +1044,7 @@ describe("chat dialogs and info", () => {
         managers: 1,
         nextCursor: null,
       }));
-      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
+      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false, canRejoin: false }));
       const close = mock<(left?: boolean) => void>();
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
@@ -1063,7 +1067,7 @@ describe("chat dialogs and info", () => {
     });
     test(`a writer leaves without loading members in ${locale}`, async () => {
       const members = mock<ChatDialogStore["members"]>(unexpected);
-      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
+      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false, canRejoin: false }));
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
           setDismissHandler: () => {},
@@ -1134,12 +1138,14 @@ describe("chat dialogs and info", () => {
       expect(onChange.mock.calls).toEqual([[[{ principal: nora.principal, displayName: "Nora" }]]]);
       expect(fetched).toEqual([]);
     });
-    test(`full-account picker renders the platform user/group search in ${locale}`, async () => {
+    test(`full-account picker renders the platform user/group/service-account search in ${locale}`, async () => {
       const people = mock<ChatDialogStore["people"]>(unexpected);
       await mount(locale, () =>
         createComponent(modules!.MemberPicker, { guest: false, chosen: [], excluded: [], people, onChange: () => {} }),
       );
-      expect(input("input").placeholder).toBe(locale === "en" ? "Add user or group…" : "Benutzer oder Gruppe hinzufügen…");
+      expect(input("input").placeholder).toBe(
+        locale === "en" ? "Add user, group, or service account…" : "Benutzer, Gruppe oder Dienstkonto hinzufügen…",
+      );
       expect(people).not.toHaveBeenCalled();
     });
     test(`info search debounces q, and Show more sends its cursor and appends in ${locale}`, async () => {

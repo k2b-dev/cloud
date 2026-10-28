@@ -272,6 +272,7 @@ const mountNoteEditor = ({
           initialHref={editorHref.split("#")[0]!}
           initialDetail={detail("Note01")}
           readOnly={readOnly}
+          canWrite={!readOnly}
         />
       </LocaleProvider>
     ),

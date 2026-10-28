@@ -6,12 +6,58 @@ import { resolveMailSearchRoute } from "../search-state";
 import type { MailboxListView, MailboxPageData } from "../service/workspace";
 import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
+import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import MailOverview from "./MailOverview.island";
 import MailWorkspace from "./MailWorkspace.island";
 
 export const MAIL_SHELL_NOW = "2026-10-14T10:00:00.000Z";
+const summaryRule = { id: "Wf001", name: "Lange Mails zusammenfassen" };
+/** `?summary=` picks the summary state the reader shows; without it the conversation has a person's short text. */
+const summaryFixture = (kind: string | null) => {
+  const ai = summaryState({
+    summary:
+      "- Neues Angebot: 500 Visitenkarten auf 350 g Naturpapier für 214 € netto (vorher 186 €).\n- Lieferung am 6.11. klappt nur mit Freigabe bis Mi., 29.10.\n- Offen: Freigabe oder Rückfrage zum Preis.",
+    source: "workflow",
+    author: { kind: "workflow", ...summaryRule },
+    ai: true,
+    generatedAt: new Date(Date.parse(MAIL_SHELL_NOW) - 3 * 60_000).toISOString(),
+    coveredMessageCount: 5,
+    nextStep: { text: "Freigabe bis Mi., 29.10.", due: "2026-10-29" },
+    canGenerate: true,
+  });
+  switch (kind) {
+    case "ai":
+      return ai;
+    case "stale":
+      return { ...ai, newMessagesSince: 1 };
+    case "writing":
+      return { ...ai, summary: null, status: "writing" as const };
+    case "failed":
+      return {
+        ...ai,
+        summary: null,
+        status: "failed" as const,
+        failure: {
+          code: "timeout" as const,
+          attempts: 3,
+          lastAttemptAt: new Date(Date.parse(MAIL_SHELL_NOW) - 60_000).toISOString(),
+          workflow: summaryRule,
+        },
+      };
+    case "limited":
+      return {
+        ...ai,
+        summary: null,
+        status: "limited" as const,
+        limit: { scope: "rule" as const, workflow: summaryRule, limit: 200, resetsAt: "2026-10-14T22:00:00.000Z" },
+        allowance: { unlimited: false, usedPercent: 24, resetsAt: null },
+      };
+    default:
+      return summaryState({ summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 });
+  }
+};
 export const focusCounts = { mine: 12, unassigned: 7, waiting: 4, all: 23 };
 export const viewCounts = {
   needs_action: 12,
@@ -181,6 +227,16 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedConversationId = url.searchParams.get("conversation");
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
+    // Older shell tests pin "list and reader"; the columns view (F2) opts in with ?layout=auto|columns.
+    viewPreference: {
+      large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
+      phone: "compact",
+    },
+    // ?done=19,14 sets today's completed conversations and how many automations completed.
+    doneTodayCounts: (() => {
+      const [done = 0, automated = 0] = (url.searchParams.get("done") ?? "").split(",").map((value) => Number(value) || 0);
+      return { doneToday: done, doneByAutomation: automated };
+    })(),
     receivingAddress: selectedMailbox.id === "Box001" ? "support@example.test" : selectedMailbox.receivingAddress,
     mailbox: selectedMailbox,
     permission,
@@ -236,7 +292,7 @@ export function mailboxData(url: URL): MailboxPageData {
     selectedConversationId,
     selectedMessageId: url.searchParams.get("message"),
     listItems:
-      scheduledMode || draftsMode
+      scheduledMode || draftsMode || url.searchParams.get("inbox") === "empty"
         ? []
         : selectedMailbox.id === "Box001"
           ? listRows
@@ -317,9 +373,7 @@ export function mailboxData(url: URL): MailboxPageData {
             },
           ]
       : [],
-    conversationSummary: selectedConversationId
-      ? { summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 }
-      : null,
+    conversationSummary: selectedConversationId ? summaryFixture(url.searchParams.get("summary")) : null,
     conversationDrafts: [],
     detailError: null,
     collaborationState: selectedConversationId
@@ -433,6 +487,7 @@ export default function MailShellFixture(props: {
           initialHiddenMailboxIds={sidebar.hiddenMailboxIds}
           currentUserEmail="reader@example.test"
           contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+          cloudUrl="https://cloud.example"
           dateConfig={{ locale, timeZone: "UTC" }}
         />
       ) : (
@@ -442,6 +497,7 @@ export default function MailShellFixture(props: {
           currentUserId="user-1"
           currentUserEmail="reader@example.test"
           contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+          cloudUrl="https://cloud.example"
           dateConfig={{ locale, timeZone: "UTC" }}
           initialPreferences={{
             ...readMailWorkspacePreferences(""),

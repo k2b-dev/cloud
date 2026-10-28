@@ -74,6 +74,7 @@ const mount = (markdown: string) => {
           appUrl="http://localhost"
           userId="User01"
           displayName="Reader"
+          canWrite
           initialContent={markdown}
           initialPanelOpen={false}
           initialRichMode="rich"

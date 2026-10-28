@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { CapabilityActionPolicy } from "../../contracts/capabilities";
 import { isMandatePolicyNarrowing, mandatePolicyAllows, mandatePolicyCanPermitCapability, parseMandatePolicy } from "./policy";
 
 describe("mandate policy", () => {
@@ -263,5 +264,66 @@ test("policy Actions allow only silent routine grants, independently of derived 
     expect(mandatePolicyCanPermitCapability(policy, { appId: "demo", capabilityId: "edit", kind: "action", capabilityPolicy })).toBe(
       allowed,
     );
+  }
+});
+
+describe("live capability policy across mandate shapes", () => {
+  const capabilities: Array<{
+    name: string;
+    capabilityPolicy?: CapabilityActionPolicy;
+    capabilityApproval?: "none" | "rememberable" | "always";
+    unattended: boolean;
+  }> = [
+    { name: "silent personal", capabilityPolicy: { silent: "you" }, unattended: true },
+    { name: "silent draft", capabilityPolicy: { silent: "draft" }, unattended: true },
+    { name: "silent shared", capabilityPolicy: { silent: "shared" }, unattended: true },
+    { name: "routines disabled", capabilityPolicy: { silent: "you", routines: false }, unattended: false },
+    { name: "ask sends", capabilityPolicy: { ask: "sends" }, unattended: false },
+    { name: "ask sensitive", capabilityPolicy: { ask: "sensitive" }, unattended: false },
+    { name: "legacy none", capabilityApproval: "none", unattended: true },
+    { name: "legacy rememberable", capabilityApproval: "rememberable", unattended: true },
+    { name: "legacy always", capabilityApproval: "always", unattended: false },
+    { name: "missing metadata", unattended: false },
+  ];
+  for (const hasGrants of [false, true]) {
+    for (const actions of ["preapproved", "require_approval", "deny"] as const) {
+      for (const capability of capabilities) {
+        test(`${hasGrants ? "with" : "without"} grants / ${actions} / ${capability.name}`, () => {
+          const policy = parseMandatePolicy({
+            version: 1,
+            apps: ["demo"],
+            operations: ["capability.action.run:edit", "capability.action.review:edit"],
+            actions,
+            ...(hasGrants ? { grants: [{ appId: "demo", capabilityId: "edit", kind: "action", fixedInput: { id: "fixed" } }] } : {}),
+          });
+          const routineAllowed = (!hasGrants && actions !== "preapproved") || capability.unattended;
+          for (const actionApproval of ["none", "approved"] as const) {
+            const call = { appId: "demo", actionApproval, input: { id: "fixed" }, ...capability };
+            expect(mandatePolicyAllows(policy, { ...call, operation: "capability.action.run:edit" })).toBe(
+              routineAllowed && (actions === "preapproved" || (actions === "require_approval" && actionApproval === "approved")),
+            );
+            expect(mandatePolicyAllows(policy, { ...call, operation: "capability.action.review:edit" })).toBe(routineAllowed);
+          }
+          expect(
+            mandatePolicyCanPermitCapability(policy, {
+              appId: "demo",
+              capabilityId: "edit",
+              kind: "action",
+              capabilityPolicy: capability.capabilityPolicy,
+              approval: capability.capabilityApproval,
+            }),
+          ).toBe(actions === "preapproved" && capability.unattended);
+          expect(
+            mandatePolicyAllows(policy, {
+              appId: "demo",
+              operation: "capability.action.run:edit",
+              actionApproval: "approved",
+              input: { id: "other" },
+              ...capability,
+            }),
+          ).toBe(!hasGrants && routineAllowed && actions !== "deny");
+        });
+      }
+    }
   }
 });

@@ -115,6 +115,7 @@ and checked cards.
 | Checked card | `CheckboxCard` | `k2b-checkbox-card` |
 | Keyboard-active or selected option | `Select`, `Combobox`, `MultiSelectInput` | `k2b-choice-option` |
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
+| Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |
@@ -170,6 +171,16 @@ do not use it. Folder icons and the icons of object rows, overview headers, and
 panel dialogs take the selection ink `--k2b-app-workspace-active`, so in a
 Cloud app they carry the app color. Sizes, fill shares, and states are in
 [Icon tile](/en/ui/surfaces/utilities#icon-tile).
+
+## One color per person
+
+A person has one color wherever they appear: the tint behind their avatar
+initials, their cursor in a shared text, and the passages they comment on.
+`personColor(name)` returns it from the display name, and `Avatar` uses the
+same palette (`PERSON_COLORS`), so build person colors from it instead of a
+second palette. The palette has no cyan, which means AI, and no yellow, which
+reads as a text highlight. Two people can share a color, so the name always
+appears next to it.
 
 ## App color in Cloud
 

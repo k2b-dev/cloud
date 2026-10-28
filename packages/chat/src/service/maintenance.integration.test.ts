@@ -1,16 +1,53 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { lazySync } from "@k2b/cloud";
+import { createAccess } from "@k2b/cloud/server";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { messageFixtures } from "../api/messages.test-fixture";
+import { repairMemberCount } from "./access";
 import { ConversationSchema, CreateOutcomeSchema, MessagePageSchema } from "./contracts";
 import { maintenanceLifecycle, reconcile } from "./maintenance";
 
 const suite = suiteFor("database", "nats", "valkey");
 suite("chat membership maintenance", () => {
   const f = messageFixtures();
+  const serviceIds: string[] = [];
+  const service = async (
+    kind: "standalone" | "agent" | "resource_bound" | "user_delegated" = "standalone",
+    userId: string | null = null,
+  ) => {
+    const name = `Maintenance ${crypto.randomUUID()}`;
+    const bound = kind === "resource_bound";
+    const [row] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts
+      (name, kind, delegated_user_id, app_id, resource_type, resource_id)
+      VALUES (${name}, ${kind}, ${userId}::uuid, ${bound ? "chat" : null}, ${bound ? "conversation" : null}, ${bound ? testShortId() : null}) RETURNING id`;
+    if (!row) throw new Error("Missing fixture service account");
+    serviceIds.push(row.id);
+    return { id: row.id, name };
+  };
+  const serviceGrant = async (
+    chat: { id: string },
+    account: { id: string },
+    author: { id: string },
+    permission: "none" | "read" | "write" | "admin" = "write",
+    role: "member" | "discoverable" = "member",
+  ) => {
+    const access = await createAccess({ principal: { type: "service_account", serviceAccountId: account.id }, permission });
+    if (!access.ok) throw new Error(access.error.message);
+    await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+      VALUES (${chat.id}::uuid, ${access.data.id}::uuid, ${role}, 'user', ${author.id}::uuid)`;
+    await sql`INSERT INTO chat.participants (conversation_id, principal_type, principal_id, origin, joined_seq)
+      VALUES (${chat.id}::uuid, 'service_account', ${account.id}::uuid, 'direct', 0) ON CONFLICT DO NOTHING`;
+    return access.data.id;
+  };
+  afterAll(async () => {
+    for (const id of serviceIds) {
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ${"p:service_account:" + id}`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+    }
+  });
   const run = () => reconcile({ signal: new AbortController().signal, heartbeat: () => {} });
   const state = async (id: string) => {
     const [row] = await sql<{ state: unknown }[]>`SELECT jsonb_build_object(
@@ -54,6 +91,168 @@ suite("chat membership maintenance", () => {
     await run();
     expect(await state(chat.id)).toEqual(stable);
   });
+
+  for (const kind of ["standalone", "agent"] as const)
+    test(`an active ${kind} manager prevents human succession and counts once across grants`, async () => {
+      const owner = await f.person("Old manager");
+      const reader = await f.person("Reader");
+      const account = await service(kind);
+      const chat = await f.fixture(owner, [{ person: reader, permission: "read" }]);
+      await serviceGrant(chat, account, owner, "admin");
+      await serviceGrant(chat, account, owner, "read");
+      await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
+      const expectedCount = await sql.begin((db) => repairMemberCount(chat.id, db));
+      expect(expectedCount).toBe(2);
+      await sql`UPDATE chat.conversations SET member_count = 99 WHERE id = ${chat.id}::uuid`;
+      const [before] = await sql<{ rev: string }[]>`SELECT rev FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+      const events = () => sql`SELECT seq, payload FROM events.outbox WHERE app_id = 'chat'
+        AND ordering_key IN (${"c:" + chat.shortId}, ${"l:" + chat.shortId}, ${"p:service_account:" + account.id}) ORDER BY seq`;
+      const beforeEvents = await events();
+      await run();
+      const [head] = await sql<
+        { member_count: number; rev: string }[]
+      >`SELECT member_count, rev FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+      expect(head).toEqual({ member_count: expectedCount, rev: before!.rev });
+      const permissions = await sql<{ permission: string }[]>`SELECT a.permission FROM chat.conversation_access ca
+        JOIN auth.access a ON a.id = ca.access_id WHERE ca.conversation_id = ${chat.id}::uuid AND a.user_id = ${reader.id}::uuid`;
+      expect(permissions).toEqual([{ permission: "read" }]);
+      expect(await sql`SELECT seq FROM chat.messages WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(0);
+      expect(await events()).toEqual(beforeEvents);
+      const stable = await state(chat.id);
+      await run();
+      expect(await state(chat.id)).toEqual(stable);
+    });
+
+  test("cleans stale service participants, preserves deleted direct markers, and counts disabled members", async () => {
+    const owner = await f.person();
+    const chat = await f.fixture(owner);
+    const active = await service("agent");
+    const disabled = await service();
+    const revoked = await service();
+    const denied = await service();
+    const discovery = await service();
+    const deletedDirect = await service();
+    const deletedOnDemand = await service();
+    await serviceGrant(chat, active, owner);
+    await serviceGrant(chat, disabled, owner, "read");
+    const revokedAccess = await serviceGrant(chat, revoked, owner);
+    await serviceGrant(chat, denied, owner, "none");
+    await serviceGrant(chat, discovery, owner, "read", "discoverable");
+    await serviceGrant(chat, deletedDirect, owner);
+    await serviceGrant(chat, deletedOnDemand, owner);
+    await sql`UPDATE chat.participants SET origin = 'ondemand'
+      WHERE conversation_id = ${chat.id}::uuid AND principal_type = 'service_account' AND principal_id = ${deletedOnDemand.id}::uuid`;
+    await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${disabled.id}::uuid`;
+    await sql`DELETE FROM auth.access WHERE id = ${revokedAccess}::uuid`;
+    await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray([deletedDirect.id, deletedOnDemand.id])}::uuid[])`;
+    const expectedCount = await sql.begin((db) => repairMemberCount(chat.id, db));
+    expect(expectedCount).toBe(3);
+    await sql`UPDATE chat.conversations SET member_count = 99 WHERE id = ${chat.id}::uuid`;
+    await run();
+    const participants = await sql<{ principal_id: string; origin: string }[]>`SELECT principal_id, origin FROM chat.participants
+      WHERE conversation_id = ${chat.id}::uuid AND principal_type = 'service_account' ORDER BY principal_id`;
+    expect(new Set(participants.map((row) => row.principal_id))).toEqual(new Set([active.id, disabled.id, deletedDirect.id]));
+    expect(participants.find((row) => row.principal_id === deletedDirect.id)?.origin).toBe("direct");
+    const [head] = await sql<{ member_count: number }[]>`SELECT member_count FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+    expect(head?.member_count).toBe(expectedCount);
+    const stable = await state(chat.id);
+    await run();
+    expect(await state(chat.id)).toEqual(stable);
+  });
+
+  for (const kind of ["standalone", "agent"] as const)
+    test(`disabling a ${kind} manager preserves management without a succession message`, async () => {
+      const owner = await f.person("Owner");
+      const reader = await f.person("Reader");
+      const chat = await f.fixture(owner, [{ person: reader, permission: "read" }]);
+      const account = await service(kind);
+      await serviceGrant(chat, account, owner, "admin");
+      await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
+      await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${account.id}::uuid`;
+      await run();
+      expect(await sql`SELECT seq FROM chat.messages WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(0);
+      const stable = await state(chat.id);
+      await run();
+      expect(await state(chat.id)).toEqual(stable);
+    });
+
+  test("bound service admins do not prevent human succession or become successors", async () => {
+    const owner = await f.person("Old manager");
+    const successor = await f.person("Successor");
+    const chat = await f.fixture(owner, [{ person: successor, permission: "read" }]);
+    for (const kind of ["resource_bound", "user_delegated"] as const) {
+      const account = await service(kind, kind === "user_delegated" ? successor.id : null);
+      await serviceGrant(chat, account, owner, "admin");
+    }
+    await serviceGrant(chat, await service(), owner, "none");
+    await serviceGrant(chat, await service("agent"), owner, "admin", "discoverable");
+    await sql`UPDATE chat.participants SET joined_seq = 1 WHERE conversation_id = ${chat.id}::uuid AND principal_type = 'user'`;
+    await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
+    await run();
+    const access = await sql<{ permission: string }[]>`SELECT a.permission FROM chat.conversation_access ca
+      JOIN auth.access a ON a.id = ca.access_id WHERE ca.conversation_id = ${chat.id}::uuid AND a.user_id = ${successor.id}::uuid`;
+    expect(access).toEqual([{ permission: "admin" }]);
+    const page = MessagePageSchema.parse(await (await f.request(successor.headers, `/${chat.shortId}/messages`)).json());
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]?.author.id).toBe(successor.id);
+    const stable = await state(chat.id);
+    await run();
+    expect(await state(chat.id)).toEqual(stable);
+    await sql`DELETE FROM auth.users WHERE id = ${successor.id}::uuid`;
+    await run();
+    expect(await sql`SELECT seq FROM chat.messages WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(1);
+    const managerless = await state(chat.id);
+    await run();
+    expect(await state(chat.id)).toEqual(managerless);
+  });
+
+  for (const kind of ["standalone", "agent"] as const)
+    for (const materialized of [true, false])
+      test(`an eligible ${kind} ${materialized ? "participant" : "member without a participant row"} succeeds the manager`, async () => {
+        const owner = await f.person("Old manager");
+        const reader = await f.person("Later member");
+        const account = await service(kind);
+        const chat = await f.fixture(owner, [{ person: reader, permission: "read" }]);
+        const accessId = await serviceGrant(chat, account, owner, "read");
+        if (materialized)
+          await sql`UPDATE chat.participants SET joined_seq = 1 WHERE conversation_id = ${chat.id}::uuid AND principal_type = 'user'`;
+        else await sql`DELETE FROM chat.participants WHERE conversation_id = ${chat.id}::uuid`;
+        if (!materialized) await sql`DELETE FROM auth.access WHERE id = ${chat.entries.get(reader.id)!}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
+        const [before] = await sql<{ seq_head: string }[]>`SELECT seq_head FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+        await run();
+        const access = await sql<{ id: string; permission: string }[]>`SELECT a.id, a.permission FROM chat.conversation_access ca
+          JOIN auth.access a ON a.id = ca.access_id WHERE ca.conversation_id = ${chat.id}::uuid AND a.service_account_id = ${account.id}::uuid`;
+        expect(access).toEqual([{ id: accessId, permission: "admin" }]);
+        const [head] = await sql<{ member_count: number }[]>`SELECT member_count FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+        expect(head?.member_count).toBe(materialized ? 2 : 1);
+        const participant = await sql<{ origin: string; joined_seq: string }[]>`SELECT origin, joined_seq FROM chat.participants
+          WHERE conversation_id = ${chat.id}::uuid AND principal_type = 'service_account' AND principal_id = ${account.id}::uuid`;
+        expect(participant).toEqual([{ origin: "direct", joined_seq: materialized ? "0" : before!.seq_head }]);
+        const messages = await sql<{ author_type: string; author_id: string; system_code: string; system_params: unknown }[]>`
+          SELECT author_type, author_id, system_code, system_params FROM chat.messages WHERE conversation_id = ${chat.id}::uuid`;
+        expect(messages).toEqual([
+          {
+            author_type: "service_account",
+            author_id: account.id,
+            system_code: "manager_assigned",
+            system_params: { member: { type: "service_account", id: account.id, name: account.name } },
+          },
+        ]);
+        const events = await sql<{ ordering_key: string; payload: unknown }[]>`SELECT ordering_key, payload FROM events.outbox
+          WHERE app_id = 'chat' AND ordering_key IN (${"c:" + chat.shortId}, ${"l:" + chat.shortId}, ${"p:service_account:" + account.id}) ORDER BY seq`;
+        for (const key of [`c:${chat.shortId}`, `l:${chat.shortId}`])
+          expect(events.find((row) => row.ordering_key === key)?.payload).toMatchObject({ a: true });
+        expect(events.find((row) => row.ordering_key === `p:service_account:${account.id}`)?.payload).toMatchObject({
+          d: { type: "membership", conversationId: chat.shortId },
+        });
+        const [audit] = await sql<{ actor_uid: string; outcome: string }[]>`SELECT actor_uid, outcome FROM audit.events
+          WHERE action = 'chat.member.succession' AND target_id = ${chat.shortId}`;
+        expect(audit).toEqual({ actor_uid: "chat-maintenance", outcome: "allowed" });
+        const stable = await state(chat.id);
+        await Promise.all([run(), run()]);
+        expect(await state(chat.id)).toEqual(stable);
+      });
 
   for (const throughGroup of [false, true])
     test(`last-manager succession to ${throughGroup ? "group-only" : "direct"} member is atomic and publishes a hint`, async () => {

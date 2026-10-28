@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # Deployment requirements
@@ -26,6 +26,19 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Upgrade pasted resource link recognition
+
+Core now serves authenticated, read-only `POST /api/resources/resolve`.
+Applications can publish optional top-level `resourcePages` in their capability
+manifest. Older Core versions ignore these pages and keep existing Types and
+readers; upgrade Core to recognize application URLs. Apps without page
+declarations still support their resource permalinks through a reader.
+
+Browser recognition compares absolute links with the canonical origin from
+`app.url`, supplied in `Layout` shell data. Configure that setting for absolute
+pasted links; root-relative links work without it. No additional service or
+secret is required. See [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
 
 ## Upgrade personal Linux group retirement
 
@@ -57,6 +70,16 @@ resolve orphaned groups through the normal Accounts group deletion path.
 Referenced or uncertain historical groups remain usable until resolved;
 upgrading alone does not remove their authority. Follow
 [Review historical groups after upgrading](/en/docs/operations/linux-identities#review-historical-groups-after-upgrading).
+
+## Enable numeric workflow conditions
+
+Upgrade every application that compiles or executes workflows before publishing
+definitions using `greaterThan`, `lessThan`, `atLeast`, or `atMost`. Older
+workers do not understand these operators. Mail also adds reply text length,
+attachment count, bulk-message classification, and conversation message count
+for new run snapshots. No schema migration or new configuration is required.
+See [workflow conditions](/en/docs/automation/author-and-publish-workflows#compare-values-in-conditions)
+and Mail's workflow Help for the field semantics.
 
 ## Review Mail workflows that send automatically
 
@@ -173,6 +196,7 @@ not fail a request that admission accepts.
 
 | Requirement | Used for | Operator responsibility |
 | --- | --- | --- |
+| `linux/amd64` hosts | Published Cloud container images | Before upgrading an ARM host, build from source or stay on an earlier ARM64 release; see [Container architectures](/en/docs/operations/build-and-deploy#container-architectures). |
 | Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
 | PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks, setup runs on one replica of an application at a time through a NATS lease, and runtime work uses NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
@@ -514,7 +538,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | --- | --- | --- |
 | Platform email | A default [outgoing mail sender profile](/en/docs/operations/outgoing-mail) and a reachable SMTP server. Core also needs IMAP egress only for profiles with bounce polling enabled. | Test the profile through Administration → Outgoing mail or `cld admin outgoing-mail profiles test <key> --to <address>`. Magic links, password-reset emails, and email notifications use outgoing mail as app `core` and need this independently of installing Mail. Notification batches follow the default profile's pace. |
 | FreeIPA | `freeipa.enable`, connection, service credentials, trusted CA and group rules. Configure and explicitly enable the integration in Core administration; environment bootstrap is not supported. | Follow [FreeIPA setup](/en/docs/operations/freeipa), test TLS/login, and preview sync scope before directory changes. |
-| AI | `ai.enabled`, `ai.model_profiles_json`, selected model IDs, profile credentials/endpoint and applicable model access grants | Follow [Models and providers](/en/docs/ai/models-and-providers). An installed Assistant is not an enabled or authorized model. Private models need reachable inference endpoints; hosted models need provider credentials. |
+| AI | `ai.enabled`, provider connections, models, variants, class/tool assignments and model access grants | Follow [Models and providers](/en/docs/ai/models-and-providers). An installed Assistant is not an enabled or authorized model. Private models need reachable inference endpoints; hosted models need provider credentials. |
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
@@ -796,6 +820,26 @@ Provide and [connect ClickHouse](#provide-clickhouse-for-pulse) before resuming
 collection. A fresh or reset installation creates no Postgres extension.
 Measurements live in each base's ClickHouse database; Postgres keeps control
 data and write reservations. Later starts preserve the new data.
+
+### Discover calendar sources
+
+The additive `calendarSource` declaration lets applications offer calendars
+through their existing capability manifests. Upgrade Core and the consumer's
+`@k2b/cloud` package before expecting discovery. Older readers ignore the new
+declaration; applications without it retain their existing manifest hashes.
+An unreadable declaration is ignored as a whole while its other capabilities
+remain available. Incompatible live sources produce one registry log per
+manifest. See [Calendar sources](/en/docs/platform/calendar-sources).
+
+Spaces adds read-only `calendar.list` and `calendar.events` Queries and
+`GET /api/spaces/calendar/sources` and `GET /api/spaces/calendar/events` for
+unbound user-backed callers, and the read-only page `/app/spaces/calendar`
+(**Calendar** in the Spaces sidebar), which shows every source a person can
+read. The existing Space iCal link and `event.agenda` remain available. No new service, configuration, migration, or subscription is
+needed. Verify source discovery and one authorized event read after upgrading;
+a healthy container alone does not prove that the caller can read a calendar.
+The aggregate reader has a 42-day view range, 100-calendar selection,
+60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
 
 ### Upgrade Spaces task deadlines
 
@@ -1534,6 +1578,35 @@ secrets, and old image set if rollback is necessary. See the
 [identity cutover contract](/en/docs/reference/deprecations-and-migrations#jwt-only-sessions-and-internal-invocations)
 for token compatibility and [Identity key operations](/en/docs/operations/identity-key-operations)
 for key recovery.
+
+## Enable nested capability Queries
+
+Upgrade Core and the applications taking part in a nested Query to the same
+Cloud release before using `context.query()`. Older invocation verifiers reject
+the child token's new parent binding. Core adds three nullable columns to
+`capabilities.executions` during its normal migration; existing history remains
+readable.
+
+Set the existing `CLOUD_CORE_INTERNAL_ORIGIN` on the calling application and
+allow its private requests to Core's
+`POST /api/_internal/identity/v1/invoke-child` route. Core and the target
+application need their shared Valkey connection. Core holds a short-lived
+exchange lease there, containing revocation coordinates and turn metadata,
+never the original session cookie or bearer credential. Optional lease setup
+runs after signing commits and gets 1% of the 30-second parent-token window
+(300 ms); a failed or stalled store disables nesting. Leases expire within
+the parent's 30-second token lifetime. Cleanup starts when dispatch ends and
+does not delay the original response; expiry bounds cleanup failures.
+Unavailable or lost lease state disables nesting without failing the original
+invocation. It denies the nested Query; do not substitute an
+application permission cache.
+
+The initial budget permits one child Query and no further nesting. Mandate
+policies and Assistant tool restrictions must include that Query explicitly.
+Check a permitted reader, a denied reader and cancellation before enabling the
+consuming workflow. Use `requestId`, `parentInvocationId` and `viaAppId` in
+capability execution history to inspect the chain. See
+[App capabilities](/en/docs/platform/capabilities#read-from-another-capability-handler).
 
 ## Upgrade from Sync v5
 

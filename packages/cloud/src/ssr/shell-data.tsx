@@ -9,6 +9,8 @@ import type { PanelProvider } from "./app-navigation";
 import type { RailApp } from "./rail-navigation";
 
 export type ShellData = {
+  /** Canonical public Cloud origin; omitted until app.url is configured. */
+  cloudOrigin?: string;
   panel?: { providers: PanelProvider[]; provider?: string; context: PanelPageContext | null; consent?: PanelConsentSnapshot };
   /** The authorized navigation catalog, sorted for the request locale: the rail, the app grid and the phone menu show it. */
   apps: RailApp[];

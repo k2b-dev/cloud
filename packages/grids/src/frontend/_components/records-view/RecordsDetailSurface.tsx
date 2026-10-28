@@ -14,7 +14,6 @@ import type {
 import { recordsViewMessages } from "./messages";
 
 type Props = {
-  cloudUrl: string;
   baseId: string;
   tableId: string;
   tableName: string;
@@ -80,7 +79,6 @@ export default function RecordsDetailSurface(props: Props) {
         >
           <Show when={props.record()} fallback={<Placeholder state="loading" variant="panel" title={t().loadingRecord} class="m-3" />}>
             <RecordDetailPanel
-              cloudUrl={props.cloudUrl}
               baseId={props.baseId}
               tableId={props.tableId}
               tableName={props.tableName}

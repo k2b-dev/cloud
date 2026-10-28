@@ -12,7 +12,7 @@ import {
   type SharedTextStructuralHistory,
 } from "./structural-history";
 import { TableActionRejectedError } from "./table-actions";
-import { minimalTextDiff } from "./text-diff";
+import { textDiffHunks } from "./text-diff";
 import type {
   SharedTextActor,
   SharedTextChange,
@@ -24,8 +24,12 @@ import type {
   SharedTextSyncEvent,
 } from "./types";
 
+/** Text for a diffed edit, original-source changes, or an application-prepared Yjs update. */
+type PlannedEdit = string | readonly SharedTextChange[] | { update: Uint8Array };
+
 type DocumentLog = {
-  maxEventBytes?: number;
+  /** Omitted logs use Sync’s default message payload limit (128 KiB) for diffs and skip the event size check. */
+  maxPayloadBytes?: number;
   events?(
     docId: string,
     after: string | null,
@@ -68,7 +72,7 @@ export const createDoc = (stored: SharedTextStoredState): Y.Doc => {
 };
 
 export const bindDocuments = <Saved, Context>(
-  { topic, replay, events, maxEventBytes }: DocumentLog,
+  { topic, replay, events, maxPayloadBytes }: DocumentLog,
   store: SharedTextStore<Saved, Context>,
 ) => {
   const write = async (
@@ -88,7 +92,7 @@ export const bindDocuments = <Saved, Context>(
       restoreRevision: string;
       contributors: SharedTextContributor[];
       state(): Uint8Array;
-    }) => string | readonly SharedTextChange[] | Promise<string | readonly SharedTextChange[]>,
+    }) => PlannedEdit | Promise<PlannedEdit>,
     maxLength?: number,
   ): Promise<SharedTextEditResult<Saved>> => {
     if (maxLength !== undefined && (!Number.isSafeInteger(maxLength) || maxLength < 0))
@@ -128,28 +132,39 @@ export const bindDocuments = <Saved, Context>(
         contributors,
         state: () => Y.encodeStateAsUpdate(doc),
       });
-      let changes: readonly SharedTextChange[];
+      let changes: readonly SharedTextChange[] = [];
+      let prepared: Uint8Array | undefined;
       if (maxLength === undefined) {
-        if (typeof next !== "string") throw new TypeError("edit must return text");
-        if (next === text) return { status: "unchanged", text };
-        const diff = minimalTextDiff(text, next);
-        changes = [{ from: diff.index, to: diff.index + diff.deleteCount, insert: diff.insert }];
+        if (typeof next === "string") {
+          if (next === text) return { status: "unchanged", text };
+          changes = textDiffHunks(text, next, maxPayloadBytes ?? 128 * 1024).map((diff) => ({
+            from: diff.index,
+            to: diff.index + diff.deleteCount,
+            insert: diff.insert,
+          }));
+        } else if ("update" in next) prepared = next.update;
+        else throw new TypeError("edit must return text or a prepared update");
       } else {
-        if (typeof next === "string") throw new TypeError("change must return disjoint edits");
+        if (typeof next === "string" || "update" in next) throw new TypeError("change must return disjoint edits");
         changes = validateChanges(text, next, maxLength);
       }
-      if (!changes.length && !options.inverseOf) return { status: "unchanged", text };
+      if (!prepared && !changes.length && !options.inverseOf) return { status: "unchanged", text };
       // A request cancelled while the callback ran must not publish a write.
       options.signal?.throwIfAborted();
       const beforeEditState = Y.encodeStateVector(doc);
       const finishHistory = options.actionId ? prepareStructuralHistory(ytext, changes) : undefined;
-      doc.transact(() => {
-        for (let index = changes.length - 1; index >= 0; index--) {
-          const change = changes[index]!;
-          if (change.to > change.from) ytext.delete(change.from, change.to - change.from);
-          if (change.insert.length) ytext.insert(change.from, change.insert);
-        }
-      }, "cli-edit");
+      if (prepared) {
+        // Application-prepared transactions preserve exact item identities and
+        // may be replayed after a partial publication/persistence failure.
+        Y.applyUpdate(doc, prepared, "server-edit");
+      } else
+        doc.transact(() => {
+          for (let index = changes.length - 1; index >= 0; index--) {
+            const change = changes[index]!;
+            if (change.to > change.from) ytext.delete(change.from, change.to - change.from);
+            if (change.insert.length) ytext.insert(change.from, change.insert);
+          }
+        }, "cli-edit");
       const actor = options.actor;
       const updateBytes = Y.encodeStateAsUpdate(doc, beforeEditState);
       const receipt = options.actionId ? { actionId: options.actionId, update: updateBytes } : undefined;
@@ -168,7 +183,7 @@ export const bindDocuments = <Saved, Context>(
         originPeerId: null,
         ...(actor ? { actor } : {}),
       };
-      if (maxEventBytes !== undefined && new TextEncoder().encode(JSON.stringify(event)).length > maxEventBytes)
+      if (maxPayloadBytes !== undefined && new TextEncoder().encode(JSON.stringify(event)).length > maxPayloadBytes)
         throw new RangeError("The structural receipt exceeds the document log payload budget");
       await options.validate?.();
       options.signal?.throwIfAborted();
@@ -468,7 +483,11 @@ export const bindDocuments = <Saved, Context>(
     edit(
       docId: string,
       options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal },
-      update: (current: { text: string; contributors: SharedTextContributor[]; state(): Uint8Array }) => string | Promise<string>,
+      update: (current: {
+        text: string;
+        contributors: SharedTextContributor[];
+        state(): Uint8Array;
+      }) => string | { update: Uint8Array } | Promise<string | { update: Uint8Array }>,
     ): Promise<SharedTextEditResult<Saved>> {
       return write(docId, options, update);
     },

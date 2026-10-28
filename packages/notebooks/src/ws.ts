@@ -2,6 +2,7 @@ import type { NotebookPresenceParticipant, User } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getLocale, guardAppAccessSocket } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { createTrustedTextAwareness, fromBase64, InvalidSharedTextAwarenessError } from "@k2b/cloud/shared-text";
+import { personColor } from "@k2b/ui";
 import { ConflictError, CursorMismatchError, RetentionGapError, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
 import type { ServerWebSocket } from "bun";
@@ -10,7 +11,7 @@ import { upgradeWebSocket } from "hono/bun";
 import { z } from "zod";
 import { SHORT_ID_REGEX } from "./lib/short-id";
 import { isPermissionInvalidation, notebooksWorkspace, toPublicWorkspaceEvent } from "./lib/workspace-events";
-import { getNotebookPresenceColor, notebooksYjs } from "./lib/yjs";
+import { notebooksYjs } from "./lib/yjs";
 import { notebooksService } from "./service";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "./service/presence";
 import { yjsSnapshotWorker } from "./service/yjs-snapshot-worker";
@@ -1223,7 +1224,7 @@ const handleAwarenessPublish = async (ctx: WsContext, payload: z.infer<typeof Aw
     ctx.trustedAwareness = createTrustedTextAwareness({
       clientId: 2 ** 32 + reservation.streamSequence,
       textName: "codemirror",
-      user: { userId: ctx.user.id, name: ctx.user.displayName, color: getNotebookPresenceColor(ctx.user.id) },
+      user: { userId: ctx.user.id, name: ctx.user.displayName, color: personColor(ctx.user.displayName) },
     });
     ctx.awarenessUserId = ctx.user.id;
   }

@@ -432,7 +432,7 @@ export const learnAiMemoriesFromPrivateChats = async (
   const summary: AiMemoryLearningRunSummary = { scanned: 0, learned: 0, updated: 0, retired: 0, skipped: 0, failed: 0 };
   let resolved: AiResolvedModel;
   try {
-    resolved = await (input.deps?.resolveModel ?? resolveAiBackgroundModel)();
+    resolved = await (input.deps?.resolveModel ?? resolveAiBackgroundModel)({ class: "fast" });
   } catch (error) {
     log.info("Memory learning skipped: no background model available", {
       error: error instanceof Error ? error.message : String(error),
@@ -500,7 +500,7 @@ export const learnAiMemoriesFromPrivateChats = async (
         conversationId: candidate.conversationId,
         turnId: candidate.turnId,
         runKind: "turn",
-        modelProfileId: resolved.profile.id,
+        modelId: resolved.profile.id,
         accountedTokens: reservedTokens,
       });
       // Claiming the run also awaits the database: recheck immediately before inference.
@@ -617,7 +617,7 @@ export const learnAiMemoriesFromPrivateChats = async (
         turnId: context.source.candidate.turnId,
         runKind: "workflow",
         evidenceKey: workflowEvidenceKey(pattern),
-        modelProfileId: resolved.profile.id,
+        modelId: resolved.profile.id,
         accountedTokens: reservedTokens,
       });
       if (!(await isAiWorkflowPatternEligible(pattern))) {

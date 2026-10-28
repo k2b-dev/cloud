@@ -40,6 +40,8 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  viewPreference: { large: "auto", phone: "compact" },
+  doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
@@ -256,6 +258,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
           contactDirectory: m.DEFAULT_MAIL_CONTACT_DIRECTORY,
+          cloudUrl: "https://cloud.example",
           dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
           initialPreferences: m.readMailWorkspacePreferences(""),
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),

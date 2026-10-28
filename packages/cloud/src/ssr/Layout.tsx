@@ -14,6 +14,7 @@ import { isAppSessionActor } from "../server/actor";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
 import { dates, resolveHomePath } from "../shared";
+import { publicCloudOrigin } from "../shared/app-url";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
 import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
@@ -258,7 +259,9 @@ export default function Layout(props: LayoutProps) {
   const panel: ShellData["panel"] = providers.length
     ? { providers, provider: panelState.provider ?? providers[0]?.id, context: pageContext, consent: c.get("panelConsent") }
     : undefined;
+  const cloudOrigin = settings?.app?.url ? publicCloudOrigin(settings.app.url) : undefined;
   const shellData: ShellData = {
+    ...(cloudOrigin ? { cloudOrigin } : {}),
     ...(panel ? { panel } : {}),
     platform: keyboardPlatform(c.req.raw.headers.get("User-Agent") ?? ""),
     ...(viewHelp.length ? { help: viewHelp } : {}),
@@ -294,6 +297,7 @@ export default function Layout(props: LayoutProps) {
           apps: allApps,
           legalLinks,
           searchLinks,
+          cloudOrigin: shellData.cloudOrigin,
           home: shellData.home,
           profile: shellData.profile,
           announcements: user ? (announcements?.latestAnnouncementVersion ?? null) : null,
@@ -325,12 +329,10 @@ export default function Layout(props: LayoutProps) {
               <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
             </main>
           </PageTrailProvider>
-          {/* Focus pages carry shell data only for their panel providers. */}
-          {panel && (
-            <ShellDataProvider data={{ panel, platform: shellData.platform, theme, apps: [], legalLinks: [], searchLinks: {} }}>
-              <PanelSlot panel={panel} state={{ ...panelState, open: false }} platform={shellData.platform} />
-            </ShellDataProvider>
-          )}
+          {/* Focus pages also expose the canonical origin to their islands. */}
+          <ShellDataProvider data={{ cloudOrigin, panel, platform: shellData.platform, theme, apps: [], legalLinks: [], searchLinks: {} }}>
+            {panel && <PanelSlot panel={panel} state={{ ...panelState, open: false }} platform={shellData.platform} />}
+          </ShellDataProvider>
           <div data-print-fallback="">
             <p>{t.printFallbackTitle}</p>
             <p>{props.printHint ?? t.printFallbackHint}</p>
