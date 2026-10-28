@@ -583,7 +583,7 @@ export default defineCliCommands({
     "groups managers": "Manage group managers",
     "groups members": "Manage group membership",
     "users avatar": "Download, replace, or remove account avatars",
-    "users app-devices": "List and remove phones paired with the mobile app (preview)",
+    "users app-devices": "List and remove devices paired with the Cloud app (preview)",
     "users devices": "List and revoke paired sign-in devices",
     "users linux": "Inspect Linux identities and assign missing attributes",
   },
@@ -948,8 +948,8 @@ export default defineCliCommands({
       },
     }),
     command("users app-devices list", {
-      summary: "List the phones a user paired with the mobile app",
-      description: "Shows active phones only, with platform, pairing time and last use.",
+      summary: "List the devices a user paired with the Cloud app",
+      description: "Shows active devices only, with platform, pairing time and last use.",
       args: { user: arg.required({ valueLabel: "user" }) },
       async run({ ctx, args }) {
         const user = await resolveUserRef(ctx, args.user);
@@ -969,16 +969,16 @@ export default defineCliCommands({
       },
     }),
     command("users app-devices remove", {
-      summary: "Remove a phone from the mobile app and end its app sessions at once",
-      description: "Web sessions and sign-in devices stay as they are. Removing an already removed phone succeeds with revoked: false.",
+      summary: "Remove a device from the Cloud app and end its app sessions at once",
+      description: "Web sessions and sign-in devices stay as they are. Removing an already removed device succeeds with revoked: false.",
       args: {
         user: arg.required({ valueLabel: "user" }),
         device: arg.required({ valueLabel: "device-id" }),
       },
-      flags: { yes: confirmFlag("Confirm removing this phone from the mobile app") },
+      flags: { yes: confirmFlag("Confirm removing this device from the Cloud app") },
       async run({ ctx, args, flags }) {
         if (!flags.yes)
-          throw new Error(cliText(ctx, { en: "Refusing to remove a phone without --yes.", de: "Telefon wird ohne --yes nicht entfernt." }));
+          throw new Error(cliText(ctx, { en: "Refusing to remove a device without --yes.", de: "Gerät wird ohne --yes nicht entfernt." }));
         if (!isUuid(args.device))
           throw new Error(
             cliText(ctx, {
@@ -995,8 +995,8 @@ export default defineCliCommands({
         if (printStructured(ctx, result)) return;
         ctx.print(
           result.revoked
-            ? cliText(ctx, { en: "Phone removed.", de: "Telefon entfernt." })
-            : cliText(ctx, { en: "The phone was already removed.", de: "Das Telefon war bereits entfernt." }),
+            ? cliText(ctx, { en: "Device removed.", de: "Gerät entfernt." })
+            : cliText(ctx, { en: "The device was already removed.", de: "Das Gerät war bereits entfernt." }),
         );
       },
     }),
