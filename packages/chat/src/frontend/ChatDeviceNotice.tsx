@@ -1,18 +1,16 @@
-import type { NotificationQuietState } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
 import { Button, ButtonLink, toast, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { errorMessage, useChatMessages } from "./chat-dialog";
 import { untilLabel } from "./chat-format";
+import { type DeviceNotice, deviceNoticeCookie } from "./device-notice";
 
 /** Remembers "Not now" on this device only; another device asks again. */
 export const NOTIFICATION_ASK_KEY = "chat:notifications-ask-dismissed";
 /** The Help topic that explains notifications, including the Home Screen on iPhone. */
 export const NOTIFICATION_HELP_HREF = "/help/apps/chat/chat-notifications";
 /** Quiet time can end on its own; the line checks again at least this often while the list is open. */
-const QUIET_RECHECK_MS = 5 * 60_000;
-
-type Notice = "quiet" | "ask" | "home-screen" | "none";
+const RECHECK_MS = 5 * 60_000;
 
 const dismissed = () => {
   try {
@@ -24,15 +22,18 @@ const dismissed = () => {
 
 /**
  * One line above the chats about this device: do not disturb with "End", the offer to turn notifications on (once per
- * device), or, on iPhone in Safari, that Cloud needs to be on the Home Screen. Only the browser knows these, so the line
- * appears after the list mounts, at most one at a time, and in the same place every time.
+ * device), or, on iPhone in Safari, that Cloud needs to be on the Home Screen. At most one shows, always in the same
+ * place. The server draws the one this device showed last, and the browser checks it again.
  */
-export default function ChatDeviceNotice(props: { dateConfig: DateContext; now: () => Date }): JSX.Element {
+export default function ChatDeviceNotice(props: { initial: DeviceNotice; dateConfig: DateContext; now: () => Date }): JSX.Element {
   const t = useChatMessages();
   const locale = useLocale();
-  const [notice, setNotice] = createSignal<Notice>("none");
-  const [quiet, setQuiet] = createSignal<NotificationQuietState | null>(null);
+  const [notice, setNotice] = createSignal<DeviceNotice>(props.initial);
   const [busy, setBusy] = createSignal(false);
+  const show = (next: DeviceNotice) => {
+    setNotice(next);
+    document.cookie = deviceNoticeCookie(next);
+  };
 
   const read = async () => {
     const { browserNotificationClient } = await import("@k2b/cloud/browser/notifications");
@@ -40,20 +41,21 @@ export default function ChatDeviceNotice(props: { dateConfig: DateContext; now: 
       browserNotificationClient.quietState().catch(() => null),
       browserNotificationClient.state().catch(() => null),
     ]);
-    setQuiet(quiet?.active ? quiet : null);
-    setNotice(
-      quiet?.active
-        ? "quiet"
+    // A failed read keeps what shows; only an answer changes it.
+    if (!quiet && !device) return;
+    show(
+      quiet?.active && quiet.reason
+        ? { kind: "quiet", reason: quiet.reason, until: quiet.until }
         : device?.homeScreenRequired
-          ? "home-screen"
+          ? { kind: "home-screen" }
           : device?.supported && device.permission === "default" && !dismissed()
-            ? "ask"
-            : "none",
+            ? { kind: "ask" }
+            : { kind: "none" },
     );
   };
   onMount(() => {
     void read().catch(() => {});
-    const timer = setInterval(() => void read().catch(() => {}), QUIET_RECHECK_MS);
+    const timer = setInterval(() => void read().catch(() => {}), RECHECK_MS);
     onCleanup(() => clearInterval(timer));
   });
 
@@ -75,7 +77,7 @@ export default function ChatDeviceNotice(props: { dateConfig: DateContext; now: 
     } catch {
       // Without storage the offer simply returns on the next visit.
     }
-    setNotice("none");
+    show({ kind: "none" });
   };
   const endQuiet = async () => {
     setBusy(true);
@@ -89,7 +91,11 @@ export default function ChatDeviceNotice(props: { dateConfig: DateContext; now: 
       setBusy(false);
     }
   };
-  const quietLine = (state: NotificationQuietState) => {
+  const quiet = () => {
+    const current = notice();
+    return current.kind === "quiet" ? current : null;
+  };
+  const quietLine = (state: { reason: "doNotDisturb" | "quietHours"; until: string | null }) => {
     const until = state.until ? untilLabel(state.until, props.now(), { ...props.dateConfig, locale: locale() }) : null;
     if (state.reason === "quietHours") return until ? t().quietHoursUntil({ time: until }) : t().doNotDisturb;
     return until ? t().doNotDisturbUntil({ time: until }) : t().doNotDisturb;
@@ -97,7 +103,7 @@ export default function ChatDeviceNotice(props: { dateConfig: DateContext; now: 
 
   return (
     <Switch>
-      <Match when={notice() === "quiet" && quiet()}>
+      <Match when={quiet()}>
         {(state) => (
           <div class="chat-device-notice" data-kind="quiet">
             <i class="ti ti-moon" aria-hidden="true" />
@@ -111,7 +117,7 @@ export default function ChatDeviceNotice(props: { dateConfig: DateContext; now: 
           </div>
         )}
       </Match>
-      <Match when={notice() === "ask"}>
+      <Match when={notice().kind === "ask"}>
         <div class="chat-device-notice" data-kind="ask">
           <i class="ti ti-bell" aria-hidden="true" />
           <div class="chat-device-notice__body">
@@ -127,7 +133,7 @@ export default function ChatDeviceNotice(props: { dateConfig: DateContext; now: 
           </div>
         </div>
       </Match>
-      <Match when={notice() === "home-screen"}>
+      <Match when={notice().kind === "home-screen"}>
         <div class="chat-device-notice" data-kind="home-screen">
           <i class="ti ti-device-mobile" aria-hidden="true" />
           <div class="chat-device-notice__body">

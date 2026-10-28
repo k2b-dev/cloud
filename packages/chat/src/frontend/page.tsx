@@ -1,11 +1,13 @@
 import { type AuthContext, getDateConfig, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { Layout, PanelLayout } from "@k2b/cloud/ssr";
+import { getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
 import { chatRequestContext } from "../request-context";
 import { chatService, loadChatView } from "../service";
 
 import ChatWorkspace from "./ChatWorkspace.island";
+import { CHAT_DEVICE_NOTICE_COOKIE, parseDeviceNotice } from "./device-notice";
 
 /**
  * `/app/chat`, a chat (`/c/:chat`), one of its threads (`/c/:chat/t/:thread`), each with a message deep link (`/m/:message`),
@@ -60,6 +62,7 @@ export default ssr<AuthContext>(async (c) => {
       : chatId
         ? (view.open?.conversation.title ?? t.noAccessTitle)
         : undefined;
+  const now = new Date();
   const workspace = () => (
     <ChatWorkspace
       embedded={embedded}
@@ -81,7 +84,8 @@ export default ssr<AuthContext>(async (c) => {
       panel={chatId && view.open && c.req.query("panel") === "info" ? "info" : null}
       viewerId={accessSubject.userId}
       dateConfig={getDateConfig(c)}
-      now={new Date().toISOString()}
+      now={now.toISOString()}
+      deviceNotice={parseDeviceNotice(getCookie(c, CHAT_DEVICE_NOTICE_COOKIE), now)}
     />
   );
   if (embedded)

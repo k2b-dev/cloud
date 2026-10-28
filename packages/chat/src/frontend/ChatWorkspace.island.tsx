@@ -69,6 +69,7 @@ import { messageTime, sameDay } from "./chat-format";
 import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
+import type { DeviceNotice } from "./device-notice";
 import ForYou from "./ForYou";
 import { createForYouApi } from "./for-you-api";
 import { createItemEventsApi } from "./item-events-api";
@@ -134,6 +135,8 @@ export type ChatWorkspaceProps = {
   dateConfig: DateContext;
   /** The server's clock, so relative day labels render the same on the server and in the browser. */
   now: string;
+  /** The line about this device above the chats that this device showed last; the browser checks it again. */
+  deviceNotice?: DeviceNotice;
 };
 
 const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>, view: ThreadView): OpenChat => ({
@@ -2217,7 +2220,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       >
         {/* Without chats, or when they did not load, the list has more important things to say. */}
         <Show when={rows().length > 0 && !listError()}>
-          <ChatDeviceNotice dateConfig={props.dateConfig} now={now} />
+          <ChatDeviceNotice initial={props.deviceNotice ?? { kind: "none" }} dateConfig={props.dateConfig} now={now} />
         </Show>
         <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
           {t().newChat}

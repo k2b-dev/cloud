@@ -26,10 +26,13 @@ test("read chats close their notification once, at start and when they become re
   jest.useFakeTimers();
   let count = 3;
   const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(async (input: string | URL | Request) => {
-      expect(String(input)).toBe(CHAT_BADGE_PATH);
-      return Response.json({ count });
-    }, { preconnect: globalThis.fetch.preconnect }),
+    Object.assign(
+      async (input: string | URL | Request) => {
+        expect(String(input)).toBe(CHAT_BADGE_PATH);
+        return Response.json({ count });
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    ),
   );
   const cleanup = createNotificationCleanup();
   try {
