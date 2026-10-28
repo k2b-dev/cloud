@@ -420,12 +420,28 @@ describe("ChatWorkspace interactions", () => {
     const privateChat = { ...conversation, id: "Chat02", unread: 10 };
     const anotherSystem = { ...system, id: "Chat03", unread: 60 };
     aggregateUnread = 40;
+    snapshots.set(system.id, {
+      cursor: "c.0",
+      conversation: system,
+      page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
+      threads: noThreads,
+      focus: null,
+    });
     await mount(true, [system, privateChat, anotherSystem], null, "en", "write", {
       url: "/pwa/chat/c/Chat01",
       app: true,
       conversation: system,
     });
-    expect(dom.root.querySelector(".chat-conversation__back-count")?.textContent).toBe("40");
+    // A system chat's timeline goes back to its threads; that page carries the way back to the chat list.
+    const backToThreads = dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__back a[aria-label="Back to the threads"]');
+    expect(backToThreads?.getAttribute("href")).toBe("/pwa/chat/c/Chat01/threads");
+    backToThreads!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01/threads");
+    const backToChats = dom.root.querySelector(".chat-threads-page .chat-conversation__back a");
+    expect(backToChats?.getAttribute("href")).toBe("/pwa/chat");
+    expect(backToChats?.getAttribute("aria-label")).toBe("Back to chats, 40 unread");
+    expect(backToChats?.querySelector(".chat-conversation__back-count")?.textContent).toBe("40");
     expect(consoleErrors).toEqual([]);
   });
   test("Back excludes an open archived chat and refreshes its total when that chat is read", async () => {
