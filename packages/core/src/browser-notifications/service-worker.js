@@ -25,7 +25,8 @@ const parsePayload = (event) => {
       (value.targetHref !== undefined && safeTargetHref(value.targetHref) === null) ||
       (value.group !== undefined && (typeof value.group !== "string" || !/^[A-Za-z0-9._:-]+$/.test(value.group))) ||
       (value.badge !== undefined && (!Number.isSafeInteger(value.badge) || value.badge < 0)) ||
-      (value.createdAt !== undefined && (!Number.isSafeInteger(value.createdAt) || value.createdAt < 0))
+      (value.createdAt !== undefined && (!Number.isSafeInteger(value.createdAt) || value.createdAt < 0)) ||
+      (value.alert !== undefined && value.alert !== false)
     ) {
       return null;
     }
@@ -80,10 +81,12 @@ const showNotification = async (payload) => {
       // Older browsers and lookup failures fall back to normal display.
     }
     if (newer) {
+      // Restoring the newer notification is never a new event, so it never alerts, even if it was dismissed meanwhile.
       await self.registration.showNotification(newer.title, {
         icon: newer.icon,
         ...(newer.body ? { body: newer.body } : {}),
         tag: newer.tag,
+        silent: true,
         data: newer.data,
       });
       return true;
@@ -93,7 +96,8 @@ const showNotification = async (payload) => {
     icon: "/branding/logo",
     ...(payload.preview !== undefined ? { body: payload.preview } : {}),
     tag: payload.group ?? payload.eventId,
-    ...(payload.group !== undefined ? { renotify: true } : {}),
+    // A quiet notification replaces its group, or appears, without sound or vibration.
+    ...(payload.alert === false ? { silent: true } : payload.group !== undefined ? { renotify: true } : {}),
     data: { targetHref: targetHref(payload.targetHref), ...(payload.createdAt !== undefined ? { createdAt: payload.createdAt } : {}) },
   });
   return false;
