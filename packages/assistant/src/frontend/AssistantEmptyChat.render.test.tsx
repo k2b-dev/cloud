@@ -76,4 +76,21 @@ describe("Assistant empty chat", () => {
     expect(html).toContain('data-size="xs"');
     expect(html).toContain('data-variant="ghost"');
   });
+
+  test("leaves out the suggestions where no starter is offered and ends the row with the given control", () => {
+    const html = renderToString(() =>
+      createComponent(AssistantEmptyChat, {
+        composer: "Shared composer",
+        projects: [project],
+        selectedProjectId: null,
+        onChooseProject: () => undefined,
+        rowEnd: "All chats control",
+      }),
+    );
+
+    expect(html).not.toContain("assistant-starters");
+    for (const starter of assistantStarterActions) expect(html).not.toContain(starter.label);
+    const row = html.slice(html.indexOf('class="assistant-empty-project"'));
+    expect(row.indexOf("No Project")).toBeLessThan(row.indexOf("All chats control"));
+  });
 });

@@ -246,6 +246,28 @@ export function assistantPanelFixture() {
       conversations.set(id, chat);
       return chat;
     },
+    /** One earlier question and answer, so the chat opens as an ongoing conversation instead of the empty start. */
+    addExchange: (id: string) => {
+      const message = (seq: number, role: "user" | "assistant", text: string): AiStoredMessage => ({
+        id: `Msg${seq}`,
+        shortId: `Msg${seq}`,
+        conversationId: id,
+        seq,
+        kind: "message",
+        message: { role, content: [{ type: "text", text }] },
+        loopId: "Turn1",
+        modelId: "standard",
+        providerModel: "standard",
+        usage: null,
+        stopReason: null,
+        loopAggregate: null,
+        loopDoneReason: null,
+        compactedAt: null,
+        meta: null,
+        createdAt: now,
+      });
+      messages.set(id, [message(1, "user", "What is open in the project plan?"), message(2, "assistant", "Two review steps are open.")]);
+    },
     run: (id: string) => {
       running.add(id);
       conversations.get(id)!.runStatus = "running";
