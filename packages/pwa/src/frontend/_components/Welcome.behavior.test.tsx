@@ -53,12 +53,15 @@ const mount = (options: {
   state?: "new" | "ended" | "expired";
   userAgent?: string;
   platform?: "apple-mobile" | "apple-in-app" | "apple-desktop" | "android";
+  clearDrafts?: boolean;
+  before?: (dom: DomTestHarness) => void;
 }): Mounted => {
   setSystemTime(NOW);
   const { ui, Welcome } = modules!;
   const dom = createDomTestHarness();
   delegateEvents(["click", "input"]);
   dom.window.history.replaceState(null, "", options.url ?? "/pwa/?pwa=new");
+  options.before?.(dom);
   const query = (media: string) => ({
     matches: media === "(display-mode: standalone)" ? options.standalone : media === "(pointer: coarse)",
     addEventListener: () => {},
@@ -83,6 +86,7 @@ const mount = (options: {
             icon: "/branding/pwa-icon-192.png?v=1",
             platform: options.platform ?? "apple-mobile",
             url: "http://localhost/pwa/",
+            clearDrafts: options.clearDrafts,
           });
         },
       }),
@@ -263,6 +267,23 @@ else {
       expect(text(page.dom)).not.toContain("This app is for phones");
     } finally {
       page.dispose();
+    }
+  });
+
+  test("the welcome after an ended pairing deletes the app's drafts only on the launch's order", () => {
+    for (const clearDrafts of [false, true]) {
+      const page = mount({
+        standalone: true,
+        state: "ended",
+        url: "/pwa/?pwa=ended",
+        clearDrafts,
+        before: (dom) => dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "old"),
+      });
+      try {
+        expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:chat")).toBe(clearDrafts ? null : "old");
+      } finally {
+        page.dispose();
+      }
     }
   });
 

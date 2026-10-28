@@ -5,7 +5,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { createConversationComment, loadConversationAssigneeIds, writeConversationAssignees } from "./collaboration";
@@ -68,8 +67,6 @@ suite("mail manual conversation threading", () => {
   let readerContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
-    await migrate();
     const [createdOwner] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-thread-owner-${suffix}`}, 'local', 'user', 'Thread Owner', false)

@@ -59,10 +59,12 @@ On phones, reopen the sheet after
 a page reload. Browser termination and forced native navigation cannot guarantee
 recovery of unsaved work.
 
-Assistant starts without choosing an unrelated recent conversation. Its
-conversation selector stays inside the panel, and **Open full view** opens the
-current conversation in the application window. Application commands in Assistant's
-composer are available in the full view. A shared page reference enters
+Assistant starts without choosing an unrelated recent conversation. The panel
+shows the composer without a head row or start suggestions. A quiet row under the
+composer offers **All chats**, which opens the Assistant application in the
+application window at the current conversation, so the chat list and that chat
+are both there. In an ongoing conversation the same row also offers **New chat**.
+Application commands in Assistant's composer are available in the full view. A shared page reference enters
 the draft only through **Attach current view**, after the existing resource
 reader checks access. Later host context changes never reassign that attachment
 or an already submitted turn.

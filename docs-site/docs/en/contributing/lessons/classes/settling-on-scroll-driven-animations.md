@@ -1,0 +1,1 @@
+| Settling on scroll-driven animations | A test waits for every page animation to finish, but scroll-driven animations never finish, so it hangs. | Check: `animation-settle` requires a timeline mention beside document-wide and subtree animation calls so settle waits filter to `animation.timeline === document.timeline`. |

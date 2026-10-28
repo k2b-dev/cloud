@@ -8,7 +8,7 @@ export const AiUsageQuerySchema = z.object({
   range: z.enum(AI_USAGE_RANGES).default("30d"),
   until: z.iso.datetime({ offset: true }).optional(),
   userId: z.union([z.uuid(), z.literal("unassigned")]).optional(),
-  modelProfileId: text,
+  modelId: text,
   providerModel: text,
   appId: text,
   workflowId: z.uuid().optional(),
@@ -36,4 +36,4 @@ export const aiUsageSearchParams = (query: Partial<AiUsageQuery>): URLSearchPara
   for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== "") params.set(key, String(value));
   return params;
 };
-export const aiUsageHref = (query: Partial<AiUsageQuery>) => `/admin/settings?tab=ai-usage&${aiUsageSearchParams(query)}`;
+export const aiUsageHref = (query: Partial<AiUsageQuery>) => `/admin/ai?sec=usage&${aiUsageSearchParams(query)}`;

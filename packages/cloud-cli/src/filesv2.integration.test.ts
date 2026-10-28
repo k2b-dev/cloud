@@ -89,7 +89,7 @@ const configuration = {
   activityRetentionDays: 730,
   url: "https://files.example.test",
   cloud: { ...area, autoCreate: false, autoArchive: true },
-  freeipa: { ...area, enabled: false, root: "freeipa" },
+  freeipa: { ...area, enabled: false, root: "freeipa", autoCreate: false },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
   tokenConfigured: true,
 };
@@ -373,7 +373,12 @@ describe("Filesv2 CLI integration", () => {
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
       token: secret,
     });
-    for (const value of [input, { ...input, token: "" }, { ...input, cloud: { ...input.cloud, autoCreate: true, autoArchive: false } }]) {
+    for (const value of [
+      input,
+      { ...input, token: "" },
+      { ...input, cloud: { ...input.cloud, autoCreate: true, autoArchive: false } },
+      { ...input, freeipa: { ...input.freeipa, autoCreate: true } },
+    ]) {
       const result = await run(["--jsonl", "filesv2", "admin", "configuration", "set", "--stdin"], {
         server: server.url.href,
         stdin: JSON.stringify(value),

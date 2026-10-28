@@ -6,6 +6,7 @@ import {
   type AccountIdentityUser,
   accountIdentities,
   accounts,
+  audit,
   coreSettings,
   logger,
 } from "@k2b/cloud/services";
@@ -40,8 +41,9 @@ import type {
   UploadLease,
   UploadSession,
 } from "../contracts";
-import { BATCH_LIMIT } from "../contracts";
+import { BATCH_LIMIT, HomeProvisioningOverviewSchema, HomeProvisioningQuerySchema, HomeProvisioningResultSchema } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
+import { homeProvisioning } from "../data/home-provisioning";
 import { favorites, recent } from "../data/marks";
 import { operations, rootLockWait, withRootLock, withUploadLock } from "../data/operations";
 import { entryRef, persistedEntryRefId, resolveEntryRefId } from "../data/references";
@@ -51,15 +53,7 @@ import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "..
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
-import {
-  currentActivityId,
-  fileAction,
-  pendingMigration,
-  purgeActivity,
-  recoverActivity,
-  type UserFilesCall,
-  uploadAction,
-} from "./activity";
+import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, type UserFilesCall, uploadAction } from "./activity";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -68,6 +62,7 @@ import { documentTemplate } from "./document-template";
 import { FilesError } from "./errors";
 import { fileEntry } from "./file-entry";
 import { connectFilegate, type FilesRoot } from "./filegate-facade";
+import { createHomeProvisioning } from "./home-provisioning";
 import { createDirectoryLifecycle } from "./lifecycle";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
 import { permits, type UnixIdentity } from "./posix";
@@ -151,6 +146,13 @@ export function createFilesService(
   },
 ) {
   const { provisionCandidate, ...lifecycle } = createDirectoryLifecycle(deps);
+  const homes = createHomeProvisioning({
+    identities: deps.identities,
+    store: homeProvisioning,
+    readConfiguration: deps.readConfiguration,
+    provision: provisionCandidate,
+    lock: (run) => withRootLock("filesv2:home-reconciliation", run),
+  });
   async function allGroups(actor: RequestActor): Promise<Group[]> {
     const result: Group[] = [];
     const deadline = Date.now() + 10_000;
@@ -524,6 +526,27 @@ export function createFilesService(
         return { itemAfterId: current.info.stableIds ? node.id : null, revisionAfter: node.revision, size: node.size };
       },
     );
+  }
+
+  function versionIntent(
+    current: Awaited<ReturnType<typeof authorized>>,
+    action: "version.comment" | "version.restore" | "version.restore_copy" | "version.delete",
+    versionId: string,
+  ): Intent {
+    return {
+      action,
+      serverUrl: current.state.config.url,
+      root: current.root.name,
+      baseId: current.inspection.binding!.id,
+      itemId: current.info.stableIds ? current.node.id : null,
+      directory: false,
+      name: current.relative.split("/").at(-1)!,
+      pathBefore: current.target,
+      pathAfter: current.target,
+      revisionBefore: current.node.revision,
+      versionId,
+      size: current.node.size,
+    };
   }
 
   async function createFolder(call: UserFilesCall, current: Awaited<ReturnType<typeof writableParent>>, batchId?: string) {
@@ -968,9 +991,7 @@ export function createFilesService(
         const target = joinPath(candidate.path, "trash");
         try {
           const node = await current.root.stat(candidate.path);
-          await pendingMigration("files.ensure_trash", () =>
-            current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) }),
-          );
+          await current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) });
         } catch (error) {
           if (!(error instanceof FilegateError && error.status === 409)) throw error;
           if (!(await current.root.stat(target)).directory) throw new FilesError("not_directory", 409);
@@ -984,6 +1005,12 @@ export function createFilesService(
     ...lifecycle,
     ...sharing,
     ...trashLifecycle,
+    provisionUserHome: homes.ensure,
+    reconcileUserHomes: homes.reconcile,
+    async adminHomeProvisioning(call: UserFilesCall, input: z.infer<typeof HomeProvisioningQuerySchema>) {
+      await requireAdmin(call.actor);
+      return HomeProvisioningResultSchema.parse(await homeProvisioning.page(HomeProvisioningQuerySchema.parse(input)));
+    },
     async maintain(input: Parameters<typeof lifecycle.maintain>[0] & { now?: Date } = {}): Promise<MaintenanceResult> {
       // The history goes first and alone: its failure never stops directory work, and theirs never stops it.
       const activity = await maintainActivity(input);
@@ -1482,9 +1509,19 @@ export function createFilesService(
         comment: input.comment || undefined,
         author: input.comment ? current.state.self.user.username : undefined,
       };
+      const options = { pinned: existing.pinned, metadata };
       return versionEntry(
-        await pendingMigration("files.version_comment", () =>
-          current.root.updateVersion(current.target, input.id, { pinned: existing.pinned, metadata }),
+        await fileAction(
+          call,
+          { ...versionIntent(current, "version.comment", input.id), versionOptions: options },
+          () =>
+            current.root.updateVersion(current.target, input.id, {
+              ...options,
+              metadata: { ...metadata, comment_activity: currentActivityId() },
+            }),
+          async (_tx, version) => {
+            if (version.id !== input.id) throw new FilesError("unavailable", 503);
+          },
         ),
       );
     },
@@ -1493,43 +1530,97 @@ export function createFilesService(
       const current = await versionFile(actor, input.baseId, input.path, true);
       return publish(current.root.name, async () => {
         const fresh = await versionFile(actor, input.baseId, input.path, true);
-        const node = await pendingMigration("files.version_restore", () => fresh.root.restore(fresh.target, input.id));
+        if (
+          fresh.root.name !== current.root.name ||
+          fresh.state.config.url !== current.state.config.url ||
+          fresh.inspection.binding!.id !== current.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const node = await fileAction(
+          call,
+          versionIntent(fresh, "version.restore", input.id),
+          () => fresh.root.restore(fresh.target, input.id),
+          async (_tx, node) => {
+            if (
+              node.root !== fresh.root.name ||
+              node.path !== fresh.target ||
+              node.directory ||
+              (fresh.info.stableIds && node.id !== fresh.node.id)
+            )
+              throw new FilesError("unavailable", 503);
+            return { itemAfterId: fresh.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
+          },
+        );
         return { base: fresh.inspection.summary, entry: fileEntry(fresh.inspection.summary, fresh.relative, node) };
       });
     },
     async restoreVersionAs(call: UserFilesCall, input: { baseId: string; path: string; id: string; name: string }): Promise<EntryResult> {
       const actor = call.actor;
-      const current = await versionFile(actor, input.baseId, input.path, false);
-      const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
-      if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative)
-        throw new FilesError("invalid_path");
-      const destination = await writableParent(actor, input.baseId, relative);
-      if (JSON.stringify(executionFor(current)) !== JSON.stringify(executionFor(destination)))
-        throw new FilesError("configuration_changed", 409);
-      if (
-        current.state.config.url !== destination.state.config.url ||
-        current.inspection.binding?.id !== destination.inspection.binding?.id
-      )
-        throw new FilesError("configuration_changed", 409);
-      const node = await pendingMigration("files.version_restore_copy", () =>
-        current.root.copyVersion(current.target, input.id, destination.root.name, joinPath(destination.target, destination.name), {
-          onConflict: "error",
+      const prepared = await versionFile(actor, input.baseId, input.path, false);
+      return publish(prepared.root.name, async () => {
+        const current = await versionFile(actor, input.baseId, input.path, false);
+        if (
+          current.root.name !== prepared.root.name ||
+          current.state.config.url !== prepared.state.config.url ||
+          current.inspection.binding!.id !== prepared.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
+        if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative)
+          throw new FilesError("invalid_path");
+        const destination = await writableParent(actor, input.baseId, relative);
+        if (
+          JSON.stringify(executionFor(current)) !== JSON.stringify(executionFor(destination)) ||
+          current.state.config.url !== destination.state.config.url ||
+          current.inspection.binding!.id !== destination.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const target = joinPath(destination.target, destination.name);
+        const options = {
+          onConflict: "error" as const,
           ownership: ownershipFor(destination, false),
           targetExecution: targetExecution(destination),
-        }),
-      );
-      if (node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
-        throw new FilesError("unavailable", 503);
-      return {
-        base: current.inspection.summary,
-        entry: fileEntry(destination.inspection.summary, userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node),
-      };
+        };
+        const node = await fileAction(
+          call,
+          {
+            ...versionIntent(current, "version.restore_copy", input.id),
+            rootAfter: destination.root.name,
+            baseAfterId: destination.inspection.binding!.id,
+            pathAfter: target,
+            copyOptions: options,
+          },
+          () => current.root.copyVersion(current.target, input.id, destination.root.name, target, options),
+          async (_tx, node) => {
+            if (node.root !== destination.root.name || node.path !== target || node.directory) throw new FilesError("unavailable", 503);
+            return { itemAfterId: destination.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
+          },
+        );
+        return { base: destination.inspection.summary, entry: fileEntry(destination.inspection.summary, relative, node) };
+      });
     },
     async deleteVersion(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<void> {
       const actor = call.actor;
       await requireAdmin(actor);
       const current = await versionFile(actor, input.baseId, input.path, true);
-      await pendingMigration("files.version_delete", () => current.root.deleteVersion(current.target, input.id));
+      await fileAction(
+        call,
+        versionIntent(current, "version.delete", input.id),
+        () => current.root.deleteVersion(current.target, input.id),
+        async (tx) => {
+          await audit.record(
+            {
+              action: "filesv2.version.delete",
+              outcome: "allowed",
+              actor: { userId: current.state.self.user.id },
+              target: { type: "filesv2.version", id: input.id, label: current.target },
+              requestId: call.requestId,
+              metadata: { root: current.root.name },
+            },
+            tx,
+          );
+        },
+      );
     },
     async versionDownload(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<DownloadLease> {
       const actor = call.actor;
@@ -1894,13 +1985,25 @@ export function createFilesService(
     },
     async admin(
       call: UserFilesCall,
-      input: { area: Area; kind: BaseKind; after?: string; q?: string; status?: InventoryState; includeEntries?: "true" | "false" },
+      input: {
+        area: Area;
+        kind: BaseKind;
+        after?: string;
+        q?: string;
+        status?: InventoryState;
+        includeEntries?: "true" | "false";
+        view?: "overview" | "directories" | "archive" | "settings" | "shares" | "templates";
+      },
     ): Promise<AdminResult> {
       const actor = call.actor;
       const self = await requireAdmin(actor);
       const config = await deps.readConfiguration();
       const { token: _token, ...configuration } = config;
       const output: AdminResult = { configuration, availability: self.availability, root: null, items: [], next: null, issue: null };
+      if (input.view === "overview") {
+        const progress = await homeProvisioning.page({ area: input.area, pendingOnly: true });
+        output.provisioning = HomeProvisioningOverviewSchema.parse({ ...progress, area: input.area, counts: progress.counts[input.area] });
+      }
       const issue = issueFor(config, input.area, self.availability);
       if (issue) {
         output.issue = issue;

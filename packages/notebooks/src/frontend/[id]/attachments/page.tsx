@@ -27,7 +27,7 @@ import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
 import WorkspaceEventBridge from "../_components/sidebar/WorkspaceEventBridge.island";
 import { notebookWorkspaceMessages } from "../messages";
-import { projectNotebook, projectTree } from "../page-data";
+import { loadSidebarWithoutNote, projectNotebook } from "../page-data";
 
 const PER_PAGE = 200;
 
@@ -62,16 +62,14 @@ export default ssr<AuthContext>(async (c) => {
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
 
-  // Three queries in parallel:
-  //   1. Note tree for the sidebar
-  //   2. Filtered + paginated attachments for the grid (current page only)
-  //   3. Unfiltered total count for the sidebar's "Attachments" badge —
+  // Queries in parallel:
+  //   1. Filtered + paginated attachments for the grid (current page only)
+  //   2. Unfiltered total count for the sidebar's "Attachments" badge —
   //      independent of the active search so the badge always reflects
   //      the notebook's actual size, not the current view.
   const workspaceCursor = await notebooksService.workspaceEvents.latestCursor({ notebookId });
-  const [snapshotNotebook, tree, paginatedResult, totalAttachmentCount, tags, favoriteRows, appUrl] = await Promise.all([
+  const [snapshotNotebook, paginatedResult, totalAttachmentCount, tags, favoriteRows, appUrl] = await Promise.all([
     notebooksService.notebook.get({ id: notebookId }),
-    notebooksService.note.getTree({ notebookId }),
     notebooksService.attachment.listPaginated({
       notebookId,
       pagination: { page, perPage: PER_PAGE },
@@ -85,7 +83,14 @@ export default ssr<AuthContext>(async (c) => {
   if (!snapshotNotebook) return ssr.error(c, 404);
   notebook = snapshotNotebook;
   const publicNotebook = projectNotebook(notebook);
-  const publicTree = projectTree(tree, notebook.shortId);
+  const sidebarFilter = parseSidebarFilter(new URL(c.req.url).searchParams);
+  const sidebar = await loadSidebarWithoutNote({
+    notebook,
+    userId: user.id,
+    sort: settings.treeSort,
+    locale: getLocale(c),
+    filter: sidebarFilter,
+  });
   const totalPages = Math.max(1, Math.ceil(paginatedResult.total / paginatedResult.perPage));
   const baseHref = buildAttachmentsUrl(notebook.shortId);
   const presentationMode = requestedPresentationMode(new URL(c.req.url).searchParams);
@@ -98,7 +103,7 @@ export default ssr<AuthContext>(async (c) => {
 
   const ctx: NotebookContext = {
     notebook: publicNotebook,
-    tree: publicTree,
+    ...sidebar,
     selectedNoteId: null,
     userId: user.id,
     settings,
@@ -110,7 +115,7 @@ export default ssr<AuthContext>(async (c) => {
     tags,
     workspaceCursor,
     dateConfig: getDateConfig(c),
-    sidebarFilter: parseSidebarFilter(new URL(c.req.url).searchParams),
+    sidebarFilter,
     presentationMode,
   };
 

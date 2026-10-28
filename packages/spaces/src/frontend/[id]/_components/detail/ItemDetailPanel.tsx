@@ -1,3 +1,4 @@
+import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
@@ -9,7 +10,6 @@ import {
   DescriptionList,
   type DescriptionListItem,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
   IconButton,
   IconButtonLink,
@@ -18,6 +18,7 @@ import {
   NumberInput,
   prompts,
   Select,
+  StatusBadge,
   Tag,
   Tooltip,
   toast,
@@ -48,7 +49,6 @@ import ClaimButton from "../shared/claim/ClaimButton";
 import {
   type ClaimFields,
   claimTask,
-  ownClaimId,
   promptReleaseNote,
   releaseTask,
   resolveAssigneeClaim,
@@ -192,18 +192,6 @@ export default function ItemDetailPanel(props: Props) {
   ] as const;
   const reconcileAfterWrite = (): void =>
     void invalidateSpacesData().catch(() => retryToast(t.itemRefreshFailed, t.retry, reconcileAfterWrite));
-
-  const unlinkReference = mutations.create<void, { type: string; id: string }>({
-    mutation: async (ref, { abortSignal }) => {
-      const response = await apiClient[":id"].items[":itemId"].references.$delete(
-        { param: { id: props.spaceId, itemId: props.item.id }, json: { ref } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readResponseError(response, t.unlinkResourceFailed));
-    },
-    onSuccess: () => reconcileAfterWrite(),
-    onError: (error) => toast.error(error.message),
-  });
 
   const addBlocker = mutations.create<void, string>({
     mutation: async (blockerItemId, { abortSignal }) => {
@@ -500,12 +488,12 @@ export default function ItemDetailPanel(props: Props) {
     },
     onError: (err) => toast.error(err.message),
   });
-  /** Header: claim or release your own claim. Work section: any writer takes over somebody else's claim. */
-  const claimButton = (options: { takeOver?: boolean } = {}) => (
+  /** One header control: claim, release your own claim, or, as any writer may, take over somebody else's. */
+  const claimButton = () => (
     <ClaimButton
       claim={props.item.claim}
       currentUserId={props.currentUserId}
-      canTakeOver={options.takeOver === true}
+      canTakeOver
       loading={claimMutation.loading()}
       disabled={isLoading() || isCompleted() || (!props.item.claim && completionBlocked())}
       onClaim={() => void claimMutation.mutate("claim")}
@@ -717,6 +705,7 @@ export default function ItemDetailPanel(props: Props) {
       allDay: props.recurringContext?.allDay ?? props.item.allDay,
       dateConfig: props.dateConfig,
     });
+  const cloudId = useCloudIdCopy();
   const itemActions = (): DropdownItem[] => {
     const actions: DropdownItem[] = [
       {
@@ -764,35 +753,48 @@ export default function ItemDetailPanel(props: Props) {
 
   const canShowAssignees = () => canEditItem() || (props.item.assignees?.length ?? 0) > 0;
   const canShowInvitations = () => isEvent() && canEditItem() && props.mailIntegrationAvailable;
-  const canShowEventContext = () => isEvent() && (Boolean(props.item.location || props.item.url) || canShowInvitations());
   const activeBlockerCount = () => (props.blockedBy ?? []).filter((dependency) => !dependency.blocker.completedAt).length;
-  const relatedTasks = () => (props.references ?? []).filter((reference) => reference.ref.type === "spaces.item");
-  const linkedResources = () => (props.references ?? []).filter((reference) => reference.ref.type !== "spaces.item");
+  /** Related tasks first, then the other Cloud resources. */
+  const references = () => {
+    const all = props.references ?? [];
+    return [
+      ...all.filter((reference) => reference.ref.type === "spaces.item"),
+      ...all.filter((reference) => reference.ref.type !== "spaces.item"),
+    ];
+  };
   const itemHref = (itemId: string) => {
     const url = new URL(props.baseUrl, "http://spaces.local");
     url.searchParams.set("item", itemId);
     return `${url.pathname}${url.search}`;
   };
-  const hasLinks = () => linkedResources().length > 0 || (props.links?.length ?? 0) > 0;
+  const hasLinks = () => references().length > 0 || (props.links?.length ?? 0) > 0;
   const hasMedia = () =>
     props.attachments?.some((attachment) => attachment.kind === "image" || isPlayableVideoType(attachment.mimeType)) ?? false;
   const hasChecklist = () => (props.checklist?.length ?? 0) > 0;
-  const linksSection = () => (
-    <Show when={canEditItem() || hasLinks()}>
-      <ItemLinksSection
-        spaceId={props.spaceId}
-        itemId={props.item.id}
-        references={linkedResources()}
-        links={props.links ?? []}
-        canEdit={canEditItem()}
-        onChanged={reconcileAfterWrite}
-      />
-    </Show>
-  );
+  const column = () => props.columns.find((entry) => entry.id === props.item.columnId);
+  const metaLine = () =>
+    [column()?.name, t.createdOn({ date: dates.formatDate(props.item.createdAt, props.dateConfig) })].filter(Boolean).join(" · ");
 
-  // Planning: schedule facts, the classification, then the task's dependencies. Editors change each property in
-  // place through a plain control, so the whole row opens its picker; readers see the same values as text. The
-  // editable rows are stable objects, so their controls stay mounted while the item snapshot refreshes.
+  // Properties: who, when, how it is classified, then the task's dependencies. Editors change each property in place
+  // through a plain control, so the whole row opens its picker; readers see the same values as text. The editable rows
+  // are stable objects, so their controls stay mounted while the item snapshot refreshes.
+  const assignedRow: DescriptionListItem = {
+    term: t.assignedPeople,
+    get description() {
+      return (
+        <AssigneesSection
+          spaceId={props.spaceId}
+          assignees={props.item.assignees ?? []}
+          claim={isEvent() ? null : props.item.claim}
+          currentUserId={props.currentUserId}
+          dateConfig={props.dateConfig}
+          onUpdate={(ids) => void updateAssignees(ids)}
+          loading={isLoading()}
+          disabled={!canEditItem()}
+        />
+      );
+    },
+  };
   const dueRow: DescriptionListItem = {
     term: t.due,
     get description() {
@@ -935,7 +937,8 @@ export default function ItemDetailPanel(props: Props) {
   const showTagsRow = () => canEditItem() || (props.item.tags?.length ?? 0) > 0;
   const showBlockedByRow = () => !isEvent() && (canEditItem() || (props.blockedBy?.length ?? 0) > 0);
   const showBlocksRow = () => !isEvent() && (props.blocks?.length ?? 0) > 0;
-  const planningItems = (): DescriptionListItem[] => {
+  const showAssignedRow = () => canShowAssignees() || Boolean(!isEvent() && props.item.claim);
+  const propertyItems = (): DescriptionListItem[] => {
     const schedule: DescriptionListItem[] = isEvent()
       ? [
           { term: t.start, description: dates.formatDateTime(scheduleStart()!, props.dateConfig) },
@@ -954,138 +957,79 @@ export default function ItemDetailPanel(props: Props) {
                 },
               ]
             : []),
+          ...(props.item.location ? [{ term: t.location, description: props.item.location }] : []),
+          ...(props.item.url
+            ? [
+                {
+                  term: t.url,
+                  description: (
+                    <a href={props.item.url} target="_blank" rel="noreferrer" class="link break-all">
+                      {props.item.url}
+                    </a>
+                  ),
+                },
+              ]
+            : []),
+          ...(showAssignedRow() ? [assignedRow] : []),
         ]
-      : [
-          ...(canEditItem() || props.item.deadline ? [dueRow] : []),
-          ...(canEditItem() || props.item.estimatedDurationMinutes ? [estimateRow] : []),
-        ];
+      : [...(showAssignedRow() ? [assignedRow] : []), ...(canEditItem() || props.item.deadline ? [dueRow] : [])];
     return [
       ...schedule,
-      ...(showPriorityRow() ? [priorityRow] : []),
       ...(showTagsRow() ? [tagsRow] : []),
+      ...(showPriorityRow() ? [priorityRow] : []),
+      ...(!isEvent() && (canEditItem() || props.item.estimatedDurationMinutes) ? [estimateRow] : []),
       ...(showBlockedByRow() ? [blockedByRow] : []),
       ...(showBlocksRow() ? [blocksRow] : []),
     ];
   };
 
-  const relatedTasksSection = () => (
-    <Show when={relatedTasks().length > 0}>
-      <DetailPanel.Section title={t.relatedTasks} icon="ti ti-list-details" tone="neutral">
-        <div class="flex flex-col gap-1">
-          <For each={relatedTasks()}>
-            {(reference) => {
-              const href = () => reference.resource?.links?.find((link) => link.rel === "open")?.href;
-              const menu = () =>
-                canEditItem()
-                  ? {
-                      menuLabel: t.moreActionsFor({ label: reference.label }),
-                      menuItems: [
-                        {
-                          label: t.unlink,
-                          icon: "ti ti-unlink",
-                          disabled: unlinkReference.loading(),
-                          action: () => unlinkReference.mutate(reference.ref),
-                        },
-                      ],
-                    }
-                  : {};
-              return (
-                <Show
-                  when={href()}
-                  fallback={
-                    <DetailPanel.Action
-                      type="button"
-                      disabled
-                      leading={<i class="ti ti-checkbox" aria-hidden="true" />}
-                      title={reference.label}
-                      description={t.taskUnavailable}
-                      {...menu()}
-                    />
-                  }
-                >
-                  {(openHref) => (
-                    <DetailPanel.Action
-                      href={openHref()}
-                      leading={<i class="ti ti-checkbox" aria-hidden="true" />}
-                      title={reference.label}
-                      description={reference.resource?.title !== reference.label ? reference.resource?.title : undefined}
-                      trailing={!canEditItem() ? <i class="ti ti-chevron-right" aria-hidden="true" /> : undefined}
-                      {...menu()}
-                    />
-                  )}
-                </Show>
-              );
-            }}
-          </For>
-        </div>
-      </DetailPanel.Section>
-    </Show>
-  );
+  const statusBadge = () =>
+    isCompleted() ? (
+      <StatusBadge tone="ok" icon="ti ti-circle-check" label={t.completed} />
+    ) : completionBlocked() ? (
+      <StatusBadge tone="warning" icon="ti ti-lock" label={t.blockedByCount({ count: activeBlockerCount() })} />
+    ) : (
+      <StatusBadge tone="neutral" icon="ti ti-circle" label={t.active} />
+    );
 
   return (
     <div class="h-full min-h-0" style="view-transition-name: detail-panel">
       <DetailPanel>
         <DetailPanel.Header
           class="[view-transition-name:space-item-detail-header]"
-          icon={`ti ${isEvent() ? "ti-calendar-event" : "ti-checkbox"}`}
-          title={props.item.title}
-          subtitle={isEvent() ? t.event : t.task}
-          meta={
+          kind={
             <>
-              <span
-                class="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium leading-4"
-                style={{
-                  color: isCompleted()
-                    ? "var(--k2b-success-text)"
-                    : completionBlocked()
-                      ? "var(--k2b-warning-text)"
-                      : "var(--k2b-text-muted)",
-                }}
-              >
-                <i class={`ti ${isCompleted() ? "ti-check" : completionBlocked() ? "ti-lock" : "ti-circle"}`} aria-hidden="true" />
-                {isCompleted() ? t.completed : completionBlocked() ? t.blockedByCount({ count: activeBlockerCount() }) : t.active}
-              </span>
-              <Show when={!props.canWrite}>
-                <span class="inline-flex items-center gap-1 text-dimmed">
-                  <i class="ti ti-lock" aria-hidden="true" /> {t.readOnly}
-                </span>
-              </Show>
+              <span>{isEvent() ? t.event : t.task}</span>
+              {statusBadge()}
               <Show when={props.recurringContext}>
-                <span
-                  class="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium leading-4"
-                  style={{ color: "var(--k2b-text-muted)" }}
-                >
-                  <i class="ti ti-repeat" aria-hidden="true" /> {t.thisOccurrence}
-                </span>
+                <StatusBadge tone="neutral" icon="ti ti-repeat" label={t.thisOccurrence} />
+              </Show>
+              <Show when={!props.canWrite}>
+                <StatusBadge tone="neutral" icon="ti ti-lock" label={t.readOnly} />
               </Show>
             </>
           }
+          title={props.item.title}
+          subtitle={metaLine()}
+          menu={[...(canEditItem() ? itemActions() : []), ...cloudId.section({ type: "spaces.item", id: props.item.id })]}
+          menuLabel={t.moreItemActions}
           actions={
-            <>
-              <Show when={canEditItem()}>
-                <Dropdown.Root position="bottom-left" items={itemActions()}>
-                  <Dropdown.Trigger iconOnly label={t.moreItemActions} tooltip={t.moreItemActions}>
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </Show>
-              <IconButtonLink
-                href={props.baseUrl}
-                onClick={(event) => {
-                  if (!shouldHandleDetailClick(event, event.currentTarget)) return;
-                  event.preventDefault();
-                  requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
-                }}
-                size="sm"
-                label={t.closeItemDetails}
-                tooltip={t.closeDetails}
-              >
-                <i class="ti ti-x" aria-hidden="true" />
-              </IconButtonLink>
-            </>
+            <IconButtonLink
+              href={props.baseUrl}
+              onClick={(event) => {
+                if (!shouldHandleDetailClick(event, event.currentTarget)) return;
+                event.preventDefault();
+                requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
+              }}
+              size="sm"
+              label={t.closeItemDetails}
+              tooltip={t.closeDetails}
+            >
+              <i class="ti ti-x" aria-hidden="true" />
+            </IconButtonLink>
           }
           primaryActions={
-            props.canWrite || props.recurringContext ? (
+            canEditItem() || props.recurringContext ? (
               <>
                 <Show when={canEditItem()}>
                   <Button
@@ -1093,26 +1037,27 @@ export default function ItemDetailPanel(props: Props) {
                     onClick={() => void toggleCompleted()}
                     disabled={isLoading() || completionBlocked()}
                     title={completionBlocked() ? t.completeBlockersFirst : undefined}
-                    variant="secondary"
+                    variant="subtle"
                     size="sm"
-                    style={completionBlocked() ? { color: "var(--k2b-warning-text)", background: "var(--k2b-warning-surface)" } : undefined}
+                    class="spaces-details-done"
+                    data-blocked={completionBlocked() ? "" : undefined}
                   >
-                    <Show when={isCompleted() || completeMutation.loading()}>
-                      <i class={`ti ${completeMutation.loading() ? "ti-loader-2 animate-spin" : "ti-check"}`} aria-hidden="true" />
-                    </Show>
-                    <Show when={!isCompleted() && !completeMutation.loading()}>
-                      <i
-                        class={`ti ${completionBlocked() ? "ti-lock" : "ti-circle-check"}`}
-                        style={{ color: completionBlocked() ? "inherit" : "var(--k2b-success-text)" }}
-                        aria-hidden="true"
-                      />
-                    </Show>
-                    {isCompleted() ? t.reopen : completionBlocked() ? t.blockedByCount({ count: activeBlockerCount() }) : t.markComplete}
+                    <i
+                      class={`ti ${
+                        completeMutation.loading()
+                          ? "ti-loader-2 animate-spin"
+                          : isCompleted()
+                            ? "ti-arrow-back-up"
+                            : completionBlocked()
+                              ? "ti-lock"
+                              : "ti-circle-check"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {/* The state badge above names the blockers; the button keeps its own name and says why it waits. */}
+                    {isCompleted() ? t.reopen : t.markComplete}
                   </Button>
                   <Show when={!isEvent() && !isCompleted()}>{claimButton()}</Show>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => void handleEdit()} disabled={isLoading()}>
-                    <i class="ti ti-pencil" aria-hidden="true" /> {t.edit}
-                  </Button>
                 </Show>
                 <Show when={props.recurringContext}>
                   <ButtonLink
@@ -1134,186 +1079,94 @@ export default function ItemDetailPanel(props: Props) {
         />
 
         <DetailPanel.Body scrollPreserveKey={props.scrollPreserveKey}>
-          <Show when={planningItems().length > 0}>
-            <DetailPanel.Summary
-              title={t.planning}
+          <Show when={propertyItems().length > 0}>
+            <DetailPanel.Section
+              title={t.properties}
               actions={
                 canEditItem() ? (
-                  <IconActionButton icon="ti ti-pencil" title={t.editPlanning} onClick={() => void handleEdit()} disabled={isLoading()} />
+                  <IconActionButton icon="ti ti-pencil" title={t.editItem} onClick={() => void handleEdit()} disabled={isLoading()} />
                 ) : undefined
               }
             >
-              <DescriptionList layout="rows" size="sm" items={planningItems()} />
-            </DetailPanel.Summary>
+              <DescriptionList layout="rows" size="sm" items={propertyItems()} />
+            </DetailPanel.Section>
           </Show>
 
-          <Show when={canShowEventContext()}>
-            <DetailPanel.Group label={t.eventContext}>
-              <Show when={props.item.location || props.item.url}>
-                <DetailPanel.Section
-                  title={t.eventDetails}
-                  icon="ti ti-map-pin"
-                  tone="accent"
-                  actions={
-                    canEditItem() ? (
-                      <IconActionButton
-                        icon="ti ti-pencil"
-                        title={t.editEventDetails}
-                        onClick={() => void handleEdit()}
-                        disabled={isLoading()}
-                      />
-                    ) : undefined
-                  }
-                >
-                  <DescriptionList
-                    layout="rows"
-                    size="sm"
-                    items={[
-                      ...(props.item.location ? [{ term: t.location, description: props.item.location }] : []),
-                      ...(props.item.url
-                        ? [
-                            {
-                              term: t.url,
-                              description: (
-                                <a href={props.item.url} target="_blank" rel="noreferrer" class="link break-all">
-                                  {props.item.url}
-                                </a>
-                              ),
-                            },
-                          ]
-                        : []),
-                    ]}
+          <Show when={props.item.description}>
+            <DetailPanel.Section
+              class="[view-transition-name:space-item-detail-description]"
+              title={t.description}
+              actions={
+                canEditItem() ? (
+                  <IconActionButton
+                    icon="ti ti-pencil"
+                    title={t.editDescription}
+                    onClick={() => void handleEdit()}
+                    disabled={isLoading()}
                   />
-                </DetailPanel.Section>
-              </Show>
-              <Show when={canShowInvitations()}>
-                <EventInvitations spaceId={props.spaceId} itemId={props.item.id} title={props.item.title} />
-              </Show>
-            </DetailPanel.Group>
+                ) : undefined
+              }
+            >
+              <MarkdownView markdown={props.item.description!} headingScale="compact" class="text-sm" />
+            </DetailPanel.Section>
           </Show>
 
-          <Show when={props.item.description || (!isEvent() && (canEditItem() || hasChecklist() || hasMedia()))}>
-            <DetailPanel.Group label={t.content}>
-              <Show when={props.item.description}>
-                <DetailPanel.Section
-                  class="[view-transition-name:space-item-detail-description]"
-                  title={t.description}
-                  icon="ti ti-align-left"
-                  tone="neutral"
-                  actions={
-                    canEditItem() ? (
-                      <IconActionButton
-                        icon="ti ti-pencil"
-                        title={t.editDescription}
-                        onClick={() => void handleEdit()}
-                        disabled={isLoading()}
-                      />
-                    ) : undefined
-                  }
-                >
-                  <MarkdownView markdown={props.item.description!} headingScale="compact" class="text-sm" />
-                </DetailPanel.Section>
-              </Show>
-              <Show when={!isEvent() && (canEditItem() || hasChecklist())}>
-                <DetailPanel.Section
-                  title={t.checklist}
-                  icon="ti ti-list-check"
-                  tone="neutral"
-                  meta={`${(props.checklist ?? []).filter((entry) => entry.completed).length}/${props.checklist?.length ?? 0}`}
-                >
-                  <TaskChecklistSection
-                    spaceId={props.spaceId}
-                    itemId={props.item.id}
-                    entries={props.checklist ?? []}
-                    canWrite={canEditItem()}
-                    onChanged={reconcileAfterWrite}
-                  />
-                </DetailPanel.Section>
-              </Show>
-              <Show when={!isEvent() && (canEditItem() || hasMedia())}>
-                <TaskAttachmentsSection
-                  spaceId={props.spaceId}
-                  itemId={props.item.id}
-                  attachments={props.attachments ?? []}
-                  canWrite={canEditItem()}
-                  onChanged={reconcileAfterWrite}
-                />
-              </Show>
-            </DetailPanel.Group>
+          <Show when={!isEvent() && (canEditItem() || hasChecklist())}>
+            <DetailPanel.Section
+              title={t.checklist}
+              meta={`${(props.checklist ?? []).filter((entry) => entry.completed).length}/${props.checklist?.length ?? 0}`}
+            >
+              <TaskChecklistSection
+                spaceId={props.spaceId}
+                itemId={props.item.id}
+                entries={props.checklist ?? []}
+                canWrite={canEditItem()}
+                onChanged={reconcileAfterWrite}
+              />
+            </DetailPanel.Section>
           </Show>
 
-          <Show when={!isEvent() && (canShowAssignees() || props.item.claim || props.work?.progress || props.work?.result)}>
-            <DetailPanel.Group label={t.work}>
-              <Show when={canShowAssignees() || props.item.claim}>
-                <DetailPanel.Section
-                  title={t.assignedPeople}
-                  icon="ti ti-users"
-                  tone="neutral"
-                  actions={
-                    canEditItem() && !isCompleted() && props.item.claim && !ownClaimId(props.item.claim, props.currentUserId)
-                      ? claimButton({ takeOver: true })
-                      : undefined
-                  }
-                >
-                  <AssigneesSection
-                    spaceId={props.spaceId}
-                    assignees={props.item.assignees ?? []}
-                    claim={props.item.claim}
-                    currentUserId={props.currentUserId}
-                    dateConfig={props.dateConfig}
-                    onUpdate={(ids) => void updateAssignees(ids)}
-                    loading={isLoading()}
-                    disabled={!canEditItem()}
-                  />
-                </DetailPanel.Section>
-              </Show>
-              <Show when={props.work?.progress}>
-                {(note) => (
-                  <DetailPanel.Section title={t.workProgress} icon="ti ti-notes" tone="neutral">
-                    <MarkdownView markdown={note().content} headingScale="compact" class="text-sm" />
-                  </DetailPanel.Section>
-                )}
-              </Show>
-              <Show when={props.work?.result}>
-                {(result) => (
-                  <DetailPanel.Section title={t.workResult} icon="ti ti-circle-check" tone="neutral">
-                    <MarkdownView markdown={result().content} headingScale="compact" class="text-sm" />
-                    <Show when={result().commit}>
-                      <code class="text-xs break-all">{result().commit}</code>
-                    </Show>
-                  </DetailPanel.Section>
-                )}
-              </Show>
-            </DetailPanel.Group>
+          <Show when={canShowInvitations()}>
+            <EventInvitations spaceId={props.spaceId} itemId={props.item.id} title={props.item.title} />
           </Show>
 
-          <Show when={!isEvent() && (canEditItem() || relatedTasks().length > 0 || hasLinks())}>
-            <DetailPanel.Group label={t.context}>
-              {relatedTasksSection()}
-              {linksSection()}
-            </DetailPanel.Group>
-          </Show>
-
-          <Show when={isEvent() && canShowAssignees()}>
-            <DetailPanel.Group label={t.people}>
-              <DetailPanel.Section title={t.assignedPeople} icon="ti ti-users" tone="neutral">
-                <AssigneesSection
-                  spaceId={props.spaceId}
-                  assignees={props.item.assignees ?? []}
-                  currentUserId={props.currentUserId}
-                  onUpdate={(ids) => updateMutation.mutate({ assigneeIds: ids })}
-                  loading={isLoading()}
-                  disabled={!canEditItem()}
-                />
+          <Show when={!isEvent() && props.work?.progress}>
+            {(note) => (
+              <DetailPanel.Section title={t.workProgress}>
+                <MarkdownView markdown={note().content} headingScale="compact" class="text-sm" />
               </DetailPanel.Section>
-            </DetailPanel.Group>
+            )}
+          </Show>
+          <Show when={!isEvent() && props.work?.result}>
+            {(result) => (
+              <DetailPanel.Section title={t.workResult}>
+                <MarkdownView markdown={result().content} headingScale="compact" class="text-sm" />
+                <Show when={result().commit}>
+                  <code class="text-xs break-all">{result().commit}</code>
+                </Show>
+              </DetailPanel.Section>
+            )}
           </Show>
 
-          <Show when={isEvent() && (canEditItem() || hasLinks() || relatedTasks().length > 0)}>
-            <DetailPanel.Group label={t.context}>
-              {relatedTasksSection()}
-              {linksSection()}
-            </DetailPanel.Group>
+          <Show when={canEditItem() || hasLinks()}>
+            <ItemLinksSection
+              spaceId={props.spaceId}
+              itemId={props.item.id}
+              references={references()}
+              links={props.links ?? []}
+              canEdit={canEditItem()}
+              onChanged={reconcileAfterWrite}
+            />
+          </Show>
+
+          <Show when={!isEvent() && (canEditItem() || hasMedia())}>
+            <TaskAttachmentsSection
+              spaceId={props.spaceId}
+              itemId={props.item.id}
+              attachments={props.attachments ?? []}
+              canWrite={canEditItem()}
+              onChanged={reconcileAfterWrite}
+            />
           </Show>
 
           {/* The discussion starts with the item's reactions: no heading, no frame, every chip, and "Add reaction" at the end.
@@ -1352,8 +1205,8 @@ export default function ItemDetailPanel(props: Props) {
             />
           </Show>
 
-          <DetailPanel.Group label={t.itemMetadata}>
-            <DetailPanel.Section title={t.details} icon="ti ti-info-circle" tone="neutral" collapsible>
+          <DetailPanel.Group title={isEvent() ? t.moreAboutEvent : t.moreAboutTask}>
+            <DetailPanel.Section title={t.technicalDetails} collapsible summary={t.technicalSummary}>
               <DescriptionList
                 layout="rows"
                 size="sm"
@@ -1363,6 +1216,14 @@ export default function ItemDetailPanel(props: Props) {
                   { term: "ID", description: <span class="break-all font-mono text-dimmed">{props.item.id}</span> },
                 ]}
               />
+              <Show when={cloudId.available()}>
+                <DetailPanel.Action
+                  type="button"
+                  leading={<i class="ti ti-copy" aria-hidden="true" />}
+                  title={cloudIdMessages.resolve([locale()]).t.copy}
+                  onClick={() => cloudId.copy({ type: "spaces.item", id: props.item.id })}
+                />
+              </Show>
             </DetailPanel.Section>
           </DetailPanel.Group>
         </DetailPanel.Body>

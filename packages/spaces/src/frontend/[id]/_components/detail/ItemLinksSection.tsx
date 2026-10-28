@@ -13,7 +13,7 @@ import type { SpaceItemDetail } from "../workspace/workspace-types";
 type Props = {
   spaceId: string;
   itemId: string;
-  /** Cloud resource references (without `spaces.item`, which the panel shows as related tasks). */
+  /** Cloud resource references, related tasks (`spaces.item`) first. */
   references: SpaceItemDetail["references"];
   /** External links with the previews known at render time. */
   links: SpaceItemLink[];
@@ -53,7 +53,7 @@ function LinkFavicon(props: { url: string }) {
 }
 
 /**
- * One "Links" list per item: Cloud resource references plus external URLs.
+ * One "Linked" list per item: related tasks and other Cloud resource references, then external URLs.
  * GitHub links render their cached issue or pull request state; the section
  * fills a missing GitHub preview once through the API after mount so SSR never
  * waits on GitHub.
@@ -182,12 +182,18 @@ export default function ItemLinksSection(props: Props) {
     state === "open" ? t.linkStateOpen : state === "merged" ? t.linkStateMerged : t.linkStateClosed;
 
   return (
-    <DetailPanel.Section title={t.links} icon="ti ti-link" tone="neutral" count={props.references.length + links().length || undefined}>
+    <DetailPanel.Section title={t.linked} count={props.references.length + links().length || undefined}>
       <div class="flex flex-col gap-1">
         <For each={props.references}>
           {(reference) => {
             const href = () => reference.resource?.links?.find((link) => link.rel === "open")?.href;
-            const icon = () => reference.resource?.icon ?? (reference.ref.type === "mail.conversation" ? "ti ti-mail" : "ti ti-link");
+            const icon = () =>
+              reference.resource?.icon ??
+              (reference.ref.type === "spaces.item"
+                ? "ti ti-checkbox"
+                : reference.ref.type === "mail.conversation"
+                  ? "ti ti-mail"
+                  : "ti ti-link");
             const referenceMenu = () =>
               props.canEdit
                 ? {
@@ -206,7 +212,7 @@ export default function ItemLinksSection(props: Props) {
                     disabled
                     leading={<i class={icon()} aria-hidden="true" />}
                     title={reference.label}
-                    description={t.resourceUnavailable}
+                    description={reference.ref.type === "spaces.item" ? t.taskUnavailable : t.resourceUnavailable}
                     {...referenceMenu()}
                   />
                 }

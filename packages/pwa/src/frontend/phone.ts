@@ -1,3 +1,4 @@
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { PWA_AUTH_PATH, PWA_SCOPE, type PwaPlatform } from "@k2b/cloud/contracts";
 
 /** An answer of Core's phone endpoints; `status` 0 means the request did not reach Cloud. */
@@ -17,6 +18,13 @@ const request = async (method: "POST" | "PATCH" | "DELETE", path: string, body?:
   }
   const json: unknown = response.status === 204 ? null : await response.json().catch(() => null);
   const code = typeof json === "object" && json !== null && "code" in json && typeof json.code === "string" ? json.code : undefined;
+  if (
+    response.status === 401 ||
+    (response.ok &&
+      ((path === "/pairings/complete" && typeof json === "object" && json !== null && "state" in json && json.state === "paired") ||
+        (method === "DELETE" && path === "/session")))
+  )
+    pwaDrafts.clearAll();
   return { status: response.status, code, body: json };
 };
 

@@ -67,7 +67,10 @@ Reference the issue the pull request closes (`Closes #n`), or say in one line
 why none is needed.
 A fix pull request also answers "How do we prevent this next time?" with a
 guard (a check, a test, or a convention) or a reason why none, and adds its
-entry to [Lessons learned](docs-site/docs/en/contributing/lessons-learned.md).
+entry as a new file at
+`docs-site/docs/en/contributing/lessons/YYYY-MM-DD-<unique-slug>.md`.
+Follow [Add a lesson](docs-site/docs/en/contributing/lessons-learned.md#add-a-lesson);
+the shared page is assembled by Fibel and must not receive entries directly.
 
 ## Add an application
 
