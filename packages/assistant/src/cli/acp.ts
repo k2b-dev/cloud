@@ -19,8 +19,8 @@ import type {
   AiDraftContentPart,
   AiLocalContext,
   AiPendingTurnAction,
+  AiPeopleModels,
   AiProject,
-  AiPublicModelProfile,
   AiSkillSummary,
 } from "@k2b/cloud/ai";
 import {
@@ -40,6 +40,7 @@ import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { type CloudCliContext, command } from "@k2b/cloud/cli";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contracts/approvals";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
+import { parseAiModelChoice } from "@k2b/cloud/shared";
 import { version } from "../../package.json";
 import {
   approvalOptions,
@@ -84,7 +85,7 @@ type Session = {
   chat?: string;
   model?: string;
   project?: string;
-  models: AiPublicModelProfile[];
+  models: AiPeopleModels["options"][number][];
   localTools: "off" | "ask";
   context?: LocalContext;
   contextReader: () => Promise<LocalContext>;
@@ -144,7 +145,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     const response = await host.fetch(`${AI_API}/models`);
     if (response.status === 401)
       throw RequestError.authRequired(undefined, "Sign in first: run `cld login` in a terminal, then start a new thread.");
-    return host.readJson<AiPublicModelProfile[]>(response);
+    return host.readJson<AiPeopleModels>(response).then((payload) => payload.options);
   };
   const config = (s: Session): SessionConfigOption[] => [
     {
@@ -155,7 +156,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       currentValue: s.model ?? "default",
       options: [
         { value: "default", name: "Cloud default" },
-        ...s.models.map((m) => ({ value: m.id, name: m.label, description: `${m.provider} · ${m.model}` })),
+        ...s.models.map((m) => ({ value: m.id, name: m.label, description: m.description })),
       ],
     },
   ];
@@ -231,7 +232,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
         await update(s, { sessionUpdate: "tool_call_update", toolCallId: callId, status: allowed ? "completed" : "failed" });
     }
   };
-  const createSession = async (id: string, cwd: string, client: AgentContext, profiles: AiPublicModelProfile[]) => {
+  const createSession = async (id: string, cwd: string, client: AgentContext, profiles: AiPeopleModels["options"][number][]) => {
     const contextReader = createLocalContextReader({
       ctx: host,
       workspace: cwd,
@@ -336,7 +337,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     if (name === "usage") {
       const quota = await readApi<AiChatQuotaSnapshot>(ctx, "/quotas");
       if (!quota.enabled) return reply("No usage limits apply.");
-      const profiles = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+      const profiles = await readApi<AiPeopleModels>(ctx, "/models").then((payload) => payload.options);
       const label = (id: string) => profiles.find((m) => m.id === id)?.label ?? id;
       const dates = new Intl.DateTimeFormat(ctx.options.locale, { dateStyle: "medium", timeStyle: "short" });
       const lines = quota.balances.map((balance) => {
@@ -700,7 +701,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
         body: {
           message: text,
           content: [...attachments, ...s.selectedCloud],
-          ...(s.model ? { modelProfileId: s.model } : {}),
+          ...(s.model ? { model: parseAiModelChoice(s.model) } : {}),
           ...fields,
           localContext: { ...fields.localContext, selectedSkills },
         },

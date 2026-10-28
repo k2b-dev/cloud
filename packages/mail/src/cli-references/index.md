@@ -38,14 +38,14 @@ Domain rules include subdomains. Trust rules support sender addresses and sender
 Start here for everyday mail, mailbox setup, search, and collaboration. Continue with:
 
 - [Mail compose and drafts](compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
-- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, and central run operations.
+- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, the automation log and rule-effect undo, and central run operations.
 - [Mail operations](operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, the contact directory, and provider-backed message changes.
 
 ## Safety
 
 - Run `cld mail help` and confirm that the Mail module is available before changing a mailbox.
 - Use `--json` when a later command needs an id, revision, token, or cursor.
-- Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+- Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself. It is the same Cloud ID that **Copy conversation Cloud ID** and **Copy message Cloud ID** copy in Mail, and other Cloud apps accept it as a reference to that conversation or message. `cld mail show` prints it as `Cloud ID`.
 - Pass provider credentials with `--secret-stdin` or `--secret-file`. Credentials are write-only and are never returned by the API.
 - Read a message and its folder ids before changing provider state, moving, copying, or deleting it.
 - Public Mail resource ids are case-sensitive, exactly six ASCII letters or digits, and must be passed through unchanged. This applies to mailboxes, folders, conversations, messages, attachments, drafts and draft attachments, sender identities, tags, comments, reminders, scheduled deliveries, saved views, compose templates, incoming automations, and automatic replies. Legacy UUID resource ids are rejected. Mailboxes also accept their exact name, folders their path, and tags their exact name; see [Address mailboxes and folders](#address-mailboxes-and-folders).
@@ -69,6 +69,19 @@ cld --json mail ls Support:Archiv
 # {"error":{"message":"\"Archiv\" matches several folders: Archiv (Fa9x2Q), archiv (Kp3m8R). Use one of these paths or IDs.","status":409,"exitCode":1}}
 cld --json mail ls Support:Fa9x2Q
 ```
+
+## Choose your mailbox view
+
+```bash
+cld mail view get Support
+cld mail view set Support --large auto --phone compact
+cld mail view set Support --large columns
+cld mail view set Support --large split --phone detailed
+```
+
+Choices belong to the current person and mailbox. Read access, including assigned-only access, is enough. Large screens accept `auto` (columns until reading, then list + reader), `columns`, or `split`. Phones accept `compact` or `detailed`. An omitted flag keeps that device class unchanged; `set` requires at least one flag. With no stored choice, the defaults are `auto` and `compact`. JSON output is `{ "large": "auto", "phone": "compact" }`.
+
+The API exposes the same preference through `GET` and `PATCH /api/mail/mailboxes/:mailboxId/view`. A small refresh read, `GET /api/mail/mailboxes/:mailboxId/done-today`, returns `{ "doneToday": 0, "doneByAutomation": 0 }` for the caller's visible conversations. The Core time zone defines today, with Europe/Berlin as fallback. Each conversation counts once; its latest transition to done today determines the automation attribution. Reopening does not remove it from today's count.
 
 ## Read mail
 
@@ -223,7 +236,7 @@ cld --json mail unkeep <conversation-id> --yes
 - `keep` protects whole conversations, including replies that join them later. It needs write access, takes up to 50 IDs, and returns `{ "results": [...] }` with who kept each conversation and since when (`status: "ok"`) or the error (`status: "error"`). Keeping an already kept conversation changes nothing. A batch continues when one conversation fails and then exits with status 1.
 - While a conversation is kept, `rm`, moving it to Junk or Drafts, deleting a folder that holds it, and the same actions from automations, workflows, and agents fail with status 409 and code `CONVERSATION_KEPT` (`FOLDER_HAS_KEPT_CONVERSATIONS` for a folder). `archive`, `mv` to other folders, `read`, and `flag` still work.
 - When the mail server or another client deletes a kept message, Cloud keeps its own copy in the folder where it was last. `cat --json` shows it with `deletedOnServer: true` and `remoteAvailable: false`. `archive`, `mv`, `read`, and `flag` change that copy in Cloud only; `message flags|move|copy|delete` for it fail with `KEPT_COPY_ONLY`.
-- `unkeep` needs Manage access and `--yes`, because the conversation can be deleted again and messages of which only Cloud's copy is left disappear from the mailbox. It returns `{ "conversationId", "released" }`.
+- `unkeep` requires a Cloud administrator (session or personal API key) and `--yes`, because the conversation can be deleted again and messages of which only Cloud's copy is left disappear from the mailbox. Use `--reason <text>` to record a reason (up to 500 characters). Without a mailbox grant, pass its exact public ID with `--mailbox <mailbox-id>`. Agents, standalone service accounts, workflows and automations cannot lift keeps. It returns `{ "conversationId", "released" }`.
 
 ## Answer mail
 
@@ -775,3 +788,24 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 Message-level provider changes, junk and keyword changes, folder, attachment, and maintenance commands are documented in [Mail operations](operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](compose.md).
 
 Live presence and cursor-based WebSocket invalidation are browser transport concerns rather than durable CLI operations. Shared draft leases, recovery copies, and resumable uploads are durable CLI capabilities and are documented in [Mail compose and drafts](compose.md).
+
+## Request a conversation summary
+
+```bash
+cld mail conversation summary generate <conversation> --mailbox <mailbox> --mode rolling
+cld --json mail conversation summary generate <conversation> --mode replace
+```
+
+The command reads the current summary revision, then requests generation.
+`rolling` continues the current text; `replace` rewrites it. The request can
+replace your own edited text because you explicitly asked. It uses your
+Assistant allowance and requires conversation write permission. A conflict
+asks you to reread the summary; it never overwrites a newer edit. A second
+request while writing returns the current state.
+
+The API responds with HTTP 202 and the full `ConversationContentSummary`.
+Structured CLI output has the same shape. Read
+`GET /mailboxes/:mailboxId/conversations/:conversationId/summary` for progress
+and results. `mail.summary.allowance_exhausted` leaves the conversation
+unchanged. Allowance presentation contains only `unlimited`, `usedPercent`
+and `resetsAt`.

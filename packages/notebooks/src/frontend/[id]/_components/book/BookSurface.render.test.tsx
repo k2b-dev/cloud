@@ -4,6 +4,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
 import { katexStylesHref } from "../../../../lib/katex-assets";
+import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import { bookMessages } from "./messages";
 import "../detail/ssr-test-plugin";
 
@@ -37,7 +38,10 @@ const render = (
           navigationHidden: false,
           fullWidth: false,
           tags: [{ tag: "handbook", count: 2 }],
-          tree: [{ id: "note01", title: "Getting started", children: [{ id: "note02", title: "Welcome", children: [] }] }],
+          navigation: bookNavigationState(
+            [{ id: "note01", title: "Getting started", children: [{ id: "note02", title: "Welcome", children: [] }] }],
+            selectedNoteId,
+          ),
         });
       },
     }),

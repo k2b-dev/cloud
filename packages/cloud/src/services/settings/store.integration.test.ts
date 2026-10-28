@@ -1,10 +1,13 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { MISSING_SETTING } from "../cache-fill";
+import { getIdentityRuntimeConfig, invalidateIdentityRuntimeConfig } from "../identity/runtime-config";
 import { buildProjectedUser } from "../session/user";
 import { encryptValue } from "./crypto";
 import { registerSettings } from "./defaults";
+import { get, read, remove, set } from "./index";
+import { preserveTestSettings, useTestSettings } from "./settings.test-fixture";
 import { bulkRead, invalidateSettingsCache, invalidateSettingsCacheForAdmin, readKey } from "./store";
 
 const suite = suiteFor("database", "valkey");
@@ -76,5 +79,47 @@ suite("settings cache upgrade compatibility", () => {
     expect(await redis.get(cacheKey)).toBe("null");
     // Previous readers JSON.parse the marker, miss, and fall back to Postgres.
     expect(() => JSON.parse(MISSING_SETTING)).toThrow();
+  });
+});
+
+// Nested suites stand in for consecutive integration files sharing Postgres and Valkey.
+// The incoming issuer deliberately differs from the consumer's declared origin.
+suite("integration settings fixture isolation", () => {
+  preserveTestSettings(["app.url", "user.allow_self_registration", "user.category.login.label"]);
+  let fallbackLabel: string;
+  beforeAll(async () => {
+    await set("app.url", "https://previous-suite.example.test");
+    await set("user.allow_self_registration", false);
+    await remove("user.category.login.label");
+    fallbackLabel = await get<string>("user.category.login.label");
+    invalidateIdentityRuntimeConfig();
+    expect((await getIdentityRuntimeConfig()).issuer).toBe("https://previous-suite.example.test");
+  });
+
+  describe("a consumer declares its own settings", () => {
+    useTestSettings({
+      "app.url": "http://localhost:3000",
+      "user.allow_self_registration": true,
+      "user.category.login.label": "Fixture label",
+    });
+    test("replaces inherited database, Valkey and process cache values", async () => {
+      expect(await get<string>("app.url")).toBe("http://localhost:3000");
+      expect(await get<boolean>("user.allow_self_registration")).toBe(true);
+      expect(await get<string>("user.category.login.label")).toBe("Fixture label");
+      expect((await getIdentityRuntimeConfig()).issuer).toBe("http://localhost:3000");
+      // Some tests deliberately corrupt rows. Cleanup must still restore the saved readable value.
+      await sql`UPDATE settings.entries SET value = 'not encrypted' WHERE key = 'user.allow_self_registration'`;
+      expect((await read("user.allow_self_registration")).stored).toBe("unreadable");
+    });
+  });
+
+  describe("the next consumer", () => {
+    test("sees the original issuer, false values and absent rows after cleanup", async () => {
+      expect(await get<string>("app.url")).toBe("https://previous-suite.example.test");
+      expect(await get<boolean>("user.allow_self_registration")).toBe(false);
+      expect((await getIdentityRuntimeConfig()).issuer).toBe("https://previous-suite.example.test");
+      expect((await read("user.category.login.label")).stored).toBe("none");
+      expect(await get<string>("user.category.login.label")).toBe(fallbackLabel);
+    });
   });
 });

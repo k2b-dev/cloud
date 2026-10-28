@@ -219,6 +219,13 @@ Administrators can open **Administration → Apps → Repair access** even when
 the app is absent from their launcher. Fixed rules cannot be repaired into
 lists; changing a fixed rule requires an application declaration update.
 
+At `/admin/apps`, selecting an app shows its access rule or the access editor
+for configurable access, requested platform services, heard and sent events,
+and notifications. Administrators can read the same detail with
+`cld apps show <app-id>`. Newly observed subscriptions are marked for seven
+days. See [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
+for offline apps, list limits and delivery recovery.
+
 ### Save without losing the last manager
 
 Each list edit serializes changes for the app and commits the grant, the

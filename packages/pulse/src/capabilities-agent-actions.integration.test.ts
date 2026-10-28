@@ -1,30 +1,26 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { sql } from "bun";
-import { suiteFor, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
+import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 
 let pulseCapabilities: typeof import("./capabilities")["pulseCapabilities"];
-let migrate: typeof import("./migrate")["migrate"];
 let lifecycle: typeof import("./service/base-lifecycle");
 let clearBaseData: typeof import("./service/base-management")["clearBaseData"];
 let deleteBase: typeof import("./service/base-management")["deleteBase"];
 let settingsFixture: typeof import("./store/settings.test-fixture")["settingsFixture"];
 
 suiteFor("database")("agent base actions enforce current policy, grants and revisions", () => {
-  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
+  let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
   let settings: ReturnType<typeof settingsFixture>;
   beforeAll(async () => {
-    database = await useFreshDatabase("pulse_agent_actions");
+    database = await useMigratedDatabase("pulse_agent_actions");
     // Domain singletons may capture Bun.sql during import; bind the disposable database first.
     ({ pulseCapabilities } = await import("./capabilities"));
-    ({ migrate } = await import("./migrate"));
     lifecycle = await import("./service/base-lifecycle");
     ({ clearBaseData, deleteBase } = await import("./service/base-management"));
     ({ settingsFixture } = await import("./store/settings.test-fixture"));
-    await (await import("../../core/src/runtime-helpers")).runCoreSetup();
     settings = settingsFixture();
     settings.values["pulse.clickhouse_connection"] = JSON.stringify({ url: "http://127.0.0.1:1", user: "fixture", password: "fixture" });
-    await migrate();
   }, 30_000);
   afterAll(async () => {
     settings?.restore();

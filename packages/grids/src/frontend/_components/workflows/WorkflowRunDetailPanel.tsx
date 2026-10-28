@@ -4,6 +4,8 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
   DetailPanel,
+  Dropdown,
+  type DropdownItem,
   dialogCore,
   IconButton,
   Placeholder,
@@ -36,6 +38,7 @@ import {
   WorkflowRunExecutionSection,
   WorkflowRunInputsSection,
   WorkflowRunStepsSection,
+  WorkflowRunTechnicalSection,
 } from "./WorkflowRunDetailSections";
 import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
 import {
@@ -349,6 +352,8 @@ export function WorkflowRunDetailPanel(props: {
   });
 
   const downloadDocument = async (document: PublicDocument) => {
+    // One download at a time, whether it started from the row or its download button.
+    if (downloadingDocumentId() !== null) return;
     setDownloadingDocumentId(document.id);
     try {
       const res = await requestDocumentDownload(document.id);
@@ -416,7 +421,8 @@ export function WorkflowRunDetailPanel(props: {
   const runAgain = async () => {
     const workflow = activeWorkflow();
     const current = run();
-    if (!workflow || !current) return;
+    // A run that is still being started cannot be started a second time from the menu or the main action.
+    if (!workflow || !current || rerunMut.loading()) return;
     const inputs = await requestWorkflowRunInput({
       workflow,
       tables: props.tables,
@@ -456,70 +462,74 @@ export function WorkflowRunDetailPanel(props: {
     }
   };
 
+  const running = () => {
+    const current = run();
+    return Boolean(current && !isTerminalWorkflowRunStatus(current.status));
+  };
+  /** Rarer commands on the run; the main action stands beside them. */
+  const runMenu = (): DropdownItem[] => [
+    ...(run() && canWrite() && running()
+      ? [{ label: t().rerunWithInputs, icon: "ti ti-repeat", action: () => void runAgain(), disabled: rerunMut.loading() }]
+      : []),
+    { label: t().refreshRunDetails, icon: "ti ti-refresh", action: () => refresh() },
+  ];
+
   return (
     <DetailPanel>
       <DetailPanel.Header
-        icon="ti ti-activity"
-        title={t().workflowRun}
+        kind={
+          <>
+            <span>{t().workflowRun}</span>
+            <span aria-live="polite" aria-atomic="true">
+              <Show when={run()}>
+                {(current) => (
+                  <StatusBadge tone={workflowRunStatusTone(current().status)} label={workflowRunStatusLabel(current().status, locale())} />
+                )}
+              </Show>
+            </span>
+          </>
+        }
+        title={provenance()?.workflowName ?? activeWorkflow()?.name ?? t().workflowRun}
         subtitle={run() ? formatDate(run()!.createdAt, locale()) : t().loading}
-        meta={
-          <span aria-live="polite" aria-atomic="true">
-            <Show when={run()}>
-              {(current) => (
-                <StatusBadge tone={workflowRunStatusTone(current().status)} label={workflowRunStatusLabel(current().status, locale())} />
-              )}
+        primaryActions={
+          <>
+            <Show when={run() && canWrite()}>
+              <Show
+                when={running()}
+                fallback={
+                  <Button
+                    variant="subtle"
+                    size="sm"
+                    type="button"
+                    class="grids-details-main"
+                    onClick={() => void runAgain()}
+                    disabled={rerunMut.loading()}
+                    aria-label={t().rerunWithInputs}
+                  >
+                    <i class={rerunMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-repeat"} aria-hidden="true" />
+                    {t().runAgain}
+                  </Button>
+                }
+              >
+                <Button variant="secondary" size="sm" type="button" onClick={() => void cancelRun()} disabled={cancelMut.loading()}>
+                  <i class={cancelMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-stop"} aria-hidden="true" />
+                  {t().cancelRun}
+                </Button>
+              </Show>
             </Show>
-          </span>
+            <Dropdown.Root items={runMenu()} align="end" label={t().moreRunActions}>
+              <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreRunActions} aria-busy={loadMut.loading() || undefined}>
+                <i class={loadMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-dots"} aria-hidden="true" />
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+          </>
         }
         actions={
-          <>
-            <Tooltip.Anchor content={t().refreshRunDetails}>
-              <IconButton
-                variant="ghost"
-                size="sm"
-                type="button"
-                onClick={() => refresh()}
-                disabled={loadMut.loading()}
-                label={t().refreshRunDetails}
-              >
-                <i class={loadMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
-              </IconButton>
-            </Tooltip.Anchor>
-            <Show when={run() && canWrite()}>
-              <Tooltip.Anchor content={t().rerunWithInputs}>
-                <IconButton
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  onClick={() => void runAgain()}
-                  disabled={rerunMut.loading()}
-                  label={t().runAgain}
-                >
-                  <i class={rerunMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-repeat"} />
-                </IconButton>
-              </Tooltip.Anchor>
-            </Show>
-            <Show when={run() && !isTerminalWorkflowRunStatus(run()!.status) && canWrite()}>
-              <Tooltip.Anchor content={t().cancelWorkflowRun}>
-                <IconButton
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  class="text-red-600 dark:text-red-400"
-                  onClick={() => void cancelRun()}
-                  disabled={cancelMut.loading()}
-                  label={t().cancelWorkflowRun}
-                >
-                  <i class={cancelMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-stop"} />
-                </IconButton>
-              </Tooltip.Anchor>
-            </Show>
-            <Tooltip.Anchor content={t().closeRunDetails}>
-              <IconButton variant="ghost" size="sm" type="button" onClick={props.onClose} label={t().closeRunDetails}>
-                <i class="ti ti-x" />
-              </IconButton>
-            </Tooltip.Anchor>
-          </>
+          <Tooltip.Anchor content={t().closeRunDetails}>
+            <IconButton variant="ghost" size="sm" type="button" onClick={props.onClose} label={t().closeRunDetails}>
+              <i class="ti ti-x" aria-hidden="true" />
+            </IconButton>
+          </Tooltip.Anchor>
         }
       />
 
@@ -565,8 +575,6 @@ export function WorkflowRunDetailPanel(props: {
                 provenance={provenance()}
                 latestProgressAt={latestProgressAt()}
                 waitingFor={waitingFor()}
-                canInspectRevision={revisionWorkflow() !== null}
-                onInspectRevision={() => void inspectRevision()}
               />
               <WorkflowRunInputsSection inputs={inputRows()} />
               <WorkflowRunStepsSection
@@ -596,6 +604,13 @@ export function WorkflowRunDetailPanel(props: {
                 onDownloadAll={() => void downloadAllDocuments()}
                 onLoadMore={(offset) => loadMoreDocumentsMut.mutate({ runId: props.runId, offset })}
               />
+              <DetailPanel.Group title={t().moreAboutRun}>
+                <WorkflowRunTechnicalSection
+                  run={current()}
+                  canInspectRevision={revisionWorkflow() !== null}
+                  onInspectRevision={() => void inspectRevision()}
+                />
+              </DetailPanel.Group>
             </>
           )}
         </Show>

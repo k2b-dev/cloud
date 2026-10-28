@@ -366,12 +366,76 @@ const stripWebp = (bytes: Uint8Array): Uint8Array => {
   return out.subarray(0, written);
 };
 
+const stripGif = (bytes: Uint8Array): Uint8Array => {
+  const bad = () => new ImageMetadataError("GIF");
+  if (bytes.length < 13) throw bad();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (!view.getUint16(6, true) || !view.getUint16(8, true)) throw bad();
+  let offset = 13 + (bytes[10]! & 0x80 ? 3 * (1 << ((bytes[10]! & 7) + 1)) : 0);
+  if (offset > bytes.length) throw bad();
+  const out = new Uint8Array(bytes.length);
+  let written = copy(out, 0, bytes, 0, offset);
+  let image = false;
+  const blocksEnd = (start: number) => {
+    let next = start;
+    while (next < bytes.length) {
+      const size = bytes[next++]!;
+      if (!size) return next;
+      if (next + size > bytes.length) throw bad();
+      next += size;
+    }
+    throw bad();
+  };
+  while (offset < bytes.length) {
+    const start = offset;
+    const type = bytes[offset++]!;
+    if (type === 0x3b) {
+      if (!image) throw bad();
+      out[written++] = type;
+      return out.subarray(0, written);
+    }
+    if (type === 0x2c) {
+      if (offset + 9 > bytes.length || !view.getUint16(offset + 4, true) || !view.getUint16(offset + 6, true)) throw bad();
+      const packed = bytes[offset + 8]!;
+      offset += 9 + (packed & 0x80 ? 3 * (1 << ((packed & 7) + 1)) : 0);
+      if (offset >= bytes.length || bytes[offset]! < 2 || bytes[offset]! > 8) throw bad();
+      offset = blocksEnd(offset + 1);
+      written = copy(out, written, bytes, start, offset);
+      image = true;
+    } else if (type === 0x21) {
+      if (offset >= bytes.length) throw bad();
+      const label = bytes[offset++]!;
+      const payload = offset;
+      offset = blocksEnd(offset);
+      if (label === 0xf9) {
+        if (bytes[payload] !== 4 || offset !== payload + 6) throw bad();
+        written = copy(out, written, bytes, start, offset);
+      } else if (label === 0x01) {
+        // Plain text extensions contribute visible content, unlike comments and private application blocks.
+        if (bytes[payload] !== 12) throw bad();
+        written = copy(out, written, bytes, start, offset);
+      } else if (
+        label === 0xff &&
+        bytes[payload] === 11 &&
+        offset === start + 19 &&
+        (startsWith(bytes, "NETSCAPE2.0", payload + 1) || startsWith(bytes, "ANIMEXTS1.0", payload + 1)) &&
+        bytes[payload + 12] === 3 &&
+        bytes[payload + 13] === 1
+      ) {
+        written = copy(out, written, bytes, start, offset);
+      }
+    } else throw bad();
+  }
+  throw bad();
+};
+
 /**
- * Losslessly removes non-rendering metadata from JPEG, PNG and WebP, selected
+ * Losslessly removes non-rendering metadata from JPEG, PNG, WebP and GIF, selected
  * by magic bytes. Call only for uploads the application classifies as images.
  * Other formats are returned unchanged. No decoding; linear time and space.
  */
 export const stripImageMetadata = (bytes: Uint8Array): Uint8Array => {
+  if (startsWith(bytes, "GIF87a") || startsWith(bytes, "GIF89a")) return stripGif(bytes);
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return stripJpeg(bytes);
   if (startsWith(bytes, "\x89PNG")) return stripPng(bytes);
   if (startsWith(bytes, "RIFF") && startsWith(bytes, "WEBP", 8)) return stripWebp(bytes);

@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
 import { selectHtml } from "../../../../../../tests/fixtures/select-html";
 import { notebooksService } from "../../../service";
+import { mockNoteTree } from "../page-tree.test-fixture";
 import "../_components/detail/ssr-test-plugin";
 
 const { default: handler } = await import("./page");
@@ -53,7 +54,7 @@ afterEach(() => {
 test("readers cannot enter the attachments workspace through a direct URL", async () => {
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("read"));
-  const tree = spyOn(notebooksService.note, "getTree");
+  const tree = spyOn(notebooksService.note.sidebar, "tree");
   const attachments = spyOn(notebooksService.attachment, "listPaginated");
   spies.push(tree, attachments);
   const app = new Hono<AuthContext>();
@@ -77,7 +78,7 @@ test("attachments render their current sidebar destination and unframed empty pa
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([]));
+  spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(401));

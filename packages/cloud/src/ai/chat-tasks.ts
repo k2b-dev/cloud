@@ -1394,7 +1394,7 @@ export const aiChatTasks = {
 
   deliverOccurrence: async (input: {
     occurrenceId: string;
-    modelProfileId: string;
+    modelId: string;
     runConfig: AiChatTurnRunConfig;
     userMessage: Message;
     expectedRevision: number;
@@ -1464,7 +1464,7 @@ export const aiChatTasks = {
         "idx_ai_turns_conversation_short_id",
         (attempt, shortId) => attempt<{ id: string }[]>`
         INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-        VALUES (${shortId}, ${occurrence.conversation_id}::uuid, ${input.modelProfileId}, 'queued', (${JSON.stringify(runConfig)}::text)::jsonb)
+        VALUES (${shortId}, ${occurrence.conversation_id}::uuid, ${input.modelId}, 'queued', (${JSON.stringify(runConfig)}::text)::jsonb)
         RETURNING id
       `,
       );

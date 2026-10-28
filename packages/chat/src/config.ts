@@ -25,6 +25,23 @@ export const app = defineApp({
     requiresRoles: ["user", "guest"],
   },
   panel: { href: "/app/chat/panel", label: "Chat", icon: "ti ti-messages", requiresRoles: ["user", "guest"] },
+  settings: {
+    "chat.discoverable_authenticated": {
+      kind: "boolean",
+      label: "Allow channels discoverable by all signed-in accounts",
+      description: "Includes guests and service accounts. Turning this off removes their discovery access; existing members keep access.",
+      default: true,
+      presentation: {
+        translations: {
+          de: {
+            label: "Kanäle für alle Angemeldeten erlauben",
+            description:
+              "Schließt Gäste und Dienstkonten ein. Ausschalten entzieht den Zugriff über diese Auffindbarkeit; bestehende Mitglieder behalten Zugriff.",
+          },
+        },
+      },
+    },
+  },
   openapi: "/api/chat/openapi.json",
   routes: ["/api/chat", "/app/chat", "/admin/chat", "/public/chat"],
 });

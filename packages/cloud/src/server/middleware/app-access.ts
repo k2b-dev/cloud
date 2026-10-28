@@ -8,7 +8,7 @@ import type { AppMeta } from "../../contracts/app";
 import { appAccessAuthority, canUseApp } from "../../services/app-access";
 import { recordAppAccessDenied } from "../../services/app-access-metrics";
 import { createLoginRedirectUrl } from "../../shared/redirect";
-import { type AuthContext, auth, type RequestAuthority } from "./auth";
+import { type AuthContext, auth, loadAuthenticatedActor, type RequestAuthority } from "./auth";
 
 type AccessApp = Pick<AppMeta, "id" | "access"> & { name?: string };
 export const APP_ACCESS_RECHECK_MS = 50_000;
@@ -280,10 +280,10 @@ export const requireAppAccess = (
   const isPublic = appPublicRouteMatcher(app);
   return createMiddleware<AuthContext>(async (c, next) => {
     if (!app.access || isPublic(c.req.path)) return next();
-    let resolved: RequestAuthority | null = null;
-    await auth.requireRole("*")(c, async () => {
-      resolved = appAccessAuthority(c);
-    });
+    // The framework checks application entry before the app router is matched.
+    // Route-level OAuth policy belongs to the app authentication middleware.
+    await loadAuthenticatedActor(c);
+    const resolved = appAccessAuthority(c);
     const browser =
       c.req.method === "GET" && c.req.header("accept")?.includes("text/html") && c.req.header("upgrade")?.toLowerCase() !== "websocket";
     if (!resolved) {

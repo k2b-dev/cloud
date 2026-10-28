@@ -5,7 +5,7 @@ import * as ai from "@k2b/cloud/ai";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
-import type { AuthContext } from "@k2b/cloud/server";
+import { type AuthContext, auth } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import * as bun from "bun";
 import { Hono } from "hono";
@@ -83,7 +83,9 @@ const request = (path: string, body?: unknown) =>
 
 function setup() {
   // Stub requireInvocation's registered middleware, leaving the actual tool handler and errors intact.
-  const invocation = codeToolRoutes.routes.find((route) => route.path === "/code_list" && route.method === "POST");
+  const invocation = codeToolRoutes.routes.find(
+    (route) => route.path === "/code_list" && route.method === "POST" && route.handler !== auth.readOnly,
+  );
   if (!invocation) throw new Error("Missing code_list invocation middleware");
   const transport = spyOn(invocation, "handler").mockImplementation(async (_c, next) => next());
   const queries: { query: string; values: unknown[] }[] = [];
