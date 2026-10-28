@@ -51,16 +51,31 @@ const svgCategoryTicks = (html: string) =>
 
 test("every chart type fills a fixed-height box instead of sizing itself by its aspect ratio", () => {
   // A full-width block would otherwise draw a 480:280 SVG far taller than the block and overlap the next one.
-  expect(chart(statuses, { chartType: "donut" })).toMatch(/^<div class="flex h-72 flex-col"><div class="k2b-chart min-h-0 flex-1"/);
-  for (const chartType of ["bar", "line"] as const) {
-    expect(chart(statuses, { chartType })).toMatch(
-      new RegExp(`^<div class="flex h-72 flex-col"><div class="flex min-h-0 flex-1">${GUTTER}<div class="k2b-chart flex-1 `),
-    );
+  for (const chartType of ["donut", "bar"] as const)
+    expect(chart(statuses, { chartType })).toMatch(/^<div class="flex h-72 flex-col"><div class="k2b-chart min-h-0 flex-1"/);
+  expect(chart(statuses, { chartType: "line" })).toMatch(
+    new RegExp(`^<div class="flex h-72 flex-col"><div class="flex min-h-0 flex-1">${GUTTER}<div class="k2b-chart flex-1 `),
+  );
+});
+
+test("bar charts name every category, print every value and title both axes inside the shared chart", () => {
+  const labels = Array.from({ length: 30 }, (_, index) => `Week ${index + 1}`);
+  for (const categories of [statuses, labels]) {
+    const html = chart(categories, { xAxisLabel: "Ticket status", yAxisLabel: "Tickets", valueFormat: { style: "number", unit: "kg" } });
+    const named = [...html.matchAll(/stdlib-chart-category-label"[^>]*>(?:<title>[^<]*<\/title>)?([^<]*)</g)].map((match) => match[1]);
+    expect(named.join(" ")).toBe(categories.join(" "));
+    const values = [...html.matchAll(/stdlib-chart-bar-value"[^>]*>([^<]*)</g)].map((match) => match[1]);
+    expect(values).toEqual(categories.map((_, index) => `${index + 1} kg`));
+    expect([...html.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1]).sort()).toEqual([
+      "Ticket status",
+      "Tickets",
+    ]);
+    expect(html).not.toContain("data-chart-category");
   }
 });
 
-test("bar and line charts show the y-axis label beside the plot and the x-axis label below their categories", () => {
-  for (const chartType of ["bar", "line"] as const) {
+test("line charts show the y-axis label beside the plot and the x-axis label below their categories", () => {
+  for (const chartType of ["line"] as const) {
     const yAxisLabel = "Average handling time in working days per ticket status";
     const html = chart(statuses, { chartType, xAxisLabel: "Ticket status", yAxisLabel });
     // stdlib would draw both labels at full length inside the SVG: a long y-axis label runs past
@@ -92,8 +107,8 @@ test("bar and line charts show the y-axis label beside the plot and the x-axis l
   }
 });
 
-test("category names sit under their bar or point and are shortened to their slot, keeping the full name as title", () => {
-  for (const chartType of ["bar", "line"] as const) {
+test("category names sit under their point and are shortened to their slot, keeping the full name as title", () => {
+  for (const chartType of ["line"] as const) {
     for (const yAxisLabel of [undefined, "Tickets"]) {
       const html = chart(statuses, { chartType, yAxisLabel });
       // stdlib would draw each name at full length (line: repeated between points), overlapping on narrow blocks.
@@ -117,9 +132,9 @@ test("category names sit under their bar or point and are shortened to their slo
   }
 });
 
-test("charts name at most 12 categories and give each shown name the room of the categories it stands for", () => {
+test("line charts name at most 12 categories and give each shown name the room of the categories it stands for", () => {
   const labels = Array.from({ length: 30 }, (_, index) => `Week ${index + 1}`);
-  for (const chartType of ["bar", "line"] as const) {
+  for (const chartType of ["line"] as const) {
     const html = chart(labels, { chartType });
     const { width, start, end } = plotArea(html);
     const slot = (end - start) / labels.length;
@@ -135,7 +150,7 @@ test("charts name at most 12 categories and give each shown name the room of the
 });
 
 test("the lowest value label keeps room below its baseline for descenders such as the g in kg", () => {
-  for (const chartType of ["bar", "line"] as const) {
+  for (const chartType of ["line"] as const) {
     const html = chart(statuses, { chartType, valueFormat: { style: "number", unit: "kg" }, xAxisLabel: "Ticket status" });
     const height = Number(html.match(/viewBox="0 0 \d+ (\d+)"/)?.[1]);
     const baselines = [
@@ -221,7 +236,7 @@ test("y-axis values stay whole and close to the plot on phones and wide pages al
     { locale: "en", values: [3, 7, 12], valueFormat: undefined, shows: "12" },
   ];
   for (const { locale, values, valueFormat, shows } of cases) {
-    for (const chartType of ["bar", "line"] as const) {
+    for (const chartType of ["line"] as const) {
       for (const yAxisLabel of [undefined, "Amount"]) {
         const html = amounts(values, { chartType, valueFormat, yAxisLabel, dateConfig: { timeZone: "UTC", locale } });
         // The gutter holds exactly the labels the chart draws, so the browser sizes it for them.
@@ -251,7 +266,7 @@ test("y-axis values stay whole and close to the plot on phones and wide pages al
 test("an extreme but valid value format keeps its tick labels whole and a plot that overflows instead of collapsing", () => {
   // The value format allows 20 decimal places and a 20-character unit: about 300px of label on a phone.
   const valueFormat = { style: "number", decimalPlaces: 20, unit: "kWh je Monat und Ort" } as const;
-  for (const chartType of ["bar", "line"] as const) {
+  for (const chartType of ["line"] as const) {
     const html = amounts([1_250_000, 3_400_000, 2_100_000], {
       chartType,
       valueFormat,
@@ -269,7 +284,7 @@ test("an extreme but valid value format keeps its tick labels whole and a plot t
 });
 
 test("the tick gutter measures its labels in the font the chart draws them in", async () => {
-  const html = amounts([3200.5, 14250], { valueFormat: { style: "number", decimalPlaces: 2, unit: "EUR" } });
+  const html = amounts([3200.5, 14250], { chartType: "line", valueFormat: { style: "number", decimalPlaces: 2, unit: "EUR" } });
   // stdlib's stylesheet inside the SVG sizes the tick labels, and @k2b/ui sets their font.
   const fontSize = html.match(/\.stdlib-chart-tick-label \{[^}]*font-size:\s*([^;}]+)/)?.[1]?.trim();
   const ui = await Bun.file(Bun.resolveSync("@k2b/ui/styles.css", import.meta.dir)).text();

@@ -171,3 +171,48 @@ testFor("nats")("an overtaken save result passes through without another save", 
     expect(saves).toHaveLength(1);
   });
 });
+
+testFor("nats")("distant server edits preserve paragraph anchors and concurrent middle edits after replay", async () => {
+  await withLog(async ({ documents, log, docId }) => {
+    const before = "First old paragraph\n\nMiddle stable 😀 paragraph\n\nThird old paragraph\n";
+    await documents.edit(docId, { actor: null }, () => before);
+    const initial = await documents.read(docId);
+    const browser = new Y.Doc();
+    const replayed = new Y.Doc();
+    try {
+      Y.applyUpdate(browser, initial!.state!);
+      const ytext = browser.getText(SHARED_TEXT_NAME);
+      const anchors = ["First", "stable 😀", "Third"].map((quote) => ({
+        quote,
+        position: Y.createRelativePositionFromTypeIndex(ytext, before.indexOf(quote)),
+      }));
+      const middle = before.indexOf("stable");
+      const vector = Y.encodeStateVector(browser);
+      ytext.insert(middle, "client ");
+      const clientUpdate = toBase64(Y.encodeStateAsUpdate(browser, vector));
+      const result = await documents.edit(docId, { actor: null }, async ({ text }) => {
+        expect(text).toBe(before);
+        // Accepted after the edit's captured head, before its own publication.
+        await log.topic().publish({
+          tenantId: docId,
+          data: { kind: "sync", payload: clientUpdate, originNodeId: "browser", originPeerId: "peer" },
+        });
+        return text.replaceAll("old", "new longer");
+      });
+      const expected = before.replaceAll("old", "new longer").replace("stable", "client stable");
+      expect(result).toMatchObject({ status: "edited", text: expected });
+      const current = await documents.read(docId);
+      Y.applyUpdate(replayed, current!.state!);
+      expect(replayed.getText(SHARED_TEXT_NAME).toString()).toBe(expected);
+      for (const { quote, position } of anchors) {
+        const resolved = Y.createAbsolutePositionFromRelativePosition(position, replayed, false);
+        expect(resolved?.type).toBe(replayed.getText(SHARED_TEXT_NAME));
+        expect(expected.slice(resolved!.index, resolved!.index + quote.length)).toBe(quote);
+      }
+      expect(replayed.store.pendingStructs).toBeNull();
+    } finally {
+      browser.destroy();
+      replayed.destroy();
+    }
+  });
+});

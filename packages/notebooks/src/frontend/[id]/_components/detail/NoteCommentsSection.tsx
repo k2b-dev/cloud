@@ -274,7 +274,6 @@ export default function NoteCommentsSection(props: Props) {
     <Show when={props.canWrite || commentsPage().total > 0}>
       <Discussion
         label={t().comments}
-        icon="ti ti-message"
         count={commentsPage().total}
         data-note-comments=""
         tabIndex={-1}

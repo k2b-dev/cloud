@@ -3,7 +3,6 @@ import type { LiveViewer } from "@k2b/cloud/events";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import {
   getMailboxAccess,
   getMailboxAccesses,
@@ -85,7 +84,6 @@ suite("mail access to assigned conversations", () => {
     sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id) VALUES (${conversationId}::uuid, ${userId}::uuid)`;
 
   beforeAll(async () => {
-    await migrate();
     owner = await createUser("owner");
     assignedReader = await createUser("reader");
     groupMember = await createUser("member");

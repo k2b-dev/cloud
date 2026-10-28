@@ -115,7 +115,6 @@ export function CustomAppAvailabilitySection(props: CustomAppAvailabilitySection
   return (
     <DetailPanel.Section
       title={text({ value: "Availability" })}
-      icon="ti ti-lock-access"
       description={
         props.value().trim()
           ? text({ value: "Available when the query returns at least one row." })

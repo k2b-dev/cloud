@@ -694,11 +694,16 @@ const DaySection = (props: {
         </Show>
         <span class="k2b-calendar-days__summary">{daySummary(view, props.dayKey)}</span>
       </header>
-      <Show when={model().spans.length > 0}>
-        <div class="k2b-calendar-days__all-day" role="group" aria-label={view.messages().calendarAllDayAndDue}>
-          <AllDayChips view={view} dayKey={props.dayKey} spans={model().spans} />
-        </div>
-      </Show>
+      {/* Always one line, also while empty, so an all-day entry that arrives later moves nothing in the common case;
+          more entries still add lines. */}
+      <div
+        class="k2b-calendar-days__all-day"
+        role="group"
+        aria-label={view.messages().calendarAllDayAndDue}
+        aria-hidden={model().spans.length === 0 ? "true" : undefined}
+      >
+        <AllDayChips view={view} dayKey={props.dayKey} spans={model().spans} />
+      </div>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: free time is reached through its gap buttons; the pointer adds drawing and slots. */}
       <div
         ref={(element) => view.registerBody(props.dayKey, element, expanded)}

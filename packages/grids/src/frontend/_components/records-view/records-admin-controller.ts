@@ -56,6 +56,10 @@ type RecordsAdminControllerOptions = {
   setDisableDirectInsert: Setter<boolean>;
   fields: Accessor<Field[]>;
   setFields: Setter<Field[]>;
+  /** The table's own fields, which field settings edit; a saved view narrows `fields` to its output columns. */
+  tableFields: Accessor<Field[]>;
+  /** Given in a saved view, where `tableFields` is a list of its own, to keep it current. */
+  setTableFields?: (next: Field[]) => void;
   /** Fields the current table view hides and "Add column" can show again. */
   hiddenFields: Accessor<Field[]>;
   showColumns: (fieldIds: string[]) => void;
@@ -98,21 +102,26 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
   };
 
   const openFieldSettings = (field: Field) => {
+    const replaceField = (list: Field[], updated: Field) => list.map((candidate) => (candidate.id === updated.id ? updated : candidate));
+    const withoutField = (list: Field[]) => list.filter((candidate) => candidate.id !== field.id);
     openFieldEditDialog({
       field,
       tableKind: options.tableKind,
       baseId: options.baseId,
       tableId: options.tableId,
       otherTables: options.otherTables,
-      fieldsByTable: { ...options.fieldsByTable, [options.tableId]: options.fields() },
+      fieldsByTable: { ...options.fieldsByTable, [options.tableId]: options.tableFields() },
       tableColumns: () => ({
         // An empty table column list means "derive from the fields"; edit the list the table shows so a save keeps the other columns.
-        columns: resolveDefaultViewColumns(options.tableColumns(), options.fields()).filter(isFieldColumn),
+        columns: resolveDefaultViewColumns(options.tableColumns(), options.tableFields()).filter(isFieldColumn),
         derived: options.tableColumns().length === 0,
         updatedAt: options.tableUpdatedAt(),
       }),
       dateConfig: options.dateConfig,
-      onSaved: (updated) => syncFields(options.fields().map((candidate) => (candidate.id === updated.id ? updated : candidate))),
+      onSaved: (updated) => {
+        options.setTableFields?.(replaceField(options.tableFields(), updated));
+        syncFields(replaceField(options.fields(), updated));
+      },
       onTableColumnsSaved: applyTableColumns,
       onTableColumnsConflict: options.reloadTableColumns,
       onDeleted: async () => {
@@ -121,7 +130,8 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
         // The server removes the field from the table's columns and display settings and changes the table version.
         options.setTableColumns((columns) => columns.filter((column) => column.fieldId !== field.id));
         options.setTableDisplayConfig((config) => withoutDisplayField(config, field.id));
-        syncFields(options.fields().filter((candidate) => candidate.id !== field.id));
+        options.setTableFields?.(withoutField(options.tableFields()));
+        syncFields(withoutField(options.fields()));
         // The editor stays open until the new version is known, so a column change right after it does not conflict.
         await options.reloadTableColumns();
         return true;

@@ -8,7 +8,7 @@ import {
   type DropdownItem,
   Placeholder,
   prompts,
-  ScrollArea,
+  Select,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -16,17 +16,19 @@ import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { isHandOrdered } from "../../../../lib/note-order";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
+import type { SidebarNote } from "../../../../lib/sidebar-tree";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { useDuplicateNote } from "../detail/duplicate-note";
 import { readErrorMessage } from "../settings/utils";
 import { NoteRowLabel, NoteRowMenu, NoteRowsContextMenu } from "./note-rows";
-import { flattenTree, getNodeDepthLabel } from "./tree-utils";
-import type { NoteTreeNode } from "./types";
+import type { SidebarTree } from "./sidebar-tree";
 
 type Props = {
-  tree: NoteTreeNode[];
+  tree: SidebarTree;
+  /** The title on screen, which may run ahead of the saved one while someone types. */
+  titleOf: (note: SidebarNote) => string;
   /** Notebook short-id (6 readable characters). Used both for URL building
    *  (`buildNoteUrl`, etc.) and for API path params — the API resolves
    *  short-ids to UUIDs at the boundary, so islands never need both
@@ -39,7 +41,7 @@ type Props = {
   /** Lets writers rearrange the notes on screen; the tree reports the requested place. */
   onMove?: (move: AppWorkspaceNavTreeMove) => void;
   /** A note's menu, from its ⋯ button, a right-click, the Context Menu key or Shift+F10. */
-  noteMenu?: (node: NoteTreeNode, level: NoteTreeNode[]) => DropdownItem[];
+  noteMenu?: (node: SidebarNote, level: SidebarNote[]) => DropdownItem[];
 };
 
 /**
@@ -51,15 +53,17 @@ export type NotePlacement = { parentId: string | null } & ({ before: string } | 
 /** Where a note sits in the notebook order on screen; absent where another order is shown. */
 export type NoteOrderContext = {
   /** The note's level as displayed, the pinned homepage first. */
-  level: NoteTreeNode[];
+  level: SidebarNote[];
+  /** The note's own sub-notes as far as they are loaded; their order offers "Sort alphabetically". */
+  children?: SidebarNote[];
   homepageId: string | null;
 };
 
 /** The place between two neighbours: before the next one, or after the last one. */
 const placementBetween = (
   parentId: string | null,
-  after: NoteTreeNode | undefined,
-  before: NoteTreeNode | undefined,
+  after: SidebarNote | undefined,
+  before: SidebarNote | undefined,
 ): NotePlacement | null => (before ? { parentId, before: before.id } : after ? { parentId, after: after.id } : null);
 
 export const placementForMove = (move: AppWorkspaceNavTreeMove): NotePlacement | null =>
@@ -73,7 +77,10 @@ export const placementForMove = (move: AppWorkspaceNavTreeMove): NotePlacement |
 // Note Actions
 // =============================================================================
 
-export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], options: { onOrderChanged?: () => void } = {}) {
+export function useNoteActions(
+  notebookId: string,
+  options: { onOrderChanged?: () => void; findNote?: (id: string) => SidebarNote | undefined } = {},
+) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const createNoteMut = mutations.create<{ id: string }, { parentId?: string }>({
@@ -98,7 +105,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
         param: { id: notebookId, noteId: data.noteId },
         json: { parentId: data.parentId },
       });
-      if (!res.ok) throw new Error(t().failedMoveNote);
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().failedMoveNote));
       return res.json();
     },
     onSuccess: () => refreshCurrentPath(),
@@ -166,51 +173,48 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
 
   const handleCreateNote = (parentId?: string) => createNoteMut.mutate({ parentId });
 
-  const handleMove = async (node: NoteTreeNode) => {
-    const allFlat = flattenTree(tree(), node.id);
+  /** Notes to move a note under, by title: the top level first, a search across the notebook as the person types. */
+  const loadMoveTargets = async (node: SidebarNote, query: string, signal: AbortSignal) => {
+    const root = { value: "", label: t().rootLevel, icon: "ti ti-home" };
+    const res = query.trim()
+      ? await apiClient[":id"].notes.$get({ param: { id: notebookId }, query: { q: query.trim(), per_page: "20" } }, { init: { signal } })
+      : await apiClient[":id"].tree.levels.$get({ param: { id: notebookId }, query: { levels: ":0:20" } }, { init: { signal } });
+    if (!res.ok) throw new Error(t().failedLoadNotes);
+    const payload = (await res.json()) as { data?: Array<{ id: string; title: string }>; levels?: Array<{ items: SidebarNote[] }> };
+    const notes = payload.data ?? payload.levels?.[0]?.items ?? [];
+    return [
+      ...(query.trim() ? [] : [root]),
+      ...notes
+        .filter((note) => note.id !== node.id)
+        .map((note) => ({ value: note.id, label: note.title || t().untitled, description: `#${note.id}`, icon: "ti ti-file-text" })),
+    ];
+  };
 
+  const handleMove = async (node: SidebarNote) => {
     const result = await prompts.dialog<{ parentId: string | null }>(
       (close) => {
-        const [selected, setSelected] = createSignal<string | null>(node.parentId);
-
+        const [selected, setSelected] = createSignal<string | null>(node.parentId ?? "");
+        const parent = node.parentId ? options.findNote?.(node.parentId) : undefined;
         return (
-          <div class="flex flex-col gap-2">
-            <p class="text-sm text-secondary">{t().moveTo({ title: node.title })}</p>
-
-            <ScrollArea class="flex flex-col gap-1 max-h-64">
-              {/* Root level option */}
-              <Button
-                variant={selected() === null ? "subtle" : "ghost"}
-                size="sm"
-                onClick={() => setSelected(null)}
-                align="start"
-                class="w-full"
-              >
-                <i class="ti ti-home text-xs mr-1.5" />
-                {t().rootLevel}
-              </Button>
-
-              <For each={allFlat}>
-                {(target) => (
-                  <Button
-                    variant={selected() === target.id ? "subtle" : "ghost"}
-                    size="sm"
-                    onClick={() => setSelected(target.id)}
-                    align="start"
-                    class="w-full"
-                  >
-                    <i class="ti ti-file-text text-xs mr-1.5" />
-                    {getNodeDepthLabel(target, allFlat)}
-                  </Button>
-                )}
-              </For>
-            </ScrollArea>
-
+          <div class="flex flex-col gap-3">
+            <p class="text-sm text-secondary">{t().moveTo({ title: node.title || t().untitled })}</p>
+            <Select
+              label={t().moveTarget}
+              value={selected}
+              onValueChange={setSelected}
+              selectedLabel={() => (node.parentId ? (parent?.title ?? `#${node.parentId}`) : t().rootLevel)}
+              loadOptions={(query, signal) => loadMoveTargets(node, query, signal)}
+              searchPlaceholder={t().searchMoveTarget}
+              placeholder={t().searchMoveTarget}
+            />
             <div class="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => close(undefined)}>
                 {t().cancel}
               </Button>
-              <Button onClick={() => close({ parentId: selected() })} disabled={selected() === node.parentId}>
+              <Button
+                onClick={() => close({ parentId: selected() || null })}
+                disabled={selected() === null || (selected() || null) === node.parentId}
+              >
                 {t().move}
               </Button>
             </div>
@@ -225,10 +229,10 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
     }
   };
 
-  const handleCopy = (node: NoteTreeNode) => duplicateNote.duplicate(node.id);
+  const handleCopy = (node: SidebarNote) => duplicateNote.duplicate(node.id);
 
-  const handleDelete = async (node: NoteTreeNode) => {
-    const hasKids = node.children.length > 0;
+  const handleDelete = async (node: SidebarNote) => {
+    const hasKids = node.hasChildren;
     const confirmed = await prompts.confirm(
       hasKids ? t().deleteNoteTreeConfirm({ title: node.title }) : t().deleteNoteConfirm({ title: node.title }),
       {
@@ -243,7 +247,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
     }
   };
 
-  const handleLock = async (node: NoteTreeNode) => {
+  const handleLock = async (node: SidebarNote) => {
     const confirmed = await prompts.confirm(t().lockConfirm({ title: node.title }), {
       title: t().lockNote,
       icon: "ti ti-lock",
@@ -283,7 +287,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
 
 /** Move up and down, plus the way back to the title order where a level was arranged by hand. */
 const noteOrderItems = (
-  node: NoteTreeNode,
+  node: SidebarNote,
   actions: ReturnType<typeof useNoteActions>,
   t: ReturnType<(typeof notebookWorkspaceMessages)["resolve"]>["t"],
   order: NoteOrderContext,
@@ -299,7 +303,7 @@ const noteOrderItems = (
   return [
     { icon: "ti ti-arrow-up", label: t.moveUp, disabled: !up, action: () => actions.handlePlace(node.id, up) },
     { icon: "ti ti-arrow-down", label: t.moveDown, disabled: !down, action: () => actions.handlePlace(node.id, down) },
-    ...(isHandOrdered(node.children)
+    ...(order.children && isHandOrdered(order.children)
       ? [{ icon: "ti ti-sort-a-z", label: t.sortSubnotesAlphabetically, action: () => actions.handleSortAlphabetically(node.id) }]
       : []),
     ...(node.parentId === null && isHandOrdered(level)
@@ -309,7 +313,7 @@ const noteOrderItems = (
 };
 
 export const noteActionItems = (
-  node: NoteTreeNode,
+  node: SidebarNote,
   actions: ReturnType<typeof useNoteActions>,
   t: ReturnType<(typeof notebookWorkspaceMessages)["resolve"]>["t"],
   canDeleteOrLock: boolean,
@@ -362,56 +366,101 @@ export const noteActionItems = (
   },
 ];
 
-/** Notes with sub-notes get the stacked icon, so a branch reads as one before it is opened. */
-export const noteIcon = (node: NoteTreeNode, homepageId: string | null | undefined): string =>
-  node.id === homepageId ? "ti ti-home" : node.children.length > 0 ? "ti ti-files" : "ti ti-file-text";
+/** Moves focus to a row that just loaded, so keyboard and screen reader users continue where the new notes begin. */
+export const focusTreeRow = (id: string | undefined) => {
+  if (!id) return;
+  queueMicrotask(() =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]"))
+      .find((row) => row.dataset.k2bNavTreeId === id)
+      ?.focus(),
+  );
+};
 
-function NoteTreeItems(props: {
-  nodes: NoteTreeNode[];
+/** Notes with sub-notes get the stacked icon, so a branch reads as one before it is opened. */
+export const noteIcon = (node: SidebarNote, homepageId: string | null | undefined): string =>
+  node.id === homepageId ? "ti ti-home" : node.hasChildren ? "ti ti-files" : "ti ti-file-text";
+
+/**
+ * One level of the tree as far as it is loaded: its rows, a row that loads earlier ones above them, and one that
+ * loads more below. An open branch that has not loaded yet says so in its place.
+ */
+function NoteTreeLevel(props: {
+  parentId: string | null;
+  tree: SidebarTree;
+  titleOf: (note: SidebarNote) => string;
   notebookId: string;
   presentationMode?: PresentationMode;
   homepageId: string | null;
   movable: boolean;
-  noteMenu?: (node: NoteTreeNode, level: NoteTreeNode[]) => DropdownItem[];
+  noteMenu?: (node: SidebarNote, level: SidebarNote[]) => DropdownItem[];
 }) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const level = () => props.tree.level(props.parentId);
+  const items = () => level()?.items ?? [];
+  const key = () => props.parentId ?? "";
+  const earlier = () => level()?.offset ?? 0;
+  const later = () => {
+    const loaded = level();
+    return loaded ? loaded.total - loaded.offset - loaded.items.length : 0;
+  };
   return (
-    <For each={props.nodes}>
-      {(node) => (
+    <Show
+      when={level()}
+      fallback={<AppWorkspace.NavTree.Item id={`loading:${key()}`} label={t().loadingNotes} icon="ti ti-loader-2 animate-spin" disabled />}
+    >
+      <Show when={earlier() > 0}>
         <AppWorkspace.NavTree.Item
-          id={node.id}
-          label={<NoteRowLabel note={node} />}
-          icon={noteIcon(node, props.homepageId)}
-          iconLabel={node.id === props.homepageId ? t().homepage : undefined}
-          href={buildNoteUrl(props.notebookId, node.id, props.presentationMode)}
-          navigation="document"
-          movable={props.movable && node.id !== props.homepageId}
-          actions={props.noteMenu ? <NoteRowMenu note={node} items={props.noteMenu(node, props.nodes)} /> : undefined}
-        >
-          <NoteTreeItems
-            nodes={node.children}
-            notebookId={props.notebookId}
-            presentationMode={props.presentationMode}
-            homepageId={props.homepageId}
-            movable={props.movable}
-            noteMenu={props.noteMenu}
-          />
-        </AppWorkspace.NavTree.Item>
-      )}
-    </For>
+          id={`earlier:${key()}`}
+          label={t().earlierNotes({ count: earlier() })}
+          icon={props.tree.isPending(props.parentId) ? "ti ti-loader-2 animate-spin" : "ti ti-chevrons-up"}
+          class="notebook-tree-more"
+          onSelect={() => {
+            const shown = items().length;
+            void props.tree
+              .showEarlier(props.parentId)
+              .then(() => focusTreeRow(items()[items().length - shown - 1]?.id))
+              .catch(() => undefined);
+          }}
+        />
+      </Show>
+      <For each={items()}>
+        {(node) => (
+          <AppWorkspace.NavTree.Item
+            id={node.id}
+            label={<NoteRowLabel note={node} title={props.titleOf(node)} />}
+            icon={noteIcon(node, props.homepageId)}
+            iconLabel={node.id === props.homepageId ? t().homepage : undefined}
+            href={buildNoteUrl(props.notebookId, node.id, props.presentationMode)}
+            navigation="document"
+            movable={props.movable && node.id !== props.homepageId}
+            hasChildren={node.hasChildren}
+            actions={props.noteMenu ? <NoteRowMenu note={node} items={props.noteMenu(node, items())} /> : undefined}
+          >
+            <Show when={node.hasChildren && props.tree.isExpanded(node.id)}>
+              <NoteTreeLevel {...props} parentId={node.id} />
+            </Show>
+          </AppWorkspace.NavTree.Item>
+        )}
+      </For>
+      <Show when={later() > 0}>
+        <AppWorkspace.NavTree.Item
+          id={`more:${key()}`}
+          label={t().moreNotes({ count: later() })}
+          icon={props.tree.isPending(props.parentId) ? "ti ti-loader-2 animate-spin" : "ti ti-chevrons-down"}
+          class="notebook-tree-more"
+          onSelect={() => {
+            const shown = items().length;
+            void props.tree
+              .showMore(props.parentId)
+              .then(() => focusTreeRow(items()[shown]?.id))
+              .catch(() => undefined);
+          }}
+        />
+      </Show>
+    </Show>
   );
 }
-
-/** Finds a note and the level it sits in, as displayed. */
-export const findNoteInLevel = (level: NoteTreeNode[], id: string): { node: NoteTreeNode; level: NoteTreeNode[] } | null => {
-  for (const node of level) {
-    if (node.id === id) return { node, level };
-    const found = findNoteInLevel(node.children, id);
-    if (found) return found;
-  }
-  return null;
-};
 
 // =============================================================================
 // Main Component
@@ -421,27 +470,33 @@ export default function NoteTree(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const contextMenu = (id: string) => {
-    const found = findNoteInLevel(props.tree, id);
-    return found && props.noteMenu ? props.noteMenu(found.node, found.level) : [];
+    const node = props.tree.findNote(id);
+    return node && props.noteMenu ? props.noteMenu(node, props.tree.level(node.parentId)?.items ?? [node]) : [];
   };
 
   // An empty notebook shows one line where the first note would be, not a stretched empty tree.
   return (
     <Show
-      when={props.tree.length > 0}
+      when={(props.tree.level(null)?.total ?? 0) > 0}
       fallback={<Placeholder variant="inline" align="left" icon="ti ti-file-text" description={t().noNotes} />}
     >
       <NoteRowsContextMenu menu={contextMenu}>
         <AppWorkspace.NavTree
           ariaLabel={t().notes}
           selectedId={props.selectedNoteId}
-          defaultExpandedIds={flattenTree(props.tree)
-            .filter((node) => node.children.length > 0)
-            .map((node) => node.id)}
+          expandedIds={props.tree.expandedIds()}
+          onExpandedIdsChange={(ids) => {
+            const next = new Set(ids);
+            const current = new Set(props.tree.expandedIds());
+            for (const id of next) if (!current.has(id)) props.tree.setOpen(id, true);
+            for (const id of current) if (!next.has(id)) props.tree.setOpen(id, false);
+          }}
           onMove={props.onMove}
         >
-          <NoteTreeItems
-            nodes={props.tree}
+          <NoteTreeLevel
+            parentId={null}
+            tree={props.tree}
+            titleOf={props.titleOf}
             notebookId={props.notebookId}
             presentationMode={props.presentationMode}
             homepageId={props.homepageId ?? null}

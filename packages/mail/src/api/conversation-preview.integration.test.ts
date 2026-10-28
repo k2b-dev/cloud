@@ -6,7 +6,6 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailConversationPreview } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "../service/auth";
 import { writeConversationAssignees } from "../service/collaboration";
 import { MAIL_CONVERSATION_PREVIEW_EXCERPT_MAX_LENGTH, MAIL_CONVERSATION_PREVIEW_NAME_MAX_LENGTH } from "../service/conversation-preview";
@@ -164,7 +163,6 @@ suite("Mail conversation quick look", () => {
   let main: { id: string; shortId: string };
 
   beforeAll(async () => {
-    await migrate();
     owner = await insertUser("preview-owner", "Owner");
     assignee = await insertUser("preview-assignee", "Jonas Muster");
     await insertUser("preview-outsider", "Outsider");
