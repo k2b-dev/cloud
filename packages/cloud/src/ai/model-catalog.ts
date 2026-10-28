@@ -15,6 +15,7 @@ import {
   AiVariantInputSchema,
   AiVariantSchema,
   aiModelClassFallbackChain,
+  aiModelSupportsSlot,
 } from "../shared/ai-models";
 import { listAiCredentialProviderIds } from "./credentials";
 import { AiModelAccessConflict, type AiModelAccessDraft, aiModelAccess } from "./model-access";
@@ -318,12 +319,7 @@ export const aiModelCatalog = {
   },
 };
 export const validateAiSlot = (slot: import("../shared/ai-models").AiModelSlot, model: Pick<AiModel, "kind" | "capabilities">) => {
-  if (
-    slot === "audio"
-      ? model.kind !== "transcription"
-      : model.kind !== "chat" || (slot === "vision" && !model.capabilities.includes("vision"))
-  )
-    throw new AiConfigError("invalid_configuration", "The model does not support this assignment.");
+  if (!aiModelSupportsSlot(slot, model)) throw new AiConfigError("invalid_configuration", "The model does not support this assignment.");
 };
 export const flattenAiModelVariant = (provider: AiProvider, model: AiModel, variant: AiModelVariant): AiModelProfile => ({
   id: variant.id,

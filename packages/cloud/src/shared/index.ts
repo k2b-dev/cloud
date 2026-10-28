@@ -14,6 +14,7 @@ export * from "./account-display";
 export * from "./account-session";
 export * from "./ai-costs";
 export * from "./ai-models";
+export * from "./ai-models";
 export type { AiPromptContextInput, AiToolPromptHint } from "./ai-platform-prompt";
 export {
   AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS,

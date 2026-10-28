@@ -1,4 +1,6 @@
 export { AiTurnBlockView } from "./chat/blocks";
+export { AiModelCard, type AiModelCardStop, aiModelClassLabel, aiModelClassSubtitle } from "./model-card";
+export { aiModelChooserMessages } from "./model-chooser-messages";
 export { AiModelIcon, aiModelDisplayIcon } from "./model-icon";
 
 import { latestLoopUsage, latestUsage, latestUsageSnapshot, textFromMessage } from "./chat/message-utils";
