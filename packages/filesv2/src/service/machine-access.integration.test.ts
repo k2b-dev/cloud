@@ -744,15 +744,12 @@ suite("Files machine storage through actual API tokens", () => {
       expect(await service.editorSave(editor.token, ref, { timestamp: null, read: async () => new Blob(["abc"]) })).toHaveProperty(
         "modified",
       );
-      const readEditor = await data<OfficeEditorLaunch>(await request(readBearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
-      expect((await service.editorFileInfo(readEditor.token, ref)).UserCanWrite).toBe(false);
-      await expect(
-        service.editorSave(readEditor.token, ref, { timestamp: null, read: async () => new Blob(["denied"]) }),
-      ).rejects.toMatchObject({ status: 403 });
+      // An editor session can save, so launching one needs write scope; a read-only token is refused at the route.
+      await denied(await request(readBearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
       await denied(await request(readBearer, `${base}/directories`, "POST", { path: "scope-denied" }));
       await denied(await request(await sign("admin", Math.floor(Date.now() / 1000) - 1), `${base}/entries`));
       const originalTime = Date.now();
-      const shortBearer = await sign("read", Math.floor(originalTime / 1000) + 1);
+      const shortBearer = await sign("write", Math.floor(originalTime / 1000) + 1);
       const shortTransfer = await data<{ url: string }>(await request(shortBearer, `${base}/download`, "POST", { path: "oauth.odt" }));
       const shortEditor = await data<OfficeEditorLaunch>(await request(shortBearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
       try {
