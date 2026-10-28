@@ -66,4 +66,15 @@ describe("createSettingsDraft", () => {
     dispose();
     expect(settingsSaveControls()).toBeNull();
   });
+
+  test("rebase moves untouched fields to newer stored values and keeps edits", () => {
+    const { form: draft, dispose } = form(async (value) => value);
+    draft.update({ a: 5 });
+    draft.rebase({ a: 9, b: 7 });
+    expect(draft.draft()).toEqual({ a: 5, b: 7 });
+    draft.rebase({ a: 9, b: 7 }, ["a"]);
+    expect(draft.draft()).toEqual({ a: 9, b: 7 });
+    expect(settingsSaveControls()?.state).toBe("saved");
+    dispose();
+  });
 });

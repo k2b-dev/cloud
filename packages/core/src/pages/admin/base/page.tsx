@@ -5,6 +5,7 @@ import { AdminAreaPane } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
 import type { RegistryFormSection } from "../_area/RegistryForm.island";
 import PlacesAndMaps from "../places-and-maps/PlacesAndMaps.island";
+import DocumentationLink from "../settings/_components/DocumentationLink";
 import { buildEntries } from "../settings/entries";
 import { BaseArea, type BaseSection, baseText } from "./area";
 import { cliSections, generalSections, legalSections, pdfSections } from "./sections";
@@ -14,8 +15,21 @@ import { BaseFormView } from "./view";
 const formSection = (section: Exclude<BaseSection, "places">, groups: string[], sections: (locale: string) => RegistryFormSection[]) =>
   ssr<AuthContext>(async (c) => {
     const locale = getLocale(c);
-    const entries = (await Promise.all(groups.map((group) => buildEntries(group, locale)))).flat();
-    return () => <BaseFormView c={c} locale={locale} section={section} groups={groups} sections={sections(locale)} entries={entries} />;
+    const [entries, documentationBase] = await Promise.all([
+      Promise.all(groups.map((group) => buildEntries(group, locale))).then((lists) => lists.flat()),
+      coreSettings.get<string>("app.documentation_url"),
+    ]);
+    return () => (
+      <BaseFormView
+        c={c}
+        locale={locale}
+        section={section}
+        groups={groups}
+        sections={sections(locale)}
+        entries={entries}
+        documentationBase={documentationBase}
+      />
+    );
   });
 
 export const generalPage = formSection("general", ["app"], generalSections);
@@ -35,7 +49,11 @@ export const placesPage = ssr<AuthContext>(async (c) => {
   ]);
   return () => (
     <BaseArea c={c} locale={locale} section="places">
-      <AdminAreaPane label={t.places} description={t.placesDescription}>
+      <AdminAreaPane
+        label={t.places}
+        description={t.placesDescription}
+        actions={<DocumentationLink base={documentationBase} topic="places" />}
+      >
         <PlacesAndMaps initial={{ status, usage, actorId: user.id }} documentationBase={documentationBase} embedded />
       </AdminAreaPane>
     </BaseArea>

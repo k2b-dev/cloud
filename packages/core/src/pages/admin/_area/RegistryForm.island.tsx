@@ -21,7 +21,7 @@ export type RegistryFormSection = {
 };
 
 type Values = Record<string, unknown>;
-type Conflict = { key: string; current: unknown; who: string | null; at: string };
+type Conflict = { key: string; current: unknown; who: string | null; at: string; version: string | null };
 
 const preview = (entry: SettingFieldDef, value: unknown, t: AreaFormMessages): string => {
   if (entry.kind === "secret") return value ? "••••••" : t.emptyValue;
@@ -55,7 +55,7 @@ export default function RegistryForm(props: { groups: string[]; sections: Regist
   const unreadable = (key: string) => entries().find((item) => item.key === key)?.unreadable === true;
   const confirmed = (key: string) => unreadable(key) && replace().includes(key);
 
-  const refresh = async (): Promise<SettingFieldDef[]> => {
+  const fetchEntries = async (): Promise<SettingFieldDef[]> => {
     const lists = await Promise.all(
       props.groups.map(async (group) => {
         const response = await coreClient.admin.core.settings.entries.$get({ query: { group } });
@@ -64,16 +64,36 @@ export default function RegistryForm(props: { groups: string[]; sections: Regist
       }),
     );
     const keys = new Set(props.entries.map((item) => item.key));
-    const next = lists.flat().filter((item) => keys.has(item.key));
+    return lists.flat().filter((item) => keys.has(item.key));
+  };
+  /**
+   * Reads the current values without losing edits: an untouched field and every field in `adopt` take the stored
+   * value and its version; an edited field keeps the person's value and the version it was read at, so saving it
+   * still reports a change someone else made.
+   */
+  const rebase = async (adopt: readonly string[]) => {
+    const next = await fetchEntries();
+    const before = form.stored();
+    const draft = form.draft();
+    const untouched = (key: string) => adopt.includes(key) || JSON.stringify(draft[key]) === JSON.stringify(before[key]);
+    setSeenAt(
+      Object.fromEntries(next.map((item) => [item.key, untouched(item.key) ? (item.updatedAt ?? null) : (seenAt()[item.key] ?? null)])),
+    );
     setEntries(next);
-    setSeenAt(Object.fromEntries(next.map((item) => [item.key, item.updatedAt ?? null])));
-    return next;
+    form.rebase(initialValues(next), adopt);
+  };
+  const forgetKey = (key: string) => {
+    setResets(resets().filter((item) => item !== key));
+    setReplace(replace().filter((item) => item !== key));
+    const { [key]: _cleared, ...rest } = fieldErrors();
+    setFieldErrors(rest);
   };
 
   const form = createSettingsDraft<Values>({
     initial: initialValues(props.entries),
     locale,
     pending: () => resets().length > 0 || replace().some(confirmed),
+    // Only client rules block Save. Errors the server reported stay at their fields until changed, and Save retries.
     validate: (value) => {
       const errors: Record<string, string> = {};
       for (const item of entries()) {
@@ -82,10 +102,16 @@ export default function RegistryForm(props: { groups: string[]; sections: Regist
         if (item.min !== undefined && current < item.min) errors[item.key] = t().atLeast({ min: item.min });
         if (item.max !== undefined && current > item.max) errors[item.key] = t().atMost({ max: item.max });
       }
-      return { ...fieldErrors(), ...errors };
+      return errors;
+    },
+    onDiscard: () => {
+      setResets([]);
+      setReplace([]);
+      setFieldErrors({});
+      setConflict(null);
     },
     save: async (value) => {
-      const stored = initialValues(entries());
+      const stored = form.stored();
       const updates: Values = {};
       for (const item of entries()) {
         if (resets().includes(item.key)) continue;
@@ -109,13 +135,22 @@ export default function RegistryForm(props: { groups: string[]; sections: Regist
           .catch(() => null)) as Record<string, unknown> | null;
         if (response.status === 409 && body?.code === "conflict" && typeof body.key === "string") {
           const by = body.changedBy as { name?: string } | null | undefined;
-          setConflict({ key: body.key, current: body.current, who: by?.name ?? null, at: String(body.changedAt ?? "") });
-          throw new SaveRejected(t().conflict({ who: by?.name ?? t().someoneElse, time: timeOf(String(body.changedAt ?? "")) }));
+          const changedAt = String(body.changedAt ?? "");
+          setConflict({
+            key: body.key,
+            current: body.current,
+            who: by?.name ?? null,
+            at: changedAt,
+            // A row someone removed reports the epoch; the version to expect then is "no row".
+            version: !changedAt || changedAt === new Date(0).toISOString() ? null : changedAt,
+          });
+          throw new SaveRejected(t().conflict({ who: by?.name ?? t().someoneElse, time: timeOf(changedAt) }));
         }
-        if (response.status === 409 && body?.code === "setting_unreadable") await refresh().catch(() => undefined);
+        if (response.status === 409 && body?.code === "setting_unreadable") await rebase([]).catch(() => undefined);
         const { message, fields } = await readSettingsError(response, t().saveFailed);
-        setFieldErrors(fields);
-        // A transaction that reported its field errors rolled back; anything else may have been stored.
+        const { _form: _formError, ...byField } = fields;
+        setFieldErrors(byField);
+        // A transaction that reported its errors rolled back; anything else may have been stored.
         if (response.status >= 500 && Object.keys(fields).length === 0) throw saveFailure(response.status, message);
         throw new SaveRejected(message);
       }
@@ -123,23 +158,28 @@ export default function RegistryForm(props: { groups: string[]; sections: Regist
       setConflict(null);
       setResets([]);
       setReplace([]);
-      return initialValues(await refresh());
+      const next = await fetchEntries();
+      setEntries(next);
+      setSeenAt(Object.fromEntries(next.map((item) => [item.key, item.updatedAt ?? null])));
+      return initialValues(next);
     },
   });
   const timeOf = (iso: string) =>
-    iso ? new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "";
+    iso && iso !== new Date(0).toISOString()
+      ? new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit" }).format(new Date(iso))
+      : "";
 
   const takeTheirs = async () => {
     const current = conflict();
     if (!current) return;
+    forgetKey(current.key);
     setConflict(null);
-    await refresh().catch(() => undefined);
-    form.update({ [current.key]: current.current });
+    await rebase([current.key]).catch(() => form.update({ [current.key]: current.current }));
   };
   const keepMine = () => {
     const current = conflict();
     if (!current) return;
-    setSeenAt({ ...seenAt(), [current.key]: current.at || null });
+    setSeenAt({ ...seenAt(), [current.key]: current.version });
     setConflict(null);
     void form.save();
   };
@@ -169,7 +209,7 @@ export default function RegistryForm(props: { groups: string[]; sections: Regist
         </div>
         <p id={`${settingControlId(fieldProps.key)}-description`} class="text-xs text-dimmed">
           {item().description}
-          <Show when={item().kind === "secret"}> {item().value ? t().secretSet : t().secretEmpty}</Show>
+          <Show when={item().kind === "secret"}> {item().isCustom || item().valueSource === "env" ? t().secretSet : t().secretEmpty}</Show>
         </p>
         <Show when={unreadable(fieldProps.key)}>
           <InlineGuidance tone="warning" icon="ti ti-eye-off">
@@ -192,7 +232,7 @@ export default function RegistryForm(props: { groups: string[]; sections: Regist
             <FieldInput
               entry={item()}
               value={() => form.draft()[fieldProps.key]}
-              error={() => form.errors()[fieldProps.key]}
+              error={() => form.errors()[fieldProps.key] ?? fieldErrors()[fieldProps.key]}
               onChange={(value) => {
                 if (fieldErrors()[fieldProps.key]) {
                   const { [fieldProps.key]: _cleared, ...rest } = fieldErrors();

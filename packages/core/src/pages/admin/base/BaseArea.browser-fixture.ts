@@ -11,7 +11,7 @@ import { renderToString } from "solid-js/web";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 
 /** States the captures and tests switch with `?state=`. */
-export type BaseFixtureState = "normal" | "conflict" | "unreadable" | "savefail";
+export type BaseFixtureState = "normal" | "conflict" | "conflictgone" | "unreadable" | "savefail";
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -84,7 +84,7 @@ export const fixtureEntries = (state: BaseFixtureState): SettingFieldDef[] => [
   entry("app", "app.cleanup_schedule", "cron", "0 3 * * *", { label: "Cleanup schedule", isCustom: false, valueSource: "default" }),
   entry("gotenberg", "gotenberg.url", "url", "http://gotenberg:3000", { label: "Gotenberg address" }),
   entry("gotenberg", "gotenberg.username", "string", "", { label: "User name" }),
-  entry("gotenberg", "gotenberg.password", "secret", "set", { label: "Password" }),
+  entry("gotenberg", "gotenberg.password", "secret", "", { label: "Password" }),
   entry("gotenberg", "gotenberg.timeout_ms", "number", 30000, { label: "Timeout (ms)", min: 1000, max: 120000 }),
   entry("gotenberg", "gotenberg.max_html_bytes", "number", 5000000, { label: "Largest page (bytes)" }),
   entry("gotenberg", "gotenberg.max_pdf_bytes", "number", 20000000, { label: "Largest PDF (bytes)" }),
@@ -206,6 +206,12 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
           },
           { status: 409 },
         );
+      // Someone removed the stored name: the server reports the epoch, and only "no row" is the right version.
+      if (state === "conflictgone" && body.expectedUpdatedAt["app.name"] !== null)
+        return Response.json(
+          { code: "conflict", key: "app.name", current: "Cloud", changedBy: null, changedAt: new Date(0).toISOString() },
+          { status: 409 },
+        );
       if (state === "unreadable" && "app.timezone" in body.updates && !body.replaceUnreadable.includes("app.timezone"))
         return Response.json(
           { message: "Not saved", errors: { "app.timezone": "Unreadable" }, code: "setting_unreadable" },
@@ -215,7 +221,9 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
         item.key in body.updates
           ? {
               ...item,
-              value: item.kind === "secret" ? "set" : body.updates[item.key],
+              value: item.kind === "secret" ? "" : body.updates[item.key],
+              isCustom: true,
+              valueSource: "custom",
               updatedAt: "2026-10-28T10:00:00.000Z",
               unreadable: false,
             }

@@ -76,6 +76,25 @@ test("a value someone else changed is shown at its field with both ways out", as
   expect(errors).toEqual([]);
 }, 30_000);
 
+test("Discard also drops a staged default, and a removed value is saved against no stored row", async () => {
+  await goto("/admin/base");
+  await page.getByRole("button", { name: "Use default" }).first().click();
+  expect(await state()).toBe("draft");
+  await visible("Discard").click();
+  expect(await state()).toBe("saved");
+  expect(await visible("Save").isDisabled()).toBe(true);
+
+  await goto("/admin/base?state=conflictgone");
+  await nameField().fill("Meine Cloud");
+  await visible("Save").click();
+  await visible("Save my value").waitFor();
+  const retry = page.waitForRequest((candidate) => candidate.method() === "PUT");
+  await visible("Save my value").click();
+  expect((await retry).postDataJSON().expectedUpdatedAt).toEqual({ "app.name": null });
+  await page.waitForFunction(() => document.querySelector('.k2b-save-status__state[data-state="saved"]'));
+  expect(errors).toEqual([]);
+}, 30_000);
+
 test("an unreadable value is replaced only after the person confirms it", async () => {
   await goto("/admin/base?state=unreadable");
   expect(await page.getByText("The stored value cannot be read.").isVisible()).toBe(true);
@@ -97,7 +116,9 @@ test("a refused save keeps the draft and names the field; secrets stay empty unt
   await visible("Save").click();
   await page.getByText("The name could not be saved.").waitFor();
   expect(await nameField().inputValue()).toBe("Andere");
-  expect(await state()).toBe("invalid");
+  // The refused save can be tried again without changing anything.
+  expect(await state()).toBe("failed");
+  expect(await visible("Save").isDisabled()).toBe(false);
 
   await goto("/admin/base/pdf");
   expect(await page.getByLabel("Password", { exact: true }).first().inputValue()).toBe("");

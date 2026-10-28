@@ -49,6 +49,8 @@ type Options<T> = {
    */
   save: (value: T, commit: (stored: T) => void) => Promise<T>;
   locale: () => string;
+  /** Runs with Discard, for state the form keeps beside the draft, such as staged resets. */
+  onDiscard?: () => void;
 };
 
 /**
@@ -98,6 +100,21 @@ export const createSettingsDraft = <T>(options: Options<T>) => {
   const discard = () => {
     setDraft(() => stored());
     setOutcome((current) => (current?.kind === "unknown" ? current : null));
+    options.onDiscard?.();
+  };
+  /**
+   * Takes newer stored values without losing edits: a field still at its old saved value moves to the new one, an
+   * edited field keeps the person's value. `adopt` names fields that take the new value regardless.
+   */
+  const rebase = (next: T, adopt: readonly string[] = []) => {
+    const previous = stored() as Record<string, unknown>;
+    const current = draft() as Record<string, unknown>;
+    const merged: Record<string, unknown> = { ...current };
+    for (const [key, value] of Object.entries(next as Record<string, unknown>)) {
+      if (adopt.includes(key) || JSON.stringify(current[key]) === JSON.stringify(previous[key])) merged[key] = value;
+    }
+    setStored(() => next);
+    setDraft(() => merged as T);
   };
 
   // Leaving the page with unsaved changes asks first, as the settings pages did before.
@@ -129,5 +146,8 @@ export const createSettingsDraft = <T>(options: Options<T>) => {
     saving,
     save,
     discard,
+    rebase,
+    /** The values last read from the server. */
+    stored,
   };
 };
