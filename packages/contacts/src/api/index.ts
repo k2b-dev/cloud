@@ -1504,6 +1504,7 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/books/:bookId/contacts/bulk/export.vcf",
+    auth.readOnly,
     documentRoute({
       tags: ["Contacts"],
       summary: "Export selected contacts as vCard",
@@ -2176,6 +2177,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/books/:bookId/import/preview",
+    auth.readOnly,
     documentRoute({
       tags: ["Contacts"],
       summary: "Parse a vCard payload and preview matches against existing contacts",

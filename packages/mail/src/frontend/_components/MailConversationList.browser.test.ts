@@ -1125,7 +1125,7 @@ describe("Mail kept conversations", () => {
       expect(await keepLayout(page, "Cv0001")).toEqual(before);
       // The harness loads no icon font, so the lock has no size here; the row carries it.
       expect(await page.locator(`${row("Cv0001")} [data-mail-kept-indicator]`).count()).toBe(1);
-      // Cloud refuses Trash and Junk for a kept conversation, and only managers lift the keep.
+      // Cloud refuses Trash and Junk for a kept conversation, and only Cloud administrators lift the keep.
       expect(await page.isDisabled('#reader [data-mail-toolbar-action="trash"]')).toBe(true);
       expect(await page.isDisabled('#reader [data-mail-toolbar-action="spam"]')).toBe(true);
       expect(await page.getAttribute('#reader [data-mail-toolbar-action="keep"]', "aria-label")).toBe("Kept");

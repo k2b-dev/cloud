@@ -7,8 +7,9 @@ describe("record durable history UI contract", () => {
     expect(source).toContain("RECORD_VERSION_PAGE_SIZE = 5");
     expect(source).toContain("title={t().durableHistory}");
     expect(source).toContain("label={t().on}");
-    expect(source).toContain("<DetailPanel.Group");
     expect(source).toContain("<DetailPanel.Section");
+    expect(source).toContain("collapsible");
+    expect(source).toContain("t().latestVersion({ label: revisionTitle(revisions()[0]!) })");
     expect(source).toContain("<DetailPanel.Action");
     expect(source).toContain("/versions/${encodeURIComponent(props.revision.id)}/files/");
     // Each historical file can also be saved into an app that stores files, read from the same route.

@@ -7,18 +7,25 @@ import { coreSettings } from "../services/settings/api";
 import { createAiOpenAiRoutes } from "./openai-api";
 import { checkOpenAiApiMessages } from "./openai-api-messages";
 import { PROVIDER_TIMEOUTS } from "./provider";
+import { withProviderErrors } from "./provider-errors";
 import { inferenceProvider } from "./quota-provider";
 import { AiQuotaError } from "./quotas";
 import type { AiModelProfile } from "./types";
 
 const user = buildProjectedUser({ id: "11111111-1111-4111-8111-111111111111", uid: "api-user", provider: "local", profile: "user" });
 const profile: AiModelProfile = {
+  modelId: "text-model",
+  providerId: "text-model",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "text-model",
   label: "Text model",
   provider: "openai",
   model: "provider-model",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "hosted",
   contextWindow: 1000,
   maxOutputTokens: 40,
@@ -39,7 +46,7 @@ const settings = spyOn(coreSettings, "get");
 afterEach(() => settings.mockReset());
 afterAll(() => settings.mockRestore());
 
-function accounting() {
+function accounting(onBegin = () => {}) {
   type Lifecycle = NonNullable<Parameters<typeof inferenceProvider>[4]>;
   const bookings: {
     usage: Parameters<Lifecycle["finish"]>[1];
@@ -47,7 +54,10 @@ function accounting() {
     details: Parameters<Lifecycle["finish"]>[3];
   }[] = [];
   const lifecycle: Lifecycle = {
-    begin: async () => ({ id: crypto.randomUUID(), maxOutputTokens: 40 }),
+    begin: async () => {
+      onBegin();
+      return { id: crypto.randomUUID(), maxOutputTokens: 40 };
+    },
     heartbeat: async () => {},
     finish: async (_id, usage, status, details) => {
       bookings.push({ usage, status, details });
@@ -60,6 +70,7 @@ function accounting() {
 function fixture(
   options: {
     enabled?: boolean;
+    classes?: boolean;
     auth?: boolean;
     slots?: boolean;
     family?: Provider["family"];
@@ -72,6 +83,8 @@ function fixture(
     keepaliveMs?: number;
     wrap?: typeof inferenceProvider;
     resolutionError?: Error;
+    authenticate?: NonNullable<Parameters<typeof createAiOpenAiRoutes>[0]>["authenticate"];
+    assertModelAccess?: NonNullable<Parameters<typeof createAiOpenAiRoutes>[0]>["assertModelAccess"];
   } = {},
 ) {
   settings.mockResolvedValue(4).mockResolvedValueOnce(options.enabled ?? true);
@@ -101,11 +114,19 @@ function fixture(
     },
   };
   const app = createAiOpenAiRoutes({
+    assignments: async () =>
+      options.classes
+        ? [{ slot: "balanced", variantId: profile.id, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }]
+        : [],
     keepaliveMs: options.keepaliveMs,
     limit: async (_c, next) => next(),
-    authenticate: async (token) =>
-      token === "models-key" && options.auth !== false ? { subject: { type: "user", userId: user.id }, credentialId: "credential" } : null,
-    assertModelAccess: async () => {},
+    authenticate:
+      options.authenticate ??
+      (async (token) =>
+        token === "models-key" && options.auth !== false
+          ? { subject: { type: "user", userId: user.id }, credentialId: "credential" }
+          : null),
+    assertModelAccess: options.assertModelAccess ?? (async () => {}),
     listModels: async (subject) => {
       expect(subject).toEqual({ type: "user", userId: user.id });
       return options.models ?? [profile];
@@ -113,8 +134,8 @@ function fixture(
     resolveModel: async (policy, id) => {
       if (options.resolutionError) throw options.resolutionError;
       expect(policy?.kind).toBe("selectable");
-      expect(id).toBe(profile.id);
-      return { profile, provider: options.provider ?? provider };
+      expect(id).toEqual(options.classes ? { class: "balanced" } : { id: profile.id });
+      return { model: { id: profile.id }, profile, provider: withProviderErrors(options.provider ?? provider) };
     },
     acquire: async ({ subject, limit }) => {
       expect(subject).toEqual({ type: "user", userId: user.id });
@@ -130,7 +151,13 @@ function fixture(
           };
     },
     inferenceProvider: (provider, _profile, context) => {
-      expect(context).toEqual({ kind: "chat", task: "openai-api", subject: { type: "user", userId: user.id }, credentialId: "credential" });
+      expect(context).toEqual({
+        kind: "chat",
+        task: "openai-api",
+        subject: { type: "user", userId: user.id },
+        credentialId: "credential",
+        modelRef: { id: profile.id },
+      });
       return options.wrap ? options.wrap(provider, profile, context) : provider;
     },
   });
@@ -145,6 +172,34 @@ function fixture(
 }
 
 describe("models-only OpenAI-compatible API", () => {
+  for (const stream of [false, true])
+    for (const denial of ["credential", "model-access"] as const)
+      test(`dispatch admission keeps status and zero usage: ${denial}, stream=${stream}`, async () => {
+        let reserved = false;
+        const a = accounting(() => {
+          reserved = true;
+        });
+        const f = fixture({
+          wrap: a.wrap,
+          authenticate: async () =>
+            reserved && denial === "credential" ? null : { subject: { type: "user", userId: user.id }, credentialId: "credential" },
+          assertModelAccess: async () => {
+            if (reserved && denial === "model-access")
+              throw Object.assign(new Error("Model access revoked"), {
+                aiError: { code: "model_policy_mismatch", message: "Model access revoked" },
+              });
+          },
+        });
+        const response = await f.call({ stream });
+        expect(response.status).toBe(denial === "credential" ? 401 : 404);
+        expect((await response.json()).error.code).toBe(denial === "credential" ? "invalid_api_key" : "model_not_found");
+        expect(f.requests).toHaveLength(0);
+        expect(f.releases()).toBe(1);
+        expect(a.bookings).toHaveLength(1);
+        expect(a.bookings[0]).toMatchObject({ usage: { input: 0, output: 0 }, status: "failed" });
+        expect(a.bookings[0]?.usage?.estimated).toBeUndefined();
+      });
+
   test("slow first provider events reach both JSON and SSE clients over Bun HTTP", async () => {
     const f = fixture({
       stream: async function* () {
@@ -654,7 +709,10 @@ describe("models-only OpenAI-compatible API", () => {
   });
   for (const stream of [false, true]) {
     test(`quota errors return German HTTP 429 before output (stream=${stream})`, async () => {
-      const f = fixture({ failure: new AiQuotaError("quota_usage_unknown", "English private detail") });
+      const tracked = accounting(() => {
+        throw new AiQuotaError("quota_usage_unknown", "English private detail");
+      });
+      const f = fixture({ wrap: tracked.wrap });
       const response = await f.call({ stream }, { "Accept-Language": "de" });
       expect(response.status).toBe(429);
       expect((await response.json()).error).toMatchObject({
@@ -662,6 +720,8 @@ describe("models-only OpenAI-compatible API", () => {
         type: "insufficient_quota",
         message: expect.stringContaining("Dein Nutzungslimit im Assistenten"),
       });
+      expect(f.requests).toHaveLength(0);
+      expect(tracked.bookings).toHaveLength(0);
       expect(f.releases()).toBe(1);
     });
   }
@@ -679,10 +739,9 @@ describe("models-only OpenAI-compatible API", () => {
   });
   for (const [code, status, mapped] of [
     ["ai_disabled", 403, "ai_disabled"],
-    ["model_access_denied", 403, "model_access_denied"],
-    ["missing_provider_credential", 502, "missing_provider_credential"],
+    ["ai_no_model", 404, "model_not_found"],
     ["model_policy_mismatch", 404, "model_not_found"],
-    ["invalid_model_profiles", 500, "internal_error"],
+    ["unexpected_configuration_error", 500, "internal_error"],
   ] as const) {
     test(`maps safe model resolution error ${code}`, async () => {
       const f = fixture({ resolutionError: Object.assign(new Error("secret"), { aiError: { code, message: "secret" } }) });
@@ -885,4 +944,14 @@ describe("models-only OpenAI-compatible API", () => {
     expect(response.status).toBe(404);
     expect((await response.json()).error).toMatchObject({ code: "not_found", type: "invalid_request_error" });
   });
+});
+
+test("OpenAI model lists include allowed assigned classes and class requests resolve through the public union", async () => {
+  const { app, call, requests } = fixture({ classes: true });
+  const response = await app.request("/models", { headers: { authorization: "Bearer models-key" } });
+  expect((await response.json()).data.map((model: { id: string }) => model.id)).toEqual([profile.id, "cloud/balanced"]);
+  const result = await call({ model: "cloud/balanced" });
+  expect(result.status).toBe(200);
+  await result.text();
+  expect(requests).toHaveLength(1);
 });

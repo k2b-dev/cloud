@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 import { appRuntimeRoute, htmlApp } from "./html/test-assets";
 
 test("a running app keeps its state while saved versions arrive, and a newer revision needs an explicit restart", async () => {
@@ -50,7 +50,7 @@ document.querySelector("#amount").addEventListener("input", (event) => {
       );
     },
   });
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage();
     const app = page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");

@@ -12,7 +12,7 @@ const configuration = (unreadable: boolean, activityRetentionDays = 365): Public
   url: "",
   activityRetentionDays,
   cloud: { ...area, autoCreate: false, autoArchive: true },
-  freeipa: { ...area, root: "freeipa" },
+  freeipa: { ...area, root: "freeipa", autoCreate: false },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
   tokenConfigured: false,
   unreadable,

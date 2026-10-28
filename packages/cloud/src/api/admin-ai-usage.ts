@@ -25,7 +25,7 @@ export const createAdminAiUsageRoutes = (
     .get(
       "/facets",
       describeRoute({ summary: "Find AI usage filter values", tags: ["Admin AI usage"] }),
-      v("query", AiUsageQuerySchema.extend({ field: z.enum(["userId", "modelProfileId", "providerModel", "appId", "task"]) }).strict()),
+      v("query", AiUsageQuerySchema.extend({ field: z.enum(["userId", "modelId", "providerModel", "appId", "task"]) }).strict()),
       async (c) => {
         const q = c.req.valid("query");
         return respond(c, ok({ items: await service.facets(q.field, q.search ?? "", q) }));

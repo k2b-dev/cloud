@@ -113,6 +113,7 @@ const activityIcons = {
   "note.created": "ti ti-plus",
   "note.edited": "ti ti-pencil",
   "note.restored": "ti ti-history",
+  "annotation.create": "ti ti-message-plus",
   "comment.created": "ti ti-message-plus",
   "comment.updated": "ti ti-message-pencil",
   "comment.deleted": "ti ti-message-x",

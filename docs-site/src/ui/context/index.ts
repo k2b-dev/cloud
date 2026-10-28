@@ -47,7 +47,10 @@ import inputAutocomplete from "./input/autocomplete.md" with { type: "text" };
 import inputAutocompleteSelect from "./input/autocomplete-select.md" with { type: "text" };
 import inputBoolean from "./input/boolean.md" with { type: "text" };
 import inputChoiceChips from "./input/choice-chips.md" with { type: "text" };
+import inputChoiceSlider from "./input/choice-slider.md" with { type: "text" };
+import inputChoiceTiles from "./input/choice-tiles.md" with { type: "text" };
 import inputColor from "./input/color.md" with { type: "text" };
+import inputColorChoices from "./input/color-choices.md" with { type: "text" };
 import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
 import inputEmojiPicker from "./input/emoji-picker.md" with { type: "text" };
@@ -66,6 +69,7 @@ import inputSlider from "./input/slider.md" with { type: "text" };
 import inputTagEditor from "./input/tag-editor.md" with { type: "text" };
 import inputTags from "./input/tags.md" with { type: "text" };
 import inputText from "./input/text.md" with { type: "text" };
+import layoutAnchoredPopover from "./layout/anchored-popover.md" with { type: "text" };
 import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import layoutDetailPanel from "./layout/detail-panel.md" with { type: "text" };
 import layoutDiscussion from "./layout/discussion.md" with { type: "text" };
@@ -113,8 +117,10 @@ const catalogContextSources = {
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
+  "input/choice-tiles": { file: "input/choice-tiles.md", content: inputChoiceTiles },
   "input/combobox": { file: "input/combobox.md", content: inputCombobox },
   "input/color": { file: "input/color.md", content: inputColor },
+  "input/color-choices": { file: "input/color-choices.md", content: inputColorChoices },
   "input/tags": { file: "input/tags.md", content: inputTags },
   "input/tag-editor": { file: "input/tag-editor.md", content: inputTagEditor },
   "input/pin": { file: "input/pin.md", content: inputPin },
@@ -126,6 +132,7 @@ const catalogContextSources = {
   "input/file-dropzone": { file: "input/file-dropzone.md", content: inputFileDropzone },
   "input/file-drop-target": { file: "input/file-drop-target.md", content: inputFileDropTarget },
   "input/icon": { file: "input/icon.md", content: inputIcon },
+  "input/choice-slider": { file: "input/choice-slider.md", content: inputChoiceSlider },
   "input/slider": { file: "input/slider.md", content: inputSlider },
   "input/boolean": { file: "input/boolean.md", content: inputBoolean },
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
@@ -156,6 +163,7 @@ const catalogContextSources = {
   "layout/settings-modal": { file: "layout/settings-modal.md", content: layoutSettingsModal },
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },
   "layout/floating-window": { file: "layout/floating-window.md", content: layoutFloatingWindow },
+  "layout/anchored-popover": { file: "layout/anchored-popover.md", content: layoutAnchoredPopover },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },

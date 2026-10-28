@@ -15,7 +15,7 @@ const stored = (id: string, role: Extract<Message["role"], "user" | "assistant">
       ? { role, content: [{ type: "text", text: "go" }] }
       : { role, content: [{ type: "text", text: "working" }], stopReason: "tool_use" },
   loopId,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: role === "assistant" ? "tool_use" : null,
@@ -39,7 +39,7 @@ describe("public AI message projection", () => {
       visibleMessages({
         conversation: null,
         messages,
-        activeTurn: { turnId: "public-turn", attempt: 1, seq: 1, status: "running", blocks: [], modelProfileId: null },
+        activeTurn: { turnId: "public-turn", attempt: 1, seq: 1, status: "running", blocks: [], modelId: null },
       }).map((message) => message.id),
     ).toEqual(["user-1"]);
   });

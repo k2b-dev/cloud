@@ -41,7 +41,7 @@ describe("RecordReferencedBy", () => {
     expect(REFERENCED_BY_PAGE_SIZE).toBe(5);
     expect(referencedByEndpoint("TABLE1", "REC001")).toEndWith("/referenced-by?limit=5");
     expect(html).toContain("Referenced by");
-    expect(html).toContain("ti-link-plus");
+    expect(html).not.toContain("ti-link-plus");
     expect(html).not.toContain("<details");
   });
 });

@@ -11,3 +11,13 @@
   background: var(--ui-app-selected-nav);
   color: var(--ui-app-accent-text);
 }
+
+/* Contact details in the shared outline: the first way to reach the contact
+   is the one main action, in a quiet tint of the app colour. */
+.k2b-ui .k2b-button.contacts-details-main {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+.k2b-ui .k2b-button.contacts-details-main:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}

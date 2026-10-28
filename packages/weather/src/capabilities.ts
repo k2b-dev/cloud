@@ -457,6 +457,7 @@ export const weatherCapabilities = defineCapabilities({
       description: "A saved weather location owned by the current user.",
       icon: "ti ti-map-pin",
       reader: "location.read",
+      pages: ["/app/weather/:id"],
     },
   },
   queries: {
