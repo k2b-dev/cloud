@@ -24,6 +24,7 @@ describe("spacesHelp", () => {
     expect(spacesHelp.documents.map((document) => document.id)).toEqual([
       "spaces-start",
       "spaces-views",
+      "spaces-calendar",
       "spaces-workflow",
       "spaces-sharing",
       "spaces-troubleshooting",
