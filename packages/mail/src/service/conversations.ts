@@ -8,6 +8,7 @@ import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission, writeConversationAssignees } from "./collaboration";
 import { keepCarriesOver, recordCarriedKeep } from "./conversation-keeps";
 import { mergeConversationReferencesInTransaction } from "./conversation-reference";
+import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
 import { type MailActivityChange, mailLive } from "./live";
@@ -490,6 +491,7 @@ export const mergeConversations = async (params: {
         SET conversation_id = ${params.targetConversationId}::uuid
         WHERE conversation_id = ${params.input.sourceConversationId}::uuid
       `;
+      await discardConversationSummaries(tx, { mailboxId: params.mailboxId, conversationId: params.input.sourceConversationId });
       await tx`DELETE FROM mail.conversations WHERE id = ${params.input.sourceConversationId}::uuid`;
 
       const actor = actorIdentity(params.context);

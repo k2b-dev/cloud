@@ -21,7 +21,8 @@ type MemberOfTabProps = {
 export default function MemberOfTab(props: MemberOfTabProps) {
   const messages = useAccountsMessages();
   const locale = useLocale();
-  const hasGroups = props.items.length > 0;
+  // The total decides: an empty page of a non-empty list is not an empty list.
+  const hasGroups = props.pagination.total > 0;
   const columns: DataTableColumn<EntityListItem>[] = [
     { id: "group", header: messages().group, value: (item) => (item.kind === "group" ? item.group.name : "") },
     {

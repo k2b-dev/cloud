@@ -3,7 +3,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { createMailCommand } from "./commands";
@@ -172,7 +171,6 @@ suite("mail sync recovery", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-sync-recovery-${suffix}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

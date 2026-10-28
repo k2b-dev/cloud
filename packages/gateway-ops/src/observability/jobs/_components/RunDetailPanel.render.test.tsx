@@ -83,12 +83,23 @@ describe("RunDetailPanel", () => {
     expect(html).toContain('aria-label="Close run detail panel"');
     expect(html).toContain('href="/admin/observability/jobs?source=mail.cleanup"');
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
-    expect(html).toContain('class="k2b-detail-panel__summary"');
+    // K1 outline: kind line with state, properties, events, then "More about this run" with the raw run data.
+    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
+    expect(kind).toContain("Run");
+    expect(kind).toContain("Healthy");
+    expect(html).not.toContain('class="k2b-detail-panel__summary"');
+    expect(html).not.toContain("k2b-detail-panel__header-icon");
+    expect(html).not.toContain("k2b-detail-panel__section-icon");
     expect(html).toContain('data-layout="rows"');
     expect(html).toContain('data-size="sm"');
-    expect(html).toContain('aria-label="Run data"');
-    expect(html).toContain("Summary");
-    expect(html).toContain("Attributes");
+    const properties = html.indexOf(">Properties<");
+    const eventsAt = html.indexOf(">Events<", properties);
+    const more = html.indexOf("More about this run");
+    expect(properties).toBeGreaterThan(-1);
+    expect(properties).toBeLessThan(eventsAt);
+    expect(eventsAt).toBeLessThan(more);
+    expect(html.slice(more)).toContain("Summary");
+    expect(html.slice(more)).toContain("Attributes");
     expect(html).toContain("Cleanup completed");
     expect(html).toContain("Run entered the queue.");
     expect(html).toContain("Cleanup finished.");
@@ -105,7 +116,7 @@ describe("RunDetailPanel", () => {
       events: [],
     });
 
-    expect(html).not.toContain('aria-label="Run data"');
+    expect(html).not.toContain("More about this run");
     expect(html).not.toContain("Cleanup completed");
     expect(html).toContain("No events recorded for this run.");
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);

@@ -68,6 +68,13 @@ import { useWorkspaceMessages } from "./workspace-messages";
 
 export type { AppWorkspaceWidthShare } from "./app-workspace-width";
 
+/** The narrowest container of each levels width class, as the stylesheet's breakpoints define them (48rem, 80rem). */
+const LEVEL_CLASS_WIDTH = { 1: 0, 2: 768, 3: 1280 } as const;
+/** The last shown level's minimum width when the level does not declare one; the stylesheet uses the same value. */
+const LEVEL_LAST_MIN = 320;
+/** The width the last shown level keeps at least: its declared minimum, never below the default. */
+const levelLastMin = (minSize: number | undefined) => Math.max(minSize ?? 0, LEVEL_LAST_MIN);
+const nonEmptyStyle = (style: Record<string, string>) => (Object.keys(style).length ? style : undefined);
 const ResizeContext = createContext(true);
 /** The enclosing workspace: its head names the sidebar, and a nested workspace leaves the page title to it. */
 const WorkspaceContext = createContext<{
@@ -286,6 +293,11 @@ export type AppWorkspaceMainPaneProps = {
   resizable?: boolean;
   resizeShadow?: boolean;
   defaultSize?: number | AppWorkspaceWidthShare;
+  /**
+   * The narrowest width in px, also for a person resizing it. Levels mode: the level needs it to be shown; when the
+   * deepest levels do not fit side by side at their minimum widths, the shallowest of them gives way, so a wide list
+   * pushes earlier columns aside.
+   */
   minSize?: number;
   maxSize?: number;
   class?: string;
@@ -573,6 +585,11 @@ export type AppWorkspaceNavTreeItemProps = {
   class?: string;
   /** With the tree's `onMove`, the item can change its place among its siblings. Other items keep theirs, and no item moves past them. */
   movable?: boolean;
+  /**
+   * Shows the item as a branch before its children are rendered, for a tree that loads a branch when it opens. The
+   * application renders the children, or a row that says they load, once the item is expanded.
+   */
+  hasChildren?: boolean;
   onDragEnter?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
   onDragOver?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
   onDragLeave?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
@@ -679,10 +696,28 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
     return open;
   });
   const depth = () => Math.max(1, levels().findIndex((pane) => pane.props.id === props.level) + 1);
+  /** How many of the deepest levels a width class shows: up to its count, as long as their minimum widths fit. */
+  const levelCount = (widthClass: 1 | 2 | 3) => {
+    const all = levels();
+    let count = Math.min(widthClass, all.length);
+    while (count > 1) {
+      const end = Math.max(depth(), count);
+      const needed = all
+        .slice(end - count, end)
+        .reduce(
+          (sum, pane, offset) =>
+            sum + (end - count + offset + 1 === end ? levelLastMin(pane.props.minSize) : (pane.props.minSize ?? APP_WORKSPACE_PANE_MIN)),
+          0,
+        );
+      if (needed <= LEVEL_CLASS_WIDTH[widthClass]) break;
+      count--;
+    }
+    return count;
+  };
   const levelClasses = (index: number, kind: "shown" | "first" | "last" | "handle") =>
-    [1, 2, 3]
+    ([1, 2, 3] as const)
       .filter((widthClass) => {
-        const count = Math.min(widthClass, levels().length);
+        const count = levelCount(widthClass);
         const end = Math.max(depth(), count);
         const start = end - count + 1;
         return kind === "first"
@@ -840,15 +875,18 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                     data-scroll-fade-mode={
                       !levelsMode() && pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined
                     }
-                    style={
-                      isAnchor()
-                        ? undefined
+                    style={nonEmptyStyle({
+                      ...(isAnchor()
+                        ? {}
                         : {
                             // A stored width keeps to this pane's limits before the controller attaches.
                             "--k2b-workspace-panel-size": `clamp(${minSize()}px, var(${variable}, ${appWorkspaceWidthCss(defaultSize(), "var(--k2b-workspace-width)")}), ${maxSize()}px)`,
                             "--k2b-workspace-panel-min": `${minSize()}px`,
-                          }
-                    }
+                          }),
+                      // The last shown level fills the rest, but never below its minimum; set on every level, so a workspace
+                      // nested in a wide level does not inherit that minimum.
+                      ...(levelsMode() ? { "--k2b-workspace-level-min": `${levelLastMin(pane.props.minSize)}px` } : {}),
+                    })}
                   >
                     {levelsMode() ? (
                       <>
@@ -1453,6 +1491,69 @@ type AppWorkspaceSidebarRowProps = {
   data?: Record<string, string | number | boolean | null | undefined>;
 };
 
+/**
+ * Hover actions overlay a row's end, so the label and count under them fade
+ * out while they show. The row measures how far the overlay reaches into its
+ * count (`--k2b-sidebar-item-cover`) and how much of that the count and gap
+ * after the label already take (`--k2b-sidebar-item-label-trail`), so the
+ * label keeps all the width the overlay leaves it. The stylesheet applies
+ * both only while the overlay shows, and assumes its usual size until then.
+ */
+function observeSidebarRowCover(row: HTMLElement): void {
+  if (isServer || typeof ResizeObserver === "undefined") return;
+  // A hidden count, such as an empty status, or hidden actions have no box to measure from.
+  const laidOut = (element: Element | null | undefined): element is Element => Boolean(element?.getClientRects().length);
+  const measure = () => {
+    const main = row.querySelector(":scope > .k2b-app-workspace__sidebar-item-main");
+    const label = main?.querySelector(":scope > :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label)");
+    const overlays = Array.from(
+      row.querySelectorAll(
+        ':scope > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child, :scope > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]',
+      ),
+    ).filter((element) => laidOut(element) && getComputedStyle(element).position === "absolute");
+    if (!main || !laidOut(label) || !overlays.length) {
+      row.style.removeProperty("--k2b-sidebar-item-cover");
+      row.style.removeProperty("--k2b-sidebar-item-label-trail");
+      return;
+    }
+    // Lengths along the inline axis, measured toward the row's end.
+    const rtl = getComputedStyle(row).direction === "rtl";
+    const end = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return rtl ? -box.left : box.right;
+    };
+    const start = Math.min(
+      ...overlays.map((element) => {
+        const box = element.getBoundingClientRect();
+        return rtl ? -box.right : box.left;
+      }),
+    );
+    const meta = main.querySelector(":scope > .k2b-app-workspace__sidebar-item-meta");
+    const content = end(laidOut(meta) ? meta : label);
+    row.style.setProperty("--k2b-sidebar-item-cover", `${Math.max(0, content - start)}px`);
+    row.style.setProperty("--k2b-sidebar-item-label-trail", `${Math.max(0, content - end(label))}px`);
+  };
+  const resized = new ResizeObserver(measure);
+  // The label, the count, and the actions can be replaced while the row stays.
+  const replaced = new MutationObserver(() => observe());
+  const observe = () => {
+    const main = row.querySelector(":scope > .k2b-app-workspace__sidebar-item-main");
+    if (main) replaced.observe(main, { childList: true });
+    resized.disconnect();
+    resized.observe(row);
+    for (const element of row.querySelectorAll(
+      ":scope > .k2b-app-workspace__sidebar-item-main > :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-meta), :scope > :is(.k2b-app-workspace__sidebar-item-actions, .k2b-app-workspace__sidebar-item-action)",
+    ))
+      resized.observe(element);
+  };
+  replaced.observe(row, { childList: true });
+  observe();
+  onCleanup(() => {
+    replaced.disconnect();
+    resized.disconnect();
+  });
+}
+
 /** Shared visual and semantic row frame for flat sidebar items and tree items. */
 function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element {
   const className = () =>
@@ -1512,7 +1613,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
   };
   return (
     <Show when={props.hasActions} fallback={<Control grouped={false} />}>
-      <div {...common()} data-disabled={props.disabled ? "true" : undefined}>
+      <div {...common()} ref={(row) => onMount(() => observeSidebarRowCover(row))} data-disabled={props.disabled ? "true" : undefined}>
         <Control grouped />
         {props.actions}
       </div>
@@ -1807,7 +1908,7 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
     <For each={siblings()}>
       {(item, place) => {
         const nested = createMemo(() => navTreeItems(item.children));
-        const hasChildren = () => nested().length > 0;
+        const hasChildren = () => item.hasChildren ?? nested().length > 0;
         const selected = () => props.selectedId === item.id;
         const siblingIndex = (id: string) => siblings().findIndex((sibling) => sibling.id === id);
         const movable = () => Boolean(props.onMove && item.movable && !item.disabled);

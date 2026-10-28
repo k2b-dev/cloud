@@ -296,8 +296,10 @@ fixing them when practical, run focused tests at the highest public seam, then
 widen to the owning package's typecheck, build, documentation checks, or root
 checks only when the boundary requires it.
 A fix pull request answers "How do we prevent this next time?" with a guard
-(check, test, or convention ID) or a reason why none, and adds its lesson to
-[Lessons learned](docs-site/docs/en/contributing/lessons-learned.md).
+(check, test, or convention ID) or a reason why none, and adds one new file at
+`docs-site/docs/en/contributing/lessons/YYYY-MM-DD-<unique-slug>.md`.
+Follow [Add a lesson](docs-site/docs/en/contributing/lessons-learned.md#add-a-lesson);
+never insert entries into the shared page, which Fibel assembles at runtime.
 
 The `gate` check runs `bun run check`, `bun run test`, and the integration
 suites with `CLOUD_TEST_*`, plus path-filtered jobs such as Grids

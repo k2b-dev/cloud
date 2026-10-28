@@ -62,36 +62,57 @@ const legacyDetailClasses = [
 ];
 
 describe("Capabilities workspace detail panel", () => {
-  test("composes a query runner through one shared detail-panel scroll owner", () => {
+  test("composes a query runner in the K1 outline through one shared detail-panel scroll owner", () => {
     const html = renderWorkspace(querySelection);
 
     expect(html).toContain('class="k2b-detail-panel"');
+    expect(html).toContain('class="k2b-detail-panel__kind"');
     expect(html).toContain("<h2>Search messages</h2>");
     expect(html).toContain("Find messages in a mailbox.");
-    expect(html).toContain("mail.messages.search");
+    expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).toContain('data-scroll-preserve="capability-mail-query-messages.search"');
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
+    // Header: the one main command and the rarer commands behind "…" below the identity row.
+    expect(html).toContain('class="k2b-button capabilities-run');
+    expect(html).toContain(">Run<");
+    expect(html).toContain('aria-label="More actions"');
+    expect(html.slice(html.indexOf('class="k2b-detail-panel__primary-actions"'))).toContain('aria-label="More actions"');
+    // Fixed order: properties, then request and response, then "More about this query".
+    const properties = html.indexOf(">Properties<");
+    const request = html.indexOf(">Request<");
+    const response = html.indexOf(">Response<");
+    const more = html.indexOf("More about this query");
+    expect(properties).toBeGreaterThan(-1);
+    expect(properties).toBeLessThan(request);
+    expect(request).toBeLessThan(response);
+    expect(response).toBeLessThan(more);
+    expect(html).toContain("mail.messages.search");
     expect(html).toContain('role="group" aria-label="Capability run"');
-    expect(html).toContain(">Request<");
-    expect(html).toContain(">Response<");
     expect(html).toContain("Ready to run");
-    expect(html).toContain("Request as cURL");
-    expect(html).toContain("Schemas");
+    expect(html.slice(more)).toContain("Request as cURL");
+    expect(html.slice(more)).toContain("POST /api/capabilities/");
+    expect(html.slice(more)).toContain("Schemas");
+    expect(html.slice(more)).toContain("Input schema · Data schema");
     expect(html).toContain('aria-label="Close capability details"');
-    expect(html.indexOf(">Reset<")).toBeLessThan(html.indexOf('aria-label="Close capability details"'));
+    // No section icons in the outline.
+    expect(html).not.toContain("k2b-detail-panel__section-icon");
     expect(html).not.toContain("Action policy");
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
   });
 
-  test("keeps action policy context conditional and preserves policy labels", () => {
+  test("shows action policy as property rows and the destructive state in the kind line", () => {
     const html = renderWorkspace(actionSelection);
 
-    expect(html).toContain('class="k2b-detail-panel__summary"');
-    expect(html).toContain("Action policy");
-    expect(html).toContain("Destructive");
+    expect(html).not.toContain('class="k2b-detail-panel__summary"');
+    const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
+    expect(kind).toContain("Action");
+    expect(kind).toContain("Destructive");
+    expect(html).toContain(">Effect<");
+    expect(html).toContain(">Reach<");
     expect(html).toContain("Open world");
-    expect(html).toContain("Idempotency: required");
-    expect(html.match(/<section class="k2b-detail-panel__summary"/g)).toHaveLength(1);
+    expect(html).toContain(">Idempotency<");
+    expect(html).toContain(">required<");
+    expect(html).toContain("More about this action");
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
   });
 

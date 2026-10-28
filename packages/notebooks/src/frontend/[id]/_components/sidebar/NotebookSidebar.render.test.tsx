@@ -3,6 +3,7 @@ import { LocaleProvider, type NavigationItem } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
+import { sidebarNote } from "./sidebar-tree.test-fixture";
 import type { NotebookContext } from "./types";
 import "../detail/ssr-test-plugin";
 
@@ -23,7 +24,8 @@ describe("Notebook workspace container head", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
-    tree: [],
+    sidebarTree: { total: 0, levels: [{ parentId: null, total: 0, offset: 0, items: [] }], expandedIds: [] },
+    sidebarList: null,
     selectedNoteId: null,
     userId: "user01",
     settings: { lastNoteId: null, richMode: "rich", treeSort: "title" },
@@ -149,4 +151,17 @@ describe("Notebook workspace container head", () => {
       expect(navigation.items.find((item) => item.id === "graph")?.href).toBe(href);
     },
   );
+  test("a level of 5,000 notes renders one page of rows and says how many more there are, on the desktop and the phone", async () => {
+    const items = Array.from({ length: 100 }, (_, index) =>
+      sidebarNote({ id: `N${String(index).padStart(5, "0")}`, title: `Note ${index}` }),
+    );
+    const html = renderSidebar({
+      ...ctx(),
+      sidebarTree: { total: 5000, levels: [{ parentId: null, total: 5000, offset: 0, items }], expandedIds: [] },
+    });
+    expect(await selectHtml(html, '[role="tree"] [role="treeitem"]')).toHaveLength(101);
+    expect((await selectHtml(html, '[data-k2b-nav-tree-id="more:"]'))[0]?.text).toContain("4,900 more notes");
+    // A page with a huge notebook stays the size of a page with a small one.
+    expect(html.length).toBeLessThan(400_000);
+  });
 });
