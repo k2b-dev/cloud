@@ -149,6 +149,7 @@ callers `cli.plugins.access` allows; `cld` installs them per profile and writes 
 Read **Ship Assistant Skills** (`/en/docs/platform/assistant-skills`) first: keep each Skill in `src/skills/<name>/SKILL.md` (+ `references/*.md`), import the files `with { type: "text" }` in `src/skills.ts`, export `SKILLS = [skill({ markdown, references })]` from `@k2b/cloud`, and pass `skills: SKILLS` to `defineApp()`.
 Cloud validates Skills at start, updates them by content hash, and offers them only while their app runs and its access rule (legacy: Help audience) permits use. Skills grant nothing; never seed or rewrite Skill rows from code.
 
+Request AI through `model: { class: "fast" | "balanced" | "thorough" | "maximum" }`; omitted requests mean balanced, and only empty assignments fall back. Read **Models and providers** and **Structured and background AI** for policy, explicit variant IDs and errors.
 ## Build and verify one complete slice
 For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
 especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
@@ -174,6 +175,5 @@ speculative paths, one-off abstractions, and unrelated cleanup. Start with the
 fastest relevant check, then verify each affected permission, data,
 registration, and SSR/browser boundary. Integration tests gate on `CLOUD_TEST_*`
 variables and never touch a database whose name does not end in `_test`. Before
-release, test against the target Cloud version with the production package
-version. Update the application's docs when observable behavior changes; finish
+release, test against the target Cloud version with the production package version. Update the application's docs when observable behavior changes; finish
 when code, focused tests, and documentation describe one contract.

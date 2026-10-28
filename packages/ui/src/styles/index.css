@@ -13255,6 +13255,46 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-overflow: ellipsis;
 }
 
+/* AnchoredPopover: a non-modal panel at a control. A bottom sheet on a phone, with the safe area kept clear. */
+.k2b-ui .k2b-anchored-popover {
+  position: fixed;
+  z-index: 1000;
+  inset: unset;
+  width: min(var(--k2b-anchored-popover-width, 21rem), calc(100vw - 1rem));
+  max-height: var(--k2b-anchored-popover-room, calc(100dvh - 1rem));
+  margin: 0;
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  outline: none;
+}
+
+.k2b-ui .k2b-anchored-popover:not(:popover-open) {
+  display: none;
+}
+
+.k2b-ui .k2b-anchored-popover::backdrop {
+  background: transparent;
+}
+
+.k2b-ui .k2b-anchored-popover[data-sheet] {
+  inset: auto 0 0 0;
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - 3rem);
+  padding-bottom: env(safe-area-inset-bottom);
+  border-width: 1px 0 0;
+  border-radius: var(--k2b-radius-surface) var(--k2b-radius-surface) 0 0;
+}
+
+.k2b-ui .k2b-anchored-popover[data-sheet]::backdrop {
+  background: var(--k2b-feedback-backdrop);
+}
+
 .k2b-ui .k2b-emoji-picker-popover {
   position: fixed;
   z-index: 1000;
