@@ -810,6 +810,8 @@ describe("spaces capabilities", () => {
   });
 
   test("lists only writable calendar destinations without accepting Mail ownership state", async () => {
+    const audience = { memberCount: 8, guestCount: 1, serviceAccountCount: 0, public: false, authenticated: false };
+    spyOn(spacesService.access, "audiences").mockResolvedValue({ ok: true, data: { [space.id]: audience } });
     const list = spyOn(spacesService.space, "list").mockResolvedValue({
       items: [space],
       page: 1,
@@ -836,6 +838,7 @@ describe("spaces capabilities", () => {
             ref: { type: "spaces.space", id: spaceId },
             name: space.name,
             color: space.color,
+            audience,
             links: [{ rel: "open", href: `/app/spaces/${spaceId}` }],
           },
         ],

@@ -215,7 +215,23 @@ describe("Venue settings lifecycle behavior", () => {
       () => SettingsDialog({ dashboard, accessEntries: [saved], apiKeys: [], initialTab: "access", close: () => {} }),
       dom.root,
     );
-    const chip = () => dom.root.querySelector<HTMLButtonElement>("button.k2b-select-chip");
+    // happy-dom has no Popover API; the access level menu opens through it.
+    const prototype = dom.window.HTMLElement.prototype as unknown as Record<string, unknown>;
+    const openPopovers = new WeakSet<object>();
+    const matches = prototype.matches as (this: Element, selector: string) => boolean;
+    Object.assign(prototype, {
+      matches(this: Element, selector: string) {
+        return selector === ":popover-open" ? openPopovers.has(this) : matches.call(this, selector);
+      },
+      showPopover(this: object) {
+        openPopovers.add(this);
+      },
+      hidePopover(this: object) {
+        openPopovers.delete(this);
+      },
+      scrollIntoView() {},
+    });
+    const chip = () => dom.root.querySelector<HTMLButtonElement>("button.k2b-rich-select__trigger");
     const waitFor = async (condition: () => boolean) => {
       for (let attempt = 0; attempt < 200; attempt += 1) {
         if (condition()) return;
@@ -227,15 +243,18 @@ describe("Venue settings lifecycle behavior", () => {
       await waitFor(() => reads === 1 && chip() !== null);
       await flush();
       const original = chip()!;
-      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
-        .find((item) => item.textContent?.startsWith("Staff"))!
+      original.click();
+      await flush();
+      const list = dom.document.getElementById(original.getAttribute("aria-controls")!)!;
+      Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'))
+        .find((item) => item.querySelector(".k2b-rich-select__label")?.textContent === "Staff")!
         .click();
       await waitFor(() => reads === 2);
       expect(chip() === original).toBe(true);
-      expect(original.disabled).toBe(true);
+      // The trigger stays focusable while the change saves; the editor ignores another pick until it settles.
       expect(original.textContent).toBe("Staff");
       reload.resolve(Response.json(payload()));
-      await waitFor(() => chip() !== null && !chip()!.disabled);
+      await flush();
       expect(chip() === original).toBe(true);
       expect(original.textContent).toBe("Staff");
     } finally {

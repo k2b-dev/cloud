@@ -88,6 +88,7 @@ import {
   UpdateTagSchema,
   UpdateTaskChecklistEntrySchema,
   UpdateWormholeSchema,
+  WormholeTransferPreviewSchema,
   WormholeTransferResultSchema,
 } from "@/contracts";
 import { SpaceApiKeySchema, SpaceSettingsContextSchema } from "@/settings-context";
@@ -2649,6 +2650,32 @@ const app = new Hono<AuthContext>()
           projectItems,
         ),
       );
+    },
+  )
+
+  .get(
+    "/:id/items/:itemId/wormhole-previews",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Preview wormhole transfer consequences",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.array(WormholeTransferPreviewSchema), "Read-only transfer previews"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Item not found"),
+      },
+    }),
+    async (c) => {
+      const { internalId: sourceSpaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (error) return error;
+      const item = await requireItemInSpace(sourceSpaceId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      const result = await spacesService.wormhole.previewTransfer({
+        sourceSpaceId: sourceSpaceId!,
+        itemId: item.data.id,
+        actor: getWormholeActor(c),
+      });
+      return respond(c, result.ok ? ok(await projectWormholes(result.data)) : result);
     },
   )
 

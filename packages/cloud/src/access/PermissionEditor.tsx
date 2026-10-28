@@ -1,5 +1,5 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { announce, Button, IconButton, Placeholder, prompts, RichSelect, type RichSelectItem, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
@@ -108,10 +108,12 @@ type PermissionEditorProps = {
 // Defaults & helpers
 // ─────────────────────────────────────────────────────────────────────────
 
-const defaultLabels = (t: ReturnType<typeof accessMessages.resolve>["t"]): Record<PermissionLevel, { label: string; icon: string }> => ({
-  read: { label: t.view, icon: "ti-eye" },
-  write: { label: t.edit, icon: "ti-pencil" },
-  admin: { label: t.manage, icon: "ti-shield" },
+const defaultLabels = (
+  t: ReturnType<typeof accessMessages.resolve>["t"],
+): Record<PermissionLevel, { label: string; icon: string; description?: string }> => ({
+  read: { label: t.view, icon: "ti-eye", description: t.viewLine },
+  write: { label: t.edit, icon: "ti-pencil", description: t.editLine },
+  admin: { label: t.manage, icon: "ti-shield", description: t.manageLine },
   // Defensive — never granted by this editor, but renders correctly if
   // a legacy entry has permission === "none".
   none: { label: t.noAccess, icon: "ti-ban" },
@@ -145,10 +147,20 @@ const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined, t: ReturnType
       key: levelKey(level, override?.scope),
       label: override?.label ?? def.label,
       icon: override?.icon ?? def.icon,
-      description: override?.description,
+      // The default line explains the default name only; a level the consumer renames or scopes says its own.
+      description: override?.description ?? (override?.label || override?.scope ? undefined : def.description),
     };
   });
 };
+
+/** The level menu's rows: one short line each, and the reason where the last manager cannot go lower. */
+const levelItems = (allowed: readonly ResolvedLevel[], locked: (option: ResolvedLevel) => string | undefined): RichSelectItem[] =>
+  allowed.map((option) => ({
+    value: option.key,
+    label: option.label,
+    description: option.description,
+    disabledReason: locked(option),
+  }));
 
 /** Resolve a stored entry's permission to a renderable {label,icon},
  *  preferring the caller's allowedLevels override and falling back to
@@ -476,14 +488,13 @@ export default function PermissionEditor(props: PermissionEditorProps) {
               )}
             </Show>
           </div>
-          <Select
+          <RichSelect
             aria-label={t().newPermission}
+            title={draft()?.display.displayName ?? t().newPermission}
             value={draftLevel}
             disabled={saving()}
-            options={allowed(draft()?.principal ?? { type: "user", userId: "" }).map((option) => ({
-              value: option.key,
-              label: option.label,
-            }))}
+            items={levelItems(allowed(draft()?.principal ?? { type: "user", userId: "" }), () => undefined)}
+            size={{ width: "21rem" }}
             onValueChange={(value) => {
               if (value && canStart()) setDraftLevel(value);
             }}
@@ -623,6 +634,15 @@ function AccessEntryRow(props: {
   const shownDisplay = () =>
     props.updating ? resolveEntryDisplay(props.updating.permission, props.updating.scope, props.allowed, t()) : display();
 
+  // The menu names whom it is for once, with a group's size; each level then says in one line what it allows.
+  const menuTitle = () => (props.ownEntry ? t().yourAccess : props.detail ? `${displayName()} · ${props.detail}` : displayName());
+  const items = () =>
+    levelItems(props.allowed, (option) =>
+      props.lastManager && (option.level !== "admin" || option.scope !== undefined)
+        ? t().lastManagerOption({ level: manageLabel() })
+        : undefined,
+    );
+
   const badgeClass =
     "flex min-h-7 items-center gap-1 rounded-full border border-transparent bg-[var(--ui-surface-muted)] px-2.5 py-1 text-xs text-secondary";
 
@@ -734,40 +754,40 @@ function AccessEntryRow(props: {
             when={props.expanded}
             fallback={
               <Show when={hasPicker()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
-                <SelectChip
+                <RichSelect
                   aria-label={t().permissionFor({ name: displayName() })}
+                  title={menuTitle()}
                   value={shownKey}
-                  disabled={props.disabled}
-                  loading={props.pending || props.updating !== undefined}
-                  options={props.allowed.map((option) => {
-                    const locked = props.lastManager && (option.level !== "admin" || option.scope !== undefined);
-                    return {
-                      value: option.key,
-                      label: option.label,
-                      icon: `ti ${option.icon}`,
-                      disabled: locked,
-                      description: locked ? t().lastManagerOption({ level: manageLabel() }) : option.description,
-                    };
-                  })}
-                  icon={`ti ${shownDisplay().icon}`}
-                  position="bottom-left"
+                  disabled={props.disabled && !props.updating}
+                  items={items()}
+                  appearance="plain"
+                  size={{ width: "21rem" }}
+                  renderTrigger={() => (
+                    <span class="flex items-center gap-1 text-xs text-secondary">
+                      <i
+                        class={props.pending || props.updating ? "ti ti-loader-2 animate-spin" : `ti ${shownDisplay().icon}`}
+                        aria-hidden="true"
+                      />
+                      <span>{shownDisplay().label}</span>
+                      <i class="ti ti-chevron-down text-[11px]" aria-hidden="true" />
+                    </span>
+                  )}
                   onValueChange={(key) => {
                     const option = props.allowed.find((candidate) => candidate.key === key);
-                    if (option && key !== entryKey()) props.onUpdatePermission(option);
+                    // A change in flight keeps the trigger focusable; the next one waits for it.
+                    if (option && key !== entryKey() && !saving()) props.onUpdatePermission(option);
                   }}
                 />
               </Show>
             }
           >
-            <Select
+            <RichSelect
               aria-label={t().permissionFor({ name: displayName() })}
+              title={menuTitle()}
               value={shownKey}
               disabled={props.disabled || !props.canEdit || props.singlePicker}
-              options={props.allowed.map((option) => ({
-                value: option.key,
-                label: option.label,
-                disabled: props.lastManager && option.level !== "admin",
-              }))}
+              items={items()}
+              size={{ width: "21rem" }}
               onValueChange={(key) => {
                 const option = props.allowed.find((candidate) => candidate.key === key);
                 if (option && key !== entryKey()) props.onUpdatePermission(option);

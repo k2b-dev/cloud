@@ -111,7 +111,20 @@ export const calendarInvitationResponseSchema = z
 export const calendarResponseStateDataSchema = calendarResponseStateSchema;
 
 export const spacesMailDestinationSchema = z
-  .object({ id: spacesResourceIdSchema, name: z.string().min(1).max(100), color: z.string().regex(/^#[0-9a-fA-F]{6}$/) })
+  .object({
+    id: spacesResourceIdSchema,
+    name: z.string().min(1).max(100),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    audience: z
+      .object({
+        memberCount: z.number().int().nonnegative(),
+        guestCount: z.number().int().nonnegative(),
+        serviceAccountCount: z.number().int().nonnegative(),
+        public: z.boolean(),
+        authenticated: z.boolean(),
+      })
+      .optional(),
+  })
   .passthrough();
 export const spacesMailDestinationsSchema = z.array(spacesMailDestinationSchema).max(500);
 export const spacesMailDestinationContextSchema = z

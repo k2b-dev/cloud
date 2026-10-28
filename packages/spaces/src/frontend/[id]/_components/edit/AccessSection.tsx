@@ -1,9 +1,16 @@
-import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { type AllowedLevel, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import { SettingsGroup } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
 import { readErrorMessage } from "./utils";
+
+/** What each level allows in a Space, one short line in the level menu. */
+export const spaceAccessLevels = (m: ReturnType<typeof useSpaceMessages>): AllowedLevel[] => [
+  { level: "read", description: m.accessReadLine },
+  { level: "write", description: m.accessWriteLine },
+  { level: "admin", description: m.accessAdminLine },
+];
 
 export function PermissionsSection(props: { spaceId: string; accessEntries: AccessEntry[]; onWorkspaceChange?: () => void }) {
   const m = useSpaceMessages();
@@ -13,6 +20,7 @@ export function PermissionsSection(props: { spaceId: string; accessEntries: Acce
         // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
         initialEntries={props.accessEntries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
         canEdit
+        allowedLevels={spaceAccessLevels(m)}
         grantAccess={async (principal, permission) => {
           const res = await apiClient[":id"].access.$post({
             param: { id: props.spaceId },

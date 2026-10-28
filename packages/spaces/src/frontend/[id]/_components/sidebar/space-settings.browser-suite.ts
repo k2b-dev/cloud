@@ -226,7 +226,7 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
         await page.getByRole("button", { name: settingsLabel, exact: true }).click();
         const dialog = page.locator("dialog[open]");
         await dialog.getByRole("tab", { name: locale === "de" ? "Zugriff" : "Access", exact: true }).click();
-        const input = dialog.getByRole("combobox");
+        const input = dialog.locator("input[role=combobox]");
         await input.waitFor();
         await settle(page);
         const before = await dialog.boundingBox();

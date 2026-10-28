@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../../ui/test/browser";
@@ -104,6 +104,7 @@ afterAll(async () => {
 
 const open = async (width: number, locale: string, initialEntries?: AccessEntry[], expanded = false) => {
   const tab = await browser.newPage({ viewport: { width, height: 800 } });
+  tab.setDefaultTimeout(5_000);
   await tab.setContent(
     `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui"><div style="padding:16px">${render(locale, initialEntries, expanded)}</div></body></html>`,
@@ -170,7 +171,12 @@ describe("PermissionEditor last manager in a browser", () => {
           return { x: box.x, y: box.y, width: box.width, height: box.height };
         };
         const remove = row.querySelector<HTMLButtonElement>("button[aria-label$='entfernen']");
-        return { row: rect(row), level: rect(row.querySelector("[aria-haspopup=menu]")), remove: rect(remove), disabled: remove!.disabled };
+        return {
+          row: rect(row),
+          level: rect(row.querySelector('button[role="combobox"]')),
+          remove: rect(remove),
+          disabled: remove!.disabled,
+        };
       });
     } finally {
       await tab.close();
@@ -285,6 +291,7 @@ describe("PermissionEditor group coverage in a browser", () => {
 
 const openHarness = async (width: number, confirmation?: "immediate" | "delayed") => {
   const tab = await browser.newPage({ viewport: { width, height: 800 }, reducedMotion: "reduce" });
+  tab.setDefaultTimeout(5_000);
   // Confirmation cases observe native focus-return frames and use only fixed fixture timestamps.
   if (!confirmation) await tab.clock.setFixedTime(new Date("2026-10-17T12:00:00.000Z"));
   const origin = "https://permission-editor.test";
@@ -301,6 +308,26 @@ const openHarness = async (width: number, confirmation?: "immediate" | "delayed"
   await tab.addScriptTag({ content: harness });
   await settled(tab);
   return tab;
+};
+
+const levelTriggers = (tab: Page) => tab.locator('.group\\/access-row button[role="combobox"]');
+const pickLevel = async (tab: Page, index: number, label: string) => {
+  const trigger = levelTriggers(tab).nth(index);
+  await trigger.press("Enter");
+  if (tab.viewportSize()!.width < 768) {
+    const sheet = tab.getByRole("dialog");
+    await sheet.getByRole("button", { name: label, exact: true }).press("Enter");
+    await sheet.waitFor({ state: "hidden" });
+  } else {
+    const options = tab.getByRole("option");
+    await options.first().waitFor();
+    const index = (await options.allTextContents()).indexOf(label);
+    if (index < 0) throw new Error(`Missing level: ${label}`);
+    // RichSelect keeps keyboard navigation on its combobox.
+    await trigger.press("Home");
+    for (let step = 0; step < index; step++) await trigger.press("ArrowDown");
+    await trigger.press("Enter");
+  }
 };
 
 describe("PermissionEditor pending layout and focus", () => {
@@ -343,7 +370,7 @@ describe("PermissionEditor pending layout and focus", () => {
     test(`${width} px: a pending update keeps every control, box, and keyboard return target`, async () => {
       const tab = await openHarness(width);
       try {
-        const controls = tab.locator("button.k2b-select-chip");
+        const controls = levelTriggers(tab);
         await controls.first().waitFor();
         await tab.evaluate(() => document.fonts.ready);
         const originals = await controls.elementHandles();
@@ -351,7 +378,7 @@ describe("PermissionEditor pending layout and focus", () => {
           tab.evaluate(() =>
             Array.from(document.querySelectorAll(".group\\/access-row"), (row) => {
               // A badge in place of a picker is deliberately measured too, so the old implementation fails.
-              const control = row.querySelector("button.k2b-select-chip, span.cursor-default")!;
+              const control = row.querySelector('button[role="combobox"], span.cursor-default')!;
               const box = (element: Element) => {
                 const rect = element.getBoundingClientRect();
                 return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
@@ -362,15 +389,22 @@ describe("PermissionEditor pending layout and focus", () => {
         const before = await measure();
         expect(before).toHaveLength(3);
         await controls.nth(1).focus();
-        await tab.keyboard.press("Enter");
-        await tab.getByRole("menuitemradio", { name: "Level 2", exact: true }).press("Enter");
+        await pickLevel(tab, 1, "Level 2");
         await tab.waitForFunction(() => document.documentElement.dataset.saving === "true");
         expect(await measure()).toEqual(before);
         expect(await controls.nth(1).textContent()).toBe("Level 2");
-        expect(await controls.evaluateAll((elements) => elements.every((element) => (element as HTMLButtonElement).disabled))).toBe(true);
+        expect(await controls.evaluateAll((elements) => elements.map((element) => (element as HTMLButtonElement).disabled))).toEqual([
+          true,
+          false,
+          true,
+        ]);
+        expect(await controls.nth(1).locator(".ti-loader-2.animate-spin").count()).toBe(1);
+        await pickLevel(tab, 1, "Level 3");
+        expect(await tab.evaluate(() => Number(document.documentElement.dataset.writes ?? 0))).toBe(1);
+        expect(await controls.nth(1).textContent()).toBe("Level 2");
         for (let index = 0; index < originals.length; index++) {
           expect(
-            await originals[index]!.evaluate((element, i) => element === document.querySelectorAll("button.k2b-select-chip")[i], index),
+            await originals[index]!.evaluate((element, i) => element === document.querySelectorAll('button[role="combobox"]')[i], index),
           ).toBe(true);
         }
         await tab.evaluate(() => document.dispatchEvent(new Event("settle-access")));
@@ -380,7 +414,7 @@ describe("PermissionEditor pending layout and focus", () => {
         expect(await controls.nth(1).evaluate((element) => element === document.activeElement)).toBe(true);
         for (let index = 0; index < originals.length; index++) {
           expect(
-            await originals[index]!.evaluate((element, i) => element === document.querySelectorAll("button.k2b-select-chip")[i], index),
+            await originals[index]!.evaluate((element, i) => element === document.querySelectorAll('button[role="combobox"]')[i], index),
           ).toBe(true);
         }
       } finally {
@@ -395,20 +429,18 @@ describe("PermissionEditor consumer refetch focus", () => {
     test(`${width} px: keyboard focus survives a consumer refetch with an external change`, async () => {
       const tab = await openHarness(width);
       try {
-        const chips = tab.locator("button.k2b-select-chip");
+        const chips = levelTriggers(tab);
         await chips.nth(1).focus();
         await chips.nth(1).evaluate((chip) => {
           chip.setAttribute("data-original-chip", "true");
         });
-        await tab.keyboard.press("Enter");
-        await tab.keyboard.press("End");
-        await tab.keyboard.press("Enter");
+        await pickLevel(tab, 1, "Level 2");
         await tab.waitForFunction(() => document.documentElement.dataset.saving === "true");
         await tab.evaluate(() => document.dispatchEvent(new Event("settle-access")));
         await tab.waitForFunction(() => document.querySelector(".group\\/access-row[aria-busy]") === null);
         await tab.waitForFunction(() => document.activeElement?.hasAttribute("data-original-chip") === true);
         await tab.evaluate(() => document.dispatchEvent(new Event("refetch-access")));
-        await tab.waitForFunction(() => document.querySelectorAll("button.k2b-select-chip")[2]?.textContent === "Level 2");
+        await tab.waitForFunction(() => document.querySelectorAll('button[role="combobox"]')[2]?.textContent === "Level 2");
         expect(await chips.nth(1).textContent()).toBe("Level 2");
         expect(await tab.evaluate(() => document.activeElement === document.querySelector("[data-original-chip]"))).toBe(true);
         expect(await chips.nth(1).getAttribute("data-original-chip")).toBe("true");

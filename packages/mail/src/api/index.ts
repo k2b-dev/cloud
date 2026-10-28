@@ -96,6 +96,7 @@ import {
   renderComposeSnippetInputSchema,
   searchBackendSchema,
   searchRequestSchema,
+  senderChoiceSchema,
   senderDispositionInputSchema,
   setComposeSignatureDefaultInputSchema,
   setConversationReminderSchema,
@@ -177,6 +178,7 @@ import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
+import { listSenderChoices } from "../service/sender-choices";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
@@ -2513,6 +2515,17 @@ const mailOperationsApi = new Hono<MailApiContext>()
         request: await internalInput(c, c.req.valid("json")),
       }),
     ),
+  )
+  .get(
+    "/mailboxes/:mailboxId/sender-choices",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Read sender consequences for composing",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(z.array(senderChoiceSchema), "Sender choices") },
+    }),
+    v("param", mailboxParamSchema),
+    async (c) => respondSenderIdentities(c, listSenderChoices(requestContext(c), internalMailboxId(c))),
   )
   .get("/mailboxes/:mailboxId/sender-identities", v("param", mailboxParamSchema), async (c) =>
     respondSenderIdentities(c, senderIdentities.listSenderIdentities(requestContext(c), internalMailboxId(c))),

@@ -26,21 +26,42 @@ action menus.
 
 ## Which dropdown when
 
-Start with the task. Add a preview only when an option has several consequences
-that change the choice and those consequences differ per option. When one line
-says the difference, there is no preview.
+Start with the task, then ask two questions. Do people compare the options by
+reading a name, by an order, or by looking at them? And does an option need more
+than its name to be chosen well?
 
-| Component | Use it for | Preview |
+| Task | Component | What each option shows |
 | --- | --- | --- |
-| `Select` | One form value, with static options or remote loading | No |
-| `AutocompleteSelect` | Type and validate one remote ID, keeping the chosen value | No |
-| `MultiSelectInput` | Several controlled values | No |
-| `SelectChip` | One compact toolbar value | No |
-| `FilterChip` | Filtering an existing result set | No |
-| `Combobox` | Find an item, run an action, then clear the query | No |
-| `Dropdown` | Secondary actions and links | No |
-| `RichSelect` | Mail sender: signature, visibility, copies, and replies differ | Yes |
-| `RichSelect` | Sharing level: one short line per level says the difference | No |
+| One form value from a known list | `Select` | Its name |
+| One value where each option needs an explanation or an unavailable reason | [`RichSelect`](rich-select) | Name, one short line, the reason when it cannot be chosen |
+| The same, when an option has several consequences that differ per option | [`RichSelect`](rich-select) with a preview | Name and line; the preview shows at most three facts |
+| Two to five ordered stops compared by feel, such as faster to more thorough | [`ChoiceSlider`](choice-slider) | One line for the active stop, always visible |
+| A handful of short, unordered quick choices, one tap away | [`ChoiceChips`](choice-chips) | Its name |
+| Choices that differ in how something looks | [`ChoiceTiles`](choice-tiles) | A small picture and its name |
+| Type and validate one remote ID | [`AutocompleteSelect`](autocomplete-select) | Its name |
+| Several controlled values | `MultiSelectInput` | Its name |
+| One compact toolbar value | `SelectChip` | Its name, an optional icon |
+| Find an item, run an action, then clear the query | [`Combobox`](combobox) | Its name |
+| Filter an existing result set | `FilterChip` | Its name |
+| Secondary actions and links | `Dropdown` | An action, not a value |
+
+A preview pays off only when the options differ in several consequences that
+change the choice. When one line says the difference, leave the preview out.
+Every option is listed once; do not repeat recommended options in a second
+group.
+
+### Examples from Cloud
+
+| Choice | Component | Why |
+| --- | --- | --- |
+| Sharing level (View, Edit, Manage) | `RichSelect`, no preview | One line per level says what it allows; the last manager sees why lower levels are locked |
+| Mail sender | `RichSelect` with preview | Reply address, copies, folder and signature differ per sender; an unconfirmed sender shows its reason |
+| Space for a moved card | `RichSelect` with preview | The row says what the move drops and whether a guest sees the card; the preview names the details |
+| Target folder for moving or copying files | `RichSelect` with preview | Access, versioning and whether the files move or are copied differ per folder; a folder without write access shows the reason |
+| Calendar for an invitation | `RichSelect` | One line says who sees the event |
+| AI model class in the composer | `ChoiceSlider` in a card | Fast, Balanced, Thorough and Maximum form an order; a list of every model opens from the card |
+| A Project's default AI model | `RichSelect` | No default, a class, or one model outside the classes, each with one line |
+| Provider type when adding an AI provider | `ChoiceTiles` | Few choices, all visible at once, each with its provider mark |
 
 Use [RichSelect](rich-select) for explained choices and unavailable reasons;
 do not build select rows inside an action menu.

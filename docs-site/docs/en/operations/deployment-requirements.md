@@ -828,6 +828,20 @@ collection. A fresh or reset installation creates no Postgres extension.
 Measurements live in each base's ClickHouse database; Postgres keeps control
 data and write reservations. Later starts preserve the new data.
 
+### Upgrade consequence previews in Spaces, Mail, and Files
+
+Deploy the updated application image for each new choice preview. Spaces adds
+`GET /api/spaces/:id/items/:itemId/wormhole-previews`; Mail adds
+`GET /api/mail/mailboxes/:mailboxId/sender-choices`; Files adds the read-only
+`POST /api/filesv2/bases/:baseId/destination-previews`. These reads use the same
+services and access checks as the existing actions and need no new settings or
+migration. Moves, copies, and sending recheck their normal conditions.
+
+Spaces' `calendar-destination.list` Query now includes audience counts. Mail
+accepts a destination without them during a rolling deployment and shows that
+access details are unavailable until Spaces has been updated. Verify an
+invitation import after both images are running.
+
 ### Discover calendar sources
 
 The additive `calendarSource` declaration lets applications offer calendars

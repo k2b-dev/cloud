@@ -29,7 +29,8 @@ so a preview helps. A sharing level needs one line per level; omit the preview.
   Supply a render function, for example `visual: () => <Avatar name="Anna" />`,
   so the trigger, list and preview each receive their own DOM element.
   Names must make sense without the visual.
-- Search and section headings appear only from eight options. Search matches
+- Search and section headings appear only from eight options. Pass `search={false}`
+  when a short, fixed action list should remain unfiltered. Search matches
   label, description, value, and `keywords`, ignoring case. Keep items from
   each section together; `sections` supplies the heading labels.
 - Keep the preview to at most three facts. `RichSelectFacts` enforces this by
@@ -97,6 +98,9 @@ removing the item returns to the list.
 Choosing an enabled item closes the sheet before reporting its value. The
 sheet participates in dialog history, so browser Back also dismisses it.
 The opening focus stays on the sheet to avoid opening the phone keyboard.
+After a choice, focus returns to the trigger before its value or footer callback
+runs, unless focus already moved elsewhere. A confirmation opened by that
+callback can return to the field on cancel.
 
 ## API reference
 
@@ -146,9 +150,11 @@ type RichSelectProps = ValueFieldProps<string | null> & {
   tone?: "default" | "warning";
   renderTrigger?: (selected: RichSelectItem | undefined) => JSX.Element;
   renderPreview?: (item: RichSelectItem) => JSX.Element;
+  search?: false;
   searchPlaceholder?: string;
   status?: RichSelectStatus;
   onRetry?: () => void;
+  onOpenChange?: (open: boolean) => void;
   empty?: JSX.Element;
   footer?: RichSelectFooter;
   appearance?: ChoiceAppearance;
@@ -237,3 +243,7 @@ const [sender, setSender] = createSignal<string | null>("mara");
   )}
 />;
 ```
+
+Use `onOpenChange(open)` to refresh changing consequence data when the desktop
+picker or phone sheet opens. Keep the actual action permission-aware and recheck
+its conditions when it runs.

@@ -337,3 +337,5 @@ Mail hält Änderungen in der Aktivität der Unterhaltung fest. Ändert eine and
 Drücke in einem Postfach **Cmd/Strg+Umschalt+K**, um seine Nachrichten und Anhänge zu durchsuchen. Der Name des Postfachs erscheint als Chip. Entferne den Chip, um die ganze Cloud zu durchsuchen.
 
 Bei einer geöffneten Kalendereinladung bietet die Cloud-Suche **Diesen Termin in Spaces übernehmen oder aktualisieren** an. Wenn du antworten kannst, bietet sie auch **Antwort auf diese Einladung vorbereiten** an. Wähle einen Kalender, in dem du Zugriff **Bearbeiten** hast. Bestätige dann den Import oder wähle deine Antwort. Antworten öffnen sich als Entwürfe, die du vor dem Senden prüfst.
+
+Die Kalenderauswahl unter einer Einladung nennt, wer den Termin im jeweiligen gemeinsamen Kalender sieht. Wähle einen Kalender mit Zugriff **Bearbeiten** und übernimm den Termin wie gewohnt. Lädt die Kalenderliste nicht, wähle **Erneut versuchen**; ohne verfügbaren Kalender bleibt die Übernahme gesperrt.

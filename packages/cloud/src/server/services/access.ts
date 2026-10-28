@@ -653,6 +653,71 @@ export const listUsersWithAccess = async (params: {
   }));
 };
 
+/** An aggregate of explicit readers. Broad grants stay explicit rather than pretending to be a finite member list. */
+export type AccessAudience = {
+  memberCount: number;
+  guestCount: number;
+  serviceAccountCount: number;
+  public: boolean;
+  authenticated: boolean;
+};
+
+/** Call only after authorizing every resource; applications own the access IDs and permission to disclose these summaries. */
+export const summarizeAccessAudiences = async (params: {
+  accessIdsByResource: Record<string, string[]>;
+  db?: AccessDb;
+}): Promise<Record<string, AccessAudience>> => {
+  const db = params.db ?? sql;
+  const rows = await db<(AccessAudience & { resource: string })[]>`
+    WITH RECURSIVE resources AS (
+      SELECT key AS resource, value AS access_ids FROM jsonb_each(${JSON.stringify(params.accessIdsByResource)}::text::jsonb)
+    ), grants AS (
+      SELECT r.resource, a.* FROM resources r
+      CROSS JOIN LATERAL jsonb_array_elements_text(r.access_ids) ids(id)
+      JOIN auth.access a ON a.id = ids.id::uuid AND a.permission IN ('read', 'write', 'admin')
+    ), groups(resource, id, provider) AS (
+      SELECT a.resource, g.id, g.provider FROM grants a JOIN auth.groups g ON g.id = a.group_id
+      UNION
+      SELECT g.resource, child.id, child.provider
+      FROM groups g
+      JOIN auth.group_groups_v2 gg ON gg.parent_group_id = g.id
+      JOIN auth.groups child ON child.id = gg.child_group_id AND child.provider = g.provider
+    ), readers(resource, id) AS (
+      SELECT resource, user_id FROM grants WHERE user_id IS NOT NULL
+      UNION
+      SELECT g.resource, ug.user_id FROM auth.user_groups_v2 ug JOIN groups g ON g.id = ug.group_id
+    ), people AS (
+      SELECT r.resource,
+        COUNT(*)::int AS member_count,
+        (COUNT(*) FILTER (WHERE u.provider = 'local' AND u.profile = 'guest'))::int AS guest_count
+      FROM readers r JOIN auth.users u ON u.id = r.id
+      WHERE u.account_expires IS NULL OR u.account_expires > now()
+      GROUP BY r.resource
+    ), audiences AS (
+      SELECT g.resource,
+        (COUNT(DISTINCT sa.id) FILTER (WHERE sa.status = 'active'))::int AS service_account_count,
+        BOOL_OR(g.user_id IS NULL AND g.group_id IS NULL AND g.service_account_id IS NULL AND NOT g.authenticated_only) AS public,
+        BOOL_OR(g.authenticated_only) AS authenticated
+      FROM grants g LEFT JOIN auth.service_accounts sa ON sa.id = g.service_account_id
+      GROUP BY g.resource
+    )
+    SELECT r.resource,
+      COALESCE(p.member_count, 0) AS "memberCount",
+      COALESCE(p.guest_count, 0) AS "guestCount",
+      COALESCE(a.service_account_count, 0) AS "serviceAccountCount",
+      COALESCE(a.public, FALSE) AS public,
+      COALESCE(a.authenticated, FALSE) AS authenticated
+    FROM resources r
+    LEFT JOIN people p ON p.resource = r.resource
+    LEFT JOIN audiences a ON a.resource = r.resource
+  `;
+  return Object.fromEntries(rows.map(({ resource, ...audience }) => [resource, audience]));
+};
+
+/** One resource, with the same authorization precondition as the batch reader. */
+export const summarizeAccessAudience = async (params: { accessIds: string[]; db?: AccessDb }): Promise<AccessAudience> =>
+  (await summarizeAccessAudiences({ accessIdsByResource: { resource: uniqueIds(params.accessIds) }, db: params.db })).resource!;
+
 /**
  * Resolve display names for access entries.
  * Missing principals and audiences have no displayName; render with principalLabel.

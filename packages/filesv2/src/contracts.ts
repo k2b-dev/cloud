@@ -118,6 +118,36 @@ export type FolderBatchResult = { base: BaseSummary; results: FolderResult[] };
 export const RenameInputSchema = z.object({ path: PathSchema, name: z.string().min(1).max(255) });
 export const MoveInputSchema = z.object({ paths: PathsSchema, folder: z.string().max(4096) });
 export const CopyInputSchema = z.object({ paths: PathsSchema, targetBaseId: z.string().min(1), folder: z.string().max(4096) });
+export const DestinationPreviewsInputSchema = z.object({
+  paths: PathsSchema,
+  targets: z
+    .array(z.object({ baseId: z.string().min(1).max(512), folder: z.string().max(4096) }))
+    .min(1)
+    .max(BATCH_LIMIT),
+  copyOnly: z.boolean().default(false),
+});
+export type DestinationAccess = {
+  kind: "personal" | "group" | "filesystem";
+  name: string | null;
+  owner: boolean;
+  group: boolean;
+  additionalUsers: number;
+  additionalGroups: number;
+  others: boolean;
+};
+export type DestinationPreview = {
+  baseId: string;
+  folder: string;
+  /** Null when a read-only preview cannot bind or provision this base. */
+  canWrite: boolean | null;
+  sourceCount: number;
+  sourceMovableCount: number;
+  copy: boolean;
+  copyReason: "requested" | "boundary" | "source_read_only" | null;
+  versioningEnabled: boolean;
+  access: DestinationAccess | null;
+};
+
 export const PathsInputSchema = z.object({ paths: PathsSchema });
 export const TrashIdSchema = z.object({
   id: z.union([

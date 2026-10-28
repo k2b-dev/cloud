@@ -18,7 +18,7 @@ const entry = resolve(import.meta.dir, "rich-select.fixture.ts");
 const fixture = `
 import { createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { RichSelect, RichSelectFacts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { dialogCore, RichSelect, RichSelectFacts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const items = [
   { value: "review", label: "Marketing · Review", description: "2 tags are dropped", color: "#8b5cf6" },
   { value: "print", label: "Print orders · Inbox", description: "A guest can see it, one assignee is dropped", color: "#f97316" },
@@ -35,6 +35,7 @@ const [value, setValue] = createSignal(null);
 const [targets, setTargets] = createSignal(items);
 const [status, setStatus] = createSignal("ready");
 const [disabled, setDisabled] = createSignal(false);
+const [search, setSearch] = createSignal(undefined);
 let resumeHistory;
 document.addEventListener("fixture:state", (event) => {
   const next = event.detail;
@@ -44,6 +45,8 @@ document.addEventListener("fixture:state", (event) => {
   if (next === "error" || next === "loading") setStatus(next);
   if (next === "disable") setDisabled(true);
   if (next === "unmount") dispose();
+  if (next === "no-search") setSearch(false);
+  if (next === "nested") void dialogCore.open(() => form, { ariaLabel: "Edit card" });
   if (next === "many") setTargets([...items, ...Array.from({ length: 5 }, (_, index) => ({ value: "extra-" + index, label: "Extra " + index }))]);
   if (next === "hold-history") {
     const go = history.go.bind(history);
@@ -59,8 +62,10 @@ form.addEventListener("submit", (event) => { event.preventDefault(); form.datase
 document.getElementById("app").append(form);
 const dispose = render(() => createComponent(RichSelect, {
   label: "Move card", title: "Move card", placeholder: "Move to …", value,
-  onValueChange: (next) => { form.dataset.committed = next; setValue(next); }, get items() { return targets(); }, get status() { return status(); }, get disabled() { return disabled(); },
+  onValueChange: (next) => { form.dataset.focusAtCommit = document.activeElement?.id ?? ""; form.dataset.committed = next; setValue(next); }, get items() { return targets(); }, get status() { return status(); }, get disabled() { return disabled(); },
   onRetry: () => setStatus("ready"),
+  get search() { return search(); },
+  onOpenChange: (open) => { form.dataset.open = String(open); },
   footer: { label: "New target", create: { placeholder: "Target name", onCreate: (name) => { form.dataset.created = name; } } },
   renderPreview: (item) => createComponent(RichSelectFacts, { facts: (facts[item.value] ?? []).map(text => ({ icon: "ti ti-info-circle", text })) }),
 }), form);
@@ -188,6 +193,30 @@ describe("RichSelect shipped browser contract", () => {
     }
   }, 10_000);
 
+  for (const width of [1440, 390]) {
+    test(`consequence pickers can suppress search and report opening (${width}px)`, async () => {
+      const { page, close } = await open({ viewport: { width, height: 900 }, isMobile: width === 390, hasTouch: width === 390 });
+      try {
+        await page.evaluate(() => {
+          document.dispatchEvent(new CustomEvent("fixture:state", { detail: "many" }));
+          document.dispatchEvent(new CustomEvent("fixture:state", { detail: "no-search" }));
+        });
+        await page.getByRole("combobox", { name: "Move card" }).click();
+        await page.waitForFunction(() => document.querySelector("form")?.getAttribute("data-open") === "true");
+        const choices = width === 390 ? page.getByRole("dialog") : page.getByRole("listbox");
+        await choices.waitFor({ state: "visible" });
+        expect(await page.locator('input[type="search"]:visible').count()).toBe(0);
+        await page.keyboard.press("Escape");
+        // Phone sheets restore focus after closing, which starts a separate trigger colour transition.
+        // This contract observes the reported open state and surface, rather than that animation.
+        await choices.waitFor({ state: "hidden" });
+        await page.waitForFunction(() => document.querySelector("form")?.getAttribute("data-open") === "false");
+      } finally {
+        await close();
+      }
+    });
+  }
+
   test("desktop preview, list, popover and trigger never move while keys and hover change the active row", async () => {
     const { page, close } = await open({ viewport: { width: 1440, height: 900 } });
     try {
@@ -285,10 +314,34 @@ describe("RichSelect shipped browser contract", () => {
       await sheet.waitFor({ state: "hidden" });
       await page.waitForFunction(() => document.querySelector('[role="combobox"]')?.getAttribute("aria-expanded") === "false");
       expect(await trigger.innerText()).toContain("Marketing · Review");
-      // dialogCore returns focus in a frame after closing; its history promise
-      // (and therefore the committed value/aria-expanded) can finish first.
+      expect(await page.locator("form").first().getAttribute("data-focus-at-commit")).toBe(await trigger.getAttribute("id"));
       await page.waitForFunction(() => document.querySelector('[role="combobox"]') === document.activeElement);
       expect(await trigger.evaluate((element) => element === document.activeElement)).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
+  test("a phone choice inside another dialog returns to its field before committing", async () => {
+    const { page, close } = await open({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    try {
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "nested" })));
+      await page.getByRole("dialog", { name: "Edit card", exact: true }).waitFor();
+      const trigger = page.getByRole("combobox", { name: "Move card", exact: true });
+      await trigger.tap();
+      const sheet = page.getByRole("dialog", { name: "Move card", exact: true });
+      await sheet.getByRole("button", { name: "Marketing · Review", exact: true }).waitFor();
+      // WebKit can keep focus on the sheet when a touch activates a button. Preserve that focus through the click.
+      await sheet.evaluate((dialog) => {
+        if (!(dialog instanceof HTMLDialogElement)) throw new Error("Expected the choice sheet");
+        dialog.focus();
+        dialog.querySelector<HTMLButtonElement>(".k2b-rich-select__sheet-row > button.k2b-rich-select__option")!.click();
+      });
+      await sheet.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.querySelector("form")?.getAttribute("data-committed") === "review");
+      expect(await page.locator("form").first().getAttribute("data-focus-at-commit")).toBe(await trigger.getAttribute("id"));
+      await page.keyboard.press("Escape");
+      await page.getByRole("dialog").waitFor({ state: "hidden" });
     } finally {
       await close();
     }

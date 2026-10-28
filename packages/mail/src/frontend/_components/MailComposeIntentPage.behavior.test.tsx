@@ -125,6 +125,7 @@ if (!isServer)
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.endsWith("/sender-choices")) return Response.json([]);
         if (url.endsWith("/sender-identities")) return Response.json([unverifiedIdentity("sent_folder_missing")]);
         throw new Error(`Unexpected request: ${url}`);
       },
@@ -187,6 +188,7 @@ if (!isServer)
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.endsWith("/sender-choices")) return Response.json([]);
         if (url.includes("/mail01/sender-identities")) return Response.json([verified("mail01")]);
         if (url.includes("/mail02/sender-identities")) {
           await new Promise<void>((resolve) => {

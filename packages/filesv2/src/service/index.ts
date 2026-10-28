@@ -24,6 +24,7 @@ import type {
   BaseSummary,
   BasesResult,
   ConfigurationInput,
+  DestinationPreview,
   DirectoryResult,
   DownloadLease,
   EditorLaunch,
@@ -58,6 +59,7 @@ import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
 import { readConfiguration, resetConfiguration, writeConfiguration } from "./configuration";
+import { destinationAccess } from "./destination-access";
 import { documentTemplate } from "./document-template";
 import { FilesError } from "./errors";
 import { fileEntry } from "./file-entry";
@@ -180,7 +182,14 @@ export function createFilesService(
       gid_number: identity.gid,
     };
   }
-  async function inspect(root: FilesRoot, item: Candidate, info: RootInfo, serverUrl: string, adopt = false): Promise<Inspection> {
+  async function inspect(
+    root: FilesRoot,
+    item: Candidate,
+    info: RootInfo,
+    serverUrl: string,
+    adopt = false,
+    readOnly = false,
+  ): Promise<Inspection> {
     const summary: BaseSummary = {
       id: `${item.area}:${item.kind}:${item.identity_id}`,
       area: item.area,
@@ -227,7 +236,7 @@ export function createFilesService(
       if (node.gid !== item.gid_number || (item.kind === "users" && node.uid !== item.uid_number))
         return result("conflict", "ownership_mismatch");
     }
-    if (!existing.length && (item.area === "freeipa" || adopt)) existing = await deps.bindings.claim(item);
+    if (!readOnly && !existing.length && (item.area === "freeipa" || adopt)) existing = await deps.bindings.claim(item);
     if (!existing.length) return result("unassigned", "unassigned");
     if (existing.length !== 1 || !sameBinding(existing[0]!, item)) return result("conflict", "binding_conflict");
     return result("existing", null, existing[0]!);
@@ -286,7 +295,7 @@ export function createFilesService(
     }
   }
   /** The actor's base, usable and bound, before any path in it is looked at. */
-  async function authorizedBase(actor: RequestActor, baseId: string, snapshot?: Awaited<ReturnType<typeof context>>) {
+  async function authorizedBase(actor: RequestActor, baseId: string, snapshot?: Awaited<ReturnType<typeof context>>, readOnly = false) {
     const state = snapshot ?? (await context(actor));
     const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === baseId);
     if (!item) throw new FilesError("not_found", 404);
@@ -294,8 +303,8 @@ export function createFilesService(
     if (issue) throw new FilesError(issue, 403);
     const service = deps.connect(state.config).root(item.root);
     const info = await service.info();
-    let inspection = await inspect(service, item, info, state.config.url);
-    if (inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
+    let inspection = await inspect(service, item, info, state.config.url, false, readOnly);
+    if (!readOnly && inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
       await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
       inspection = await inspect(service, item, info, state.config.url);
     }
@@ -1074,6 +1083,104 @@ export function createFilesService(
       const actor = call.actor;
       const state = await context(actor);
       return state.candidates.map((item) => ({ id: `${item.area}:${item.kind}:${item.identity_id}`, name: item.name, kind: item.kind }));
+    },
+    /** No provisioning, binding claim or file write: actual move/copy rechecks everything. */
+    async destinationPreviews(
+      call: UserFilesCall,
+      input: {
+        baseId: string;
+        paths: string[];
+        targets: { baseId: string; folder: string }[];
+        copyOnly: boolean;
+      },
+    ): Promise<DestinationPreview[]> {
+      if (!input.paths.length || input.paths.length > BATCH_LIMIT || !input.targets.length || input.targets.length > BATCH_LIMIT)
+        throw new FilesError("invalid_input", 400);
+      const state = await context(call.actor);
+      const sourceBase = await authorizedBase(call.actor, input.baseId, state, true);
+      let sourceMovableCount = 0;
+      const paths = normalizeSelection(input.paths);
+      for (const path of paths) {
+        try {
+          const source = await authorizedPath(sourceBase, path);
+          if ((await entryActions(source)).move) sourceMovableCount++;
+        } catch (error) {
+          if (!(error instanceof FilesError || error instanceof FilegateError) || ![403, 404].includes(error.status)) throw error;
+        }
+      }
+      const result: DestinationPreview[] = [];
+      const targetBases = new Map<string, ReturnType<typeof authorizedBase>>([[input.baseId, Promise.resolve(sourceBase)]]);
+      for (const target of input.targets) {
+        const folder = relativePath(target.folder);
+        const copyReason = input.copyOnly
+          ? "requested"
+          : target.baseId !== input.baseId
+            ? "boundary"
+            : sourceMovableCount === 0
+              ? "source_read_only"
+              : null;
+        try {
+          userPath(folder);
+          let targetBase = targetBases.get(target.baseId);
+          if (!targetBase) {
+            targetBase = authorizedBase(call.actor, target.baseId, state, true);
+            targetBases.set(target.baseId, targetBase);
+          }
+          const current = await authorizedPath(await targetBase, folder, true);
+          const item = current.inspection.candidate;
+          const groupName =
+            state.candidates.find(
+              (candidate) => candidate.kind === "groups" && candidate.area === item.area && candidate.gid_number === current.node.gid,
+            )?.name ?? null;
+          const acl = item.area === "freeipa" ? await current.root.getACL(current.target, "access") : null;
+          const access = acl
+            ? destinationAccess(acl, groupName)
+            : {
+                kind: item.kind === "users" ? ("personal" as const) : ("group" as const),
+                name: item.name,
+                owner: true,
+                group: item.kind === "groups",
+                additionalUsers: 0,
+                additionalGroups: 0,
+                others: false,
+              };
+          result.push({
+            baseId: target.baseId,
+            folder,
+            canWrite: acl ? permits(current.node, acl, current.state.unix!, 3) : true,
+            sourceCount: paths.length,
+            sourceMovableCount,
+            copy: copyReason !== null,
+            copyReason,
+            versioningEnabled: current.info.versioning.enabled,
+            access,
+          });
+        } catch (error) {
+          if (
+            !(error instanceof FilesError && [403, 404].includes(error.status)) &&
+            !(error instanceof FilegateError && [403, 404].includes(error.status))
+          )
+            throw error;
+          const candidate = state.candidates.find((item) => `${item.area}:${item.kind}:${item.identity_id}` === target.baseId);
+          const firstUse =
+            error instanceof FilesError &&
+            error.status === 403 &&
+            ((candidate?.area === "freeipa" && error.code === "unassigned") ||
+              (candidate?.area === "cloud" && error.code === "not_found" && state.config.cloud.autoCreate));
+          result.push({
+            baseId: target.baseId,
+            folder,
+            canWrite: firstUse ? null : false,
+            sourceCount: paths.length,
+            sourceMovableCount,
+            copy: copyReason !== null,
+            copyReason,
+            versioningEnabled: false,
+            access: null,
+          });
+        }
+      }
+      return result;
     },
     async list(call: UserFilesCall, input: { baseId: string; path?: string } & BrowseInput): Promise<DirectoryResult> {
       const actor = call.actor;

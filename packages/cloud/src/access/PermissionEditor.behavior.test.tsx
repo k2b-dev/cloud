@@ -32,6 +32,24 @@ const installPopoverApi = (dom: DomTestHarness) => {
   });
 };
 
+const levelTrigger = (row: Element) => row.querySelector<HTMLButtonElement>('button[role="combobox"]')!;
+const openLevels = (row: Element) => {
+  const trigger = levelTrigger(row);
+  for (const other of row.ownerDocument.querySelectorAll<HTMLButtonElement>('button[role="combobox"][aria-expanded="true"]')) {
+    if (other !== trigger) other.click();
+  }
+  if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
+  const list = row.ownerDocument.getElementById(trigger.getAttribute("aria-controls")!);
+  if (!list) throw new Error("The level picker did not open");
+  return Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+};
+const pickLevel = (row: Element, label: string) => {
+  if (levelTrigger(row).disabled) return;
+  const option = openLevels(row).find((item) => item.querySelector(".k2b-rich-select__label")?.textContent === label);
+  if (!option) throw new Error(`Missing level: ${label}`);
+  option.click();
+};
+
 const labels = {
   en: {
     agent: "Agent",
@@ -81,18 +99,22 @@ describe("PermissionEditor expanded interactions", () => {
       setSystemTime(new Date("2026-10-22T12:00:00.000Z"));
       const { default: PermissionEditor } = await import("./PermissionEditor");
       delegateEvents(["input", "click"], dom.document);
+      const grantedLevels: string[] = [];
       const dispose = render(
         () => (
           <PermissionEditor
             expanded
             initialEntries={[]}
-            grantAccess={async (principal, permission, display) => ({
-              id: "new-grant",
-              principal,
-              permission,
-              createdAt: "2026-10-22T12:00:00.000Z",
-              ...display,
-            })}
+            grantAccess={async (principal, permission, display) => {
+              grantedLevels.push(permission);
+              return {
+                id: "new-grant",
+                principal,
+                permission,
+                createdAt: "2026-10-22T12:00:00.000Z",
+                ...display,
+              };
+            }}
             updateAccess={async () => {}}
             revokeAccess={async () => {}}
           />
@@ -121,6 +143,7 @@ describe("PermissionEditor expanded interactions", () => {
         clear.click();
         await waitFor(() => dom.document.activeElement === dom.root.querySelector("input[role=combobox]"), "focus after clearing");
         await pick();
+        pickLevel(dom.root, locale === "de" ? "Bearbeiten" : "Edit");
         const add = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(
           (button) => button.textContent === (locale === "de" ? "Hinzufügen" : "Add"),
         )!;
@@ -128,8 +151,10 @@ describe("PermissionEditor expanded interactions", () => {
         add.click();
         await waitFor(() => !!dom.root.querySelector(".group\\/access-row:not([aria-busy])"), "the confirmed grant");
         await waitFor(() => dom.document.activeElement === dom.root.querySelector("input[role=combobox]"), "focus after adding");
+        expect(grantedLevels).toEqual(["write"]);
       } finally {
         dispose();
+        await Promise.resolve();
         setSystemTime();
         dom.cleanup();
       }
@@ -163,7 +188,7 @@ describe("PermissionEditor expanded interactions", () => {
     );
     try {
       const row = dom.root.querySelector<HTMLElement>(".group\\/access-row")!;
-      Array.from(row.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+      openLevels(row)
         .find((option) => option.textContent?.includes("Edit"))!
         .click();
       await waitFor(() => !!dom.root.querySelector('[role="alert"] button'), "the retry action");
@@ -172,6 +197,7 @@ describe("PermissionEditor expanded interactions", () => {
       expect(attempts).toBe(1);
     } finally {
       dispose();
+      await Promise.resolve();
       dom.cleanup();
     }
   });
@@ -203,10 +229,7 @@ describe("PermissionEditor expanded interactions", () => {
     );
     try {
       const rows = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
-      const chooseEdit = (row: HTMLElement) =>
-        Array.from(row.querySelectorAll<HTMLButtonElement>('[role="option"]'))
-          .find((option) => option.textContent?.includes("Edit"))!
-          .click();
+      const chooseEdit = (row: HTMLElement) => pickLevel(row, "Edit");
       chooseEdit(rows[1]!);
       await waitFor(() => !!rows[1]!.querySelector(".ti-check.text-success"), "the confirmed change");
       chooseEdit(rows[0]!);
@@ -229,6 +252,7 @@ describe("PermissionEditor expanded interactions", () => {
       expect(attempts).toBe(2);
     } finally {
       dispose();
+      await Promise.resolve();
       dom.cleanup();
     }
   });
@@ -264,9 +288,68 @@ describe("PermissionEditor expanded interactions", () => {
       expect(row.textContent).toContain("(Agent)");
     } finally {
       dispose();
+      await Promise.resolve();
       dom.cleanup();
     }
   });
+});
+
+describe("PermissionEditor level explanations", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+  for (const locale of ["en", "de"] as const) {
+    test(`${locale}: compact and expanded menus name the principal and explain each level`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      dom.document.documentElement.lang = locale;
+      const { default: PermissionEditor } = await import("./PermissionEditor");
+      delegateEvents(["click"], dom.document);
+      const [expanded, setExpanded] = createSignal(false);
+      const [ownEntryIds, setOwnEntryIds] = createSignal<string[]>([]);
+      const entry = serviceEntry("agent");
+      const dispose = render(
+        () => (
+          <PermissionEditor
+            expanded={expanded()}
+            ownEntryIds={ownEntryIds()}
+            initialEntries={[entry]}
+            entryDetail={() => "Automation"}
+            grantAccess={async () => {
+              throw new Error("Not used");
+            }}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        for (const expanded of [false, true]) {
+          setExpanded(expanded);
+          const row = dom.root.querySelector<HTMLElement>(".group\\/access-row")!;
+          setOwnEntryIds([]);
+          const options = openLevels(row);
+          const list = dom.document.getElementById(levelTrigger(row).getAttribute("aria-controls")!)!;
+          expect(list.getAttribute("aria-label")).toBe(expanded ? "Granted agent · Automation" : "Granted agent");
+          expect(options.map((option) => option.querySelector(".k2b-rich-select__line")?.textContent)).toEqual(
+            locale === "de"
+              ? ["Inhalte lesen", "Inhalte anlegen und ändern", "Auch Freigaben, Einstellungen und Löschen"]
+              : ["Read the content", "Create and change content", "Also sharing, settings and deleting"],
+          );
+          setOwnEntryIds([entry.id]);
+          expect(list.getAttribute("aria-label")).toBe(locale === "de" ? "Deine Freigabe" : "Your access");
+          levelTrigger(row).click();
+          await Promise.resolve();
+        }
+      } finally {
+        dispose();
+        await Promise.resolve();
+        dom.cleanup();
+      }
+    });
+  }
 });
 
 describe("PermissionEditor service accounts", () => {
@@ -330,8 +413,9 @@ describe("PermissionEditor service accounts", () => {
         const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
         input.value = "fo";
         input.dispatchEvent(new Event("input", { bubbles: true }));
-        await waitFor(() => dom.root.querySelectorAll("[role=option]").length === kinds.length, "the service-account results");
-        const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=option]"));
+        const results = () => dom.document.getElementById(input.getAttribute("aria-controls")!);
+        await waitFor(() => results()?.querySelectorAll("[role=option]").length === kinds.length, "the service-account results");
+        const options = Array.from(results()!.querySelectorAll<HTMLButtonElement>("[role=option]"));
         for (const kind of kinds) {
           const option = options.find((element) => element.textContent?.includes(`Found ${kind}`))!;
           expect(option.querySelector(`i.${icons[kind]}`)).not.toBeNull();
@@ -350,13 +434,14 @@ describe("PermissionEditor service accounts", () => {
 
         // The editor changes its own copy; the entry the caller returned stays as the caller made it.
         const edit = locale === "de" ? "Bearbeiten" : "Edit";
-        Array.from(added.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+        openLevels(added)
           .find((item) => item.textContent?.startsWith(edit))!
           .click();
         await waitFor(() => rowOf("Found agent")?.textContent?.includes(edit) === true, "the new level");
         expect(returned.map((entry) => entry.permission)).toEqual(["read"]);
       } finally {
         dispose();
+        await Promise.resolve();
         globalThis.fetch = originalFetch;
         dom.cleanup();
       }
@@ -425,6 +510,7 @@ describe("PermissionEditor service accounts", () => {
       expect(rowOf()!.textContent).not.toContain("(");
     } finally {
       dispose();
+      await Promise.resolve();
       globalThis.fetch = originalFetch;
       dom.cleanup();
     }
@@ -482,8 +568,8 @@ describe("PermissionEditor last manager", () => {
     const rowOf = (name: string) =>
       Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name))!;
     const removeButton = (name: string) => rowOf(name).querySelector<HTMLButtonElement>(`button[aria-label="${name} entfernen"]`)!;
-    // The level menu of each row stays in the document as a closed popover.
-    const levelsOf = (name: string) => Array.from(rowOf(name).querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"));
+    // Open each row's listbox before inspecting its choices.
+    const levelsOf = (name: string) => openLevels(rowOf(name));
     try {
       expect(rowOf("Alle Benutzer einschließlich Gäste")).toBeDefined();
       expect(dom.root.textContent).not.toContain("All users (incl. guests)");
@@ -496,16 +582,21 @@ describe("PermissionEditor last manager", () => {
       expect(removeButton("Lya Meyer").hasAttribute("aria-description")).toBe(false);
       expect(removeButton("Import key").disabled).toBe(false);
       const locked = levelsOf("Quentin Dorn");
-      expect(locked.map((item) => [item.textContent?.startsWith("Verwalten") ?? false, item.disabled])).toEqual([
+      expect(
+        locked.map((item) => [item.textContent?.startsWith("Verwalten") ?? false, item.getAttribute("aria-disabled") === "true"]),
+      ).toEqual([
         [false, true],
         [false, true],
         [true, false],
       ]);
       expect(locked[0]!.textContent).toContain("Möglich, sobald eine weitere Person oder Gruppe Zugriff „Verwalten“ hat");
+      locked[0]!.click();
+      expect(updates).toEqual([]);
+      expect(levelTrigger(rowOf("Quentin Dorn")).getAttribute("aria-expanded")).toBe("true");
 
       // Once a second person can manage, both rows can change again.
       const levels = levelsOf("Lya Meyer");
-      expect(levels.every((item) => !item.disabled)).toBe(true);
+      expect(levels.every((item) => item.getAttribute("aria-disabled") !== "true")).toBe(true);
       levels.find((item) => item.textContent?.startsWith("Verwalten"))!.click();
       await waitFor(() => !removeButton("Quentin Dorn").disabled, "the unlocked manager row");
       expect(removeButton("Quentin Dorn").hasAttribute("aria-description")).toBe(false);
@@ -515,6 +606,7 @@ describe("PermissionEditor last manager", () => {
       expect(initialEntries.map((entry) => entry.permission)).toEqual(["admin", "read", "admin", "read"]);
     } finally {
       dispose();
+      await Promise.resolve();
       dom.cleanup();
     }
   });
@@ -557,12 +649,13 @@ describe("PermissionEditor last manager", () => {
       expect(removeButton("Lya Meyer (denied)").disabled).toBe(false);
 
       // The function sees the editor's current entries, so a new manager unlocks the row.
-      Array.from(rowOf("Ana Roth").querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+      openLevels(rowOf("Ana Roth"))
         .find((item) => item.textContent?.startsWith("Manage"))!
         .click();
       await waitFor(() => !removeButton("Quentin Dorn").disabled, "the unlocked manager row");
     } finally {
       dispose();
+      await Promise.resolve();
       dom.cleanup();
     }
   });
@@ -608,8 +701,8 @@ describe("PermissionEditor scoped levels", () => {
     );
     const rowOf = (name: string) =>
       Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name))!;
-    const levelsOf = (name: string) => Array.from(rowOf(name).querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"));
-    const chosen = (name: string) => levelsOf(name).find((item) => item.getAttribute("aria-checked") === "true")?.textContent ?? "";
+    const levelsOf = (name: string) => openLevels(rowOf(name));
+    const chosen = (name: string) => levelsOf(name).find((item) => item.getAttribute("aria-selected") === "true")?.textContent ?? "";
     try {
       // The same level reads as its scoped option only on the scoped grant.
       expect(chosen("Lya Meyer")).toStartWith("Assigned: view");
@@ -620,7 +713,7 @@ describe("PermissionEditor scoped levels", () => {
       // A grant on part of the resource never manages it: the only whole-resource manager stays locked to Manage.
       expect(
         levelsOf("Quentin Dorn")
-          .filter((item) => !item.disabled)
+          .filter((item) => item.getAttribute("aria-disabled") !== "true")
           .map((item) => item.textContent?.slice(0, 6)),
       ).toEqual(["Manage"]);
 
@@ -640,6 +733,7 @@ describe("PermissionEditor scoped levels", () => {
       ]);
     } finally {
       dispose();
+      await Promise.resolve();
       dom.cleanup();
     }
   });
@@ -735,8 +829,9 @@ describe("PermissionEditor group coverage", () => {
       toggle,
       panel,
       button,
-      done: () => {
+      done: async () => {
         dispose();
+        await Promise.resolve();
         globalThis.fetch = originalFetch;
       },
     };
@@ -787,7 +882,7 @@ describe("PermissionEditor group coverage", () => {
       expect(Array.from(view.panel().querySelectorAll("button")).some((element) => element.textContent?.includes("more"))).toBe(false);
 
       // Changing the group's level keeps its row, and with it the open list.
-      Array.from(view.groupRow().querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+      openLevels(view.groupRow())
         .find((item) => item.textContent?.startsWith("Edit"))!
         .click();
       await waitFor(() => view.groupRow().textContent?.includes("Edit") === true, "the new level");
@@ -797,7 +892,7 @@ describe("PermissionEditor group coverage", () => {
         view.requests.filter((url) => url.searchParams.get("page") === "1" && url.searchParams.has("member_of_group_id")),
       ).toHaveLength(1);
     } finally {
-      view.done();
+      await view.done();
       dom.cleanup();
     }
   });
@@ -835,7 +930,7 @@ describe("PermissionEditor group coverage", () => {
       expect(view.panel().querySelector("[role=alert]")).toBeNull();
       expect(view.panel().querySelectorAll("li")).toHaveLength(40);
     } finally {
-      view.done();
+      await view.done();
       dom.cleanup();
     }
   });
@@ -860,7 +955,7 @@ describe("PermissionEditor group coverage", () => {
       expect(view.panel().textContent).not.toContain("Über diese Gruppe");
       expect(view.panel().textContent).not.toContain("Verzeichnis");
     } finally {
-      view.done();
+      await view.done();
       dom.cleanup();
     }
   });
@@ -939,6 +1034,7 @@ describe("PermissionEditor pending grants", () => {
       dispose,
       done: async () => {
         dispose();
+        await Promise.resolve();
         // Close the error prompt before restoring the DOM globals.
         dom.document.querySelector<HTMLButtonElement>("dialog button")?.click();
         await Bun.sleep(10);
@@ -961,7 +1057,7 @@ describe("PermissionEditor pending grants", () => {
       const firstRow = rowOf("Jonas Weber")!;
       expect(firstRow).toBeDefined();
       expect(firstRow.getAttribute("aria-busy")).toBe("true");
-      expect(firstRow.querySelector("button.k2b-select-chip .ti-loader-2.k2b-spin")).not.toBeNull();
+      expect(firstRow.querySelector('button[role="combobox"] .ti-loader-2.animate-spin')).not.toBeNull();
       expect(firstRow.textContent).toContain("Manage");
       expect(grants).toHaveLength(1);
       expect(input.disabled).toBe(false);
@@ -970,7 +1066,7 @@ describe("PermissionEditor pending grants", () => {
       expect(dom.document.activeElement).toBe(input);
       for (const row of rows()) {
         expect(row.querySelector<HTMLButtonElement>('button[aria-label^="Remove "]')!.disabled).toBe(true);
-        expect(row.querySelector<HTMLButtonElement>("button.k2b-select-chip")!.disabled).toBe(true);
+        expect(row.querySelector<HTMLButtonElement>('button[role="combobox"]')!.disabled).toBe(true);
       }
       // A pending manager cannot unlock the only saved manager.
       expect(rowOf("Mara Lind")!.querySelector<HTMLButtonElement>('button[aria-label="Remove Mara Lind"]')!.disabled).toBe(true);
@@ -990,7 +1086,7 @@ describe("PermissionEditor pending grants", () => {
       await waitFor(() => rowOf("Jonas Weber")?.hasAttribute("aria-busy") === false, "the final row");
       expect(rowOf("Jonas Weber")).toBe(firstRow);
       expect(rows()).toHaveLength(2);
-      expect(firstRow.querySelector("button.k2b-select-chip .ti-loader-2.k2b-spin")).toBeNull();
+      expect(firstRow.querySelector('button[role="combobox"] .ti-loader-2.animate-spin')).toBeNull();
       expect(firstRow.querySelector<HTMLButtonElement>('button[aria-label="Remove Jonas Weber"]')!.disabled).toBe(false);
       expect(input.readOnly).toBe(false);
       expect(input.hasAttribute("aria-readonly")).toBe(false);
@@ -1171,20 +1267,17 @@ describe("PermissionEditor pending controls", () => {
       dom.root,
     );
     const rows = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
-    const pickerSelector = options.expanded ? 'button[role="combobox"]' : "button.k2b-select-chip";
+    const pickerSelector = 'button[role="combobox"]';
     const triggers = rows.map((row) => row.querySelector<HTMLButtonElement>(pickerSelector)!);
     const removes = rows.map((row) => row.querySelector<HTMLButtonElement>('button[aria-label^="Remove "]')!);
-    const assertControls = (disabled: boolean) => {
+    const assertControls = (disabled: boolean, ownUpdate = false) => {
       rows.forEach((row, index) => {
         expect(row.querySelector(pickerSelector) === triggers[index]!).toBe(true);
-        expect(triggers[index]!.disabled).toBe(disabled);
+        expect(triggers[index]!.disabled).toBe(disabled && !(ownUpdate && !options.expanded && index === 1));
         expect(row.querySelector("span.cursor-default")).toBeNull();
       });
     };
-    const chooseEdit = () =>
-      Array.from(rows[1]!.querySelectorAll<HTMLButtonElement>("[role=menuitemradio], [role=option]"))
-        .find((item) => item.textContent?.startsWith("Edit"))!
-        .click();
+    const chooseEdit = () => pickLevel(rows[1]!, "Edit");
     return {
       dom,
       update,
@@ -1198,8 +1291,9 @@ describe("PermissionEditor pending controls", () => {
       errors,
       assertControls,
       chooseEdit,
-      done: () => {
+      done: async () => {
         dispose();
+        await Promise.resolve();
         prompts.confirm = originalConfirm;
         prompts.error = originalError;
         dom.cleanup();
@@ -1237,7 +1331,7 @@ describe("PermissionEditor pending controls", () => {
 
           await confirmation.settle(true);
           expect(view.writes).toEqual([`${action}:lea`]);
-          view.assertControls(true);
+          view.assertControls(true, action === "update");
           expect(view.removes[1]!.disabled).toBe(true);
           attempt();
           expect(confirmations).toHaveLength(1);
@@ -1246,7 +1340,7 @@ describe("PermissionEditor pending controls", () => {
           expect(view.triggers[2]!.disabled).toBe(false);
           expect(view.writes).toEqual([`${action}:lea`]);
         } finally {
-          view.done();
+          await view.done();
         }
       });
     }
@@ -1279,7 +1373,7 @@ describe("PermissionEditor pending controls", () => {
         await nextConfirmation.settle(false);
         expect(view.writes).toEqual([`${action}:lea`]);
       } finally {
-        view.done();
+        await view.done();
       }
     });
 
@@ -1304,7 +1398,7 @@ describe("PermissionEditor pending controls", () => {
           expect(view.writes).toEqual([]);
           expect(confirmations).toBe(1);
         } finally {
-          view.done();
+          await view.done();
         }
       });
     }
@@ -1315,9 +1409,12 @@ describe("PermissionEditor pending controls", () => {
     try {
       view.assertControls(false);
       view.chooseEdit();
-      view.assertControls(true);
+      view.assertControls(true, true);
       expect(view.rows.map((row) => row.getAttribute("aria-busy"))).toEqual([null, "true", null]);
-      expect(view.triggers.map((chip) => chip.querySelectorAll(".ti-loader-2.k2b-spin").length)).toEqual([0, 1, 0]);
+      expect(view.triggers.map((chip) => chip.querySelectorAll(".ti-loader-2.animate-spin").length)).toEqual([0, 1, 0]);
+      expect(view.triggers[1]!.textContent).toBe("Edit");
+      pickLevel(view.rows[1]!, "Manage");
+      expect(view.writes).toEqual(["update:lea"]);
       expect(view.triggers[1]!.textContent).toBe("Edit");
       view.update.resolve();
       await waitFor(() => !view.rows[1]!.hasAttribute("aria-busy"), "the saved update");
@@ -1325,7 +1422,7 @@ describe("PermissionEditor pending controls", () => {
       expect(view.triggers[1]!.textContent).toBe("Edit");
       expect(view.dom.root.querySelector(".ti-loader-2")).toBeNull();
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1334,14 +1431,14 @@ describe("PermissionEditor pending controls", () => {
     try {
       view.chooseEdit();
       expect(view.triggers[1]!.textContent).toBe("Edit");
-      view.assertControls(true);
+      view.assertControls(true, true);
       view.update.reject(new Error("Could not save access"));
       await waitFor(() => !view.rows[1]!.hasAttribute("aria-busy"), "the failed update");
       view.assertControls(false);
       expect(view.triggers[1]!.textContent).toBe("View");
       expect(view.errors).toEqual(["Could not save access"]);
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1361,11 +1458,11 @@ describe("PermissionEditor pending controls", () => {
       // Focus continues at the next row instead of falling back to the page.
       await waitFor(() => view.dom.document.activeElement === remove[2], "focus on the next row");
       for (const index of [0, 2]) {
-        expect(view.rows[index]!.querySelector("button.k2b-select-chip") === view.triggers[index]!).toBe(true);
+        expect(view.rows[index]!.querySelector('button[role="combobox"]') === view.triggers[index]!).toBe(true);
         expect(view.triggers[index]!.disabled).toBe(false);
       }
     } finally {
-      view.done();
+      await view.done();
     }
   });
 });
@@ -1417,12 +1514,10 @@ describe("PermissionEditor caller refreshes", () => {
       ),
       dom.root,
     );
-    const chips = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button.k2b-select-chip"));
+    const chips = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>('button[role="combobox"]'));
     const chooseEdit = (index = 0) => {
       const row = chips()[index]!.closest(".group\\/access-row")!;
-      Array.from(row.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
-        .find((item) => item.textContent?.startsWith("Edit"))!
-        .click();
+      pickLevel(row, "Edit");
     };
     return {
       initial,
@@ -1434,8 +1529,9 @@ describe("PermissionEditor caller refreshes", () => {
       revokeFirst: () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Remove Lea Sommer"]')!.click(),
       revokeStarted: () => typeof finishRevoke === "function",
       finishRevoke: () => finishRevoke(),
-      done: () => {
+      done: async () => {
         dispose();
+        await Promise.resolve();
         prompts.confirm = originalConfirm;
         setSystemTime();
         dom.cleanup();
@@ -1455,7 +1551,7 @@ describe("PermissionEditor caller refreshes", () => {
       originals.forEach((chip, index) => expect(view.chips()[index] === chip).toBe(true));
       expect(view.chips().map((chip) => chip.textContent)).toEqual(["View", "Edit", "Manage"]);
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1467,17 +1563,21 @@ describe("PermissionEditor caller refreshes", () => {
       const refetched = view.initial.map((entry) => ({ ...entry, permission: "write" as const }));
       view.setData(refetched);
       await Promise.resolve();
-      expect(view.chips()[0]!.disabled).toBe(true);
+      expect(view.chips()[0]!.disabled).toBe(false);
+      expect(view.chips()[0]!.closest(".group\\/access-row")!.getAttribute("aria-busy")).toBe("true");
       expect(view.chips()[1]!.textContent).toBe("View");
       view.setData([...refetched, grant("mara", { type: "user", userId: "mara" }, "read", "Mara Lind")]);
       expect(view.chips()).toHaveLength(2);
       view.finishUpdate();
-      await waitFor(() => view.chips().length === 3 && !view.chips()[0]!.disabled, "the idle merge");
+      await waitFor(
+        () => view.chips().length === 3 && !view.chips()[0]!.closest(".group\\/access-row")!.hasAttribute("aria-busy"),
+        "the idle merge",
+      );
       originals.forEach((chip, index) => expect(view.chips()[index] === chip).toBe(true));
       expect(view.chips().map((chip) => chip.textContent)).toEqual(["Edit", "Edit", "View"]);
       expect(refetched.map((entry) => entry.permission)).toEqual(["write", "write"]);
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1487,19 +1587,19 @@ describe("PermissionEditor caller refreshes", () => {
       const original = view.chips()[0]!;
       view.chooseEdit();
       expect(original.textContent).toBe("Edit");
-      expect(original.disabled).toBe(true);
+      expect(original.disabled).toBe(false);
       const refetched = view.initial.map((entry, index) => ({ ...entry, permission: index === 0 ? ("admin" as const) : entry.permission }));
       view.setData(refetched);
       expect(view.chips()[0]).toBe(original);
       expect(original.textContent).toBe("Edit");
       view.finishUpdate();
-      await waitFor(() => !original.disabled, "the update callbacks to finish");
+      await waitFor(() => !original.closest(".group\\/access-row")!.hasAttribute("aria-busy"), "the update callbacks to finish");
       expect(view.chips()[0]).toBe(original);
       expect(original.textContent).toBe("Manage");
       view.setData(refetched.map((entry) => ({ ...entry })));
       expect(original.textContent).toBe("Manage");
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1518,7 +1618,7 @@ describe("PermissionEditor caller refreshes", () => {
       expect(view.chips().map((chip) => chip.textContent)).toEqual(["Manage", "Edit"]);
       expect(view.chips()[1]).toBe(survivor);
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1527,12 +1627,12 @@ describe("PermissionEditor caller refreshes", () => {
     try {
       view.chooseEdit();
       view.finishUpdate();
-      await waitFor(() => !view.chips()[0]!.disabled, "the saved local update");
+      await waitFor(() => !view.chips()[0]!.closest(".group\\/access-row")!.hasAttribute("aria-busy"), "the saved local update");
       view.setData(view.initial.map((entry) => ({ ...entry })));
       await Promise.resolve();
       expect(view.chips()[0]!.textContent).toBe("Edit");
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1542,19 +1642,19 @@ describe("PermissionEditor caller refreshes", () => {
       const originals = view.chips();
       view.chooseEdit(1);
       view.finishUpdate();
-      await waitFor(() => !originals[1]!.disabled, "the first saved update");
+      await waitFor(() => !originals[1]!.closest(".group\\/access-row")!.hasAttribute("aria-busy"), "the first saved update");
       // This refetch started before the next update and only saw the first one.
       const stale = view.initial.map((entry, index) => ({ ...entry, permission: index === 1 ? ("write" as const) : entry.permission }));
       view.chooseEdit();
       view.finishUpdate();
-      await waitFor(() => !originals[0]!.disabled, "the second saved update");
+      await waitFor(() => !originals[0]!.closest(".group\\/access-row")!.hasAttribute("aria-busy"), "the second saved update");
       view.setData(stale);
       await Promise.resolve();
       expect(view.chips().map((chip) => chip.textContent)).toEqual(["Edit", "Edit"]);
       originals.forEach((chip, index) => expect(view.chips()[index]).toBe(chip));
       expect(stale.map((entry) => entry.permission)).toEqual(["read", "write"]);
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1572,7 +1672,7 @@ describe("PermissionEditor caller refreshes", () => {
       expect(view.chips()[0]).toBe(survivor);
       expect(survivor.textContent).toBe("Edit");
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1585,7 +1685,7 @@ describe("PermissionEditor caller refreshes", () => {
       expect(originals[0]!.isConnected).toBe(false);
       expect(view.chips()[0]).toBe(originals[1]!);
     } finally {
-      view.done();
+      await view.done();
     }
   });
 
@@ -1598,12 +1698,12 @@ describe("PermissionEditor caller refreshes", () => {
       view.setData(refetched);
       view.chooseEdit();
       view.finishUpdate();
-      await waitFor(() => !view.chips()[0]!.disabled, "the saved update after a merge");
+      await waitFor(() => !view.chips()[0]!.closest(".group\\/access-row")!.hasAttribute("aria-busy"), "the saved update after a merge");
       expect(view.chips()[0]!.textContent).toBe("Edit");
       expect(JSON.stringify(view.initial)).toBe(initialSnapshot);
       expect(JSON.stringify(refetched)).toBe(refetchedSnapshot);
     } finally {
-      view.done();
+      await view.done();
     }
   });
 });
@@ -1691,6 +1791,7 @@ describe("PermissionEditor principal names", () => {
         expect(unknown.textContent).toContain("UP");
       } finally {
         dispose();
+        await Promise.resolve();
         globalThis.fetch = originalFetch;
         dom.cleanup();
       }
@@ -1741,6 +1842,7 @@ describe("PermissionEditor principal names", () => {
         expect(dom.root.querySelector("img")?.getAttribute("src")).toContain("avatar-revision");
       } finally {
         dispose();
+        await Promise.resolve();
         globalThis.fetch = originalFetch;
         setSystemTime();
         dom.cleanup();

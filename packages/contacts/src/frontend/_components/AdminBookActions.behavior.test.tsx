@@ -26,6 +26,16 @@ const installPopoverApi = (dom: DomTestHarness) => {
   });
 };
 
+const pickLevel = (trigger: HTMLButtonElement, label: string) => {
+  trigger.click();
+  const list = trigger.ownerDocument.getElementById(trigger.getAttribute("aria-controls")!);
+  const option = Array.from(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? []).find(
+    (item) => item.querySelector(".k2b-rich-select__label")?.textContent === label,
+  );
+  if (!option) throw new Error(`Missing level: ${label}`);
+  option.click();
+};
+
 const manager = (id: string, principal: AccessEntry["principal"], displayName: string, extra: Partial<AccessEntry> = {}): AccessEntry => ({
   id,
   principal,
@@ -77,7 +87,7 @@ describe("Contacts administration access", () => {
   });
 
   for (const failReload of [false, true]) {
-    test(`a level change keeps its chip through reload${failReload ? " and offers retry after failure" : ""}`, async () => {
+    test(`a level change keeps its picker through reload${failReload ? " and offers retry after failure" : ""}`, async () => {
       const dom = createDomTestHarness();
       installPopoverApi(dom);
       let saved = manager("access-person", { type: "user", userId: "user-1" }, "Ada Lovelace", { permission: "read" });
@@ -111,21 +121,22 @@ describe("Contacts administration access", () => {
         }
         throw new Error("Timed out waiting for access reconciliation");
       };
-      const chip = () => dom.document.querySelector<HTMLButtonElement>("button.k2b-select-chip");
+      const trigger = () => dom.document.querySelector<HTMLButtonElement>('button[role="combobox"]');
       try {
         dom.root.querySelector<HTMLButtonElement>('button[aria-label="Manage permissions for Suppliers"]')!.click();
         Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
           .find((node) => node.textContent?.includes("Permissions"))!
           .click();
-        await waitFor(() => chip() !== null);
-        const original = chip()!;
-        Array.from(dom.document.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
-          .find((item) => item.textContent?.startsWith("Edit"))!
-          .click();
+        await waitFor(() => trigger() !== null);
+        const original = trigger()!;
+        pickLevel(original, "Edit");
         await waitFor(() => reads === 2);
         expect(writes).toBe(1);
-        expect(chip() === original).toBe(true);
-        expect(original.disabled).toBe(true);
+        expect(trigger() === original).toBe(true);
+        expect(original.disabled).toBe(false);
+        expect(original.querySelector(".ti-loader-2.animate-spin")).not.toBeNull();
+        pickLevel(original, "Manage");
+        expect(writes).toBe(1);
         expect(original.textContent).toBe("Edit");
         expect(original.closest(".group\\/access-row")!.getAttribute("aria-busy")).toBe("true");
         // canEdit remains true: the picker and add form survive, with the editor owning the busy state.
@@ -135,7 +146,7 @@ describe("Contacts administration access", () => {
         await waitFor(() => dom.document.querySelector(".group\\/access-row[aria-busy]") === null);
         if (failReload) {
           expect(dom.document.body.textContent).toContain("The change was saved, but contact book access could not be reloaded.");
-          expect(chip()).toBeNull();
+          expect(trigger()).toBeNull();
           expect(dom.document.querySelector(".group\\/access-row span.cursor-default")?.textContent).toBe("Edit");
           const retry = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
             (button) => button.textContent?.trim() === "Retry reload",
@@ -143,14 +154,14 @@ describe("Contacts administration access", () => {
           expect(retry).toBeDefined();
           expect(retry.closest('.k2b-inline-guidance[data-tone="warning"]')).not.toBeNull();
           retry.click();
-          await waitFor(() => chip() !== null);
+          await waitFor(() => trigger() !== null);
           expect(reads).toBe(3);
           expect(dom.document.body.textContent).not.toContain("The change was saved, but contact book access could not be reloaded.");
         } else {
-          expect(chip() === original).toBe(true);
+          expect(trigger() === original).toBe(true);
           expect(original.disabled).toBe(false);
         }
-        expect(chip()!.textContent).toBe("Edit");
+        expect(trigger()!.textContent).toBe("Edit");
       } finally {
         dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
         await Bun.sleep(10);
