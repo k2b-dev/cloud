@@ -217,12 +217,11 @@ export default function ResourceApiKeys(props: ResourceApiKeysProps) {
     if (confirmed) await revokeMutation.mutate({ id: key.id, name: key.name });
   };
 
-  // The heading is a detail panel section heading: in a detail panel the keys line up with the sections around them,
-  // and below a settings group title they read as one level down.
+  // The heading is a detail panel section heading without an icon: in a details panel the keys line up with the
+  // sections around them, and below a settings group title they read as one level down. Keys are flat rows.
   return (
     <DetailPanel.Section
       title={props.title ?? t().apiKeys}
-      icon="ti ti-key"
       description={props.description ?? t().apiKeysDescription}
       actions={
         <Button type="button" variant="secondary" size="sm" onClick={openCreate} disabled={createMutation.loading()}>
@@ -235,7 +234,7 @@ export default function ResourceApiKeys(props: ResourceApiKeysProps) {
         <div class="flex flex-col gap-2">
           <For each={keys()}>
             {(key) => (
-              <div class="group/api-key flex items-center gap-3 rounded-lg bg-zinc-50/70 p-3 dark:bg-zinc-900/35">
+              <div class="group/api-key flex items-center gap-3 py-1.5">
                 <div class="min-w-0 flex-1">
                   {/* The name and its tags wrap instead of squeezing the name to a few letters in a narrow section. */}
                   <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">

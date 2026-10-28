@@ -210,6 +210,24 @@
   white-space: pre-wrap;
 }
 
+/* An empty section in the info panel says so in one quiet line. */
+.chat-info__none {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+/* Add people: the panel's one main action, a quiet tint of the app colour. */
+.k2b-ui .k2b-button.chat-info__main {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+
+.k2b-ui .k2b-button.chat-info__main:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}
+
 /* Fifteen unchanged two-line rows fit before this personal section scrolls. */
 .chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: auto; }
 .chat-list-filters { display: flex; gap: .25rem; padding: .25rem; }

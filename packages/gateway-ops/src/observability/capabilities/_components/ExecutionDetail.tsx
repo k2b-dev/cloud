@@ -37,16 +37,28 @@ const mono = (value: string | null): JSX.Element =>
 /**
  * One dispatched capability call. The panel deliberately shows correlation,
  * timing and shape only — the store never holds the payloads, and the detail
- * must not imply that it does.
+ * must not imply that it does. It renders on the server, so its sections stay
+ * open: a collapsible section would need browser code to toggle.
  */
 export default function ExecutionDetail(props: { executions: CapabilityExecution[]; closeHref: string; dateConfig?: DateContext }) {
   const locale = useLocale()();
   const { t } = capabilityOpsMessages.resolve([locale]);
+  const label = (execution: CapabilityExecution) => `${execution.appId} · ${execution.capability}`;
+  const single = props.executions.length === 1 ? props.executions[0] : undefined;
+  const statusBadge = (execution: CapabilityExecution) => (
+    <StatusBadge tone={STATUS_TONE[execution.status]} label={statusLabel(execution.status, t)} variant="dot" />
+  );
   return (
     <aside id="capability-execution-detail" class="paper p-3" aria-label={t.detailTitle}>
       <DetailPanel>
         <DetailPanel.Header
-          title={t.detailTitle}
+          kind={
+            <>
+              <span>{t.detailTitle}</span>
+              {single ? statusBadge(single) : <StatusBadge tone="neutral" label={t.callCount({ count: props.executions.length })} />}
+            </>
+          }
+          title={single ? label(single) : t.callCount({ count: props.executions.length })}
           subtitle={t.detailHint}
           actions={
             <IconButtonLink href={props.closeHref} label={t.close}>
@@ -56,24 +68,28 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
         />
         <DetailPanel.Body>
           {props.executions.map((execution) => (
-            <DetailPanel.Section
-              title={`${execution.appId} · ${execution.capability}`}
-              icon={execution.kind === "action" ? "ti ti-bolt" : "ti ti-search"}
-              tone="neutral"
-            >
-              <div class="flex flex-wrap items-center gap-2">
-                <StatusBadge tone={STATUS_TONE[execution.status]} label={statusLabel(execution.status, t)} variant="dot" />
-                <span class="text-xs text-secondary">
-                  <i class={ORIGIN_ICON[execution.origin]} /> {execution.origin}
-                </span>
-                <span class="text-xs text-secondary">{execution.kind === "action" ? t.kindAction : t.kindQuery}</span>
-                {execution.destructive ? <StatusBadge tone="warning" label={t.destructive} variant="dot" /> : null}
-              </div>
+            <DetailPanel.Section title={single ? t.properties : label(execution)} meta={single ? undefined : statusBadge(execution)}>
               <DescriptionList
                 layout="rows"
                 size="sm"
                 items={[
-                  { term: t.requestId, description: mono(execution.requestId) },
+                  {
+                    term: t.kind,
+                    description: (
+                      <span class="flex flex-wrap items-center gap-2">
+                        {execution.kind === "action" ? t.kindAction : t.kindQuery}
+                        {execution.destructive ? <StatusBadge tone="warning" label={t.destructive} variant="dot" /> : null}
+                      </span>
+                    ),
+                  },
+                  {
+                    term: t.origin,
+                    description: (
+                      <span>
+                        <i class={ORIGIN_ICON[execution.origin]} aria-hidden="true" /> {execution.origin}
+                      </span>
+                    ),
+                  },
                   {
                     term: t.actor,
                     description: execution.actorId ? (
@@ -99,7 +115,6 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
                   { term: t.errorCode, description: execution.errorCode ? mono(execution.errorCode) : "—" },
                   { term: t.input, description: shapeText(execution.inputMeta, t, locale) },
                   { term: t.output, description: shapeText(execution.outputMeta, t, locale) },
-                  { term: t.idempotencyKey, description: mono(execution.idempotencyKey) },
                 ]}
               />
               {execution.userId && execution.origin === "assistant" ? (
@@ -109,6 +124,21 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
               ) : null}
             </DetailPanel.Section>
           ))}
+          <DetailPanel.Group title={t.moreAboutCall}>
+            <DetailPanel.Section title={t.technicalDetails}>
+              <DescriptionList
+                layout="rows"
+                size="sm"
+                items={[
+                  { term: t.requestId, description: mono(props.executions[0]?.requestId ?? null) },
+                  ...props.executions.map((execution) => ({
+                    term: single ? t.idempotencyKey : `${t.idempotencyKey} · ${label(execution)}`,
+                    description: mono(execution.idempotencyKey),
+                  })),
+                ]}
+              />
+            </DetailPanel.Section>
+          </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>
     </aside>
