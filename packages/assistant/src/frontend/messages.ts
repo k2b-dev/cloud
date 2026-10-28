@@ -4,7 +4,6 @@ export const assistantMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      openFullView: "Open full view",
       panelUnsaved: "Draft not saved yet",
       panelSaveHint: "Save drafts before closing or switching the panel. Then repeat your navigation.",
       panelSave: "Save drafts",
@@ -144,7 +143,6 @@ export const assistantMessages = i18n.define({
       messageNumber: ({ seq }: { seq: number }) => `Message ${seq}`,
     },
     de: {
-      openFullView: "In Vollansicht öffnen",
       panelUnsaved: "Entwurf noch nicht gespeichert",
       panelSaveHint: "Speichere die Entwürfe vor dem Schließen oder Wechseln des Panels. Wiederhole danach den Wechsel.",
       panelSave: "Entwürfe speichern",
