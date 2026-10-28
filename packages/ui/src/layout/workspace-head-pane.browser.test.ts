@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, pageErrors, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-ui-head-pane-"));
@@ -172,8 +172,7 @@ for (const width of [390, 768, 834]) {
   for (const island of [false, true]) {
     test(`pane-bound head: SSR and hydration at ${width}px, island=${island}`, async () => {
       const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       try {
         await page.goto(`${origin}?reader=1&nested=1${island ? "&island=1" : ""}`);
         await settled(page);
@@ -242,8 +241,7 @@ test("phone selection, Back and reload use the existing pane state", async () =>
 for (const island of [false, true]) {
   test(`phone list head without an object: a title keeps the inset, no Details, island=${island}`, async () => {
     const page = await browser!.newPage({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     const list = () =>
       page.evaluate(() => {
         const head = document.querySelector(".outer > .k2b-app-workspace__head")!;

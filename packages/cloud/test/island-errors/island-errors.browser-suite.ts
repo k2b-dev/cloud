@@ -7,7 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 // This directory is a small Cloud app: `src/` holds its islands. The server render
 // must give each island the ID that the app's own build gives it, so both use it
@@ -72,8 +72,7 @@ const open = async (locale: "en-US" | "de-DE") => {
   flakyBroken = false;
   const context = await browser.newContext({ locale, viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
-  const reported: string[] = [];
-  page.on("pageerror", (error) => reported.push(error.message));
+  const reported = pageErrors(page);
   await page.goto(server.url.href);
   // Each island marks its browser render; the server markup has no marker.
   await page.waitForFunction(() => document.querySelectorAll("[data-mounted]").length === 3);

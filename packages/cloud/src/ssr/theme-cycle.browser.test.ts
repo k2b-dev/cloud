@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 let browser: Browser;
 let script: string;
@@ -107,8 +107,7 @@ for (const viewport of [
     test(`cycling appearance keeps controls, neighbors and containers in place (${locale}, ${viewport.width}px)`, async () => {
       for (const [surface, selectors] of Object.entries(surfaces)) {
         const page = await browser.newPage({ viewport });
-        const errors: string[] = [];
-        page.on("pageerror", (error) => errors.push(error.message));
+        const errors = pageErrors(page);
         try {
           const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
 *, *::before, *::after { animation: none !important; transition: none !important; }

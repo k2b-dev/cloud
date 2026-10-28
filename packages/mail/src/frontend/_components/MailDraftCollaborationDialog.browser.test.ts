@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 
 // Whether two choice labels fit beside each other in the small dialog, or have to stack, depends on real text
 // metrics, which only a real engine has.
@@ -93,8 +93,7 @@ describe("Draft open in another tab", () => {
       test(`shows both choices whole on a ${size} in ${locale === "en" ? "English" : "German"}`, async () => {
         const page = await (await browser.newContext(context)).newPage();
         page.setDefaultTimeout(10_000);
-        const errors: string[] = [];
-        page.on("pageerror", (error) => errors.push(error.message));
+        const errors = pageErrors(page);
         try {
           await page.goto(server.url.href);
           await page.evaluate((value) => window.openDraftCollaboration(value), locale);

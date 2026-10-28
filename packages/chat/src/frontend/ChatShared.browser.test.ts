@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -29,8 +29,7 @@ const load = async (options: BrowserContextOptions, address: { chat: string; pan
   const context = await browser.newContext(options);
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(new URL(`/app/chat/c/${address.chat}${address.panel ? "?panel=info" : ""}`, harness.url).href);
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(({ props }) => window.mountChat(props, "en"), { props: harness.props(address) });
@@ -77,8 +76,7 @@ describe("Shared Cloud elements", () => {
     const context = await browser.newContext(desktop);
     const page = await context.newPage();
     page.setDefaultTimeout(5_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     // The page's clock moves only when the test moves it, so a minute passes at once.
     await page.clock.install({ time: chatTestNow });
     await page.goto(new URL(`/app/chat/c/${chat}`, harness.url).href);

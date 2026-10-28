@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { SenderIdentity } from "../../contracts";
 import type { MailboxDetails } from "../../service/mailbox-details";
 import type { MailboxDetailsHarnessOptions } from "./MailboxDetails.browser-harness";
@@ -139,8 +139,7 @@ const load = async (
   detailsPermission = options.permission ?? "write";
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // The clipboard of a headless engine depends on its permissions; the copy action only has to hand over the address.
   await page.addInitScript(() => {
     const copied: string[] = [];

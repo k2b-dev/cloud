@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, ConsoleMessage } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, pageErrors } from "../../test/browser";
 
 // Keep the same lazy label (the array is a JSX fragment) on the server and in
 // the browser: resolving its Toggle must choose the row before hydration starts.
@@ -122,13 +122,11 @@ afterAll(async () => {
 
 test("activity hydration preserves server rows and boxes, then both disclosure forms work", async () => {
   const page = await browser.newPage({ colorScheme: "light", viewport: { width: 1440, height: 800 }, reducedMotion: "reduce" });
-  const errors: string[] = [];
+  const errors = pageErrors(page);
   const onConsole = (message: ConsoleMessage) => {
     if (message.type() === "error" || /hydrat/i.test(message.text())) errors.push(message.text());
   };
-  const onError = (error: Error) => errors.push(error.message);
   page.on("console", onConsole);
-  page.on("pageerror", onError);
   try {
     await page.setContent(`<!doctype html><html lang="en"><head><style>${css}${icons}
       html { font-size:16px; } body { margin:0; padding:16px; font-family:Arial,sans-serif; line-height:1.5; }
@@ -189,7 +187,6 @@ test("activity hydration preserves server rows and boxes, then both disclosure f
     expect(errors).toEqual([]);
   } finally {
     page.off("console", onConsole);
-    page.off("pageerror", onError);
     await page.close();
   }
 });

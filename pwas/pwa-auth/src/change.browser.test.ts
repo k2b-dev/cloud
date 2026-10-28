@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../packages/ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../packages/ui/test/browser";
 import { solid } from "../scripts/build";
 import { iconStyles } from "../scripts/icons";
 
@@ -163,8 +163,7 @@ describe("device-change sheet", () => {
             try {
               const tab = await context.newPage();
               await tab.route("https://login.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
-              const errors: string[] = [];
-              tab.on("pageerror", (error) => errors.push(error.message));
+              const errors = pageErrors(tab);
               const first = await open(tab, theme, {
                 locale,
                 kind: scenario.kind,

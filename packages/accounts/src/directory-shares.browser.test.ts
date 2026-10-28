@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { appHostCss } from "../../ui/test/app-host-fixture";
-import { launchBrowser } from "../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../ui/test/browser";
 
 const ui = resolve(import.meta.dir, "../../ui");
 let browser: Awaited<ReturnType<typeof launchBrowser>>;
@@ -47,8 +47,7 @@ for (const width of [390, 768, 1440])
   for (const dark of [false, true]) {
     test(`directory access ${width} ${dark ? "dark" : "light"}: exact share, error recovery and revoke`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 900 } });
-      const errors: string[] = [];
-      tab.on("pageerror", (e) => errors.push(e.message));
+      const errors = pageErrors(tab);
       let fail = true,
         granted = false;
       const writes: unknown[] = [];

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 import type { FolderDisplay } from "../../contracts";
 import type { MailAdminFolderView } from "../../service/folders";
 import type { FolderSettingsHarnessOptions } from "./MailFolderSettings.browser-harness";
@@ -156,8 +156,7 @@ const load = async (
   stored = [];
   patchDelayMs = 0;
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((harnessOptions: FolderSettingsHarnessOptions) => window.mountFolderSettings(harnessOptions), {

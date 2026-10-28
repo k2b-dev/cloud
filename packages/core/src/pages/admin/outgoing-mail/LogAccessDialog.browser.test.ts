@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../../ui/test/browser";
 import { outgoingMailBrowserFixture } from "./OutgoingMail.browser-fixture";
 
 let browser: Browser;
@@ -26,9 +26,8 @@ test("real admin action opens the shared host; keyboard, scope, failed save and 
       hasTouch: width < 600,
     });
     const de = locale === "de";
-    const errors: string[] = [];
+    const errors = pageErrors(page);
     let release = () => {};
-    page.on("pageerror", (error) => errors.push(error.message));
     try {
       await page.goto(`${fixture.url}?locale=${locale}`);
       await page.locator('#outgoing-mail-fixture[data-ready="true"]').waitFor();

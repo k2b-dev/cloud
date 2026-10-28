@@ -91,15 +91,29 @@ describe("root test orchestration", () => {
     expect(byName.get("@k2b/pwa-auth src/status-bar.behavior.test.ts")?.command).toContain("--conditions=browser");
     expect(byName.has("@k2b/cloud-app-spaces src/frontend/[id]/_components/kanban/kanban-board.browser.test.ts")).toBeTrue();
     expect(suites.some((suite) => suite.name.includes("consent-browser.integration"))).toBeFalse();
-    // Assistant's artifact suites run nightly in Google Chrome; only the HTML app frame suites use the shared launcher.
+    // Artifact suites using the shared launcher belong in the browser gate.
     expect(suites.filter((suite) => suite.name.startsWith("@k2b/cloud-app-assistant src/artifacts/")).map((suite) => suite.name)).toEqual(
       expect.arrayContaining([
         "@k2b/cloud-app-assistant src/artifacts/chat-presentation.browser.test.ts",
+        "@k2b/cloud-app-assistant src/artifacts/context.browser.test.ts",
         "@k2b/cloud-app-assistant src/artifacts/html/html-app.browser.test.ts",
+        "@k2b/cloud-app-assistant src/artifacts/project-apps.browser.test.ts",
         "@k2b/cloud-app-assistant src/artifacts/runner.browser.test.ts",
+        "@k2b/cloud-app-assistant src/artifacts/workspace.browser.test.ts",
       ]),
     );
-    expect(byName.has("@k2b/cloud-app-assistant src/artifacts/workspace.browser.test.ts")).toBeFalse();
+    for (const file of ["context", "project-apps", "workspace"]) {
+      expect(byName.get(`@k2b/cloud-app-assistant src/artifacts/${file}.browser.test.ts`)?.command).toEqual([
+        "bun",
+        "test",
+        "--preload",
+        preload,
+        `src/artifacts/${file}.browser.test.ts`,
+      ]);
+    }
+    // The remaining direct Google Chrome suites still run only in nightly.
+    expect(byName.has("@k2b/cloud-app-assistant src/artifacts/admin.browser.test.ts")).toBeFalse();
+    expect(byName.has("@k2b/cloud-app-assistant src/artifacts/sidebar-dropdown.browser.test.ts")).toBeFalse();
     expect(byName.has("@k2b/cloud-app-assistant src/frontend/AssistantChatSidebar.browser.test.ts")).toBeTrue();
   });
 

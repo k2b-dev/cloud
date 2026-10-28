@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { ComposeFormattingWarning } from "../../contracts";
 import { renderComposeContent } from "../../service/compose-renderer";
 import type { MailComposerEditorHarnessOptions, MailComposerHarnessOptions } from "./MailComposerEditor.browser-harness";
@@ -88,8 +88,7 @@ const phone: BrowserContextOptions = { viewport: { width: 375, height: 740 }, is
 const load = async (options: { context: BrowserContextOptions; theme: "light" | "dark"; locale: "en" | "de" }) => {
   const page = await (await browser.newContext(options.context)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((harnessOptions: MailComposerEditorHarnessOptions) => window.mountComposerEditor(harnessOptions), {
@@ -101,8 +100,7 @@ const load = async (options: { context: BrowserContextOptions; theme: "light" | 
 const loadComposer = async (context: BrowserContextOptions, locale: "en" | "de") => {
   const page = await (await browser.newContext(context)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   await page.evaluate((options: MailComposerHarnessOptions) => window.mountComposer(options), {
     locale,

@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import type { BunPlugin } from "bun";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { html, installCompactShellHarness, ipadPortrait, open, phone } from "./compact-shell.browser-harness";
 
 installCompactShellHarness(launchBrowser);
@@ -88,8 +88,7 @@ describe("soft shell server, mounted and settled frames", () => {
     for (const theme of ["light", "dark"] as const) {
       test(`${device.width}×${device.height} ${theme}: ten reloads preserve every shell rectangle`, async () => {
         const { context, page } = await open(device, "/app/mail/inbox", { theme, attached: false });
-        const errors: string[] = [];
-        page.on("pageerror", (error) => errors.push(error.message));
+        const errors = pageErrors(page);
         try {
           const markup = await html("/app/mail/inbox", { theme });
           // Serve real SSR HTML. Framework asset scripts are stripped by the harness; the

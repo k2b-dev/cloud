@@ -8,7 +8,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
-import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser, pageErrors } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -325,7 +325,7 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
     if (!done) throw new Error(`${step} did not finish within ${budget / 1000} s.`);
     return done.value;
   };
-  const pageErrors: string[] = [];
+  let errors: string[] = [];
   const failedRequests: string[] = [];
   const modules = new Map<string, string>();
   const islandModule = (url: string, status: string) => {
@@ -333,7 +333,6 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
     if (path.startsWith("/_ssr/")) modules.set(path, `${status} at ${at()}`);
   };
   // The context reports its page's events, so listening needs no page, which may stall while it opens.
-  context.on("weberror", (webError) => pageErrors.push(`${at()} ${webError.error().message}`));
   context.on("request", (request) => islandModule(request.url(), "requested"));
   // A module the server answers with an error status fails to load, which the browser reports as a cancelled request.
   context.on("response", (response) => islandModule(response.url(), `answered ${response.status()}`));
@@ -341,6 +340,7 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
   let page: Page | undefined;
   try {
     page = await inTime("Opening the page", context.newPage());
+    errors = pageErrors(page);
     await inTime("Loading the page", page.goto(`${server.url}app/spaces/${spaceId}?item=Item01&case=${id}`));
     await inTime(
       "Loading its fonts",
@@ -375,7 +375,7 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
         `The detail page did not become interactive (${view.width}x${view.height}, ${scenario.locale}, failed at ${failedAt}).`,
         `  main thread: ${mainThread}`,
         `  island modules:${list([...modules].map(([path, status]) => `${path} ${status}`))}`,
-        `  page errors:${list(pageErrors)}`,
+        `  page errors:${list(errors)}`,
         `  failed requests:${list(failedRequests)}`,
         `  host since the page opened: ${hostLoad(cpuAtStart, cpuAtFailure)}`,
         `  ${error instanceof Error ? error.message : String(error)}`,

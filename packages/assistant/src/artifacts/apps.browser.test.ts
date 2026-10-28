@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { appRuntimeRoute, htmlApp } from "./html/test-assets";
 
 const frame = (page: Page) => page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");
@@ -122,8 +122,7 @@ test("Studio lists open details with all management actions; publication and ver
   try {
     const page = await browser.newPage({ viewport: { width: 1300, height: 850 } });
     page.setDefaultTimeout(15000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     await page.goto(server.url.href);
     expect(await running(page)).toBe("1");
     expect(await page.locator(".assistant-studio-card").count()).toBe(0);

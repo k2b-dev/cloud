@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { appRuntimeRoute } from "./html/test-assets";
 
 // Where things stand when a long turn ends needs a real layout engine. The harness scripts one live turn with a Studio
@@ -109,8 +109,7 @@ for (const viewport of [
     counts.presentation = 0;
     counts.start = 0;
     const page = await browser.newPage({ viewport, hasTouch: viewport.width < 600 });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     try {
       await page.goto(server.url.href);
       await page.getByText("Build an inventory dashboard").waitFor();

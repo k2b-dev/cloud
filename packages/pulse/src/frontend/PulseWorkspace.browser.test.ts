@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import {
   baseOverviewFixture,
   buildWorkspaceHarness,
@@ -90,9 +90,8 @@ describe("Pulse base overview", () => {
       const serverHtml = await renderWorkspaceSnapshot(props, "de", true);
       const tab = await browser.newPage({ viewport: view });
       tab.setDefaultTimeout(5_000);
-      const errors: string[] = [];
+      const errors = pageErrors(tab);
       const unexpectedRequests: string[] = [];
-      tab.on("pageerror", (error) => errors.push(error.message));
       // The isolated SSR document must not depend on DNS or an external fixture host.
       await tab.route("**/*", (route) => {
         unexpectedRequests.push(route.request().url());
@@ -235,8 +234,7 @@ describe("Pulse base overview", () => {
       const tab = await browser.newPage({ viewport: { width: 390, height: 844 } });
       tab.setDefaultTimeout(5_000);
       const calls: string[] = [],
-        errors: string[] = [];
-      tab.on("pageerror", (error) => errors.push(error.message));
+        errors = pageErrors(tab);
       await tab.route(`${origin}/api/**`, (route) => {
         calls.push(route.request().url());
         return route.fulfill({ status: 500, json: { code: "UNEXPECTED" } });

@@ -68,6 +68,25 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  test("pageErrors() reports ordinary uncaught application errors", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const errors = pageErrors(page);
+      await page.goto(new URL("/start", server.url).href);
+      const reported = page.waitForEvent("pageerror");
+      await page.evaluate(() => {
+        setTimeout(() => {
+          throw new Error("application failed");
+        });
+      });
+      await reported;
+      expect(errors).toEqual(["Error: application failed"]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("pageErrors() reports an unhandled rejection of a failed fetch, also during a test's navigation", async () => {
     const context = await browser.newContext();
     try {

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { MailRecipientHarnessOptions } from "./MailRecipientInput.browser-harness";
 
 // Whether the suggestion list opens at its final size without moving the field, and whether the details panel simply
@@ -132,8 +132,7 @@ const load = async (options: MailRecipientHarnessOptions & { context?: BrowserCo
   contactsRegistered = options.contacts;
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   await page.evaluate((harnessOptions: MailRecipientHarnessOptions) => window.mountMailRecipients(harnessOptions), {
     locale: options.locale,

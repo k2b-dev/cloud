@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 for (const kind of ["apps", "skills"] as const)
   test(`project ${kind} can be searched, linked and unlinked while readers have no controls`, async () => {
@@ -61,12 +61,11 @@ for (const kind of ["apps", "skills"] as const)
         );
       },
     });
-    const browser = await chromium.launch({ channel: "chrome", headless: true });
+    const browser = await launchBrowser({ headless: true });
     try {
       const page = await browser.newPage();
       page.setDefaultTimeout(15000);
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       await page.goto(new URL(`/${kind}`, server.url).href);
       await page.getByText("Bank reconciliation", { exact: true }).waitFor();
       expect(listRequests).toBe(0);

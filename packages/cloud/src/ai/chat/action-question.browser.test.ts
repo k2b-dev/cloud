@@ -8,7 +8,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 
 // The server render of the same card, for the first-frame comparison below.
 const ssrRoot = mkdtempSync(resolve(tmpdir(), "cloud-action-question-browser-"));
@@ -129,8 +129,7 @@ const open = async (view: (typeof VIEWS)[number], query: string, theme: "light" 
     timezoneId: "Europe/Berlin",
   });
   const page = await context.newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.clock.setFixedTime(new Date("2026-10-17T12:10:00Z"));
   await page.goto(`http://127.0.0.1:${server.port}/?${query}&col=${view.column}&theme=${theme}`);
   await page.locator(".k2b-chat-decision").first().waitFor();
