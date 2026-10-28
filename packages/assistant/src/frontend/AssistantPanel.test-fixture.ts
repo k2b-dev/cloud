@@ -256,7 +256,7 @@ export function assistantPanelFixture() {
         kind: "message",
         message: { role, content: [{ type: "text", text }] },
         loopId: "Turn1",
-        modelProfileId: "standard",
+        modelId: "standard",
         providerModel: "standard",
         usage: null,
         stopReason: null,
