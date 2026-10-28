@@ -1151,7 +1151,7 @@ describe("live tool disclosure stability", () => {
       kind: "message",
       message: { role: "user", content: [{ type: "text", text: "Hello" }] },
       loopId: null,
-      modelProfileId: null,
+      modelId: null,
       providerModel: null,
       usage: null,
       stopReason: null,
@@ -1167,7 +1167,7 @@ describe("live tool disclosure stability", () => {
       seq: 2,
       status: "running",
       blocks: [{ id: "text-1", kind: "text", text: "Working" }],
-      modelProfileId: null,
+      modelId: null,
     };
 
     createRoot((dispose) => {
@@ -1293,7 +1293,7 @@ describe("survey answer timeline", () => {
     seq: 1,
     status: "running",
     blocks,
-    modelProfileId: null,
+    modelId: null,
   });
   const snapshot = (messages: AiStoredMessage[], activeTurn: AiActiveTurn | null) =>
     createRoot((dispose) => {
@@ -1313,7 +1313,7 @@ describe("survey answer timeline", () => {
     kind: "message",
     message,
     loopId: "survey-turn",
-    modelProfileId: null,
+    modelId: null,
     providerModel: null,
     usage: null,
     stopReason: null,
@@ -1483,7 +1483,7 @@ describe("scheduled result presentation", () => {
       kind: "message",
       message: { role: "assistant", content: [{ type: "text", text: "The morning overview is ready." }] },
       loopId: null,
-      modelProfileId: null,
+      modelId: null,
       providerModel: null,
       usage: null,
       stopReason: null,
@@ -1517,7 +1517,7 @@ describe("scheduled result presentation", () => {
       kind: "message",
       message: { role: "assistant", content: [{ type: "text", text }] },
       loopId: null,
-      modelProfileId: null,
+      modelId: null,
       providerModel: null,
       usage: null,
       stopReason: null,
@@ -1600,7 +1600,7 @@ describe("assistant activity width", () => {
       ],
     },
     loopId: "turn-1",
-    modelProfileId: null,
+    modelId: null,
     providerModel: null,
     usage: null,
     stopReason: "stop",
@@ -1617,7 +1617,7 @@ describe("assistant activity width", () => {
         get children() {
           const items = createAiChatTimeline({
             messages: () => messages,
-            activeTurn: () => (blocks ? { turnId: "turn-1", attempt: 1, seq: 2, status: "running", blocks, modelProfileId: null } : null),
+            activeTurn: () => (blocks ? { turnId: "turn-1", attempt: 1, seq: 2, status: "running", blocks, modelId: null } : null),
           })();
           return createComponent(Chat.Timeline, { items, scrollFade: false });
         },
@@ -1728,7 +1728,7 @@ describe("turn places in the reader's language", () => {
       kind: "message",
       message,
       loopId: "turn-1",
-      modelProfileId: null,
+      modelId: null,
       providerModel: null,
       usage: null,
       stopReason: null,

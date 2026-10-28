@@ -89,3 +89,33 @@ test("provider navigation stays below the panel route, including list, info, thr
   });
   expect(parseRoute(new URL("https://cloud.test/app/chat/panel-other"))).toBeNull();
 });
+
+test("personal archive routes remain inside either full view or provider", () => {
+  for (const base of ["/app/chat", "/app/chat/panel"])
+    expect(parseRoute(new URL(`https://cloud.test${base}/archive?filter=unread`))).toEqual({
+      chatId: null,
+      view: "all",
+      threads: false,
+      messageId: null,
+      panel: null,
+    });
+});
+
+test("channel discovery restores a bounded search without selecting a conversation, also in the panel", () => {
+  for (const pathname of ["/app/chat/channels", "/app/chat/channels/", "/app/chat/panel/channels"]) {
+    const url = new URL(pathname, "https://cloud.test");
+    url.searchParams.set("q", "  Studio decisions  ");
+    url.searchParams.set("panel", "info");
+    expect(parseRoute(url)).toEqual({
+      channels: true,
+      query: "Studio decisions",
+      chatId: null,
+      view: "all",
+      threads: false,
+      messageId: null,
+      panel: null,
+    });
+    url.searchParams.set("q", "q".repeat(101));
+    expect(parseRoute(url)?.query).toHaveLength(100);
+  }
+});

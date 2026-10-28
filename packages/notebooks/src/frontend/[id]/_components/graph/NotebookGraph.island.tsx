@@ -118,6 +118,15 @@ export default function NotebookGraph(props: Props) {
   };
   const recenter = (id: string) => {
     if (!model.byId.has(id) || id === centreId()) return;
+    if (props.graph.scope) {
+      // A large notebook's graph holds only the pages around one page; the graph around the chosen one loads anew.
+      const url = writeGraphViewState(new URL(window.location.href), state());
+      url.pathname = url.pathname.replace(/\/notes\/[^/]+\/?$/, "");
+      url.searchParams.set("note", id);
+      flushUrl();
+      navigateTo(`${url.pathname}${url.search}`);
+      return;
+    }
     setCentreId(id);
     centreChanged = true;
     writeUrl();
@@ -445,6 +454,22 @@ export default function NotebookGraph(props: Props) {
             </IconButton>
           </Toolbar.Group>
         </Toolbar>
+      </Show>
+
+      {/* A large notebook draws the pages around one page; the line says so from the first paint, so nothing moves. */}
+      <Show when={props.graph.scope}>
+        {(scope) => (
+          <p class="notebook-graph__scope" role="note">
+            <i class="ti ti-zoom-in-area" aria-hidden="true" />
+            <span>
+              {t().graphScope({
+                shown: model.notes.length,
+                total: scope().total,
+                title: model.byId.get(scope().around)?.title || t().untitled,
+              })}
+            </span>
+          </p>
+        )}
       </Show>
 
       <div class="notebook-graph__body">

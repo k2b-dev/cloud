@@ -1,7 +1,8 @@
-import { SettingUnreadableError } from "@k2b/cloud/services";
+import { logger, SettingUnreadableError } from "@k2b/cloud/services";
 import { z } from "zod";
 import { app } from "../config";
 import { type ConfigurationInput, ConfigurationSchema, type PublicConfiguration } from "../contracts";
+import { requestHomeReconciliation } from "../maintenance-schedule";
 import { FilesError } from "./errors";
 import { validateConfiguration } from "./paths";
 
@@ -20,7 +21,7 @@ const defaults = {
     groups: "groups",
     archive: "archive",
   },
-  freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+  freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 export async function readConfiguration(): Promise<PublicConfiguration & { token: string }> {
@@ -49,7 +50,13 @@ export async function writeConfiguration(input: ConfigurationInput): Promise<voi
     if (error instanceof SettingUnreadableError) throw new FilesError("configuration_unreadable", 409);
     throw error;
   }
+  await requestHomeReconciliation().catch((error) => {
+    logger("filesv2:maintenance").warn("Home reconciliation request failed; periodic reconciliation will retry", { error });
+  });
 }
 export async function resetConfiguration(): Promise<void> {
   await app.settings.remove("filesv2.configuration");
+  await requestHomeReconciliation().catch((error) => {
+    logger("filesv2:maintenance").warn("Home reconciliation request failed; periodic reconciliation will retry", { error });
+  });
 }

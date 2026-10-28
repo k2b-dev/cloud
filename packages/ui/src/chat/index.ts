@@ -20,10 +20,12 @@ export type {
   ChatCommandScope,
   ChatCommandSearch,
   ChatCommandSection,
+  ChatComposerPeople,
   ChatComposerProps,
   ChatComposerReply,
   ChatFileSelection,
   ChatPasteHandler,
+  ChatPersonSuggestion,
 } from "./ChatComposer";
 export type {
   ChatDecisionProps,

@@ -1,0 +1,6 @@
+### Pairing survives incidental gestures and uncertain requests
+
+- **What happened:** Outside taps, Escape and downward gestures could dismiss enrollment. An interrupted claim could lose its saved enrollment key, while loading-state assertions and timed interaction checks could race their fixtures.
+- **Root cause:** Multi-step enrollment inherited incidental dialog dismissal, uncertain requests discarded recoverable state, and test setup shared the interaction's timing window.
+- **Error class:** Enrollment state is discarded before its outcome is known; asynchronous interaction tests depend on host timing.
+- **Guard:** Cloud Login's `pairing.browser.test.ts` checks outside taps, Escape, dragging, interrupted claims and resumption in Chromium and WebKit. The existing `dialogCore` option `cancelBehavior: "ignore"` keeps explicit close and cancel controls. Interrupted claims retain their enrollment key and read status before retrying; only `pending` allows a new claim. The status-bar test closes pairing explicitly. `Clouds.behavior.test.tsx` holds mocked requests with a controlled promise until after loading assertions ([#1780](https://github.com/k2b-dev/cloud/issues/1780)). `Approvals.browser.test.ts` pauses the browser clock before rendering and advances its interaction guard explicitly ([#1785](https://github.com/k2b-dev/cloud/issues/1785)).

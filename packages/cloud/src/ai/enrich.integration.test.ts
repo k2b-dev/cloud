@@ -32,7 +32,7 @@ const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "non
 const seedUserMessage = async (conversationId: string, text: string) => {
   await aiConversations.submitChatTurn({
     conversationId,
-    modelProfileId: "test-model",
+    modelId: "test-model",
     runConfig,
     userMessage: userMessage(text),
   });

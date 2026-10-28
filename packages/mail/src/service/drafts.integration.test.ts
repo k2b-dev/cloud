@@ -6,7 +6,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { reviewDraftComposeSafety, validateDraftComposeSafety } from "./compose-safety";
@@ -53,7 +52,6 @@ suite("mail draft limits", () => {
   const fillerHash = `${suffix}${"d".repeat(64)}`.slice(0, 64);
 
   beforeAll(async () => {
-    await migrate();
     const [ownerRow] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail)
       VALUES (${`draft-limit-owner-${suffix}`}, 'local', 'user', 'Ada Owner', ${`draft-limit-${suffix}@example.test`})

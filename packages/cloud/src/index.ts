@@ -39,6 +39,7 @@ export { type AppSkillDefinition, skill } from "./ai/app-skills";
 export type { AppAccessDeclaration, AppAccessRule, FixedAppAccessRule } from "./contracts/app-access";
 export { appAccess } from "./contracts/app-access";
 export { defineCapabilities } from "./contracts/capabilities";
+export type { AppInstallable } from "./contracts/installable";
 export type {
   AnyBoundNotificationDefinition,
   BoundNotificationDefinition,

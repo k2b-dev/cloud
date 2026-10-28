@@ -1,0 +1,1 @@
+| A shadow follows the inset instead of the frame | Attaching separation paint to an inset scrollport cuts its top short; fading to zero removes the bottom cue. | Test: `detail-float.browser.test.ts` samples the actual column edge at the workspace top and bottom, checks a visible softer end, and preserves geometry through close, resize, drawer, and phone modes. |

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { Field, GridFile } from "../../../service";
@@ -78,7 +77,7 @@ describe("RecordFileField", () => {
     );
   });
 
-  test("renders every image as a small preview without removing the file row", () => {
+  test("lists every file in one list with an image preview and keeps write actions to writers", () => {
     const html = renderToString(() =>
       createComponent(RecordFileField, {
         tableId: field.tableId,
@@ -90,18 +89,28 @@ describe("RecordFileField", () => {
       }),
     );
 
-    expect(html).toContain(`aria-label="Preview ${image.filename}"`);
-    expect(html).toContain("grids-record-file-thumbnail");
+    expect(html).toContain("k2b-file-grid");
     expect(html).toContain(`src="/api/files/${field.id}/${image.id}/content?item_id=item-1&amp;inline=true"`);
     expect(html.match(/<img/g)).toHaveLength(2);
     expect(html).toContain(image.filename);
+    expect(html).toContain(`aria-label="Download ${image.filename}"`);
     expect(html).not.toContain(`aria-label="Replace ${image.filename}"`);
     expect(html).not.toContain(`aria-label="Remove ${image.filename} from record"`);
   });
 
-  test("hard-limits thumbnails independently of generated utility coverage", async () => {
-    const css = await Bun.file(resolve(import.meta.dir, "../../../styles/app.css")).text();
+  test("says quietly that a field has no files yet", () => {
+    const html = renderToString(() =>
+      createComponent(RecordFileField, {
+        tableId: field.tableId,
+        recordId: "44444444-4444-4444-8444-444444444444",
+        field,
+        canWrite: false,
+        initialFiles: [],
+        endpoint: `/api/files/${field.id}?item_id=item-1`,
+      }),
+    );
 
-    expect(css).toMatch(/\.grids-record-file-thumbnail\s*\{[^}]*width:\s*5rem;[^}]*height:\s*5rem;[^}]*flex:\s*0 0 5rem;/);
+    expect(html).toContain("No files yet.");
+    expect(html).not.toContain("k2b-file-grid");
   });
 });

@@ -4,10 +4,11 @@ import type { CloudResourceRef } from "../contracts";
 import CloudResourceSearch from "./CloudResourceSearch";
 import { resourceSearchDialogOptions } from "./resource-search-dialog";
 import { resourceSearchMessages } from "./resource-search-messages";
+import type { SearchScope } from "./search-bridge";
 
 export type CloudResourcePickerItem = SearchItem;
-/** Narrows the search on the server to one app and, optionally, one of its search tags; shown as the removable chip. */
-export type CloudResourcePickerScope = { appId: string; tag?: string; label: string; icon?: string };
+/** Narrows the server search to an app/tag or resource context; shown as a removable chip. */
+export type CloudResourcePickerScope = SearchScope;
 export type CloudResourcePickerOptions = {
   title?: string;
   placeholder?: string;

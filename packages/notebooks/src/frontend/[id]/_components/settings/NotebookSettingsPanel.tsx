@@ -56,7 +56,6 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
           <SettingsModal.Tab id="general" title={t().general} icon="ti ti-id" description={t().generalDescription}>
             <GeneralSection
               notebook={notebook()}
-              tree={props.tree}
               canWrite={props.canWrite}
               dateConfig={props.dateConfig}
               onNotebookChange={setNotebook}
