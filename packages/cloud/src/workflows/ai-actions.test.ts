@@ -3,6 +3,8 @@ import type { AiResolvedModel } from "../ai/types";
 import { WorkflowAiAdmissionError } from "./ai/policy";
 import type { WorkflowAiTask } from "./ai/types";
 import { AI_WORKFLOW_ACTIONS, runWorkflowAiAction, workflowAiActionCost } from "./ai-actions";
+import type { WorkflowDiagnostic, WorkflowFieldSchema, WorkflowJsonValue } from "./contracts";
+import { validateWorkflowField } from "./language/schema";
 
 const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   id: "00000000-0000-0000-0000-000000000001",
@@ -13,7 +15,7 @@ const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   kind: "classify",
   request: { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"] },
   inputHash: "a".repeat(64),
-  modelProfileId: "workflow-model",
+  modelId: "workflow-model",
   status: "queued",
   output: null,
   usage: null,
@@ -43,16 +45,16 @@ describe("shared workflow AI actions", () => {
     const created = task();
     const result = await runWorkflowAiAction(
       context,
-      { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"], modelProfileId: "override" },
+      { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"], model: { id: "override" } },
       {
         getByEffectKey: async () => null,
         create: async (input) => {
-          expect(input.modelProfileId).toBe("workflow-model");
+          expect(input.modelId).toBe("workflow-model");
           return { task: created, created: true };
         },
         exists: async () => false,
         resolveModel: async (requested) => {
-          expect(requested).toBe("override");
+          expect(requested).toEqual({ id: "override" });
           return resolved;
         },
         submit: async (id) => {
@@ -139,3 +141,29 @@ for (const [code, retryable] of [
     expect(result).toMatchObject({ state: "failed", code, retryable });
   });
 }
+
+test("workflow validation rejects classification and enum choices longer than the task contract", () => {
+  for (const length of [200, 201]) {
+    const choice = "x".repeat(length);
+    const cases: Array<{ config: WorkflowFieldSchema; value: WorkflowJsonValue }> = [
+      {
+        config: AI_WORKFLOW_ACTIONS.aiClassify.config,
+        value: { input: "mail", prompt: "Choose", choices: ["other", choice], saveAs: "result" },
+      },
+      {
+        config: AI_WORKFLOW_ACTIONS.aiExtractData.config,
+        value: {
+          input: "mail",
+          prompt: "Extract",
+          fields: [{ name: "category", type: "enum", description: "Category", choices: [choice] }],
+          saveAs: "result",
+        },
+      },
+    ];
+    for (const { config, value } of cases) {
+      const diagnostics: WorkflowDiagnostic[] = [];
+      validateWorkflowField(value, config, [], {}, diagnostics);
+      expect(diagnostics.length === 0).toBe(length === 200);
+    }
+  }
+});

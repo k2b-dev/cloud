@@ -107,11 +107,13 @@ import {
   savedConversationViewFilterSchema,
   type UnsubscribeMailingListResult,
   type WorkflowEffectBudget,
+  type WorkflowTryResult,
   type WorkflowValidation,
 } from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
 import { forwardMessageBody } from "./frontend/_components/mail-compose-derivation";
 import { incomingAutomationIssues } from "./incoming-automation-issues";
+import { LARGE_MAIL_VIEWS, type MailViewPreference, PHONE_MAIL_VIEWS } from "./mail-view-preference";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
 import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
 import type {
@@ -2938,6 +2940,7 @@ const specialistCommands = {
     repair: "Repair mailbox folder and message hydration state",
     automation: "Create, inspect, and run guided incoming automations",
     "saved-view": "Create and manage saved conversation views",
+    view: "Choose how a mailbox looks on large screens and phones",
     scheduled: "Inspect and cancel scheduled message delivery",
     sender: "Preview and update messages from one sender or domain",
     subscription: "Inspect and manage mailing-list subscriptions",
@@ -3085,6 +3088,35 @@ const specialistCommands = {
         const restored = await readApi<Mailbox>(ctx, `/mailboxes/${mailboxId}/restore`, { method: "POST" });
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", restored))) return;
         ctx.print(`Restored ${restored.name} in paused state. Verify the provider, then explicitly resume synchronization.`);
+      },
+    }),
+    command("view get", {
+      summary: "Read your view for a mailbox on large screens and phones",
+      args: { mailbox: arg.required({ description: "Mailbox id or exact name" }) },
+      run: async ({ ctx, args }) => {
+        const mailbox = await resolveMailbox(ctx, args.mailbox);
+        const view = await readApi<MailViewPreference>(ctx, `/mailboxes/${mailbox.id}/view`);
+        if (printStructured(ctx, view)) return;
+        ctx.print(`Large: ${view.large} · Phone: ${view.phone}`);
+      },
+    }),
+    command("view set", {
+      summary: "Choose your view for a mailbox; omitted device classes keep their value",
+      args: { mailbox: arg.required({ description: "Mailbox id or exact name" }) },
+      flags: {
+        large: flag.enum(LARGE_MAIL_VIEWS, { description: "Large-screen view" }),
+        phone: flag.enum(PHONE_MAIL_VIEWS, { description: "Phone view" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (!flags.large && !flags.phone) throw new Error("Pass --large, --phone, or both.");
+        const mailbox = await resolveMailbox(ctx, args.mailbox);
+        const view = await readApi<MailViewPreference>(
+          ctx,
+          `/mailboxes/${mailbox.id}/view`,
+          jsonRequest("PATCH", { large: flags.large, phone: flags.phone }),
+        );
+        if (printStructured(ctx, view)) return;
+        ctx.print(`Large: ${view.large} · Phone: ${view.phone}`);
       },
     }),
     command("mailbox preferences", {
@@ -7652,6 +7684,54 @@ const specialistCommands = {
             ctx.print(`${diagnostic.severity}: ${diagnostic.path}: ${diagnostic.message}`);
           }
         }
+      },
+    }),
+    command("workflow try", {
+      summary: "Try a workflow on recent messages without making changes or calling AI",
+      args: { workflowId: arg.optional({ description: "Stable workflow id (omit with --file)" }) },
+      flags: {
+        ...mailboxFlag,
+        last: flag.int({ min: 1, max: 100, default: 50, description: "Number of recent messages (1–100)" }),
+        file: flag.string({ description: "Unsaved YAML file (mailbox admin)" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (Boolean(args.workflowId) === Boolean(flags.file)) throw new Error("Provide a workflow id or --file, exclusively.");
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const definition = flags.file ? { source: await Bun.file(flags.file).text() } : { workflowId: args.workflowId };
+        let merged: WorkflowTryResult | undefined;
+        let cursor: string | null = null;
+        do {
+          const result: WorkflowTryResult = await readApi<WorkflowTryResult>(
+            ctx,
+            `/mailboxes/${mailbox.id}/workflows/try`,
+            jsonRequest("POST", { ...definition, last: flags.last, cursor, batch: 25 }),
+          );
+          if (merged && result.checked <= merged.checked) throw new Error("Workflow preview did not advance; run it again.");
+          merged = merged
+            ? {
+                ...result,
+                items: [...merged.items, ...result.items],
+                aiCalls: {
+                  min: merged.aiCalls.min + result.aiCalls.min,
+                  max: merged.aiCalls.max + result.aiCalls.max,
+                },
+              }
+            : result;
+          cursor = result.cursor;
+        } while (cursor !== null);
+        if (printStructured(ctx, merged)) return;
+        const count = (outcome: string) => merged.items.filter((item) => item.outcome === outcome).length;
+        const calls =
+          merged.aiCalls.min === merged.aiCalls.max ? String(merged.aiCalls.min) : `${merged.aiCalls.min}–${merged.aiCalls.max}`;
+        ctx.print(
+          `${count("match")} match · ${count("skipped")} skipped · ${count("none")} none · ${calls} AI calls would be needed, none made`,
+        );
+        for (const item of merged.items)
+          ctx.print(
+            `${item.outcome} · ${item.from.name ?? item.from.email} · ${item.subject} · ${item.messageId}${
+              item.problems.length ? ` · ${item.problems.map((problem) => problem.code).join(", ")}` : ""
+            }`,
+          );
       },
     }),
     command("workflow list", {

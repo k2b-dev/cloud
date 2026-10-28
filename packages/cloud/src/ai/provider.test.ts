@@ -1,16 +1,27 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { ProviderEvent } from "@k2b/nessi";
 import { z } from "zod";
 import { createAiProvider } from "./provider";
+import * as connections from "./provider-connections";
 import type { AiModelProfile } from "./types";
 
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
+
 const profile = (overrides: Partial<AiModelProfile>): AiModelProfile => ({
+  modelId: "model-1",
+  providerId: "model-1",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "model-1",
   label: "Model 1",
   provider: "openrouter",
   model: "openai/gpt-4.1-mini",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "hosted",
   ...overrides,
 });

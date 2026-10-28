@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
-import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-import { migrate } from "../migrate";
+import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { baseStore } from "../store/base-store";
 import { applyAlertEvaluation, claimDueAlert, evaluateDueAlerts, releaseCancelledAlert } from "./alert-evaluator";
@@ -13,12 +12,9 @@ import { createSource, removeSource, updateSource } from "./source-management";
 import * as sqlService from "./sql-service";
 
 suiteFor("database")("alert rules preserve rights, revisions and bounded control data", () => {
-  let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
+  let database: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
   beforeAll(async () => {
-    database = await useFreshDatabase("pulse_alert_rules");
-    const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
-    await runCoreSetup();
-    await migrate("Europe/Berlin");
+    database = await useMigratedDatabase("pulse_alert_rules");
   }, 30_000);
   afterAll(async () => {
     if (database) {

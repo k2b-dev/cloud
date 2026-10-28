@@ -2,7 +2,7 @@ import { afterAll } from "bun:test";
 import { bindProcessApplicationId } from "../../packages/cloud/src/_internal/process-identity";
 import { getProcessSync, startProcessSync } from "../../packages/cloud/src/_internal/process-sync";
 import { createIdentityPublicRoutes, initializeIdentityAuthority } from "../../packages/cloud/src/services/identity";
-import { requireInfra, testInfra } from "./test-infra";
+import { requireInfra, testInfra, usesMigratedDatabase } from "./test-infra";
 
 /**
  * Starts a real Core identity authority (identity routes, OAuth issuance, process
@@ -17,13 +17,15 @@ type OAuthModule = { default: Routes };
 
 if (testInfra.database && testInfra.nats) {
   await requireInfra("database", "nats");
-  // Package-owned integration preloads can supply a fresh disposable database.
-  const setupPath = "../../packages/core/src/runtime-helpers";
-  const { runCoreSetup } = (await import(setupPath)) as { runCoreSetup: () => Promise<void> };
-  await runCoreSetup();
-  const oauthMigrationPath = "../../packages/oauth/src/migrate";
-  const { migrate } = (await import(oauthMigrationPath)) as { migrate: () => Promise<void> };
-  await migrate();
+  // A migrated clone already contains Core and OAuth; empty/shared fixtures retain setup.
+  if (!usesMigratedDatabase()) {
+    const setupPath = "../../packages/core/src/runtime-helpers";
+    const { runCoreSetup } = (await import(setupPath)) as { runCoreSetup: () => Promise<void> };
+    await runCoreSetup();
+    const oauthMigrationPath = "../../packages/oauth/src/migrate";
+    const { migrate } = (await import(oauthMigrationPath)) as { migrate: () => Promise<void> };
+    await migrate();
+  }
   // Loaded through computed specifiers so a test in one package does not pull the
   // Core and OAuth programs into that package's typecheck.
   const issuancePath = "../../packages/core/src/api/identity-oauth-issuance";

@@ -102,6 +102,7 @@ The heading and list shortcuts use the physical digit keys on every keyboard lay
 :::reference
 - `/` at a line start or after whitespace opens the insert menu. Type a command name to filter it.
 - `[[` opens note suggestions. Choosing a note replaces the typed brackets with a Markdown link to it.
+- Pasting a link to something in this Cloud, for example from the address bar or **Copy Cloud ID**, turns it into a link with its title once it is recognized; a note becomes a note link. Links you may not open, links in code, and pastes with **Ctrl+Shift+V** (**⌘+Shift+V** on a Mac) stay as pasted. Undo brings back the plain link.
 - `![[` opens attachment suggestions. Choosing an image embeds it; choosing another file inserts a download link.
 - `==text==` highlights text. Highlight stays within one line.
 - On touch screens, **Undo** and **Redo** sit at the start of the toolbar.
