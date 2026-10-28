@@ -1,6 +1,13 @@
-import { AdminLayout, getDisplayRuntimeContext } from "@k2b/cloud/ssr";
-import SettingsSaveStatus from "@k2b/cloud/ssr/SettingsSaveStatus.island";
-import { AppWorkspace, StatusBadge, ViewTabs } from "@k2b/ui";
+import {
+  AdminArea,
+  type AdminAreaGroup,
+  type AdminAreaItem,
+  AdminAreaPane,
+  AdminAreaSaveStatusFoot,
+  AdminAreaSaveStatusHead,
+  getDisplayRuntimeContext,
+} from "@k2b/cloud/ssr";
+import { ViewTabs } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { buildGatewayHealth, type GatewayHealth } from "../../health";
 import { type AreaMessages, areaMessages } from "./area-messages";
@@ -105,10 +112,8 @@ export const readAttention = (): Promise<Attention> => loadAttention().catch(() 
 
 export const areaText = (locale: string): AreaMessages => areaMessages.resolve([locale]).t;
 
-type ContributedLink = { href: string; label: string; icon: string; app: string };
-
 /** Links other apps the person may use add to the area with `adminNav[].section: "observability"`. Gateway Ops owns the sections above. */
-const contributedLinks = (c: AreaProps["c"]): ContributedLink[] =>
+const contributedLinks = (c: AreaProps["c"]): AdminAreaItem[] =>
   getDisplayRuntimeContext(c).apps.flatMap((app) =>
     app.id === "gateway-ops"
       ? []
@@ -117,53 +122,18 @@ const contributedLinks = (c: AreaProps["c"]): ContributedLink[] =>
           .flatMap((group) =>
             group.links
               .filter((link) => link.href.startsWith("/admin/"))
-              .map((link) => ({ href: link.href, label: link.label, icon: link.icon.replace(/^ti\s+/, ""), app: app.name })),
+              .map((link) => ({
+                id: link.href,
+                href: link.href,
+                label: link.label,
+                icon: `ti ${link.icon.replace(/^ti\s+/, "")}`,
+                description: app.name,
+              })),
           ),
   );
 
-function AreaColumn(props: { t: AreaMessages; section: ObservabilitySection; attention: Attention; contributed: ContributedLink[] }) {
-  return (
-    <>
-      {GROUPS.map((group) => (
-        <AppWorkspace.SidebarSection title={group.title ? (props.t[group.title] as string) : undefined}>
-          {group.sections.map((section) => {
-            const mark = props.attention[section];
-            return (
-              <AppWorkspace.SidebarItem
-                href={OBSERVABILITY_SECTION_HREF[section]}
-                navigation="document"
-                active={props.section === section}
-                icon={SECTION_ICON[section]}
-                meta={
-                  mark ? (
-                    <span title={props.t.needsAttention}>
-                      <StatusBadge tone={mark} variant="dot" label="" />
-                      <span class="sr-only">{props.t.needsAttention}</span>
-                    </span>
-                  ) : undefined
-                }
-              >
-                {props.t[section]}
-              </AppWorkspace.SidebarItem>
-            );
-          })}
-        </AppWorkspace.SidebarSection>
-      ))}
-      {props.contributed.length > 0 ? (
-        <AppWorkspace.SidebarSection title={props.t.fromApps}>
-          {props.contributed.map((link) => (
-            <AppWorkspace.SidebarItem href={link.href} navigation="document" icon={`ti ${link.icon}`} description={link.app}>
-              {link.label}
-            </AppWorkspace.SidebarItem>
-          ))}
-        </AppWorkspace.SidebarSection>
-      ) : null}
-    </>
-  );
-}
-
 type AreaProps = {
-  c: Parameters<typeof AdminLayout>[0]["c"];
+  c: Parameters<typeof AdminArea>[0]["c"];
   locale: string;
   /** The open section. */
   section: ObservabilitySection;
@@ -174,74 +144,42 @@ type AreaProps = {
   children: JSX.Element;
 };
 
-/** The save status in a level head. A phone has no room there; it shows the status at the bottom of the level instead. */
-export const SaveStatusHead = () => (
-  <div class="hidden md:block">
-    <SettingsSaveStatus />
-  </div>
-);
-export const SaveStatusFoot = () => (
-  <div class="sticky bottom-0 flex justify-end bg-(--k2b-surface) px-4 py-3 md:hidden">
-    <SettingsSaveStatus />
-  </div>
-);
-
-/** A section that fills the width beside the first column, such as a dashboard. */
-export function ObservabilityPane(props: {
-  label: string;
-  description?: JSX.Element;
-  /** Before the title, such as the step back from one job source to all sources. */
-  lead?: JSX.Element;
-  actions?: JSX.Element;
-  /** A form that saves with a button: its status, Discard and Save sit in the head, on a phone at the bottom. */
-  saveStatus?: boolean;
-  /** With a detail level beside it: the address of this level without the selection. */
-  href?: string;
-  /** A wide list declares the room it needs; the first column then gives way before the list is squeezed. */
-  minSize?: number;
-  children: JSX.Element;
-}) {
-  return (
-    <AppWorkspace.MainPane
-      id="section"
-      label={props.label}
-      description={props.description}
-      lead={props.lead}
-      actions={props.saveStatus ? <SaveStatusHead /> : props.actions}
-      href={props.href}
-      minSize={props.minSize}
-      defaultSize={props.minSize}
-    >
-      <div class="app-rows px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">{props.children}</div>
-      {props.saveStatus ? <SaveStatusFoot /> : null}
-    </AppWorkspace.MainPane>
-  );
-}
+export { AdminAreaSaveStatusFoot as SaveStatusFoot, AdminAreaSaveStatusHead as SaveStatusHead, AdminAreaPane as ObservabilityPane };
 
 /**
- * The Observability area: the admin layout with the area's sections as the first column and the open section beside
- * it. Pages own their panes; a list adds a `minSize` so a wide list pushes the first column aside.
+ * The Observability area on the shared admin area frame: its sections as the first column with attention marks, other
+ * apps' links under "From apps", and the open section beside it.
  */
 export function ObservabilityArea(props: AreaProps) {
   const t = areaText(props.locale);
+  const contributed = contributedLinks(props.c);
+  const groups: AdminAreaGroup[] = [
+    ...GROUPS.map((group) => ({
+      title: group.title ? (t[group.title] as string) : undefined,
+      items: group.sections.map((section) => ({
+        id: section,
+        label: t[section],
+        href: OBSERVABILITY_SECTION_HREF[section],
+        icon: SECTION_ICON[section],
+        mark: props.attention[section],
+      })),
+    })),
+    ...(contributed.length > 0 ? [{ title: t.fromApps, items: contributed }] : []),
+  ];
   return (
-    <AdminLayout c={props.c} title={t[props.section]} ownMain>
-      <AppWorkspace.Main level={props.level ?? "section"}>
-        <AppWorkspace.MainPane
-          id="area"
-          label={t.area}
-          href={OBSERVABILITY_SECTION_HREF.home}
-          defaultSize={248}
-          minSize={232}
-          maxSize={320}
-        >
-          <nav aria-label={t.sections}>
-            <AreaColumn t={t} section={props.section} attention={props.attention} contributed={contributedLinks(props.c)} />
-          </nav>
-        </AppWorkspace.MainPane>
-        {props.children}
-      </AppWorkspace.Main>
-    </AdminLayout>
+    <AdminArea
+      c={props.c}
+      label={t.area}
+      sectionsLabel={t.sections}
+      href={OBSERVABILITY_SECTION_HREF.home}
+      groups={groups}
+      current={props.section}
+      title={t[props.section]}
+      markLabel={t.needsAttention}
+      level={props.level}
+    >
+      {props.children}
+    </AdminArea>
   );
 }
 
