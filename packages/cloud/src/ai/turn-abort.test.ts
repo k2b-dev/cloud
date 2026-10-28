@@ -44,7 +44,7 @@ test("foreground abort preserves the captured attempt and next wire sequence", a
         conversationId: input.conversationId,
         status: "running",
         attempt: 3,
-        modelProfileId: "test",
+        modelId: "test",
         createdAt: "2026-04-07T09:00:00.000Z",
         completedAt: null,
         error: null,

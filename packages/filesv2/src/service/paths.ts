@@ -1,4 +1,4 @@
-import type { Configuration } from "../contracts";
+import type { Configuration, DirectoryTarget } from "../contracts";
 import { FilesError } from "./errors";
 
 export function relativePath(value: string, allowEmpty = true): string {
@@ -40,3 +40,15 @@ export function validateConfiguration(config: Configuration): void {
   if (config.cloud.enabled && config.freeipa.enabled && config.cloud.root === config.freeipa.root)
     throw new FilesError("overlapping_roots");
 }
+
+export const strictName = (value: string) => {
+  const name = relativePath(value, false);
+  if (name.includes("/")) throw new FilesError("invalid_path");
+  return name;
+};
+export const basePath = (config: Configuration, input: DirectoryTarget) =>
+  joinPath(
+    config[input.area].prefix,
+    input.kind === "users" ? config[input.area].homes : config[input.area].groups,
+    strictName(input.name),
+  );

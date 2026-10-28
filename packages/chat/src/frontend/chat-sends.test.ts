@@ -4,6 +4,10 @@ import { MessageViewSchema } from "../service/contracts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 
 const message = MessageViewSchema.parse({
+  reactions: [],
+  mentions: [],
+  refs: [],
+  attachments: [],
   thread: null,
   replyTo: null,
   id: "message001",
@@ -320,4 +324,64 @@ test("send API passes the gateway deadline signal and rejects when it aborts", a
     globalThis.fetch = originalFetch;
     AbortSignal.timeout = originalTimeout;
   }
+});
+
+test("a send carries its uploaded files from the first frame and posts only their IDs", async () => {
+  const posted: unknown[] = [];
+  const box = createChatSends({
+    post: async (_conversationId, input) => {
+      posted.push(input);
+      return message;
+    },
+    newClientId: () => "client-1",
+  });
+  const photo = {
+    id: "Ph0t01",
+    name: "lager.jpg",
+    mimeType: "image/jpeg",
+    size: 2048,
+    kind: "image" as const,
+    width: 800,
+    height: 600,
+    href: "/api/chat/conversations/abcdef/attachments/Ph0t01",
+  };
+  const entry = box.send("abcdef", "", { attachments: [photo] });
+  expect(entry.attachments).toEqual([photo]);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(posted).toEqual([{ clientId: "client-1", body: "", attachments: ["Ph0t01"] }]);
+});
+
+test("queued sends and retries retain an immutable snapshot of UTF-16 mention ranges", async () => {
+  const calls: unknown[] = [];
+  let attempt = 0;
+  const controller = createChatSends({
+    post: async (_id, input) => {
+      calls.push(structuredClone(input));
+      if (++attempt === 1) {
+        input.mentions![0]!.principal.id = "33333333-3333-4333-8333-333333333333";
+        throw new Error("offline");
+      }
+      return message;
+    },
+    newClientId: () => "mention-retry",
+    now: () => new Date(message.createdAt),
+  });
+  const mentions = [{ start: 3, end: 7, principal: { type: "user" as const, id: message.author.id } }];
+  const send = controller.send("abcdef", "😀 Mara", { mentions });
+  mentions[0]!.start = 0;
+  mentions[0]!.principal.id = "22222222-2222-4222-8222-222222222222";
+  mentions.length = 0;
+  await Bun.sleep(0);
+  expect(send.status).toBe("failed");
+  controller.retry(send.clientId);
+  await Bun.sleep(0);
+  const expected = {
+    clientId: "mention-retry",
+    body: "😀 Mara",
+    mentions: [{ start: 3, end: 7, principal: { type: "user" as const, id: message.author.id } }],
+  };
+  expect(calls).toEqual([expected, expected]);
+  expect(send.status).toBe("sent");
+  controller.dispose();
 });

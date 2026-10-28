@@ -6,7 +6,6 @@ import {
   DetailPanel,
   IconButtonLink,
   isStructuredDataValue,
-  Placeholder,
   StructuredDataPreview,
   type StructuredDataValue,
   useLocale,
@@ -25,6 +24,7 @@ export type RunDetailPanelProps = {
   dateConfig: DateContext;
 };
 
+/** Renders on the server, so its sections stay open: a collapsible section would need browser code to toggle. */
 export default function RunDetailPanel(props: RunDetailPanelProps) {
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
@@ -32,7 +32,12 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
     <aside class="paper min-h-0 p-3" aria-label={t.runDetail}>
       <DetailPanel>
         <DetailPanel.Header
-          icon="ti ti-activity"
+          kind={
+            <>
+              <span>{t.run}</span>
+              {props.status}
+            </>
+          }
           title={props.span.name}
           subtitle={props.span.spanKey ?? props.span.spanId}
           actions={
@@ -43,7 +48,7 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
         />
 
         <DetailPanel.Body>
-          <DetailPanel.Summary title={t.status}>
+          <DetailPanel.Section title={t.properties}>
             <DescriptionList
               layout="rows"
               size="sm"
@@ -53,7 +58,6 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
                   description: <span class="break-all font-mono">{props.span.source}</span>,
                 },
                 { term: t.type, description: props.span.category },
-                { term: t.status, description: props.status },
                 { term: t.started, description: formatDateTime(props.span.startedAt, props.dateConfig) },
                 { term: t.ended, description: formatDateTime(props.span.endedAt, props.dateConfig) },
                 { term: t.duration, description: formatDurationMs(props.span.durationMs, { locale: locale() }) },
@@ -68,26 +72,11 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
                   : []),
               ]}
             />
-          </DetailPanel.Summary>
+          </DetailPanel.Section>
 
-          {props.span.summary || props.span.attributes ? (
-            <DetailPanel.Group label={t.runData}>
-              {props.span.summary ? (
-                <DetailPanel.Section title={t.summary} icon="ti ti-list-details" tone="accent">
-                  <StructuredDataPreview data={traceData(props.span.summary, t.invalidTraceData)} maxRows={8} />
-                </DetailPanel.Section>
-              ) : null}
-              {props.span.attributes ? (
-                <DetailPanel.Section title={t.attributes} icon="ti ti-braces" tone="neutral">
-                  <StructuredDataPreview data={traceData(props.span.attributes, t.invalidTraceData)} maxRows={10} />
-                </DetailPanel.Section>
-              ) : null}
-            </DetailPanel.Group>
-          ) : null}
-
-          <DetailPanel.Section title={t.events} icon="ti ti-list" tone="neutral">
+          <DetailPanel.Section title={t.events}>
             {props.events.length === 0 ? (
-              <Placeholder align="left" description={t.noRunEvents} />
+              <p class="text-xs text-dimmed">{t.noRunEvents}</p>
             ) : (
               <ol class="m-0 flex list-none flex-col gap-3 p-0">
                 {props.events.map((event) => (
@@ -108,6 +97,21 @@ export default function RunDetailPanel(props: RunDetailPanelProps) {
               </ol>
             )}
           </DetailPanel.Section>
+
+          {props.span.summary || props.span.attributes ? (
+            <DetailPanel.Group title={t.moreAboutRun}>
+              {props.span.summary ? (
+                <DetailPanel.Section title={t.summary}>
+                  <StructuredDataPreview data={traceData(props.span.summary, t.invalidTraceData)} maxRows={8} />
+                </DetailPanel.Section>
+              ) : null}
+              {props.span.attributes ? (
+                <DetailPanel.Section title={t.attributes}>
+                  <StructuredDataPreview data={traceData(props.span.attributes, t.invalidTraceData)} maxRows={10} />
+                </DetailPanel.Section>
+              ) : null}
+            </DetailPanel.Group>
+          ) : null}
         </DetailPanel.Body>
       </DetailPanel>
     </aside>

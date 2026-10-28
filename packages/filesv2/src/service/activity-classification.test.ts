@@ -19,6 +19,9 @@ const base = () => mixed();
 // writes stay in Postgres; "read" here means they do not change data in Filegate.
 const files: Record<string, Classification> = {
   maintain: mutation(),
+  provisionUserHome: mutation(),
+  reconcileUserHomes: mutation(),
+  adminHomeProvisioning: read,
   provision: mutation(),
   archive: mutation(),
   retire: read,
@@ -130,7 +133,15 @@ function dummyService() {
     throw new Error("Classification must not invoke a dependency");
   };
   return createFilesService({
-    identities: { reconcile: unused, localLifecycle: unused, self: unused, groups: unused, inventory: unused },
+    identities: {
+      reconcile: unused,
+      localLifecycle: unused,
+      self: unused,
+      groups: unused,
+      inventory: unused,
+      provisioningUsers: unused,
+      provisioningIdentity: unused,
+    },
     bindings: { find: unused, claim: unused, byId: unused, path: unused },
     displayNames: unused,
     readConfiguration: unused,

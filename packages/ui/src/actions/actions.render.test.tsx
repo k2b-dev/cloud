@@ -397,6 +397,22 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).not.toContain("<button");
   });
 
+  test("a lazy dropdown renders its trigger and an empty menu, not its entries", () => {
+    const html = renderToString(() =>
+      createComponent(Dropdown.Root, {
+        lazy: true,
+        items: [{ label: "Rename", icon: "ti ti-pencil", action: () => {} }],
+        get children() {
+          return createComponent(Dropdown.Trigger, { label: "Row actions", children: "More" });
+        },
+      }),
+    );
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('role="menu"');
+    expect(html).not.toContain("Rename");
+    expect(html).not.toContain('role="menuitem"');
+  });
+
   test("renders an explicit SSR trigger with declarative sections, links, and actions", () => {
     const elements: PublicDropdownItem[] = [
       { label: "Rename", icon: "ti ti-pencil", action: () => {} },

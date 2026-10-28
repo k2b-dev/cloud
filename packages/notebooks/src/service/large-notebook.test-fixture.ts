@@ -16,6 +16,8 @@ export type InsertedFixtureNotebook = {
 };
 
 const BATCH = 2000;
+/** Every notebook this process inserted, so a suite removes them even when its setup timed out halfway. */
+const inserted = new Set<string>();
 const base = Date.parse("2026-09-01T08:00:00.000Z");
 
 /**
@@ -29,6 +31,7 @@ export async function insertFixtureNotebook(shape: FixtureShape): Promise<Insert
   const notebook = { id: crypto.randomUUID(), shortId: testShortId() };
   const notes = tree.map((note) => ({ id: crypto.randomUUID(), shortId: testShortId(), parentIndex: note.parent }));
   await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebook.id}::uuid, ${notebook.shortId}, ${`Fixture ${shape}`})`;
+  inserted.add(notebook.id);
   const rows = tree.map((note, index) => {
     const contentMd = renderFixtureMarkdown(note, { shortIdOf: (target) => notes[target]?.shortId });
     // Spread the dates so every order by date has a stable answer.
@@ -106,7 +109,10 @@ export async function insertFixtureNotebook(shape: FixtureShape): Promise<Insert
       )}) AS input(note_id, tag)
     `;
   }
-  await sql`ANALYZE notebooks.notes`;
+  // Statistics for the columns queries filter and sort by, so plans match a notebook that grew over time. A whole-table
+  // ANALYZE also samples Markdown and search vectors and takes minutes on a busy machine.
+  await sql`ANALYZE notebooks.notes (id, notebook_id, parent_id, title, position, created_at, updated_at)`;
+  await sql`ANALYZE notebooks.note_links, notebooks.note_tags`;
   const children = new Map<number, number[]>();
   tree.forEach((note, index) => {
     if (note.parent !== null) children.set(note.parent, [...(children.get(note.parent) ?? []), index]);
@@ -120,7 +126,15 @@ export async function insertFixtureNotebook(shape: FixtureShape): Promise<Insert
     page: pick(pages.at(-1)!),
     other: pick(pages[0]!),
     remove: async () => {
+      inserted.delete(notebook.id);
       await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebook.id}::uuid`;
     },
   };
+}
+
+/** Removes every fixture notebook this process inserted; an `afterAll` calls it instead of trusting its setup finished. */
+export async function removeFixtureNotebooks(): Promise<void> {
+  const ids = [...inserted];
+  inserted.clear();
+  if (ids.length > 0) await sql`DELETE FROM notebooks.notebooks WHERE id = ANY(${sql.array(ids, "UUID")})`;
 }

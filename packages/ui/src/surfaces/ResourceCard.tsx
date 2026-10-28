@@ -1,5 +1,6 @@
 import { type JSX, Match, Show, Switch } from "solid-js";
 import { useUiMessages } from "../intl/messages";
+import type { LinkCardColor } from "./LinkCard";
 import { useResourceMessages } from "./resource-messages";
 
 /**
@@ -8,6 +9,9 @@ import { useResourceMessages } from "./resource-messages";
  */
 export type ResourceCardState = "ok" | "loading" | "no_access" | "deleted" | "unavailable";
 
+/** The icon chip's colour, from the same palette as `LinkCard`. */
+export type ResourceCardColor = LinkCardColor;
+
 export type ResourceCardProps = {
   /** Defaults to `"ok"`. Every state has the same size, so a card that changes state moves nothing around it. */
   state?: ResourceCardState;
@@ -15,6 +19,12 @@ export type ResourceCardProps = {
   title?: string;
   /** Icon class of the element's kind, for example `ti ti-notebook`. Shown only in state `"ok"`. */
   icon?: string;
+  /** Colour of the icon chip, usually one per kind of element. Without it the chip stays neutral. Only in state `"ok"`. */
+  color?: ResourceCardColor;
+  /** One line above the title: what and where the element is, for example "Task in IT planning · due 30 Oct". Only in state `"ok"`. */
+  context?: string;
+  /** The element's current state as a short label, for example "Open", shown at the end. Only in state `"ok"`. */
+  status?: string;
   /** What the element belongs to, for example the application or service. Shown only in state `"ok"`. */
   source?: string;
   /** Where the element lives within its source, for example a folder or a project. Shown only in state `"ok"`. */
@@ -63,10 +73,13 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
   const content = () => (
     <Switch>
       <Match when={ok()}>
-        <span class="k2b-resource-card__icon" aria-hidden="true">
+        <span class={`k2b-resource-card__icon${props.color ? " k2b-icon-tile" : ""}`} aria-hidden="true">
           <i class={props.icon ?? DEFAULT_ICON} />
         </span>
         <span class="k2b-resource-card__copy">
+          <Show when={props.context?.trim()}>
+            <span class="k2b-resource-card__meta">{props.context}</span>
+          </Show>
           <span class="k2b-resource-card__title">{title()}</span>
           <Show when={meta()}>
             <span class="k2b-resource-card__meta">{meta()}</span>
@@ -75,6 +88,9 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
             <span class="k2b-resource-card__preview">{props.preview}</span>
           </Show>
         </span>
+        <Show when={props.status?.trim()}>
+          <span class="k2b-resource-card__status">{props.status}</span>
+        </Show>
       </Match>
       <Match when={state() === "loading"}>
         <span class="k2b-resource-card__icon" aria-hidden="true" />
@@ -91,6 +107,7 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
               <i class={STATE_ICONS[reason()]} />
             </span>
             <span class="k2b-resource-card__copy">
+              <span class="k2b-resource-card__meta">{resourceMessages().resourceKind}</span>
               <span class="k2b-resource-card__label">
                 {reason() === "no_access"
                   ? resourceMessages().resourceNoAccess
@@ -98,6 +115,9 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
                     ? resourceMessages().resourceDeleted
                     : resourceMessages().resourceUnavailable}
               </span>
+              <Show when={reason() === "no_access"}>
+                <span class="k2b-resource-card__meta">{resourceMessages().resourceNoAccessHint}</span>
+              </Show>
             </span>
           </>
         )}
@@ -112,13 +132,18 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
         <Show
           when={ok() && linkUrl(props.href)}
           fallback={
-            <div class={className()} data-state={state()} aria-busy={state() === "loading" ? "true" : undefined}>
+            <div
+              class={className()}
+              data-state={state()}
+              data-color={ok() ? props.color : undefined}
+              aria-busy={state() === "loading" ? "true" : undefined}
+            >
               {content()}
             </div>
           }
         >
           {(href) => (
-            <a class={className()} data-state={state()} href={href()}>
+            <a class={className()} data-state={state()} data-color={props.color} href={href()}>
               {content()}
             </a>
           )}
@@ -126,7 +151,7 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
       }
     >
       {(open) => (
-        <button type="button" class={className()} data-state={state()} onClick={() => open()()}>
+        <button type="button" class={className()} data-state={state()} data-color={props.color} onClick={() => open()()}>
           {content()}
         </button>
       )}

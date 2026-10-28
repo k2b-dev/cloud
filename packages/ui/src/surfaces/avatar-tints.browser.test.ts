@@ -7,7 +7,7 @@ import { launchBrowser } from "../../test/browser";
 // Initials are small text on a tinted face, so every tint keeps 4.5:1 in both themes. Contrast is a result of the
 // shipped cascade, which only a real engine computes.
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
-const TINTS = 10;
+const TINTS = 8;
 
 let browser: Browser;
 beforeAll(async () => {

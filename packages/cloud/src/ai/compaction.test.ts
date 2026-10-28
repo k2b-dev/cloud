@@ -44,7 +44,7 @@ const setup = (force = false) => {
   };
   const compact = createCloudCompactFn({
     conversationId: "test-conversation",
-    modelProfileId: "summary-profile",
+    modelId: "summary-profile",
     additionalInstructions: "",
     signal: new AbortController().signal,
     ...(force ? { keepRecentLoops: 1 } : {}),
@@ -235,7 +235,7 @@ describe("compaction inference accounting", () => {
         task: "chat-compaction",
         attribution: { conversationId: "test-conversation", turnId: undefined },
         appId: "core",
-        modelProfileId: "summary-profile",
+        modelId: "summary-profile",
         providerModel: "test-summary-model",
         status: "ok",
         durationMs: expect.any(Number),
@@ -274,7 +274,7 @@ describe("compaction inference accounting", () => {
       task: "chat-compaction",
       attribution: { conversationId: "test-conversation", turnId: undefined },
       appId: "core",
-      modelProfileId: "summary-profile",
+      modelId: "summary-profile",
       providerModel: "test-summary-model",
       status: "failed",
       durationMs: expect.any(Number),
