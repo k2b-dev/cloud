@@ -1,0 +1,1 @@
+| An app links assets below a prefix it never declared | The platform links `/public/<id>/app.css` on every page, but the gateway routes only declared prefixes, so the stylesheet answers 404 and the pages render unstyled. | Check: `app-public-route` requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`. |

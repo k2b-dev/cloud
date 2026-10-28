@@ -109,7 +109,7 @@ const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
 
   const meta = [
     { label: t.infoProviderModel, value: entry.providerModel ?? t.infoUnknown },
-    { label: t.infoModelProfile, value: entry.modelProfileId ?? t.infoUnknown },
+    { label: t.infoModelProfile, value: entry.modelId ?? t.infoUnknown },
     { label: t.infoLoopId, value: entry.loopId ?? t.infoLegacy },
     { label: t.infoFinished, value: describeResponseEnd(entry, locale) },
     { label: t.infoCreated, value: formatDateTime(entry.createdAt, locale) },

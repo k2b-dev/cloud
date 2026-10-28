@@ -29,6 +29,7 @@ const ResponseSchema = z.object({
 
 const app = new Hono<AuthContext>().use(auth.requireRole("authenticated")).post(
   "/by-table/:tableId/check",
+  auth.readOnly,
   requirePublicIdParam("tableId", "table", "Table"),
   describeRoute({
     tags: ["Grids:HTMLTemplateField"],

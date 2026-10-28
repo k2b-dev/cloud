@@ -13,7 +13,7 @@ const stored = (input: { role: "user" | "assistant"; seq: number; text: string; 
       ? { role: "user", content: [{ type: "text", text: input.text }] }
       : { role: "assistant", content: [{ type: "text", text: input.text }], stopReason: "stop" },
   loopId: input.loopId ?? null,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: input.role === "assistant" ? "stop" : null,

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { SQL } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
+import { migrate as migrateEvents } from "../../../../core/src/migrate/core/events";
 import { migratePosix } from "../../../../core/src/migrate/core/posix";
 import { mirrorIpaPosix } from "../ipa/posix";
 import { providers } from "../providers";
@@ -39,10 +40,11 @@ suite("isolated Linux identity migration and provisioning", () => {
     await db`CREATE TABLE IF NOT EXISTS settings.entries(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`.simple();
     await migratePosix(db);
     await migrateAudit();
+    await migrateEvents(db);
     service = createPosixService(db, async () => [{ start: 1000000, end: 1999999 }]);
   });
   beforeEach(async () => {
-    await db`TRUNCATE auth.user_posix, auth.posix_allocations, auth.user_groups_v2, auth.user_ipa_data, auth.groups, auth.users, settings.entries, audit.events CASCADE`.simple();
+    await db`TRUNCATE auth.user_posix, auth.posix_allocations, auth.user_groups_v2, auth.user_ipa_data, auth.groups, auth.users, settings.entries, audit.events, events.outbox CASCADE`.simple();
     await set("linux.identity_config", JSON.stringify(config), db);
   });
   afterAll(async () => {

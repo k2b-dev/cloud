@@ -13,7 +13,6 @@ import { ConversationSearchInputSchema, MailboxListInputSchema } from "../capabi
 import { app } from "../config";
 import { conversationViewSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { createMailNotificationService, type MailNotificationSendInput } from "../notifications";
 import { grantMailboxAccess, updateMailboxAccess } from "./access";
 import { resolveMailAddress } from "./addresses";
@@ -257,7 +256,6 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
   });
 
   beforeAll(async () => {
-    await migrate();
     owner = await createUser("owner");
     readerA = await createUser("A");
     writerB = await createUser("B");

@@ -215,6 +215,38 @@ suite("accounts entity visibility (integration)", () => {
       await sql`DELETE FROM auth.users WHERE id IN (${directId}::uuid, ${nestedId}::uuid, ${outsideId}::uuid)`;
     }
   });
+  // The group detail and list redirect a page past the end to the last page, which needs the real total there (#2033).
+  test("a page past the end of members or groups still counts every match", async () => {
+    const suffix = crypto.randomUUID();
+    const memberIds = [
+      await insertUser(suffix, "first", "user"),
+      await insertUser(suffix, "second", "user"),
+      await insertUser(suffix, "third", "user"),
+    ];
+    const groupIds = [await insertGroup(suffix, "paged-a"), await insertGroup(suffix, "paged-b"), await insertGroup(suffix, "paged-c")];
+    for (const userId of memberIds)
+      await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${userId}::uuid, ${groupIds[0]!}::uuid)`;
+    const actor: AccountsActor = {
+      userId: memberIds[0]!,
+      uid: `entity-visibility-first-${suffix}`,
+      roles: ["user", "local", "local/user"],
+      provider: "local",
+    };
+    const members = (page: number) =>
+      accountsAppService.entity.list({ actor, kinds: ["user"], memberOfGroupId: groupIds[0]!, pagination: { page, perPage: 2 } });
+    const groups = (page: number) =>
+      accountsAppService.group.list({ pagination: { page, perPage: 2 }, filter: { search: suffix }, scope: { mode: "all" } });
+
+    try {
+      expect(await members(2)).toMatchObject({ items: [expect.anything()], total: 3, hasNext: false });
+      expect(await members(5)).toMatchObject({ items: [], total: 3, hasNext: false });
+      expect(await groups(2)).toMatchObject({ items: [expect.anything()], total: 3, hasNext: false });
+      expect(await groups(5)).toMatchObject({ items: [], total: 3, hasNext: false });
+    } finally {
+      await sql`DELETE FROM auth.groups WHERE id = ANY(${`{${groupIds.join(",")}}`}::uuid[])`;
+      await sql`DELETE FROM auth.users WHERE id = ANY(${`{${memberIds.join(",")}}`}::uuid[])`;
+    }
+  });
 });
 
 suite("service-account directory eligibility filters", () => {
