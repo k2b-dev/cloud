@@ -13,6 +13,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const {
   readSettingsError,
+  SaveStatus,
   sameSettingValue,
   SettingsCollection,
   SettingsField,
@@ -344,5 +345,38 @@ describe("@k2b/ui complete settings surfaces", () => {
 
     expect(parsed).toEqual({ message: "Validation failed", fields: { endpoint: "Required" } });
     expect(fallback).toEqual({ message: "Could not save", fields: {} });
+  });
+});
+
+describe("SaveStatus", () => {
+  test("names every state in one live region and offers Discard and Save only while something waits", () => {
+    const saved = renderToString(() =>
+      createComponent(SaveStatus, { state: "saved", savedAt: "10:42", onSave: () => {}, onDiscard: () => {} }),
+    );
+    expect(saved).toContain('role="status"');
+    expect(saved).toContain("Saved 10:42");
+    expect(saved).toContain('data-state="saved"');
+    // Saved leaves both buttons in place but disabled, so the head keeps its width.
+    expect(saved).toContain("disabled");
+
+    const draft = renderToString(() => createComponent(SaveStatus, { state: "draft", onSave: () => {}, onDiscard: () => {} }));
+    expect(draft).toContain("Draft");
+    expect(draft).toContain(">Save<");
+
+    const invalid = renderToString(() => createComponent(SaveStatus, { state: "invalid", invalidCount: 2 }));
+    expect(invalid).toContain("Check 2 entries");
+    expect(invalid).not.toContain(">Save<");
+
+    const readOnly = renderToString(() => createComponent(SaveStatus, { state: "readonly", onSave: () => {}, onDiscard: () => {} }));
+    expect(readOnly).toContain("Read only");
+    expect(readOnly).not.toContain(">Save<");
+
+    for (const [state, text] of [
+      ["saving", "Saving"],
+      ["failed", "Not saved"],
+      ["unknown", "Outcome unclear"],
+    ] as const) {
+      expect(renderToString(() => createComponent(SaveStatus, { state }))).toContain(text);
+    }
   });
 });
