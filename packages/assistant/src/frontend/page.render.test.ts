@@ -260,7 +260,12 @@ test("the panel starts without selecting an unrelated recent chat and renders no
   expect(html).toContain("cloud-panel-page");
   expect(html).not.toContain('id="cloud-shell-data"');
   expect(html).toContain('href="/app/assistant/panel?conversation=chat1"');
-  expect(html).toContain("Open full view");
+  // No head row and no suggestions: "All chats" under the composer opens the application in the host window.
+  expect(html).not.toContain("Open full view");
+  expect(html).not.toContain("assistant-starters");
+  const allChats = /<a[^>]*assistant-panel-link[^>]*>/.exec(html)?.[0] ?? "";
+  expect(allChats).toContain('href="/app/assistant"');
+  expect(allChats).toContain('target="_top"');
 });
 
 test("a panel conversation selector does not bypass ownership or fall back to another chat", async () => {
