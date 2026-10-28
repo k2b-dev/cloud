@@ -7,7 +7,6 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
 import { MailboxListInputSchema } from "../capability-contracts";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "../service/auth";
 import { createMailbox } from "../service/mailboxes";
 import app from ".";
@@ -120,7 +119,6 @@ suite("Mail REST access for service-account credentials", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const rows = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-agent-owner-${suffix}`}, 'local', 'user', 'Owner', false)
