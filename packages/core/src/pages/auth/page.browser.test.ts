@@ -9,7 +9,7 @@ import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { browserName, launchBrowser, storedCookie } from "../../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors, storedCookie } from "../../../../ui/test/browser";
 
 // Whether the sign-in card is a frame or flat is decided by the cascade
 // between Tailwind utilities, @k2b/ui and Cloud styles at a viewport width,
@@ -532,8 +532,7 @@ test("email-link completion remembers email and a later app approval remembers t
   const script = await built.outputs[0]!.text();
   const context = await browser.newContext();
   const tab = await context.newPage();
-  const browserErrors: string[] = [];
-  tab.on("pageerror", (error) => browserErrors.push(error.message));
+  const browserErrors = pageErrors(tab);
   await tab.clock.install({ time: new Date("2026-10-23T12:00:00Z") });
   const redirectTo = "/me/security?reauthenticate=1";
   const query = new URLSearchParams({ redirectTo });
