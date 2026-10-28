@@ -293,14 +293,10 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
   );
   const exportReport = () => (
     <div class="flex flex-col gap-4">
-      {/* One reserved place: the data notice and the summary of what the PDF left out share one cell that
-                always holds both, so the summary arrives without moving anything. The live region exists from the
-                start, so screen readers announce the summary. */}
       <div class="grid">
         <InlineGuidance
           icon="ti ti-server"
-          class="[grid-area:1/1]"
-          style={{ "grid-area": "1 / 1", visibility: report() ? "hidden" : "visible" }}
+          class={report() ? "invisible [grid-area:1/1]" : "[grid-area:1/1]"}
           aria-hidden={report() ? "true" : undefined}
         >
           {t().pdfDataNotice}
@@ -308,8 +304,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
         <InlineGuidance
           tone="warning"
           icon="ti ti-alert-triangle"
-          class="[grid-area:1/1]"
-          style={{ "grid-area": "1 / 1", visibility: report() ? "visible" : "hidden" }}
+          class={report() ? "[grid-area:1/1]" : "invisible [grid-area:1/1]"}
           aria-hidden={report() ? undefined : "true"}
           data-pdf-omissions={report() ? "" : undefined}
         >

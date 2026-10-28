@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  ActivityDataSchema,
   CommentDataSchema,
   NotebookDataSchema,
   NotebookListInputSchema,
@@ -81,4 +82,21 @@ test("only append accepts the explicit exact separator and existing bounds still
   expect(
     NoteEditInputSchema.safeParse({ noteId: "abc123", operations: [{ ...operation, content: "x".repeat(10_001) }] }).success,
   ).toBeFalse();
+});
+
+test("activity links use bounded same-origin semantic paths", () => {
+  const href = ActivityDataSchema.element.shape.href;
+  expect(href.parse(undefined)).toBeUndefined();
+  expect(href.parse("/open/notebooks.annotation/~11111111-1111-4111-8111-111111111111")).toContain("/open/");
+  expect(href.parse(`/${"x".repeat(2047)}`)).toHaveLength(2048);
+  for (const value of [
+    "https://example.invalid",
+    "//example.invalid",
+    "javascript:alert(1)",
+    "/\\example.invalid",
+    "/path\nnext",
+    "",
+    `/${"x".repeat(2048)}`,
+  ])
+    expect(href.safeParse(value).success).toBeFalse();
 });

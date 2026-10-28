@@ -1,7 +1,7 @@
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { type BookReferences, renderNotebookBook } from "../lib/book-renderer";
 import { bookRendererMessages, notebookBlockDiagnosticMessage } from "../lib/book-renderer-messages";
-import { parseNotebookQueryBlocks } from "../lib/query-blocks";
+import { parseNotebookQueryBlocks, queryPageSize } from "../lib/query-blocks";
 import * as attachments from "./attachments";
 import { notebookMapState } from "./maps";
 import { type NoteQueryResult, resolveNoteQuery } from "./note-query";
@@ -17,12 +17,19 @@ export const loadBookNote = async (params: {
   locale: string;
   bypassAccess?: boolean;
   geoCaller?: CapabilityCaller;
+  /** The page each query shows, by its source line; queries without one show their first page. */
+  pages?: ReadonlyMap<number, number>;
 }) => {
   if (!params.bypassAccess && !(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel: "read" })))
     return null;
   const note = await notes.getWithContentByShortId({ shortId: params.noteShortId });
   if (!note || note.notebookId !== params.notebookId) return null;
-  const { document } = await renderBookDocument({ ...params, noteId: note.id, markdown: note.contentMd ?? "" });
+  const { document } = await renderBookDocument({
+    ...params,
+    noteId: note.id,
+    markdown: note.contentMd ?? "",
+    pages: params.pages ?? new Map(),
+  });
   // Do not return a collaboration snapshot or raw notebook data to the Book surface.
   return { note, document };
 };
@@ -38,6 +45,11 @@ export const resolveBookQueries = async (params: {
   bypassAccess?: boolean;
   /** Stops before the next query; a query without a result prints as unavailable. */
   signal?: AbortSignal;
+  /**
+   * Pages each query on screen, by its source line, a page at most `QUERY_PAGE_SIZE` rows. Without it, as for a PDF,
+   * each query returns its first `limit` rows.
+   */
+  pages?: ReadonlyMap<number, number>;
 }): Promise<Map<number, NoteQueryResult>> => {
   const queryResults = new Map<number, NoteQueryResult>();
   // The parser bounds blocks and each resolver bounds rows. Avoid database fan-out.
@@ -53,6 +65,9 @@ export const resolveBookQueries = async (params: {
         boundNotebookId: params.boundNotebookId,
         bypassAccess: params.bypassAccess,
         query,
+        ...(params.pages
+          ? { page: { offset: ((params.pages.get(query.line) ?? 1) - 1) * queryPageSize(query), size: queryPageSize(query) } }
+          : {}),
       }),
     );
   }
@@ -90,6 +105,7 @@ const renderBookDocument = async (params: {
   linkMode?: "write" | "readonly";
   bypassAccess?: boolean;
   geoCaller?: CapabilityCaller;
+  pages?: ReadonlyMap<number, number>;
 }) => {
   const { markdown } = params;
   const [queryResults, references, mapState] = await Promise.all([
@@ -124,6 +140,8 @@ export const loadBookBlockPreview = async (params: {
   markdown?: string;
   bypassAccess?: boolean;
   geoCaller?: CapabilityCaller;
+  /** Pages the queries as Book and the editor show them; without it, as for an agent, each query returns its `limit`. */
+  pages?: ReadonlyMap<number, number>;
 }) => {
   const requiredLevel = params.markdown === undefined ? "read" : "write";
   if (!params.bypassAccess && !(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel }))) {

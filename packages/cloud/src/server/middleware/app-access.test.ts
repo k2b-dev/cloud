@@ -6,6 +6,7 @@ import * as registry from "../../_internal/registry";
 import { appAccess } from "../../contracts/app-access";
 import { appAccessRevalidator, appPublicRouteMatcher, guardAppAccessSocket, requireAppAccess, watchAppAccess } from "./app-access";
 import type { AuthContext, RequestAuthority } from "./auth";
+import * as authMiddleware from "./auth";
 import { auth } from "./auth";
 
 const authority = (): RequestAuthority => ({
@@ -20,7 +21,7 @@ afterEach(() => {
 });
 
 const authenticate = (current: () => RequestAuthority | null) => {
-  const spy = spyOn(auth, "requireRole").mockImplementation(() => async (c, next) => {
+  const spy = spyOn(authMiddleware, "loadAuthenticatedActor").mockImplementation(async (c) => {
     const value = current();
     if (value) {
       c.set("actor", value.actor);
@@ -30,7 +31,11 @@ const authenticate = (current: () => RequestAuthority | null) => {
       c.set("sessionToken", "same-session");
       c.set("sessionKind", "web");
     }
-    await next();
+    return {
+      token: value ? "same-session" : null,
+      user: value?.actor.kind === "user" ? value.actor.user : null,
+      actor: value?.actor ?? null,
+    };
   });
   spies.push(spy);
 };

@@ -538,7 +538,6 @@ for (const mode of ["deadline", "caller"] as const)
       res.once("close", () => clearInterval(timer));
     });
     const caller = new AbortController();
-    // Exercise expiry during the body read, independently of connection setup time.
     if (mode === "deadline") jest.useFakeTimers();
     try {
       const pending = downloadPublicFile("https://files.example/file", {
@@ -578,6 +577,7 @@ for (const mode of ["deadline", "caller"] as const)
     const connected = Promise.withResolvers<void>();
     const fixture = await networkTransportFixture(() => connected.resolve());
     const caller = new AbortController();
+    if (mode === "deadline") jest.useFakeTimers();
     try {
       const pending = downloadPublicFile("https://files.example/file", {
         timeoutMs: mode === "deadline" ? 80 : 20_000,
@@ -585,23 +585,23 @@ for (const mode of ["deadline", "caller"] as const)
         resolve: async () => [publicAddress],
         request: fixture.request,
       });
-      // Observe the deadline before waiting for server progress: it can expire
-      // while the connection is still pending on a busy runner. Record the outcome
-      // without an assertion that can wait before the caller reaches abort().
       const outcome = pending.then(
         (value) => ({ value }),
         (error: unknown) => ({ error }),
       );
-      if (mode === "caller") {
-        await connected.promise;
-        caller.abort(new Error("cancelled"));
-      }
+      expect(await Promise.race([connected.promise.then(() => true), outcome.then(() => false)])).toBe(true);
+      if (mode === "deadline") {
+        jest.advanceTimersByTime(79);
+        expect(fixture.requests[0]!.destroyed).toBe(false);
+        jest.advanceTimersByTime(1);
+      } else caller.abort(new Error("cancelled"));
       expect(await outcome).toMatchObject({
         error: { message: expect.stringContaining(mode === "deadline" ? "did not respond" : "cancelled") },
       });
       expect(fixture.requests[0]!.destroyed).toBe(true);
       await fixture.disconnected();
     } finally {
+      if (mode === "deadline") jest.useRealTimers();
       await fixture.close();
     }
   });

@@ -26,7 +26,9 @@ submission. Call `event.preventDefault()` to handle Enter yourself without also
 calling `onSubmit`. Escape and arrow keys remain available to the caller.
 
 `clearable` adds a clear button to a single-line field. Without `onClear`,
-clearing emits an empty string through both value callbacks.
+clearing emits an empty string through both value callbacks. Clearing returns
+keyboard focus to the field before notifying the caller; an `onClear` handler
+can then navigate or move focus if its action requires it.
 
 ## Input modes
 

@@ -1,0 +1,1 @@
+| A merge changes the winning observation | A deduplicated view orders by observation time, but physical replacement orders only by acceptance; later merges silently discard the correct state. | Test: Pulse `service/state-transitions.integration.test.ts` checks state timestamp priority before and after a forced merge and schema replay. |

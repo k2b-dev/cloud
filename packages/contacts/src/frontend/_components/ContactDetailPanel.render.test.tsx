@@ -220,15 +220,22 @@ describe("Contacts detail panels", () => {
 
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Ada Lovelace</h2>");
-    expect(html).toContain('class="k2b-detail-panel__header-leading"');
+    // The shared outline: a kind line instead of an avatar, no section icons, and the rarer details closed under
+    // "More about this contact", each saying in one line what it holds.
+    expect(html).toMatch(/class="k2b-detail-panel__kind"[^>]*>(<[^>]+>)*Contact</);
+    expect(html).not.toContain("k2b-detail-panel__header-leading");
+    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("k2b-discussion__icon");
     expect(html).toContain('class="k2b-detail-panel__primary-actions"');
-    expect(html).toContain('class="k2b-detail-panel__summary"');
-    expect(html).toContain('aria-label="Contact information"');
-    expect(html).toContain('aria-label="Additional details"');
-    // Personal, work, and addresses (whose map belongs in view) start open.
-    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/g)).toHaveLength(3);
-    expect(html).toContain('aria-label="Organization context"');
-    expect(html).toContain('class="k2b-detail-panel__section-icon" data-tone="accent"');
+    // Email is the one main action; Call and Comment stay quiet beside it.
+    expect(html).toMatch(/<a href="mailto:ada@example.com" class="k2b-button contacts-details-main[^"]*"[^>]*data-variant="subtle"/);
+    expect(html).toContain('aria-label="More contact actions"');
+    expect(html).toContain(">Properties</h3>");
+    expect(html).toContain(">Reach</h3>");
+    expect(html).toContain("More about this contact");
+    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/g)).toBeNull();
+    for (const summary of ["Office", "Birthday, Pronouns, Language", "Company, Department, Job title, VAT ID"])
+      expect(html).toContain(summary);
     expect(html).toContain('data-scroll-preserve="contacts-detail"');
     expect(html).toContain('data-layout="rows"');
     expect(html).toContain('href="mailto:ada@example.com"');
@@ -291,9 +298,11 @@ describe("Contacts detail panels", () => {
     ));
 
     expect(html).toContain("Read only contact");
-    expect(html).toContain("Overview");
+    expect(html).toContain("Properties");
     expect(html).toContain("Comments");
-    expect(html).not.toContain('class="k2b-detail-panel__primary-actions"');
+    // Only "More actions" (vCard) remains: no way to write, mail, or call.
+    expect(html).toContain('aria-label="More contact actions"');
+    expect(html).not.toContain("contacts-details-main");
     expect(html).not.toContain('class="k2b-detail-panel__group"');
     expect(html).not.toContain("Reach");
     expect(html).not.toContain("Organization");
@@ -344,7 +353,8 @@ describe("Contacts detail panels", () => {
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain('data-scroll-preserve="contacts-org-tree"');
     expect(html).toContain("<h2>Org tree</h2>");
-    expect(html).toContain('class="k2b-detail-panel__header-icon"');
+    expect(html).not.toContain("k2b-detail-panel__header-icon");
+    expect(html).toMatch(/class="k2b-detail-panel__kind"[^>]*>(<[^>]+>)*Organization</);
     expect(html).toContain('aria-label="Organization context"');
     expect(html).toContain("Grace Hopper");
     expect(html).toContain("Katherine Johnson");

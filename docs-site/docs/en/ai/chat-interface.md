@@ -23,7 +23,7 @@ is no second Cloud-specific chat component set.
 ## Compose a Cloud chat
 
 ```tsx
-import type { AiPublicModelProfile } from "@k2b/cloud/ai";
+import type { AiPeopleModels } from "@k2b/cloud/ai";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AiChatActionsProvider,
@@ -36,7 +36,7 @@ import { createSignal } from "solid-js";
 
 export function ItemChat(props: {
   itemId: string;
-  models: AiPublicModelProfile[];
+  models: AiPeopleModels["options"][number][];
   selectedModelId: () => string;
   selectModel: (id: string) => void;
 }) {
@@ -72,7 +72,7 @@ export function ItemChat(props: {
             const payload = aiComposerSendInput(input);
             return input.intent === "steer"
               ? chat.steer(payload.message ?? "")
-              : chat.send({ ...payload, modelProfileId: props.selectedModelId() });
+              : chat.send({ ...payload, model: { id: props.selectedModelId() } });
           }}
           onStop={async () => {
             await chat.abort();
@@ -312,7 +312,10 @@ order:
    `cld assistant`, interactive or not, prints chart data tables (one per chart
    for a group) and a card's title and value instead. Series legends wrap below
    the chart inside its fixed viewport: 18rem for ordinary charts, 8rem for
-   sparkline, 10rem for stat and 12rem for barGauge. A group stacks 2..6 charts;
+   sparkline, 10rem for stat and 12rem for barGauge. A single chart whose
+   drawing is taller, such as a bar chart with many rows, takes that height up
+   to 40rem and scrolls inside beyond it; charts of a group and chart views that
+   load later keep 18rem. A group stacks 2..6 charts;
    `layout: "grid"` uses two columns when the chat column is at least 42rem wide,
    and one column on phones. With `linkX`, line charts of the same x type share
    a cursor on hover, arrow keys and tap. A phone tap pins it; dragging scrolls

@@ -35,6 +35,8 @@ import {
   type MapViewStyle,
   MarkdownEditor,
   MarkdownView,
+  MessageEventGroup,
+  MessageEventRow,
   MessageRow,
   type MessageRowAttachment,
   type MessageRowStatus,
@@ -73,7 +75,7 @@ import {
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
-import { ChartDemo } from "./charts";
+import { BarChartStatesDemo, ChartDemo } from "./charts";
 import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
@@ -1117,6 +1119,7 @@ const ReactionBarDemos = () => (
 );
 
 const MessageRowsDemo = () => {
+  const [eventsOpen, setEventsOpen] = createSignal(false);
   // A store changes a message in place, so its row updates without mounting again and keeps focus on its controls.
   const [entries, setEntries] = createStore(chatInitial());
   let next = CHAT_TOTAL;
@@ -1177,6 +1180,8 @@ const MessageRowsDemo = () => {
       chip={[
         { kind: "component", name: "MessageRow", from: "@k2b/ui" },
         { kind: "component", name: "MessageSystemRow", from: "@k2b/ui" },
+        { kind: "component", name: "MessageEventRow", from: "@k2b/ui" },
+        { kind: "component", name: "MessageEventGroup", from: "@k2b/ui" },
         { kind: "component", name: "VirtualFeed", from: "@k2b/ui" },
       ]}
       description="600 messages in a VirtualFeed with groups, a system row, code, a collapsed summary, unsafe Markdown shown as text, quotes, reactions, threads, attachments, previews, a deleted message, and an agent that writes with a Stop button. Toggle a reaction, send one that fails and retry it, or ask the agent."
@@ -1339,6 +1344,32 @@ const MessageRowsDemo = () => {
             }}
             onClose={() => setReactionTarget(undefined)}
           />
+        </div>
+        {/* Changes to what the conversation is about: quiet rows, and four in a row as one line that opens them. */}
+        <div class="ui-demo-stack">
+          <MessageEventRow icon="ti ti-progress" origin={{ label: "Invitation", icon: "ti ti-circle" }} time="09:41">
+            Mara set the status to “In review”
+          </MessageEventRow>
+          <MessageEventGroup
+            label="4 changes to Invitation and Light test"
+            time="09:50–09:58"
+            expanded={eventsOpen()}
+            onToggle={() => setEventsOpen(!eventsOpen())}
+          />
+          <Show when={eventsOpen()}>
+            <MessageEventRow icon="ti ti-calendar-time" origin={{ label: "Light test", icon: "ti ti-calendar-event" }} time="09:50">
+              Tim moved the event to Thu, 6 pm
+            </MessageEventRow>
+            <MessageEventRow icon="ti ti-pencil" origin={{ label: "Invitation", icon: "ti ti-circle" }} time="09:52">
+              Elif changed the description
+            </MessageEventRow>
+            <MessageEventRow icon="ti ti-paperclip" origin={{ label: "Invitation", icon: "ti ti-circle" }} time="09:55">
+              You attached “room-plan-v3.pdf”
+            </MessageEventRow>
+            <MessageEventRow icon="ti ti-calendar" origin={{ label: "Light test", icon: "ti ti-calendar-event" }} time="09:58">
+              Lena set the due date to 23 Oct
+            </MessageEventRow>
+          </Show>
         </div>
       </div>
     </DemoCard>
@@ -1981,6 +2012,7 @@ const demos: DemoSection = {
   charts: (props) => (
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
+      <BarChartStatesDemo />
       <DemoCard
         id="line-top-legend"
         chip={{ kind: "component", name: "Chart", from: "@k2b/ui" }}

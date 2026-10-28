@@ -4,11 +4,12 @@ import { renderToString } from "solid-js/web";
 import BookTagContent from "../frontend/[id]/_components/book/BookTagContent";
 import { type BookSnapshot, bookNavigationTarget } from "../frontend/[id]/_components/book/book-state";
 import { bookMessages } from "../frontend/[id]/_components/book/messages";
-import { orderBookTree } from "../lib/book-tree";
+import { parseQueryPages, QUERY_PAGES_PARAM } from "../lib/query-blocks";
+import { countOpenAnnotations } from "./annotation-count";
 import { loadBookNote } from "./book";
 import * as notebooks from "./notebooks";
-import * as notes from "./notes";
 import * as tags from "./tags";
+import { countNotes } from "./tree-levels";
 import * as workspaceEvents from "./workspace-events";
 
 /** A Book refresh uses the same authorization and renderer as the direct page. */
@@ -44,14 +45,11 @@ export const loadBookRoute = async (params: {
   const cursor = await workspaceEvents.latestCursor({ notebookId: params.notebookId });
   const notebook = await notebooks.get({ id: params.notebookId });
   if (!notebook) return { kind: "not_found" as const };
-  const [tree, tagList] = await Promise.all([
-    notes.getTree({ notebookId: params.notebookId, locale: params.locale }),
-    tags.listForNotebook({ notebookId: params.notebookId }),
-  ]);
+  const [count, tagList] = await Promise.all([countNotes(params.notebookId), tags.listForNotebook({ notebookId: params.notebookId })]);
   const common = {
     href: `${target.pathname}${target.search}${target.hash}`,
     notebookName: notebook.name,
-    tree: orderBookTree(tree, { id: (node) => node.shortId, homeId: notebook.homepageNoteShortId, locale: params.locale }),
+    hasNotes: count > 0,
     tags: tagList,
     canWrite: permission === "write" || permission === "admin",
     cursor,
@@ -64,12 +62,17 @@ export const loadBookRoute = async (params: {
       selectedNoteId: null,
       locked: false,
       historyIncomplete: false,
-      html: renderToString(() => Placeholder({ icon: "ti ti-book", description: tree.length ? t.selectNote : t.empty })),
+      openComments: 0,
+      html: renderToString(() => Placeholder({ icon: "ti ti-book", description: count > 0 ? t.selectNote : t.empty })),
     };
     return { kind: "ok" as const, snapshot };
   }
   if (kind === "notes") {
-    const loaded = await loadBookNote({ ...params, noteShortId: resource });
+    const loaded = await loadBookNote({
+      ...params,
+      noteShortId: resource,
+      pages: parseQueryPages(target.searchParams.get(QUERY_PAGES_PARAM)),
+    });
     if (!loaded) return { kind: "not_found" as const };
     const snapshot: BookSnapshot = {
       ...common,
@@ -78,6 +81,7 @@ export const loadBookRoute = async (params: {
       selectedNoteId: loaded.note.shortId,
       locked: !!loaded.note.lockedAt,
       historyIncomplete: loaded.note.historyIncomplete,
+      openComments: await countOpenAnnotations(loaded.note.id).catch(() => 0),
     };
     return { kind: "ok" as const, snapshot };
   }
@@ -107,6 +111,7 @@ export const loadBookRoute = async (params: {
     activeTag: tag,
     locked: false,
     historyIncomplete: false,
+    openComments: 0,
   };
   return { kind: "ok" as const, snapshot };
 };

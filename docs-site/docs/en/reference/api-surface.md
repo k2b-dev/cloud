@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-22
+updated: 2026-10-27
 ---
 
 # API surface
@@ -29,6 +29,8 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
+| `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
+| `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
@@ -160,6 +162,15 @@ Raw stores, runtime starters, gateway telemetry, migrations, and platform
 composition helpers from the same barrel are maintainer APIs unless a guide
 names them.
 
+`appDetails(appId, { authority, locale? })` from `@k2b/cloud/services` is a
+Core-owned administration read, not an application service for third-party apps.
+Its HTTP route is
+`GET /api/app-events/apps/:appId`; `AppDetailsSchema` and `AppDetails` from
+`@k2b/cloud/contracts` describe the response. It returns `null` (HTTP 404) for
+an unknown app and requires administrator authority on both paths. See
+[Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
+for fields, offline behavior and bounds.
+
 `linuxIdentities` is a platform-owned administration service from this barrel.
 It checks administrator access on reads and writes. See
 [Linux identities](/en/docs/operations/linux-identities) for configuration,
@@ -170,6 +181,9 @@ user, effective groups, provider availability and administrator-only paginated
 identity inventories. It does not allocate identities or track filesystems.
 See [Account administration API](/en/docs/reference/account-administration)
 for actor requirements and the limits of Cloud's FreeIPA inventory.
+For automatic home provisioning, the trusted server-only `provisioningUsers`
+projection and `provisioningIdentity` live check are documented under
+[application event operations](/en/docs/operations/app-events#check-files-home-provisioning).
 
 `readAccountCategoryPolicy` supplies server-side presentation settings;
 `isAccountCategoryAllowed` is for platform-owned credential eligibility checks,
@@ -186,6 +200,17 @@ helpers support the signed `inbox`, `action`, and `act` commands.
 the services barrel are Core-owned maintainer surfaces, not general application
 authentication. Use the
 [app approval HTTP contract](/en/docs/operations/app-approval) for external clients.
+
+For [calendar sources](/en/docs/platform/calendar-sources), `calendarSource`,
+`calendarSourceIssues`, the `Calendar*Schema` values and matching types describe
+readable calendars, events, deadlines, busy periods, and reserved versioned writes.
+`projectCalendarItem` and `projectCalendarDescriptor` retain only known fields.
+`CALENDAR_SOURCE_MAX_RANGE_MS`, `CALENDAR_SOURCE_PAGE_LIMIT`,
+`CALENDAR_VERSION_CONFLICT`, and `CALENDAR_VIEW_MAX_RANGE_MS` expose the public
+range, page, and stale-write contracts. `CalendarViewRangeSchema`,
+`CalendarSourceErrorSchema`, `CalendarSourceStateSchema`,
+`CalendarSourceSummarySchema`, `CalendarSourceListEntrySchema`, and
+`CalendarReadResultSchema` describe bounded aggregate reads.
 
 For [matching files](/en/docs/platform/file-providers#offer-matching-files),
 `@k2b/cloud/contracts` exports `FileProviderContext`, `FileProviderContextSchema`,
@@ -225,7 +250,7 @@ inferring support from autocomplete.
 | --- | --- | --- |
 | `@k2b/cloud` | `defineApp`, `appAccess`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
-| `@k2b/cloud/ai` | Structured model calls, local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
+| `@k2b/cloud/ai` | Structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
 | `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
@@ -319,14 +344,15 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/live` | Supported, server-only | `aiLive`: the cursor of AI live updates for server-rendered state; Core mounts its socket | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/live-events` | Supported, browser and server | `AiInvalidationSchema` and `AI_INVALIDATION_DOMAINS`, the data of AI live updates | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/question-text` | Platform-owned, browser and server | The plain-text form of an Assistant question (`approvalCard`, `actionCardText`, `actionQuestionLines`) that `cld`, notifications, and Cloud Login show | [Tools and approvals](/en/docs/ai/tools-and-approvals) |
+| `@k2b/cloud/ai/app-frame` | Platform-owned, browser | The chart, view, and task contracts that an Assistant app frame draws and checks, without the skill parser and schemas of `ai/browser`, because the frame inlines its script in every app | [Chat interface](/en/docs/ai/chat-interface#assistant-apps-and-browser-work) |
 | `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
-| `@k2b/cloud/events` | Supported, server-only | `defineLive`: live updates written in the transaction that makes the change; `routes(channels)` serves them over one socket per application with access checked at delivery | [Live updates](/en/docs/automation/live-updates) |
-| `@k2b/cloud/events/testing` | Supported, tests only | Real live engine, limits and types; memory topic with publish and trim controls; outbox startup for integration tests | [Test channels](/en/docs/automation/live-updates#test-channels) |
+| `@k2b/cloud/events` | Supported, server-only | `appEvents`: publish declared app events in a transaction; `defineLive`: transactional live updates; `routes(channels)` serves them over one socket per application with access checked at delivery | [App events](/en/docs/platform/app-events), [Live updates](/en/docs/automation/live-updates) |
+| `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; real live engine, memory topic controls and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
 | `@k2b/cloud/browser/app-badges` | Supported, browser | `refreshAppBadges` reads the app bar's badge counts again after a change | [Layout and navigation](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
@@ -334,7 +360,9 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/hints` | Supported, browser | `markHintSeen`: remembers a moved-path hint in the browser cookie before dismissal or navigation | [One-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/browser/pwa-drafts` | Preview, browser | `pwaDrafts`: keep plain typed text per account and field across mobile app restarts; remove it after saving | [Keep drafts](/en/docs/frontend/mobile-app-pages#keep-drafts) |
 | `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop and, under an open modal dialog, offers the reload once the dialog closes; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
+| `@k2b/cloud/browser/resource-links` | Supported, browser | Recognize pasted Cloud URLs with `resolveCloudUrl()` and read the canonical `cloudOrigin()` | [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
+| `@k2b/cloud/browser/cloud-id` | Supported, browser | "Copy Cloud ID" entry for a resource's "…" menu | [Resource copy and paste](/en/docs/platform/resource-references#copy-a-cloud-id) |
 | `@k2b/cloud/browser/panel` | Supported, browser | `openPanel`, `closePanel`, and `onPanelBeforeLeave`: open or close the panel and protect unfinished provider work | [Panels](/en/docs/platform/panels) |
 | `@k2b/cloud/browser/search` | Supported, browser | Open global search with an optional context and register app navigation | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |
@@ -362,8 +390,9 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/styles/global.css` | Supported asset | Alias for the global stylesheet | [Styling](/en/docs/frontend/styling-and-accessibility) |
 | `@k2b/cloud/cli/access` | Supported | Resource access commands | [CLI modules](/en/docs/platform/cli-modules) |
 | `@k2b/cloud/cli/capabilities` | Platform-owned | Built-in generic capability client | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/cli/events` | Platform-owned | Built-in app event commands | [App events](/en/docs/platform/app-events) |
 | `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability clients, `readCapabilityReviewContent`, and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients and typed `actionReview` builder; `listCalendarSources(credentials, { deadline, signal? })`, `readCalendarEvents({ credentials, calendars, from, to, deadline, signal?, onSource? })`, and `listCapabilityCatalog({ caller, cursor?, limit? })` read a caller's calendar sources | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest, evolution, resource-link and localized review checks | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/account` | Platform-owned | Built-in account commands | — |
@@ -385,6 +414,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Surface | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `installable` option and `AppInstallable` from `@k2b/cloud` | Supported | Give one application its own standalone installation | [App-PWA](/en/docs/frontend/app-pwa) |
 | `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the mobile app | [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app) |
 | `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#paths) |
 | `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#pwalayout) |
@@ -509,7 +539,6 @@ Application entry declarations use `appAccess` from `@k2b/cloud`; see
 [App access](/en/docs/identity/app-access). The batch resolver and registry
 filtering helpers are platform-owned.
 
-
 ### Map snapshot uploads
 
 `@k2b/cloud/geo/ui` exports `CloudMap`, `CloudMapAttribution` and
@@ -523,3 +552,11 @@ bounds. `@k2b/cloud/services/pdf` exports `prepareGeoMapSnapshotAssets`,
 `GeoMapSnapshotAssetErrorCode`. See
 [Map images](/en/docs/platform/places-and-maps#export-a-map-image-for-print-or-pdf)
 and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots).
+
+### Model-class requests
+
+`@k2b/cloud/ai` exports `AI_MODEL_CLASSES`, `AiModelClass`, `AiModelRequest`,
+`AiResolvedModelRef`, `AiModelRequestSchema`, `aiModelClassFallbackChain`,
+`parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
+model class and interpret the resolved variant. See
+[Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).

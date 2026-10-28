@@ -82,7 +82,7 @@ Use the indentation of the example. Put two spaces before filter list items, col
 | `match` | `all` (default) requires every filter; `any` requires at least one. Without filters, all notes in the scope match. |
 | `sort` | `field`: `$title`, `$created`, or `$updated`; `direction`: `asc` or `desc`. Default: updated, descending. |
 | `columns` | Fields to show, one per indented list item. Without columns, the query shows a list of linked titles. |
-| `limit` | 1–100 results, default 25. A notice shows that more notes match. Narrow your filters to see them. |
+| `limit` | 1–100, default 25. In Book and the editor, `limit` sets the rows per page, at most 20. When more notes match, the page buttons below the list show all of them; the list keeps its height. Book keeps the page in the address. A PDF shows the first `limit` rows and how many notes match. |
 
 A query has at most 32 filters and 16 different columns. A page has at most 20 query blocks. Lists in filters use inline syntax such as `[active, draft]` with 1–100 values. A filter string has at most 2,000 characters. Quote list values that contain commas, for example `["Sales, Europe", Support]`.
 
@@ -134,9 +134,9 @@ title: Sales 2026
 data: @sales
 x: Date
 y: [Revenue, Costs]
+format: EUR
 tooltip:
   label: Amount
-  format: EUR
 :::
 ```
 
@@ -163,7 +163,11 @@ y: Revenue
 
 Indent row items and tooltip fields by two spaces. Each row must match the column count. Do not combine `data` with inline rows. This is a small YAML-like format, not general YAML.
 
-The optional `tooltip` section accepts `label`, `format`, and `unit`. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix. Pie, donut, and stat also use this format for their displayed number. A single value column supplies the tooltip label by default; y column names label the series.
+Set `format` and `unit` to write the chart's values: the value axis, values at bars, tooltips, and the table. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix, such as `kg`. Pie, donut, and stat use this format for their displayed number.
+
+The chart titles its axes with the `x` column and the value name. A single value column names the value; `tooltip.label` can rename it. Two or more y columns get a legend with their names. A bar chart labels every category and shows each value next to its bar. Few short labels stand below columns. Otherwise, each category gets its own row, and the chart grows with the number of rows.
+
+The optional `tooltip` section accepts `label`, `format`, and `unit`. A tooltip `format` or `unit` applies to tooltips and the table. Without a chart `format`, it also formats the axis and the values at bars.
 
 A note can contain 20 charts. Each data list has at most 480 values, and a chart has at most 8 series. The shared chart also checks the total marks and whether the values and labels fit. Invalid settings show an error at the source line and keep the source visible. PDF export includes the chart followed by its data table.
 

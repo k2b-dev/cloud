@@ -41,6 +41,8 @@ const open = async (name: string, scenario: Scenario, width = 1440, query = "", 
   await page.bringToFront();
   await page.goto(`${url}${query}`);
   await page.waitForFunction(() => "clientHeight" in window);
+  // Map-only cases inspect the address section; ordinary workspace reads keep its collapsed default.
+  if (scenario.view === "detail") await expandAddresses(page);
   // Activate before navigation so WebKit does not throttle fixture readiness or actions.
   return page;
 };
@@ -254,7 +256,12 @@ test.each(["submission", "reload"] as const)("the focused address editor preserv
   }
 });
 
+const expandAddresses = async (page: Page) => {
+  const summary = page.locator('.k2b-detail-panel__section-summary[aria-expanded="false"]', { hasText: "Adressen" });
+  if (await summary.isVisible()) await summary.click();
+};
 const editAddress = async (page: Page) => {
+  await expandAddresses(page);
   await page.getByRole("button", { name: "Bearbeiten", exact: true }).last().click();
   await page.getByRole("form", { name: "Adresse bearbeiten" }).waitFor();
   await expectFocus(page.getByRole("heading", { name: "Adresse bearbeiten", exact: true }));

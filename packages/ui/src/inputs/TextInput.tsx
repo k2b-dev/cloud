@@ -59,12 +59,12 @@ export function TextInput(props: TextInputProps): JSX.Element {
     "markdown",
     "minLength",
     "maxLength",
+    "onKeyDown",
     "monospace",
     "multiline",
     "onClear",
     "onValueCommit",
     "onSubmit",
-    "onKeyDown",
     "onValueChange",
     "password",
     "prefix",
@@ -103,16 +103,23 @@ export function TextInput(props: TextInputProps): JSX.Element {
     local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
   const input = (next: string) => local.onValueChange?.(next);
   const commit = (next: string) => local.onValueCommit?.(next);
-  const keyDown: JSX.EventHandler<HTMLInputElement | HTMLTextAreaElement, KeyboardEvent> = (event) => {
-    const handler = local.onKeyDown;
-    if (typeof handler === "function") handler(event);
-    else if (Array.isArray(handler)) handler[0](handler[1], event);
-    if (!event.defaultPrevented && local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
+  const submitOnEnter = (event: KeyboardEvent) => {
+    if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
       event.preventDefault();
       local.onSubmit();
     }
   };
-  const clear = () => {
+  /** The caller's key handler runs first; Enter submits unless it handled the key. */
+  const keyDown: JSX.EventHandler<HTMLInputElement | HTMLTextAreaElement, KeyboardEvent> = (event) => {
+    const handler = local.onKeyDown;
+    if (typeof handler === "function") handler(event);
+    else if (Array.isArray(handler)) handler[0](handler[1], event);
+    if (!event.defaultPrevented) submitOnEnter(event);
+  };
+  const clear: JSX.EventHandler<HTMLButtonElement, MouseEvent> = (event) => {
+    // Clearing removes the button. Return to the field before notifying the caller, whose handler
+    // may deliberately navigate or move focus somewhere else.
+    event.currentTarget.ownerDocument.getElementById(meta.controlId)?.focus();
     if (local.onClear) {
       local.onClear();
       return;

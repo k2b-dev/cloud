@@ -147,7 +147,7 @@ for (const view of [
         await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
         const label = theme === "dark" ? "Verbindung wird wiederhergestellt" : "Reconnecting";
-        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, {
           ...base,
           seq: 2,
@@ -224,7 +224,7 @@ for (const view of [
         await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
         const label = theme === "dark" ? "Verbindung wird wiederhergestellt" : "Reconnecting";
-        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, {
           ...base,
           seq: 2,
@@ -291,7 +291,7 @@ for (const view of [
           kind: "message",
           message,
           loopId: "turn",
-          modelProfileId: null,
+          modelId: null,
           providerModel: null,
           usage: null,
           stopReason: null,
@@ -303,7 +303,7 @@ for (const view of [
           ...patch,
         });
         const request = stored(10, { role: "user", content: [{ type: "text", text: "Build the revenue report" }] });
-        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         // The person's message is in the chat before the turn ends, as the controller keeps it.
         await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
         await emit(page, {
@@ -429,7 +429,7 @@ for (const view of [
           { severity: "error", kind: "layout", message: "Row is misaligned" },
           { severity: "warning", kind: "layout", message: "Value is cut off" },
         ];
-        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, { ...base, seq: 2, type: "block_set", block: { ...check, status: "running" } });
         expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft die App" : "Checking the app");
         await page.locator(".ai-turn-work > summary").click();
@@ -539,7 +539,7 @@ const storedMessage = (
   kind: "message",
   message,
   loopId,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -577,7 +577,7 @@ for (const view of [
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
         let seq = 1;
-        await emit(page, { ...base, seq: seq++, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: seq++, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         // Earlier turns fill the conversation, so it scrolls and follows its end.
         for (let index = 0; index < 5; index++) {
           const user = storedMessage(100 + index * 2, `old-${index}`, {
@@ -717,7 +717,7 @@ for (const view of [
         const send = { id: "tool-send", kind: "tool" as const, callId: "send", name: "mail__action__send", args, presentation };
         const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/offer.pdf" } };
         const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Send the offer to Jana Berger" }] });
-        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
         await emit(page, { ...base, seq: 3, type: "block_set", block: { ...read, status: "completed", result: "pdf" } });
         await emit(page, {
@@ -905,7 +905,7 @@ for (const view of [
           return { color: computed.color, fontSize: computed.fontSize, lineHeight: computed.lineHeight };
         });
       };
-      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
       await emit(page, {
         ...base,
         seq: 2,
@@ -999,7 +999,7 @@ for (const view of [
         ...base,
         seq: 1,
         type: "turn_started",
-        modelProfileId: "m",
+        modelId: "m",
         providerModel: "m",
         blocks: [
           { ...read, status: "completed", result: "{}" },
@@ -1076,7 +1076,7 @@ test("a streaming answer without steps reserves no height, so it reflows live wh
   try {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
-    await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+    await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
     const words = "The quarterly numbers grew in every region, and the strongest month was March.".split(" ");
     for (const [index, word] of words.entries()) {
       await emit(page, {
@@ -1101,7 +1101,7 @@ for (const width of [390, 320])
       const page = await context.newPage();
       await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
       const title = "Lokale Anwendungseinstellungen aktualisieren";
-      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
       await emit(page, {
         ...base,
         seq: 2,
@@ -1170,7 +1170,7 @@ for (const view of [
         await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         const german = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${german ? "de" : "en"}&theme=${theme}`);
-        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, {
           ...base,
           seq: 2,
@@ -1272,7 +1272,7 @@ for (const view of [
       await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
       const url = "https://query1.finance.yahoo.com/v8/finance/chart/NVDA?range=1d&interval=5m&includePrePost=false";
       const run = { id: "tool-run", kind: "tool" as const, callId: "run-approval-0", name: "code_run", args: { code: "…" } };
-      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
       await emit(page, {
         ...base,
         seq: 2,
@@ -1364,7 +1364,7 @@ for (const view of [
           { callId: "write", name: "write_file", args: { path: "/report.md", content: "# Report" }, result: { path: "/report.md" } },
         ];
         const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Summarize the products" }] });
-        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
         let seq = 3;
         for (const [index, call] of calls.entries()) {

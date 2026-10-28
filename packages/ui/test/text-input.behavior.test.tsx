@@ -34,6 +34,35 @@ test("Enter submits a single-line TextInput without submitting a surrounding for
   dom.cleanup();
 });
 
+test("the caller's key handler runs, and a key it handles does not submit", async () => {
+  const dom = createDomTestHarness();
+  const keys: string[] = [];
+  let submitted = 0;
+  const dispose = render(
+    () => (
+      <TextInput
+        label="Search"
+        type="search"
+        value=""
+        onSubmit={() => submitted++}
+        onKeyDown={(event) => {
+          keys.push(event.key);
+          if (event.key === "Enter" && event.altKey) event.preventDefault();
+        }}
+      />
+    ),
+    dom.root,
+  );
+  const input = dom.root.querySelector("input")!;
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", altKey: true, bubbles: true, cancelable: true }));
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  expect(keys).toEqual(["Escape", "Enter", "Enter"]);
+  expect(submitted).toBe(1);
+  dispose();
+  dom.cleanup();
+});
+
 test("TextInput keeps phone keyboards from capitalizing or correcting user names, addresses, and passwords", async () => {
   const dom = createDomTestHarness();
   const dispose = render(

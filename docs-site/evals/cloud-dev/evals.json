@@ -262,6 +262,30 @@
         "The 48 rem phone split and pointer capability rules keep their viewport semantics.",
         "Verification compares a narrow host in a wide window with a window as wide as the host and checks host-only resize."
       ]
+    },
+    {
+      "id": 23,
+      "prompt": "Add a structured classification task to a Cloud application without hardcoding an operator model. Explain defaults and policy failures.",
+      "expected_output": "Uses model: { class: \"fast\" } explicitly for short classification, knows omitted requests mean balanced, consumes result.model, and never downgrades on access or budget failures.",
+      "files": [],
+      "expectations": [
+        "Requests a class through the supported AiModelRequest union.",
+        "Distinguishes explicit fast background work from the balanced public default.",
+        "Fallback applies only to empty assignments."
+      ]
+    },
+    {
+      "id": 24,
+      "prompt": "Make the customer counter in our Cloud application installable on a shared shop iPad. An employee pairs the iPad and opens a customer visit; the customer signs an offered document without signing into Cloud.",
+      "expected_output": "Reads the App-PWA installation and session contracts, declares one installable surface, uses scan-only pairing and visits, keeps device and customer authority separate from employee identity, and commits the signature and visit completion together with recovery after a lost response.",
+      "files": [],
+      "expectations": [
+        "Uses the current App-PWA and App-PWA sessions guides and public exports, without changing Cloud mobile-app pairing.",
+        "The employee shows each QR and the iPad scans it; the device belongs to the employee but never acts as that employee.",
+        "The application authorizes the visit subject and customer action; only declared Cloud resource operations intersect device permissions with current owner grants.",
+        "Domain writes, attempt recording and completion use the supplied transaction; a lost response is reconciled before announcing success.",
+        "Uses a neutral start and offline page, restart-only worker updates, and clears private display state and unfinished signatures when hidden or offline."
+      ]
     }
   ]
 }
