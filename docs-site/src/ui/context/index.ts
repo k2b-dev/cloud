@@ -69,6 +69,7 @@ import inputSlider from "./input/slider.md" with { type: "text" };
 import inputTagEditor from "./input/tag-editor.md" with { type: "text" };
 import inputTags from "./input/tags.md" with { type: "text" };
 import inputText from "./input/text.md" with { type: "text" };
+import layoutAnchoredPopover from "./layout/anchored-popover.md" with { type: "text" };
 import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import layoutDetailPanel from "./layout/detail-panel.md" with { type: "text" };
 import layoutDiscussion from "./layout/discussion.md" with { type: "text" };
@@ -162,6 +163,7 @@ const catalogContextSources = {
   "layout/settings-modal": { file: "layout/settings-modal.md", content: layoutSettingsModal },
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },
   "layout/floating-window": { file: "layout/floating-window.md", content: layoutFloatingWindow },
+  "layout/anchored-popover": { file: "layout/anchored-popover.md", content: layoutAnchoredPopover },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },

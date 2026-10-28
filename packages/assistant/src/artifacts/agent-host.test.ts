@@ -115,7 +115,7 @@ test("the managed background host returns NEEDS_APPROVAL with the exact message 
       conversationId: context.conversationId,
       status: "running",
       attempt: 1,
-      modelProfileId: null,
+      modelId: null,
       createdAt: at,
       completedAt: null,
       error: null,

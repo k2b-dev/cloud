@@ -1,13 +1,18 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { memoryStore, nessi, type StoreEntry } from "@k2b/nessi";
 import { z } from "zod";
 import { createCloudCompactFn } from "./compaction";
 import { createAiProvider, taskReasoningEffort } from "./provider";
+import * as connections from "./provider-connections";
 import { inferenceProvider } from "./quota-provider";
 import { aiConversations } from "./store";
 import * as structuredRuns from "./structured-runs";
 import { applyAiTurnPolicy } from "./turn-policy";
 import type { AiModelProfile, AiProviderId } from "./types";
+
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
 
 // A local HTTP fake exercises the real adapters without replacing the global fetch timing wrapper.
 let server: ReturnType<typeof Bun.serve> | undefined;
@@ -62,13 +67,19 @@ for (const providerId of providers)
       },
     });
     const profile: AiModelProfile = {
+      modelId: "test",
+      providerId: "test",
+      variantLabel: "Standard",
+      description: "",
+      icon: { kind: "provider" },
+      showInPicker: true,
       id: "test",
       label: "Test",
       provider: providerId,
       model: "test",
       baseURL: `http://localhost:${server.port}/v1`,
       enabled: true,
-      capabilities: ["streaming"],
+      capabilities: [],
       dataBoundary: "private",
       reasoningEffort: "medium",
       extraBody: { custom: { feature: true } },
@@ -159,7 +170,7 @@ for (const providerId of providers)
     try {
       await createCloudCompactFn({
         conversationId: "test",
-        modelProfileId: "test",
+        modelId: "test",
         additionalInstructions: "",
         signal: new AbortController().signal,
       })({
@@ -202,13 +213,19 @@ test("interrupted provider streams finish the loop as errors instead of successf
       }),
   });
   const profile: AiModelProfile = {
+    modelId: "partial",
+    providerId: "partial",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id: "partial",
     label: "Partial",
     provider: "vllm",
     model: "test",
     baseURL: `http://localhost:${server.port}/v1`,
     enabled: true,
-    capabilities: ["streaming"],
+    capabilities: [],
     dataBoundary: "private",
   };
   const store = memoryStore();

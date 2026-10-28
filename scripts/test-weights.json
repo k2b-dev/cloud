@@ -741,6 +741,7 @@
     "workspace root tests integration/identity/identity-keyring.integration.test.ts": 2.7,
     "workspace root tests integration/identity/mandate-capability-policy.integration.test.ts": 2.7,
     "workspace root tests integration/test-clickhouse-cleanup.integration.test.ts": 0.7,
+    "workspace root tests integration/test-database-template.integration.test.ts": 3.9,
     "workspace root tests integration/test-infra-redis-binding.integration.test.ts": 0.1,
     "workspace root tests integration/test-sync-cleanup.integration.test.ts": 0.1,
     "workspace root tests integration/unreadable-admin.integration.test.ts": 1.5

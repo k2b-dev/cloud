@@ -227,6 +227,16 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedConversationId = url.searchParams.get("conversation");
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
+    // Older shell tests pin "list and reader"; the columns view (F2) opts in with ?layout=auto|columns.
+    viewPreference: {
+      large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
+      phone: "compact",
+    },
+    // ?done=19,14 sets today's completed conversations and how many automations completed.
+    doneTodayCounts: (() => {
+      const [done = 0, automated = 0] = (url.searchParams.get("done") ?? "").split(",").map((value) => Number(value) || 0);
+      return { doneToday: done, doneByAutomation: automated };
+    })(),
     receivingAddress: selectedMailbox.id === "Box001" ? "support@example.test" : selectedMailbox.receivingAddress,
     mailbox: selectedMailbox,
     permission,
@@ -282,7 +292,7 @@ export function mailboxData(url: URL): MailboxPageData {
     selectedConversationId,
     selectedMessageId: url.searchParams.get("message"),
     listItems:
-      scheduledMode || draftsMode
+      scheduledMode || draftsMode || url.searchParams.get("inbox") === "empty"
         ? []
         : selectedMailbox.id === "Box001"
           ? listRows

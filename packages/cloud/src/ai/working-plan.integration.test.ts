@@ -25,7 +25,7 @@ databaseSuite()("working plan and execution budget in disposable Postgres", () =
   });
   test("plan survives compaction and fork, rolls back on retry, ignores failed updates", async () => {
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
-    const store = aiConversations.createSessionStore({ conversationId: chat.id, modelProfileId: "fixture" });
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, modelId: "fixture" });
     const plan: AiTodoPlan = { todos: [{ id: "check", content: "Check the data", status: "pending" }] };
     await store.append({ role: "tool_result", callId: "one", name: "todo_write", result: plan });
     const checkpoint = (await aiConversations.listMessages({ conversationId: chat.id })).at(-1)!;
@@ -51,7 +51,7 @@ databaseSuite()("working plan and execution budget in disposable Postgres", () =
       const chat = await aiConversations.createConversation({ ownerUserId: userId });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "fixture",
+        modelId: "fixture",
         runConfig: { kind: "chat", input: "work", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "work" }] },
       });
