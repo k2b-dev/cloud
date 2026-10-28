@@ -150,6 +150,21 @@ suiteFor(
     expect(sent.at(-1)!.data.alert).toBe(true);
     expect(await allowAlert(recipient.id, true, false)).toBe(false);
   });
+  test("out-of-order fan-out keeps the newest personal reason and its mention alert exemption", async () => {
+    const { author, recipient, chat } = await setup();
+    const original = await post(recipient, chat.shortId, "Question");
+    const reply = await post(author, chat.shortId, "Answer", { replyTo: original.id });
+    const mention = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    await deliverMessage(mention.uuid);
+    await deliverMessage(reply.uuid);
+    await due(chat.id);
+    expect(await allowAlert(recipient.id, true, false)).toBe(true);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.data).toMatchObject({ reason: "mention", text: "Hello Lea", further: 1, alert: true });
+  });
   test("none blocks personal and message; expired none returns to the default", async () => {
     const { author, recipient, chat } = await setup();
     await sql`UPDATE chat.participants SET notify = 'none', notify_until = clock_timestamp() + interval '1 hour'
@@ -427,12 +442,13 @@ suiteFor(
     const { author, chat } = await setup();
     try {
       await notificationLifecycle.start();
-      await post(author, chat.shortId);
+      await post(author, chat.shortId, "First worker message");
+      await post(author, chat.shortId, "Second worker message");
       await notificationOutbox.reconcile();
       const deadline = Date.now() + 10_000;
       while (!sent.length && Date.now() < deadline) await Bun.sleep(50);
       expect(sent).toHaveLength(1);
-      expect(sent[0]!.data.chat).toBe(chat.shortId);
+      expect(sent[0]!.data).toMatchObject({ chat: chat.shortId, further: 1 });
       expect(sent[0]!.key).toBe("message");
     } finally {
       await notificationLifecycle.stop();

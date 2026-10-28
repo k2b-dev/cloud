@@ -154,8 +154,12 @@ export const deliverMessage = async (messageId: string): Promise<boolean> => {
         VALUES (${person.id}::uuid, ${conversation.id}::uuid, ${message.id}::uuid, ${personal ? message.id : null}::uuid, ${reason})
         ON CONFLICT (user_id, conversation_id) DO UPDATE SET
           message_id = CASE WHEN (SELECT seq FROM chat.messages WHERE id = pending.message_id) < ${message.seq} THEN EXCLUDED.message_id ELSE pending.message_id END,
-          personal_message_id = CASE WHEN ${personal} THEN EXCLUDED.personal_message_id ELSE pending.personal_message_id END,
-          reason = CASE WHEN ${personal} OR pending.personal_message_id IS NULL THEN EXCLUDED.reason ELSE pending.reason END,
+          personal_message_id = CASE WHEN ${personal} AND (pending.personal_message_id IS NULL
+            OR (SELECT seq FROM chat.messages WHERE id = pending.personal_message_id) < ${message.seq})
+            THEN EXCLUDED.personal_message_id ELSE pending.personal_message_id END,
+          reason = CASE WHEN pending.personal_message_id IS NULL OR (${personal}
+            AND (SELECT seq FROM chat.messages WHERE id = pending.personal_message_id) < ${message.seq})
+            THEN EXCLUDED.reason ELSE pending.reason END,
           message_count = LEAST(pending.message_count::bigint + 1, 2147483647)::int
         RETURNING *`;
       if (row) {
