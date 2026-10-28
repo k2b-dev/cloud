@@ -7,11 +7,18 @@ export type TooltipProps = {
   placement?: TooltipPlacement;
   delay?: number;
   disabled?: boolean;
+  /**
+   * The element whose keyboard focus opens the hint, when a container holds
+   * the focus instead of `target` (a tree item around its row). Defaults to
+   * `target`.
+   */
+  focusTarget?: () => HTMLElement | undefined;
 };
 
-export type TooltipAnchorProps = Omit<JSX.HTMLAttributes<HTMLSpanElement>, "content"> & Omit<TooltipProps, "target">;
+export type TooltipAnchorProps = Omit<JSX.HTMLAttributes<HTMLSpanElement>, "content"> & Omit<TooltipProps, "target" | "focusTarget">;
 
-export type TooltipTriggerProps = Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "content"> & Omit<TooltipProps, "target">;
+export type TooltipTriggerProps = Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "content"> &
+  Omit<TooltipProps, "target" | "focusTarget">;
 
 /** True below a Tooltip.Anchor, whose hint already covers the controls inside it. */
 const AnchorContext = createContext(false);
@@ -96,18 +103,26 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
   onMount(() => {
     target = props.target();
     if (!target) return;
+    const focusHost = props.focusTarget?.() ?? target;
 
     // Server HTML may carry a native title as the no-JavaScript hint; once
     // hydrated, this surface replaces it so the hint does not appear twice.
     const originalTitle = target.getAttribute("title");
     target.removeAttribute("title");
     // A hint that only repeats the control's accessible name adds nothing for
-    // assistive technology, so it does not become a description.
-    const repeatsName = surface?.textContent?.trim() === target.getAttribute("aria-label")?.trim();
-    const originalDescription = target.getAttribute("aria-describedby");
+    // assistive technology, so it does not become a description. Without an
+    // aria-label, the name comes from the visible text the hint repeats.
+    const hint = surface?.textContent?.trim();
+    const label = focusHost.getAttribute("aria-label");
+    const text = [focusHost, target].find((element) => surface && !element.contains(surface))?.textContent;
+    const repeatsName = label !== null ? hint === label.trim() : Boolean(hint && text?.includes(hint));
+    const originalDescription = focusHost.getAttribute("aria-describedby");
     const descriptions = new Set(originalDescription?.split(/\s+/).filter(Boolean) ?? []);
     if (!repeatsName) descriptions.add(tooltipId);
-    if (descriptions.size > 0) target.setAttribute("aria-describedby", [...descriptions].join(" "));
+    // A focus container named by its content, such as a tree item, would read
+    // the open hint as part of its name; a description still reads it.
+    if (surface && focusHost !== target && focusHost.contains(surface)) surface.setAttribute("aria-hidden", "true");
+    if (descriptions.size > 0) focusHost.setAttribute("aria-describedby", [...descriptions].join(" "));
 
     // Touch has no hover, so a tap never opens the hint; the label stays the
     // accessible name.
@@ -117,14 +132,15 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
     // Only visible focus, as from the keyboard, opens the hint. Focus that a
     // click or tap gives, or that a closing overlay returns silently, does not.
     const focusIn = (event: FocusEvent) => {
-      if ((event.target as Element | null)?.matches?.(":focus-visible")) open();
+      const focused = event.target as Element | null;
+      if ((focusHost === target || focused === focusHost) && focused?.matches?.(":focus-visible")) open();
     };
     const leave = () => {
       dismissedUntilLeave = false;
       close();
     };
     const focusOut = (event: FocusEvent) => {
-      if (!target?.contains(event.relatedTarget as Node | null)) leave();
+      if (focusHost === target ? !target.contains(event.relatedTarget as Node | null) : event.target === focusHost) leave();
     };
     const dismissForUse = () => {
       dismissedUntilLeave = true;
@@ -137,24 +153,24 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
       if (event.key === " " || event.key === "Enter") dismissForUse();
     };
 
-    target.addEventListener("keydown", keyDown, true);
+    focusHost.addEventListener("keydown", keyDown, true);
     target.addEventListener("pointerenter", enter);
     target.addEventListener("pointerleave", leave);
     target.addEventListener("pointerdown", dismissForUse);
-    target.addEventListener("focusin", focusIn);
-    target.addEventListener("focusout", focusOut);
+    focusHost.addEventListener("focusin", focusIn);
+    focusHost.addEventListener("focusout", focusOut);
 
     onCleanup(() => {
       close();
       if (originalTitle !== null) target?.setAttribute("title", originalTitle);
-      if (originalDescription) target?.setAttribute("aria-describedby", originalDescription);
-      else target?.removeAttribute("aria-describedby");
-      target?.removeEventListener("keydown", keyDown, true);
+      if (originalDescription) focusHost.setAttribute("aria-describedby", originalDescription);
+      else focusHost.removeAttribute("aria-describedby");
+      focusHost.removeEventListener("keydown", keyDown, true);
       target?.removeEventListener("pointerenter", enter);
       target?.removeEventListener("pointerleave", leave);
       target?.removeEventListener("pointerdown", dismissForUse);
-      target?.removeEventListener("focusin", focusIn);
-      target?.removeEventListener("focusout", focusOut);
+      focusHost.removeEventListener("focusin", focusIn);
+      focusHost.removeEventListener("focusout", focusOut);
     });
   });
 

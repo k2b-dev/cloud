@@ -4,6 +4,7 @@ import { isServer } from "solid-js/web";
 import { dropdownPosition } from "../actions/Dropdown";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
+import { SidebarRailHint } from "./SidebarRailHint";
 
 /** One container a person can switch to, such as a notebook, a space, or a mailbox. */
 export type AppWorkspaceSwitcherOption = {
@@ -266,7 +267,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
         aria-haspopup="dialog"
         aria-expanded={open()}
         aria-controls={id}
-        // The full name for a truncated title and for the icon in a collapsed rail.
+        // The full name without JavaScript; the hydrated hint replaces it.
         title={props.label}
         onPointerEnter={load}
         onFocus={load}
@@ -296,6 +297,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
           {[props.description, props.switchLabel].filter(Boolean).join(", ")}
         </span>
       </button>
+      <SidebarRailHint target={() => trigger} label={props.label} labelSelector=".k2b-sidebar-switcher__copy > span" />
       <div
         ref={panel}
         id={id}
