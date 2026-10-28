@@ -1,0 +1,1 @@
+| A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |

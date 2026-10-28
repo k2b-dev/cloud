@@ -3,3 +3,13 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* The details header's one main command ("Run") reads in the soft panel accent, as in every K1 details panel. */
+.k2b-ui .k2b-button.capabilities-run {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+
+.k2b-ui .k2b-button.capabilities-run:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}

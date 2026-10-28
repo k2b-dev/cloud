@@ -687,7 +687,7 @@ document.addEventListener('securitypolicyviolation', () => { document.querySelec
       await inspect();
       expect(await eventually(open, Boolean)).toBe(true);
       expect(await title()).toBe("Jan");
-      expect(await tooltip.locator(".k2b-chart__tooltip-row").textContent()).toBe("Umsatz: 1.200,00\u00a0€");
+      expect(await tooltip.locator(".k2b-chart__tooltip-row").textContent()).toBe("Umsatz: 1.200\u00a0€");
       const tooltipValue = await tooltip.locator(".k2b-chart__tooltip-row b").textContent();
       const clicks = Number(await text(page, "#clicks"));
       const documentClicks = Number(await text(page, "#document-clicks"));

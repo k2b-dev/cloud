@@ -125,8 +125,9 @@ export const applyMailConversationTransition = (
     if (typeof value !== "string" || conversation.workStatus === value) return false;
     conversation.workStatus = value;
   } else {
-    if (typeof value !== "string" || conversation.summary === value) return false;
+    if (typeof value !== "string" || conversation.summarySource === "person" || conversation.summary === value) return false;
     conversation.summary = value;
+    conversation.summarySource = "workflow";
     conversation.summaryRevision = Number(conversation.summaryRevision ?? 0) + 1;
   }
   conversation.revision = Number(conversation.revision ?? 0) + 1;
@@ -199,6 +200,18 @@ export const restoreMailWorkflowProjectedState = async (
     const message = await restoredObject(ctx, step, config, "message");
     if (message && output.value !== undefined) {
       applyMailMessageTransition(message, output.action as Parameters<typeof applyMailMessageTransition>[1], output.value);
+    }
+    return;
+  }
+
+  // A skipped assignment may have observed a newer live state; restore that snapshot, never its requested target.
+  if (output.skipped) {
+    if (output.action === "assignConversation") {
+      const conversation = await restoredObject(ctx, step, config, "conversation");
+      if (conversation && Array.isArray(output.assigneeUserIds)) {
+        conversation.assigneeUserIds = output.assigneeUserIds;
+        if (typeof output.revision === "number") conversation.revision = output.revision;
+      }
     }
     return;
   }

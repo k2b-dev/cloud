@@ -11,6 +11,7 @@
  */
 
 import type { CloudRuntime } from "../contracts/app";
+import { pwaBuilds } from "../contracts/pwa-builds";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { listApps, listCapabilities, watchAppRegistry } from "./registry";
@@ -19,6 +20,11 @@ import { buildRuntimeFromRegistry } from "./runtime-context";
 const log = logger("runtime-watcher");
 
 let current: CloudRuntime | undefined;
+let mobileBuilds: Record<string, string> = {};
+
+/** Current registered release identities for the existing mobile session keepalive. */
+export const registeredPwaBuilds = (): Record<string, string> => mobileBuilds;
+
 let coreRelease: string | undefined;
 let initPromise: Promise<void> | undefined;
 let watcherTask: Promise<void> | undefined;
@@ -28,6 +34,7 @@ const refresh = async () => {
   const apps = await listApps();
   const capabilities = await listCapabilities(apps);
   current = buildRuntimeFromRegistry(apps, capabilities);
+  mobileBuilds = pwaBuilds(apps);
   coreRelease = apps.find((app) => app.id === "core")?.runtime?.release;
 };
 
@@ -74,6 +81,7 @@ export const stopRuntimeWatcher = async (): Promise<void> => {
   initPromise = undefined;
   current = undefined;
   coreRelease = undefined;
+  mobileBuilds = {};
 };
 
 export const getCurrentRuntime = (): CloudRuntime => {

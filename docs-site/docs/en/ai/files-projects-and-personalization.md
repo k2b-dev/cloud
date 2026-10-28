@@ -717,7 +717,7 @@ tool result uses that result. A crash before result persistence can repeat the
 provider call; it cannot overwrite another call's artifact or a file edited
 since creation. Artifact collisions fail explicitly.
 
-See [Models and providers](/en/docs/ai/models-and-providers#configure-audio-transcription)
+See [Models and providers](/en/docs/ai/models-and-providers#assign-classes-and-tools)
 for container and provider limits. Normal file storage limits do not imply
 that an audio endpoint accepts the same input size.
 

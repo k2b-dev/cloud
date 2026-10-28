@@ -9,6 +9,7 @@ import { defineCliCommands } from "../commands";
 import { accountAdministrationCommands } from "./account-administration";
 import { accountCategoryCommands } from "./account-categories";
 import { agentCommands } from "./agents";
+import { aiModelCommands } from "./ai-models";
 import { aiQuotaCommands } from "./ai-quotas";
 import { aiSkillCommands } from "./ai-skills";
 import { aiUsageCommands } from "./ai-usage";
@@ -39,14 +40,16 @@ export default defineCliCommands({
     accounts: "Manage account policy and account administration.",
     ai: "Manage AI models, quotas, Skills, and usage.",
     "ai models": "Manage AI model configuration.",
-    "ai models pricing": "Manage model reference prices.",
-    "ai models settings": "Manage model thinking levels, extra parameters, and extra headers.",
+    "ai providers": "Manage AI provider connections.",
+    "ai variants": "Manage named model variants.",
+    "ai classes": "Manage model classes and tools.",
     "ai quotas background": "Inspect and release the background emergency stop.",
     "ai skills": "Inspect Assistant Skills and trusted templates.",
     "ai usage": "Inspect AI runs and usage facets.",
     announcements: "Manage platform announcements and banners.",
     "app-credentials": "Manage per-application credentials for background work.",
-    agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials.",
+    agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials, and change their pictures.",
+    "agents avatar": "Show and change an agent's picture: its robot parts or a photo.",
     "app-sign-in": "Manage app sign-in and pairing.",
     apps: "Inspect and remove registered apps.",
     documentation: "Manage the administration documentation website.",
@@ -93,6 +96,7 @@ export default defineCliCommands({
     ...accountCategoryCommands,
     ...accountAdministrationCommands,
     ...aiUsageCommands,
+    ...aiModelCommands,
     ...aiQuotaCommands,
     ...aiSkillCommands,
     ...instanceCommands,

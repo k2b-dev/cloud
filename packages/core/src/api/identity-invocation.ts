@@ -1,4 +1,9 @@
-import { type CapabilityDispatchDependencies, dispatchCapability, withCapabilityRequestTimeout } from "@k2b/cloud/api";
+import {
+  type CapabilityDispatchDependencies,
+  createIdentityChildInvocationRoutes,
+  dispatchCapability,
+  withCapabilityRequestTimeout,
+} from "@k2b/cloud/api";
 import {
   CAPABILITY_MAX_REQUEST_BYTES,
   CapabilityAppIdSchema,
@@ -112,7 +117,7 @@ const dispatchRequest = (source: Request, input: InvocationRequest): Request => 
 
 export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationBrokerDependencies> = {}): Hono => {
   const authenticateWorkload = dependencies.authenticateWorkload ?? authenticateWorkloadCredential;
-  return new Hono().post("/invoke", async (c) => {
+  return new Hono().route("/", createIdentityChildInvocationRoutes()).post("/invoke", async (c) => {
     const appId = CapabilityAppIdSchema.safeParse(c.req.header("X-Cloud-App-Id"));
     const token = bearerToken(c.req.header("Authorization"));
     if (!appId.success || !token) return errorResponse(c, 401, "UNAUTHORIZED");

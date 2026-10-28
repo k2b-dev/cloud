@@ -294,43 +294,45 @@ describe("signed-in shell", () => {
     }
   });
 
-  test.each(devices)("$name: attaching, reloading and navigating preserve the shell", async (device) => {
-    const keys = ["rail", "shell", "workspace", "bar", "sidebar", "pane", "main", "detail", "avatar"] as const;
-    const same = (device: Device, step: string, actual: Geometry, expected: Geometry) => {
-      for (const key of keys) {
-        const box = actual[key]?.box;
-        const reference = expected[key]?.box;
-        expect({ device: device.name, step, key, present: !!box }).toEqual({ device: device.name, step, key, present: !!reference });
-        if (box && reference) {
-          for (const edge of ["left", "top", "right", "bottom", "width", "height"] as const)
-            expect(Math.abs(box[edge] - reference[edge]), `${device.name} ${step} ${key}.${edge}`).toBeLessThanOrEqual(0.01);
+  for (const device of devices) {
+    test(`${device.name}: neither the controller attaching nor navigating to another page moves any part of the shell`, async () => {
+      const keys = ["rail", "shell", "workspace", "bar", "sidebar", "pane", "main", "detail", "avatar"] as const;
+      const same = (device: Device, step: string, actual: Geometry, expected: Geometry) => {
+        for (const key of keys) {
+          const box = actual[key]?.box;
+          const reference = expected[key]?.box;
+          expect({ device: device.name, step, key, present: !!box }).toEqual({ device: device.name, step, key, present: !!reference });
+          if (box && reference) {
+            for (const edge of ["left", "top", "right", "bottom", "width", "height"] as const)
+              expect(Math.abs(box[edge] - reference[edge]), `${device.name} ${step} ${key}.${edge}`).toBeLessThanOrEqual(0.01);
+          }
         }
+      };
+      const noOverflow = async (page: Page) => {
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
+      const { context, page } = await open(device, "/app/mail/inbox", { attached: false });
+      try {
+        const served = await geometry(page, false);
+        await noOverflow(page);
+        await attach(page);
+        same(device, "attach", await geometry(page, false), served);
+        await noOverflow(page);
+        // Reload the same server path and attach again, without relying on a live HTTP server.
+        await page.setContent(await html("/app/mail/inbox"));
+        same(device, "reload served", await geometry(page, false), served);
+        await attach(page);
+        same(device, "reload attached", await geometry(page, false), served);
+        await noOverflow(page);
+        await page.setContent(await html("/app/mail/archive"));
+        await attach(page);
+        same(device, "navigate", await geometry(page, false), served);
+        await noOverflow(page);
+      } finally {
+        await context.close();
       }
-    };
-    const noOverflow = async (page: Page) => {
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    };
-    const { context, page } = await open(device, "/app/mail/inbox", { attached: false });
-    try {
-      const served = await geometry(page, false);
-      await noOverflow(page);
-      await attach(page);
-      same(device, "attach", await geometry(page, false), served);
-      await noOverflow(page);
-      // Reload the same server path and attach again, without relying on a live HTTP server.
-      await page.setContent(await html("/app/mail/inbox"));
-      same(device, "reload served", await geometry(page, false), served);
-      await attach(page);
-      same(device, "reload attached", await geometry(page, false), served);
-      await noOverflow(page);
-      await page.setContent(await html("/app/mail/archive"));
-      await attach(page);
-      same(device, "navigate", await geometry(page, false), served);
-      await noOverflow(page);
-    } finally {
-      await context.close();
-    }
-  });
+    });
+  }
 
   for (const device of [ipadPortrait, smallLaptop, ipadLandscape, laptop, desktop]) {
     test(`${device.name}: a page without a workspace follows the card rule`, async () => {

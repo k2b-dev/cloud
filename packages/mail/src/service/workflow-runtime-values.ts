@@ -1,8 +1,10 @@
-import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
+import type { WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
-import type { WorkflowValueResolverPort } from "@k2b/cloud/workflows/runtime";
+import { WorkflowValueError, type WorkflowValueResolverPort } from "@k2b/cloud/workflows/runtime";
 import type { WorkflowRunClaim } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
+import { appEnv } from "../env";
+import { mailMessageTextLength } from "./message-text";
 import { resolveMailboxPublicId } from "./public-resources";
 import { enqueueMessageHydration } from "./sync-runtime";
 import { mailWorkflowBodyFieldLoaded, markMailWorkflowBodyFieldsLoaded } from "./workflow-body-fields";
@@ -20,36 +22,90 @@ const isObject = (value: WorkflowJsonValue | undefined): value is JsonObject =>
 const messageForReference = (
   reference: string,
   inputs: Record<string, WorkflowJsonValue>,
-): { message: JsonObject; field: "body" | "bodyText" | "bodyHtml" | "attachments"; tail: string[]; frozenKey: string } | null => {
+): {
+  message: JsonObject;
+  field: "body" | "bodyText" | "bodyHtml" | "attachments";
+  derived: "textLength" | "attachmentCount" | undefined;
+  tail: string[];
+  frozenKey: string;
+} | null => {
   const parts = reference.split(".");
-  const field = parts[2];
+  const derived = parts[2] === "textLength" || parts[2] === "attachmentCount" ? parts[2] : undefined;
+  const field = derived === "textLength" ? "bodyText" : derived === "attachmentCount" ? "attachments" : parts[2];
   if (parts[0] !== "inputs" || !parts[1] || (field !== "body" && field !== "bodyText" && field !== "bodyHtml" && field !== "attachments")) {
     return null;
   }
   const input = inputs[parts[1]];
   return isObject(input)
-    ? { message: input, field, tail: parts.slice(3), frozenKey: `inputs.${parts[1]}.${field === "body" ? "bodyText" : field}` }
+    ? { message: input, field, derived, tail: parts.slice(3), frozenKey: `inputs.${parts[1]}.${field === "body" ? "bodyText" : field}` }
     : null;
+};
+
+const assertBodyBudget = (value: WorkflowJsonValue | undefined, limit?: number): void => {
+  if (!limit || typeof value !== "string") return;
+  let characters = 0;
+  for (const _character of value) {
+    if (++characters > limit)
+      throw new WorkflowValueError(
+        `Mail body exceeds the ${limit}-character AI budget. Inspect the original or narrow the input; nothing was truncated.`,
+        "WORKFLOW_AI_INPUT_TOO_LARGE",
+      );
+  }
+};
+
+const isAiValuePath = (steps: WorkflowIrStep[], path: Array<string | number>): boolean =>
+  steps.some((step) => {
+    if (step.kind === "action")
+      return (
+        ["aiClassify", "aiClassifyMany", "aiExtractData", "aiGenerateText"].includes(step.action) &&
+        [...step.sourcePath, step.action].every((part, index) => path[index] === part)
+      );
+    if (step.kind === "if") return isAiValuePath([...step.then, ...step.else], path);
+    if (step.kind === "switch") return isAiValuePath([...step.cases.flatMap((entry) => entry.steps), ...step.default], path);
+    return isAiValuePath(step.steps, path);
+  });
+
+const assertAiSourceBudget = (value: WorkflowJsonValue | undefined, limit?: number): void => {
+  assertBodyBudget(value, limit);
+  if (!limit || value === null || typeof value !== "object") return;
+  for (const child of Object.values(value)) assertAiSourceBudget(child, limit);
 };
 
 const hydratedMessageValue = async (
   mailboxId: string,
   publicMessageId: string,
   field: "body" | "bodyText" | "bodyHtml" | "attachments",
+  bodyLimit?: number,
 ): Promise<HydratedMessageValue> => {
   const messageId = await resolveMailboxPublicId("messages", mailboxId, publicMessageId);
   if (!messageId) return { state: "unavailable" };
   const [message] = await sql<
-    { hydration_status: string; hydration_attempt: number; plain_text: string | null; sanitized_html: string | null }[]
+    {
+      hydration_status: string;
+      hydration_attempt: number;
+      plain_text: string | null;
+      sanitized_html: string | null;
+      body_too_large?: boolean;
+      body_present?: boolean;
+    }[]
   >`
-    SELECT hydration_status, hydration_attempt, plain_text, sanitized_html
+    SELECT hydration_status, hydration_attempt,
+      CASE WHEN ${field} IN ('body', 'bodyText') AND (${bodyLimit ?? null}::integer IS NULL OR char_length(plain_text) <= ${bodyLimit ?? null}) THEN plain_text END AS plain_text,
+      CASE WHEN ${field} = 'bodyHtml' AND (${bodyLimit ?? null}::integer IS NULL OR char_length(sanitized_html) <= ${bodyLimit ?? null}) THEN sanitized_html END AS sanitized_html,
+      (plain_text IS NOT NULL OR sanitized_html IS NOT NULL) AS body_present,
+      CASE WHEN ${field} = 'attachments' THEN NULL WHEN ${field} = 'bodyHtml' THEN char_length(sanitized_html) ELSE char_length(plain_text) END > ${bodyLimit ?? null}::integer AS body_too_large
     FROM mail.message_contents
     WHERE id = ${messageId}::uuid
       AND mailbox_id = ${mailboxId}::uuid
   `;
   if (!message) return { state: "unavailable" };
+  if (message.body_too_large)
+    throw new WorkflowValueError(
+      `Mail body exceeds the ${bodyLimit}-character AI budget. Inspect the original message manually or supply narrower input; nothing was truncated.`,
+      "WORKFLOW_AI_INPUT_TOO_LARGE",
+    );
   // Attachment hydration can change the status after the body is stored.
-  if (field !== "attachments" && (message.plain_text !== null || message.sanitized_html !== null)) {
+  if (field !== "attachments" && (message.body_present || message.plain_text !== null || message.sanitized_html !== null)) {
     return { state: "resolved", value: (field === "bodyHtml" ? message.sanitized_html : message.plain_text) ?? "" };
   }
   if (message.hydration_status === "failed" && message.hydration_attempt >= 5) return { state: "unavailable" };
@@ -145,13 +201,24 @@ export const normalizeMailWorkflowFrozenHydration = (frozen: JsonObject): void =
   }
 };
 
-export const projectMailWorkflowFrozenBody = (name: string, message: WorkflowJsonValue | undefined, frozen: JsonObject): void => {
-  if (!isObject(message) || message.bodyAvailable === true) return;
+export const projectMailWorkflowFrozenMessage = (name: string, message: WorkflowJsonValue | undefined, frozen: JsonObject): void => {
+  if (!isObject(message)) return;
+  const attachments = frozen[`inputs.${name}.attachments`];
+  if (Array.isArray(attachments)) {
+    message.attachments = attachments;
+    message.attachmentCount = attachments.length;
+    message.attachmentsAvailable = true;
+  }
+  if (message.bodyAvailable === true) {
+    if (typeof message.bodyText === "string") message.textLength = mailMessageTextLength(message.bodyText);
+    return;
+  }
   const plainKey = `inputs.${name}.bodyText`;
   const htmlKey = `inputs.${name}.bodyHtml`;
   // Mutate the shared projection so action contexts and restored aliases see the same body.
   if (Object.hasOwn(frozen, plainKey)) {
     message.body = message.bodyText = frozen[plainKey]!;
+    if (typeof message.bodyText === "string") message.textLength = mailMessageTextLength(message.bodyText);
     markMailWorkflowBodyFieldsLoaded(message, ["body", "bodyText"]);
   }
   if (Object.hasOwn(frozen, htmlKey)) {
@@ -177,24 +244,28 @@ export const createMailWorkflowValueResolver = (params: {
     params.frozenHydration[reference] = frozen;
     return frozen;
   };
-  const hydrateWholeMessage = async (name: string): Promise<void> => {
+  const hydrateWholeMessage = async (name: string, bodyLimit?: number): Promise<void> => {
     const message = params.claim.inputs[name];
-    if (!isObject(message) || message.bodyAvailable === true) return;
+    if (!isObject(message)) return;
+    assertBodyBudget(message.bodyText, bodyLimit);
+    assertBodyBudget(message.bodyHtml, bodyLimit);
+    if (message.bodyAvailable === true) return;
     if (typeof message.id !== "string") return;
     const entries: Array<{ key: string; value: WorkflowJsonValue }> = [];
     for (const field of ["bodyText", "bodyHtml"] as const) {
       const key = `inputs.${name}.${field}`;
       if (hasFrozen(key)) continue;
-      const hydrated = await hydratedMessageValue(params.mailboxId, message.id, field);
+      const hydrated = await hydratedMessageValue(params.mailboxId, message.id, field, bodyLimit);
       // Whole values keep receipt-time behavior: pending or unavailable bodies do not block the step.
       if (hydrated.state !== "resolved") return;
       entries.push({ key, value: hydrated.value });
     }
     for (const entry of entries) await freeze(entry.key, entry.value);
-    projectMailWorkflowFrozenBody(name, message, params.frozenHydration);
+    projectMailWorkflowFrozenMessage(name, message, params.frozenHydration);
   };
   return {
     resolve: async ({ reference, path, plan, fallback }) => {
+      const bodyLimit = isAiValuePath(plan.steps, path) ? appEnv.MAIL_WORKFLOW_AI_BODY_MAX_CHARS : undefined;
       const candidate = messageForReference(reference, params.claim.inputs);
       if (!candidate) {
         const action = path.at(-2);
@@ -202,11 +273,12 @@ export const createMailWorkflowValueResolver = (params: {
         if (!referenceOnly) {
           for (const input of plan.inputs) {
             if (input.type === "mailMessage" && (reference === "inputs" || reference === `inputs.${input.name}`)) {
-              await hydrateWholeMessage(input.name);
+              await hydrateWholeMessage(input.name, bodyLimit);
             }
           }
         }
         const value = fallback();
+        assertAiSourceBudget(value, bodyLimit);
         return value === undefined ? { state: "missing" } : { state: "resolved", value };
       }
 
@@ -214,15 +286,26 @@ export const createMailWorkflowValueResolver = (params: {
         candidate.field === "attachments"
           ? candidate.message.attachmentsAvailable === true
           : mailWorkflowBodyFieldLoaded(candidate.message, candidate.field);
+      const derivedValue = (value: WorkflowJsonValue): WorkflowJsonValue => {
+        if (candidate.derived === "textLength") {
+          if (typeof value !== "string") return null;
+          if (typeof candidate.message.textLength !== "number") candidate.message.textLength = mailMessageTextLength(value);
+          return candidate.message.textLength;
+        }
+        if (candidate.derived === "attachmentCount") return Array.isArray(value) ? value.length : null;
+        return value;
+      };
       if (available) {
+        if (candidate.derived) return resolvedPath(derivedValue(candidate.message[candidate.field] ?? null), candidate.tail);
         const value = fallback();
+        if (candidate.field !== "attachments") assertBodyBudget(value, bodyLimit);
         return value === undefined ? { state: "missing" } : { state: "resolved", value };
       }
 
       if (!hasFrozen(candidate.frozenKey)) {
         const messageId = candidate.message.id;
         if (typeof messageId !== "string") return { state: "missing" };
-        const hydrated = await hydratedMessageValue(params.mailboxId, messageId, candidate.field);
+        const hydrated = await hydratedMessageValue(params.mailboxId, messageId, candidate.field, bodyLimit);
         if (hydrated.state === "unavailable") return { state: "missing" };
         if (hydrated.state === "pending") {
           await enqueueMessageHydration(hydrated.messageId);
@@ -238,9 +321,8 @@ export const createMailWorkflowValueResolver = (params: {
         }
         await freeze(candidate.frozenKey, hydrated.value);
       }
-      if (candidate.field !== "attachments")
-        projectMailWorkflowFrozenBody(reference.split(".")[1]!, candidate.message, params.frozenHydration);
-      return resolvedPath(params.frozenHydration[candidate.frozenKey]!, candidate.tail);
+      projectMailWorkflowFrozenMessage(reference.split(".")[1]!, candidate.message, params.frozenHydration);
+      return resolvedPath(derivedValue(params.frozenHydration[candidate.frozenKey]!), candidate.tail);
     },
   };
 };

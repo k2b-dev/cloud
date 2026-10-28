@@ -231,7 +231,7 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Account categories | `accounts config get`, `accounts config set` |
 | Webhooks | `webhooks list`, `webhooks get`, `webhooks apply`, `webhooks create`, `webhooks update`, `webhooks test`, `webhooks delete` |
 | Metrics | `metrics status`, `metrics read`, `metrics catalogue`, `metrics tokens list`, `metrics tokens create`, `metrics tokens revoke` |
-| Agents | `agents create`, `agents ls`, `agents revoke`, `agents rotate-secret` |
+| Agents | `agents create`, `agents ls`, `agents revoke`, `agents rotate-secret`, `agents avatar show`, `agents avatar random`, `agents avatar set`, `agents avatar photo`, `agents avatar use`, `agents avatar delete-photo` |
 
 ## AI usage and feedback
 
@@ -338,6 +338,21 @@ profile; an agent addressed by name must match exactly one account. The same
 accounts are visible in the Accounts app and through
 `cld accounts service-accounts list --kind agent`.
 
+Every agent gets a robot picture drawn from its account ID, so it never shows a
+bare icon. Change it with the robot parts or replace it with a photo:
+
+```bash
+cld admin agents avatar show "Release agent" --json
+cld admin agents avatar set "Release agent" head=round color=teal antenna=dish
+cld admin agents avatar random "Release agent"
+cld admin agents avatar photo "Release agent" ./logo.png
+cld admin agents avatar use "Release agent" robot
+cld admin agents avatar delete-photo "Release agent" --yes
+```
+
+An unknown part or value lists the choices. A photo is a square PNG, JPEG, or
+WebP of at most 48 KiB; deleting it shows the robot again.
+
 ## Built-in Assistant Skills
 
 Use `cld admin ai skills list --json` for exact Skill IDs, revisions, template
@@ -356,37 +371,38 @@ stay intact. Identity, grants, personal activation, and loaded turn snapshots ar
 preserved. Deleted linked Skills stay deleted; there is no automatic recreation,
 merge, or version history.
 
-## Model request settings
+## Models, variants and request settings
 
-Read and change a profile's thinking level, extra provider parameters and
-write-only endpoint headers:
+Configure provider connections, models and class assignments with
+`admin ai providers`, `admin ai models`, `admin ai variants` and `admin ai classes`.
+See [Models and providers](/en/docs/ai/models-and-providers) for creation,
+access, deletion and class fallback.
+
+Read a model with its variants, then update shared model parameters or a
+variant's thinking level and overrides:
 
 ```bash
-cld admin ai models settings get --id MODEL_ID --json
-cld admin ai models settings set --id MODEL_ID --thinking-level low --yes --json
-cld admin ai models settings set --id MODEL_ID --extra-body-file parameters.json --yes --json
-cld admin ai models settings set --id MODEL_ID --headers-file headers.json --yes --json
-cld admin ai models settings set --id MODEL_ID --headers-stdin --yes --json < headers.json
-cld admin ai models settings set --id MODEL_ID --clear-thinking-level --clear-extra-body --clear-headers --yes --json
+cld admin ai models list --json
+cld admin ai models show MODEL_ID --json
+cld admin ai models update MODEL_ID --input-file model-patch.json --yes --json
+cld admin ai variants update MODEL_ID:deep --input-file variant-patch.json --yes --json
 ```
 
-`set` changes only supplied fields and requires `--yes`. Extra parameters accept
-`--extra-body <json>`, `--extra-body-file <path>` or `--stdin`. Header patches accept
-`--headers <json>`, `--headers-file <path>` or `--headers-stdin`; prefer files or
-standard input because values may be secrets. A string sets a header and `null`
-removes it. Omitted names keep their values. `--clear-headers` removes all headers
-before applying any patch. Output contains only configured header names.
+For example, `model-patch.json` can contain `{"extraBody":{"custom":true}}`.
+`variant-patch.json` can contain `{"reasoningEffort":"low","extraBody":null}`.
+Use the model ID alone to update its standard variant. Only supplied fields
+change; JSON `null` clears an optional value. Updates also accept
+`--input <json>` or `--stdin`. Each command reads the current row revision before
+saving; read again and reconcile on conflict.
 
-The thinking level passes unchanged to chat and tool loops; clearing it restores
-the model default. Extra parameters apply to every call, including titles,
-summaries and compaction. Headers require vLLM or OpenAI-compatible chat profiles;
-if an API key is configured, it replaces custom Authorization with its Bearer
-value. Transcription profiles reject all three settings.
-
-The command reads the current revision before saving and rejects concurrent
-changes. Read again before retrying. See
-[Models and providers](/en/docs/ai/models-and-providers) for reserved parameters,
-size limits and provider thinking-level mappings.
+Endpoint headers belong to the provider connection. Configure them in
+administration or through `PUT /api/admin/core/ai/providers/{id}/headers` with
+`{"revision":CURRENT_REVISION,"headers":{"X-Endpoint-Token":"value","X-Old":null}}`.
+Read its revision with `cld admin ai providers show PROVIDER_ID --json`.
+Header values are write-only; reads expose `requestHeaderNames`. Use protected
+input for header values. Extra headers require vLLM or OpenAI-compatible
+providers. See [Models and providers](/en/docs/ai/models-and-providers) for
+connection and request settings.
 
 ## AI prices, Assistant cost budgets, and background stop
 
@@ -492,17 +508,18 @@ usage history in balances is not a lifetime total. Reset IDs remain durable.
 Set reference prices before creating model-specific budgets:
 
 ```bash
-cld admin ai models pricing get --json
-cld admin ai models pricing set --id MODEL_ID --pricing-file prices.json --yes --json
+cld admin ai models list --json
+cld admin ai models update MODEL_ID --input-file model-patch.json --yes --json
+cld admin ai variants update MODEL_ID:deep --input-file variant-patch.json --yes --json
 ```
 
-The file contains `{"inputPerMillion":0.5,"outputPerMillion":2}` or JSON `null`
-to remove pricing. Both prices are required, nonnegative, with up to six decimal
-places and a maximum of 1,000,000. Zero is explicitly free. Missing prices mean
-unpriced usage: these models bypass all cost budgets, including wildcard rules
-and the background stop. Audio pricing is not supported. The command reads
-current prices and submits an optimistic precondition; it does not touch
-credentials or grants. Re-read and reconcile on conflict.
+A price patch is `{"pricing":{"inputPerMillion":0.5,"outputPerMillion":2}}`;
+`{"pricing":null}` removes model pricing or a variant's price override. Both
+prices are required, nonnegative, with up to six decimal places and a maximum
+of 1,000,000. A variant inherits model prices unless overridden. Zero is
+explicitly free. Unpriced or free calls bypass cost budgets and the background
+stop. Audio pricing is not supported. Updates use the current model or variant
+revision and leave omitted fields unchanged. Read again and reconcile on conflict.
 
 Configuration additionally includes `unit` (default `EUR`, maximum 16 characters)
 and optional `background: {"enabled":true,"warnAt":5,"stopAt":10}`. All model

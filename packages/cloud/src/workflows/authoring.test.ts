@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildWorkflowManifestCompletions, workflowCompletionContext } from "./authoring";
 import type { WorkflowLanguageManifest } from "./contracts";
+import { parseWorkflowYaml } from "./language/strict-yaml";
 import type { DefinedWorkflowModule } from "./module";
 
 const manifest: WorkflowLanguageManifest = {
@@ -59,4 +60,37 @@ describe("workflow authoring completions", () => {
     expect(buildWorkflowManifestCompletions("steps:\n  - se", 13, workflows).map((item) => item.label)).toEqual(["send"]);
     expect(buildWorkflowManifestCompletions("", 0, workflows).map((item) => item.label)).toEqual(["inputs", "triggers", "steps"]);
   });
+});
+
+test("suggests number comparisons in nested conditions", () => {
+  for (const source of [
+    "steps:\n  - if:\n      gr",
+    "steps:\n  - if:\n      all:\n        - gr",
+    "steps:\n  - if:\n      not:\n        gr",
+  ]) {
+    expect(buildWorkflowManifestCompletions(source, source.length, workflows).map((item) => item.label)).toEqual(
+      expect.arrayContaining(["greaterThan", "lessThan", "atLeast", "atMost"]),
+    );
+  }
+});
+
+test("inline condition completions insert parseable flow mappings", () => {
+  for (const prefix of ["steps:\n  - if: gr", "steps:\n  - if:\n      not: gr"]) {
+    const item = buildWorkflowManifestCompletions(prefix, prefix.length, workflows).find((item) => item.label === "greaterThan");
+    expect(item).toBeDefined();
+    if (!item) throw new Error("Expected number operator completion");
+    const edited = prefix.slice(0, item.textEdit.start) + item.textEdit.text + prefix.slice(item.textEdit.end);
+    expect(parseWorkflowYaml(edited).ok).toBe(true);
+    expect(edited).toEndWith("{ greaterThan: [] }");
+  }
+});
+
+test("does not suggest condition keys in operand values or sibling step keys", () => {
+  for (const source of [
+    "steps:\n  - if:\n      greaterThan: gr",
+    "steps:\n  - if:\n      equals: [1, 1]\n    then:",
+    "steps:\n  - if:\n      equals: [1, 1]\n    th",
+  ]) {
+    expect(buildWorkflowManifestCompletions(source, source.length, workflows).some((item) => item.label === "greaterThan")).toBe(false);
+  }
 });

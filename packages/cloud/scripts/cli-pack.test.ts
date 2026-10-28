@@ -90,30 +90,34 @@ test("refuses an output with a cld manifest and a foreign extra file untouched",
   expect(await readFile(join(out, "keep.txt"), "utf8")).toBe("keep");
 });
 
-test("refuses earlier-looking outputs containing the module or references, including path aliases", async () => {
-  const out = join(workspace, "protected");
-  await mkdir(join(out, "references"), { recursive: true });
-  const pkg = JSON.stringify({ cld: { manifest: "manifest.json" } });
-  const source = await readFile(join(workspace, "module.ts"), "utf8");
-  await writeFile(join(out, "package.json"), pkg);
-  await writeFile(join(out, "cli.js"), source);
-  await writeFile(join(out, "references", "index.md"), "# Protected\n");
-  await symlink(out, join(workspace, "protected-alias"));
-  await symlink(join(workspace, "module.ts"), join(out, "manifest.json"));
-  for (const [module, references, output] of [
-    [join(out, "cli.js"), "references", out],
-    ["module.ts", join(out, "references"), out],
-    [join(workspace, "protected-alias", "cli.js"), "references", out],
-    [join(out, "manifest.json"), "references", out],
-  ] as const) {
-    const result = await runArgs([module, "--references", references, "--out", output]);
+for (const input of ["module", "references", "directory alias", "file alias"] as const) {
+  test(`refuses earlier-looking output containing the ${input} without changing source files`, async () => {
+    const out = join(workspace, `protected-${input.replaceAll(" ", "-")}`);
+    await mkdir(join(out, "references"), { recursive: true });
+    const pkg = JSON.stringify({ cld: { manifest: "manifest.json" } });
+    const source = await readFile(join(workspace, "module.ts"), "utf8");
+    await writeFile(join(out, "package.json"), pkg);
+    await writeFile(join(out, "cli.js"), source);
+    await writeFile(join(out, "references", "index.md"), "# Protected\n");
+    await symlink(out, `${out}-alias`);
+    await symlink(join(workspace, "module.ts"), join(out, "manifest.json"));
+    const module =
+      input === "module"
+        ? join(out, "cli.js")
+        : input === "directory alias"
+          ? join(`${out}-alias`, "cli.js")
+          : input === "file alias"
+            ? join(out, "manifest.json")
+            : "module.ts";
+    const references = input === "references" ? join(out, "references") : "references";
+    const result = await runArgs([module, "--references", references, "--out", out]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Refusing --out");
     expect(await readFile(join(out, "package.json"), "utf8")).toBe(pkg);
     expect(await readFile(join(out, "cli.js"), "utf8")).toBe(source);
     expect(await readFile(join(out, "references", "index.md"), "utf8")).toBe("# Protected\n");
-  }
-});
+  });
+}
 
 test("prints usage with --help", async () => {
   const result = await run(join(workspace, "unused"), "--help");

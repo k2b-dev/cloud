@@ -491,8 +491,10 @@ export const createStandaloneApiToken = async (params: {
   name: string;
   expiresAt?: string | null;
   scopes?: string[];
+  access?: "full" | "models";
 }): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
-  if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
+  if (params.scopes?.includes(AI_INFERENCE_SCOPE) || (params.access === "models" && params.scopes?.length))
+    return fail(err.badInput("Models-only access cannot be combined with general credential scopes"));
   const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
   if (!serviceAccount || !isStandaloneServiceAccountKind(serviceAccount.kind)) return fail(err.notFound("Service account"));
   if (serviceAccount.status !== "active") return fail(err.badInput("Service account is disabled"));
@@ -503,7 +505,7 @@ export const createStandaloneApiToken = async (params: {
       name: params.name,
       expiresAt: params.expiresAt,
       createdBy: params.actor.id,
-      scopes: params.scopes,
+      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : params.scopes,
     });
 
     return audit.recordResult({
@@ -514,6 +516,7 @@ export const createStandaloneApiToken = async (params: {
         serviceAccountId: serviceAccount.id,
         kind: "api_token",
         serviceAccountKind: serviceAccount.kind,
+        access: params.access ?? "full",
         expiresAt: params.expiresAt ?? null,
       },
       result,

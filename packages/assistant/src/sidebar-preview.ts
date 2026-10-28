@@ -14,7 +14,7 @@ export async function loadAssistantSidebarPreview(userId: string, chatId: string
   const ids = [...new Set(sources.sources.flatMap((source) => (source.ref?.type === "assistant.artifact" ? [source.ref.id] : [])))];
   const apps = await artifacts.describe(ids, userId, conversation.id);
   return {
-    model: turn ? (models.find((model) => model.id === turn.modelProfileId)?.label ?? turn.modelProfileId) : null,
+    model: turn ? (models.find((model) => model.id === turn.modelId)?.label ?? turn.modelId) : null,
     // Working files below /temp/ come last, so the preview names what the user brought and received.
     files: [...files.filter((file) => !isAiWorkingFilePath(file.path)), ...files.filter((file) => isAiWorkingFilePath(file.path))].map(
       (file) => ({

@@ -145,7 +145,7 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
       const tables = [...snapshot.matchAll(valueTable)];
       expect(tables).toHaveLength(1);
       expect(tables[0]![0]).toContain("<caption>Umsatz</caption>");
-      expect(tables[0]![0]).toContain('<td class="num">1.200,00&nbsp;€</td>');
+      expect(tables[0]![0]).toContain('<td class="num">1.200&nbsp;€</td>');
     }
 
     await card.getByRole("button", { name: "Stoppen", exact: true }).click();

@@ -144,6 +144,8 @@ export type WorkflowPlannedEffect = {
    * that cannot tell a planned record from a real one will act on a fiction.
    */
   output?: WorkflowJsonValue;
+  /** Omit the planned output when it cannot be predicted; explain why in `issues`. */
+  outputUnavailable?: true;
   /** Why the plan is not fully determined — surfaced in the dry-run view. */
   issues?: string[];
 };
