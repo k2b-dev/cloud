@@ -7,6 +7,7 @@ import {
   type AiCallDetails,
   type AiCallStatus,
 } from "./inference-calls";
+import { withProviderErrors } from "./provider-errors";
 import { AiProviderAdmissionError, inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
@@ -60,7 +61,13 @@ function fixture(events: ProviderEvent[]) {
     heartbeat: async (_id: string) => {},
   };
   const wrap = () =>
-    inferenceProvider(provider, profile, { kind: "chat", task: "chat" }, { kind: "background", task: "chat-compaction" }, lifecycle);
+    inferenceProvider(
+      withProviderErrors(provider),
+      profile,
+      { kind: "chat", task: "chat" },
+      { kind: "background", task: "chat-compaction" },
+      lifecycle,
+    );
   return {
     provider,
     lifecycle,
@@ -144,8 +151,8 @@ test("stream exception and complete exception preserve estimated input", async (
   f.provider.complete = async () => {
     throw new Error("timeout");
   };
-  await expect(drain(f.wrap())).rejects.toThrow("timeout");
-  await expect(f.wrap().complete({ messages: [], systemPrompt: "S".repeat(100) })).rejects.toThrow("timeout");
+  await expect(drain(f.wrap())).rejects.toThrow("AI provider request failed.");
+  await expect(f.wrap().complete({ messages: [], systemPrompt: "S".repeat(100) })).rejects.toThrow("AI provider request failed.");
   expect(f.booked.every((b) => b.usage?.estimated && b.status === "failed")).toBe(true);
   expect(f.booked[1]!.usage!.input).toBeGreaterThan(0);
 });
@@ -258,7 +265,7 @@ test("a provider timeout is retained as the call's error and is not a cancellati
   await drain(f.wrap());
   expect(f.booked[0]).toMatchObject({
     status: "failed",
-    details: { error: "SSE stream first byte timeout after 60000ms.", cancelled: false },
+    details: { error: "AI provider request timed out.", cancelled: false },
   });
   expect(f.booked[0]!.details!.requestStartedAt).toBeGreaterThan(0);
 });
@@ -279,16 +286,16 @@ test("a caller abort is recorded as aborted without an error", async () => {
   expect(f.booked[0]).toMatchObject({ status: "aborted", details: { error: null, cancelled: true } });
   expect(f.booked[0]!.usage!.estimated).toBe(true);
 });
-test("a thrown provider error keeps its message and the timing of the first visible block", async () => {
+test("a thrown provider error uses fixed text and keeps the timing of the first visible block", async () => {
   const f = fixture([]);
   f.provider.stream = async function* () {
     yield { type: "block_start", blockId: "a", index: 0, kind: "text" };
     throw new Error("openai-compatible connection failed: socket hang up");
   };
-  await expect(drain(f.wrap())).rejects.toThrow("socket hang up");
+  await expect(drain(f.wrap())).rejects.toThrow("AI provider request failed.");
   expect(f.booked[0]).toMatchObject({
     status: "failed",
-    details: { error: "openai-compatible connection failed: socket hang up", cancelled: false },
+    details: { error: "AI provider request failed.", cancelled: false },
   });
   expect(f.booked[0]!.details!.firstBlockMs).toBeGreaterThanOrEqual(0);
   const complete = fixture([]);
@@ -375,10 +382,14 @@ test("dispatch admission rejection clears reservations without estimated usage",
   f.provider.complete = async () => {
     throw rejection;
   };
-  await expect(drain(f.wrap())).rejects.toBe(rejection);
-  await expect(f.wrap().complete(request)).rejects.toBe(rejection);
+  // The trusted dispatch guard wraps an already normalized adapter, as in openai-api.ts.
+  const guarded = inferenceProvider(f.provider, profile, { kind: "chat", task: "chat" }, undefined, f.lifecycle);
+  await expect(drain(guarded)).rejects.toBe(rejection);
+  await expect(guarded.complete(request)).rejects.toBe(rejection);
   expect(f.booked.map((booking) => booking.usage)).toEqual([
     { input: 0, output: 0 },
     { input: 0, output: 0 },
   ]);
+  expect(f.booked.every((booking) => booking.status === "failed")).toBe(true);
+  expect(f.calls).toBe(0);
 });

@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { planShards, type TestSuite, type TestWeights } from "./run-tests";
 
 /** Read only completed suite timing lines, keeping the slowest observation of each suite. */
@@ -21,14 +21,20 @@ const gh = (args: string[]): string => {
   return result.stdout.toString();
 };
 
-const modes = ["browser", "unit"] as const;
+const modes = ["browser", "unit", "integration"] as const;
+
+/** Both the old single integration job and the matrix jobs use the integration table. */
+export const jobMode = (name: string): keyof TestWeights | undefined => {
+  const match = /^(unit|webkit|integration)(?: \(\d+\))?$/.exec(name);
+  return match ? (match[1] === "webkit" ? "browser" : match[1] === "integration" ? "integration" : "unit") : undefined;
+};
 
 const run = (): void => {
   const args = Bun.argv.slice(2);
   if (args.includes("--help")) {
     console.log(`Refresh measured test suite times from successful CI jobs.
 
-Usage: bun scripts/test-weights.ts --run <id> [<id>...]
+Usage: bun scripts/test-weights.ts --run <id> [<id>...] [--mode browser|unit|integration]
        bun scripts/test-weights.ts --run <id> --run <id>
 
 Use the three newest green merge-queue runs. Requires gh authentication.
@@ -37,11 +43,17 @@ Prints predicted slowest shards for 1–8 shards and the smallest count at or be
 15 minutes (half the 30-minute job limit).`);
     return;
   }
+  let selectedModes: readonly (keyof TestWeights)[] = modes;
   const runs: string[] = [];
   let hasRun = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
-    if (arg === "--run") {
+    if (arg === "--mode") {
+      const mode = args[++index];
+      const selected = modes.find((candidate) => candidate === mode);
+      if (!selected) throw new Error("--mode expects browser, unit, or integration");
+      selectedModes = [selected];
+    } else if (arg === "--run") {
       if (!/^\d+$/.test(args[index + 1] ?? "")) throw new Error("--run expects a workflow run id");
       hasRun = true;
     } else if (hasRun && /^\d+$/.test(arg)) runs.push(arg);
@@ -49,7 +61,7 @@ Prints predicted slowest shards for 1–8 shards and the smallest count at or be
   }
   if (runs.length === 0) throw new Error("provide --run <id> [<id>...]; use --help for usage");
 
-  const times = { browser: new Map<string, number>(), unit: new Map<string, number>() };
+  const times = { browser: new Map<string, number>(), unit: new Map<string, number>(), integration: new Map<string, number>() };
   for (const id of runs) {
     // @json yields one JSON object per line, including when --paginate fetches several pages.
     const jobs = gh([
@@ -63,8 +75,8 @@ Prints predicted slowest shards for 1–8 shards and the smallest count at or be
       if (typeof job !== "object" || job === null || !("name" in job) || typeof job.name !== "string") {
         throw new Error(`run ${id}: malformed job response`);
       }
-      const match = /^(unit|webkit) \(\d+\)$/.exec(job.name);
-      if (!match) continue;
+      const mode = jobMode(job.name);
+      if (!mode || !selectedModes.includes(mode)) continue;
       if (!("conclusion" in job) || job.conclusion !== "success") {
         throw new Error(
           `run ${id}: ${job.name} did not succeed (conclusion: ${"conclusion" in job ? job.conclusion : "missing"}); refusing to write weights`,
@@ -73,25 +85,25 @@ Prints predicted slowest shards for 1–8 shards and the smallest count at or be
       if (!("id" in job) || typeof job.id !== "number" || !Number.isSafeInteger(job.id) || job.id <= 0) {
         throw new Error(`run ${id}: ${job.name} has an invalid job id`);
       }
-      const mode = match[1] === "webkit" ? "browser" : "unit";
       const log = gh([`repos/k2b-dev/cloud/actions/jobs/${job.id}/logs`]);
       for (const [name, seconds] of parseSuiteTimes(log)) {
         times[mode].set(name, Math.max(times[mode].get(name) ?? 0, seconds));
       }
     }
   }
-  for (const mode of modes) {
+  for (const mode of selectedModes) {
     if (times[mode].size === 0) throw new Error(`no ${mode} suite times found; refusing to write scripts/test-weights.json`);
   }
   const table = (mode: keyof TestWeights): Record<string, number> =>
     Object.fromEntries(
       [...times[mode]].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([name, seconds]) => [name, Math.round(seconds * 10) / 10]),
     );
-  const weights: TestWeights = { browser: table("browser"), unit: table("unit") };
+  const weights: TestWeights = JSON.parse(readFileSync(new URL("./test-weights.json", import.meta.url), "utf8"));
+  for (const mode of selectedModes) weights[mode] = table(mode);
   writeFileSync(new URL("./test-weights.json", import.meta.url), `${JSON.stringify(weights, null, 2)}\n`);
   console.log("Wrote scripts/test-weights.json");
 
-  for (const mode of modes) {
+  for (const mode of selectedModes) {
     const suites: TestSuite[] = Object.keys(weights[mode]).map((name) => ({ name, cwd: "", command: [] }));
     let smallest: number | undefined;
     console.log(`\n${mode}: predicted slowest shard`);

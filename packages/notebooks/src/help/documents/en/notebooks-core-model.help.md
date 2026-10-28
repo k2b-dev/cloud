@@ -34,6 +34,8 @@ A notebook is a shared workspace. A note is a Markdown source document in it. Na
 
 **Links** at the bottom of the navigation opens the graph in every view, also with **View** access.
 
-In **Write**, a colored cursor shows where another person is working. Their name sits as a small flag on top of the cursor. It shows while they type or move the cursor. After a few seconds without activity, only a dot stays at the top of the cursor. With a mouse or trackpad, point at the dot to see the name again.
+In **Write**, a note opens with its saved text and joins live editing with your first change. Until then, changes from others appear once they are saved, and others do not see you in the note. Your first keystrokes appear at once and are kept: if someone else changed the note in the meantime, your words join their version where you typed them.
+
+While you edit, a colored cursor shows where another person is working. Their name sits as a small flag on top of the cursor. It shows while they type or move the cursor. After a few seconds without activity, only a dot stays at the top of the cursor. With a mouse or trackpad, point at the dot to see the name again.
 
 Keep important information visible in the Markdown. Queries read saved note data. They do not run code, change pages, or create hidden state.

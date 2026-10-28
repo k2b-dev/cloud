@@ -153,6 +153,140 @@ describe("Mail workflow catalog", () => {
 });
 
 describe("Mail workflow binder", () => {
+  for (const [action, config] of Object.entries({
+    aiGenerateText: "prompt: Write a reply.\n      saveAs: generated",
+    aiClassify: "input: Fixed text.\n      prompt: Pick a route.\n      choices: [yes, no]\n      saveAs: generated",
+    aiClassifyMany: "input: Fixed text.\n      prompt: Pick routes.\n      choices: [yes, no]\n      saveAs: generated",
+    aiExtractData:
+      "input: Fixed text.\n      prompt: Extract a value.\n      fields:\n        - { name: text, type: text, description: Extracted text. }\n      saveAs: generated",
+  })) {
+    for (const position of ["before", "after", "branch", "switch"] as const) {
+      test(`requires draft review for ${action} ${position} an automatic send`, async () => {
+        const ai = `  - ${action}:\n      ${config}\n`;
+        const reply = `  - automaticReply:
+      message: inputs.message
+      conversation: inputs.conversation
+      sender: Support
+      schedule: { mode: always }
+      subject: Receipt
+      body: Fixed operator-approved reply.
+`;
+        const branch = `  - if:\n      equals: [1, 2]\n    then:\n${ai
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => `    ${line}`)
+          .join("\n")}\n`;
+        const choice = `  - switch: disabled\n    cases:\n      - when: enabled\n        do:\n${ai
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => `        ${line}`)
+          .join("\n")}\n`;
+        const steps =
+          position === "before" ? ai + reply : position === "after" ? reply + ai : position === "branch" ? reply + branch : reply + choice;
+        const source = `inputs:
+  message:
+    type: mailMessage
+    required: true
+  conversation:
+    type: mailConversation
+    required: true
+triggers:
+  messageReceived:
+    with:
+      message: "\${{ trigger.message }}"
+      conversation: "\${{ trigger.conversation }}"
+steps:
+${steps}`;
+        const result = await bindMailWorkflow(await compile(source), catalog());
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "send.reviewRequired" }));
+      });
+    }
+  }
+
+  test("requires draft review for scheduled AI sends", async () => {
+    const source = `triggers:
+  schedule:
+    cron: "0 8 * * *"
+    timezone: UTC
+    with: {}
+steps:
+  - aiGenerateText:
+      prompt: Write a status message.
+      saveAs: generated
+  - createDraft:
+      sender: Support
+      to: [{ address: recipient@example.test }]
+      subject: Status
+      body: "{{ generated }}"
+      saveAs: draft
+  - scheduleDraftSend:
+      draft: draft
+      scheduledAt: "2026-10-20T08:00:00.000Z"
+`;
+    const result = await bindMailWorkflow(await compile(source), catalog());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "send.reviewRequired" }));
+  });
+
+  for (const [setup, body] of [
+    ["", "{{ inputs.conversation.summary }}"],
+    ["", "{% if false %}{% assign inputs = nil %}{% endif %}{{ inputs.conversation.summary }}"],
+    ["", "{% if false %}{% assign inputs = nil %}{% endif %}{% assign key = 'summary' %}{{ inputs.conversation[key] }}"],
+    ["", "{% assign root = 'context' %}{{ [root] | json }}"],
+    ["", "{% assign root = 'context' %}{{ [root].source.conversation.summary }}"],
+    [
+      '  - setVariable:\n      name: replies\n      value:\n        "yes": Fixed yes reply.\n        "no": Fixed no reply.\n',
+      "{% if false %}{% assign replies = nil %}{% endif %}{% assign root = 'context' %}{{ replies[[root].source.conversation.summary] }}",
+    ],
+    [
+      "  - if:\n      exists: inputs.conversation.summary\n    then:\n      - succeed:\n          message: Summary present.\n",
+      "Fixed operator-approved reply.",
+    ],
+    [
+      "  - if:\n      not:\n        any:\n          - all:\n              - exists: inputs.conversation.summary\n    then:\n      - succeed:\n          message: No summary.\n",
+      "Fixed operator-approved reply.",
+    ],
+    ["", "{{ context | json }}"],
+    ...["where_exp", "reject_exp", "group_by_exp", "has_exp", "find_exp", "find_index_exp"].map((filter) => [
+      "",
+      `{% assign probe = 'x' | split: ',' | ${filter}: 'item', 'inputs.conversation.summary' %}{{ probe | json }}`,
+    ]),
+    ['  - setVariable:\n      name: copied\n      value: "${{ context }}"\n', "{{ copied | json }}"],
+    ['  - setVariable:\n      name: copied\n      value: "${{ inputs.conversation.summary }}"\n', "{{ copied }}"],
+    ['  - setVariable:\n      name: copied\n      value: "${{ inputs.conversation }}"\n', "{{ copied.summary }}"],
+    [
+      '  - setVariable:\n      name: copied\n      value:\n        conversation: "${{ inputs.conversation }}"\n',
+      "{{ copied.conversation.summary }}",
+    ],
+  ]) {
+    test(`requires draft review for a stored summary through ${body}`, async () => {
+      const source = `inputs:
+  message:
+    type: mailMessage
+    required: true
+  conversation:
+    type: mailConversation
+    required: true
+triggers:
+  messageReceived:
+    with:
+      message: "\${{ trigger.message }}"
+      conversation: "\${{ trigger.conversation }}"
+steps:
+${setup}  - automaticReply:
+      message: inputs.message
+      conversation: inputs.conversation
+      sender: Support
+      schedule: { mode: always }
+      subject: Receipt
+      body: "${body}"
+`;
+      const result = await bindMailWorkflow(await compile(source), catalog());
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "send.reviewRequired" }));
+    });
+  }
   test("routes one AI classification through an existing Mail action", async () => {
     const source = `inputs:
   message:

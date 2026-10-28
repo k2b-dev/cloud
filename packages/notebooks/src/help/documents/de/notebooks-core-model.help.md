@@ -34,6 +34,8 @@ Zugriff **Ansehen** öffnet immer die Buchansicht. Mit Zugriff **Bearbeiten** od
 
 **Verknüpfungen** unten in der Navigation öffnet den Graphen in jeder Ansicht, auch mit Zugriff **Ansehen**.
 
-In **Bearbeiten** zeigt ein farbiger Cursor, wo eine andere Person arbeitet. Ihr Name steht als kleines Fähnchen über dem Cursor. Er erscheint, während sie tippt oder den Cursor bewegt. Nach einigen Sekunden ohne Aktivität bleibt nur ein Punkt oben am Cursor. Mit Maus oder Trackpad zeigst du auf den Punkt, um den Namen wieder zu sehen.
+In **Bearbeiten** öffnet sich eine Notiz mit ihrem gespeicherten Text und verbindet sich mit deiner ersten Änderung zum gemeinsamen Bearbeiten. Bis dahin erscheinen Änderungen anderer, sobald sie gespeichert sind, und andere sehen dich nicht in der Notiz. Deine ersten Tastendrücke erscheinen sofort und bleiben erhalten: Hat jemand die Notiz inzwischen geändert, landen deine Wörter in dessen Fassung an der Stelle, an der du getippt hast.
+
+Während du bearbeitest, zeigt ein farbiger Cursor, wo eine andere Person arbeitet. Ihr Name steht als kleines Fähnchen über dem Cursor. Er erscheint, während sie tippt oder den Cursor bewegt. Nach einigen Sekunden ohne Aktivität bleibt nur ein Punkt oben am Cursor. Mit Maus oder Trackpad zeigst du auf den Punkt, um den Namen wieder zu sehen.
 
 Halte wichtige Informationen im Markdown sichtbar. Abfragen lesen gespeicherte Notizdaten. Sie führen keinen Code aus, ändern keine Seiten und erzeugen keinen versteckten Zustand.

@@ -56,13 +56,15 @@ const detail = (id: string) => ({
   backlinks: [],
   namedBlocks: [],
 });
+/** The saved text the route state answers for each note; tests set it to model a save by someone else. */
+const savedTexts = new Map<string, string>();
 const routeGet = mock(async ({ query: { href } }: { query: { href: string } }) => {
   const id = new URL(href, "http://localhost").pathname.split("/").at(-1)!;
   return Response.json({
     kind: "ok",
     state: {
       href,
-      note: { id, title: id, lockedAt: null, historyIncomplete: false, yjsSnapshot: null },
+      note: { id, title: id, lockedAt: null, historyIncomplete: false, contentMd: savedTexts.get(id) ?? null },
       detail: detail(id),
     },
   });
@@ -73,6 +75,12 @@ const notePath = "/app/notebooks/Book01/Note01?mode=write";
 const flush = async () => {
   await Promise.resolve();
   await Promise.resolve();
+};
+
+/** Lets timers run until the condition holds or the deadline passes. */
+const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
+const waitFor = async (condition: () => boolean, timeoutMs: number) => {
+  for (const deadline = performance.now() + timeoutMs; !condition() && performance.now() < deadline; ) await nextTask();
 };
 
 const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
@@ -170,19 +178,21 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
   }
   window.history.replaceState({ shown: true }, "", editorHref);
   const { NoteEditor, LocaleProvider, yjs, prompts } = loaded!;
-  const providers: Array<{ opts: YjsProviderOptions; dispose: ReturnType<typeof mock>; reconnectNow: ReturnType<typeof mock> }> = [];
+  const providers: Array<{
+    opts: YjsProviderOptions;
+    dispose: ReturnType<typeof mock>;
+    reconnectNow: ReturnType<typeof mock>;
+    connect: ReturnType<typeof mock>;
+  }> = [];
   const provider = spyOn(yjs, "createYjsProvider").mockImplementation((opts) => {
     const dispose = mock(() => {});
     const reconnectNow = mock(() => {});
-    providers.push({ opts, dispose, reconnectNow });
-    return { reconnectNow, connect: () => {}, resume: () => {}, dispose, hasUnsentChanges: () => pending };
+    const connect = mock(() => {});
+    providers.push({ opts, dispose, reconnectNow, connect });
+    return { reconnectNow, connect, resume: () => {}, dispose, hasUnsentChanges: () => pending };
   });
   const confirmed = spyOn(prompts, "confirm").mockResolvedValue(false);
   routeGet.mockClear();
-  const doc = new Y.Doc();
-  doc.getText("codemirror").insert(0, markdown);
-  const initialSnapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
-  doc.destroy();
   const dispose = render(
     () => (
       <LocaleProvider locale="en">
@@ -194,10 +204,9 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
           historyIncomplete={false}
           notebookName="Book"
           appUrl="http://localhost"
-          workspaceCursor={null}
           userId="User01"
           displayName="Reader"
-          initialSnapshot={initialSnapshot}
+          initialContent={markdown}
           initialPanelOpen={false}
           initialRichMode="source"
           initialHref={editorHref.split("#")[0]!}
@@ -248,6 +257,195 @@ describe("sync ended editor recovery", () => {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
+
+  test("reading a note connects nothing; the first keystroke connects and stays on screen as it was typed", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    expect(instance.connect).not.toHaveBeenCalled();
+    expect(editor.view().state.doc.toString()).toBe(markdown);
+    const end = editor.view().state.doc.length;
+    editor.view().dispatch({ changes: { from: end, insert: " More" }, userEvent: "input.type" });
+    editor.view().dispatch({ changes: { from: end + 5, insert: "!" }, userEvent: "input.type" });
+    expect(instance.connect).toHaveBeenCalledTimes(1);
+    expect(editor.view().state.doc.toString()).toBe(`${markdown} More!`);
+    // Until the live note arrives, the typed words are unsent: leaving asks first.
+    expect(beforeUnloadPrevented()).toBe(true);
+
+    const ytext = instance.opts.doc.getText("codemirror");
+    // The replay arrives as remote updates, as the provider applies them.
+    instance.opts.doc.transact(() => ytext.insert(0, markdown), "remote");
+    instance.opts.onReady?.();
+    expect(ytext.toString()).toBe(`${markdown} More!`);
+    // From now on every keystroke goes to Yjs.
+    editor.view().dispatch({ changes: { from: 0, insert: "> " }, userEvent: "input.type" });
+    expect(ytext.toString()).toBe(`> ${markdown} More!`);
+    expect(instance.connect).toHaveBeenCalledTimes(1);
+  });
+
+  test("opening another note right after the first keystroke waits until the server confirmed the words", async () => {
+    using editor = mountNoteEditor({ pending: true });
+    const instance = editor.providers[0]!;
+    editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Last words." }, userEvent: "input.type" });
+    routeGet.mockClear();
+    const navigation = loaded!.requestSoftNoteNavigation(otherHref);
+    await flush();
+    // The other note does not load while the words exist only on screen.
+    expect(routeGet).not.toHaveBeenCalled();
+    expect(instance.dispose).not.toHaveBeenCalled();
+    const ytext = instance.opts.doc.getText("codemirror");
+    instance.opts.doc.transact(() => ytext.insert(0, markdown), "remote");
+    instance.opts.onReady?.();
+    expect(ytext.toString()).toBe(`${markdown} Last words.`);
+    // In Yjs, but not yet confirmed: the other note still waits.
+    await flush();
+    expect(routeGet).not.toHaveBeenCalled();
+    editor.setPending(false);
+    await navigation;
+    expect(routeGet).toHaveBeenCalledTimes(1);
+    expect(editor.confirmed).not.toHaveBeenCalled();
+  });
+
+  test("edits another person made since the note was saved stay, and the first edits land where they were typed", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Mine." }, userEvent: "input.type" });
+    const ytext = instance.opts.doc.getText("codemirror");
+    instance.opts.doc.transact(() => ytext.insert(0, `Intro from Ada\n\n${markdown}`), "remote");
+    instance.opts.onReady?.();
+    expect(editor.view().state.doc.toString()).toBe(`Intro from Ada\n\n${markdown} Mine.`);
+    expect(ytext.toString()).toBe(editor.view().state.doc.toString());
+    // A remote edit after the catch-up reaches the editor through Yjs.
+    instance.opts.doc.transact(() => ytext.insert(0, "# "), "remote");
+    expect(editor.view().state.doc.toString().startsWith("# Intro from Ada")).toBe(true);
+  });
+
+  test("before the first edit, a save by someone else replaces the shown text without connecting", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    const updated = () =>
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: { cursor: null, event: { v: 1, type: "note.updated", notebookId: "Book01", note: { id: "Note01" } }, cover: () => {} },
+        }),
+      );
+    savedTexts.set("Note01", `${markdown}\n\nAdded by Ada.`);
+    try {
+      updated();
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(editor.view().state.doc.toString()).toBe(`${markdown}\n\nAdded by Ada.`);
+      expect(instance.connect).not.toHaveBeenCalled();
+      // Once the person types, the live note decides; a later save no longer replaces the text.
+      editor.view().dispatch({ changes: { from: 0, insert: "Mine " }, userEvent: "input.type" });
+      savedTexts.set("Note01", "Something else");
+      updated();
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(editor.view().state.doc.toString()).toBe(`Mine ${markdown}\n\nAdded by Ada.`);
+      const ytext = instance.opts.doc.getText("codemirror");
+      instance.opts.doc.transact(() => ytext.insert(0, `${markdown}\n\nAdded by Ada.`), "remote");
+      instance.opts.onReady?.();
+      expect(ytext.toString()).toBe(`Mine ${markdown}\n\nAdded by Ada.`);
+    } finally {
+      savedTexts.clear();
+    }
+  });
+
+  test("Undo keys before the live note arrived do nothing and break nothing", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    editor.view().dispatch({ changes: { from: 0, insert: "Draft " }, userEvent: "input.type" });
+    // CodeMirror reports a failing key command to the console instead of throwing.
+    const logged = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+        const key = new KeyboardEvent("keydown", { key: "z", code: "KeyZ", keyCode: 90, ...modifier, bubbles: true, cancelable: true });
+        editor.view().contentDOM.dispatchEvent(key);
+      }
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+    expect(editor.view().state.doc.toString()).toBe(`Draft ${markdown}`);
+  });
+
+  test("a note locked by someone else before the first edit opens again as the server shows it", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    routeGet.mockImplementationOnce(async () => Response.json({ kind: "fallback", reason: "readonly" }));
+    try {
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: { cursor: null, event: { v: 1, type: "note.updated", notebookId: "Book01", note: { id: "Note01" } }, cover: () => {} },
+        }),
+      );
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      reload.mockRestore();
+    }
+  });
+
+  test("before the first edit, a deleted note reopens, a lost history shows, and a failed read tries again", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    const event = (body: Record<string, unknown>) =>
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: { cursor: null, event: { v: 1, notebookId: "Book01", ...body }, cover: () => {} },
+        }),
+      );
+    try {
+      event({ type: "note.updated", note: { id: "Note01", historyIncomplete: true } });
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(editor.dom.root.textContent).toContain(notebookWorkspaceMessages.resolve(["en"]).t.historyIncompleteTitle);
+
+      // One failed read is retried by the note itself.
+      routeGet.mockImplementationOnce(async () => new Response("unavailable", { status: 503 }));
+      savedTexts.set("Note01", `${markdown}\n\nSaved by Ada.`);
+      event({ type: "note.updated", note: { id: "Note01" } });
+      // The retry waits about a second; poll for its result within a bounded deadline.
+      const retried = `${markdown}\n\nSaved by Ada.`;
+      await waitFor(() => editor.view().state.doc.toString() === retried, 5000);
+      expect(editor.view().state.doc.toString()).toBe(retried);
+
+      event({ type: "note.deleted", noteId: "Note01" });
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      savedTexts.clear();
+      reload.mockRestore();
+    }
+  });
+
+  test("Undo takes back the edits made before the live note arrived as one step", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const instance = editor.providers[0]!;
+    for (const word of [" one", " two"])
+      editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: word }, userEvent: "input.type" });
+    const ytext = instance.opts.doc.getText("codemirror");
+    // The replay arrives as remote updates, as the provider applies them.
+    instance.opts.doc.transact(() => ytext.insert(0, markdown), "remote");
+    instance.opts.onReady?.();
+    expect(ytext.toString()).toBe(`${markdown} one two`);
+    const undo = Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.getAttribute("aria-label") === "Undo");
+    undo!.click();
+    expect(ytext.toString()).toBe(markdown);
+    expect(editor.view().state.doc.toString()).toBe(markdown);
+  });
+
+  test("a note that is only read reports itself saved and connected, so no offline notice appears", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    const states: SyncStateEventDetail[] = [];
+    const listener = (event: Event) => states.push((event as CustomEvent<SyncStateEventDetail>).detail);
+    window.addEventListener(SYNC_STATE_EVENT, listener);
+    try {
+      window.dispatchEvent(new Event(SYNC_STATE_REQUEST_EVENT));
+      expect(states.at(-1)).toMatchObject({ connected: true, ended: false });
+      expect(beforeUnloadPrevented()).toBe(false);
+    } finally {
+      window.removeEventListener(SYNC_STATE_EVENT, listener);
+    }
+  });
 
   test("a late panel receives sync and presence, requests reconnect and jumps without moving selection", async () => {
     using editor = mountNoteEditor({ pending: false });

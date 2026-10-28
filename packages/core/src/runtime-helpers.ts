@@ -42,6 +42,7 @@ import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
 import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
 import { migrate as migratePanelContextConsent } from "./migrate/core/panel-context-consent";
+import { migratePersonalGroupHistory, startPersonalGroupHistory } from "./migrate/core/personal-group-history";
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
@@ -50,6 +51,7 @@ import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
 
+let stopPersonalGroupHistory: (() => Promise<void>) | undefined;
 let stopCloudAiRuntime: (() => void) | null = null;
 let stopHelpMaintenance: (() => Promise<void>) | undefined;
 
@@ -117,6 +119,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "pwa", run: migratePwa },
     { name: "device-trust", run: migrateDeviceTrust },
     { name: "audit", run: migrateAudit },
+    { name: "personal-group-history", run: migratePersonalGroupHistory },
     { name: "geoip", run: migrateGeoIp },
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
@@ -185,7 +188,10 @@ export const startCoreServices = async (
     await startNotificationRuntime();
     await appApprovalRuntime.start(notificationSender);
     await lifecycleJobs.start({ notificationSender });
+    stopPersonalGroupHistory = startPersonalGroupHistory();
   } catch (error) {
+    await stopPersonalGroupHistory?.();
+    stopPersonalGroupHistory = undefined;
     await stopAppSkillsWatcher();
     await stopHelpMaintenance?.();
     stopHelpMaintenance = undefined;
@@ -219,6 +225,8 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
   try {
     // Sign-in and reset requests already answered must reach the notification store before it stops.
     await drainDeferredAuthRequests();
+    await stopPersonalGroupHistory?.();
+    stopPersonalGroupHistory = undefined;
     await stopAppSkillsWatcher();
     await stopHelpMaintenance?.();
     stopHelpMaintenance = undefined;

@@ -6,6 +6,7 @@ import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
 import { trace } from "../services/logging";
 import { taskReasoningEffort } from "./provider";
+import { AiProviderError } from "./provider-errors";
 import { inferenceProvider } from "./quota-provider";
 import { resolveAiModel } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
@@ -75,7 +76,7 @@ export type RunAiStructuredResult<TOutput extends z.ZodType> = {
   structuredMeta: StructuredMeta;
 };
 
-/** nessi wraps provider failures in direct structured mode; callers rely on the provider's original error. */
+/** nessi wraps classified provider failures in direct structured mode; preserve their stable code for callers. */
 export const structuredProviderFailure = (error: unknown): unknown => {
   if (
     error instanceof StructuredOutputError &&
@@ -188,7 +189,12 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           durationMs: Date.now() - startedAt,
           usage: details?.aggregate?.usage,
           attempts: details?.attempts,
-          errorCode: failure instanceof StructuredOutputError ? failure.code : failure instanceof Error ? failure.name : "unknown",
+          errorCode:
+            failure instanceof StructuredOutputError || failure instanceof AiProviderError
+              ? failure.code
+              : failure instanceof Error
+                ? failure.name
+                : "unknown",
           error: failure instanceof Error ? failure.message : String(failure),
         });
         throw failure;

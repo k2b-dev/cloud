@@ -109,6 +109,7 @@ const api = new Hono<AuthContext>()
   )
   .post(
     "/bases/:baseId/download",
+    auth.readOnly,
     middleware.openapi({
       summary: "Issue a single-file download lease",
       ...requiresAuth,
@@ -258,10 +259,20 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Restore a trashed entry to its original path", ...requiresAuth }),
     v("param", TrashIdSchema.extend({ baseId: z.string() })),
     v("query", z.object({ path: z.string().min(1).max(4096).optional() })),
-    async (c) => respond(c, ok(await filesService.restoreTrash(requestCall(c), { ...c.req.valid("param"), ...c.req.valid("query") }))),
+    async (c) =>
+      respond(
+        c,
+        ok(
+          await filesService.restoreTrash(
+            { ...requestCall(c), requestAbort: c.req.raw.signal },
+            { ...c.req.valid("param"), ...c.req.valid("query") },
+          ),
+        ),
+      ),
   )
   .post(
     "/bases/:baseId/archive",
+    auth.readOnly,
     middleware.openapi({ summary: "Issue a direct ZIP download lease for a selection", ...requiresAuth }),
     v("json", PathsInputSchema),
     async (c) => respond(c, ok(await filesService.bundle(requestCall(c), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
@@ -296,6 +307,7 @@ const api = new Hono<AuthContext>()
   )
   .post(
     "/bases/:baseId/versions/download",
+    auth.readOnly,
     middleware.openapi({ summary: "Issue a direct download lease for a version", ...requiresAuth }),
     v("json", VersionRefSchema),
     async (c) =>
@@ -322,6 +334,7 @@ const api = new Hono<AuthContext>()
   )
   .post(
     "/bases/:baseId/thumbnail",
+    auth.readOnly,
     middleware.openapi({ summary: "Issue a direct thumbnail lease", ...requiresAuth }),
     v("json", ThumbnailInputSchema),
     async (c) =>
@@ -436,6 +449,7 @@ const api = new Hono<AuthContext>()
   )
   .post(
     "/admin/download",
+    auth.readOnly,
     middleware.openapi({ summary: "Issue an administrative single-file lease", ...requiresAdmin }),
     v("json", AdminLocatorSchema),
     async (c) => respond(c, ok(await filesService.adminDownload(requestCall(c), c.req.valid("json")))),

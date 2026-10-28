@@ -99,6 +99,7 @@ import {
   AiTurnFailure,
   type AiTurnFailureInfo,
   type AiTurnFailureReason,
+  aiIssueDiagnostic,
   aiTurnFailureFromThrown,
   aiTurnReasonFromThrown,
   rememberProviderErrors,
@@ -799,8 +800,8 @@ export class AiTurnExecutor {
 
   /**
    * Ends the turn. A failure stores its reason twice: as a code on the turn's last message, which the chat words in
-   * the reader's language, and as text in the turn's language for readers without the chat view. The raw cause, such
-   * as a provider's own message, goes only to the log. A failed compaction left the chat as it was, so its text names
+   * the reader's language, and as text in the turn's language for readers without the chat view. The diagnostic cause,
+   * with provider and loop issues reduced to fixed text, goes only to the log. A failed compaction left the chat as it was, so its text names
    * only the reason.
    */
   private async finalize(
@@ -1885,8 +1886,9 @@ export class AiTurnExecutor {
           if (!abortController.signal.aborted && isToolRound(event.message)) noteToolRound();
         } else if (event.type === "issue") {
           if (event.issue.kind === "malformed_tool_call" && event.issue.callId) malformedCallIds.add(event.issue.callId);
-          lastIssueMessage = event.issue.message;
-          log.warn("AI turn issue", { conversationId, turnId, kind: event.issue.kind, message: event.issue.message });
+          const diagnostic = aiIssueDiagnostic(event.issue);
+          lastIssueMessage = diagnostic.message;
+          log.warn("AI turn issue", { conversationId, turnId, ...diagnostic });
         } else if (event.type === "loop_end") {
           const stoppedAfterFailure =
             event.reason === "stop" &&
@@ -2274,7 +2276,7 @@ export class AiTurnExecutor {
       for await (const event of loop as AsyncIterable<CompactEvent>) {
         if (event.type === "compaction_start") await pipeline.applyCompaction("running");
         else if (event.type === "compaction_end") await pipeline.applyCompaction("completed");
-        else if (event.type === "issue") issueMessage = event.issue.message;
+        else if (event.type === "issue") issueMessage = aiIssueDiagnostic(event.issue).message;
         else if (event.type === "loop_end") {
           status = event.reason === "stop" ? "completed" : event.reason === "aborted" ? "aborted" : "failed";
           await pipeline.applyCompaction(status === "failed" ? "failed" : "completed", event.result);

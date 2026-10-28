@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { accountsAppService } from "./app";
 import type { AccountsActor } from "./authz";
+import * as users from "./users";
 
 const suite = databaseSuite();
 
@@ -11,8 +12,9 @@ const groupIds = (items: Awaited<ReturnType<typeof accountsAppService.entity.lis
 
 suite("personal Linux groups in group lists and search (integration)", () => {
   test("are flagged with their owner and left out of browsing and search unless requested", async () => {
-    const suffix = crypto.randomUUID().slice(0, 8);
-    const number = 1_500_000 + Math.floor(Math.random() * 400_000);
+    const baseline = await accountsAppService.dashboard.get();
+    const suffix = "fixture";
+    const number = 1_500_000;
     const [owner] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail)
       VALUES (${`pg${suffix}`}, 'local', 'user', 'Quinn Personal', ${`pg-${suffix}@example.test`})
@@ -28,7 +30,7 @@ suite("personal Linux groups in group lists and search (integration)", () => {
       VALUES (${`local:pg${suffix}-team`}, 'local', ${`pg${suffix}-team`}, 'Real team')
       RETURNING id
     `;
-    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${owner!.id}::uuid, ${personal!.id}::uuid), (${owner!.id}::uuid, ${team!.id}::uuid)`;
+    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${owner!.id}::uuid, ${personal!.id}::uuid)`;
     await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${team!.id}::uuid, ${personal!.id}::uuid)`;
     await sql`
       INSERT INTO auth.user_posix (user_id, managed_by, uid_number, primary_gid_number, primary_group_id, home_directory, login_shell)
@@ -38,6 +40,11 @@ suite("personal Linux groups in group lists and search (integration)", () => {
     const expectedOwner = { id: owner!.id, uid: `pg${suffix}`, displayName: "Quinn Personal" };
 
     try {
+      const summary = await accountsAppService.dashboard.get();
+      expect(summary.groupsTotal).toBe(baseline.groupsTotal + 1);
+      expect(summary.localGroupsTotal).toBe(baseline.localGroupsTotal + 1);
+      expect(summary.ipaGroupsTotal).toBe(baseline.ipaGroupsTotal);
+
       const hidden = await accountsAppService.group.list({ filter: { search: `pg${suffix}` }, scope: { mode: "all" } });
       expect(hidden.total).toBe(1);
       expect(hidden.items).toEqual([expect.objectContaining({ id: team!.id, personalOwner: null })]);
@@ -48,6 +55,15 @@ suite("personal Linux groups in group lists and search (integration)", () => {
       });
       expect(shown.total).toBe(2);
       expect(shown.items.find((group) => group.id === personal!.id)?.personalOwner).toEqual(expectedOwner);
+
+      for (const recursive of [false, true]) {
+        const names = await accountsAppService.user.group.list({ userId: owner!.id, recursive });
+        expect(names.items).toEqual(recursive ? [`pg${suffix}-team`] : []);
+      }
+      const ids = await accountsAppService.user.groupId.list({ userId: owner!.id, recursive: false });
+      expect(ids).toContain(personal!.id);
+      expect(ids).not.toContain(team!.id);
+      expect(await users.getGroups({ id: owner!.id, recursive: true })).toEqual([`pg${suffix}`, `pg${suffix}-team`]);
 
       const member = await accountsAppService.group.list({ scope: { userId: owner!.id, mode: "member" } });
       expect(member.items.map((group) => group.id)).toEqual([team!.id]);
