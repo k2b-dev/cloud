@@ -100,6 +100,16 @@ export const createSettingsDraft = <T>(options: Options<T>) => {
     setOutcome((current) => (current?.kind === "unknown" ? current : null));
   };
 
+  // Leaving the page with unsaved changes asks first, as the settings pages did before.
+  if (typeof window !== "undefined") {
+    const guard = (event: BeforeUnloadEvent) => {
+      if (state() === "saved") return;
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", guard);
+    onCleanup(() => window.removeEventListener("beforeunload", guard));
+  }
+
   createEffect(() =>
     setControls({
       state: state(),
