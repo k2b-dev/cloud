@@ -178,9 +178,7 @@ const messageId = (chat: string, seq: number) => `${chat}${String(seq).padStart(
  * the live socket. Tests add messages from others with `receive`, which the server stores and delivers live like
  * the chat app does, and make the next sends fail with `failSends`.
  */
-export const startChatHarness = async (
-  options: { autoMount?: boolean; renderPage?: (request: Request) => Promise<Response> } = {},
-) => {
+export const startChatHarness = async (options: { autoMount?: boolean; renderPage?: (request: Request) => Promise<Response> } = {}) => {
   const started = performance.now();
   const now = () => new Date(chatTestNow.getTime() + (performance.now() - started));
   const [harness, css, fontAssets] = await Promise.all([
