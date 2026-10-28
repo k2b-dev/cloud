@@ -43,8 +43,8 @@ import {
 `Widget` requires `title` and `children`. Optional `icon`, `meta`, and `href`
 build its compact header. `size` is `"content"`, `"compact"`, `"standard"`, or
 `"fill"`; the default standard frame is 25rem high, compact is 14rem, fill takes
-the height its container gives it, such as a cell of a dashboard grid, and
-content has no fixed height. Compact fits a header with meta above one stat, status, or hero
+the height and the width its container gives it, such as a cell of a dashboard
+grid, and does not size itself from its content, and content has no fixed height. Compact fits a header with meta above one stat, status, or hero
 and a row of pills. The header has the same height with and without meta. The
 body owns the spacing: 0.5rem above, between, and 0.75rem below its blocks,
 which have no vertical padding of their own, and every line height is a whole
