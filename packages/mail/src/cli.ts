@@ -107,6 +107,7 @@ import {
   savedConversationViewFilterSchema,
   type UnsubscribeMailingListResult,
   type WorkflowEffectBudget,
+  type WorkflowTryResult,
   type WorkflowValidation,
 } from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
@@ -2939,6 +2940,7 @@ const specialistCommands = {
     repair: "Repair mailbox folder and message hydration state",
     automation: "Create, inspect, and run guided incoming automations",
     "saved-view": "Create and manage saved conversation views",
+    view: "Choose how a mailbox looks on large screens and phones",
     scheduled: "Inspect and cancel scheduled message delivery",
     sender: "Preview and update messages from one sender or domain",
     subscription: "Inspect and manage mailing-list subscriptions",
@@ -7682,6 +7684,54 @@ const specialistCommands = {
             ctx.print(`${diagnostic.severity}: ${diagnostic.path}: ${diagnostic.message}`);
           }
         }
+      },
+    }),
+    command("workflow try", {
+      summary: "Try a workflow on recent messages without making changes or calling AI",
+      args: { workflowId: arg.optional({ description: "Stable workflow id (omit with --file)" }) },
+      flags: {
+        ...mailboxFlag,
+        last: flag.int({ min: 1, max: 100, default: 50, description: "Number of recent messages (1–100)" }),
+        file: flag.string({ description: "Unsaved YAML file (mailbox admin)" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (Boolean(args.workflowId) === Boolean(flags.file)) throw new Error("Provide a workflow id or --file, exclusively.");
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const definition = flags.file ? { source: await Bun.file(flags.file).text() } : { workflowId: args.workflowId };
+        let merged: WorkflowTryResult | undefined;
+        let cursor: string | null = null;
+        do {
+          const result: WorkflowTryResult = await readApi<WorkflowTryResult>(
+            ctx,
+            `/mailboxes/${mailbox.id}/workflows/try`,
+            jsonRequest("POST", { ...definition, last: flags.last, cursor, batch: 25 }),
+          );
+          if (merged && result.checked <= merged.checked) throw new Error("Workflow preview did not advance; run it again.");
+          merged = merged
+            ? {
+                ...result,
+                items: [...merged.items, ...result.items],
+                aiCalls: {
+                  min: merged.aiCalls.min + result.aiCalls.min,
+                  max: merged.aiCalls.max + result.aiCalls.max,
+                },
+              }
+            : result;
+          cursor = result.cursor;
+        } while (cursor !== null);
+        if (printStructured(ctx, merged)) return;
+        const count = (outcome: string) => merged.items.filter((item) => item.outcome === outcome).length;
+        const calls =
+          merged.aiCalls.min === merged.aiCalls.max ? String(merged.aiCalls.min) : `${merged.aiCalls.min}–${merged.aiCalls.max}`;
+        ctx.print(
+          `${count("match")} match · ${count("skipped")} skipped · ${count("none")} none · ${calls} AI calls would be needed, none made`,
+        );
+        for (const item of merged.items)
+          ctx.print(
+            `${item.outcome} · ${item.from.name ?? item.from.email} · ${item.subject} · ${item.messageId}${
+              item.problems.length ? ` · ${item.problems.map((problem) => problem.code).join(", ")}` : ""
+            }`,
+          );
       },
     }),
     command("workflow list", {
