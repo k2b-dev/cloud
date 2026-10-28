@@ -45,6 +45,7 @@ import { mutation, query } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
   Button,
+  ButtonLink,
   Chat,
   type ChatMention,
   dialogCore,
@@ -2482,13 +2483,63 @@ export default function AssistantWorkspace(props: Props) {
     );
   };
 
+  // The side panel has no head row; a quiet row under the composer leads on. "All chats" opens the Assistant
+  // application at what the panel shows (the current chat, Project or approvals), so a chat continues in the full view.
+  const panelFullViewHref = () => {
+    const project = activeProject();
+    const pending = project ? pendingProjectChats()[project.id]?.id : undefined;
+    if (pending) return assistantConversationHref("/app/assistant", pending);
+    if (project) return assistantProjectHref("/app/assistant", project.id);
+    if (approvalsOpen()) return "/app/assistant?approvals=1";
+    return assistantConversationHref("/app/assistant", chat.activeConversationId());
+  };
+  const PanelAllChats = () => (
+    <ButtonLink
+      href={panelFullViewHref()}
+      size="xs"
+      variant="ghost"
+      class="assistant-panel-link"
+      // Before the panel scripts run, the host opens the link instead of the panel frame.
+      target={workspaceMounted() ? undefined : "_top"}
+    >
+      <i class="ti ti-messages" aria-hidden="true" />
+      {t().allChats}
+    </ButtonLink>
+  );
+  // The panel reopens the chat it remembers, so the row also starts a new one whenever the panel holds a chat, even one
+  // without messages (a saved draft, or a chat that failed to load).
+  const PanelNewChat = () => (
+    <Button
+      size="xs"
+      variant="ghost"
+      class="assistant-panel-link"
+      disabled={newConversation.loading() || composerPicking() > 0}
+      onClick={() => void createAndFocusConversation()}
+    >
+      <i class="ti ti-plus" aria-hidden="true" />
+      {t().newChat}
+    </Button>
+  );
+  const PanelRow = () => (
+    <div class="assistant-panel-row">
+      <PanelNewChat />
+      <PanelAllChats />
+    </div>
+  );
+  // In the empty chat the Project choice keeps the start of the row; these links share its end.
+  const PanelRowEnd = () => (
+    <div class="assistant-panel-row-end">
+      <Show when={chat.activeConversationId()}>
+        <PanelNewChat />
+      </Show>
+      <PanelAllChats />
+    </div>
+  );
+
   return (
     <AssistantLiveProvider value={liveHub}>
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <AssistantSidebar
-          fullViewConversationId={activeProject() ? pendingProjectChats()[activeProject()!.id]?.id : undefined}
-          embedded={props.embedded}
-          panelReady={workspaceMounted()}
           basePath={basePath}
           conversations={conversations}
           timeZone={props.timeZone}
@@ -2538,7 +2589,16 @@ export default function AssistantWorkspace(props: Props) {
               </Show>
               <Show
                 when={!approvalsOpen()}
-                fallback={<AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />}
+                fallback={
+                  <>
+                    <AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />
+                    <Show when={props.embedded}>
+                      <div class="mx-auto w-full max-w-3xl shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)]">
+                        <PanelRow />
+                      </div>
+                    </Show>
+                  </>
+                }
               >
                 <Show
                   keyed
@@ -2635,7 +2695,8 @@ export default function AssistantWorkspace(props: Props) {
                                 selectedProjectId={emptyProjectId()}
                                 choosingProject={choosingProject()}
                                 onChooseProject={() => void chooseEmptyChatProject()}
-                                onStarter={useStarter}
+                                onStarter={props.embedded ? undefined : useStarter}
+                                rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
                               />
                             </Show>
                             <codeApprovals.View
@@ -2648,6 +2709,9 @@ export default function AssistantWorkspace(props: Props) {
                               <div class="mx-auto flex max-w-3xl flex-col gap-2">
                                 <ComposerNotices />
                                 <AssistantComposer />
+                                <Show when={props.embedded}>
+                                  <PanelRow />
+                                </Show>
                               </div>
                             </div>
                           </Show>
@@ -2686,7 +2750,14 @@ export default function AssistantWorkspace(props: Props) {
                           project={project()}
                           initialPage={view.page}
                           initialContext={view.context}
-                          composer={<AssistantComposer projectId={project().id} projectName={project().name} />}
+                          composer={
+                            <div class="flex flex-col gap-2">
+                              <AssistantComposer projectId={project().id} projectName={project().name} />
+                              <Show when={props.embedded}>
+                                <PanelRow />
+                              </Show>
+                            </div>
+                          }
                           onOpenConversation={openAndFocusConversation}
                         />
                       )}
