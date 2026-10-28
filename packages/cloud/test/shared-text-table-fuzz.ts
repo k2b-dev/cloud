@@ -98,7 +98,12 @@ export function inspectTable(source: string) {
   // Canonical email-profile Markdown plus the actual outgoing HTML sanitizer.
   // This is deliberately not labelled the final Mail compose/send pipeline.
   const html = sanitizeEmailHtml(renderMarkdownSync(source, { output: "email", links: "plain", locale: "en" }));
-  const emailVisible = html.replace(/<[^>]*>/g, "");
+  // Strip until stable: removing one tag must not join fragments into another.
+  let emailVisible = html;
+  for (let previous = ""; previous !== emailVisible; ) {
+    previous = emailVisible;
+    emailVisible = emailVisible.replace(/<[^>]*>/g, "");
+  }
   const count = (text: string, ch: string) => [...text].filter((value) => value === ch).length;
   const emailMissing = marks(visible).filter((ch) => count(emailVisible, ch) !== count(visible, ch));
   return { broken, extras, visible, outside, emailMissing, html };

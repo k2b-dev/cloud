@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { basename } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, pageErrors } from "../../test/browser";
 import type {} from "../../test/clipboard-grid.fixture";
 import type {} from "../../test/text-editor-browser-harness";
 
@@ -92,8 +92,7 @@ for (const outcome of [
   test(`deferred HTML paste: ${outcome}`, async () => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
@@ -189,8 +188,7 @@ test("plain paste does not request the HTML sanitizer", async () => {
 test("public tableGrid composition lazily loads its HTML paste parser", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   try {
     await page.goto(new URL("grid", server.url).href);
     await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();

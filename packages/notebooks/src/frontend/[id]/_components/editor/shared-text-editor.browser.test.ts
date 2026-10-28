@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
-import { browserName, launchBrowser, settled } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors, settled } from "../../../../../../ui/test/browser";
 import { startNotebookEditorFixture } from "./shared-text-editor.browser-fixture";
 
 let browser: Browser;
@@ -27,8 +27,7 @@ const desktop: BrowserContextOptions = { viewport: { width: 1280, height: 860 } 
 const open = async (options: { doc?: string; device?: BrowserContextOptions } = {}) => {
   const context = await browser.newContext(options.device ?? desktop);
   const page = await context.newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });

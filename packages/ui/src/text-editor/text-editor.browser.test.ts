@@ -1,12 +1,13 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, devices } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, pageErrors } from "../../test/browser";
 import type {} from "../../test/text-editor-browser-harness";
 
 let browser: Browser;
-const pageErrors: string[] = [];
+let collected: string[] = [];
 afterEach(() => {
-  const errors = pageErrors.splice(0);
+  const errors = collected;
+  collected = [];
   expect(errors).toEqual([]);
 });
 let server: ReturnType<typeof Bun.serve>;
@@ -44,7 +45,7 @@ for (const [name, options] of Object.entries(profiles))
     const open = async () => {
       const context = await browser.newContext(options);
       const page = await context.newPage();
-      page.on("pageerror", (error) => pageErrors.push(error.message));
+      collected = pageErrors(page);
       await page.goto(server.url.href);
       await page.waitForSelector(".k2b-ste-cell");
       return { context, page };

@@ -6,7 +6,7 @@ import type { ServerWebSocket } from "bun";
 import type { Browser, Page } from "playwright";
 import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { DraftEditableContent, MailDraft } from "../../contracts";
 import { createDraftDocument, DRAFT_BODY, readDraftDocument, writeLocalDraftHeaders } from "../../lib/draft-document";
 import { mailDraftDocumentRequestSchema } from "../../lib/draft-document-protocol";
@@ -243,8 +243,7 @@ const open = async (width = 1440) => {
   const context = await browser.newContext({ viewport: { width, height: 900 } });
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   await page.waitForFunction(() => window.mailSharedFixture?.state()?.ready);
   await settled(page);

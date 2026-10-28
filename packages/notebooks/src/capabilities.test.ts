@@ -1316,7 +1316,12 @@ for (const [locale, prefix] of [
 ] as const) {
   test(`note reader returns its notebook context in ${locale}`, async () => {
     trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
-    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, contentMd: "Plan", yjsSnapshot: null });
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({
+      ...note,
+      contentMd: "Plan",
+      yjsSnapshot: null,
+      yjsRestoreRevision: "0",
+    });
     const getNotebook = trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
     trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
     const operation = notebooksCapabilities.queries["note.read"];

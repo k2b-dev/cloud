@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, devices } from "playwright";
-import { browserName, launchBrowser, settled } from "../../test/browser";
+import { browserName, launchBrowser, pageErrors, settled } from "../../test/browser";
 import type {} from "../../test/text-editor-component-harness";
 
 let browser: Browser;
@@ -68,8 +68,7 @@ for (const [name, options] of Object.entries(profiles))
       const context = await browser.newContext(options);
       try {
         const page = await context.newPage();
-        const errors: string[] = [];
-        page.on("pageerror", (error) => errors.push(error.message));
+        const errors = pageErrors(page);
         await page.goto(server.url.href);
         const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
         await cell.waitFor();

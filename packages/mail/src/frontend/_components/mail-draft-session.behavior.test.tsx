@@ -568,13 +568,17 @@ describe("Mail draft session", () => {
     );
     expect(localStorage.getItem(mailDraftJournalKey(MAILBOX_ID, seed.id))).toBeNull();
     expect(readMailDraftSeed(localStorage, MAILBOX_ID, seed.id)).toBeNull();
-    const write = spyOn(localStorage, "setItem").mockImplementation(() => {
+    // happy-dom's Storage proxy ignores assigned methods, so a spy would never run; only a defined property replaces one.
+    const write = localStorage.setItem;
+    const replaceWrite = (value: Storage["setItem"]) =>
+      Object.defineProperty(localStorage, "setItem", { configurable: true, writable: true, value });
+    replaceWrite(() => {
       throw new Error("Storage full");
     });
     try {
       await expect(session.prepareSignIn()).rejects.toThrow("Storage full");
     } finally {
-      write.mockRestore();
+      replaceWrite(write);
     }
     localStorage.setItem("cloud:user-epoch:Usr001", "ended");
     await expect(session.prepareSignIn()).rejects.toThrow("This browser session ended");
