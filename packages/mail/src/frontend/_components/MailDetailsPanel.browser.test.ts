@@ -190,6 +190,8 @@ describe("Mail conversation details in the shared outline", () => {
       expect(await more.textContent()).toContain("4 doppelte zusammengefasst");
       await shot(page, "02-mail-viele-kurz-light-1440");
       await more.click();
+      // The click leaves the pointer over a file row of the longer list, whose actions would fade in on hover.
+      await page.mouse.move(0, 0);
       await settled(page);
       expect(await page.locator(".mail-details-files-info").textContent()).toBe("17 Dateien aus 21 Anhängen · 4 doppelte zusammengefasst");
       expect(await page.locator(".k2b-file-grid-stack__label").allTextContents()).toEqual(["Dateien6", "Bilder11"]);
@@ -198,6 +200,7 @@ describe("Mail conversation details in the shared outline", () => {
       expect(await page.locator(".k2b-file-grid__meta", { hasText: "von Druckerei Nordlicht" }).count()).toBe(1);
       await shot(page, "03-mail-viele-alle-light-1440");
       await page.getByRole("radio", { name: "Nach Nachricht" }).click();
+      await page.mouse.move(0, 0);
       await settled(page);
       const labels = await page.locator(".k2b-file-grid-stack__label").allTextContents();
       expect(labels).toHaveLength(3);
