@@ -29,7 +29,10 @@ export default function AssistantEmptyChat(props: {
   selectedProjectId: string | null;
   choosingProject?: boolean;
   onChooseProject: () => void;
-  onStarter: (starter: AssistantStarterAction) => void;
+  /** Without it, no suggestions show: the side panel keeps only the composer and its quiet row. */
+  onStarter?: (starter: AssistantStarterAction) => void;
+  /** Quiet control at the end of the row under the composer, such as the panel's "All chats". */
+  rowEnd?: JSX.Element;
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -79,16 +82,19 @@ export default function AssistantEmptyChat(props: {
             <span class="truncate">{selectedProject()?.name ?? t().noProject}</span>
             <i class="ti ti-chevron-down" aria-hidden="true" />
           </Button>
+          {props.rowEnd}
         </div>
 
-        <div class="assistant-starters" role="group" aria-label={t().starters}>
-          {starters().map((starter) => (
-            <Button variant="subtle" class="assistant-starter" onClick={() => props.onStarter(starter)}>
-              <i class={starter.icon} aria-hidden="true" />
-              <span>{starter.label}</span>
-            </Button>
-          ))}
-        </div>
+        {props.onStarter ? (
+          <div class="assistant-starters" role="group" aria-label={t().starters}>
+            {starters().map((starter) => (
+              <Button variant="subtle" class="assistant-starter" onClick={() => props.onStarter?.(starter)}>
+                <i class={starter.icon} aria-hidden="true" />
+                <span>{starter.label}</span>
+              </Button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </section>
   );

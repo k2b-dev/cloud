@@ -4,7 +4,6 @@ import { deleteWorkflowScope, emitWorkflowEvent, getWorkflowRun } from "@k2b/clo
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { executeMutationCommand } from "./command-runtime";
 import { imapSmtpConnector } from "./connectors";
@@ -31,7 +30,6 @@ suite("Hand-written Mail workflow placement steps", () => {
   const metricBlobIds: string[] = [];
 
   beforeAll(async () => {
-    await migrate();
     const [user] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-workflow-placement-${suffix}`}, 'local', 'user', 'Mail workflow placement', false)
