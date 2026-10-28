@@ -12,9 +12,11 @@ import { lazySync } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
+import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
+import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
 type SqlClient = typeof sql;
 
@@ -152,6 +154,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   )`.simple();
   await tx`ALTER TABLE mail.draft_document_rests ALTER COLUMN rest_draft_id DROP NOT NULL`.simple();
 
+  await tx.unsafe(automationLogSchema).simple();
+  await ensureMailWorkflowEffectOrderSchema(tx);
   await tx`CREATE TABLE IF NOT EXISTS mail.mailbox_logo_versions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,

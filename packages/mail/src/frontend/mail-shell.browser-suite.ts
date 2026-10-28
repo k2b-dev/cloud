@@ -2213,6 +2213,33 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       });
 
       section("reader", () => {
+        // One case per trace, each on its own page (#1966): the current AI assignment leads, every effect stays below.
+        for (const width of [1440, 390])
+          for (const kind of ["name", "uncertain", "manual", "normal"] as const)
+            test(`automation: rule trace ${kind} at ${width}`, async () => {
+              const page = await open(`${boxPath}?conversation=Conv01&locale=de&trace=${kind}`, width, width === 390 ? 844 : 900);
+              try {
+                if (kind === "name") await page.getByText("„Mails nach Art verteilen“ hat Nora Albrecht zugewiesen.").waitFor();
+                if (kind === "uncertain") {
+                  await page
+                    .getByText("Die KI war unsicher. „Mails nach Art verteilen“ hat die Mail an „Eingang prüfen“ gegeben.")
+                    .waitFor();
+                  await page.getByRole("button", { name: "Mir zuweisen" }).waitFor();
+                }
+                if (kind === "manual") {
+                  await page.getByText("Nora Albrecht hat um 06:40 Lisa Brandt zugewiesen.").waitFor();
+                  expect(await page.locator("[data-mail-automation-note]").count()).toBe(0);
+                }
+                if (kind === "normal") {
+                  await page.getByText("„Großkunden an Can“ hat Zuweisen übersprungen:").waitFor();
+                  await page.locator('[data-mail-automation-note="assigned"]').waitFor();
+                }
+                if (screenshots) await page.screenshot({ path: join(screenshots, `trace-${kind}-light-${width}.png`) });
+              } finally {
+                await close(page);
+              }
+            });
+
         test("Details access transfers focus across the phone breakpoint", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 767, 900);
           try {

@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, storedCookie } from "../../test/browser";
+import { launchBrowser, settled, storedCookie } from "../../test/browser";
 import { type AppWorkspaceLayoutState, appWorkspaceLayoutStyle, parseAppWorkspaceLayoutState } from "./app-workspace-state";
 
 const ui = resolve(import.meta.dir, "../..");
@@ -27,7 +27,7 @@ export function Fixture(props) {
           <a href="/?level=items">Providers</a>
         </AppWorkspace.MainPane>
         <AppWorkspace.MainPane id="items" label="Items" href="/?level=items" actions={<button type="button" data-test-action style="width:44px;height:44px">+</button>}><a href="/?level=item">Model</a></AppWorkspace.MainPane>
-        <AppWorkspace.MainPane id="item" label={props.long ? "A selected item whose title is much longer than any column could show in one line ".repeat(3) : "Item"}>
+        <AppWorkspace.MainPane id="item" minSize={props.wide ? 900 : undefined} label={props.long ? "A selected item whose title is much longer than any column could show in one line ".repeat(3) : "Item"}>
           {props.long ? <p>{"Unbroken_content_that_is_wider_than_the_column_".repeat(12)} {"A long paragraph of ordinary words that would fill a wide column many times over. ".repeat(40)}</p> : "Selected model"}
         </AppWorkspace.MainPane>
       </AppWorkspace.Main></AppWorkspace.Content>
@@ -42,7 +42,7 @@ const serverBuild = await Bun.build({
     [serverEntry]: `import { createComponent } from "solid-js";
 import { renderToString, generateHydrationScript } from "solid-js/web";
 import { Fixture } from "./workspace-levels.fixture";
-export const render = (level, state, long, enhanced) => renderToString(() => createComponent(Fixture, { level, state, long, enhanced }));
+export const render = (level, state, long, enhanced, wide) => renderToString(() => createComponent(Fixture, { level, state, long, enhanced, wide }));
 export const hydrationScript = generateHydrationScript();`,
   },
   target: "node",
@@ -83,8 +83,10 @@ writeFileSync(modulePath, await serverBuild.outputs[0]!.text());
 const {
   render,
   hydrationScript,
-}: { render: (level: string, state: AppWorkspaceLayoutState | null, long: boolean, enhanced: boolean) => string; hydrationScript: string } =
-  await import(modulePath);
+}: {
+  render: (level: string, state: AppWorkspaceLayoutState | null, long: boolean, enhanced: boolean, wide: boolean) => string;
+  hydrationScript: string;
+} = await import(modulePath);
 const clientEntry = resolve(import.meta.dir, "workspace-levels.client-fixture.ts");
 const clientBuild = await Bun.build({
   entrypoints: [clientEntry],
@@ -98,7 +100,7 @@ import { parseAppWorkspaceLayoutState } from ${JSON.stringify(resolve(ui, "dist/
 import { Fixture } from "./workspace-levels.fixture";
 const state = parseAppWorkspaceLayoutState(document.body.dataset.layout);
 const params = new URL(location.href).searchParams;
-hydrate(() => createComponent(Fixture, { level: params.get("level") || "item", state, long: params.get("long") === "1", enhanced: params.get("nav") === "enhanced" }), document.getElementById("app"));
+hydrate(() => createComponent(Fixture, { level: params.get("level") || "item", state, long: params.get("long") === "1", enhanced: params.get("nav") === "enhanced", wide: params.get("wide") === "1" }), document.getElementById("app"));
 document.body.dataset.ready = "true";`,
   },
   plugins: [
@@ -141,6 +143,7 @@ beforeAll(async () => {
         state,
         url.searchParams.get("long") === "1",
         url.searchParams.get("nav") === "enhanced",
+        url.searchParams.get("wide") === "1",
       );
       return new Response(
         `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}html,body{margin:0;width:100%;height:100%;}#app{height:100%;}.k2b-app-workspace{height:100%;}</style></head><body class="k2b-ui" data-layout="${encoded ?? ""}"><div id="app" style="${appWorkspaceLayoutStyle(state) ?? ""}">${body}</div>${hydrationScript}${url.searchParams.get("hydrate") === "0" ? "" : '<script src="/client.js"></script>'}</body></html>`,
@@ -314,6 +317,45 @@ test("keyboard resizing, cookie restoration without a hydration shift, and doubl
     await page.close();
   }
 }, 30000);
+
+// A level that needs more room declares its minimum width: where the deepest levels do not fit at their minimums,
+// the shallowest gives way, and the wide level never shrinks below its minimum.
+test("1440px: a wide last level pushes the first level aside and keeps its minimum width", async () => {
+  const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.goto(`${origin}/?level=item&wide=1`);
+    await page.waitForSelector('body[data-ready="true"]');
+    await settled(page);
+    expect(await visibleIds(page)).toEqual(["items", "item"]);
+    expect(await page.locator('[data-workspace-level="2"] .k2b-app-workspace__level-back').isVisible()).toBe(true);
+    const width = await page.locator('[data-workspace-level="3"]').evaluate((element) => element.getBoundingClientRect().width);
+    expect(width).toBeGreaterThanOrEqual(900);
+    // Resizing the level beside it stops where the wide level keeps its minimum, and the separator says so.
+    const separator = page.locator('[data-app-workspace-resize="pane"][data-workspace-panel-id="items"]');
+    await separator.focus();
+    await page.keyboard.press("End");
+    await settled(page);
+    const after = await page.evaluate(() => ({
+      items: document.querySelector('[data-workspace-level="2"]')!.getBoundingClientRect().width,
+      item: document.querySelector('[data-workspace-level="3"]')!.getBoundingClientRect().width,
+      now: Number(
+        document.querySelector('[data-app-workspace-resize="pane"][data-workspace-panel-id="items"]')!.getAttribute("aria-valuenow"),
+      ),
+      max: Number(
+        document.querySelector('[data-app-workspace-resize="pane"][data-workspace-panel-id="items"]')!.getAttribute("aria-valuemax"),
+      ),
+    }));
+    expect(after.item).toBeGreaterThanOrEqual(899.5);
+    expect(Math.abs(after.now - after.items)).toBeLessThanOrEqual(1);
+    expect(after.max).toBeLessThanOrEqual(Math.ceil(after.items));
+    await page.goto(`${origin}/?level=item`);
+    await page.waitForSelector('body[data-ready="true"]');
+    await settled(page);
+    expect(await visibleIds(page)).toEqual(["sections", "items", "item"]);
+  } finally {
+    await page.close();
+  }
+});
 
 test("at 1024px the selected middle level fills the rest and has no trailing separator", async () => {
   const page = await browser!.newPage({ viewport: { width: 1024, height: 900 } });

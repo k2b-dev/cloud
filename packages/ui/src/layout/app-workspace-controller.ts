@@ -185,6 +185,16 @@ const flexibleLevel = (pane: HTMLElement) => {
   const widthClass = root ? cssState(root, "--k2b-workspace-level-class") : "";
   return Boolean(widthClass && pane.dataset.workspaceLevelLast?.split(" ").includes(widthClass));
 };
+/** How much more than Main's default minimum the filling last level declares, such as a wide list. */
+const flexibleLevelExtra = (main: HTMLElement | null) => {
+  const level = main
+    ? Array.from(main.querySelectorAll<HTMLElement>(":scope > [data-workspace-level]")).find(
+        (pane) => flexibleLevel(pane) && isVisible(pane),
+      )
+    : undefined;
+  const minimum = level ? Number.parseFloat(getComputedStyle(level).getPropertyValue("--k2b-workspace-level-min")) : Number.NaN;
+  return Number.isFinite(minimum) ? Math.max(0, minimum - APP_WORKSPACE_MAIN_MIN) : 0;
+};
 const levelsMain = (handle: HTMLElement) => handle.closest(".k2b-app-workspace__main")?.hasAttribute("data-workspace-levels") ?? false;
 const controlsResizableRegion = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind) => {
   const panel = kind === "sidebar" ? sidebarElement(root) : controlledPanel(root, handle);
@@ -280,7 +290,9 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         : kind === "detail"
           ? 8 + (reserveMainMinimum ? mainExtra : 0)
           : kind === "pane"
-            ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) + separatorSize
+            ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) +
+              separatorSize +
+              flexibleLevelExtra(main)
             : 0,
     min: numberData(handle, "workspaceMinSize", defaultMin),
     max: numberData(handle, "workspaceMaxSize", defaultMax),
@@ -411,7 +423,7 @@ const reconcilePanes = (root: HTMLElement, layoutState: AppWorkspaceLayoutState,
   });
   if (!fits.length) return;
 
-  const budget = main.getBoundingClientRect().width - fixedWidth - APP_WORKSPACE_MAIN_MIN;
+  const budget = main.getBoundingClientRect().width - fixedWidth - APP_WORKSPACE_MAIN_MIN - flexibleLevelExtra(main);
   // Each share default clamps only against Main, not its resizable or non-resizable siblings. When panes
   // together leave Main's primary region less than its minimum, fit them like stored widths, allowing subpixels.
   if (fits.reduce((total, fit) => total + fit.desired, 0) > budget + 0.5)

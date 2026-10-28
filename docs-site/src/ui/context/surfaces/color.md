@@ -70,6 +70,7 @@ sidebar row also turns semibold; its label reserves that width in advance.
 | Selected sidebar row, object chip, or sidebar icon action | `AppWorkspace.SidebarItem` | `k2b-app-workspace` |
 | Selected navigation row | `Navigation` | `k2b-navigation` |
 | Selected settings category | `SettingsModal` | `k2b-settings` |
+| Open page in a touch app's sidebar, and the one that is loading | `MobileShell.Sidebar` | `k2b-mobile-shell` |
 
 ### Selected tabs, segments, and filters
 
