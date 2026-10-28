@@ -8,6 +8,7 @@ Use `cld notebooks` to read and write notes by ID or path, keep a notebook as a 
 
 ## Contents
 
+- [Passage comments](annotations.md)
 - [Core model](#core-model)
 - [Markdown knowledge conventions](#markdown-knowledge-conventions)
 - [Declarative summaries](#declarative-summaries)
@@ -112,7 +113,7 @@ Query rules:
 - `$title`, `$created`, `$updated`, `$tags`, and named `block.key` properties can be selected or filtered.
 - Sort by `$title`, `$created`, or `$updated`, with `asc` or `desc`. The default is `$updated` descending.
 - Omitting `columns` produces a list. Selected columns produce a table, with at most 16 columns.
-- `limit` is 1–100, default 25. A query accepts at most 32 filters and 100 values in a filter list. A note accepts at most 20 query blocks.
+- `limit` is 1–100, default 25. Book and the editor page a query 20 rows at a time; the CLI and capabilities return the first `limit` rows. A query accepts at most 32 filters and 100 values in a filter list. A note accepts at most 20 query blocks.
 
 Choose operators for the field's value type:
 

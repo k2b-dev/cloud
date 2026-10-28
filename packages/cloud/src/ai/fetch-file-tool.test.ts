@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import { networkTransportFixture } from "../../../../scripts/fixtures/network-transport";
@@ -538,6 +538,7 @@ for (const mode of ["deadline", "caller"] as const)
       res.once("close", () => clearInterval(timer));
     });
     const caller = new AbortController();
+    if (mode === "deadline") jest.useFakeTimers();
     try {
       const pending = downloadPublicFile("https://files.example/file", {
         timeoutMs: mode === "deadline" ? 80 : 20_000,
@@ -545,13 +546,28 @@ for (const mode of ["deadline", "caller"] as const)
         resolve: async () => [publicAddress],
         request: fixture.request,
       });
-      await fixture.firstResponse;
-      if (mode === "caller") caller.abort(new Error("cancelled"));
-      await expect(pending).rejects.toThrow(mode === "deadline" ? "did not respond" : "cancelled");
+      const outcome = pending.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      expect(await Promise.race([fixture.firstResponse.then(() => true), outcome.then(() => false)])).toBe(true);
+      if (mode === "deadline") {
+        const nextChunk = new Promise<void>((resolve) => fixture.responses[0]!.once("data", () => resolve()));
+        jest.advanceTimersByTime(5);
+        await nextChunk;
+        jest.advanceTimersByTime(74);
+        expect(fixture.requests[0]!.destroyed).toBe(false);
+        expect(fixture.responses[0]!.destroyed).toBe(false);
+        jest.advanceTimersByTime(1);
+      } else caller.abort(new Error("cancelled"));
+      expect(await outcome).toMatchObject({
+        error: { message: expect.stringContaining(mode === "deadline" ? "did not respond" : "cancelled") },
+      });
       expect(fixture.requests[0]!.destroyed).toBe(true);
       await fixture.disconnected();
       expect(fixture.responses[0]!.destroyed).toBe(true);
     } finally {
+      if (mode === "deadline") jest.useRealTimers();
       await fixture.close();
     }
   });
@@ -561,6 +577,7 @@ for (const mode of ["deadline", "caller"] as const)
     const connected = Promise.withResolvers<void>();
     const fixture = await networkTransportFixture(() => connected.resolve());
     const caller = new AbortController();
+    if (mode === "deadline") jest.useFakeTimers();
     try {
       const pending = downloadPublicFile("https://files.example/file", {
         timeoutMs: mode === "deadline" ? 80 : 20_000,
@@ -568,12 +585,23 @@ for (const mode of ["deadline", "caller"] as const)
         resolve: async () => [publicAddress],
         request: fixture.request,
       });
-      await connected.promise;
-      if (mode === "caller") caller.abort(new Error("cancelled"));
-      await expect(pending).rejects.toThrow(mode === "deadline" ? "did not respond" : "cancelled");
+      const outcome = pending.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      expect(await Promise.race([connected.promise.then(() => true), outcome.then(() => false)])).toBe(true);
+      if (mode === "deadline") {
+        jest.advanceTimersByTime(79);
+        expect(fixture.requests[0]!.destroyed).toBe(false);
+        jest.advanceTimersByTime(1);
+      } else caller.abort(new Error("cancelled"));
+      expect(await outcome).toMatchObject({
+        error: { message: expect.stringContaining(mode === "deadline" ? "did not respond" : "cancelled") },
+      });
       expect(fixture.requests[0]!.destroyed).toBe(true);
       await fixture.disconnected();
     } finally {
+      if (mode === "deadline") jest.useRealTimers();
       await fixture.close();
     }
   });

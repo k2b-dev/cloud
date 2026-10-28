@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AVATAR_KINDS, PersonAvatarSchema, RobotAvatarSchema } from "./avatar";
 
 /**
  * Schemas for account profile / password / request inputs. Live in core
@@ -54,6 +55,37 @@ export const UpdateAvatarResponseSchema = z.object({
   avatarHash: z.string(),
 });
 export type UpdateAvatarResponse = z.infer<typeof UpdateAvatarResponseSchema>;
+
+/**
+ * One save of the profile picture dialog: store and show a photo or a built avatar, or switch to a stored picture.
+ * The photo stays stored while another kind shows; only the active picture is served.
+ */
+export const SaveAvatarSchema = z.union([
+  z.object({ dataUrl: AvatarDataUrlSchema }).strict(),
+  z.object({ built: PersonAvatarSchema }).strict(),
+  z.object({ use: z.enum(AVATAR_KINDS) }).strict(),
+]);
+export type SaveAvatar = z.infer<typeof SaveAvatarSchema>;
+
+/** A service account always shows a picture, so it switches only between its photo and its robot. */
+export const SaveServiceAccountAvatarSchema = z.union([
+  z.object({ dataUrl: AvatarDataUrlSchema }).strict(),
+  z.object({ built: RobotAvatarSchema }).strict(),
+  z.object({ use: z.enum(["photo", "built"]) }).strict(),
+]);
+export type SaveServiceAccountAvatar = z.infer<typeof SaveServiceAccountAvatarSchema>;
+
+export const AvatarStateSchema = z.object({
+  kind: z.enum(AVATAR_KINDS),
+  built: z.union([PersonAvatarSchema, RobotAvatarSchema]).nullable(),
+  hasPhoto: z.boolean(),
+  /** The stored photo as a data URL, also while another kind shows; only the account holder or an administrator reads it. */
+  photo: AvatarDataUrlSchema.nullable(),
+  avatarHash: z.string().nullable(),
+});
+export type AvatarStateResponse = z.infer<typeof AvatarStateSchema>;
+
+export const SaveAvatarResponseSchema = AvatarStateSchema.extend({ message: z.string() });
 
 export const ChangePasswordSchema = z
   .object({

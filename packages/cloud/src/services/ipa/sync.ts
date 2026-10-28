@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { coreUserEventPublisher } from "../../events/core-user-created";
 import { freeipa } from "../../server/services";
 import { writeDeletedAccountAudit } from "../account-lifecycle/audit";
 import { calculateIpaProfileFromGroupNames, parseIpaAccountTransitionPolicy, parseIpaMatchMode } from "../account-model";
@@ -461,8 +462,11 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
         RETURNING id, (xmax = 0) AS inserted`;
       await upsertUserIpaData(tx, { userId: upserted[0]!.id as string, ...u });
       upsertedUsersByUid += 1;
-      if (Boolean(upserted[0]?.inserted)) insertedUsersByUid += 1;
-      else updatedUsersByUid += 1;
+      if (Boolean(upserted[0]?.inserted)) {
+        insertedUsersByUid += 1;
+        const userId = upserted[0]!.id as string;
+        await coreUserEventPublisher().publish(tx, "user.created", { subject: userId, data: { userId, provider: "ipa" } });
+      } else updatedUsersByUid += 1;
     }
 
     for (let staleIndex = 0; staleIndex < staleLocalUsers.length; staleIndex += 1) {

@@ -181,7 +181,6 @@ test("uploads stream to the session lease without Cloud credentials, then commit
   const dispose = await mountWithUploads(dom.root, {
     directory: initial,
     bases: [initial.base],
-    cloudUrl: "https://cloud.test",
     onNavigate: async () => {},
     onChanged: (path) => {
       created = path ?? "";
@@ -219,7 +218,6 @@ test("an existing name asks before replacing and skipping leaves the file untouc
   const dispose = await mountWithUploads(dom.root, {
     directory: initial,
     bases: [initial.base],
-    cloudUrl: "https://cloud.test",
     onNavigate: async () => {},
     onChanged: (path) => {
       created = path ?? "";
@@ -268,7 +266,6 @@ async function mountBrowser(directory: () => DirectoryResult = () => initial) {
       return directory();
     },
     bases: [initial.base],
-    cloudUrl: "https://cloud.test",
     onNavigate: async () => {},
     onChanged: () => {},
   });
@@ -493,7 +490,6 @@ test("files picked while an upload runs join the same batch instead of being ref
   const dispose = await mountWithUploads(dom.root, {
     directory: initial,
     bases: [initial.base],
-    cloudUrl: "https://cloud.test",
     onNavigate: async () => {},
     onChanged: () => {},
   });
@@ -553,7 +549,6 @@ test("a new empty file is created at once instead of waiting behind a running up
   const dispose = await mountWithUploads(dom.root, {
     directory: initial,
     bases: [initial.base],
-    cloudUrl: "https://cloud.test",
     onNavigate: async () => {},
     onChanged: () => {},
   });

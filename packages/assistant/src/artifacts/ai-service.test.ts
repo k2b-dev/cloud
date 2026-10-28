@@ -8,7 +8,7 @@ import { testIdentity } from "./test-identity";
 const identity = testIdentity("00000000-0000-4000-8000-000000000001");
 test("Code AI uses the caller's model access and allowance and propagates cancellation", async () => {
   const authorize = spyOn(scope, "authorizeRuntimeScope").mockResolvedValue({ scope: { resourceId: "aBc234" }, actor: user(identity) });
-  const select = spyOn(ai, "selectAssistantAiModelId").mockResolvedValue("allowed-model");
+  const select = spyOn(ai, "selectAssistantAiModel").mockResolvedValue({ id: "allowed-model" });
   const execute = spyOn(ai, "executeAiTask").mockResolvedValue({ output: "Summary", usage: null });
   const abort = new AbortController();
   try {
@@ -20,7 +20,7 @@ test("Code AI uses the caller's model access and allowance and propagates cancel
       usageSubject: identity.accessSubject,
       attribution: { userId: user(identity).id },
       signal: abort.signal,
-      requestedModelId: "allowed-model",
+      model: { id: "allowed-model" },
       taskPrefix: "code",
     });
     select.mockRejectedValueOnce(new Error("Model not allowed"));
@@ -45,7 +45,7 @@ test("Code AI uses the caller's model access and allowance and propagates cancel
 
 test("scheduled Code AI uses background accounting with task-turn attribution", async () => {
   const authorize = spyOn(scope, "authorizeRuntimeScope").mockResolvedValue({ scope: { conversationId: "chat" }, actor: user(identity) });
-  const select = spyOn(ai, "selectAssistantAiModelId").mockResolvedValue("allowed-model");
+  const select = spyOn(ai, "selectAssistantAiModel").mockResolvedValue({ id: "allowed-model" });
   const execute = spyOn(ai, "executeAiTask").mockResolvedValue({ output: "yes", usage: null });
   try {
     expect(
@@ -57,6 +57,7 @@ test("scheduled Code AI uses background accounting with task-turn attribution", 
         "scheduled-turn",
       ),
     ).toBe("yes");
+    expect(select).toHaveBeenCalledWith(identity.accessSubject, { class: "fast" });
     expect(execute.mock.calls[0]?.[1]).toMatchObject({
       usageSubject: undefined,
       attribution: { userId: user(identity).id, conversationId: "chat", turnId: "scheduled-turn" },

@@ -83,6 +83,44 @@ if (isServer) {
     }
   });
 
+  test("a resource scope reaches the search request and takes precedence over the initial app", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        requests.push(String(input));
+        return stream();
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { dialogCore } = await import("@k2b/ui");
+    const { openCloudResourcePicker } = await import("./resource-picker");
+    try {
+      const result = openCloudResourcePicker({
+        scope: { ref: { type: "notebooks.notebook", id: "Book01" }, label: "Planning", icon: "ti ti-notebook" },
+        initialAppId: "mail",
+        requireReader: true,
+      });
+      await waitFor(() => Boolean(dom.document.querySelector("section button")), "container results without query");
+      const params = new URL(requests[0]!, "http://localhost").searchParams;
+      expect(Object.fromEntries(params)).toMatchObject({
+        app: "notebooks",
+        scope_type: "notebooks.notebook",
+        scope_id: "Book01",
+        require_reader: "true",
+      });
+      expect(params.has("scope_tag")).toBe(false);
+      expect(dom.document.querySelector('button[title="Planning"]')?.textContent).toContain("Planning");
+      dom.document.querySelector<HTMLButtonElement>('[aria-label="Close search"]')!.click();
+      expect(await result).toBeUndefined();
+    } finally {
+      dialogCore.close();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
   for (const initialAppId of [undefined, "notebooks"]) {
     test(`prefills a query without an explicit scope (${initialAppId ?? "all apps"})`, async () => {
       const dom = createDomTestHarness();

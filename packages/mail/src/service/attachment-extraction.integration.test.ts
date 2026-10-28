@@ -3,7 +3,6 @@ import { Readable } from "node:stream";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import {
   enqueueAttachmentExtraction,
   extractMailAttachmentBlob,
@@ -58,7 +57,6 @@ suite("Mail attachment document extraction", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     await sql`
       INSERT INTO mail.mailboxes (id, short_id, name)
       VALUES (${mailboxId}::uuid, ${newShortId()}, 'Attachment extraction tests')

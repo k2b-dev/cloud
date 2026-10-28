@@ -5,6 +5,8 @@
  * `cld` profile through the host; the secret is never printed.
  */
 import { z } from "zod";
+import { type RobotAvatar, randomRobotAvatar } from "../../contracts/avatar";
+import { applyAvatarParts, avatarRows, type CliAvatarState, readAvatarPhoto } from "../avatar";
 import { arg, cliText, command, confirmFlag, flag, printStructured } from "../index";
 import { apiGet, apiJson, queryString } from "./shared";
 
@@ -60,6 +62,12 @@ const resolveAgent = async (ctx: Ctx, reference: string): Promise<Account> => {
   if (matches.length === 1) return matches[0]!;
   if (matches.length === 0) throw new Error(`No agent named "${reference}". Run \`cld admin agents ls\`.`);
   throw new Error(`Several agents match "${reference}": ${matches.map((item) => `${item.name} (${item.id})`).join(", ")}.`);
+};
+
+const avatarPath = (id: string) => `${accountsRoot}/${encodeURIComponent(id)}/avatar`;
+
+const printAvatar = (ctx: Ctx, state: CliAvatarState) => {
+  if (!printStructured(ctx, state)) ctx.table(avatarRows(state), [{ key: "key" }, { key: "value" }]);
 };
 
 const disableAccount = (ctx: Ctx, id: string) => apiJson(ctx, "PATCH", `${accountsRoot}/${encodeURIComponent(id)}`, { status: "disabled" });
@@ -214,6 +222,64 @@ export const agentCommands = [
       if (!printStructured(ctx, summary)) {
         ctx.print(`Rotated the client secret of agent "${agent.name}"; profile "${profileName}" holds the new secret.`);
       }
+    },
+  }),
+  command("agents avatar show", {
+    summary: "Show an agent's picture: its robot parts, and whether a photo is stored and showing",
+    args: { agent: arg.required({ valueLabel: "agent-id-or-name" }) },
+    async run({ ctx, args }) {
+      const agent = await resolveAgent(ctx, args.agent);
+      printAvatar(ctx, await apiGet<CliAvatarState>(ctx, avatarPath(agent.id)));
+    },
+  }),
+  command("agents avatar random", {
+    summary: "Give an agent a new random robot and show it",
+    args: { agent: arg.required({ valueLabel: "agent-id-or-name" }) },
+    async run({ ctx, args }) {
+      const agent = await resolveAgent(ctx, args.agent);
+      printAvatar(ctx, await apiJson<CliAvatarState>(ctx, "PUT", avatarPath(agent.id), { built: randomRobotAvatar() }));
+    },
+  }),
+  command("agents avatar set", {
+    summary: "Change parts of an agent's robot, for example head=round color=teal, and show it",
+    args: {
+      agent: arg.required({ valueLabel: "agent-id-or-name" }),
+      parts: arg.rest({ valueLabel: "part=value", description: "Parts to change; an unknown value lists the choices" }),
+    },
+    async run({ ctx, args }) {
+      const agent = await resolveAgent(ctx, args.agent);
+      const current = await apiGet<CliAvatarState>(ctx, avatarPath(agent.id));
+      if (current.built?.kind !== "robot") throw new Error(`Agent "${agent.name}" has no robot to change.`);
+      const built = applyAvatarParts<RobotAvatar>(current.built, args.parts);
+      printAvatar(ctx, await apiJson<CliAvatarState>(ctx, "PUT", avatarPath(agent.id), { built }));
+    },
+  }),
+  command("agents avatar photo", {
+    summary: "Store a small square PNG, JPEG, or WebP (at most 48 KiB) as an agent's picture and show it",
+    args: { agent: arg.required({ valueLabel: "agent-id-or-name" }), file: arg.required({ valueLabel: "file" }) },
+    async run({ ctx, args }) {
+      const agent = await resolveAgent(ctx, args.agent);
+      printAvatar(ctx, await apiJson<CliAvatarState>(ctx, "PUT", avatarPath(agent.id), { dataUrl: await readAvatarPhoto(args.file) }));
+    },
+  }),
+  command("agents avatar use", {
+    summary: "Show an agent's stored photo or its robot",
+    args: { agent: arg.required({ valueLabel: "agent-id-or-name" }), kind: arg.required({ valueLabel: "photo|robot" }) },
+    async run({ ctx, args }) {
+      const use = { photo: "photo", robot: "built" }[args.kind];
+      if (!use) throw new Error(`Choose photo or robot, not "${args.kind}".`);
+      const agent = await resolveAgent(ctx, args.agent);
+      printAvatar(ctx, await apiJson<CliAvatarState>(ctx, "PUT", avatarPath(agent.id), { use }));
+    },
+  }),
+  command("agents avatar delete-photo", {
+    summary: "Delete an agent's stored photo; its robot shows again",
+    args: { agent: arg.required({ valueLabel: "agent-id-or-name" }) },
+    flags: { yes: confirmFlag("Delete this agent's photo") },
+    async run({ ctx, args, flags }) {
+      requireYes(ctx, flags.yes, "Deleting a photo requires --yes.", "Foto löschen erfordert --yes.");
+      const agent = await resolveAgent(ctx, args.agent);
+      printAvatar(ctx, await apiJson<CliAvatarState>(ctx, "DELETE", avatarPath(agent.id)));
     },
   }),
 ];

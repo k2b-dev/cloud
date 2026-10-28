@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import type { BookNavigatorProps } from "./BookNavigator.island";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata } from "./book-state";
 
@@ -72,7 +73,7 @@ beforeAll(async () => {
         canWrite: url.searchParams.get("access") !== "read",
         locked: false,
         navigationHidden: false,
-        tree,
+        navigation: bookNavigationState(tree, noteId),
         tags: [],
       };
       // This fixture stands for the app router. The Write response identifies the route; it does not mount the editor.
@@ -158,7 +159,7 @@ test(`${browserName}: a soft Book snapshot to a locked note swaps Write for Open
       title: "Glossary",
       selectedNoteId: "note03",
       notebookName: "Handbook",
-      tree,
+      hasNotes: true,
       tags: [],
       canWrite: true,
       locked: true,
