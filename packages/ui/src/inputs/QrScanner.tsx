@@ -112,7 +112,7 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     for (const listener of detach.splice(0)) listener();
     resetRejected.cancel();
     resetFeedback.cancel();
-    // pause(true) stops the camera stream immediately once the engine runs; before that, the stream is stopped here.
+    // pause(true) stops the camera stream immediately while the engine runs; a stream it never started stops here.
     void scanner?.pause(true);
     scanner?.destroy();
     scanner = undefined;
@@ -127,34 +127,45 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     props.onError(reason);
   };
   /**
-   * Shows the camera picture and then hands it to the engine. WebKit, above all in an installed web app, can leave a
-   * stream black: play() never settles or is refused. Attaching the stream again restarts such a player, and play()
-   * runs before any await, so a click on "Try again" is the gesture a refused play() may need.
+   * Waits for the camera picture. WebKit, above all in an installed web app, can leave a stream black: play() never
+   * settles or is refused. The scanner then offers to try again rather than wait in silence, and a picture that starts
+   * late still clears that offer.
    */
-  const show = async () => {
-    if (!stream || !scanner) return;
+  let attempt = 0;
+  const show = async (play: () => Promise<void>) => {
+    const current = ++attempt;
+    const latest = () => !closed && current === attempt;
     setStalled(false);
-    video.srcObject = null;
-    video.srcObject = stream;
+    const playing = play().then(
+      () => video.videoWidth > 0,
+      () => false,
+    );
     let timer: ReturnType<typeof setTimeout> | undefined;
     const shown = await Promise.race([
-      video.play().then(
-        () => video.videoWidth > 0,
-        () => false,
-      ),
+      playing,
       new Promise<false>((resolve) => {
         timer = setTimeout(resolve, firstPictureMs, false);
       }),
     ]);
     clearTimeout(timer);
-    if (closed) return;
-    if (!shown) return setStalled(true);
-    // The engine starts scanning from the play event it hears, so it takes over a paused video.
-    video.pause();
-    await scanner.start();
-    if (!closed) setStarting(false);
+    if (!latest()) return;
+    if (!shown) {
+      setStalled(true);
+      if (!(await playing) || !latest()) return;
+    }
+    setStalled(false);
+    setStarting(false);
   };
-  const retry = () => void show().catch(() => fail("unavailable"));
+  /**
+   * Attaching the stream again restarts a player that stalled on it, and play() runs within the click, the gesture a
+   * refused play() may need. The engine already runs from its first start and scans from the play event it hears.
+   */
+  const retry = () => {
+    if (closed || !stream) return;
+    video.srcObject = null;
+    video.srcObject = stream;
+    void show(() => video.play());
+  };
   onMount(() => {
     const hidden = () => {
       if (document.visibilityState !== "visible") props.onStop();
@@ -232,8 +243,11 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
         if (closed) return stopStream(camera.stream);
         // qr-scanner plays a stream that is already set instead of opening its own.
         stream = camera.stream;
+        video.srcObject = stream;
         video.style.transform = camera.mirrored ? "scaleX(-1)" : "";
-        await show();
+        // start() awaits the engine's play() of this stream.
+        const engine = scanner;
+        await show(() => engine.start());
       } catch {
         fail("unavailable");
       }

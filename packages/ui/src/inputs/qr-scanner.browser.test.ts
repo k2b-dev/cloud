@@ -38,7 +38,10 @@ const code = { text: CODE, path: /<path d="([^"]+)"/.exec(svg)![1]!, size: Numbe
 
 type Detector = "none" | "empty" | "reject" | "transient" | "broken";
 type Camera = "fake" | "code" | "turning" | "rear-overconstrained" | "NotReadableError" | "NotAllowedError" | "NotFoundError";
-/** How the first play() of the page ends: as usual, refused, as WebKit may refuse it, or never, as a stalled player. */
+/**
+ * How play() ends: as usual, refused once, as WebKit may refuse it without a gesture, or twice never, as a player that
+ * stalls on the stream and once more after "Try again".
+ */
 type Play = "normal" | "refuse" | "hang";
 type Calls = { results: string[]; errors: string[]; stops: number };
 type Probe = { scanner: Calls; detects: number; requests: MediaTrackConstraints[]; codeVisible: boolean; turned: boolean };
@@ -68,10 +71,11 @@ function stubDevice({
   probe.turned = false;
   if (play !== "normal") {
     const original = HTMLMediaElement.prototype.play;
-    let first = true;
+    let failures = play === "refuse" ? 1 : 2;
     HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-      if (!first) return original.call(this);
-      first = false;
+      if (failures-- <= 0) return original.call(this);
+      // Such a player does not start the picture by itself either.
+      this.autoplay = false;
       return play === "refuse" ? Promise.reject(new DOMException("Playback needs a gesture.", "NotAllowedError")) : new Promise(() => {});
     };
   }
@@ -317,6 +321,13 @@ describe("@k2b/ui QrScanner in a browser", () => {
         expect(await status(page)).toBe("The camera is on, but its picture did not start.");
         expect(await calls(page)).toEqual({ results: [], errors: [], stops: 0 });
         await retry.click();
+        if (play === "hang") {
+          // A picture that stalls again after "Try again" offers it again.
+          await retry.waitFor({ state: "hidden" });
+          await retry.waitFor({ timeout: 10_000 });
+          expect(await calls(page)).toEqual({ results: [], errors: [], stops: 0 });
+          await retry.click();
+        }
         await settled(page);
         expect(await calls(page)).toEqual({ results: [CODE], errors: [], stops: 0 });
       } finally {
