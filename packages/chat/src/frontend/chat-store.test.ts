@@ -2496,3 +2496,30 @@ test("notification hints refresh the canonical list, open metadata and thread fo
     store.dispose();
   }
 });
+
+test("a new mention reloads the rows' @ counts, and reading a chat with mentions reads its count again", async () => {
+  let conversationReads = 0;
+  const { store, connection } = fixture({
+    conversations: async () => ({ items: [{ ...conversation, mentionsUnread: 2, unread: 3 }], nextCursor: null }),
+    conversation: async () => {
+      conversationReads++;
+      return { ...conversation, mentionsUnread: 0, unread: 0 };
+    },
+  });
+  await connection.get("me").apply({ type: "for-you" });
+  expect(store.sidebar[0]?.mentionsUnread).toBe(2);
+  const before = conversationReads;
+  await connection.get("me").apply({
+    type: "read",
+    threads: [],
+    conversationId: conversation.id,
+    lastReadSeq: 1,
+    unreadFromSeq: null,
+    joinedSeq: 0,
+    unread: 0,
+    asOfRev: conversation.rev,
+  });
+  expect(conversationReads - before).toBe(1);
+  expect(store.sidebar[0]?.mentionsUnread).toBe(0);
+  store.dispose();
+});

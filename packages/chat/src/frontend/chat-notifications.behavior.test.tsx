@@ -101,3 +101,23 @@ test("a failed save returns to the saved level, says what applies, and retries t
     dispose();
   }
 });
+
+test("a failed duration change returns the chips to the duration that still applies", async () => {
+  const muted: Notifications = { ...base, level: "none", choice: "none", until: null };
+  const { dispose } = await mount(muted, async () => {
+    throw new Error("offline");
+  });
+  try {
+    const chip = (label: string) =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((element) => element.textContent === label)!;
+    expect(chip("Bis ich es ändere").getAttribute("aria-checked")).toBe("true");
+    chip("1 Stunde").click();
+    await flush();
+    expect(chip("Bis ich es ändere").getAttribute("aria-checked")).toBe("true");
+    expect(chip("1 Stunde").getAttribute("aria-checked")).toBe("false");
+    expect(dom.root.textContent).toContain("Nicht gespeichert. Es gilt weiter „Aus“.");
+    expect(dom.root.textContent).toContain("Bleibt aus, bis du es änderst.");
+  } finally {
+    dispose();
+  }
+});

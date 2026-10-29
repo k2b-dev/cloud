@@ -36,9 +36,9 @@ test("read chats close their notification once, at start and when they become re
   const cleanup = createNotificationCleanup(dependencies);
   try {
     cleanup([
-      { id: "ChatRead01", unread: 0, mentionsUnread: 0 },
-      { id: "ChatNew002", unread: 4, mentionsUnread: 0 },
-      { id: "ChatAt0003", unread: 0, mentionsUnread: 1 },
+      { id: "ChatRead01", unread: 0, mentionsUnread: 0, summaryCursor: null },
+      { id: "ChatNew002", unread: 4, mentionsUnread: 0, summaryCursor: null },
+      { id: "ChatAt0003", unread: 0, mentionsUnread: 1, summaryCursor: null },
     ]);
     await flush();
     expect(closed).toEqual([["chat", "ChatRead01"]]);
@@ -49,9 +49,9 @@ test("read chats close their notification once, at start and when they become re
 
     // Unchanged rows neither close again nor read the badge again.
     cleanup([
-      { id: "ChatRead01", unread: 0, mentionsUnread: 0 },
-      { id: "ChatNew002", unread: 4, mentionsUnread: 0 },
-      { id: "ChatAt0003", unread: 0, mentionsUnread: 1 },
+      { id: "ChatRead01", unread: 0, mentionsUnread: 0, summaryCursor: null },
+      { id: "ChatNew002", unread: 4, mentionsUnread: 0, summaryCursor: null },
+      { id: "ChatAt0003", unread: 0, mentionsUnread: 1, summaryCursor: null },
     ]);
     jest.advanceTimersByTime(1_000);
     await flush();
@@ -61,15 +61,15 @@ test("read chats close their notification once, at start and when they become re
     // Reading elsewhere arrives as zero counts: the notification closes here, and several reads share one badge read.
     count = 1;
     cleanup([
-      { id: "ChatRead01", unread: 0, mentionsUnread: 0 },
-      { id: "ChatNew002", unread: 0, mentionsUnread: 0 },
-      { id: "ChatAt0003", unread: 0, mentionsUnread: 1 },
+      { id: "ChatRead01", unread: 0, mentionsUnread: 0, summaryCursor: null },
+      { id: "ChatNew002", unread: 0, mentionsUnread: 0, summaryCursor: null },
+      { id: "ChatAt0003", unread: 0, mentionsUnread: 1, summaryCursor: null },
     ]);
     count = 0;
     cleanup([
-      { id: "ChatRead01", unread: 0, mentionsUnread: 0 },
-      { id: "ChatNew002", unread: 0, mentionsUnread: 0 },
-      { id: "ChatAt0003", unread: 0, mentionsUnread: 0 },
+      { id: "ChatRead01", unread: 0, mentionsUnread: 0, summaryCursor: null },
+      { id: "ChatNew002", unread: 0, mentionsUnread: 0, summaryCursor: null },
+      { id: "ChatAt0003", unread: 0, mentionsUnread: 0, summaryCursor: null },
     ]);
     await flush();
     expect(closed.map(([, id]) => id)).toEqual(["ChatRead01", "ChatNew002", "ChatAt0003"]);
@@ -79,8 +79,8 @@ test("read chats close their notification once, at start and when they become re
     expect(requests).toEqual([CHAT_BADGE_PATH, CHAT_BADGE_PATH]);
 
     // A chat that gets new messages and is read again closes again.
-    cleanup([{ id: "ChatNew002", unread: 2, mentionsUnread: 0 }]);
-    cleanup([{ id: "ChatNew002", unread: 0, mentionsUnread: 0 }]);
+    cleanup([{ id: "ChatNew002", unread: 2, mentionsUnread: 0, summaryCursor: null }]);
+    cleanup([{ id: "ChatNew002", unread: 0, mentionsUnread: 0, summaryCursor: null }]);
     await flush();
     expect(closed.map(([, id]) => id)).toEqual(["ChatRead01", "ChatNew002", "ChatAt0003", "ChatNew002"]);
   } finally {
@@ -93,16 +93,48 @@ test("a failing badge route leaves the badge alone, and nothing runs after dispo
   answer = () => new Response("unavailable", { status: 503 });
   const cleanup = createNotificationCleanup(dependencies);
   try {
-    cleanup([{ id: "ChatNew002", unread: 1, mentionsUnread: 0 }]);
+    cleanup([{ id: "ChatNew002", unread: 1, mentionsUnread: 0, summaryCursor: null }]);
     jest.advanceTimersByTime(1_000);
     await flush();
     expect(badges).toEqual([]);
     cleanup.dispose();
-    cleanup([{ id: "ChatNew002", unread: 0, mentionsUnread: 0 }]);
+    cleanup([{ id: "ChatNew002", unread: 0, mentionsUnread: 0, summaryCursor: null }]);
     jest.advanceTimersByTime(1_000);
     await flush();
     expect(closed).toEqual([]);
     expect(requests).toHaveLength(1);
+  } finally {
+    cleanup.dispose();
+  }
+});
+
+test("a partial summary never closes its chat, and a late older badge answer is dropped", async () => {
+  jest.useFakeTimers();
+  const answers: Array<(response: Response) => void> = [];
+  const slow: NotificationCleanupDependencies = {
+    ...dependencies,
+    fetch: async (input) => {
+      requests.push(input);
+      return new Promise<Response>((resolve) => answers.push(resolve));
+    },
+  };
+  const cleanup = createNotificationCleanup(slow);
+  try {
+    cleanup([{ id: "ChatSpace01", unread: 0, mentionsUnread: 0, summaryCursor: "next" }]);
+    await flush();
+    expect(closed).toEqual([]);
+    jest.advanceTimersByTime(1_000);
+    await flush();
+    cleanup([{ id: "ChatSpace01", unread: 2, mentionsUnread: 0, summaryCursor: "next" }]);
+    jest.advanceTimersByTime(1_000);
+    await flush();
+    expect(answers).toHaveLength(2);
+    // The newer read answers first; the older one arrives later and must not undo it.
+    answers[1]!(Response.json({ count: 0 }));
+    await flush();
+    answers[0]!(Response.json({ count: 1 }));
+    await flush();
+    expect(badges).toEqual([0]);
   } finally {
     cleanup.dispose();
   }

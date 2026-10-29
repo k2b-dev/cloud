@@ -26,13 +26,19 @@ const dismissed = () => {
  * place. The server draws the one this device found last, and the browser checks it again; a new line waits for the
  * next visit, so it never moves the chats.
  */
-export default function ChatDeviceNotice(props: { initial: DeviceNotice; dateConfig: DateContext; now: () => Date }): JSX.Element {
+export default function ChatDeviceNotice(props: {
+  /** The line as the workspace holds it, starting with what the server drew; shared by every copy of the sidebar. */
+  notice: DeviceNotice;
+  onNotice: (notice: DeviceNotice) => void;
+  dateConfig: DateContext;
+  now: () => Date;
+}): JSX.Element {
   const t = useChatMessages();
   const locale = useLocale();
-  const [notice, setNotice] = createSignal<DeviceNotice>(props.initial);
+  const notice = () => props.notice;
   const [busy, setBusy] = createSignal(false);
   const show = (next: DeviceNotice) => {
-    setNotice(next);
+    props.onNotice(next);
     document.cookie = deviceNoticeCookie(next);
   };
 
@@ -42,8 +48,9 @@ export default function ChatDeviceNotice(props: { initial: DeviceNotice; dateCon
       browserNotificationClient.quietState().catch(() => null),
       browserNotificationClient.state().catch(() => null),
     ]);
-    // A failed read keeps what shows; only an answer changes it.
+    // A failed read keeps what shows; only an answer changes it. Without the quiet state, a shown quiet line stays.
     if (!quiet && !device) return;
+    if (!quiet && notice().kind === "quiet") return;
     const next: DeviceNotice =
       quiet?.active && quiet.reason
         ? { kind: "quiet", reason: quiet.reason, until: quiet.until }

@@ -863,6 +863,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       // General's own count is not part of the event; the thread list says it exactly.
       if (list && list.items.length > 0) void refreshThreads(chat);
     }
+    // Reading may have read mentions too; the row's "@" count comes from the server.
+    if (known.mentionsUnread > 0) return refetchRow(known.id);
     notify();
   };
   const applySummary = async (summary: Summary) => {
@@ -952,7 +954,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
-            if (events.some(({ data }) => data.type === "membership" || data.type === "personal")) await reloadSidebar();
+            // A new mention or reply changes a row's "@" count, which only the server knows.
+            if (events.some(({ data }) => data.type === "membership" || data.type === "personal" || data.type === "for-you"))
+              await reloadSidebar();
             // A chat joined or left changes what is for the reader, as a new mention does.
             if (events.some(({ data }) => data.type === "for-you" || data.type === "membership")) await refreshForYou();
             for (const { data } of events)

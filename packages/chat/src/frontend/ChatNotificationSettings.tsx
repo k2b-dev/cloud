@@ -51,7 +51,7 @@ export default function ChatNotificationSettings(props: {
   // last one's outcome shows.
   let queue = Promise.resolve();
   let latest = 0;
-  const save = (input: Update) => {
+  const save = (input: Update, revertMuteFor?: MuteFor | null) => {
     const mine = ++latest;
     setPending(input.level === "default" ? props.notifications.defaultLevel : input.level);
     setFailed(null);
@@ -59,7 +59,11 @@ export default function ChatNotificationSettings(props: {
       try {
         await props.save(input);
       } catch {
-        if (mine === latest) setFailed(input);
+        if (mine === latest) {
+          setFailed(input);
+          // The duration returns with the level, so the chips agree with what still applies.
+          if (revertMuteFor !== undefined) setMuteFor(revertMuteFor);
+        }
       } finally {
         if (mine === latest) setPending(null);
       }
@@ -77,9 +81,10 @@ export default function ChatNotificationSettings(props: {
     save(level === props.notifications.defaultLevel ? { level: "default" } : { level });
   };
   const chooseDuration = (duration: MuteFor) => {
-    if (duration === muteFor()) return;
+    const previous = muteFor();
+    if (duration === previous) return;
     setMuteFor(duration);
-    save({ level: "none", for: duration });
+    save({ level: "none", for: duration }, previous);
   };
   const description = (level: Level) =>
     level === "all"

@@ -24,6 +24,14 @@ const isStandalone = (): boolean =>
   window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
 
 const support = (): { supported: boolean; reason?: string; homeScreenRequired?: true } => {
+  // Safari on iPhone and iPad offers push only to the Home Screen app, so it lacks the APIs checked below.
+  if (typeof window !== "undefined" && isIos() && !isStandalone()) {
+    return {
+      supported: false,
+      reason: "On iPhone and iPad, add Cloud to your Home Screen before enabling browser notifications.",
+      homeScreenRequired: true,
+    };
+  }
   if (
     typeof window === "undefined" ||
     !window.isSecureContext ||
@@ -32,13 +40,6 @@ const support = (): { supported: boolean; reason?: string; homeScreenRequired?: 
     !nativeNotifications.isSupported()
   ) {
     return { supported: false, reason: "Browser notifications are not supported in this browser." };
-  }
-  if (isIos() && !isStandalone()) {
-    return {
-      supported: false,
-      reason: "On iPhone and iPad, add Cloud to your Home Screen before enabling browser notifications.",
-      homeScreenRequired: true,
-    };
   }
   return { supported: true };
 };

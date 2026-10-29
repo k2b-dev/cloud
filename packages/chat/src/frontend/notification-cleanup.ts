@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { ConversationSchema } from "../service/contracts";
 
-type Row = Pick<z.infer<typeof ConversationSchema>, "id" | "unread" | "mentionsUnread">;
+type Row = Pick<z.infer<typeof ConversationSchema>, "id" | "unread" | "mentionsUnread" | "summaryCursor">;
 
 /** Chat's badge route; the same count the rail, the phone bar, and a push carry. */
 export const CHAT_BADGE_PATH = "/api/chat/badge";
@@ -32,19 +32,23 @@ export const createNotificationCleanup = (dependencies: NotificationCleanupDepen
   let signature: string | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
+  // Only the latest badge read may set the badge; an older answer arriving late is dropped.
+  let generation = 0;
   const client = dependencies.notifications;
 
   const refreshBadge = () => {
     clearTimeout(timer);
     timer = setTimeout(async () => {
       if (disposed) return;
+      const mine = ++generation;
       try {
         await dependencies.refreshAppBadges();
         const response = await dependencies.fetch(CHAT_BADGE_PATH, { credentials: "same-origin", headers: { accept: "application/json" } });
         if (!response.ok) return void (await response.body?.cancel());
         const body: unknown = await response.json();
         const count = typeof body === "object" && body !== null && "count" in body ? body.count : null;
-        if (typeof count === "number" && Number.isSafeInteger(count) && count >= 0 && !disposed) await (await client()).setBadge(count);
+        if (typeof count === "number" && Number.isSafeInteger(count) && count >= 0 && !disposed && mine === generation)
+          await (await client()).setBadge(count);
       } catch {
         // The badge is a hint; the next read or push sets it again.
       }
@@ -54,7 +58,8 @@ export const createNotificationCleanup = (dependencies: NotificationCleanupDepen
   const update = (rows: readonly Row[]) => {
     if (disposed) return;
     for (const row of rows) {
-      if (row.unread > 0 || row.mentionsUnread > 0) {
+      // A partial summary is a lower bound: zero there does not mean the chat is read.
+      if (row.unread > 0 || row.mentionsUnread > 0 || row.summaryCursor != null) {
         closed.delete(row.id);
         continue;
       }

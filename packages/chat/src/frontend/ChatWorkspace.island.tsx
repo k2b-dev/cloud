@@ -235,6 +235,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   const [panel, setPanel] = createSignal<"info" | null>(props.panel);
   const [rows, setRows] = createSignal<readonly Conversation[]>(props.sidebar.items);
+  // The line about this device lives here, so a sidebar that renders again shows what the reader last saw.
+  const [deviceNotice, setDeviceNotice] = createSignal<DeviceNotice>(props.deviceNotice ?? { kind: "none" });
   const [hasMore, setHasMore] = createSignal(props.sidebar.nextCursor !== null);
   const [chat, setChat] = createSignal<OpenChat | null>(props.open ? initialChat(props.open, props.view) : null);
   const [liveStopped, setLiveStopped] = createSignal(false);
@@ -2220,7 +2222,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       >
         {/* Without chats, or when they did not load, the list has more important things to say. */}
         <Show when={rows().length > 0 && !listError()}>
-          <ChatDeviceNotice initial={props.deviceNotice ?? { kind: "none" }} dateConfig={props.dateConfig} now={now} />
+          <ChatDeviceNotice notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
         </Show>
         <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
           {t().newChat}

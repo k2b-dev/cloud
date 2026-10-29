@@ -91,6 +91,11 @@ test("push registration preserves opt-in, rebinding, disable, and failure behavi
     const iphone = await client.state();
     assert.equal(iphone.supported, false);
     assert.equal(iphone.homeScreenRequired, true);
+    // Safari outside the Home Screen app has no PushManager; the hint must still reach it.
+    const pushManager = window.PushManager;
+    delete window.PushManager;
+    assert.equal((await client.state()).homeScreenRequired, true);
+    window.PushManager = pushManager;
     window.matchMedia = () => ({ matches: true });
     assert.equal("homeScreenRequired" in (await client.state()), false);
     window.matchMedia = () => ({ matches: false });
