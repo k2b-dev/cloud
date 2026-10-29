@@ -18,6 +18,7 @@ import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
 import { entryRefId } from "../resource-ref";
 import { createFilesService } from ".";
+import { systemCall } from "./activity";
 import { connectFilegate } from "./filegate-facade";
 import { createTemplateService } from "./templates";
 
@@ -2462,22 +2463,25 @@ suite("Files service and durable bindings", () => {
     expect((await inventory()).items.map((item) => item.status)).toEqual(["legacy"]);
     const binding = await bindings.path("cloud", "groups/legacy-owner");
     const pendingId = crypto.randomUUID();
-    await operations.insert({
-      id: pendingId,
-      area: "cloud",
-      kind: "groups",
-      root: "cloud",
-      server_url: config.url,
-      name: "legacy-owner",
-      action: "archive",
-      source: "groups/legacy-owner",
-      target: `archive/${pendingId}/contents`,
-      base_id: binding!.id,
-      archive_id: null,
-      actor_id: null,
-      actor_name: "automatic-policy",
-      snapshot: nodes.get("cloud:groups/legacy-owner")!,
-    });
+    await operations.insert(
+      {
+        id: pendingId,
+        area: "cloud",
+        kind: "groups",
+        root: "cloud",
+        server_url: config.url,
+        name: "legacy-owner",
+        action: "archive",
+        source: "groups/legacy-owner",
+        target: `archive/${pendingId}/contents`,
+        base_id: binding!.id,
+        archive_id: null,
+        actor_id: null,
+        actor_name: "automatic-policy",
+        snapshot: nodes.get("cloud:groups/legacy-owner")!,
+      },
+      systemCall("automatic-archive"),
+    );
     expect((await service.maintain()).archived).toBe(0);
     expect(nodes.has("cloud:groups/legacy-owner")).toBeTrue();
     expect((await inventory()).items.map((item) => item.status)).toEqual(["legacy"]);
