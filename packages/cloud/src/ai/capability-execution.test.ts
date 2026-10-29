@@ -147,7 +147,7 @@ describe("AI capability authority", () => {
     ).rejects.toThrow("no longer active");
   });
 
-  test("a turn started in the mobile app keeps the app's limits after the owner is reloaded", async () => {
+  test("a turn started in the Cloud app keeps the app's limits after the owner is reloaded", async () => {
     spyOn(categoryPolicy, "isAccountCategoryAllowed").mockResolvedValue(true);
     const current = { ...user("11111111-1111-4111-8111-111111111111"), roles: ["user" as const, "admin" as const] };
     const resolved = await resolveAiCapabilityActor({

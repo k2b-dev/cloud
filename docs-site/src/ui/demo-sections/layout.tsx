@@ -31,6 +31,7 @@ import {
   Placeholder,
   PullToRefresh,
   removePanesItem,
+  SaveStatus,
   ScrollArea,
   SegmentedControl,
   Select,
@@ -1277,6 +1278,21 @@ const SettingsSaveBarDemo = () => (
   </DemoCard>
 );
 
+const SaveStatusDemo = () => (
+  <DemoCard
+    id="save-status"
+    chip={{ kind: "component", name: "SaveStatus", from: "@k2b/ui" }}
+    description="The save status of a form at one fixed place in a level head: the state, then Discard and Save. Its width is reserved, so a change of state never moves the title or the buttons."
+    code={`<SaveStatus state={state()} savedAt={savedAt()} onDiscard={discard} onSave={save} />`}
+  >
+    <div class="flex flex-col items-end gap-3">
+      <SaveStatus state="draft" onDiscard={() => undefined} onSave={() => undefined} />
+      <SaveStatus state="saved" savedAt="10:42" onDiscard={() => undefined} onSave={() => undefined} />
+      <SaveStatus state="invalid" invalidCount={2} onDiscard={() => undefined} onSave={() => undefined} />
+    </div>
+  </DemoCard>
+);
+
 const PanelDemo = () => {
   const [tab, setTab] = createSignal("general");
   const [shared, setShared] = createSignal(true);
@@ -2256,6 +2272,7 @@ const items = [
       <SettingsPageDemo />
       <SettingsDemo />
       <SettingsSaveBarDemo />
+      <SaveStatusDemo />
     </DemoGrid>
   ),
   "panel-dialog": () => (

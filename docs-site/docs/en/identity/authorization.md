@@ -15,6 +15,9 @@ The service that reads or changes a resource checks its permission.
 Every API route, SSR page, background action, and CLI command should reach the
 same permission-aware service.
 
+For Studio execution and its separate effect rights, see
+[Run Studio apps with a machine identity](/en/docs/identity/studio-machine-execution).
+
 For machine inference, [models-only API keys](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
 use the service account's explicit model grants and shared account allowance.
 

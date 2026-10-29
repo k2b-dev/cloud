@@ -91,6 +91,7 @@ export default ssr<AuthContext>(async (c) => {
   if (!isWelcomeState(state)) return c.redirect(`${PWA_AUTH_PATH}/session/launch?to=${encodeURIComponent(remembered)}`, 302);
 
   const icon = `/branding/pwa-icon-192.png?v=${await appIconVersion()}`;
+  // iPadOS Safari reports a Mac; Welcome renders both variants and CSS selects by pointer.
   const platform = installationPlatform(c.req.header("User-Agent") ?? "", "", 0);
   // Behind the gateway the request URL names an internal hop; the public address is the configured one.
   const url = `${publicCloudOrigin(c.get("settings")?.app?.url || "localhost:3000")}${PWA_SCOPE}`;

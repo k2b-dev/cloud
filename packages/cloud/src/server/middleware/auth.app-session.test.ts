@@ -43,7 +43,7 @@ const actor = async (probe: Probe) => {
   return response.status === 200 ? ((await response.json()) as { sid: string; kind: string }) : response.status;
 };
 
-describe("credential resolution without the mobile app", () => {
+describe("credential resolution without the Cloud app", () => {
   // Every row without pwa_session is today's behaviour.
   test("keeps bearer precedence, API keys and the web cookie unchanged", async () => {
     expect(await token({})).toBeNull();
@@ -60,7 +60,7 @@ describe("credential resolution without the mobile app", () => {
   });
 });
 
-describe("credential resolution with the mobile app", () => {
+describe("credential resolution with the Cloud app", () => {
   test("pages below /pwa/ read only the app session, whatever else the request carries", async () => {
     const all = { session_token: "web-valid", pwa_session: "app-valid" };
     expect(await token({ path: "/pwa/spaces", cookies: all, navigate: true })).toBe("app-valid");

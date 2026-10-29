@@ -2,7 +2,7 @@
 
 `TabBar` is the bottom navigation between a phone app's top-level pages: up to
 five native links with an icon above each label. The default bar is flat and
-opaque on the page canvas, without a rule above it and without badges. The content's scroll
+opaque on the page canvas, without a rule above it. The content's scroll
 fade marks its edge while more content continues below. Use `variant="floating"`
 for a rounded bar placed above content by its host.
 
@@ -41,6 +41,12 @@ const items: TabBarItem[] = [
   destination such as Start or More that lists every page.
 - The items share the width equally. Long labels fade out, so keep
   them to one short word.
+- `badge` is an optional mark at the icon's upper right corner, such as an
+  unread count. It is laid over the icon and takes no layout space, so a count
+  that appears, grows, or clears moves nothing. Put the count's description
+  for screen readers inside the element, after a visually hidden separator,
+  because the link's accessible name is its label followed by the badge's
+  text. Show a badge only for something that waits for the person.
 
 The bar is a set of links, not a tab widget: each item loads a page. The server
 marks the current item, so the bar stays the same when the component mounts.
@@ -84,7 +90,8 @@ Set these custom properties on the bar or an ancestor to match its host:
 
 The bar is a `<nav>` landmark named by `label`, with a list of links. The open
 page carries `aria-current="page"` and is also shown by colour. Icons are
-decorative; the visible label is the accessible name. Each item is at least
+decorative; the visible label, followed by a badge's text, is the accessible
+name. Each item is at least
 44 px high and has a visible focus ring.
 
 ## Runtime

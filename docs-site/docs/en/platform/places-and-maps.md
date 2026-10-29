@@ -333,6 +333,11 @@ buffer (with its default applied), sorted categories, limit, and request languag
 A cache failure skips the cache. A Valkey admission failure refuses paid calls
 with `GEO_BUSY`.
 
+Paired App-PWA devices can use the platform's closed
+[allowlisted autocomplete route](/en/docs/identity/app-pwa-sessions#offer-address-suggestions).
+It checks the live pairing and visit and charges the owner's budget without
+turning the device into an employee or exposing employee credentials.
+
 ## Call from a server
 
 Import `geoClient` from `@k2b/cloud/server` and pass the same

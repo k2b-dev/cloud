@@ -11,8 +11,8 @@ export type TabBarItem = {
   /** The page this item leads to is open. */
   current?: boolean;
   /**
-   * A mark at the icon's corner that calls for attention, such as `AppWorkspace.SidebarItemStatus` with unread
-   * messages. Its element names the count for screen readers; an empty one takes no space.
+   * A mark at the icon's corner that calls for attention, such as an unread count. Its element names the count for
+   * screen readers; an empty one takes no space.
    */
   badge?: JSX.Element;
 };

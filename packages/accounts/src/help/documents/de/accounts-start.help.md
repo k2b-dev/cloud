@@ -6,7 +6,7 @@ description: Konten, Gruppen, Anfragen, Dienstkonten, Benachrichtigungen und den
 order: 100
 ---
 
-Konten zeigt deinen eigenen Kontokontext. Die Administration ändert hier außerdem Personen und Gruppen, bearbeitet Kontoanfragen, widerruft API-Schlüssel, versendet Benachrichtigungsbatches und prüft den Kontoverlauf. Bevor du eine einzelne Person oder Gruppe öffnest, sieh dir **Übersicht** und die Navigation an. Sie zeigen deinen Zugriff, deinen Verwaltungsbereich und die wichtigsten Warteschlangen der Administration.
+Die App Zugänge zeigt deinen eigenen Kontokontext. Die Administration ändert hier außerdem Personen und Gruppen, bearbeitet Kontoanfragen, widerruft API-Schlüssel, versendet Benachrichtigungsbatches und prüft den Kontoverlauf. Bevor du eine einzelne Person oder Gruppe öffnest, sieh dir **Übersicht** und die Navigation an. Sie zeigen deinen Zugriff, deinen Verwaltungsbereich und die wichtigsten Warteschlangen der Administration.
 
 ## Die Objekte kennen {icon="layout-grid"}
 
@@ -27,15 +27,15 @@ Konten zeigt deinen eigenen Kontokontext. Die Administration ändert hier außer
 :::
 
 :::info Wohin FreeIPA-Änderungen gehen
-Bei aktiviertem FreeIPA schreibt der Konten-Dienst die Änderungen an FreeIPA-gestützten Personen und Gruppen. Lokale Konten und Gruppen bleiben in der Cloud-Datenbank.
+Bei aktiviertem FreeIPA schreibt die App Zugänge die Änderungen an FreeIPA-gestützten Personen und Gruppen. Lokale Konten und Gruppen bleiben in der Cloud-Datenbank.
 :::
 
 ## Konto oder Gruppe finden {icon="search"}
 
 :::steps
-1. Wähle die Suchschaltfläche oder drücke **Cmd/Ctrl+Shift+K**. Die Cloud-Suche öffnet sich mit einem Chip **Konten**.
+1. Wähle die Suchschaltfläche oder drücke **Cmd/Ctrl+Shift+K**. Die Cloud-Suche öffnet sich mit einem Chip **Zugänge**.
 2. Suche nach einer Gruppe, die du sehen kannst. Die Administration findet außerdem Personen und Dienstkonten.
-3. Wähle einen Treffer, um seine Seite in Konten zu öffnen.
+3. Wähle einen Treffer, um seine Seite in der App Zugänge zu öffnen.
 :::
 
 Entferne den Chip, um andere Apps zu durchsuchen.
