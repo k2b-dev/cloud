@@ -661,7 +661,7 @@ values as `outgoing_mail.retention.update`.
 ## Sign-in locations
 
 Inspect or replace the City and ASN databases used for approximate sign-in
-locations. These commands use the same API as **Admin → Settings → Sign-in →
+locations. These commands use the same API as **Admin → Sign-in & security → Sign-in →
 Sign-in locations** and require an administrator:
 
 ```bash
