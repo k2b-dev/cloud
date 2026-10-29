@@ -132,12 +132,13 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
   }
   beforeAll(async () => {
     await assertPrivateDatabase();
-    await sql`CREATE SCHEMA auth`.simple();
-    await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY,uid text,display_name text,avatar_hash text)`.simple();
-    await sql`CREATE SCHEMA filesv2`.simple();
-    await sql`CREATE TABLE filesv2.bases(id uuid PRIMARY KEY,area text,kind text,identity_id uuid,root text,path text)`.simple();
-    await sql`CREATE SCHEMA audit`.simple();
-    await sql`CREATE TABLE audit.events(id bigint GENERATED ALWAYS AS IDENTITY,created_at timestamptz DEFAULT now(),
+    // The private database may already carry the shared schemas from its template.
+    await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY,uid text,display_name text,avatar_hash text)`.simple();
+    await sql`CREATE SCHEMA IF NOT EXISTS filesv2`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS filesv2.bases(id uuid PRIMARY KEY,area text,kind text,identity_id uuid,root text,path text)`.simple();
+    await sql`CREATE SCHEMA IF NOT EXISTS audit`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS audit.events(id bigint GENERATED ALWAYS AS IDENTITY,created_at timestamptz DEFAULT now(),
       action text,outcome text,actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],
       target_type text,target_id text,target_label text,target_provider text,reason text,error_code text,error_message text,
       request_id text,metadata jsonb)`.simple();
