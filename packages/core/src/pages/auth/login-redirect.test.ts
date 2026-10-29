@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { afterSignInHref, isReauthenticationRequest, resolveAuthenticatedLoginRedirect } from "./login-redirect";
+import {
+  afterSignInHref,
+  confirmationRequestOptions,
+  isReauthenticationRequest,
+  resolveAuthenticatedLoginRedirect,
+} from "./login-redirect";
 
 test("all sign-in completions preserve only local destinations through consent", () => {
   expect(afterSignInHref("/app/contacts?view=mine#entry")).toBe("/auth/continue?redirectTo=%2Fapp%2Fcontacts%3Fview%3Dmine%23entry");
@@ -51,4 +56,11 @@ describe("resolveAuthenticatedLoginRedirect", () => {
 
     expect(resolveAuthenticatedLoginRedirect(loginUrl(`redirectTo=${encodeURIComponent(target)}`))).toBe("/");
   });
+});
+
+test("only confirmation requests carry the same-account constraint", () => {
+  expect(confirmationRequestOptions("/me/security?reauthenticate=1")).toEqual({ headers: { "X-Cloud-Reauthenticate": "1" } });
+  expect(confirmationRequestOptions("/me/security")).toEqual({});
+  expect(confirmationRequestOptions()).toEqual({});
+  expect(confirmationRequestOptions("https://other.example/?reauthenticate=1")).toEqual({});
 });

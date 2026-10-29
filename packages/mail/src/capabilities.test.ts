@@ -2803,6 +2803,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2849,6 +2850,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2891,6 +2893,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2931,7 +2934,9 @@ describe("mail capabilities", () => {
     spyOn(messages, "getMessage").mockResolvedValue({
       ok: true,
       data: {
-        attachments: [{ id: internalAttachmentId, filename: "emoji.txt", contentType: "text/plain", sizeBytes: 6, contentId: null }],
+        attachments: [
+          { id: internalAttachmentId, filename: "emoji.txt", contentType: "text/plain", sizeBytes: 6, contentId: null, checksum: null },
+        ],
       } as never,
     });
     spyOn(attachmentExtraction, "loadAttachmentExtraction").mockResolvedValue({
@@ -3084,7 +3089,9 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     mailingList: null,
     remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
     delivery: null,
-    attachments: [{ id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null }],
+    attachments: [
+      { id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null, checksum: null },
+    ],
   };
   spyOn(mailboxes, "getMailbox").mockResolvedValue({
     ok: true,

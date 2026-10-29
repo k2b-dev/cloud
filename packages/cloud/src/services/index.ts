@@ -280,3 +280,14 @@ export {
   requireAppAccessManager,
   type AppAccessSnapshot,
 } from "./app-access-management";
+
+export { storage } from "./object-store";
+export type {
+  ObjectStoreFile,
+  ObjectVisibility,
+  ObjectWriteData,
+  ObjectWriteOptions,
+  ObjectPresignOptions,
+  ObjectListOptions,
+  ObjectListResult,
+} from "./object-store";

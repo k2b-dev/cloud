@@ -6,6 +6,7 @@
  */
 
 import { APP_READINESS_PATH } from "@k2b/cloud";
+import { servePublicStorage } from "@k2b/cloud/server/public-storage.ts";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { logger } from "@k2b/cloud/services";
 import { resolveClientAddress } from "./client-address";
@@ -67,6 +68,9 @@ export default {
       server.requestIP(req)?.address ?? null,
       gatewayRouter.trustedProxies,
     );
+
+    // Reserve public storage before registry-driven proxying.
+    if (/^https?:\/\/[^/]+\/public\/storage(?:\/|[?#]|$)/.test(req.url)) return servePublicStorage(req, client?.address ?? "unknown");
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
       return tryUpgradeWebSocket(req, server, getRouteTable(), (msg, meta) => log.info(msg, meta), client);

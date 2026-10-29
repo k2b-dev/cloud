@@ -194,7 +194,7 @@ Another Cloud app can keep a reference to a conversation or a message. To give i
 - In a conversation, open **More conversation actions** or right-click the conversation. Choose **Copy conversation Cloud ID**.
 - On a message, open **Message actions** or right-click the message. Choose **Copy message Cloud ID**. The same menu also has **Copy conversation Cloud ID**.
 - In the list, the actions of a row have **Copy conversation Cloud ID**.
-- In **Conversation details**, use the ID button in the header for the conversation, or **Copy message Cloud ID** under **Mail details** for the newest message.
+- In **Conversation details**, choose **…** in the header, then **Copy conversation Cloud ID**. For the newest message, open **More about this conversation** › **Technical details** and choose **Copy message Cloud ID**.
 
 Mail confirms the copy. Paste the Cloud ID into the other app. It is a link such as `https://cloud.example.com/open/mail.message/~Ab12Cd`, and it opens the mail. The Cloud ID gives no access: the other app shows the mail only to people who can open it in Mail.
 
@@ -216,7 +216,7 @@ Only a Cloud administrator can lift the protection. This also applies to people 
 
 ## Inspect an individual message {icon="file-search"}
 
-When you need technical information about one message, open **Conversation details**. Expand **Mail details** and choose **Headers** or **Source**. In a conversation with several messages, select the exact message at the top of the inspector.
+When you need technical information about one message, open **Conversation details**. Under **More about this conversation**, expand **Technical details** and choose **Headers** or **Source**. In a conversation with several messages, select the exact message at the top of the inspector.
 
 - **Overview** shows message identifiers, provider placement, standard flags, provider keywords, MIME parts, attachments, synchronization state, and parsing warnings.
 - **Spam diagnostics** shows the provider's spam headers, if present. Cloud does not calculate or infer its own spam score.

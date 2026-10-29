@@ -7,6 +7,7 @@ import { defineHelp } from "../server/help";
 import * as authMiddleware from "../server/middleware/auth";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import { inventory, person } from "./define-app.test-fixture";
 import * as heartbeat from "./heartbeat";
@@ -26,6 +27,7 @@ test.each(["roles", "resources"] as const)(
     let authenticated = 0,
       appCalls = 0;
     const spies = [
+      spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
       spyOn(processSync, "startProcessSync").mockImplementation(async () => {
         processSync.bindProcessSync(sync);
         return { sync, stop: async () => processSync.unbindProcessSync() };
@@ -47,6 +49,7 @@ test.each(["roles", "resources"] as const)(
     try {
       const app = defineApp({
         ...inventory,
+        package: "warehouse-suite",
         access:
           rule === "resources"
             ? appAccess.resources({ adapters: { workspace: { hasAnyRight: async () => false } }, publicRoutes: ["/public-route/:token"] })
@@ -62,6 +65,7 @@ test.each(["roles", "resources"] as const)(
         },
         openapi: new Hono().get("/", (c) => c.json({})),
       });
+      expect(applicationPackage.registerApplicationPackage).toHaveBeenCalledWith(inventory.id, "warehouse-suite");
       for (const path of [
         "/cli/plugins/inventory/manifest.json",
         "/api/inventory/openapi.json",
