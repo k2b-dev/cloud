@@ -311,7 +311,7 @@ verify its calls, then revoke the old credential. The equivalent UI is
 ## Agents
 
 An agent is a standalone service account of kind `agent` with its own OAuth
-client. It appears with a robot icon in pickers, activity, and audit, starts
+client. It appears with its robot picture in pickers, activity, and audit, starts
 with no access, and is granted access like a person (Space membership, Notebook
 access, and so on).
 
@@ -661,7 +661,7 @@ values as `outgoing_mail.retention.update`.
 ## Sign-in locations
 
 Inspect or replace the City and ASN databases used for approximate sign-in
-locations. These commands use the same API as **Admin → Settings → Sign-in →
+locations. These commands use the same API as **Admin → Sign-in & security → Sign-in →
 Sign-in locations** and require an administrator:
 
 ```bash

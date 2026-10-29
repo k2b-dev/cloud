@@ -16,7 +16,7 @@ export type RegistryFormSection = {
   title: string;
   description?: string;
   keys: string[];
-  shownWhen?: Record<string, { key: string; value: string }>;
+  shownWhen?: Record<string, { key: string; value: string | boolean }>;
   link?: { label: string; href: string };
 };
 
@@ -39,7 +39,13 @@ const initialValues = (entries: SettingFieldDef[]): Values =>
  * through Core's settings API: a stale version reports who changed what, an unreadable stored value is replaced only
  * after the person confirms it, and "Use default" removes the own value on save.
  */
-export default function RegistryForm(props: { groups: string[]; sections: RegistryFormSection[]; entries: SettingFieldDef[] }) {
+export default function RegistryForm(props: {
+  groups: string[];
+  sections: RegistryFormSection[];
+  entries: SettingFieldDef[];
+  /** Keys whose saved value changes what the server shows next to the form; saving one of them reloads the page. */
+  reloadAfter?: string[];
+}) {
   const locale = useLocale();
   const t = () => areaFormMessages.resolve([locale()]).t;
   const [entries, setEntries] = createSignal(props.entries);
@@ -153,6 +159,10 @@ export default function RegistryForm(props: { groups: string[]; sections: Regist
         // A transaction that reported its errors rolled back; anything else may have been stored.
         if (response.status >= 500 && Object.keys(fields).length === 0) throw saveFailure(response.status, message);
         throw new SaveRejected(message);
+      }
+      if (keys.some((key) => props.reloadAfter?.includes(key))) {
+        window.location.reload();
+        return value;
       }
       setFieldErrors({});
       setConflict(null);
