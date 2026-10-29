@@ -65,3 +65,23 @@ test("presence resolves cursor lines and skips the resolver for missing position
   });
   expect(resolved).toEqual([24]);
 });
+
+test("foreign-root awareness never adds roots while resolving panel locations", () => {
+  const doc = new Y.Doc();
+  const text = doc.getText("codemirror");
+  const awareness = new Awareness(doc);
+  try {
+    const roots = [...doc.share.keys()];
+    for (const tname of ["unknown-one", "unknown-two", "unknown-three"]) {
+      awareness.getStates().set(2 ** 32 + 1, { user: { userId: "peer" }, cursor: { head: { tname, item: null, type: null } } });
+      expect(participantCursors(awareness, text).get("peer")?.position).toBeNull();
+      expect([...doc.share.keys()]).toEqual(roots);
+    }
+    awareness.getStates().clear();
+    expect(participantCursors(awareness, text).size).toBe(0);
+    expect([...doc.share.keys()]).toEqual(roots);
+  } finally {
+    awareness.destroy();
+    doc.destroy();
+  }
+});

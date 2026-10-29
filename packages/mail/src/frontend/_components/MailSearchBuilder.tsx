@@ -98,7 +98,12 @@ function MailSearchConditionEditor(props: {
     const users = await response.json();
     return [
       { id: UNASSIGNED_VALUE, label: messages().unassigned, icon: "ti ti-user-off" },
-      ...users.map((user) => ({ id: user.id, label: user.displayName, description: user.description, icon: "ti ti-user" })),
+      ...users.map((user) => ({
+        id: user.id,
+        label: user.displayName,
+        description: user.description,
+        icon: user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
+      })),
     ];
   };
   const fetchFolders = async (_query: string, signal: AbortSignal) => {

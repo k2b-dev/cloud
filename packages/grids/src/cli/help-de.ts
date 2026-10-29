@@ -400,8 +400,8 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Published App public ID from its URL; no base access required":
     "Öffentliche ID der veröffentlichten App aus ihrer URL; kein Zugriff auf die Base erforderlich",
   "Published Combined table public id": "Öffentliche ID der veröffentlichten kombinierten Tabelle",
-  "Raw Grids access is granted on a base. Published Grids Apps have their own read access.":
-    "Direkter Grids-Zugriff wird auf einer Base gewährt. Veröffentlichte Grids Apps haben einen eigenen Lesezugriff.",
+  "Raw Grids access is granted on a base. Published Grids Apps have their own read access, including standalone and agent account grants.":
+    "Direkter Grids-Zugriff wird auf einer Base gewährt. Veröffentlichte Grids Apps haben einen eigenen Lesezugriff, auch für eigenständige Dienstkonten und Agentenkonten.",
   "Read an evidence export status, hashes and coverage": "Status, Hashes und Abdeckung eines Nachweisexports lesen",
   "Read and interact with published Grids Apps": "Veröffentlichte Grids Apps lesen und mit ihnen interagieren",
   "Read and manage comments in published Apps": "Kommentare in veröffentlichten Apps lesen und verwalten",
@@ -555,7 +555,6 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Search text; exact names are safest for grant/set commands.": "Suchtext; für die Befehle grant/set sind exakte Namen am sichersten.",
   "Search users, groups, and service accounts for grants": "Personen, Gruppen und Dienstkonten für Freigaben suchen",
   "Service account id or exact name": "Dienstkonto-ID oder exakter Name",
-  "Service account id or exact name; base grants only": "Dienstkonto-ID oder exakter Name; nur für Freigaben auf Bases",
   "Set the default Grids base": "Standard-Grids-Base festlegen",
   "Set the retention floor for a Grids base": "Mindestaufbewahrung für eine Grids-Base festlegen",
   "Set where a table's record changes may start": "Festlegen, wo Datensatzänderungen einer Tabelle beginnen dürfen",

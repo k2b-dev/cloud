@@ -25,6 +25,7 @@ import contentLabelChip from "./content/label-chip.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
 import contentMapView from "./content/map-view.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
+import contentMatchText from "./content/match-text.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
@@ -104,12 +105,14 @@ import surfacePaper from "./surfaces/paper.md" with { type: "text" };
 import surfaceProgress from "./surfaces/progress.md" with { type: "text" };
 import surfaceStats from "./surfaces/stats.md" with { type: "text" };
 import surfaceUtilities from "./surfaces/utilities.md" with { type: "text" };
+import inputTextEditor from "./text-editor.md" with { type: "text" };
 import widgetDashboard from "./widgets/dashboard.md" with { type: "text" };
 
 const catalogContextSources = {
   "ai/chat": { file: "ai/chat.md", content: aiChat },
   "ai/context-usage": { file: "ai/context-usage.md", content: aiContextUsage },
   "input/text": { file: "input/text.md", content: inputText },
+  "input/text-editor": { file: "text-editor.md", content: inputTextEditor },
   "input/markdown-editor": { file: "markdown-editor.md", content: inputMarkdownEditor },
   "input/autocomplete": { file: "input/autocomplete.md", content: inputAutocomplete },
   "input/autocomplete-select": { file: "input/autocomplete-select.md", content: inputAutocompleteSelect },
@@ -188,6 +191,7 @@ const catalogContextSources = {
   "content/map-view": { file: "content/map-view.md", content: contentMapView },
   "content/kbd": { file: "content/kbd.md", content: contentKbd },
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
+  "content/match-text": { file: "content/match-text.md", content: contentMatchText },
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },

@@ -40,7 +40,7 @@ type FieldRenderer = (props: FieldInputProps) => JSX.Element;
 
 const FIELD_RENDERERS: Partial<Record<SettingFieldDef["kind"], FieldRenderer>> = {
   image: (props) => <ImageSettingInput value={props.value} error={props.error} onChange={props.onChange} />,
-  boolean: (props) => <BooleanSettingInput value={props.value} error={props.error} onChange={props.onChange} />,
+  boolean: (props) => <BooleanSettingInput value={props.value} error={props.error} onChange={props.onChange} name={props.entry.label} />,
   number: (props) => <NumberSettingInput {...props} />,
   enum: (props) => <EnumSettingInput {...props} />,
   string_list: (props) => <StringListSettingInput {...props} />,
@@ -77,13 +77,21 @@ function ImageSettingInput(props: { value: () => unknown; error: () => string | 
   );
 }
 
-function BooleanSettingInput(props: { value: () => unknown; error: () => string | undefined; onChange: (value: unknown) => void }) {
+function BooleanSettingInput(props: {
+  value: () => unknown;
+  error: () => string | undefined;
+  onChange: (value: unknown) => void;
+  /** The setting's name, shown above the switch by the form; the switch is then named after it. */
+  name?: string;
+}) {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
+  const state = () => (props.value() ? t().enabled : t().disabled);
   return (
     <div class="flex flex-col gap-1">
       <Switch
-        label={props.value() ? t().enabled : t().disabled}
+        aria-label={props.name}
+        label={props.name ? undefined : state()}
         value={() => Boolean(props.value())}
         onValueChange={(v) => props.onChange(v)}
       />

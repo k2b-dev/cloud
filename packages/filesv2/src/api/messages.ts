@@ -1,4 +1,16 @@
 const messages: Record<string, [string, string]> = {
+  history_unavailable: [
+    "History is available only for local Cloud storage. This area uses Unix permissions, which history cannot check.",
+    "Der Verlauf ist nur für lokale Cloud-Ablagen verfügbar. Dieser Bereich verwendet Unix-Rechte, die der Verlauf nicht prüfen kann.",
+  ],
+  share_access_cursor_expired: [
+    "The network page expired or the date range changed. Refresh the first page of link access counts.",
+    "Die Netzseite ist abgelaufen oder der Zeitraum wurde geändert. Lade die erste Seite der Linkzugriffe neu.",
+  ],
+  invalid_activity_filter: [
+    "Check the history filters and date range. Paths require a storage base; the start must not follow the end.",
+    "Prüfe Verlaufsfilter und Zeitraum. Pfade brauchen eine Ablage; der Anfang darf nicht nach dem Ende liegen.",
+  ],
   transfer_expired: [
     "This transfer expired. Request a new transfer from Files.",
     "Diese Übertragung ist abgelaufen. Fordere in Dateien eine neue Übertragung an.",
@@ -219,8 +231,12 @@ const messages: Record<string, [string, string]> = {
   ],
   versioning_disabled: ["Versions are not enabled for this storage.", "Für diese Ablage sind Versionen nicht aktiviert."],
   search_limited: [
-    "This folder holds too many entries to search without an index. Search within a smaller folder.",
-    "Dieser Ordner enthält zu viele Einträge für eine Suche ohne Index. Suche in einem kleineren Ordner.",
+    "This search takes too long. Search in a smaller folder, add a filter, or search exact names.",
+    "Diese Suche dauert zu lange. Suche in einem kleineren Ordner, setze einen Filter oder suche nach genauen Namen.",
+  ],
+  search_busy: [
+    "Storage is busy with other searches. Try again in a moment.",
+    "Die Ablage ist mit anderen Suchen beschäftigt. Versuche es gleich noch einmal.",
   ],
 };
 export function errorMessage(code: string, locale: string): string {

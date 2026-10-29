@@ -337,7 +337,7 @@ Important encodings:
 - `number` stores a canonical decimal string, although writes accept strings or numbers.
 - `select` stores an array of option ids, including single-select fields.
 - `relation` stores target record public IDs. A single relation can be written as one public ID string; multiple relations use an array.
-- `principal` always stores an array of typed Cloud references such as `[{"type":"user","id":"..."},{"type":"group","id":"..."}]`, even when its cardinality is `single`. Writes are revalidated against the current actor's identity-discovery scope.
+- `principal` always stores an array of typed Cloud references such as `[{"type":"user","id":"..."},{"type":"group","id":"..."},{"type":"service_account","id":"..."}]`, even when its cardinality is `single`. Writes are revalidated against the current actor's identity-discovery scope. Writing nonempty Principal values requires a user-backed directory context; userless accounts can read references but cannot resolve private names or bypass directory validation.
 - `date` uses `YYYY-MM-DD` unless `includeTime` is enabled; date-time values must include a timezone.
 - `duration` accepts seconds, `MM:SS`, or `HH:MM:SS` and stores integer seconds.
 - `id`, formula, lookup, rollup, HTML template, and timestamp fields must not be sent in record writes.
@@ -841,7 +841,7 @@ Conditions use `=`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `not`, and parenthe
 - boolean: equality with `true` or `false`, inequality, or the field by itself;
 - select: `=`, `!=`, `oneof`, `noneof`, `containsall` with option label or id values;
 - relation: `=`, `!=`, `oneof`, `noneof`, `containsall` with record public-ID values.
-- principal: `=`, `!=`, `oneof`, `noneof`, `containsall` with user or group UUID values.
+- principal: `=`, `!=`, `oneof`, `noneof`, `containsall` with user, group, or service-account UUID values.
 
 `field = null` means empty and `field != null` means not empty. Other comparisons with `null` are invalid. A true/false formula may compare
 fields and calculated expressions. Use operators in GQL conditions, not function-style `AND(...)`, `OR(...)`, or `NOT(...)`.
@@ -852,7 +852,7 @@ Grids App GQL receives typed request context automatically:
 - `@auth.name`: current account display name or `null`;
 - `@auth.username`: current account username or `null`;
 - `@auth.email`: current account email address or `null`;
-- `@auth.subjects`: current user UUID plus effective direct and nested group UUIDs, or `[]` for anonymous visitors; valid only inside `oneof`, `noneof`, or `containsall`;
+- `@auth.subjects`: current user UUID plus effective direct and nested group UUIDs, the standalone/agent account’s own UUID for machine callers, or `[]` for anonymous visitors; valid only inside `oneof`, `noneof`, or `containsall`;
 - `@params.<name>`: one declared and validated page parameter;
 - `@page.id`, `@page.title`, `@page.url`;
 - `@app.id`, `@app.name`;
@@ -1312,9 +1312,9 @@ cld grids access grant app Bookshop "Public catalog" --public --permission read
 Supported resource references are:
 
 - `base <base>`: `read`, `write`, `admin`, or `none`; applies to the complete raw base and every record.
-- `app <base> <app>`: `read` or `none`; supports users, groups, authenticated, and public principals. Delegated credentials act as their user.
+- `app <base> <app>`: `read` or `none`; supports users, groups, standalone and agent service accounts, authenticated, and public principals. Delegated credentials act as their user.
 
-Choose exactly one principal with `--user`, `--group`, `--service-account`, `--authenticated`, or `--public`. `--service-account` is accepted only for a base; `--public` is accepted only for a Grids App. The `access list` table shows standalone and agent service-account grants, with type `agent` for agents; grants of resource-bound service accounts, such as legacy Grids App entries, appear only with `--include-service-accounts`, with type `resource-bound`. Existing Grids App service-account entries can be removed with `access revoke --access-id <id> --yes`, but they do not authorize app runtime. `access grant` creates a direct grant. `access set` updates or creates it. `access revoke` requires `--yes` and either a principal or `--access-id`.
+Choose exactly one principal with `--user`, `--group`, `--service-account`, `--authenticated`, or `--public`. `--service-account` accepts standalone and agent accounts for a Grids App as well as accounts for a base; `--public` is accepted only for a Grids App. The `access list` table shows standalone and agent service-account grants, with type `agent` for agents; grants of resource-bound service accounts, such as legacy Grids App entries, appear only with `--include-service-accounts`, with type `resource-bound`. Existing resource-bound Grids App entries can be removed with `access revoke --access-id <id> --yes`, but they do not authorize app runtime. `access grant` creates a direct grant. `access set` updates or creates it. `access revoke` requires `--yes` and either a principal or `--access-id`.
 
 ## Build and operate workflows
 
@@ -1929,7 +1929,7 @@ The app CLI covers terminal workflows; Cloud Capabilities remain a curated daily
 
 Start with the App's public ID from `/apps/<id>`. No base grant or default base is needed.
 Publishing does not grant runtime access: assign an App read grant to the intended
-user or group with `access grant app` first. Base administration alone does not
+user, group, standalone or agent account with `access grant app` first. Base administration alone does not
 replace that grant. An unavailable or unauthorized private App can return 404.
 Keep test Apps private; grant only the test user's account.
 

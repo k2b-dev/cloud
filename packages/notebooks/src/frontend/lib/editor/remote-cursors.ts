@@ -2,6 +2,7 @@ import { Annotation, EditorSelection, type Extension } from "@codemirror/state";
 import { BlockType, EditorView, type LayerMarker, layer, RectangleMarker, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { resolveTextCursor } from "./relative-cursor";
 
 // Long enough to read a name after the caret stops, short enough that a pause in typing clears the text it covers.
 export const REMOTE_CARET_LABEL_IDLE_MS = 3_000;
@@ -154,10 +155,10 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
             const now = Date.now();
             this.pruneDeletions(now);
             const position = Y.createRelativePositionFromJSON(cursor.head);
-            const head = Y.createAbsolutePositionFromRelativePosition(position, doc);
+            const head = resolveTextCursor(ytext, position);
             const deletion = this.deletions.findIndex(({ position: deleted }) => {
               if (Y.compareRelativePositions(position, deleted)) return true;
-              const absolute = Y.createAbsolutePositionFromRelativePosition(deleted, doc);
+              const absolute = resolveTextCursor(ytext, deleted);
               return head?.type === ytext && absolute?.type === ytext && head.index === absolute.index;
             });
             if (deletion !== -1) {
@@ -201,7 +202,7 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
           let matched = false;
           for (const [client, state] of awareness.getStates()) {
             if (client === doc.clientID || !hasCursor(state.cursor)) continue;
-            const head = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(state.cursor.head), doc);
+            const head = resolveTextCursor(ytext, state.cursor.head);
             if (head?.type !== ytext || head.index !== index) continue;
             this.lastActive.set(client, now);
             matched = true;
@@ -216,9 +217,12 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
 
       onTransaction = (transaction: Y.Transaction) => {
         if (transaction.local) return;
-        // The clients whose clocks advanced wrote this update.
-        for (const [client, clock] of transaction.afterState) {
-          if (clock > (transaction.beforeState.get(client) ?? 0)) this.lastActive.set(client, Date.now());
+        // Document writers and server-owned awareness envelopes have separate IDs.
+        for (const [client, state] of awareness.getStates()) {
+          const writer: unknown = state.writerId;
+          if (typeof writer !== "number") continue;
+          if ((transaction.afterState.get(writer) ?? 0) > (transaction.beforeState.get(writer) ?? 0))
+            this.lastActive.set(client, Date.now());
         }
         // Yjs observers have already dispatched the view update before this event.
         this.apply();
@@ -285,8 +289,8 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
     for (const [client, state] of awareness.getStates()) {
       const cursor: unknown = state.cursor;
       if (client === doc.clientID || !hasCursor(cursor)) continue;
-      const anchor = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cursor.anchor), doc);
-      const head = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cursor.head), doc);
+      const anchor = resolveTextCursor(ytext, cursor.anchor);
+      const head = resolveTextCursor(ytext, cursor.head);
       if (anchor?.type !== ytext || head?.type !== ytext) continue;
       const user: unknown = state.user;
       const color = typeof user === "object" && user !== null && "color" in user && typeof user.color === "string" ? user.color : "#30bced";

@@ -182,7 +182,7 @@ Agenten ändern Abonnements beim Anbieter mit `cld mail folder subscribe` und `c
 - **Ansehen** zum Lesen, Suchen, Kommentieren und für persönliche Erinnerungen.
 - **Bearbeiten** für den Versand, Vorgänge an E-Mails beim Anbieter und Änderungen an der Zusammenarbeit.
 - **Verwalten** für Transport, Freigabe, Regeln, Workflows und den Lebenszyklus des Postfachs.
-- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen und Gruppen, die nur an den ihnen zugewiesenen Unterhaltungen arbeiten. Was sie damit tun können, steht in [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration).
+- **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten** für Personen, Gruppen, Agenten und eigenständige Dienstkonten, die nur an den ihnen zugewiesenen Unterhaltungen arbeiten. Was sie damit tun können, steht in [Gemeinsam in einem Postfach arbeiten](/app/mail/help/mail-collaboration).
 
 **Verwaltungszugriff für automatische Antworten** ist eine Einstellung des Postfachs über der Zugriffsliste:
 

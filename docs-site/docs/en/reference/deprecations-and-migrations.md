@@ -10,6 +10,34 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## Personal Linux groups in exports
+
+Accounts group and entity exports and OAuth/OIDC group claims exclude personal
+Linux groups. Remove `--include-personal` from CLI commands; `include_personal`
+no longer opts into the API export. Use ordinary team groups in integrations
+and inspect primary GIDs through user Linux identity diagnostics. See the
+[operator upgrade note](/en/docs/operations/linux-identities#upgrade-group-exports-and-integrations)
+for consumer checks and retained Files directories.
+
+## Sign-in and security are one administration area with new addresses
+
+**Administration → Sign-in & security** collects Sign-in, Registration,
+Security, Linux identities, FreeIPA, and Account operations. The old addresses
+open the e-mail templates and do not redirect:
+
+| Before | Now |
+| --- | --- |
+| `/admin/settings?tab=user` | `/admin/signin` |
+| `/admin/settings?tab=registration` | `/admin/signin/registration` |
+| `/admin/settings?tab=security` | `/admin/signin/security` |
+| `/admin/settings?tab=linux` | `/admin/signin/linux` |
+| `/admin/settings?tab=freeipa` | `/admin/signin/freeipa` |
+| `/admin/settings?tab=account-operations` | `/admin/signin/operations` |
+
+`/admin/sync` without the Accounts app now leads to `/admin/signin/freeipa`.
+Operators: no migration is needed. Update bookmarks and links in your own
+runbooks.
+
 ## Notebooks page discussion moved to the discussion commands
 
 `cld notebooks comments` now means comments on a passage of the text, with
@@ -603,8 +631,9 @@ bound version, but the field no longer exists in its runs: a step that reads it
 fails with an unavailable reference, and `exists` on it is false. Saving or
 validating the workflow again reports a diagnostic for the unknown field. Replace it with `inputs.conversation.assigneeUserIds`,
 for example `${{ inputs.conversation.assigneeUserIds.0 }}` for the first
-assignee. The workflow action `assignConversation` keeps its `user` input: it
-replaces all assignees with that person, and `null` removes them all.
+assignee. The workflow action `assignConversation` keeps its `user` input and
+accepts an eligible person or service account by exact name or UUID. It assigns
+only when nobody is assigned; `null` leaves existing assignees in place.
 
 Platform administrators without a mailbox grant no longer count as mailbox
 users in Mail's background checks either: reminders and other conversation
@@ -1494,6 +1523,14 @@ wait in `events.outbox` until Grids is updated again.
 
 ## Mail writes live updates through the platform outbox
 
+This section describes the historical outbox transition. Its rolling-upgrade
+and rollback behavior applies only before the later `principal_assignees`
+schema boundary. For a current Mail upgrade, follow the
+[Mail assignment cutover](/en/docs/operations/mail-assignee-cutover): stop
+every old Mail process before migration. An older image refuses startup
+afterward; recovery requires a fix-forward or coordinated restoration of the
+pre-upgrade backup, not a binary-only rollback.
+
 Mail writes its live updates through the platform outbox that Core's migration
 creates, from the trigger on its activity log, so they are part of the
 transaction that records a change. Update Core before Mail: Mail does not start
@@ -1508,7 +1545,7 @@ receives what it missed instead of loading the view again. The socket accepts
 every credential the Mail API accepts, so pages in the device app receive live
 updates too.
 
-The first Mail start after the update replaces `mail.enqueue_live_invalidation()`
+During that historical outbox transition, the first Mail start replaces `mail.enqueue_live_invalidation()`
 and drops `mail.live_invalidation_outbox`. The function keeps its signature, so
 replicas of the previous version that still run during a rolling update write
 their changes to the platform outbox as well, and the new replicas publish them.
@@ -1524,7 +1561,7 @@ expire after 24 hours, but its stream keeps its 1 GiB reservation until the
 next release removes it together with `/api/mail/ws`; see
 [Deployment requirements](/en/docs/operations/deployment-requirements).
 
-If you roll Mail back to the previous version, its pages receive no live
+Before the assignment cutover, rolling back that outbox release leaves its pages without live
 updates until Mail is updated again, because the database keeps the new
 function. Reloading a page shows the current state. The updates written
 meanwhile wait in `events.outbox` and are published by the next Mail start.
@@ -2549,3 +2586,18 @@ accounting fields use `modelId`; historical SQL columns keep their names.
 Project defaults are `defaultModel: AiModelRequest | null`, and personal
 selection is `selection: AiModelRequest | null`. Old pricing/settings CLI
 commands are replaced by `admin ai models update` and `admin ai variants update`.
+
+## Project and Skill service authorization context
+
+Project and Skill services and their AI tool factories now require
+`AiResourceContext` from `@k2b/cloud/ai`. Replace bare `AccessSubject` arguments
+with `{ actor, accessSubject }` from the authenticated request or capability
+context. Pass that same context as `subject` when creating a resource. Keep the
+original machine actor, including its scopes; do not construct a user actor to
+represent a machine credential. Keep the resolved `RequestAuthority` argument
+or list option on Skill calls so app-entry checks retain the credential's scope
+and effective roles. Anonymous read paths may pass `null`.
+
+Standalone and agent credentials use their own grants within their credential
+scopes. Resource-bound credentials are unsupported for Projects and Skills.
+See [Projects and Skills](/en/docs/ai/files-projects-and-personalization#reuse-shared-skills).

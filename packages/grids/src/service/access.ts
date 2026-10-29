@@ -73,7 +73,7 @@ export const lockBaseAuthorization = async (baseIds: readonly string[], client: 
   for (const baseId of [...new Set(baseIds)].sort()) {
     await client`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:base-authorization:${baseId}`}, 0))`;
   }
-  await client`LOCK TABLE auth.user_groups_v2, auth.group_groups_v2 IN SHARE MODE`;
+  await client`LOCK TABLE auth.user_groups_v2, auth.group_groups_v2, auth.service_account_groups IN SHARE MODE`;
 };
 
 export const hasTransactionalBaseAdmin = async (
@@ -111,9 +111,6 @@ export const validateAccessPermission = (resourceType: AccessResourceType, permi
 export const validateAccessPrincipal = (resourceType: AccessResourceType, principal: Principal, locale?: string): string | null => {
   const messages = getGridsCrudMessages(locale);
   if (resourceType === "base" && principal.type === "public") return messages.publicAccessAppsOnly;
-  if (resourceType === "customApp" && principal.type === "service_account") {
-    return messages.appServiceAccountUnsupported;
-  }
   return null;
 };
 
@@ -294,6 +291,16 @@ export const grantAccess = async (params: {
   const result = await sql.begin(async (tx): Promise<Result<{ accessId: string }>> => {
     const binding = await resolveResourceBinding(params.resourceType, params.resourceId, { client: tx });
     if (!binding) return fail(err.notFound(messages.resource));
+    // Account deletion locks the recipient before cascading into memberships.
+    // Take the same order, including base grants whose INSERT takes an FK lock.
+    // SHARE also keeps the account kind and active status stable until commit.
+    let serviceAccountKind: ServiceAccountKind | undefined;
+    if (params.principal.type === "service_account") {
+      const [account] = await tx<{ kind: ServiceAccountKind }[]>`
+        SELECT kind FROM auth.service_accounts WHERE id = ${params.principal.serviceAccountId}::uuid FOR SHARE
+      `;
+      serviceAccountKind = account?.kind;
+    }
     await lockBaseAuthorization([binding.baseId], tx);
     const authorized = await authorizeMutation(binding, params.authorization, tx, params.locale);
     if (!authorized.ok) return fail(authorized.error);
@@ -306,6 +313,14 @@ export const grantAccess = async (params: {
         params.locale,
       );
       if (!guarded.ok) return fail(guarded.error);
+    }
+    // Published apps have their own boundary. Only independent account subjects
+    // can receive it; resource-bound credentials remain confined to their base.
+    if (params.principal.type === "service_account") {
+      if (!serviceAccountKind) return fail(err.notFound(messages.serviceAccount));
+      if (params.resourceType === "customApp" && serviceAccountKind !== "standalone" && serviceAccountKind !== "agent") {
+        return fail(err.badInput(messages.appServiceAccountUnsupported));
+      }
     }
     const created = await insertAccessRow({ principal: params.principal, permission: params.permission }, tx, params.locale);
     if (!created.ok) return fail(created.error);
@@ -375,6 +390,16 @@ export const listAccessForBaseTree = async (baseId: string): Promise<ScopedAcces
   );
 };
 
+// Deletion cascades through existing grants and memberships. Lock their account
+// before the membership tables, just as grantAccess locks a new recipient.
+const lockAccessRecipient = async (accessId: string, client: SqlClient): Promise<void> => {
+  await client`
+    SELECT account.id FROM auth.service_accounts account
+    JOIN auth.access entry ON entry.service_account_id = account.id
+    WHERE entry.id = ${accessId}::uuid FOR SHARE OF account
+  `;
+};
+
 export const updateAccessLevel = async (
   accessId: string,
   level: PermissionLevel,
@@ -388,6 +413,7 @@ export const updateAccessLevel = async (
     if (!binding) return fail(err.notFound(messages.accessEntry));
     const validationError = validateAccessPermission(binding.resourceType, level, locale);
     if (validationError) return fail(err.badInput(validationError));
+    await lockAccessRecipient(accessId, tx);
     await lockBaseAuthorization([binding.baseId], tx);
     const authorized = await authorizeMutation(binding, authorization, tx, locale);
     if (!authorized.ok) return fail(authorized.error);
@@ -425,6 +451,7 @@ export const revokeAccess = async (
   const result = await sql.begin(async (tx): Promise<Result<AccessBinding>> => {
     const binding = await resolveAccessBinding(accessId, tx);
     if (!binding) return fail(err.notFound(messages.accessEntry));
+    await lockAccessRecipient(accessId, tx);
     await lockBaseAuthorization([binding.baseId], tx);
     const authorized = await authorizeMutation(binding, authorization, tx, locale);
     if (!authorized.ok) return fail(authorized.error);

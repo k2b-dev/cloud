@@ -49,6 +49,7 @@ describe("buildAdminGroups", () => {
     ] as const) {
       expect(buildAdminGroups([], locale).find((group) => group.label === "Cloud")?.links).toEqual([
         { href: "/admin/base", icon: "ti-adjustments", label: locale === "de" ? "Grundeinstellungen" : "Base settings" },
+        { href: "/admin/signin", icon: "ti-shield-lock", label: locale === "de" ? "Anmeldung & Sicherheit" : "Sign-in & security" },
         { href: "/admin/ai", icon: "ti-sparkles", label },
       ]);
     }
@@ -68,6 +69,7 @@ describe("buildAdminGroups", () => {
     ]);
     expect(groups.find((group) => group.label === "Cloud")?.links).toEqual([
       { href: "/admin/base", icon: "ti-adjustments", label: "Base settings" },
+      { href: "/admin/signin", icon: "ti-shield-lock", label: "Sign-in & security" },
       { href: "/admin/ai", icon: "ti-sparkles", label: "AI" },
     ]);
     expect(groups.some((group) => group.label === "Example tools")).toBe(false);
@@ -87,10 +89,11 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["General", "Cloud", "Operations", "Accounts & sign-in", "Settings"]);
+    expect(groups.map((group) => group.label)).toEqual(["General", "Cloud", "Operations", "Settings"]);
     expect(groups[2]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
     expect(groups.find((group) => group.label === "Cloud")?.links).toEqual([
       { href: "/admin/base", icon: "ti-adjustments", label: "Base settings" },
+      { href: "/admin/signin", icon: "ti-shield-lock", label: "Sign-in & security" },
       { href: "/admin/ai", icon: "ti-sparkles", label: "AI" },
     ]);
   });
@@ -114,7 +117,7 @@ describe("buildAdminGroups", () => {
       }),
     ]);
     const area = groups.find((group) => group.label === "Cloud")!;
-    expect(area.links.map((link) => link.href)).toEqual(["/admin/base", "/admin/ai", "/admin/observability"]);
+    expect(area.links.map((link) => link.href)).toEqual(["/admin/base", "/admin/signin", "/admin/ai", "/admin/observability"]);
     expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
     expect(groups.some((group) => group.label === "App administration")).toBe(false);
     const links = groups.flatMap((group) => group.links);
@@ -126,7 +129,7 @@ describe("buildAdminGroups", () => {
       buildAdminGroups([], "de")
         .find((group) => group.label === "Cloud")
         ?.links.map((link) => link.label),
-    ).toEqual(["Grundeinstellungen", "KI"]);
+    ).toEqual(["Grundeinstellungen", "Anmeldung & Sicherheit", "KI"]);
   });
 
   it("opens the first contributed Observability page when no app owns the area start", () => {
@@ -166,21 +169,16 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["General", "Cloud", "Accounts & sign-in", "Settings"]);
+    expect(groups.map((group) => group.label)).toEqual(["General", "Cloud", "Settings"]);
   });
-  it("groups global account controls once and preserves existing links", () => {
-    const groups = buildAdminGroups([]);
-    const accounts = groups.find((group) => group.label === "Accounts & sign-in")!;
-    expect(accounts.links.map((link) => link.href)).toEqual(
-      ["user", "registration", "linux", "account-operations", "freeipa"].map((tab) => `/admin/settings?tab=${tab}`),
-    );
-    const all = groups.flatMap((group) => group.links.map((link) => link.href));
+  it("shows Sign-in & security as one area entry that stays active on its sections", () => {
+    const links = buildAdminGroups([]).flatMap((group) => group.links);
+    for (const path of ["/admin/signin", "/admin/signin/freeipa", "/admin/signin/linux?scope=all"]) {
+      expect(activeAdminLink(path, links)?.href).toBe("/admin/signin");
+    }
+    expect(links.some((link) => /tab=(user|registration|linux|account-operations|freeipa|security)/.test(link.href))).toBe(false);
+    const all = links.map((link) => link.href);
     expect(new Set(all).size).toBe(all.length);
-    expect(
-      buildAdminGroups([], "de")
-        .find((group) => group.label === "Accounts & Anmeldung")
-        ?.links.map((link) => link.label),
-    ).toEqual(["Anmeldung", "Registrierung & Anfragen", "Linux-Identitäten", "Betrieb", "FreeIPA"]);
   });
 });
 

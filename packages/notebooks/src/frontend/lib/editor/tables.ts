@@ -55,7 +55,8 @@
 import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Extension, Prec, type Range, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
-import { type EvalContext, evaluateFormula, isFormula } from "@k2b/cloud/shared";
+import { type EvalContext, type EvalResult, evaluateFormula, isFormula } from "@k2b/cloud/shared";
+import { i18n } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import { isNamedBlockHandle } from "../../../lib/named-blocks";
 import { formatFormulaError, formatFormulaValue, renderPrettyTableHtml } from "../pretty-table";
@@ -136,11 +137,23 @@ const sameTableData = (left: TableData, right: TableData): boolean =>
  * "copied" state survives unrelated editor updates.
  */
 const COPIED_REVERT_MS = 800;
+const formulaCopyMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: { copy: "Copy result", copied: "copied", failed: "Could not copy. Click to try again." },
+    de: { copy: "Ergebnis kopieren", copied: "kopiert", failed: "Kopieren fehlgeschlagen. Zum Wiederholen klicken." },
+  },
+});
+
+// Equal widgets may retain DOM while their WidgetType instance changes.
+// Clipboard work and its timer therefore belong to the DOM lifetime.
+const formulaPreviewCopies = new WeakMap<HTMLElement, { timer?: number; destroyed: boolean }>();
 
 class FormulaPreviewWidget extends WidgetType {
   constructor(
     private text: string,
     private isError: boolean,
+    private locale?: string,
   ) {
     super();
   }
@@ -154,7 +167,19 @@ class FormulaPreviewWidget extends WidgetType {
     if (this.isError) return span;
 
     const valueText = this.text;
-    let revertTimer: number | null = null;
+    const copyState: { timer?: number; destroyed: boolean } = { destroyed: false };
+    formulaPreviewCopies.set(span, copyState);
+    const messages = formulaCopyMessages.resolve(this.locale ? [this.locale] : []).t;
+    span.setAttribute("aria-live", "polite");
+    span.setAttribute("role", "button");
+    span.setAttribute("aria-label", messages.copy);
+    span.tabIndex = 0;
+    span.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      span.click();
+    });
 
     // mousedown: we own the event. preventDefault stops CM from moving
     // the cursor to the click position; stopPropagation keeps our DOM
@@ -167,34 +192,55 @@ class FormulaPreviewWidget extends WidgetType {
     span.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      // Fire-and-forget — clipboard errors (e.g. permission denied)
-      // are silent; the user sees no "copied" flash and will retry.
       clipboard
         .copy(valueText)
         .then(() => {
-          span.textContent = " copied ";
+          if (copyState.destroyed) return;
+          span.textContent = ` ${messages.copied} `;
           span.classList.add("cm-formula-preview-copied");
-          if (revertTimer !== null) window.clearTimeout(revertTimer);
-          revertTimer = window.setTimeout(() => {
+          if (copyState.timer !== undefined) window.clearTimeout(copyState.timer);
+          copyState.timer = window.setTimeout(() => {
             span.textContent = ` → ${valueText} `;
             span.classList.remove("cm-formula-preview-copied");
-            revertTimer = null;
+            copyState.timer = undefined;
           }, COPIED_REVERT_MS);
         })
-        .catch(() => {});
+        .catch(() => {
+          if (copyState.destroyed) return;
+          if (copyState.timer !== undefined) window.clearTimeout(copyState.timer);
+          copyState.timer = undefined;
+          span.classList.remove("cm-formula-preview-copied");
+          span.textContent = ` → ${valueText} · ${messages.failed} `;
+        });
     });
 
     return span;
   }
 
+  override destroy(dom: HTMLElement) {
+    const copyState = formulaPreviewCopies.get(dom);
+    if (!copyState) return;
+    copyState.destroyed = true;
+    if (copyState.timer !== undefined) window.clearTimeout(copyState.timer);
+    formulaPreviewCopies.delete(dom);
+  }
+
   override eq(other: WidgetType) {
-    return other instanceof FormulaPreviewWidget && other.text === this.text && other.isError === this.isError;
+    return (
+      other instanceof FormulaPreviewWidget && other.text === this.text && other.isError === this.isError && other.locale === this.locale
+    );
   }
 
   override ignoreEvent() {
     return true;
   }
 }
+
+/** Shared with the source-only extension; installs no table replacement or keymap. */
+export const formulaPreviewWidget = (result: EvalResult, locale?: string): WidgetType => {
+  const text = result.kind === "ok" ? formatFormulaValue(result.value, locale) : `⚠ ${formatFormulaError(result, locale).split("\n")[0]}`;
+  return new FormulaPreviewWidget(text, result.kind === "error", locale);
+};
 
 /** Build inline live-preview decorations for one table when its
  *  source is visible. Walks each body line, parses cell positions,
@@ -222,11 +268,9 @@ const buildLivePreviewDecorations = (state: EditorState, tableNode: { from: numb
       };
       const result = evaluateFormula(trimmed, ctx);
       const locale = typeof document === "undefined" ? undefined : document.documentElement.lang;
-      const previewText =
-        result.kind === "ok" ? formatFormulaValue(result.value, locale) : `⚠ ${formatFormulaError(result, locale).split("\n")[0]}`;
       decorations.push(
         Decoration.widget({
-          widget: new FormulaPreviewWidget(previewText, result.kind === "error"),
+          widget: formulaPreviewWidget(result, locale),
           side: 1,
         }).range(line.from + cell.toInLine),
       );

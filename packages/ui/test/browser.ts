@@ -351,8 +351,28 @@ const explainNavigations = (page: Page): Page => {
   return page;
 };
 
-const wrapContext = (context: BrowserContext): BrowserContext => {
+// Cloud's shell reads the capability catalog on its own, for example to discover file providers while the page is
+// idle. Whether that read happens before a test ends depends on timing, and a fixture that does not serve it answers
+// 404, counts it as its own request, or sees it refused by a navigation (#2075). So every page answers it in the page
+// with an empty catalog, before any request, unless the file launches with `serveShellCatalog: true`.
+const answerShellCatalog = () => {
+  window.fetch = new Proxy(window.fetch, {
+    apply: (network, self, args: Parameters<typeof fetch>) => {
+      const [input, init] = args;
+      const request = input instanceof Request ? input : undefined;
+      // Resolved like fetch resolves it; an address fetch cannot parse stays fetch's own error.
+      const url = URL.parse(request?.url ?? String(input), document.baseURI);
+      const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
+      if (url?.origin !== location.origin || url.pathname !== "/api/capabilities/v1/catalog" || method !== "GET")
+        return Reflect.apply(network, self, args);
+      return Promise.resolve(Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } }));
+    },
+  });
+};
+
+const wrapContext = async (context: BrowserContext, servesShellCatalog: boolean): Promise<BrowserContext> => {
   tolerateKilledBrowserOnClose(context);
+  if (!servesShellCatalog) await context.addInitScript(answerShellCatalog);
   context.on("page", explainNavigations);
   const newPage = context.newPage.bind(context);
   context.newPage = async () => explainNavigations(await newPage());
@@ -373,7 +393,13 @@ const wrapContext = (context: BrowserContext): BrowserContext => {
  * Close waits at most 2 s gracefully and 2 s for a killed local process group; a surviving group fails cleanup.
  * A forced close, a launch pending after 4 s, and a failed launch carry timing evidence (#1473).
  */
-export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browser> => {
+export const launchBrowser = async ({
+  serveShellCatalog = false,
+  ...options
+}: LaunchOptions & {
+  /** The test serves Cloud's capability catalog, or fails it on purpose, instead of every page answering it empty. */
+  serveShellCatalog?: boolean;
+} = {}): Promise<Browser> => {
   let current = await start(options);
   let closed = false;
   let replacement: Promise<StartedBrowser> | undefined;
@@ -423,11 +449,13 @@ export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browse
   };
   const newPage: Browser["newPage"] = async (pageOptions) => {
     const page = await open((browser) => browser.newPage(pageOptions));
-    wrapContext(page.context());
+    await wrapContext(page.context(), serveShellCatalog);
+    // The first document exists before the init script, so it gets the answer directly.
+    if (!serveShellCatalog) await page.evaluate(answerShellCatalog);
     return explainNavigations(page);
   };
   const newContext: Browser["newContext"] = async (contextOptions) =>
-    wrapContext(await open((browser) => browser.newContext(contextOptions)));
+    wrapContext(await open((browser) => browser.newContext(contextOptions)), serveShellCatalog);
 
   const close: Browser["close"] = async (closeOptions) => {
     closed = true;

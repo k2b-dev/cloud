@@ -4,6 +4,7 @@ import { fromJSON } from "seroval";
 import type { Component } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import RegistryForm from "../_area/RegistryForm.island";
+import TestFreeIpaButton from "../signin/TestFreeIpaButton.island";
 import LegacySettings from "./LegacySettings.island";
 import TestPdfButton from "./TestPdfButton.island";
 
@@ -12,6 +13,7 @@ const islands: Record<string, Component<never>> = {
   "LegacySettings.island.tsx": LegacySettings as Component<never>,
   "RegistryForm.island.tsx": RegistryForm as Component<never>,
   "SettingsSaveStatus.island.tsx": SettingsSaveStatus as Component<never>,
+  "TestFreeIpaButton.island.tsx": TestFreeIpaButton as Component<never>,
   "TestPdfButton.island.tsx": TestPdfButton as Component<never>,
 };
 for (const element of document.querySelectorAll<HTMLElement>("solid-island")) {

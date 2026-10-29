@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import { setImmediate } from "node:timers";
+import * as sharedText from "@k2b/cloud/browser/shared-text";
+import { encoding } from "@k2b/stdlib";
 import { createRenderEffect, createRoot, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
+import * as Y from "yjs";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import type { DraftEditableContent, DraftLease, MailDraft, MailDraftSeed } from "../../contracts";
+import { createDraftDocument } from "../../lib/draft-document";
+import { mailDraftJournalKey } from "./mail-draft-journal";
+import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 const MAILBOX_ID = "Box001";
 const DRAFT_ID = "Drf001";
@@ -85,9 +91,29 @@ class FakeWebSocket {
   onerror: (() => void) | null = null;
   constructor(readonly url: string) {
     FakeWebSocket.instances.push(this);
+    if (new URL(url).pathname.endsWith("/document/socket"))
+      queueMicrotask(() => {
+        if (this.readyState === FakeWebSocket.CONNECTING) this.open();
+      });
   }
   send(data: string) {
     this.sent.push(JSON.parse(data));
+    if (!new URL(this.url).pathname.endsWith("/document/socket")) return;
+    const packet: { type: string; payload: { payload?: string } } = JSON.parse(data);
+    const position = { docId: DRAFT_ID, generation: "1", cursor: "s6t.fixture.1" };
+    if (packet.type === "replayRequest")
+      queueMicrotask(() => this.message({ type: "replayReady", payload: { ...position, peerId: "peer1" } }));
+    if (packet.type === "syncPublish" && packet.payload.payload)
+      queueMicrotask(() =>
+        this.message({
+          type: "syncPush",
+          payload: {
+            docId: position.docId,
+            generation: position.generation,
+            updates: [{ generation: position.generation, cursor: position.cursor, payload: packet.payload.payload }],
+          },
+        }),
+      );
   }
   open() {
     this.readyState = FakeWebSocket.OPEN;
@@ -153,6 +179,229 @@ describe("Mail draft session", () => {
       { preconnect: originalFetch.preconnect },
     );
   };
+
+  const sharedFixture = async (fromSeed = false, initializing = false) => {
+    const editable = content("Saved shared text", "first@example.test");
+    const currentDraft: MailDraft = { ...draft(3, editable), editMode: "shared", generation: "1" };
+    const document = createDraftDocument(editable);
+    const bytes = Y.encodeStateAsUpdate(document);
+    document.destroy();
+    const snapshot = { state: encoding.toBase64(bytes), cursor: "s6t.fixture.1", content: editable };
+    const authorization = {
+      generation: "1",
+      revision: 3,
+      lifecycle: "draft",
+      historyComplete: true,
+      fresh: snapshot,
+      durable: snapshot,
+      frozen: null,
+    };
+    respondWith((_method, url) => {
+      if (url.endsWith("/materialize")) return Response.json(currentDraft);
+      if (url.endsWith("/document") && !initializing) return Response.json(authorization);
+      return Response.json({ message: "Session expired" }, { status: 401 });
+    });
+    const { createMailDraftSession } = await import("./mail-draft-session");
+    const [current, setCurrent] = createSignal(editable);
+    const session = createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      return createMailDraftSession({
+        mailboxId: MAILBOX_ID,
+        currentActor: { kind: "user", id: "Usr001" },
+        initialDraft: fromSeed ? undefined : currentDraft,
+        initialSeed: fromSeed ? { ...seed, content: editable } : undefined,
+        hasVerifiedIdentity: () => true,
+        content: current,
+        applyDraftContent: setCurrent,
+        isDisposed: () => false,
+        onRecovered: () => undefined,
+        onMaterialized: () => undefined,
+        locale: () => "en",
+      });
+    });
+    return { session, current, setCurrent };
+  };
+
+  test.each(["initialize", "save", "materialize-initialize", "materialize-save"])(
+    "shared %s 401 keeps the sign-in action through client errors and later state updates",
+    async (phase) => {
+      localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "no");
+      const initializing = phase.endsWith("initialize");
+      const f = await sharedFixture(phase.startsWith("materialize"), initializing);
+      if (phase.startsWith("materialize")) {
+        f.setCurrent({ ...f.current(), body: "Materializing input" });
+        expect(await f.session.persist()).toBeNull();
+        expect(f.session.materializedLeasePending()).toBe(false);
+      } else {
+        await f.session.ensureDraft();
+        if (!initializing) {
+          f.setCurrent({ ...f.current(), body: "Pending shared input" });
+          await Bun.sleep(0); // Deliver the publication echo before requesting its snapshot.
+          expect(await f.session.persist()).toBeNull();
+        }
+      }
+      expect(f.session.authenticationRequired()).toBe(true);
+      expect(f.session.status()).toBe("readonly");
+      expect(f.session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
+      if (initializing) {
+        if (!phase.startsWith("materialize")) {
+          await f.session.prepareSignIn(); // Unchanged SSR content already exists on the server.
+          f.setCurrent({ ...f.current(), body: "Input without a shared client" });
+        }
+        await expect(f.session.prepareSignIn()).rejects.toThrow();
+      }
+      const before = requests.length;
+      await f.session.resumeCurrentLease();
+      expect(await f.session.persist()).toBeNull();
+      expect(requests).toHaveLength(before);
+    },
+  );
+
+  test.each(["tab-only", "remembered", "storage-failed"])(
+    "shared sign-in preparation uses reload-safe document storage: %s",
+    async (mode) => {
+      const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+      localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, mode === "tab-only" ? "no" : "yes");
+      let stored: Uint8Array | null = null;
+      const write = Promise.withResolvers<void>();
+      const offline = spyOn(sharedText, "openAuthorizedSharedTextOffline").mockImplementation(async (_identity, authorize, signal) => {
+        const authorization = await authorize(signal ?? new AbortController().signal);
+        return {
+          authorization,
+          state: stored,
+          baseCursor: "s6t.fixture.1",
+          session: {
+            signal: new AbortController().signal,
+            load: async () => stored,
+            loadPending: async () => (stored ? { state: stored, baseCursor: "s6t.fixture.1" } : null),
+            save: async (bytes) => {
+              await write.promise;
+              if (mode === "storage-failed") throw new Error("Device storage full");
+              stored = bytes.slice();
+              return stored;
+            },
+            acknowledgeSnapshot: async () => false,
+            forget: async () => {},
+            close: () => {},
+          },
+        };
+      });
+      try {
+        const f = await sharedFixture();
+        await f.session.ensureDraft();
+        f.setCurrent({ ...f.current(), body: "Only on this device" });
+        await Bun.sleep(0);
+        expect(await f.session.persist()).toBeNull();
+        expect(f.session.authenticationRequired()).toBe(true);
+        if (mode === "tab-only") {
+          await expect(f.session.prepareSignIn()).rejects.toThrow();
+          expect(offline).not.toHaveBeenCalled();
+        } else {
+          let finished = false;
+          const preparing = f.session.prepareSignIn().finally(() => {
+            finished = true;
+          });
+          const outcome = preparing.then(
+            () => "ready",
+            () => "blocked",
+          );
+          await Bun.sleep(0);
+          expect(finished).toBe(false); // A queued write is not yet a reload guarantee.
+          write.resolve();
+          expect(await outcome).toBe(mode === "remembered" ? "ready" : "blocked");
+          if (mode === "remembered") {
+            dispose();
+            await Bun.sleep(0);
+            const reloaded = await sharedFixture();
+            await reloaded.session.ensureDraft();
+            expect(reloaded.current().body).toBe("Only on this device");
+          }
+        }
+        expect(openMailUserDraftStorage(localStorage, "Usr001").getItem(mailDraftJournalKey(MAILBOX_ID, DRAFT_ID))).toBeNull();
+      } finally {
+        write.resolve();
+        dispose();
+        await Bun.sleep(0);
+        offline.mockRestore();
+        generations.mockRestore();
+      }
+    },
+  );
+
+  test.each(["saved", "pending-save"])("invalidated shared storage blocks sign-in reload: %s", async (mode) => {
+    const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+    localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "yes");
+    const controller = new AbortController();
+    const write = Promise.withResolvers<void>();
+    const writeStarted = Promise.withResolvers<void>();
+    let delayWrite = false;
+    const storage: { state: Uint8Array | null } = { state: null };
+    const offline = spyOn(sharedText, "openAuthorizedSharedTextOffline").mockImplementation(async (_identity, authorize) => ({
+      authorization: await authorize(controller.signal),
+      state: storage.state,
+      baseCursor: "s6t.fixture.1",
+      session: {
+        signal: controller.signal,
+        load: async () => storage.state,
+        loadPending: async () => (storage.state ? { state: storage.state, baseCursor: "s6t.fixture.1" } : null),
+        save: async (bytes) => {
+          const saved = bytes.slice();
+          if (delayWrite) {
+            writeStarted.resolve();
+            await write.promise;
+          }
+          if (!controller.signal.aborted) storage.state = saved;
+          return saved;
+        },
+        acknowledgeSnapshot: async () => false,
+        forget: async () => {},
+        close: () => controller.abort(),
+      },
+    }));
+    try {
+      const f = await sharedFixture();
+      await f.session.ensureDraft();
+      const client = f.session.shared()!;
+      f.setCurrent({ ...f.current(), body: "Only on this device" });
+      client.edit(f.current());
+      expect(await client.flushLocal()).toBe(true);
+      expect(storage.state).toEqual(Y.encodeStateAsUpdate(client.doc));
+      expect(client.state().locallySaved).toBe(true);
+      if (mode === "pending-save") {
+        delayWrite = true;
+        f.setCurrent({ ...f.current(), body: "More unsent input" });
+        client.edit(f.current());
+        await writeStarted.promise;
+      }
+      const unsent = f.current();
+      // Invalidation deletes the saved bytes while this tab retains its unsent document.
+      storage.state = null;
+      controller.abort(new Error("Offline store invalidated"));
+      expect(client.state()).toMatchObject({ terminal: true, dirty: true, locallySaved: false, error: true });
+      // A write may already have completed before invalidation; deliver its result afterwards.
+      write.resolve();
+      expect(await client.flushLocal()).toBe(false);
+      expect(storage.state).toBeNull();
+      expect(client.state()).toMatchObject({ locallySaved: false, error: true });
+      respondWith(() => Response.json({ message: "Session expired" }, { status: 401 }));
+      await expect(client.retry()).rejects.toThrow("Session expired");
+      expect(f.session.authenticationRequired()).toBe(true);
+      expect(f.session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
+      await expect(f.session.prepareSignIn()).rejects.toThrow("Draft could not be saved");
+      expect(await client.flushLocal()).toBe(false);
+      expect(client.content()).toEqual(unsent);
+      expect(f.current()).toEqual(unsent);
+      const leaving = new window.Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(leaving);
+      expect(leaving.defaultPrevented).toBe(true);
+    } finally {
+      write.resolve();
+      dispose();
+      await Bun.sleep(0);
+      offline.mockRestore();
+      generations.mockRestore();
+    }
+  });
 
   test("a send after a lost save response stores the current recipients and text before it uses the draft", async () => {
     // The first save reached the server, but its response was lost, so the browser still has no draft.
@@ -281,7 +530,9 @@ describe("Mail draft session", () => {
     await session.resumeCurrentLease();
     expect(session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
     expect(session.status()).toBe("readonly");
-    expect(JSON.parse(localStorage.getItem(session.draftKey(DRAFT_ID))!).content.body).toBe("Unsaved text");
+    expect(
+      JSON.parse(openMailUserDraftStorage(localStorage, "Usr001").getItem(mailDraftJournalKey(MAILBOX_ID, DRAFT_ID))!).content.body,
+    ).toBe("Unsaved text");
     const before = requests.length;
     await session.resumeCurrentLease();
     expect(requests).toHaveLength(before);
@@ -311,27 +562,26 @@ describe("Mail draft session", () => {
     expect(session.authenticationRequired()).toBe(true);
     expect(session.draft()).toBeNull();
     await session.prepareSignIn();
-    expect(readMailDraftSeed(localStorage, MAILBOX_ID, seed.id)?.content).toEqual(seed.content);
-    expect(JSON.parse(localStorage.getItem(session.draftKey(seed.id))!).content).toEqual(current());
-    const storage = localStorage;
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      value: {
-        length: storage.length,
-        key: (index: number) => storage.key(index),
-        getItem: (key: string) => storage.getItem(key),
-        removeItem: (key: string) => storage.removeItem(key),
-        clear: () => storage.clear(),
-        setItem: () => {
-          throw new Error("Storage full");
-        },
-      } satisfies Storage,
+    expect(readMailDraftSeed(openMailUserDraftStorage(localStorage, "Usr001"), MAILBOX_ID, seed.id)?.content).toEqual(seed.content);
+    expect(JSON.parse(openMailUserDraftStorage(localStorage, "Usr001").getItem(mailDraftJournalKey(MAILBOX_ID, seed.id))!).content).toEqual(
+      current(),
+    );
+    expect(localStorage.getItem(mailDraftJournalKey(MAILBOX_ID, seed.id))).toBeNull();
+    expect(readMailDraftSeed(localStorage, MAILBOX_ID, seed.id)).toBeNull();
+    // happy-dom's Storage proxy ignores assigned methods, so a spy would never run; only a defined property replaces one.
+    const write = localStorage.setItem;
+    const replaceWrite = (value: Storage["setItem"]) =>
+      Object.defineProperty(localStorage, "setItem", { configurable: true, writable: true, value });
+    replaceWrite(() => {
+      throw new Error("Storage full");
     });
     try {
       await expect(session.prepareSignIn()).rejects.toThrow("Storage full");
     } finally {
-      Object.defineProperty(globalThis, "localStorage", { configurable: true, value: storage });
+      replaceWrite(write);
     }
+    localStorage.setItem("cloud:user-epoch:Usr001", "ended");
+    await expect(session.prepareSignIn()).rejects.toThrow("This browser session ended");
   });
 
   test("a late successful save cannot hide expired sign-in or discard newer journal text", async () => {
@@ -379,7 +629,10 @@ describe("Mail draft session", () => {
     expect(session.status()).toBe("readonly");
     expect(session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
     expect(session.authenticationRequired()).toBe(true);
-    expect(JSON.parse(localStorage.getItem(session.draftKey(DRAFT_ID))!)).toEqual({ revision: 4, content: current() });
+    expect(JSON.parse(openMailUserDraftStorage(localStorage, "Usr001").getItem(mailDraftJournalKey(MAILBOX_ID, DRAFT_ID))!)).toEqual({
+      revision: 4,
+      content: current(),
+    });
   });
 
   test("a lease failure followed by lifecycle 401 keeps the sign-in action", async () => {

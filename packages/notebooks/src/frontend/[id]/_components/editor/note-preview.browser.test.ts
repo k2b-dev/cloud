@@ -121,6 +121,13 @@ beforeAll(async () => {
       {
         name: "solid-note-preview-test",
         setup(builder) {
+          // Exercise the real composition with current UI source, as the shared
+          // editor fixture does; a previous dist build must not mask a handoff.
+          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
+          builder.onResolve({ filter: /^@k2b\/ui\/text-editor$/ }, () => ({ path: resolve(ui, "src/text-editor.ts") }));
+          builder.onResolve({ filter: /^@k2b\/ui\/text-editor\/model$/ }, () => ({
+            path: resolve(ui, "src/text-editor/markdown-table.ts"),
+          }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -145,7 +152,11 @@ beforeAll(async () => {
       },
     ),
   );
-  const css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  const css = [
+    "@layer properties, theme, base, components, utilities;",
+    ...outputs,
+    await Bun.file(resolve(ui, "src/styles/text-editor.css")).text(),
+  ].join("\n");
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -229,11 +240,13 @@ beforeAll(async () => {
     websocket: {
       open(socket) {
         // The first edit connects; the server sends the note's state before it is ready, as the real one does.
-        const updates = [{ cursor: null, payload: servedSnapshot, originPeerId: null }];
+        const updates = [{ cursor: null, payload: servedSnapshot, originPeerId: null, restoreRevision: "0" }];
         socket.send(
           JSON.stringify({ type: notebooksYjs.wsType.syncPush, payload: { noteId: "note01", historyIncomplete: false, updates } }),
         );
-        socket.send(JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01" } }));
+        socket.send(
+          JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01", cursor: null, restoreRevision: "0" } }),
+        );
       },
       message() {},
     },
@@ -280,6 +293,14 @@ const measure = (page: Page, selector: string, count: number) =>
     { selector, count },
   );
 const closeTo = (actual: number, expected: number, context: string) => expect(Math.abs(actual - expected), context).toBeLessThanOrEqual(1);
+const collectErrors = (page: Page) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  return errors;
+};
 
 for (const fixture of [
   { mode: "rich", width: 1280, height: 800, readOnly: false, dark: false, historyIncomplete: false, headings: false },
@@ -297,8 +318,7 @@ for (const fixture of [
       isMobile: fixture.width === 390,
       hasTouch: fixture.width === 390,
     });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectErrors(page);
     let release: (() => void) | undefined;
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
@@ -361,8 +381,7 @@ for (const fixture of [
 
 test("a note longer than the preview keeps the editor's gutter and lines: source, 1280px", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = collectErrors(page);
   let release: (() => void) | undefined;
   const blocked = new Promise<void>((resolve) => {
     release = resolve;
@@ -421,8 +440,7 @@ for (const fixture of [
       isMobile: fixture.width === 390,
       hasTouch: fixture.width === 390,
     });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectErrors(page);
     let release: (() => void) | undefined;
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
@@ -490,8 +508,7 @@ for (const [note, width] of [
       note === "chart" ? { kind: "line", area: true } : { kind: "bar" },
     );
     const page = await browser.newPage({ viewport: { width, height: 900 }, isMobile: width < 600, hasTouch: width < 600 });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectErrors(page);
     let releaseEditor: (() => void) | undefined;
     let releasePreview: (() => void) | undefined;
     const editorHeld = new Promise<void>((resolve) => {
@@ -552,8 +569,7 @@ for (const [note, width] of [
 for (const readOnly of [false, true])
   test(`prints the whole note from its Book copy, with text typed just before: ${readOnly ? "read-only" : "write"}`, async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = collectErrors(page);
     try {
       await page.goto(`${server.url}?print${readOnly ? "&readonly" : ""}`);
       await page.waitForSelector(".cm-content");
