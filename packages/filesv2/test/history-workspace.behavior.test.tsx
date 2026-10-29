@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -120,9 +120,11 @@ describe("Files history in the workspace", () => {
     return;
   }
   let cleanup = () => {};
+  beforeEach(() => setSystemTime(new Date(NOW)));
   afterEach(() => {
     cleanup();
     apiRequests.length = 0;
+    setSystemTime();
   });
   const mount = (initial: WorkspaceSnapshot) => {
     const dom = createDomTestHarness();
@@ -403,58 +405,53 @@ describe("Files history in the workspace", () => {
   });
 
   test("SSR and client old-descendant notices agree, pass the old path, and never open the ancestor", async () => {
-    setSystemTime(new Date(NOW));
-    try {
-      const oldPath = "Kunden/Angebote";
-      const moved = entry({
-        action: "item.move",
-        before: gone("opaque/base/Kunden", { directory: true, relativePath: "Kunden" }),
-        after: current("opaque/base/Archiv/Kunden", { itemId: "ancestor-id" }),
-      });
-      const endpoint = { baseId: home.id, path: "Archiv/Kunden/Angebote", itemId: null };
-      const movedChain = chain({ endpoint, certainty: "probable" });
-      const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=${encodeURIComponent(oldPath)}`;
-      const dom = mount(snapshotOf({ source, moved: { baseId: home.id, path: oldPath, entry: moved, chain: movedChain } }));
-      await flush();
-      const notice = () => dom.root.querySelector(".filesv2-history-moved")!;
-      const initialText = notice().textContent;
-      expect(initialText).toContain("“Angebote” is probably now in Team Vertrieb › Archiv › Kunden");
-      expect(apiRequests.filter((request) => request.kind !== "entries")).toHaveLength(0);
-      expect(dom.window.location.search).toBe(new URL(source, "https://files.test").search);
-      expect(button(notice(), "Move back")).toBeUndefined();
-      // Navigate away and back: the browser must ask the same question as SSR, including the descendant path.
-      dom.window.history.replaceState(null, "", `/app/filesv2?base=${encodeURIComponent(home.id)}`);
-      dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
-      await flush();
-      pending("bases").resolve(Response.json(bases));
-      await flush();
-      pending("entries").resolve(Response.json({ base: home, path: "", items: [], next: null }));
-      await flush();
-      dom.window.history.replaceState(null, "", source);
-      dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
-      await flush();
-      pending("bases").resolve(Response.json(bases));
-      await flush();
-      pending("entries").resolve(Response.json({ code: "not_found", message: "Not found" }, { status: 404 }));
-      await flush();
-      expect(query(pending("activity"))).toEqual({ baseId: home.id, path: oldPath, scope: "item" });
-      pending("activity").resolve(Response.json(page([moved])));
-      await flush();
-      expect(pending("chain").input).toEqual({ param: { activityId: moved.id }, query: { oldPath } });
-      pending("chain").resolve(Response.json(movedChain));
-      await flush();
-      expect(notice().textContent).toBe(initialText);
-      expect(button(dom.root.querySelector(".k2b-app-workspace__main")!, "Try again")).toBeUndefined();
-      expect(apiRequests.some((request) => request.kind === "entry-by-id" || request.kind === "entry")).toBe(false);
-      expect(dom.window.location.search).toBe(new URL(source, "https://files.test").search);
-      button(notice(), "Go there")!.click();
-      await flush();
-      // Navigation rechecks the child path; the ancestor stable ID never enters an entry request.
-      expect(pending("entry").input).toEqual({ param: { baseId: home.id }, query: { path: endpoint.path } });
-      expect(apiRequests.some((request) => request.kind === "entry-by-id")).toBe(false);
-    } finally {
-      setSystemTime();
-    }
+    const oldPath = "Kunden/Angebote";
+    const moved = entry({
+      action: "item.move",
+      before: gone("opaque/base/Kunden", { directory: true, relativePath: "Kunden" }),
+      after: current("opaque/base/Archiv/Kunden", { itemId: "ancestor-id" }),
+    });
+    const endpoint = { baseId: home.id, path: "Archiv/Kunden/Angebote", itemId: null };
+    const movedChain = chain({ endpoint, certainty: "probable" });
+    const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=${encodeURIComponent(oldPath)}`;
+    const dom = mount(snapshotOf({ source, moved: { baseId: home.id, path: oldPath, entry: moved, chain: movedChain } }));
+    await flush();
+    const notice = () => dom.root.querySelector(".filesv2-history-moved")!;
+    const initialText = notice().textContent;
+    expect(initialText).toContain("“Angebote” is probably now in Team Vertrieb › Archiv › Kunden");
+    expect(apiRequests.filter((request) => request.kind !== "entries")).toHaveLength(0);
+    expect(dom.window.location.search).toBe(new URL(source, "https://files.test").search);
+    expect(button(notice(), "Move back")).toBeUndefined();
+    // Navigate away and back: the browser must ask the same question as SSR, including the descendant path.
+    dom.window.history.replaceState(null, "", `/app/filesv2?base=${encodeURIComponent(home.id)}`);
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    pending("bases").resolve(Response.json(bases));
+    await flush();
+    pending("entries").resolve(Response.json({ base: home, path: "", items: [], next: null }));
+    await flush();
+    dom.window.history.replaceState(null, "", source);
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    pending("bases").resolve(Response.json(bases));
+    await flush();
+    pending("entries").resolve(Response.json({ code: "not_found", message: "Not found" }, { status: 404 }));
+    await flush();
+    expect(query(pending("activity"))).toEqual({ baseId: home.id, path: oldPath, scope: "item" });
+    pending("activity").resolve(Response.json(page([moved])));
+    await flush();
+    expect(pending("chain").input).toEqual({ param: { activityId: moved.id }, query: { oldPath } });
+    pending("chain").resolve(Response.json(movedChain));
+    await flush();
+    expect(notice().textContent).toBe(initialText);
+    expect(button(dom.root.querySelector(".k2b-app-workspace__main")!, "Try again")).toBeUndefined();
+    expect(apiRequests.some((request) => request.kind === "entry-by-id" || request.kind === "entry")).toBe(false);
+    expect(dom.window.location.search).toBe(new URL(source, "https://files.test").search);
+    button(notice(), "Go there")!.click();
+    await flush();
+    // Navigation rechecks the child path; the ancestor stable ID never enters an entry request.
+    expect(pending("entry").input).toEqual({ param: { baseId: home.id }, query: { path: endpoint.path } });
+    expect(apiRequests.some((request) => request.kind === "entry-by-id")).toBe(false);
   });
 
   test("the file detail shows its SSR history under the versions and numbers versions the list holds", async () => {
@@ -483,7 +480,7 @@ describe("Files history in the workspace", () => {
     const inspector = () => dom.root.querySelector("#filesv2-inspector, [id*='filesv2-inspector']")!;
     expect(inspector().textContent).toContain("Mia Schulz");
     // The file facts use the same request timezone as the adjacent versions and history.
-    expect(inspector().querySelector("time")?.textContent).toBe("today, 02:30 PM");
+    expect(inspector().querySelector(".filesv2-inspector-info time")?.textContent).toBe("today, 02:30 PM");
     expect(dom.root.querySelector(".filesv2-list__row time")?.textContent).toContain("14:30");
     expect(button(inspector(), "All in Activity")!.getAttribute("href")).toBe(
       `/app/filesv2?view=activity&base=${encodeURIComponent(home.id)}&path=Kunden%2FProof.bin`,
@@ -502,7 +499,7 @@ describe("Files history in the workspace", () => {
     expect(inspector().textContent).toContain("Version 2");
   });
   for (const next of [null, "more-children"]) {
-    test(`folder count retries a failed read and ${next ? "marks an incomplete page as a lower bound" : "counts a complete page exactly"}`, async () => {
+    test(`folder count retries a failed read and ${next ? "does not claim a total for an incomplete page" : "counts a complete page exactly"}`, async () => {
       const folder: FileEntry = { name: "Druckdaten", path: "Druckdaten", directory: true, size: 0, modified: NOW };
       const first: FileEntry = { name: "Proof.pdf", path: "Druckdaten/Proof.pdf", directory: false, size: 2, modified: NOW };
       const readme: FileEntry = { name: "README.md", path: "Druckdaten/README.md", directory: false, size: 3, modified: NOW };
@@ -518,20 +515,30 @@ describe("Files history in the workspace", () => {
       );
       await flush();
       const inspector = dom.root.querySelector("[id*='filesv2-inspector']")!;
-      const count = () => inspector.querySelector(".filesv2-inspector-count")!;
-      expect(count().textContent).toBe("Loading details…");
+      const contents = [...inspector.querySelectorAll("section")].find(
+        (section) => section.querySelector("h3")?.textContent === "Contents",
+      )!;
+      const count = () => contents.querySelector(".k2b-count-chip");
+      expect(contents.querySelector('[role="status"]')?.textContent).toBe("Loading details…");
+      expect(count()).toBeNull();
       expect(query(pending("entries"))).toEqual({ path: folder.path });
       pending("entries").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
       await flush();
-      expect(count().textContent).toBe("Contents not loaded.");
-      expect(count().getAttribute("role")).toBe("status");
-      button(inspector, "Try again")!.click();
+      expect(contents.querySelector('[role="alert"]')?.textContent).toContain(
+        "The contents of this folder cannot be loaded right now. The folder itself is up to date.",
+      );
+      expect(count()).toBeNull();
+      button(contents, "Try again")!.click();
       await flush();
-      expect(dom.document.activeElement).toBe(count());
-      expect(count().getAttribute("role")).toBe("status");
+      expect(contents.querySelector('[role="status"]')?.textContent).toBe("Loading details…");
+      expect(count()).toBeNull();
       pending("entries").resolve(Response.json({ base: home, path: folder.path, items: [first, readme], readme, next }));
       await flush();
-      expect(count().textContent).toBe(next ? "at least 2 items" : "2 items");
+      // The contents list replaced the old standalone count. Only a complete page supplies a total.
+      if (next) expect(count()).toBeNull();
+      else expect(count()?.textContent).toBe("2");
+      expect([...contents.querySelectorAll(".k2b-file-grid__name")].map((name) => name.textContent)).toEqual([first.name, readme.name]);
+      expect(contents.querySelector('[role="alert"], [role="status"]')).toBeNull();
       // The response includes the listing endpoint's README lookup; it is not counted twice. No child-page cursor is followed.
       expect(apiRequests.filter((request) => request.kind === "entries")).toHaveLength(2);
       expect(apiRequests.some((request) => request.kind === "versions")).toBe(false);
