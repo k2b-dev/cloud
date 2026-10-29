@@ -555,7 +555,10 @@ withDatabase("Core OAuth issuance authority database resolution", () => {
         const response = await f.issue(await f.code(["openid", "groups"]), true);
         expect(response.status).toBe(200);
         const body = z.object({ tokens: z.array(z.string()).length(2) }).parse(await response.json());
-        for (const token of body.tokens) expect(decodeJwt(token).groups).toEqual(["claim-team"]);
+        // Groups are an identity claim: the ID token carries them without the personal group, the access token none.
+        const [access, id] = body.tokens.map((token) => decodeJwt(token));
+        expect(access?.groups).toBeUndefined();
+        expect(id?.groups).toEqual(["claim-team"]);
       } finally {
         await sql`DELETE FROM auth.groups WHERE id IN (${personal}::uuid,${team}::uuid)`;
         await sql`DELETE FROM auth.personal_groups WHERE group_id=${personal}::uuid`;

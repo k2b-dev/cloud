@@ -2399,7 +2399,8 @@ suite("Files service and durable bindings", () => {
     await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number)
       VALUES(${group!.id},${id(owner)},'legacy-owner',200004)`;
     await service.adopt(testCall(admin), { area: "cloud", kind: "groups", identityId: group!.id });
-    const inventory = async () => service.admin(testCall(admin), { area: "cloud", kind: "groups", after: "fs:", status: "legacy" });
+    // From the start: a personal group's directory lists in the identity pass while the group exists, later in the filesystem pass.
+    const inventory = async () => service.admin(testCall(admin), { area: "cloud", kind: "groups", status: "legacy" });
     expect((await inventory()).items).toContainEqual(
       expect.objectContaining({
         name: "legacy-owner",
@@ -2452,7 +2453,8 @@ suite("Files service and durable bindings", () => {
       VALUES(${formerId},${id(owner)},'former-owner',200004,now())`;
     await sql`INSERT INTO auth.groups(name,provider,gid_number) VALUES('former-owner','local',200005)`;
     directory("cloud", "groups/former-owner", 0, 200004);
-    const result = await service.admin(testCall(admin), { area: "cloud", kind: "groups", after: "fs:" });
+    // The team that reuses the name lists the directory in the identity pass, so read the inventory from its start.
+    const result = await service.admin(testCall(admin), { area: "cloud", kind: "groups" });
     expect(result.items).toContainEqual(
       expect.objectContaining({ name: "former-owner", status: "legacy", reason: "legacy_personal_group" }),
     );

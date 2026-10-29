@@ -70,7 +70,9 @@ suiteFor(
         createApiClient: () => {
           throw new Error("Unused typed client");
         },
-        fetch: async (path, init) => routes.request(path, { ...init, headers }),
+        // Keep the CLI's own headers, such as the JSON content type of a member change, beside the fixture's identity.
+        fetch: async (path, init) =>
+          routes.request(path, { ...init, headers: { ...Object.fromEntries(new Headers(init?.headers)), ...headers } }),
         readJson: async (response) => {
           if (!response.ok) throw new Error(`Export failed: ${response.status}`);
           return response.json();
