@@ -175,7 +175,8 @@ describe("notification definitions", () => {
     expect(definition.excludedReason).toBe("Too frequent");
     expect(definition.delivery?.excluded).toEqual(["email"]);
     expect(Object.isFrozen(definition.delivery?.excluded)).toBe(true);
-    expect(notification(input).delivery?.excluded).toEqual([]);
+    // Kinds without exclusions keep the delivery shape they had before.
+    expect(notification(input).delivery).toEqual({ recommended: [], required: [] });
   });
 
   test("resolves excluded reasons through the same per-field locale fallback", () => {
