@@ -28,7 +28,7 @@ const log = logger("pwa");
 
 const MESSAGES: Record<PwaError["code"], string> = {
   UNAVAILABLE: "The mobile app is not available right now.",
-  REAUTHENTICATE: "Sign in again to pair a phone.",
+  REAUTHENTICATE: "Sign in again to pair a device.",
   FORBIDDEN: "Use Cloud on the web for this.",
   ACCOUNT_BLOCKED: "This account cannot use the mobile app right now.",
   INVALID_REQUEST: "The request is not valid.",
@@ -40,7 +40,7 @@ const MESSAGES: Record<PwaError["code"], string> = {
   ALREADY_PAIRED: "This app is paired with another account.",
   ACCOUNT_MISMATCH: "This browser is signed in to another account.",
   LIMIT_REACHED: "The limit for this account was reached.",
-  UNPAIRED: "This phone is not paired.",
+  UNPAIRED: "This device is not paired.",
 };
 
 /** `{ code, message }` with a safe English message; the UI maps codes to its own catalog. */
@@ -95,7 +95,7 @@ const webActor = async (c: Context) => {
   const session = token ? await auth.session.authenticateRequest(c, token) : null;
   if (!session) throw new PwaError("REAUTHENTICATE", 403);
   if (session.data.kind !== "web") throw new PwaError("FORBIDDEN", 403);
-  return { userId: session.user.id, sid: session.data.sid };
+  return { userId: session.user.id, sid: session.data.sid, admin: session.user.roles.includes("admin") };
 };
 
 /** The phone this request also comes from (Chrome on a paired Android phone shares the app's cookies). */
@@ -119,7 +119,7 @@ export const createPwaRoutes = (options: PwaRouteOptions = {}) => {
       "/pairings",
       describeRoute({
         tags,
-        summary: "Start pairing a phone",
+        summary: "Start pairing a device",
         description: "Needs a web sign-in from the last ten minutes. The link secret is returned once.",
         responses: { 201: jsonResponse(PwaPairingStartResultSchema, "Pairing started") },
       }),
@@ -129,13 +129,33 @@ export const createPwaRoutes = (options: PwaRouteOptions = {}) => {
         return c.json(await service.startPairing(actor), 201);
       },
     )
+    .post(
+      "/users/:userId/pairings",
+      describeRoute({
+        tags,
+        summary: "Pair the Cloud app for another person",
+        description:
+          "Administrator web session only, signed in within ten minutes. App sessions and API keys are refused. The target account must be active. Uses the existing account pairing and device limits. After the administrator confirms the device code, the device must explicitly accept before credentials are issued.",
+        responses: {
+          201: jsonResponse(PwaPairingStartResultSchema, "Administrative pairing started"),
+          403: { description: "Administrator, fresh web sign-in or active account required" },
+        },
+      }),
+      v("param", z.object({ userId: z.string().uuid() }), pwaInvalidRequest),
+      async (c) => {
+        const actor = await webActor(c);
+        if (!actor.admin) throw new PwaError("FORBIDDEN", 403);
+        if (!shellAvailable(c)) throw new PwaError("UNAVAILABLE", 503);
+        return c.json(await service.startUserPairing(actor, c.req.valid("param").userId), 201);
+      },
+    )
     .get(
       "/pairings/:id",
       describeRoute({
         tags,
         summary: "Read a pairing",
         description:
-          "Only for the web session that started it. Never returns the code. A pending read is held for up to one poll interval and answers as soon as the phone claims the link.",
+          "Only for the web session that started it. Never returns the code. A pending read is held for up to one poll interval and answers as soon as the device claims the link.",
         responses: { 200: jsonResponse(PwaPairingStatusSchema, "Pairing state") },
       }),
       v("param", IdParamSchema, pwaInvalidRequest),
@@ -147,7 +167,13 @@ export const createPwaRoutes = (options: PwaRouteOptions = {}) => {
     )
     .post(
       "/pairings/:id/confirm",
-      describeRoute({ tags, summary: "Confirm a pairing with the code the phone shows", responses: { 204: { description: "Confirmed" } } }),
+      describeRoute({
+        tags,
+        summary: "Confirm a pairing with the code the device shows",
+        description:
+          "Administrative pairings enter awaiting_device; only the claiming device can then accept or reject. Self-pairing proceeds as before.",
+        responses: { 204: { description: "Confirmed" } },
+      }),
       v("param", IdParamSchema, pwaInvalidRequest),
       v("json", PwaPairingConfirmSchema, pwaInvalidRequest),
       async (c) => {
@@ -166,7 +192,7 @@ export const createPwaRoutes = (options: PwaRouteOptions = {}) => {
     )
     .get(
       "/devices",
-      describeRoute({ tags, summary: "List paired phones", responses: { 200: jsonResponse(PwaDeviceListSchema, "Active phones") } }),
+      describeRoute({ tags, summary: "List paired devices", responses: { 200: jsonResponse(PwaDeviceListSchema, "Active devices") } }),
       async (c) => {
         const actor = await webActor(c);
         return c.json({ items: await service.list(actor, await currentDeviceId(c, actor.userId)) });
@@ -174,7 +200,7 @@ export const createPwaRoutes = (options: PwaRouteOptions = {}) => {
     )
     .delete(
       "/devices/:id",
-      describeRoute({ tags, summary: "Remove a paired phone", responses: { 204: { description: "Removed; idempotent" } } }),
+      describeRoute({ tags, summary: "Remove a paired device", responses: { 204: { description: "Removed; idempotent" } } }),
       v("param", IdParamSchema, pwaInvalidRequest),
       async (c) => {
         await service.revoke(await webActor(c), c.req.valid("param").id);

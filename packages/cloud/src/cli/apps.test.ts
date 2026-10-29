@@ -51,6 +51,8 @@ const fixture: AppDetails = {
       recipientKind: "user",
       requiredChannels: ["browser"],
       recommendedChannels: ["email"],
+      excludedChannels: ["sms"],
+      excludedReason: "SMS is unavailable for this kind.",
     },
   ],
   totals: { sends: 1, hears: 1, notifications: 1 },
@@ -126,6 +128,7 @@ test("show text groups app, access, sends, hears and notifications with new and 
     "Notifications (1/1)",
     "Required: browser",
     "recommended: email",
+    "excluded: sms",
     fixture.hears[0]!.failedDeliveries[0]!.id,
   ])
     expect(output).toContain(text);

@@ -34,12 +34,22 @@ export const app = defineApp({
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `id` | Yes | Stable machine identity |
+| `id` | Yes | Stable machine identity: `^[a-z][a-z0-9-]{0,79}$` |
+| `package` | No | Shared object-store package; defaults to `id` |
 | `name` | Yes | Name shown by platform surfaces |
 | `icon` | Yes | Tabler icon class used across Cloud and as the favicon on rendered app pages |
 | `description` | Yes | Short application description |
 | `baseUrl` | Yes | Internal address used by the gateway |
 | `routes` | Yes | Public path prefixes routed to the service |
+
+App IDs and package names contain 1–80 lowercase letters, digits, or hyphens,
+beginning with a letter. `defineApp()` rejects invalid IDs for every app,
+including apps that do not use S3. Related apps can declare the same
+`package: "warenfluss"` to share storage. `storage` is reserved as an app ID and package name. A package name cannot be another
+app's ID or a built-in app's ID; `app.start()` rejects conflicting durable
+reservations. Choose the package before first startup. See
+[Object store](/en/docs/platform/object-store) for the area and key rules, and
+[Object store operations](/en/docs/operations/object-store) for database prerequisites.
 
 Use an address that resolves from the gateway container for `baseUrl`. Do not
 use the public browser URL.
@@ -109,7 +119,7 @@ nav: {
 | `match` | No | `href` without its query | Path used for active navigation |
 | `requiresAuth` | No | — | Hide the link from anonymous visitors |
 | `requiresRoles` | No | — | Show the link, the application's [Help](/en/docs/platform/help#who-can-read-help), and its [Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill) only for matching platform roles; `guest` matches guests |
-| `badge` | No | — | Route whose count the app bar and app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
+| `badge` | No | — | Route whose count the app bar, the phone bar, and the app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 
 Navigation visibility is not authorization. Protect the destination with
 [route policies](/en/docs/identity/route-policies).
@@ -155,25 +165,25 @@ instead of adding a group of its own:
 Route and resource authorization still belong to the application; this field
 only selects where authorized navigation is displayed.
 
-## Add pages to the mobile app
+## Add pages to the Cloud app
 
-> **Preview:** the mobile app is not released yet. This option may still
+> **Preview:** the Cloud app is not released yet. This option may still
 > change until it is, without counting as a breaking change.
 
 `pwa` adds the application to the installation's
-[mobile app](/en/docs/frontend/mobile-app-pages):
+[Cloud app](/en/docs/frontend/mobile-app-pages):
 
 ```ts
 pwa: { requiresRoles: ["user"] },
 ```
 
 Cloud appends `/pwa/<id>` to `routes` and publishes the part in the registry.
-The mobile app lists it with the application's `name`, `icon`, and
+The Cloud app lists it with the application's `name`, `icon`, and
 `description`. `requiresRoles` is optional and, like `nav.requiresRoles`,
 controls only visibility; routes and services still authorize.
 
 `/pwa` is reserved. `defineApp()` throws at startup when `routes` lists `/pwa`
-or a path below it; the only exceptions are the mobile app's own `/pwa` and
+or a path below it; the only exceptions are the Cloud app's own `/pwa` and
 Core's `/pwa/_auth`. It also throws when an application declares `pwa` with the
 id `pwa`, `settings`, or `offline`, or with an id that is not lowercase letters,
 digits, and hyphens starting with a letter.
@@ -182,7 +192,7 @@ digits, and hyphens starting with a letter.
 
 Declare `installable` to give this application one independent installation at
 its own `/app/<id>/<surface>/` path. Cloud generates the manifest, themed icons,
-worker, offline document, and automatic SSR installation hint. It adds no mobile
+worker, offline document, and automatic SSR installation hint. It adds no Cloud
 app session or device permissions. See [App-PWA](/en/docs/frontend/app-pwa) for
 the complete declaration and route requirements.
 
@@ -244,6 +254,9 @@ link text stays body ink, and only its underline takes the app ink. See
 [Colors and selection](/en/ui/surfaces/color).
 The accent also reaches dialogs and sheets opened from the app's pages,
 with no application code.
+Cyan is reserved for AI surfaces, so keep the accent and background colors
+clearly apart from it; see
+[Colors and selection](/en/ui/surfaces/color#app-color-in-cloud).
 
 | Background field | Default | Accepted range |
 | --- | --- | --- |
@@ -276,7 +289,7 @@ The remaining options declare application-owned contributions:
 | `presentation` | Localized overlays for registered human-facing app metadata | [Internationalization](/en/docs/build/internationalization) |
 | `openapi` | Public OpenAPI document path | [Typed HTTP APIs](/en/docs/server/http#publish-openapi) |
 | `installable` | One standalone installation per application | [App-PWA](/en/docs/frontend/app-pwa) |
-| `pwa` | Pages in the mobile app (preview) | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
+| `pwa` | Pages in the Cloud app (preview) | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages) |
 
 Definitions establish ownership and types. They do not run an operation.
 

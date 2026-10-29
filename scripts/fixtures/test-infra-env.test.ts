@@ -246,3 +246,56 @@ describe("ClickHouse test gate", () => {
     expect(result.stdout.toString()).toBe("postgres://fixture:REDACTED@localhost/cloud_test\n");
   });
 });
+
+describe("S3 test configuration", () => {
+  test("keeps test S3 targets explicit without production environment aliases", () => {
+    const env = testRuntimeEnv({ CLOUD_TEST_S3_ENDPOINT: "http://127.0.0.1:3900", CLOUD_TEST_S3_BUCKET: "cloud-test" });
+    expect(Object.keys(env).some((key) => key.startsWith("CLOUD_S3_"))).toBe(false);
+  });
+});
+
+describe("S3 test gate", () => {
+  const run = (source: string, env: Record<string, string> = {}) =>
+    Bun.spawnSync([process.execPath, "--no-env-file", "-e", source], {
+      cwd: workspaceRoot,
+      env: { PATH: process.env.PATH, BUN_OPTIONS: "--no-env-file", ...env },
+    });
+  const config = {
+    CLOUD_TEST_S3_ENDPOINT: "http://127.0.0.1:1",
+    CLOUD_TEST_S3_BUCKET: "cloud-test",
+    CLOUD_TEST_S3_ACCESS_KEY_ID: "fake-test-key",
+    CLOUD_TEST_S3_SECRET_ACCESS_KEY: "fake-test-secret",
+    CLOUD_TEST_S3_REGION: "garage",
+  };
+  test("unset endpoint skips the suite", () => {
+    const result = run(
+      'import { suiteFor } from "./scripts/fixtures/test-infra.ts"; import { describe } from "bun:test"; console.log(suiteFor("s3") === describe.skip)',
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString().trim()).toBe("true");
+  });
+  test("requires explicit credentials, region, and a test bucket", () => {
+    for (const overrides of [
+      { CLOUD_TEST_S3_BUCKET: "production" },
+      { CLOUD_TEST_S3_SECRET_ACCESS_KEY: "" },
+      { CLOUD_TEST_S3_REGION: "" },
+    ]) {
+      const result = run('import "./scripts/fixtures/test-infra.ts"', { ...config, ...overrides });
+      expect(result.exitCode).not.toBe(0);
+      const output = result.stderr.toString();
+      expect(output).toContain("CLOUD_TEST_S3_");
+      expect(output).not.toContain("fake-test-secret");
+    }
+  });
+  test("unusable storage fails loudly without printing credentials", () => {
+    const result = run(
+      'import { requireInfra } from "./scripts/fixtures/test-infra.ts"; try { await requireInfra("s3") } catch (e) { console.error(e.message); process.exit(1) }',
+      config,
+    );
+    expect(result.exitCode).toBe(1);
+    const output = result.stderr.toString();
+    expect(output).toContain("CLOUD_TEST_S3_ENDPOINT=http://127.0.0.1:1/ is set but not usable");
+    expect(output).not.toContain("fake-test-secret");
+    expect(output).not.toContain("fake-test-key");
+  });
+});

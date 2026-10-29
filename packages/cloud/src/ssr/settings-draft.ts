@@ -1,6 +1,23 @@
 import type { SaveStatusState } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import { setAreaSaveControls } from "./save-controls";
+
+/**
+ * A settings form saves with the button in its level head, outside the form island. Both islands read this store: the
+ * form registers its state and actions, `SettingsSaveStatus` renders them. One form per page registers at a time.
+ */
+export type SettingsSaveControls = {
+  state: SaveStatusState;
+  savedAt?: string;
+  invalidCount?: number;
+  save: () => void;
+  discard: () => void;
+};
+
+const [controls, setControls] = createSignal<SettingsSaveControls | null>(null);
+export const settingsSaveControls = controls;
+
+/** A save that did not succeed: refused with a reason, or with an unclear outcome. */
+export type SettingsDraftOutcome = { kind: "failed" | "unknown"; message: string };
 
 /** Thrown by `save` when the server refused the write; anything else counts as an unclear outcome. */
 export class SaveRejected extends Error {}
@@ -32,6 +49,8 @@ type Options<T> = {
    */
   save: (value: T, commit: (stored: T) => void) => Promise<T>;
   locale: () => string;
+  /** Runs with Discard, for state the form keeps beside the draft, such as staged resets. */
+  onDiscard?: () => void;
 };
 
 /**
@@ -39,11 +58,11 @@ type Options<T> = {
  * with the level head, which shows the status with Discard and Save. A failed save keeps the draft; when the
  * connection breaks, the outcome stays unclear and the person checks the current state instead of saving twice.
  */
-export const createDraftForm = <T>(options: Options<T>) => {
+export const createSettingsDraft = <T>(options: Options<T>) => {
   const [stored, setStored] = createSignal<T>(options.initial);
   const [draft, setDraft] = createSignal<T>(options.initial);
   const [saving, setSaving] = createSignal(false);
-  const [outcome, setOutcome] = createSignal<{ kind: "failed" | "unknown"; message: string } | null>(null);
+  const [outcome, setOutcome] = createSignal<SettingsDraftOutcome | null>(null);
   const [savedAt, setSavedAt] = createSignal<string | undefined>(undefined);
   const errors = createMemo(() => options.validate?.(draft()) ?? {});
   const dirty = createMemo(() => JSON.stringify(draft()) !== JSON.stringify(stored()) || options.pending?.() === true);
@@ -81,10 +100,35 @@ export const createDraftForm = <T>(options: Options<T>) => {
   const discard = () => {
     setDraft(() => stored());
     setOutcome((current) => (current?.kind === "unknown" ? current : null));
+    options.onDiscard?.();
+  };
+  /**
+   * Takes newer stored values without losing edits: a field still at its old saved value moves to the new one, an
+   * edited field keeps the person's value. `adopt` names fields that take the new value regardless.
+   */
+  const rebase = (next: T, adopt: readonly string[] = []) => {
+    const previous = stored() as Record<string, unknown>;
+    const current = draft() as Record<string, unknown>;
+    const merged: Record<string, unknown> = { ...current };
+    for (const [key, value] of Object.entries(next as Record<string, unknown>)) {
+      if (adopt.includes(key) || JSON.stringify(current[key]) === JSON.stringify(previous[key])) merged[key] = value;
+    }
+    setStored(() => next);
+    setDraft(() => merged as T);
   };
 
+  // Leaving the page with unsaved changes asks first, as the settings pages did before.
+  if (typeof window !== "undefined") {
+    const guard = (event: BeforeUnloadEvent) => {
+      if (state() === "saved") return;
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", guard);
+    onCleanup(() => window.removeEventListener("beforeunload", guard));
+  }
+
   createEffect(() =>
-    setAreaSaveControls({
+    setControls({
       state: state(),
       savedAt: savedAt(),
       invalidCount: Object.keys(errors()).length,
@@ -92,7 +136,7 @@ export const createDraftForm = <T>(options: Options<T>) => {
       discard,
     }),
   );
-  onCleanup(() => setAreaSaveControls(null));
+  onCleanup(() => setControls(null));
 
   return {
     draft,
@@ -102,5 +146,8 @@ export const createDraftForm = <T>(options: Options<T>) => {
     saving,
     save,
     discard,
+    rebase,
+    /** The values last read from the server. */
+    stored,
   };
 };

@@ -1207,16 +1207,14 @@ suite("mail provider lease fairness", () => {
       const startedAt = performance.now();
       await runFolderSyncJob(mailbox.folderId(INBOX), { turns, timing });
       const leaseWaitMs = timing.firstLeaseTurnMs ?? Number.POSITIVE_INFINITY;
-      // Two seconds for the turn, plus the UID MOVE and the sync's lease-line retry of up to 1.5 s,
-      // with slack for a loaded host.
-      const longestWaitMs = MOVE_SET_ADMISSION_MS * 5 + 3_000;
-      if (leaseWaitMs >= longestWaitMs) {
-        const uidMoves = moveSets
-          .filter((entry) => entry.label === "slow-moves")
-          .map((entry) => `${Math.round(entry.at - startedAt)} ms ${entry.uids} UIDs`);
+      // The sync gets the lease after the set in progress, not after a further set. Count the sets
+      // instead of milliseconds: on a loaded host one set's slow statements alone can take over 5 s (#1492).
+      const setsBeforeTurn = moveSets.filter((entry) => entry.label === "slow-moves" && entry.at < startedAt + leaseWaitMs);
+      if (setsBeforeTurn.length > 1) {
+        const uidMoves = setsBeforeTurn.map((entry) => `${Math.round(entry.at - startedAt)} ms ${entry.uids} UIDs`);
         console.error(`Sync waited ${Math.round(leaseWaitMs)} ms; turns: ${turns.join(", ")}; UID MOVEs: ${uidMoves.join(", ")}`);
       }
-      expect(leaseWaitMs).toBeLessThan(longestWaitMs);
+      expect(setsBeforeTurn.length).toBeLessThanOrEqual(1);
       expect(await imported(mailbox, newMail!)).toBe(true);
     } finally {
       await removeSlowUpdates();

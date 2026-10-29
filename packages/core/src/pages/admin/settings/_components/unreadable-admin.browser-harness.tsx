@@ -1,8 +1,8 @@
+import SettingsSaveStatus from "@k2b/cloud/ssr/SettingsSaveStatus.island";
 import { Button, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { previewViews } from "../../../../../../../scripts/fixtures/unreadable-admin/views";
 import { DatabaseSettingsForm, StorageSettingsForm } from "../../../../../../assistant/src/artifacts/AdminSettings";
-import AreaSaveStatus from "../../../../../../gateway-ops/src/observability/_components/AreaSaveStatus.island";
 import RetentionForm from "../../../../../../gateway-ops/src/observability/retention/RetentionForm.island";
 import { openMailContactDirectoryDialog } from "../../../../../../mail/src/frontend/_components/MailContactDirectoryDialog";
 import { RetentionDialog } from "../../outgoing-mail/SendLog";
@@ -25,7 +25,7 @@ render(
         {surface === "outgoing" && <RetentionDialog retention={views.outgoing} close={close} onSaved={() => {}} />}
         {surface === "logs" && (
           <>
-            <AreaSaveStatus />
+            <SettingsSaveStatus />
             <RetentionForm
               values={{ logs: views.logs.retentionDays, events: 14, rollups: 90 }}
               unreadable={{ logs: views.logs.unreadable }}

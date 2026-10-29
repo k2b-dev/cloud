@@ -90,7 +90,7 @@ Actions that cannot be undone or reach other people, such as sending mail,
 deleting, sharing, or inviting, always wait for confirmation in Cloud. The
 editor can only reject them, and shows the link to the web chat. Choosing
 **Confirm in Cloud**, including an automatic choice in Full access, leaves the
-request waiting until you confirm or reject it in Cloud, or on a phone paired
+request waiting until you confirm or reject it in Cloud, or on a device paired
 with [Cloud Login](/en/apps/cloud-login).
 
 Local Bash commands, replacing a file, and writing or moving a file that
