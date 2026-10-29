@@ -25,13 +25,23 @@ export const panelHref = (
   basePath = "/app/chat",
 ): string => `${threadHref(chatId, view, messageId, basePath)}${panel === "info" ? "?panel=info" : ""}`;
 
+/** Unread messages in all of the reader's chats; the Cloud app's sidebar and its way back to the list count them. */
+export const UNREAD_COUNT_PATH = "/api/chat/conversations/unread-count";
+
 /** The phone's page with the chat's threads. */
 export const threadsPageHref = (chatId: string, basePath = "/app/chat") => `${basePath}/c/${encodeURIComponent(chatId)}/threads`;
+
+/** The address of a whole route, so the phone's thread page keeps its place when Info opens or closes on it. */
+export const routeAddress = (route: Route, basePath = "/app/chat"): string => {
+  if (!route.chatId) return basePath;
+  if (route.threads) return `${threadsPageHref(route.chatId, basePath)}${route.panel === "info" ? "?panel=info" : ""}`;
+  return panelHref(route.chatId, route.panel, route.messageId, route.view, basePath);
+};
 
 export const parseRoute = (url: URL): Route | null => {
   if (/^\/app\/chat(?:\/panel)?\/for-you\/?$/.test(url.pathname))
     return { chatId: null, view: "all", threads: false, messageId: null, panel: null, forYou: true };
-  if (/^\/app\/chat(?:\/panel)?\/channels\/?$/.test(url.pathname))
+  if (/^\/(?:app\/chat(?:\/panel)?|pwa\/chat)\/channels\/?$/.test(url.pathname))
     return {
       chatId: null,
       view: "all",
@@ -41,7 +51,9 @@ export const parseRoute = (url: URL): Route | null => {
       channels: true,
       query: (url.searchParams.get("q") ?? "").trim().slice(0, 100),
     };
-  const match = /^\/app\/chat(?:\/panel)?(?:\/archive|\/c\/([^/]+)(?:(\/threads)|\/t\/([^/]+))?(?:\/m\/([^/]+))?)?\/?$/.exec(url.pathname);
+  const match = /^\/(?:app\/chat(?:\/panel)?|pwa\/chat)(?:\/archive|\/c\/([^/]+)(?:(\/threads)|\/t\/([^/]+))?(?:\/m\/([^/]+))?)?\/?$/.exec(
+    url.pathname,
+  );
   if (!match || (match[2] && match[4])) return null;
   const chatId = match[1] ? decodeURIComponent(match[1]) : null;
   return {
