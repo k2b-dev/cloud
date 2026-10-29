@@ -19,7 +19,7 @@ Grenze die Störung anhand eines Signals ein, bevor du alle Seiten der Systembeo
 4. **Protokolle:** Filtere nach der Quelle der App oder des Dienstes und grenze nach Stufe oder Suchbegriff ein. Suche den Kontext der App aus demselben Zeitraum.
 5. **Jobs:** Prüfe die Hintergrundarbeit, wenn das Symptom veraltete oder fehlende Daten sind, nicht eine fehlschlagende Anfrage. Suche nach hängenden Läufen und überfälligen Zeitplänen. Ein Zeitplan, der nicht mehr auslöst, erzeugt selbst keine Fehler.
 6. **Postgres** oder **Redis**: Prüfe die Speicherdiagnosen nur, wenn Anfragen und Protokolle auf Speicherdruck, veraltete Daten oder wachsenden Keyspace hindeuten. Bei Redis sind Verdrängungen und Trefferrate wichtiger als die Anzahl der Schlüssel.
-7. **Benachrichtigungen** und **Webhooks**: Prüfe, ob die Plattform eine Benachrichtigung für den Betrieb gesendet hat oder ob der Versand fehlgeschlagen ist.
+7. **Zustellungen** und **Alarme & Webhooks**: Prüfe, ob die Plattform eine Betriebsbenachrichtigung gesendet hat oder ob der Versand fehlgeschlagen ist.
 :::
 
 ## Die Daten richtig einordnen {icon="point"}

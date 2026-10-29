@@ -31,6 +31,7 @@ import { generateSpecs } from "hono-openapi";
 import { CLOUD_CLI_PLUGIN_ROUTE } from "../cli/plugin";
 import { env } from "../config/env";
 import type {
+  AppAdminArea,
   AppAdminNavigationGroup,
   AppAppearance,
   AppCliModules,
@@ -170,7 +171,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   adminHref?: string;
   /** Multi-link admin navigation contributed by this app. */
   adminNav?: ReadonlyArray<{
-    section?: "ai";
+    section?: AppAdminArea;
     id?: string;
     label: string;
     links: ReadonlyArray<{ label: string; href: string; icon: string }>;

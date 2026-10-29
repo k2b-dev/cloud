@@ -4,6 +4,7 @@ import { type Browser, chromium } from "playwright";
 import { z } from "zod";
 import { runHtmlCheck } from "../artifacts/html/check";
 import { CHECK_LIMITS, CheckStart, modelCheckReport } from "../artifacts/html/check-contracts";
+import type { MachineHostInput } from "../artifacts/machine-contracts";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import type {} from "../artifacts/runtime/cli-host";
 import { appEnv } from "../env";
@@ -204,6 +205,8 @@ export async function createBrowserCodeHost(
       return operation;
     };
     return {
+      machine: (input: MachineHostInput) =>
+        page.evaluate((serialized) => window.assistantMachineExecute(JSON.parse(serialized)), JSON.stringify(input)),
       health: () => page.evaluate(() => undefined),
       execute: (call: Call, signal?: AbortSignal) => execute(call, false, signal),
       call: (call: Call, signal?: AbortSignal) => execute(call, true, signal),
