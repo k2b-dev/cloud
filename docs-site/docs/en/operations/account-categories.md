@@ -5,12 +5,12 @@ section: Accounts & sign-in
 order: 1081
 description: Configure Guest, local Login and FreeIPA access independently from login-page visibility.
 tags: [accounts, authentication, administration, freeipa]
-updated: 2026-10-17
+updated: 2026-10-28
 ---
 
 # Configure account types and sign-in
 
-Open **Administration → Accounts & sign-in → Sign-in** to choose which
+Open **Administration → Sign-in & security → Sign-in** to choose which
 account types are allowed and which appear on the general login page.
 Individual accounts and groups remain in **Accounts**.
 
@@ -132,7 +132,7 @@ See the [Account administration API](/en/docs/reference/account-administration#d
 
 ## Sign-in locations
 
-In **Admin → Settings → Sign-in → Sign-in locations**, inspect the City and ASN
+In **Admin → Sign-in & security → Sign-in → Sign-in locations**, inspect the City and ASN
 database source and build date, upload an IPv6 `.mmdb` or `.mmdb.gz` replacement,
 or reset a type to the bundled snapshot. Data older than about six months gets
 a hint. See [Sign-in locations](/en/docs/operations/sign-in-locations) for limits,

@@ -21,7 +21,7 @@ The account settings link to the matching English guide with **Documentation**. 
 
 ## Control account types and sign-in {icon="settings"}
 
-In **Accounts & sign-in → Sign-in**, you configure the account types **Guest**, **Login**, and **FreeIPA** separately. **Login** is the passwordless local account. Rename it with **Login account label**, for example to Company account.
+In **Sign-in & security → Sign-in**, you configure the account types **Guest**, **Login**, and **FreeIPA** separately. **Login** is the passwordless local account. Rename it with **Login account label**, for example to Company account.
 
 :::reference
 - **Guest accounts allowed**, **Login accounts allowed**, **FreeIPA accounts allowed:** Control access.
@@ -36,20 +36,20 @@ Keep another allowed administrator or your emergency token available.
 
 Disabling an account type denies later requests from existing sessions, user OAuth tokens, personal API keys, and user-bound background work. It does not delete accounts or stop FreeIPA sync. Allowing the type again makes credentials work again if they are otherwise valid. Emergency recovery explicitly allows all local **Login** accounts again. It does not change which types the sign-in page shows.
 
-In **Admin → Settings → Sign-in → Sign-in locations**, check the source and build date of the City and ASN databases. Upload your own `.mmdb` or `.mmdb.gz` file, or reset a type to the bundled snapshot. Uploads remain active until reset. A hint appears when the data is older than about six months. Files must use an IPv6 City or ASN database; follow the provider’s licence. The limits are 192 MiB unpacked and 128 MiB per upload request. DB-IP attribution appears while DB-IP data is active.
+In **Admin → Sign-in & security → Sign-in → Sign-in locations**, check the source and build date of the City and ASN databases. Upload your own `.mmdb` or `.mmdb.gz` file, or reset a type to the bundled snapshot. Uploads remain active until reset. A hint appears when the data is older than about six months. Files must use an IPv6 City or ASN database; follow the provider’s licence. The limits are 192 MiB unpacked and 128 MiB per upload request. DB-IP attribution appears while DB-IP data is active.
 
 ## Find the other settings groups {icon="settings"}
 
 :::reference
 - **Base settings:** **General** holds branding, public links, and global schedules. **Legal** holds the Terms of Service, the Privacy Policy, and the Imprint. **PDF rendering** holds the Gotenberg connection, its credentials, and render limits. **Places & maps** and **CLI** follow.
-- **Accounts & sign-in → Registration & requests:** Guest self-registration, FreeIPA access requests, account defaults, expiry, and reminders. On a new installation, requests are off until you turn them on. An upgrade keeps the earlier behavior. When you turn off new requests, pending requests stay available for processing.
+- **Sign-in & security → Registration:** Guest self-registration, FreeIPA access requests, account defaults, expiry, and reminders. On a new installation, requests are off until you turn them on. An upgrade keeps the earlier behavior. When you turn off new requests, pending requests stay available for processing.
 - **Follow-up notices:** In **Registration & requests**, set an optional Liquid-Markdown notice for successful user or group changes. Use `action` to choose the instructions for each change, and check the preview with sample data. Empty output adds no notice. The notice is an instruction for the administrator or group manager who made the change, not a notification to the user. Cloud has no built-in NFS instructions.
-- **Accounts & sign-in → Operations:** Open filtered lifecycle logs, FreeIPA sync logs, or scheduled jobs. Maintenance repairs account expiry dates, not Linux identities, and can restore access for expired accounts. A toast confirms that the job is queued. Check its logs to see when it finishes. Single records and request processing stay in Accounts.
-- **Accounts & sign-in → Linux identities:** Reserve an ID range and set defaults for home and shell. While assignment is on, new local full accounts and promoted guests get Linux attributes automatically. Turning it on does not change older full accounts; use **Backfill existing accounts** for them. Turning assignment off hides the backfill table and keeps existing identities in Accounts. Linux identities do not enable computer sign-in or sudo.
-- **Accounts & sign-in → FreeIPA:** FreeIPA connection settings, sync rules, and group mapping.
+- **Sign-in & security → Account operations:** Open filtered lifecycle logs, FreeIPA sync logs, or scheduled jobs. Maintenance repairs account expiry dates, not Linux identities, and can restore access for expired accounts. A toast confirms that the job is queued. Check its logs to see when it finishes. Single records and request processing stay in Accounts.
+- **Sign-in & security → Linux identities:** Reserve an ID range and set defaults for home and shell. While assignment is on, new local full accounts and promoted guests get Linux attributes automatically. Turning it on does not change older full accounts; use **Backfill existing accounts** for them. Turning assignment off hides the backfill table and keeps existing identities in Accounts. Linux identities do not enable computer sign-in or sudo.
+- **Sign-in & security → FreeIPA:** FreeIPA connection settings, sync rules, and group mapping.
 - **AI:** Configure model profiles and provider credentials, and check background work. Use **Skills** or **Projects** to restore access when nobody has **Manage** access to a shared resource any more. These recovery pages can give access or permanently delete resources that are no longer needed. An app does not install a deleted app Skill again until you choose **Restore**.
 - **Settings → Outgoing mail:** SMTP delivery and sender credentials. Internal SMTP and bounce IMAP hosts require the operator to set `OUTGOING_MAIL_ALLOWED_TARGETS` in Core; the default permits only public targets.
-- **Settings → Email templates** and **Settings → Security:** Transactional email templates, rate limits, and defaults for access protection.
+- **Settings → Email templates** and **Sign-in & security → Security:** Transactional email templates, rate limits, and defaults for access protection.
 :::
 
 ## Sign in as the first administrator {icon="key"}
