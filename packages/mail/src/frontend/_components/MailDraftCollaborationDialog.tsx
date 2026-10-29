@@ -1,5 +1,6 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Avatar, Button, prompts, useLocale } from "@k2b/ui";
+import { Button, prompts, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import type { DraftLease, DraftLeaseHolder } from "../../contracts";
 import { mailComposerMessages } from "./mail-composer-messages";
@@ -10,11 +11,6 @@ export type MailDraftActorRef = Pick<DraftLeaseHolder, "kind" | "id">;
 
 const isSameActor = (lease: DraftLease | null, currentActor: MailDraftActorRef): boolean =>
   lease?.holder.kind === currentActor.kind && lease.holder.id === currentActor.id;
-
-const avatarSource = (lease: DraftLease | null): string | undefined =>
-  lease?.holder.kind === "user" && lease.holder.avatarHash
-    ? `/api/accounts/users/${encodeURIComponent(lease.holder.id)}/avatar?rev=${encodeURIComponent(lease.holder.avatarHash)}`
-    : undefined;
 
 export const mailDraftCollaborationCopy = (conflict: MailDraftLeaseConflict, currentActor: MailDraftActorRef, requestedLocale = "en") => {
   const t = mailComposerMessages.resolve([requestedLocale]).t;
@@ -60,7 +56,14 @@ export function MailDraftCollaborationDialog(props: {
       <Show when={lease()}>
         {(current) => (
           <div class="flex min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3">
-            <Avatar name={current().holder.displayName} src={avatarSource(current())} size="sm" loading="eager" />
+            <CloudAvatar
+              username={current().holder.displayName}
+              userId={current().holder.id}
+              avatarHash={current().holder.avatarHash}
+              kind={current().holder.kind}
+              size="sm"
+              loading="eager"
+            />
             <div class="min-w-0">
               <p class="truncate text-sm font-medium text-primary">{current().holder.displayName || t().anotherCollaborator}</p>
               <p class="text-xs leading-5 text-dimmed">
