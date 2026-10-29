@@ -134,6 +134,8 @@ export type AppMeta = {
   access?: AppAccessRule;
   platformPermissions?: readonly PlatformPermission[];
   id: string;
+  /** Shared object-store package; omitted means the app ID. */
+  package?: string;
   name: string;
   icon: string;
   description: string;

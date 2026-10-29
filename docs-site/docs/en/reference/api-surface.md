@@ -154,6 +154,7 @@ Use the capability guide to choose the narrow API:
 - [Settings](/en/docs/platform/settings): `SettingUnreadableError`, `SettingRead`, and `StoredSettingState` from `@k2b/cloud/services`; `app.settings.read()` reports stored state before a partial update.
 - [Saved maps](/en/docs/platform/saved-map-documents): `GeoDocumentSchema`, pin/link schemas and `serializeGeoDocument` from `@k2b/cloud/geo/document` save Geo results and complete routes as Notebook blocks.
 - [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, `geoRouteContract`, geo input/result schemas, route plans/updates, and provenance types come from `@k2b/cloud/contracts`.
+- [Object store](/en/docs/platform/object-store): `storage` from `@k2b/cloud/services` supplies app-bound private documents and permanent public image URLs.
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
