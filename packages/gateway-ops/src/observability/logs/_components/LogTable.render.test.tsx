@@ -13,7 +13,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: LogTable } = await import("./LogTable.island");
 
-const renderTable = (loadError: string | null, withEntry = false) =>
+const renderTable = (loadError: string | null, withEntry = false, selectedId: string | null = null) =>
   renderToString(() =>
     createComponent(LogTable, {
       entries: withEntry
@@ -22,11 +22,12 @@ const renderTable = (loadError: string | null, withEntry = false) =>
       total: withEntry ? 12345 : 0,
       filter: defaultLogFilter,
       sources: [],
-      retentionDays: 30,
       timeZone: "Europe/Berlin",
       totalPages: withEntry ? 124 : 1,
       baseUrl: "/admin/observability/logs?page=",
       loadError,
+      selectedId,
+      entryHrefBase: "/admin/observability/logs?level=error",
     }),
   );
 
@@ -38,6 +39,12 @@ describe("LogTable", () => {
     expect(html).toContain('data-tone="error"');
     expect(html).toContain('href="/admin/observability/logs?page=2"');
     expect(html).toContain('aria-labelledby="k2b-data-table-');
+  });
+
+  test("marks the entry open in the detail column", () => {
+    const html = renderTable(null, true, "1");
+    expect(html).toContain('data-clickable="true" data-selected="true"');
+    expect(renderTable(null, true)).not.toContain('data-clickable="true" data-selected="true"');
   });
 
   test("distinguishes failed loading from a successful empty result and retains search", () => {
