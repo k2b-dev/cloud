@@ -96,6 +96,7 @@ describe("server capability client", () => {
     const forwarded: Request[] = [];
     let body: BodyInit | null | undefined;
     globalThis.fetch = (async (input, init) => {
+      expect(init?.redirect).toBeUndefined();
       forwarded.push(input instanceof Request ? input : new Request(input, init));
       body = await (input instanceof Request ? input : new Request(input, init)).clone().text();
       return Response.json({ data: { id: "one" } });

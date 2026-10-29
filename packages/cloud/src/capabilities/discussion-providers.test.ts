@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { z } from "zod";
-import { CloudResourceReaderViewSchema } from "../contracts/capabilities";
+import { CapabilityManifestSchema, CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import { DiscussionContainersDataSchema, DiscussionContainersInputSchema } from "../contracts/discussions";
 import { discussionProviders } from "./discussion-providers";
 import { compileCapabilityManifest } from "./testing";
@@ -93,4 +93,14 @@ test("bounds raw response bytes and aborts a stalled transport at cancellation",
   );
   controller.abort(new Error("fixture cancelled"));
   await expect(pending).rejects.toThrow("fixture cancelled");
+});
+
+test("a provider with an omitted reader query does not advertise push availability", async () => {
+  const manifest = CapabilityManifestSchema.parse({
+    ...app.manifest,
+    queries: app.manifest.queries.map((query) => (query.appOnly ? { ...query, futureRestriction: true } : query)),
+  });
+  const providers = await discussionProviders({ transport: async () => page([{ ...app, manifest }]) }, options);
+  expect(providers).toHaveLength(1);
+  expect(providers[0]!.app.manifest.resourceTypes?.find((model) => model.type === "item")?.readable).toBeUndefined();
 });

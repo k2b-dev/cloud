@@ -27,22 +27,20 @@ export const DiscussionContainersDataSchema = z
   .strict();
 
 /** Shared owner activity, independent of the application or discussion consumer. */
-export const ResourceActivityEventSchema = z
-  .object({
-    id: z.string().max(100),
-    at: z.string().datetime({ offset: true }),
-    ref: CloudResourceRefSchema.nullable(),
-    title: z.string().max(500).nullable().optional(),
-    actor: z.object({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }).strict(),
-    icon: z
-      .string()
-      .regex(/^ti ti-[a-z0-9-]+$/)
-      .max(80),
-    sentence: z.string().max(4000),
-    href: CapabilitySemanticLinkSchema.shape.href.optional(),
-    count: z.number().int().min(1),
-  })
-  .strict();
+export const ResourceActivityEventSchema = z.object({
+  id: z.string().max(100),
+  at: z.string().datetime({ offset: true }),
+  ref: CloudResourceRefSchema.strip().nullable(),
+  title: z.string().max(500).nullable().optional(),
+  actor: z.object({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
+  icon: z
+    .string()
+    .regex(/^ti ti-[a-z0-9-]+$/)
+    .max(80),
+  sentence: z.string().max(4000),
+  href: CapabilitySemanticLinkSchema.shape.href.optional(),
+  count: z.number().int().min(1),
+});
 export type ResourceActivityEvent = z.infer<typeof ResourceActivityEventSchema>;
 export const DiscussionActivityInputSchema = z
   .object({
@@ -56,6 +54,17 @@ export const DiscussionActivityInputSchema = z
   })
   .strict();
 export const DiscussionActivityDataSchema = z.array(ResourceActivityEventSchema).max(DISCUSSION_PAGE_LIMIT);
+// The wire contract accepts additive fields; the public consumer schema strips them.
+// Zod's output JSON Schema is closed even for stripping objects, so use an explicit
+// open acceptance shape here rather than treating stripped fields as forbidden.
+const DiscussionActivityWireSchema = z
+  .array(
+    ResourceActivityEventSchema.loose().extend({
+      actor: ResourceActivityEventSchema.shape.actor.loose(),
+      ref: CloudResourceRefSchema.loose().nullable(),
+    }),
+  )
+  .max(DISCUSSION_PAGE_LIMIT);
 export type DiscussionContainer = z.infer<typeof DiscussionContainerSchema>;
 
 /** Startup/registry check: discovery is never permission to read content. */
@@ -68,7 +77,7 @@ export const discussionsIssues = (manifest: CapabilityManifest): CapabilityContr
   for (const localId of [role.item, ...(model?.container ? [model.container] : [])]) issues.push(...typeViewIssues(manifest, localId));
   for (const [localId, input, data] of [
     [role.containers, DiscussionContainersInputSchema, DiscussionContainersDataSchema],
-    ...(role.activity ? [[role.activity, DiscussionActivityInputSchema, DiscussionActivityDataSchema] as const] : []),
+    ...(role.activity ? [[role.activity, DiscussionActivityInputSchema, DiscussionActivityWireSchema] as const] : []),
   ] as const) {
     const query = manifest.queries.find((query) => query.localId === localId);
     if (!query) issues.push({ code: "kind", path: "$", message: `Missing discussion Query ${localId}` });

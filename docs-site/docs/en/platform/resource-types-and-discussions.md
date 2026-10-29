@@ -111,6 +111,8 @@ containers the current caller can read. Reuse these contracts from
   Events carry ID, timestamp, nullable item ref, optional title, actor,
   icon, sentence, optional open URL, and count. The provider authorizes both
   the container and any requested item and returns only readable activity.
+  Providers may add fields to events, actors, and refs. Consumers strip fields
+  they do not understand; the documented required fields remain required.
 
 These operations cannot stream or use app authority. `discussionsIssues(manifest)`
 checks the role, views, and operation schemas. Startup rejects incompatible
@@ -147,13 +149,19 @@ The platform generates `<typeLocalId>.readable`, with fixed
 `{ id, container?, principals } → { readable }`. For a contained Type, the
 generated input requires `container`, fixes its Type to the declared local
 container Type, and leaves its ID opaque. Do not declare this Query yourself;
-a name collision fails startup. The framework also rejects unrequested
-principals in the callback result.
+a name collision fails startup. Before calling application code, the platform
+filters candidates in one database query: users must exist, be unexpired,
+and belong to an enabled account category; service accounts must exist and
+have active status. A `user_delegated` service account's user must also pass
+these user checks. Disabled, expired, and deleted accounts never reach the
+callback. This checks accounts rather than credentials and does not apply
+credential scopes. The framework rejects callback results containing any
+principal outside that filtered input.
 
 Implement the callback with current principal rights:
 
 - Resolve direct, group, authenticated, and public grants as supported by
-  your resource service, including resource bindings and account status.
+  your resource service, including resource bindings.
 - Disabled, expired, or deleted accounts are not readable. An unknown or
   deleted resource, or an item moved out of the expected container, returns
   an empty subset.
@@ -183,10 +191,14 @@ resourceTypes?: Array<{
 discussions?: { item: string; containers: string; activity?: string };
 ```
 
-Readers drop projections with missing Types and remove view support if its
-reader is unavailable. They omit roles whose named Queries are unavailable.
+Manifest readers drop projections with missing Types, remove view support if
+its reader is unavailable, and remove readable support unless the exact
+`<typeLocalId>.readable` app-only Query remains available. They omit roles
+whose named Queries are unavailable.
 The `readable` boolean is an availability claim, not a reference to a person
-Query: it stays visible when person catalogs hide the generated Query.
+Query: Core validates the full manifest first, then retains this fact when
+person catalogs hide the generated Query. `CapabilityCatalogSchema` reads
+that person projection; `CapabilityManifestSchema` reads a full manifest.
 The Query entry itself carries `appOnly: true`, so older readers drop that
 entry. Older Core keeps the Type and its ordinary reader while ignoring the
 new top-level facts. Upgrade Core before deploying providers using this role.

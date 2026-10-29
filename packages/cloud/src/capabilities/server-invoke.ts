@@ -124,7 +124,9 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
       });
       return readCapabilityResponse(outcome, capabilityResultSchema(dataSchema, { consumer: true }));
     }
-    const response = await (caller.transport ?? ((request: Request) => fetch(request, { redirect: "error" })))(
+    const response = await (
+      caller.transport ?? ((request: Request) => fetch(request, caller.workload ? { redirect: "error" } : undefined))
+    )(
       new Request(request, {
         body: JSON.stringify(
           caller.mandate || caller.workload

@@ -1,4 +1,4 @@
-import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
@@ -11,6 +11,7 @@ import {
 import * as executions from "../capabilities/executions";
 import {
   type CapabilityAppExecutionContext,
+  CapabilityCatalogSchema,
   type CapabilityExecutionContext,
   CapabilityManifestSchema,
   CapabilityQueryManifestSchema,
@@ -21,6 +22,13 @@ import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { LocalUserSchema } from "../contracts/shared";
 import { signAppQueryInvocation, verifyAppQueryInvocation, verifyInvocationToken } from "../services/identity/invocation-token";
 import { compileCapabilities, invokeCompiledCapability, parseCapabilityManifest } from "./capabilities";
+
+import * as resourcePrincipals from "./resource-principals";
+
+let activePrincipals: ReturnType<typeof spyOn<typeof resourcePrincipals, "activeResourcePrincipals">>;
+beforeEach(() => {
+  activePrincipals = spyOn(resourcePrincipals, "activeResourcePrincipals").mockImplementation(async (principals) => principals);
+});
 
 const now = new Date("2026-10-29T00:00:00Z");
 const workload = {
@@ -96,6 +104,7 @@ const signer = {
 };
 const key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: signer.kid, alg: "RS256", use: "sig" }] });
 afterEach(() => {
+  activePrincipals.mockRestore();
   setSystemTime();
   seen = undefined;
 });
@@ -358,7 +367,7 @@ test("declared app queries reject person authority at dispatch and execution, wi
         getCapability: async () => entry,
       },
     );
-    expect(CapabilityManifestSchema.parse(catalog.apps[0]!.manifest).resourceTypes).toEqual([{ type: "item", readable: true }]);
+    expect(CapabilityCatalogSchema.parse(catalog).apps[0]!.manifest.resourceTypes).toEqual([{ type: "item", readable: true }]);
     expect(catalog.apps[0]!.manifest.queries.map((query) => query.localId)).toEqual(["private"]);
   } finally {
     record.mockRestore();

@@ -160,8 +160,8 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       return invalid("widgets", "an array of valid widgets");
     }
   }
-  if (value.platformPermissions !== undefined && !PlatformPermissionSchema.array().safeParse(value.platformPermissions).success)
-    return invalid("platformPermissions", "an array of platform permissions");
+  if (value.platformPermissions !== undefined && !isStringArray(value.platformPermissions))
+    return invalid("platformPermissions", "an array of permission IDs");
   if (value.settingKeys !== undefined && !isStringArray(value.settingKeys)) return invalid("settingKeys", "an array of strings");
   if (
     value.cliModules !== undefined &&
@@ -198,5 +198,18 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   return null;
 };
 
-export const asAppRegistryEntry = (value: unknown): AppRegistryEntry | null =>
-  validateAppRegistryEntry(value) === null ? (value as AppRegistryEntry) : null;
+export const asAppRegistryEntry = (value: unknown): AppRegistryEntry | null => {
+  if (validateAppRegistryEntry(value) !== null) return null;
+  const entry = value as AppRegistryEntry;
+  return {
+    ...entry,
+    ...(entry.platformPermissions !== undefined
+      ? {
+          platformPermissions: entry.platformPermissions.flatMap((permission) => {
+            const parsed = PlatformPermissionSchema.safeParse(permission);
+            return parsed.success ? [parsed.data] : [];
+          }),
+        }
+      : {}),
+  };
+};

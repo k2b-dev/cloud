@@ -1,8 +1,9 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { assertResourceView } from "../capabilities/testing";
 import {
+  CapabilityCatalogAppSchema,
   CapabilityManifestSchema,
   type CapabilityResourceTypeDefinition,
   CapabilityResourceTypeManifestSchema,
@@ -16,10 +17,15 @@ import {
   DiscussionContainersDataSchema,
   DiscussionContainersInputSchema,
   discussionsIssues,
+  ResourceActivityEventSchema,
 } from "../contracts/discussions";
 import { typeViewIssues } from "../contracts/resource-types";
 import { capabilityHash, compileCapabilities, invokeCompiledCapability } from "./capabilities";
 import { resolveLiveCapabilityRegistryEntry } from "./registry";
+import * as resourcePrincipals from "./resource-principals";
+
+afterEach(() => activePrincipals?.mockRestore());
+let activePrincipals: ReturnType<typeof spyOn<typeof resourcePrincipals, "activeResourcePrincipals">>;
 
 const idInput = z.object({ id: z.string().min(1).max(512).describe("Resource ID.") }).strict();
 const view = { title: "Inventory", permission: "read" as const };
@@ -141,7 +147,8 @@ test("discussion role checks item containment, view, exact shared schemas and st
   ).toBe(true);
 });
 
-test("generated readability requires expected container and only returns requested principals", async () => {
+test("generated readability requires expected container and only returns active requested principals", async () => {
+  activePrincipals = spyOn(resourcePrincipals, "activeResourcePrincipals").mockImplementation(async (principals) => principals);
   const principal: ResourcePrincipal = { type: "service_account", serviceAccountId: "11111111-1111-4111-8111-111111111111" };
   const instance = compileCapabilities("inventory", {
     protocolVersion: 2,
@@ -192,6 +199,18 @@ test("generated readability requires expected container and only returns request
     ok: false,
     error: { status: 500 },
   });
+  activePrincipals.mockResolvedValue([]);
+  expect(await run({ id: "item-1", container: { type: "inventory.collection", id: "current" }, principals: [principal] })).toMatchObject({
+    ok: true,
+    data: { data: { readable: [] } },
+  });
+  // Even a provider that returns a filtered-out requested principal fails closed.
+  expect(
+    await run({ id: "invalid-subset", container: { type: "inventory.collection", id: "current" }, principals: [principal] }),
+  ).toMatchObject({
+    ok: false,
+    error: { status: 500 },
+  });
   expect(() =>
     compileCapabilities("inventory", {
       protocolVersion: 2,
@@ -223,5 +242,83 @@ test("registry retains valid roles and ignores an incompatible role without losi
     expect(logged).toHaveBeenCalledTimes(1);
   } finally {
     logged.mockRestore();
+  }
+});
+
+test("readable advertisement requires the exact retained app-only query", () => {
+  const manifest = compileCapabilities("inventory", {
+    protocolVersion: 2,
+    types: { item: { title: "Item", description: "Item.", access: { readable: () => [] } } },
+  }).manifest;
+  expect(CapabilityManifestSchema.parse(manifest).resourceTypes?.[0]?.readable).toBe(true);
+  const query = manifest.queries[0]!;
+  for (const queries of [
+    [],
+    [{ ...query, futureRestriction: true }],
+    [{ ...query, appOnly: undefined }],
+    [{ ...query, localId: "other.readable" }],
+  ]) {
+    expect(CapabilityManifestSchema.parse({ ...manifest, queries }).resourceTypes?.[0]?.readable).toBeUndefined();
+    if (queries.length && queries[0]?.localId === "item.readable") {
+      const app = CapabilityCatalogAppSchema.parse({
+        appId: "inventory",
+        appName: "Inventory",
+        appIcon: "box",
+        appDescription: "Inventory",
+        manifest: { ...manifest, queries },
+      });
+      expect(app.manifest.resourceTypes?.[0]?.readable).toBeUndefined();
+    }
+  }
+});
+
+test("generated reader titles compile for the full allowed type title range", () => {
+  for (const length of [104, 120]) {
+    const instance = compileCapabilities("inventory", {
+      protocolVersion: 2,
+      types: { item: { title: "x".repeat(length), description: "Item.", access: { readable: () => [] } } },
+    });
+    expect(instance.manifest.queries[0]!.title).toBe("Check resource readers");
+    expect(instance.manifest.queries[0]!.description).toContain("x".repeat(length));
+  }
+});
+
+test("activity consumers strip additive fields and discussion contracts accept them", () => {
+  const event = {
+    id: "event-1",
+    at: "2026-10-29T00:00:00Z",
+    ref: { type: "inventory.item", id: "item-1", extra: true },
+    actor: { type: "system", id: null, name: "Inventory", extra: true },
+    icon: "ti ti-box",
+    sentence: "Updated",
+    count: 1,
+    extra: true,
+  };
+  expect(ResourceActivityEventSchema.parse(event)).toEqual({
+    id: event.id,
+    at: event.at,
+    ref: { type: "inventory.item", id: "item-1" },
+    actor: { type: "system", id: null, name: "Inventory" },
+    icon: event.icon,
+    sentence: event.sentence,
+    count: 1,
+  });
+  const extended = ResourceActivityEventSchema.extend({
+    extra: z.boolean(),
+    actor: ResourceActivityEventSchema.shape.actor.extend({ extra: z.boolean() }).loose(),
+    ref: z.object({ type: z.literal("inventory.item"), id: z.string().min(1).max(512), extra: z.boolean() }).nullable(),
+  }).loose();
+  const provider = compileCapabilities("inventory", {
+    ...definitions,
+    queries: {
+      ...definitions.queries,
+      "collection.activity": { ...definitions.queries!["collection.activity"]!, data: z.array(extended).max(100) },
+    },
+  });
+  expect(discussionsIssues(provider.manifest)).toEqual([]);
+  for (const field of ["id", "at", "ref", "actor", "icon", "sentence", "count"]) {
+    const incomplete: Record<string, unknown> = { ...event };
+    delete incomplete[field];
+    expect(ResourceActivityEventSchema.safeParse(incomplete).success).toBe(false);
   }
 });

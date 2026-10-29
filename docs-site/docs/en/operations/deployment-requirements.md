@@ -37,7 +37,9 @@ ignore the new role and omit generated app-only reader Queries.
 Before any application declares `resources:readers`, upgrade Core, the gateway,
 and all applications to this release or newer. Older registry readers reject an
 application with an unknown platform permission, which removes its routes and
-catalog entry from those processes.
+catalog entry from those processes. Registry readers in this release and newer
+drop unknown permission IDs without granting them and keep the application
+registered; that rule cannot change the behavior of older releases.
 
 Applications that perform reader checks declare `resources:readers` in their
 platform permissions and need `CLOUD_APP_CREDENTIAL` plus

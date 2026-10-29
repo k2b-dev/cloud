@@ -4,13 +4,16 @@ import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtu
 
 import { APP_QUERY_REQUESTS_PER_MINUTE, dispatchCapability } from "../api/capabilities";
 import * as executions from "../capabilities/executions";
+import { migrateCloudCapabilities } from "../capabilities/migrate";
 import { defineCapabilities } from "../contracts/capabilities";
 import { signAppQueryInvocation } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { authenticateWorkloadCredential } from "../services/identity/workload-auth";
+import { toPgTextArray } from "../services/postgres";
 import { createApiToken } from "../services/service-account-credentials";
+import { encryptValue } from "../services/settings/crypto";
 import { createAppQueryRoutes } from "./app-queries";
-import { compileCapabilities } from "./capabilities";
+import { compileCapabilities, invokeCompiledCapability } from "./capabilities";
 
 const database = testInfra.database && testInfra.nats && testInfra.valkey ? await useFreshDatabase("resource_readers") : null;
 if (database) await import("../../../../scripts/fixtures/authorization-preload");
@@ -97,6 +100,102 @@ suiteFor(
     } finally {
       await sql`DELETE FROM auth.service_accounts WHERE id = ${account!.id}::uuid`;
     }
+  });
+  test("platform filters inactive principals before provider code in one bounded batch", async () => {
+    const userId = crypto.randomUUID();
+    const expiredId = crypto.randomUUID();
+    const disabledCategoryId = crypto.randomUUID();
+    const activeAccountId = crypto.randomUUID();
+    const disabledAccountId = crypto.randomUUID();
+    const delegatedActiveId = crypto.randomUUID();
+    const delegatedExpiredId = crypto.randomUUID();
+    const delegatedDisabledCategoryId = crypto.randomUUID();
+    const deletedId = crypto.randomUUID();
+    const user = (userId: string) => ({ type: "user" as const, userId });
+    const account = (serviceAccountId: string) => ({ type: "service_account" as const, serviceAccountId });
+    const active = [user(userId.toUpperCase()), account(activeAccountId), account(delegatedActiveId)];
+    const principals = [
+      ...active,
+      user(expiredId),
+      user(disabledCategoryId),
+      account(disabledAccountId),
+      user(deletedId),
+      account(deletedId),
+      account(delegatedExpiredId),
+      account(delegatedDisabledCategoryId),
+    ];
+    const [setting] = await sql<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = 'user.category.guest.enabled'`;
+    try {
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, account_expires) VALUES
+        (${userId}::uuid, ${userId}, 'local', 'user', NULL),
+        (${expiredId}::uuid, ${expiredId}, 'local', 'user', '-infinity'),
+        (${disabledCategoryId}::uuid, ${disabledCategoryId}, 'local', 'guest', NULL)`;
+      await sql`INSERT INTO auth.service_accounts (id, name, kind, status) VALUES
+        (${activeAccountId}::uuid, 'Active reader', 'standalone', 'active'),
+        (${disabledAccountId}::uuid, 'Disabled reader', 'standalone', 'disabled')`;
+      await sql`INSERT INTO auth.service_accounts (id, name, kind, status, delegated_user_id) VALUES
+        (${delegatedActiveId}::uuid, 'Active delegated reader', 'user_delegated', 'active', ${userId}::uuid),
+        (${delegatedExpiredId}::uuid, 'Expired delegated reader', 'user_delegated', 'active', ${expiredId}::uuid),
+        (${delegatedDisabledCategoryId}::uuid, 'Disabled category delegated reader', 'user_delegated', 'active', ${disabledCategoryId}::uuid)`;
+      await sql`INSERT INTO settings.entries (key, value) VALUES ('user.category.guest.enabled', ${await encryptValue(false)})
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+      let called = 0;
+      const compiled = compileCapabilities("provider", {
+        protocolVersion: 2,
+        types: {
+          item: {
+            title: "Item",
+            description: "Item.",
+            access: {
+              readable: (input) => {
+                called++;
+                expect(input.principals).toEqual(active);
+                return input.principals;
+              },
+            },
+          },
+        },
+      });
+      const result = await invokeCompiledCapability({
+        compiled,
+        kind: "query",
+        localId: "item.readable",
+        input: { id: "item-1", principals },
+        expectedSchemaHash: compiled.queries.get("item.readable")!.manifest.schemaHash,
+        context: {
+          actor: { kind: "app", appId: "consumer" },
+          accessSubject: { type: "none" },
+          user: null,
+          locale: "en",
+          requestId: "active-reader-fixture",
+          origin: "app",
+          signal: new AbortController().signal,
+        },
+      });
+      expect(result).toEqual({ ok: true, data: { data: { readable: active } } });
+      expect(called).toBe(1);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ANY(${toPgTextArray([userId, expiredId, disabledCategoryId])}::uuid[])`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgTextArray([activeAccountId, disabledAccountId])}::uuid[])`;
+      if (setting) await sql`UPDATE settings.entries SET value = ${setting.value} WHERE key = 'user.category.guest.enabled'`;
+      else await sql`DELETE FROM settings.entries WHERE key = 'user.category.guest.enabled'`;
+    }
+  });
+  test("execution actor constraint upgrades once and keeps its OID on subsequent boots", async () => {
+    await sql`ALTER TABLE capabilities.executions DROP CONSTRAINT capabilities_executions_actor_kind_check`.simple();
+    await sql`ALTER TABLE capabilities.executions ADD CONSTRAINT capabilities_executions_actor_kind_check
+      CHECK (actor_kind IS NULL OR actor_kind IN ('user', 'service_account'))`.simple();
+    const constraint = () => sql<
+      { oid: number; definition: string }[]
+    >`SELECT oid, pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid = 'capabilities.executions'::regclass AND conname = 'capabilities_executions_actor_kind_check'`;
+    const before = await constraint();
+    await migrateCloudCapabilities();
+    const upgraded = await constraint();
+    expect(upgraded[0]!.oid).not.toBe(before[0]!.oid);
+    expect(upgraded[0]!.definition).toContain("'app'::text");
+    await migrateCloudCapabilities();
+    expect(await constraint()).toEqual(upgraded);
   });
   test("execution history persists the app without a person or grant subject", async () => {
     const id = await executions.recordCapabilityExecution({

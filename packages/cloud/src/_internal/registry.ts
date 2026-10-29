@@ -19,7 +19,7 @@ import {
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
 import { lazySync } from "./process-sync";
-import { validateAppRegistryEntry } from "./registry-validation";
+import { asAppRegistryEntry, validateAppRegistryEntry } from "./registry-validation";
 import { watchRegistryChanges } from "./registry-watch";
 import { WidgetSettingsDeclarationSchema } from "./widget-settings";
 
@@ -151,7 +151,7 @@ export const readAppRegistrySnapshot = async (): Promise<AppRegistrySnapshot> =>
       continue;
     }
     loggedInvalidReasons.delete(entry.key);
-    const value = entry.value as AppRegistryEntry;
+    const value = asAppRegistryEntry(entry.value)!;
     const updatedAt = entry.updatedAt.getTime();
     apps.push({
       ...value,
@@ -195,7 +195,7 @@ export const getApp = async (appId: string): Promise<AppRegistryEntry | null> =>
       : validateAppRegistryEntry(entry.value);
   if (!reason) {
     loggedInvalidReasons.delete(key);
-    return entry.value;
+    return asAppRegistryEntry(entry.value);
   }
   reportInvalidEntry({ key, version: entry.revision, reason });
   return null;

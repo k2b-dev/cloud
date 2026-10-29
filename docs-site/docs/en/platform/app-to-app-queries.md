@@ -28,7 +28,10 @@ Core resolves the caller from its workload credential and checks its current
 registry declaration. The target Query must carry `appOnly: true`, generated
 by the platform. Ordinary person, service-account, mandate, MCP, and Assistant
 invocations receive 403 for this Query. REST, MCP, and AI person catalogs hide
-it while retaining the Type's readable-availability projection.
+it while retaining the Type's readable-availability projection. Core validates
+that projection against the full manifest first: the exact `<type>.readable`
+app-only Query must be available. An omitted or incompatible Query does not
+advertise reader checks.
 
 Admission is deliberately broad: an admitted app can ask about **any known
 resource ref and candidate principals**, up to 1,501 × 500 account/resource

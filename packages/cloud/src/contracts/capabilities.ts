@@ -1227,7 +1227,7 @@ const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T
  * pages and pages without a readable Type/reader are omitted; live prefix ownership is checked separately.
  * Every other entry stays available.
  */
-const readableManifest = (value: unknown): unknown => {
+const readableManifest = (value: unknown, personCatalog = false): unknown => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const sent = value as Record<string, unknown>;
   const types = readEntries(sent.types, CapabilityResourceTypeManifestSchema);
@@ -1282,8 +1282,24 @@ const readableManifest = (value: unknown): unknown => {
       parent = models.find((candidate) => candidate.type === parent)?.container;
     }
     if (models.filter((candidate) => candidate.type === model.type).length !== 1) return [];
-    const { view, ...rest } = model;
-    return [{ ...rest, ...(view && type.reader && queryIds.has(type.reader) ? { view } : {}) }];
+    const { view, readable, ...rest } = model;
+    return [
+      {
+        ...rest,
+        ...(readable &&
+        (readableQueries.some((query) => query.localId === `${model.type}.readable` && query.appOnly === true) ||
+          // Core validates the full manifest before hiding app-only queries from person catalogs.
+          (personCatalog &&
+            Array.isArray(sent.queries) &&
+            !sent.queries.some(
+              (query: unknown) =>
+                typeof query === "object" && query !== null && "localId" in query && query.localId === `${model.type}.readable`,
+            )))
+          ? { readable }
+          : {}),
+        ...(view && type.reader && queryIds.has(type.reader) ? { view } : {}),
+      },
+    ];
   });
   const role = CapabilityDiscussionsManifestSchema.safeParse(sentDiscussions);
   const discussions =
@@ -1342,7 +1358,7 @@ const readableManifest = (value: unknown): unknown => {
  * Producers stay strict: `app.start()` registers exactly the manifest its release defines.
  */
 export const CapabilityManifestSchema = z.preprocess(
-  readableManifest,
+  (value) => readableManifest(value),
   z.object({
     protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
     appId: CapabilityAppIdSchema,
@@ -1413,7 +1429,8 @@ export const CapabilityCatalogAppSchema = z.object({
   appName: z.string().min(1).max(200),
   appIcon: z.string().min(1).max(120),
   appDescription: z.string().max(1000),
-  manifest: CapabilityManifestSchema,
+  // This is Core's person projection, whose app-only queries have already been hidden.
+  manifest: z.preprocess((value) => readableManifest(value, true), CapabilityManifestSchema.out),
   events: z.array(CapabilityEventCatalogEntrySchema).max(MAX_MANIFEST_ENTRIES).optional(),
 });
 

@@ -78,6 +78,7 @@ import {
   parseCapabilitySentence,
   resolveCapabilityActionSentences,
 } from "./capability-sentences";
+import { activeResourcePrincipals } from "./resource-principals";
 
 /** App-only queries never enter a person catalog. */
 export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): boolean => query.appOnly !== true;
@@ -781,8 +782,8 @@ export const compileCapabilities = (
         })
       : ResourceReadableInputSchema;
     generated[queryId] = {
-      title: `Check readers of ${type.title}`,
-      description: "Check current principal readability without granting content access.",
+      title: "Check resource readers",
+      description: `Check current principal readability of ${type.title} without granting content access.`,
       input,
       data: ResourceReadableDataSchema,
       openWorld: false,
@@ -791,9 +792,10 @@ export const compileCapabilities = (
         if (!isAppCapabilityContext(context))
           return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
         const parsed = input.parse(value);
-        const result = ResourceReadableDataSchema.parse({ readable: await readable(parsed, context) });
-        const key = (principal: (typeof result.readable)[number]) => JSON.stringify(principal);
-        const requested = new Set(parsed.principals.map(key));
+        const principals = await activeResourcePrincipals(parsed.principals);
+        const key = (principal: (typeof principals)[number]) => JSON.stringify(principal);
+        const requested = new Set(principals.map(key));
+        const result = ResourceReadableDataSchema.parse({ readable: await readable({ ...parsed, principals }, context) });
         if (result.readable.some((principal) => !requested.has(key(principal))))
           throw new Error(`Resource type ${localId} readable returned an unrequested principal`);
         return { ok: true, data: { data: result } };

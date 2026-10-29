@@ -27,6 +27,14 @@ export default function AppDetails(props: {
   const locale = useLocale();
   const t = () => appDetailsMessages.resolve([locale()]).t;
   const app = () => props.app;
+  const permissionLabel = (permission: string): string => {
+    const labels: Readonly<Record<string, string>> = {
+      "mail:send": t().permissionMailSend,
+      "mail:read": t().permissionMailRead,
+      "resources:readers": t().permissionResourceReaders,
+    };
+    return Object.hasOwn(labels, permission) ? labels[permission]! : permission;
+  };
   const time = (value: string | null) =>
     value ? new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "";
   const reason = (code: string | null) => {
@@ -93,15 +101,7 @@ export default function AppDetails(props: {
             <p class="text-[13px]">
               <span class="text-dimmed">{t().platformServices}: </span>
               {details().access.platformPermissions.length
-                ? details()
-                    .access.platformPermissions.map((permission) =>
-                      permission === "mail:send"
-                        ? t().permissionMailSend
-                        : permission === "mail:read"
-                          ? t().permissionMailRead
-                          : t().permissionResourceReaders,
-                    )
-                    .join(", ")
+                ? details().access.platformPermissions.map(permissionLabel).join(", ")
                 : t().noPlatformServices}
             </p>
           )}

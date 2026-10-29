@@ -166,6 +166,14 @@ change.
 
 No static gateway rule is required for each application.
 
+Registry readers ignore unknown `platformPermissions` IDs while keeping the
+application and its routes registered. An unknown permission grants nothing.
+Application declarations stay strict: `defineApp()` rejects permission IDs
+that its installed platform version does not support. Releases before app
+reader checks rejected the whole registry entry instead; follow the
+[upgrade order](/en/docs/operations/deployment-requirements#resource-reader-checks-and-discussions)
+before declaring `resources:readers`.
+
 ## Diagnose an unreachable route
 
 Check the path in this order:
