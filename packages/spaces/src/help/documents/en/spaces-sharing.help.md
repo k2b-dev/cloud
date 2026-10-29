@@ -36,6 +36,12 @@ When a form has a footer, review its count of changes and choose **Save changes*
 - **Manage:** Also change wormholes, the GitHub token, access, API keys, the calendar export, and deletion.
 :::
 
+## Give an integration or agent access {icon="key"}
+
+Add its standalone service account or agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.
+
+To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent or standalone service account can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own Space.
+
 ## Add a GitHub token {icon="brand-github"}
 
 The GitHub token is optional and belongs to one Space. Spaces stores it encrypted and uses it only to preview GitHub links on items of this Space. Spaces never shows the token again.

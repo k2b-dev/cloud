@@ -1,7 +1,9 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
+import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { notebooksService } from "../service";
@@ -19,10 +21,11 @@ const insertAccount = async (name: string, notebookId?: string) => {
   return { id: row!.id, name };
 };
 
-const grant = async (notebookId: string, serviceAccountId: string, permission: "read" | "write") => {
+const grant = async (notebookId: string, serviceAccountId: string, permission: "read" | "write" | "admin") => {
   const [access] = await sql<{ id: string }[]>`
     INSERT INTO auth.access (service_account_id, permission) VALUES (${serviceAccountId}::uuid, ${permission}) RETURNING id`;
   await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebookId}::uuid, ${access!.id}::uuid)`;
+  return access!.id;
 };
 
 /** Calls the real Notebooks API with a service-account credential carrying the given scopes. */
@@ -66,7 +69,7 @@ suite("Notebooks REST access for standalone agents", () => {
       accountIds.push(agent.id, stranger.id, bound.id);
       await grant(granted.id, agent.id, "write");
       await grant(granted.id, bound.id, "read");
-      await grant(other.id, bound.id, "read");
+      const otherBoundAccessId = await grant(other.id, bound.id, "admin");
 
       // Access entries name the service-account kind, so `access list` can show agents and hide resource API keys.
       const kinds = new Map((await listNotebookAccess(granted.id)).map((entry) => [entry.displayName, entry.serviceAccountKind]));
@@ -128,6 +131,17 @@ suite("Notebooks REST access for standalone agents", () => {
       expect(node.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       expect(Array.isArray(graph.data.edges)).toBe(true);
       expect((await boundCall(`/${other.shortId}`)).status).toBe(403);
+      const boundManager = await apiAs(bound, ["admin"]);
+      const otherAccessPath = `/${other.shortId}/access`;
+      expect((await boundManager(otherAccessPath)).status).toBe(403);
+      expect(
+        (await boundManager(otherAccessPath, { method: "POST", body: { principal: { type: "authenticated" }, permission: "read" } }))
+          .status,
+      ).toBe(403);
+      expect(
+        (await boundManager(`${otherAccessPath}/${otherBoundAccessId}`, { method: "PATCH", body: { permission: "read" } })).status,
+      ).toBe(403);
+      expect((await boundManager(`${otherAccessPath}/${otherBoundAccessId}`, { method: "DELETE" })).status).toBe(403);
     } finally {
       await sql`DELETE FROM notebooks.notebooks WHERE id IN (${granted.id}::uuid, ${other.id}::uuid)`;
       for (const id of accountIds) {
@@ -137,4 +151,104 @@ suite("Notebooks REST access for standalone agents", () => {
       }
     }
   });
+});
+
+const credentialSuite = suiteFor("database", "nats", "valkey");
+credentialSuite("Notebook sharing with named machine principals", () => {
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind}: manage sharing, keep a manager, use the token, and revoke`, async () => {
+      const suffix = crypto.randomUUID();
+      const [owner] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
+        VALUES (${`sharing-owner-${suffix}`}, 'local', 'user', 'Mara Lind') RETURNING id`;
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+        VALUES (${`Notebook helper ${suffix}`}, ${kind}) RETURNING id`;
+      const notebook = { id: crypto.randomUUID(), shortId: testShortId() };
+      const grants: string[] = [];
+      try {
+        await sql`INSERT INTO notebooks.notebooks (id, short_id, name)
+          VALUES (${notebook.id}::uuid, ${notebook.shortId}, 'Shared research')`;
+        const [manager] = await sql<{ id: string }[]>`INSERT INTO auth.access (user_id, permission)
+          VALUES (${owner!.id}::uuid, 'admin') RETURNING id`;
+        grants.push(manager!.id);
+        await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id)
+          VALUES (${notebook.id}::uuid, ${manager!.id}::uuid)`;
+        const cookie = `session_token=${await createTestSession(owner!.id)}`;
+        const sharing = (path: string, method = "GET", body?: unknown) =>
+          notebooksApi.request(path, {
+            method,
+            headers: { cookie, "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          });
+        const machine = await apiAs(account!, ["read", "write", "admin"]);
+        expect((await machine(`/${notebook.shortId}`)).status).toBe(403);
+        const created = await sharing(`/${notebook.shortId}/access`, "POST", {
+          principal: { type: "service_account", serviceAccountId: account!.id },
+          permission: "admin",
+        });
+        expect(created.status).toBe(200);
+        const entry = await created.json();
+        expect(entry).toMatchObject({
+          principal: { type: "service_account", serviceAccountId: account!.id },
+          displayName: `Notebook helper ${suffix}`,
+          serviceAccountKind: kind,
+          permission: "admin",
+        });
+        grants.push(entry.id);
+        const listed = await sharing(`/${notebook.shortId}/access`);
+        expect(listed.status).toBe(200);
+        expect(await listed.json()).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: entry.id,
+              displayName: `Notebook helper ${suffix}`,
+              serviceAccountKind: kind,
+            }),
+          ]),
+        );
+        expect((await machine(`/${notebook.shortId}`)).status).toBe(200);
+        expect((await machine(`/${notebook.shortId}/notes`, { method: "POST", body: { contentMd: "# Shared result" } })).status).toBe(200);
+        const readOnly = await apiAs(account!, ["read"]);
+        expect((await readOnly(`/${notebook.shortId}/notes`, { method: "POST", body: { contentMd: "# Refused" } })).status).toBe(403);
+        const accessPath = `/${notebook.shortId}/access`;
+        const machineList = await machine(accessPath);
+        expect(machineList.status).toBe(200);
+        expect(await machineList.json()).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: entry.id, displayName: `Notebook helper ${suffix}`, serviceAccountKind: kind }),
+          ]),
+        );
+        expect((await readOnly(accessPath)).status).toBe(403);
+        expect(
+          (await readOnly(accessPath, { method: "POST", body: { principal: { type: "authenticated" }, permission: "read" } })).status,
+        ).toBe(403);
+        expect((await readOnly(`${accessPath}/${entry.id}`, { method: "PATCH", body: { permission: "read" } })).status).toBe(403);
+        expect((await readOnly(`${accessPath}/${entry.id}`, { method: "DELETE" })).status).toBe(403);
+        const temporary = await machine(accessPath, { method: "POST", body: { principal: { type: "authenticated" }, permission: "read" } });
+        expect(temporary.status).toBe(200);
+        const temporaryEntry = await temporary.json();
+        grants.push(temporaryEntry.id);
+        expect((await machine(`${accessPath}/${temporaryEntry.id}`, { method: "PATCH", body: { permission: "write" } })).status).toBe(200);
+        expect((await machine(`${accessPath}/${temporaryEntry.id}`, { method: "DELETE" })).status).toBe(200);
+        // A human may hand management to either kind of independent machine principal.
+        expect((await sharing(`${accessPath}/${manager!.id}`, "PATCH", { permission: "read" })).status).toBe(200);
+        for (const method of ["PATCH", "DELETE"]) {
+          const refused = await machine(`${accessPath}/${entry.id}`, {
+            method,
+            ...(method === "PATCH" ? { body: { permission: "read" } } : {}),
+          });
+          expect(refused.status).toBe(409);
+          expect(await refused.json()).toMatchObject({ code: "LAST_MANAGER" });
+        }
+        expect((await machine(`${accessPath}/${manager!.id}`, { method: "PATCH", body: { permission: "admin" } })).status).toBe(200);
+        expect((await sharing(`/${notebook.shortId}/access/${entry.id}`, "DELETE")).status).toBe(200);
+        expect((await machine(`/${notebook.shortId}`)).status).toBe(403);
+        expect((await machine(`/${notebook.shortId}/notes`, { method: "POST", body: { contentMd: "# Refused" } })).status).toBe(403);
+      } finally {
+        await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebook.id}::uuid`;
+        for (const id of grants) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
+        await sql`DELETE FROM auth.service_accounts WHERE id = ${account!.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${owner!.id}::uuid`;
+      }
+    });
+  }
 });

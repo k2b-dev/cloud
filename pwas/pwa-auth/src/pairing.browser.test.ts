@@ -59,12 +59,12 @@ async function fixture(
   width: number,
   run: (
     page: Page,
-    state: { offline: boolean; failClaim: boolean; savedElsewhere: boolean; claims: number; confirmed: boolean },
+    state: { offline: boolean; failClaim: boolean; savedElsewhere: boolean; claims: number; confirmed: boolean; refused: number },
   ) => Promise<void>,
 ) {
   const context = contexts.get(width)!;
   const page = await context.newPage();
-  const state = { offline: false, failClaim: false, savedElsewhere: false, claims: 0, confirmed: false };
+  const state = { offline: false, failClaim: false, savedElsewhere: false, claims: 0, confirmed: false, refused: 0 };
   let claimed = false;
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -72,7 +72,10 @@ async function fixture(
     await page.clock.install({ time: new Date("2026-10-23T13:00:00.000Z") });
     await page.route("https://login.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: built.html }));
     await page.route("https://cloud.example.test/**", async (route) => {
-      if (state.offline) return route.abort();
+      if (state.offline) {
+        state.refused++;
+        return route.abort();
+      }
       const headers = { "access-control-allow-origin": "https://login.example.test", "access-control-allow-headers": "content-type" };
       if (route.request().method() === "OPTIONS") return route.fulfill({ headers });
       const path = new URL(route.request().url()).pathname;
@@ -230,7 +233,12 @@ test("network loss stays visible and retry resumes status checks", async () => {
     await page.getByRole("button", { name: "Cloud vertrauen und koppeln" }).click();
     await page.locator(".auth-comparison").waitFor();
     state.offline = true;
-    await page.clock.fastForward(6000);
+    // A status check is skipped while the claim's own check still runs, which takes real time while the page clock
+    // stands still; one jump of 6 s could pass while it runs and leave no check scheduled. Advance one poll interval at
+    // a time until a check reaches the lost network.
+    for (const deadline = performance.now() + 3_000; state.refused === 0 && performance.now() < deadline; )
+      await page.clock.fastForward(1000);
+    expect(state.refused).toBeGreaterThan(0);
     await page.getByRole("alert").waitFor();
     const retry = page.getByRole("button", { name: "Kopplung erneut versuchen", exact: true });
     expect(await retry.isVisible()).toBe(true);

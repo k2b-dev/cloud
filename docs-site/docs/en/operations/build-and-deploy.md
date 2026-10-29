@@ -35,6 +35,8 @@ this table for machine subjects; consumers require the Core migration even
 before the first machine member is added.
 
 The updated applications resolve local group grants for active standalone
+and agent accounts. Spaces assignee eligibility and group coverage include
+these members.
 and agent accounts. Group coverage includes these members.
 Existing memberships and grants are preserved. IPA groups, directory
 visibility, human group management, resource bindings, and credential scope
@@ -287,6 +289,13 @@ Dockerfile `ENV` instructions or pass them as build arguments.
 
 Do not expose the application directly. The gateway discovers its registered
 prefixes and proxies public traffic.
+
+### Update resource access management
+
+Rebuilt Spaces, Notebooks, and Contacts accept access-management calls from
+standalone accounts and agents with the resource's admin permission and a
+matching credential scope. Personal API-key management retains its existing
+user requirement. These route changes require no application schema migration.
 
 ## Choose an image tag
 

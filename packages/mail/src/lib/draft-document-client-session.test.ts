@@ -20,6 +20,14 @@ const base: DraftEditableContent = {
   requestReadReceipt: false,
   requestDeliveryReceipt: false,
 };
+/** Polls recorded client state with a bounded deadline. */
+const until = async (condition: () => boolean, ms = 2_000) => {
+  for (const deadline = performance.now() + ms; !condition(); ) {
+    if (performance.now() > deadline) throw new Error("Condition not met in time");
+    await Bun.sleep(5);
+  }
+};
+
 const draft = (generation: string): MailDraft => ({
   ...base,
   signatureTemplateId: null,
@@ -380,7 +388,9 @@ test("old SSR generation without offline bytes opens the freshly authorized gene
   const f = fixture("2", true);
   try {
     const client = await f.open("1");
-    await client.recover(); // Recovery now includes an asynchronous content fingerprint.
+    // A closed generation starts its recovery by itself. Calling recover() again would start a second one, with its own
+    // authorization, once the first has finished; its asynchronous content fingerprint decides which comes first.
+    await until(() => client.state().restUnchanged);
     expect(client.generation).toBe("2");
     expect(f.requests.filter((request) => new URL(request.url, "http://localhost").pathname.endsWith("/document"))).toHaveLength(3); // two opens, one recovery authorization
     expect(client.state().restUnchanged).toBe(true);
