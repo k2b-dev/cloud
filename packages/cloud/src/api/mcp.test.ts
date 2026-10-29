@@ -407,6 +407,33 @@ describe("capability MCP projection", () => {
     expect(await response.json()).toMatchObject({ error: { code: -32600, message: "MCP request is too large" } });
   });
 
+  test("tools/list omits every query declaring callers", async () => {
+    const restricted: CapabilityRegistryEntry = {
+      ...app,
+      manifest: {
+        ...app.manifest,
+        queries: [
+          ...app.manifest.queries,
+          { ...app.manifest.queries[0]!, localId: "readable", callers: ["chat"] },
+          { ...app.manifest.queries[0]!, localId: "disabled", callers: [] },
+        ],
+      },
+    };
+    const routes = createMcpRoutes({
+      listApps: async () => [summary(restricted)],
+      getCapability: async () => restricted,
+      authenticate: authenticated,
+    });
+    const response = await rpc(routes, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    expect(response.status).toBe(200);
+    const result = z.object({ result: z.object({ tools: z.array(z.object({ name: z.string() })) }) }).parse(await response.json());
+    const names = result.result.tools.map((tool) => tool.name);
+    expect(names).toContain("demo__query__get");
+    expect(names).toContain("demo__action__create");
+    expect(names).not.toContain("demo__query__readable");
+    expect(names).not.toContain("demo__query__disabled");
+  });
+
   test("lists live queries and actions with schemas and safety annotations", async () => {
     const routes = createMcpRoutes({
       listApps: async () => [summary(app)],

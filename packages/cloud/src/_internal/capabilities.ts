@@ -73,6 +73,9 @@ import {
   resolveCapabilityActionSentences,
 } from "./capability-sentences";
 
+/** A callers declaration, including an empty one, confines a Query to app authority. */
+export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): boolean => query.callers === undefined;
+
 type JsonSchema = Record<string, unknown>;
 const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
 

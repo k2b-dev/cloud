@@ -29,7 +29,9 @@ The dispatcher in Core checks the declaration against the app identity from
 the workload credential. A caller cannot supply a person, grants, scopes,
 schema hash, or an approval decision. Declaring `callers` makes the Query
 app-only: ordinary person, service-account, mandate, MCP, and Assistant calls
-cannot invoke it, and it is omitted from the ordinary capability catalog.
+cannot invoke it. Queries declaring `callers`, including `callers: []`, are
+omitted from the REST capability catalog, MCP `tools/list`, and the AI capability
+catalog. All three catalogs use the same person-visible Query filter.
 Core and the provider compiler enforce this before the handler runs.
 
 An app invocation supplies:
@@ -114,7 +116,10 @@ An atomic cache reservation prevents concurrent misses for the same key.
 Before contacting Core, Chat admits at most **100 uncached element checks per
 person** (one candidate page) and **500 across all interactive traffic** (one
 five-page scan) per weighted 60-second window. Per-person admission precedes
-global interactive admission; rejected requests never reach Core. This leaves
+global interactive admission; rejected requests never reach Core. An admission
+rejection releases its own cache reservation with an atomic UUID comparison,
+so the next request can retry admission immediately without waiting 60 seconds.
+It cannot remove a newer reservation or result. This leaves
 1,001 Core slots for background checks within the stated batch budget, even
 when interactive misses flood the counter. Admission or provider failures
 omit those elements from badge and For you counts and are logged. Counts may
@@ -128,6 +133,19 @@ when different, each bound to the system conversation's container. Owner calls
 and badge preparation run outside database transactions. Short write
 transactions validate the prepared cursor, pending messages, local membership,
 resource refs, read state, and notification preferences before enqueueing.
+
+For system pushes, a monotonic **three-second** deadline starts immediately
+before final reader preparation, before the first owner call. Immediately
+before calling `notifications.send`, elapsed time must be **less than 3,000 ms**.
+This includes all final owner round-trips, connection acquisition, row-lock
+waits, and local validation, even when two elements need checks. Each lock wait
+in that write transaction is limited to **one second** with transaction-local
+`lock_timeout`. A lock timeout or an expired deadline keeps the pending push
+and resubmits it immediately; preparation starts again with fresh owner checks
+outside the transaction. The deadline bounds entry to the enqueue operation,
+not its completion or device delivery. Sustained contention or slow owners can
+delay delivery through retries; they do not extend a prepared decision's validity.
+
 Read snapshots consume only previously resolved count decisions; new or expired
 candidates fail closed until a subsequent read.
 

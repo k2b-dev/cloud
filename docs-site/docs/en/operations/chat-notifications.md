@@ -85,7 +85,18 @@ latest message elements against the system conversation's expected container.
 Interactive badge and For you counts cache yes/no decisions for at most 60
 seconds, with separate per-person and global admission before Core. See the
 [budget derivation](/en/docs/platform/app-to-app-queries#keep-the-answer-bounded).
-A cached count may lag revocation; final send authorization always stays fresh.
+Admission rejection releases its own cache reservation, allowing the next
+request to retry as soon as the admission budget permits. A cached count may
+lag revocation; it never authorizes a push.
+
+System-push preparation has a three-second monotonic deadline starting before
+the first final owner check. Chat enters `notifications.send` only when less
+than 3,000 ms have elapsed, including owner calls, connection and lock waits,
+and local validation. Each lock wait in the write transaction is capped at
+one second. A lock timeout or expired preparation preserves pending work and
+resubmits it immediately with fresh owner checks outside the transaction.
+This bounds enqueue entry, not enqueue completion or delivery to a device;
+sustained contention or slow owner checks can delay delivery through retries.
 A later revocation cannot recall an already queued push. General system-chat
 messages remain closed because this contract checks only item and note IDs.
 

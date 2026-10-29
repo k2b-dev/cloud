@@ -136,10 +136,22 @@ export const resolveSystemRecipients = async (
       // Reserve the cache slot atomically before admission; overlapping requests cannot amplify a miss.
       if ((await redis.send("SET", [key, reservation, "NX", "EX", String(ACCESS_TTL_SECONDS)])) !== "OK") continue;
       if ((await personLimit.check(id)).limited) {
+        await redis.send("EVAL", [
+          'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0',
+          "1",
+          key,
+          reservation,
+        ]);
         log.warn("System chat interactive reader admission exhausted", { scope: "person" });
         continue;
       }
       if ((await interactiveLimit.check("chat")).limited) {
+        await redis.send("EVAL", [
+          'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0',
+          "1",
+          key,
+          reservation,
+        ]);
         log.warn("System chat interactive reader admission exhausted", { scope: "app" });
         continue;
       }

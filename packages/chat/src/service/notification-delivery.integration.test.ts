@@ -19,6 +19,7 @@ import { forYou, forYouUnread } from "./for-you";
 import { alertKey, allowAlert, deliverMessage, notificationLifecycle, notificationOutbox, sendPush } from "./notification-delivery";
 import { resourceReaderDependencies } from "./resource-access";
 import {
+  INTERACTIVE_READER_APP_LIMIT,
   INTERACTIVE_READER_PERSON_LIMIT,
   readableSystemRecipients,
   systemNotificationDependencies,
@@ -667,6 +668,133 @@ suiteFor(
       await redis.del(...rateKeys);
     }
   });
+  for (const scope of ["person", "app", "replaced"] as const) {
+    test(`interactive ${scope} admission rejection releases only its own reservation`, async () => {
+      const { author, recipient, chat } = await setup();
+      const message = await post(author, chat.shortId);
+      const threadId = await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+      const [ref] = await sql<{ container_id: string; resource_id: string }[]>`
+        SELECT c.resource_id AS container_id, t.resource_id FROM chat.conversations c
+        JOIN chat.threads t ON t.conversation_id = c.id WHERE t.id = ${threadId}::uuid`;
+      const key = `chat:system-reader:v1:${recipient.id}:spaces.space:${ref!.container_id}:spaces.item:${ref!.resource_id}`;
+      configureSystem();
+      reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => ({
+        ok: true,
+        data: { data: { readable: input.userIds } },
+      }));
+      const instant = new Date("2026-10-29T03:00:00Z");
+      setSystemTime(instant);
+      const window = Math.floor(instant.getTime() / 60_000);
+      const personKey = `cloud:ratelimit:chat:reader-person:${recipient.id}:${window}`;
+      const appKey = `cloud:ratelimit:chat:reader-interactive:chat:${window}`;
+      const keys = [personKey, appKey, `cloud:ratelimit:chat:reader-interactive:chat:${window - 1}`];
+      const replacement = crypto.randomUUID();
+      const originalSend = redis.send.bind(redis);
+      // Replace the reservation between admission and cleanup to exercise compare-and-delete.
+      const intercept =
+        scope === "replaced"
+          ? spyOn(redis, "send").mockImplementation(async (command, args) => {
+              if (command === "EVAL" && args.includes(personKey)) await redis.set(key, replacement, "EX", 60);
+              return originalSend(command, args);
+            })
+          : undefined;
+      try {
+        await redis.del(...keys);
+        await redis.set(
+          scope === "app" ? appKey : personKey,
+          String(scope === "app" ? INTERACTIVE_READER_APP_LIMIT : INTERACTIVE_READER_PERSON_LIMIT),
+          "EX",
+          120,
+        );
+        expect(await readableSystemRecipients(chat.id, threadId, [recipient.id], sql, "interactive")).toEqual(new Set());
+        expect(reader.mock.calls).toHaveLength(0);
+        expect(await redis.get(key)).toBe(scope === "replaced" ? replacement : null);
+        intercept?.mockRestore();
+        await redis.del(...keys);
+        if (scope !== "replaced") {
+          expect(await readableSystemRecipients(chat.id, threadId, [recipient.id], sql, "interactive")).toEqual(new Set([recipient.id]));
+          expect(reader.mock.calls).toHaveLength(1);
+          expect(await redis.get(key)).toBe("1");
+        }
+      } finally {
+        intercept?.mockRestore();
+        await redis.del(...keys);
+      }
+    });
+  }
+  for (const delay of ["timeout", "expired"] as const) {
+    test(`delayed push lock ${delay} restarts owner preparation before enqueue`, async () => {
+      const { author, recipient, chat } = await setup();
+      const message = await post(author, chat.shortId);
+      await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+      configureSystem();
+      reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => ({
+        ok: true,
+        data: { data: { readable: input.userIds } },
+      }));
+      await deliverMessage(message.uuid);
+      await due(chat.id);
+      // Warm only the badge cache so each send's final owner check is observable separately.
+      await badgeCount(recipient.context);
+      await sql`INSERT INTO chat.notification_push_state (user_id, conversation_id)
+        VALUES (${recipient.id}::uuid, ${chat.id}::uuid) ON CONFLICT DO NOTHING`;
+      const release = Promise.withResolvers<void>();
+      const locked = Promise.withResolvers<number>();
+      const blocker = sql.begin(async (tx) => {
+        await tx`SELECT 1 FROM chat.notification_push_state WHERE user_id = ${recipient.id}::uuid
+          AND conversation_id = ${chat.id}::uuid FOR UPDATE`;
+        const [row] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        locked.resolve(row!.pid);
+        await release.promise;
+      });
+      // A broken timeout must still fail and release the fixture lock before the test ends.
+      const safetyRelease = setTimeout(() => release.resolve(), 2_000);
+      let attempt: Promise<number | null> | undefined;
+      let monotonicNow = 0;
+      const clock = spyOn(performance, "now").mockImplementation(() => monotonicNow);
+      try {
+        const blockerPid = await locked.promise;
+        reader.mockClear();
+        attempt = sendPush(recipient.id, chat.id);
+        // Wait for the actual row lock, never infer ordering from an arbitrary sleep.
+        let waiting = false;
+        for (let i = 0; i < 100 && !waiting; i++) {
+          const [row] = await sql<{ waiting: boolean }[]>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+            WHERE datname = current_database() AND ${blockerPid}::int = ANY(pg_blocking_pids(pid))) AS waiting`;
+          waiting = row!.waiting;
+          if (!waiting) await Bun.sleep(5);
+        }
+        expect(waiting).toBe(true);
+        expect(reader.mock.calls).toHaveLength(1);
+        if (delay === "expired") {
+          monotonicNow = 3_000;
+          release.resolve();
+          await blocker;
+        }
+        expect(await attempt).toBe(0);
+        expect(sent).toHaveLength(0);
+        expect(
+          await sql`SELECT 1 FROM chat.notification_pending WHERE user_id = ${recipient.id}::uuid
+          AND conversation_id = ${chat.id}::uuid`,
+        ).toHaveLength(1);
+        release.resolve();
+        await blocker;
+        reader.mockImplementation(async () => ({ ok: true, data: { data: { readable: [] } } }));
+        expect(await sendPush(recipient.id, chat.id)).toBeNull();
+        expect(reader.mock.calls).toHaveLength(2);
+        expect(sent).toHaveLength(0);
+      } finally {
+        clearTimeout(safetyRelease);
+        release.resolve();
+        try {
+          await blocker;
+          await attempt;
+        } finally {
+          clock.mockRestore();
+        }
+      }
+    });
+  }
   test("For you listing asks interactive owners without holding a read transaction", async () => {
     const { author, recipient, chat } = await setup();
     const message = await post(author, chat.shortId, "Hello Lea", {

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
-import { resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
+import { isPersonVisibleCapabilityQuery, resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
 import { capabilityReviewView } from "../_internal/capability-reviews";
 import {
   CAPABILITY_APPROVAL_REASON_FIELD,
@@ -164,7 +164,9 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale
         : app.appName;
       return [
         ...app.manifest.actions.map((operation) => ({ app, appName, operation, kind: "action" as const })),
-        ...app.manifest.queries.map((operation) => ({ app, appName, operation, kind: "query" as const })),
+        ...app.manifest.queries
+          .filter(isPersonVisibleCapabilityQuery)
+          .map((operation) => ({ app, appName, operation, kind: "query" as const })),
       ];
     })
     .map(

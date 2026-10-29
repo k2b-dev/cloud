@@ -2,7 +2,7 @@ import { lazySync } from "@k2b/cloud";
 import { getEffectivePermissions, type PermissionLevel } from "@k2b/cloud/server";
 import { accounts, coreSettings, logger, notifications } from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
-import { redis, sql } from "bun";
+import { redis, SQL, sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import type { PushData } from "../notifications";
@@ -21,6 +21,8 @@ import {
 
 export const DELIVERY_BATCH = 500;
 export const PUSH_DELAY_MS = 3_000;
+// At enqueue entry, every final owner check must have started less than three seconds ago.
+const SYSTEM_READER_VALIDITY_MS = 3_000;
 export const ALERT_WINDOW_SECONDS = 10;
 const log = logger("chat:notifications");
 const MessageInput = z.object({ messageId: z.uuid() });
@@ -406,6 +408,8 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
   const definition =
     pending.reason === "added" ? app.notifications.added : personalReason ? app.notifications.mention : app.notifications.message;
   const decisions = new Map<string | null, SystemReaderDecision>();
+  // Use a monotonic clock and include all owner round-trips and connection/lock waits.
+  const readerDeadline = conversation.kind === "system" ? performance.now() + SYSTEM_READER_VALIDITY_MS : null;
   if (conversation.kind === "system") {
     for (const threadId of new Set([chosen.thread_id, latest.thread_id])) {
       const decision = await resolveSystemRecipients(conversation.id, threadId, [userId]);
@@ -416,54 +420,62 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
       decisions.set(threadId, decision);
     }
   }
-  return sql.begin(async (transaction) => {
-    // Overlapping workers serialize only local validation and the idempotent platform enqueue.
-    const [currentState] = await transaction<{ last_seq: string }[]>`SELECT last_seq FROM chat.notification_push_state
+  return sql
+    .begin(async (transaction) => {
+      // Overlapping workers serialize only local validation and the idempotent platform enqueue.
+      if (readerDeadline !== null) await transaction`SET LOCAL lock_timeout = '1s'`;
+      const [currentState] = await transaction<{ last_seq: string }[]>`SELECT last_seq FROM chat.notification_push_state
         WHERE user_id = ${userId}::uuid AND conversation_id = ${conversationId}::uuid FOR UPDATE`;
-    if (!currentState || String(currentState.last_seq) !== String(state.last_seq)) return 0;
-    if (!addedMessageId) {
-      const [current] = await transaction<Pending[]>`SELECT * FROM chat.notification_pending
+      if (!currentState || String(currentState.last_seq) !== String(state.last_seq)) return 0;
+      if (!addedMessageId) {
+        const [current] = await transaction<Pending[]>`SELECT * FROM chat.notification_pending
           WHERE user_id = ${userId}::uuid AND conversation_id = ${conversationId}::uuid FOR UPDATE`;
-      if (!current) return null;
-      if (
-        current.message_id !== pendingSnapshot.message_id ||
-        current.personal_message_id !== pendingSnapshot.personal_message_id ||
-        current.reason !== pendingSnapshot.reason ||
-        current.message_count !== pendingSnapshot.message_count ||
-        current.due_at.getTime() !== pendingSnapshot.due_at.getTime()
-      )
-        return 0;
-    }
-    for (const [threadId, decision] of decisions)
-      if (!(await recheckSystemRecipients(decision, conversation.id, threadId, transaction)).has(userId)) {
+        if (!current) return null;
+        if (
+          current.message_id !== pendingSnapshot.message_id ||
+          current.personal_message_id !== pendingSnapshot.personal_message_id ||
+          current.reason !== pendingSnapshot.reason ||
+          current.message_count !== pendingSnapshot.message_count ||
+          current.due_at.getTime() !== pendingSnapshot.due_at.getTime()
+        )
+          return 0;
+      }
+      for (const [threadId, decision] of decisions)
+        if (!(await recheckSystemRecipients(decision, conversation.id, threadId, transaction)).has(userId)) {
+          await clear(transaction);
+          return null;
+        }
+      // Local reads/mutes/expiry can change while the owner is answering. Discard preparation and retry.
+      const currentParticipant = await pushParticipant(transaction, userId, conversationId, latest.thread_id, state.last_seq);
+      if (JSON.stringify(currentParticipant) !== JSON.stringify(participant)) return 0;
+      if (conversation.kind !== "system" && (await permissions(conversation, [person])).get(userId) === "none") {
         await clear(transaction);
         return null;
       }
-    // Local reads/mutes/expiry can change while the owner is answering. Discard preparation and retry.
-    const currentParticipant = await pushParticipant(transaction, userId, conversationId, latest.thread_id, state.last_seq);
-    if (JSON.stringify(currentParticipant) !== JSON.stringify(participant)) return 0;
-    if (conversation.kind !== "system" && (await permissions(conversation, [person])).get(userId) === "none") {
-      await clear(transaction);
-      return null;
-    }
-    const [unchanged] = await transaction`SELECT 1 FROM chat.conversations c JOIN auth.users u ON u.id = ${userId}::uuid
+      const [unchanged] = await transaction`SELECT 1 FROM chat.conversations c JOIN auth.users u ON u.id = ${userId}::uuid
         WHERE c.id = ${conversationId}::uuid AND c.rev = ${conversation.rev}
           AND c.kind = ${conversation.kind} AND c.resource_type IS NOT DISTINCT FROM ${conversation.resource_type}
           AND c.resource_id IS NOT DISTINCT FROM ${conversation.resource_id}
           AND (u.account_expires IS NULL OR u.account_expires > now())`;
-    if (!unchanged) return 0;
-    const result = await notifications.send(definition, {
-      recipient: { userId },
-      data,
-      locale: context.locale,
-      idempotencyKey: `${conversation.short_id}:${latest.short_id}`,
-    });
-    if (result.status === "error") throw new Error("Chat notification preparation failed");
-    await transaction`UPDATE chat.notification_push_state SET last_seq = GREATEST(last_seq, ${latest.seq}), last_push_at = clock_timestamp()
+      if (!unchanged) return 0;
+      if (readerDeadline !== null && performance.now() >= readerDeadline) return 0;
+      const result = await notifications.send(definition, {
+        recipient: { userId },
+        data,
+        locale: context.locale,
+        idempotencyKey: `${conversation.short_id}:${latest.short_id}`,
+      });
+      if (result.status === "error") throw new Error("Chat notification preparation failed");
+      await transaction`UPDATE chat.notification_push_state SET last_seq = GREATEST(last_seq, ${latest.seq}), last_push_at = clock_timestamp()
     WHERE user_id = ${userId}::uuid AND conversation_id = ${conversationId}::uuid`;
-    await clear(transaction);
-    return null;
-  });
+      await clear(transaction);
+      return null;
+    })
+    .catch((error: unknown) => {
+      // Rollback releases local locks; the worker rebuilds preparation outside the transaction.
+      if (readerDeadline !== null && error instanceof SQL.PostgresError && error.errno === "55P03") return 0;
+      throw error;
+    });
 };
 
 let deliveryWorker: Awaited<ReturnType<ReturnType<typeof deliveryJob>["process"]>> | undefined;

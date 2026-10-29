@@ -3,7 +3,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { type CatalogSubscription, projectAppEventCatalog, readCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import { isPersonVisibleCapabilityQuery, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import {
   capabilityActionReceiptIssues,
   capabilityActionReviewIssues,
@@ -231,7 +231,7 @@ export const loadCapabilityCatalogPage = async (
       appName: presentedEntry.name,
       appIcon: capability.appIcon,
       appDescription: presentedEntry.description,
-      manifest: { ...manifest, queries: manifest.queries.filter((query) => query.callers === undefined) },
+      manifest: { ...manifest, queries: manifest.queries.filter(isPersonVisibleCapabilityQuery) },
       ...(manifest.events ? { events: projectAppEventCatalog(manifest, manifest.events.length ? await loadSubscribers() : []) } : {}),
     };
     const projectedBytes = new TextEncoder().encode(JSON.stringify(projected)).byteLength;

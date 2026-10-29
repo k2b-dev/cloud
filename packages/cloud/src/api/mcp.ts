@@ -16,7 +16,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type CatalogSubscription, projectAppEventCatalog, readEventCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import { isPersonVisibleCapabilityQuery, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { capabilitySentenceText } from "../_internal/capability-sentences";
 import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import {
@@ -311,7 +311,9 @@ const orderedCapabilityEntries = function* (app: CapabilityRegistryEntry): Gener
   for (const operation of [...app.manifest.actions].sort((left, right) => left.localId.localeCompare(right.localId))) {
     yield { app, kind: "actions", operation };
   }
-  for (const operation of [...app.manifest.queries].sort((left, right) => left.localId.localeCompare(right.localId))) {
+  for (const operation of app.manifest.queries
+    .filter(isPersonVisibleCapabilityQuery)
+    .sort((left, right) => left.localId.localeCompare(right.localId))) {
     yield { app, kind: "queries", operation };
   }
 };
