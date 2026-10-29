@@ -65,6 +65,11 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
       if (!row) return [];
       return query.includes("AS revision") ? [{ revision: row.yjs_restore_revision }] : [{ ...row }];
     }
+    // The app-event marker of a changed note, not the replacement itself.
+    if (query.includes("app_event_pending_since")) {
+      expect(lockKind).toBe("exclusive");
+      return [];
+    }
     if (query.includes("UPDATE notebooks.notes")) {
       expect(lockKind).toBe("exclusive");
       writes++;
