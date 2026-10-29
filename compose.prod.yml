@@ -45,6 +45,8 @@ services:
     image: ghcr.io/k2b-dev/cloud-gateway:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     networks: [cloud-internal, traefik]
     environment:
+      APP_SECRET: ${APP_SECRET}
+      REDIS_URL: redis://valkey:6379
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       NATS_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
       SYNC_NAMESPACE: ${SYNC_NAMESPACE:-prod}

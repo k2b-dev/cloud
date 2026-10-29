@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
-import { env } from "../config/env";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
@@ -9,8 +8,7 @@ import {
   capabilityResultSchema,
 } from "../contracts/capabilities";
 import type { RequestAuthority } from "../server";
-import { get } from "../services/settings";
-import { publicCloudOrigin } from "../shared/app-url";
+import { coreOrigin } from "../services/identity/core-origin";
 import { capabilityMessages } from "../shared/capability-messages";
 import { LOCALE_HEADER } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
@@ -41,14 +39,7 @@ export type CapabilityCaller = {
   mandate?: { id: string; revision: number; callingAppId: string };
 };
 
-export const coreOrigin = async (internal = false): Promise<string> => {
-  const configured = env.CLOUD_CORE_INTERNAL_ORIGIN;
-  if (internal && !configured) throw new Error("CLOUD_CORE_INTERNAL_ORIGIN is required for mandate-backed invocation");
-  const origin = configured || publicCloudOrigin(await get<string>("app.url"));
-  const url = new URL(origin);
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("CLOUD_CORE_INTERNAL_ORIGIN must use http or https");
-  return url.origin;
-};
+export { coreOrigin } from "../services/identity/core-origin";
 
 export const callerRequest = async (
   caller: CapabilityCaller,

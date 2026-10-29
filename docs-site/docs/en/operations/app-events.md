@@ -18,7 +18,8 @@ Core endpoints under `/api/app-events` require administrator access.
 
 Deploy the updated Core first and let its migrations finish before deploying
 event producers or subscribers. Check `cld events status` and the catalog before
-enabling automatic provisioning. Producers require the Postgres event outbox;
+enabling automatic provisioning. Producers require the Postgres event outbox and the updated platform
+app-ID publisher binding;
 Core needs the existing NATS JetStream service and storage for the budget below.
 
 For Files, configure its Filegate URL, token and provider-specific roots before
@@ -85,9 +86,11 @@ metadata, `dataSchema`, and subscribers, including their persisted state and
 `firstSeenAt`. Offline applications remain in this administrative catalog. `--app` selects the publisher.
 
 `subscriptions` shows subscription readiness and blocked reasons; `--app`
-selects the subscriber. Cloud currently delivers service events only. A resource event
-subscription remains blocked with `resource_events_unsupported`; retrying or
-redelivering does not remove that restriction.
+selects the subscriber. Applications receive service events only. An application's
+subscription to a resource event stays blocked with `resource_events_unsupported`
+by design; retrying or redelivering does not change that. Resource events go only
+to subscriptions a person stands behind with a mandate, and each delivery checks
+that this person may read the place.
 
 `deliveries` accepts `--app`, `--state`, and `--event-type`.
 Use `--offset` and `--limit` to page through retained work. Structured output
@@ -108,6 +111,37 @@ These commands call the matching administrative endpoints:
 | `acknowledge-gap --yes` | `POST /api/app-events/status/acknowledge` |
 | `redeliver <id>` | `POST /api/app-events/deliveries/:id/redeliver` |
 | `record <type> --shape-only` | `GET /api/app-events/record/:eventType` |
+
+Spaces now publishes `spaces.item.created` and `spaces.item.completed`.
+Notebooks publishes `notebooks.notebook.created`, `notebooks.notebook.updated`,
+`notebooks.note.created`, and `notebooks.note.updated`. All are version 1
+resource events with public refs and empty data. They are retained through the
+normal event pipeline, but **are not delivered to app subscribers**. Retrying,
+redelivering, or restarting does not remove the authorization block.
+
+Note updates are trailing, bounded batches: Q = **30 seconds** quiet time,
+W = **five minutes** until eligibility despite continuous edits, T = **one minute**
+between sweeps, M = **four notes** per sweep across all replicas. A durable
+Postgres tick claim prevents concurrent ticks and retries from spending a
+second batch. Pending rows have a partial index; the sweep selects oldest
+pending rows with `FOR UPDATE SKIP LOCKED` and atomically publishes and clears
+each marker. Locked notes remain eligible. An outbox failure rolls back the
+batch and tick claim, leaving markers for retry. Backlog and skipped row locks
+can delay delivery beyond W; W bounds coalescing, not queueing time.
+
+Creates and completions are discrete facts retained in their domain
+transactions. Their rate equals the domain write rate. Both APIs install the
+shared `rateLimit()` middleware: by default 60 requests/s per session user or
+client IP, configurable through `security.rate_limit_per_second`. That is not
+an installation-wide event bound, and direct services and capability Actions
+do not acquire that API throttle. Ordinary creates/completions affect one
+item; notebook creation can also seed a welcome note, and missing note paths
+can create up to 64 missing parents plus the requested note in one call
+(2,000-character parent-path limit). Repeated
+agent calls and multiple callers remain unbounded in aggregate. Notebook
+metadata updates affect one notebook without note fan-out, so they remain
+transactional too. Operators must budget all these writes together with Core
+and other producers; the note sweep does not enforce the overall stream budget.
 
 ## Recover a delivery
 
@@ -184,13 +218,44 @@ letters can accept older events later, so handlers must tolerate that order.
 
 ## Plan retention and outage capacity
 
-The design rate is **0.1 events per second** (8,640 a day), far above how
-often accounts are created, with a maximum envelope size of **4096 bytes** in
-PostgreSQL `jsonb::text`. The shared event stream only buffers events until
-Core has stored them. It has a **256 MiB** byte limit and a **7-day** maximum
-age; JetStream reserves the byte limit on every replica. Both limits apply:
-byte pressure can shorten the available history. This is a capacity budget,
-not an unlimited replay guarantee.
+The stream budget is shared by **all producers**. The producer fixture tests
+measure compact JSON envelopes at **241 bytes** for `spaces.item.created`,
+**243 bytes** for `spaces.item.completed`, **256 bytes** for either note event,
+and **264 bytes** for either notebook event (six-character public IDs, a UUID
+event ID, fixed ISO timestamp, empty data, no cause). PostgreSQL `jsonb::text`
+adds 21 bytes of whitespace to these fixtures: **262–285 bytes**. Longer refs
+or an optional cause increase the size; the platform maximum remains
+**4096 bytes** in PostgreSQL `jsonb::text`.
+
+The shared JetStream has a **256 MiB** byte limit and a **7-day** maximum age.
+Before transport overhead, 264-byte thin envelopes fit at
+`268435456 / (264 × 604800) = 1.68 events/s` for seven days. This is an
+upper bound, not an operating rate: Sync wrapping, subjects, headers, and NATS
+storage consume bytes too. The fixture test also publishes through Sync:
+notebook events occupy **692 retained bytes/message**, note events **684**,
+including broker accounting in that test namespace (64-character ordering key
+and UUID deduplication key). These values vary with namespace and headers;
+692 bytes would allow only `268435456 / (692 × 604800) = 0.64 events/s`.
+Retaining the conservative **1024-byte transport
+allowance** and using the largest measured database representation gives
+`268435456 / ((285 + 1024) × 604800) = 0.339 events/s`.
+Use **0.3 events/s aggregate** (25,920/day) as the thin-envelope planning rate,
+with roughly 12% of stream space left beyond that allowance. At the full
+4096-byte envelope limit plus the allowance, only 52,428 events fit: about
+two days at 0.3 events/s. Byte pressure can shorten history before seven days.
+JetStream reserves the byte limit on every replica; replication multiplies
+physical storage. The stream buffers events until Core stores them, so this
+outage budget matters when Core cannot ingest.
+
+Allocate at most 25% of the 0.3 events/s planning rate to coalesced note updates.
+The existing Sync scheduler has minute resolution, so T = 60 s and
+`M = floor(0.25 × 0.3 × 60) = 4`. Thus sustained `note.updated` throughput is
+at most `M/T = 4/60 = 0.0667 events/s`, **22.2%** of the shared planning rate
+(with an initial burst of at most four). Q = 30 s merges short editing bursts;
+W = 300 s lets continuous editing become eligible within five minutes. The
+remaining 0.233 events/s is a planning allowance for all other events, not a
+publisher limit. Sustained discrete writes above it require more capacity or
+a shorter outage target. A missed or expired event requires domain reconciliation.
 
 Core retains unresolved deliveries for **30 days** from creation or the latest
 administrator redelivery, then marks them
@@ -285,22 +350,16 @@ these through Core's existing Sync administration for `cloud:app-events` and
 the durable consumer `core-app-events-v1`. Recovery uses the same idempotent
 broker handler. No event payload is included in the status response.
 
-The 256 MiB stream budget holds 52,428 envelopes at the 4096-byte limit plus
-1024 bytes of transport allowance: six days of a Core outage at the design rate,
-and more at typical envelope sizes. A longer outage evicts events before Core
-stores them; Core then reports `gap_detected` and the owning applications'
-reconciliation covers the gap. Replication multiplies physical storage. The
-throughput budget assumes up to four matching subscribers and handlers averaging
-at most 500 ms: four worker slots provide about eight attempts per second, far
-above the 0.4 new deliveries per second of the design rate, leaving retry and
-burst headroom. Slower handlers or greater fan-out require an operator capacity
-review; backlog and failures remain visible. There is no publisher rate limiter
-for app events.
+At four matching subscribers and handlers averaging at most 500 ms, four
+worker slots provide about eight attempts/s against 1.2 new deliveries/s at
+the aggregate planning rate. This leaves retry and burst headroom. Slower
+handlers or greater fan-out require a capacity review; backlog and failures
+remain visible. There is no global publisher rate limiter for app events.
 
-At the design rate the 30-day Core event history contains 259,200 envelopes, up
-to 0.99 GiB of payload before table and index overhead. At four subscribers, a
-conservative 4 KiB allowance per delivery gives 0.92 GiB for seven days of done
-rows, or 3.96 GiB for a full 30 days of unresolved deliveries. Provision database
-space for the relevant failure scenario plus indexes and operational headroom.
+At 0.3 events/s, 30 days of Core history contain 777,600 envelopes: about
+0.21 GiB at 285 bytes or up to 2.97 GiB at the 4096-byte limit, before table
+and index overhead. At four subscribers and a conservative 4 KiB per delivery,
+allow 2.77 GiB for seven days of completed rows, or 11.87 GiB for 30 days of
+unresolved deliveries. Provision indexes and operational headroom separately.
 The bounded cleanup removes at most 1000 rows from each retention class per
-minute, exceeding this design rate of four deliveries per second.
+minute, above the planning rate of 72 new deliveries per minute.

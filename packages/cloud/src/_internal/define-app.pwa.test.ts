@@ -34,6 +34,31 @@ describe("defineApp({ pwa })", () => {
     expect(visiblePwaParts(buildRuntimeFromRegistry([entry]).apps, person, "en")).toEqual([]);
   });
 
+  test("a part may count something for its sidebar entry, from one of its own paths", async () => {
+    const options = { ...inventory, pwa: { badge: "/api/inventory/count" } } satisfies AppOptions;
+    const entry = await publishedEntry(options);
+    expect(entry.pwa).toEqual({ href: "/pwa/inventory", requiresRoles: undefined, badge: "/api/inventory/count" });
+    expect(validateAppRegistryEntry(entry)).toBeNull();
+    expect(buildRuntimeFromRegistry([entry]).apps[0]?.pwa?.badge).toBe("/api/inventory/count");
+    expect(() => defineApp({ ...inventory, pwa: { badge: "/api/other/count" } })).toThrow("pwa.badge");
+    expect(() => defineApp({ ...inventory, pwa: { badge: "https://elsewhere.test/count" } })).toThrow("pwa.badge");
+  });
+
+  test("a part may summarize itself for Start, from one of its own paths, also its badge's", async () => {
+    const options = { ...inventory, pwa: { badge: "/api/inventory/count", summary: "/api/inventory/count" } } satisfies AppOptions;
+    const entry = await publishedEntry(options);
+    expect(entry.pwa).toEqual({
+      href: "/pwa/inventory",
+      requiresRoles: undefined,
+      badge: "/api/inventory/count",
+      summary: "/api/inventory/count",
+    });
+    expect(validateAppRegistryEntry(entry)).toBeNull();
+    expect(buildRuntimeFromRegistry([entry]).apps[0]?.pwa?.summary).toBe("/api/inventory/count");
+    expect(() => defineApp({ ...inventory, pwa: { summary: "/api/other/summary" } })).toThrow("pwa.summary");
+    expect(() => defineApp({ ...inventory, pwa: { summary: "//elsewhere.test/summary" } })).toThrow("pwa.summary");
+  });
+
   test("an app without pwa has no part", () => {
     const app = defineApp(inventory);
     expect(app.meta.pwa).toBeUndefined();
@@ -70,5 +95,12 @@ describe("defineApp({ pwa })", () => {
     for (const id of ["pwa", "settings", "offline", "_auth", "spaces/tasks", "Inventory"]) {
       expect(() => defineApp({ ...inventory, id, routes: [], pwa: {} })).toThrow(`App "${id}" cannot declare pwa`);
     }
+  });
+
+  test("package validation still rejects invalid app IDs without a part and reserved packages with a valid part", () => {
+    for (const id of ["_auth", "spaces/tasks", "Inventory"]) {
+      expect(() => defineApp({ ...inventory, id, routes: [] })).toThrow("Application IDs and packages must be lowercase names");
+    }
+    expect(() => defineApp({ ...inventory, package: "storage", pwa: {} })).toThrow("reserved for public storage routing");
   });
 });

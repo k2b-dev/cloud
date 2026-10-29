@@ -33,6 +33,10 @@ const items: TabBarItem[] = [
 - `title` is the header title of the item's page. The shell shows it while the
   page loads. It defaults to `label`; set it when the page has a different
   title, such as a Start tab whose page is titled with the app's name.
+- `badge` puts a mark at the icon's upper right corner for something that
+  calls for attention, such as `AppWorkspace.SidebarItemStatus` with unread
+  messages, which also names the count for screen readers. The mark stands out
+  of the flow, so a count never moves the label.
 - At most five items render; further items are left out. Put the rest behind a
   destination such as Start or More that lists every page.
 - The items share the width equally. Long labels fade out, so keep

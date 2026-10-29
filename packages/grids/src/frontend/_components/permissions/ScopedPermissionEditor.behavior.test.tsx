@@ -135,3 +135,38 @@ for (const scenario of precedenceScenarios) {
     }
   });
 }
+
+for (const scopeType of ["base", "customApp"] as const) {
+  domTest(`${scopeType} picker mirrors the current API's machine-recipient support`, async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const originalFetch = globalThis.fetch;
+    const requests: URL[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        requests.push(new URL(input instanceof Request ? input.url : String(input), "http://cloud.test"));
+        return Response.json({ items: [] });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { ScopedPermissionEditor } = await import("./ScopedPermissionEditor");
+    const dispose = render(
+      () => <ScopedPermissionEditor scope={{ type: scopeType, id: "SCOPE01" }} initialEntries={[]} canEdit />,
+      dom.root,
+    );
+    try {
+      delegateEvents(["input"]);
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.value = "helper";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => requests.length > 0, "scoped directory request");
+      expect(requests[0]!.pathname).toBe("/api/accounts/entities");
+      expect(requests[0]!.searchParams.get("kinds")).toBe(scopeType === "base" ? "user,group,service_account" : "user,group");
+      expect(requests[0]!.searchParams.get("service_account_status")).toBe(scopeType === "base" ? "active" : null);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+}

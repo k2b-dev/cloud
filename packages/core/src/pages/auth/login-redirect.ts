@@ -26,3 +26,11 @@ export const resolveAuthenticatedLoginRedirect = (requestUrl: string): string =>
 
   return redirectTo;
 };
+
+/** Confirmation constrains credential verification; it never authenticates a request itself. */
+export const confirmationRequestOptions = (redirectTo?: string) => {
+  const target = normalizeRedirectTo(redirectTo);
+  return target && new URL(target, "https://cloud.invalid").searchParams.get("reauthenticate") === "1"
+    ? { headers: { "X-Cloud-Reauthenticate": "1" } }
+    : {};
+};

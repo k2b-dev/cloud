@@ -10,20 +10,19 @@ import { adminMessages } from "../messages";
 import AccountOperations from "./_components/AccountOperations.island";
 import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettingsForm.island";
 import DocumentationLink from "./_components/DocumentationLink";
-import LegalSettingsForm, { type LegalInitial } from "./_components/LegalSettingsForm.island";
 import LinuxIdentityPanel from "./_components/LinuxIdentityPanel.island";
 import { buildEntries } from "./entries";
 
 // Flat tab list. Each tab maps either to a core-settings group (`group` prop)
-// or a dedicated immediate-action view such as Projects or Legal.
+// or a dedicated immediate-action view such as Linux identities.
 const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) =>
   [
     {
-      id: "general",
-      title: t.generalSettings,
-      description: t.generalSettingsDescription,
-      icon: "ti ti-settings",
-      group: "app" as const,
+      id: "storage",
+      title: t.storageSettings,
+      description: t.storageSettingsDescription,
+      icon: "ti ti-database",
+      group: "storage" as const,
     },
     {
       id: "user",
@@ -49,13 +48,6 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
     },
     { id: "account-operations", title: t.accountOperations, description: t.accountOperationsDescription, icon: "ti ti-tool", group: null },
     {
-      id: "pdf-rendering",
-      title: t.pdfRenderingSettings,
-      description: t.pdfRenderingSettingsDescription,
-      icon: "ti ti-file-type-pdf",
-      group: "gotenberg" as const,
-    },
-    {
       id: "email-templates",
       title: t.emailTemplateSettings,
       description: t.emailTemplateSettingsDescription,
@@ -69,47 +61,12 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       icon: "ti ti-shield-lock",
       group: "security" as const,
     },
-    {
-      id: "cli",
-      title: t.cliSettings,
-      description: t.cliSettingsDescription,
-      icon: "ti ti-terminal",
-      group: "cli" as const,
-    },
-    {
-      id: "legal",
-      title: t.legalSettings,
-      description: t.legalSettingsDescription,
-      icon: "ti ti-file-certificate",
-      group: null,
-    },
   ] as const;
 
 type TabId = ReturnType<typeof tabs>[number]["id"];
 
 const isTabId = (value: string | undefined, availableTabs: ReturnType<typeof tabs>): value is TabId =>
   !!value && availableTabs.some((tab) => tab.id === value);
-
-/** Read all 9 legal.* entries into the LegalSettingsForm initial shape. */
-const buildLegalInitial = (entries: SettingFieldDef[]): LegalInitial => {
-  const value = (key: keyof LegalInitial) => entries.find((entry) => entry.key === key)?.value;
-  const stringValue = (key: keyof LegalInitial) => {
-    const current = value(key);
-    return typeof current === "string" ? current : "";
-  };
-  const asMode = (key: keyof LegalInitial): "local" | "external" => (stringValue(key) === "external" ? "external" : "local");
-  return {
-    "legal.terms.mode": asMode("legal.terms.mode"),
-    "legal.terms.content": stringValue("legal.terms.content"),
-    "legal.terms.url": stringValue("legal.terms.url"),
-    "legal.privacy.mode": asMode("legal.privacy.mode"),
-    "legal.privacy.content": stringValue("legal.privacy.content"),
-    "legal.privacy.url": stringValue("legal.privacy.url"),
-    "legal.imprint.mode": asMode("legal.imprint.mode"),
-    "legal.imprint.content": stringValue("legal.imprint.content"),
-    "legal.imprint.url": stringValue("legal.imprint.url"),
-  };
-};
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
@@ -119,11 +76,10 @@ export default ssr<AuthContext>(async (c) => {
   // SMTP delivery moved to sender profiles — keep old links working.
   if (rawTab === "mail") return c.redirect("/admin/outgoing-mail", 302);
   // Places and maps has its own page that checks the key with the provider — keep old links working.
-  if (rawTab === "places") return c.redirect("/admin/places-and-maps", 302);
   // The AI tabs moved into the AI area; old links land on the same section with their filters.
   const aiHref = aiSettingsRedirectHref(rawTab, c.req.query());
   if (aiHref) return c.redirect(aiHref, 302);
-  const tabId: TabId = isTabId(rawTab, availableTabs) ? rawTab : "general";
+  const tabId: TabId = isTabId(rawTab, availableTabs) ? rawTab : "user";
   const tab = availableTabs.find((item) => item.id === tabId)!;
   const documentationBase = await coreSettings.get<string>("app.documentation_url");
   const approvalState = tab.id === "user" ? approvalAvailability(await appApproval.config(false).catch(() => null)) : undefined;
@@ -139,14 +95,10 @@ export default ssr<AuthContext>(async (c) => {
   const linuxScope = c.req.query("scope") === "all" ? "all" : "ready";
   const linuxOverview =
     tab.id === "linux" ? await linuxIdentities.overview(c.get("user"), linuxAfter, { search: linuxSearch, scope: linuxScope }) : null;
-  let legalInitial: LegalInitial | null = null;
 
   if (tab.group) {
     entries = await buildEntries(tab.group, locale);
     if (tab.id === "email-templates") entries = entries.filter((entry) => entry.kind === "template");
-  } else if (tab.id === "legal") {
-    entries = await buildEntries("legal", locale);
-    legalInitial = buildLegalInitial(entries);
   }
 
   return () => (
@@ -182,14 +134,9 @@ export default ssr<AuthContext>(async (c) => {
             approvalState={approvalState}
             signInLocations={signInLocations}
             accountSection={tab.id === "registration" ? "registration" : tab.id === "user" ? "sign-in" : undefined}
-            showTestPdfAction={tab.id === "pdf-rendering"}
+            showTestStorageAction={tab.id === "storage"}
             showTestFreeIpaAction={tab.id === "freeipa"}
-            showLegacySettings={tab.id === "general"}
           />
-        ) : null}
-
-        {tab.id === "legal" && legalInitial ? (
-          <LegalSettingsForm title={tab.title} subtitle={tab.description} icon={tab.icon} initial={legalInitial} entries={entries} />
         ) : null}
       </div>
     </AdminLayout>

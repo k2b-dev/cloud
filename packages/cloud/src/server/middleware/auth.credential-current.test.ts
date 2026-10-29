@@ -35,6 +35,7 @@ const oauthServiceAccount = (account: ServiceAccount): AuthenticatedOAuthToken =
   kind: "service_account",
   payload: {},
   serviceAccount: account,
+  oauthClientId: "oauth-fixture-client",
   delegatedUser: null,
   scopes: ["read"],
 });
