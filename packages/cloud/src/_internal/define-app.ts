@@ -448,7 +448,6 @@ export const defineApp = <
 >(
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
-  const packageName = resolveApplicationPackage(opts.id, opts.package);
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
   configurePostgresApplicationName(opts.id);
@@ -456,6 +455,7 @@ export const defineApp = <
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
   const pwaPart = validateAppPwaPart(opts);
+  const packageName = resolveApplicationPackage(opts.id, opts.package);
   const installable = opts.installable === undefined ? undefined : validateInstallable(opts.id, opts.routes, opts.installable);
   if (installable === null)
     throw new Error(`App "${opts.id}" declares invalid installable; use a canonical own /app/<id>/<surface>/ path covered by routes`);
