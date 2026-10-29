@@ -190,7 +190,7 @@ export default ssr<AuthContext>(async (c) => {
                 </Paper>
                 <StatGrid columns={2}>
                   <StatCell
-                    label={t.accounts}
+                    label={t.accountTotalLabel}
                     value={totalAccounts}
                     sub={t.sourceCounts({ freeIpa: summary.ipaAccountsTotal, local: summary.localAccountsTotal })}
                     accent={{ tone: "blue", icon: "ti ti-users" }}

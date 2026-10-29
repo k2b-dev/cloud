@@ -58,6 +58,13 @@ test("send validates browser metadata before persistence and normalizes previews
       await assert.rejects(send({ badge }), /badge/);
       assert.equal(sqlCalls, before);
     }
+    for (const alert of [null, 0, 1, "false", {}]) {
+      const before = sqlCalls;
+      await assert.rejects(send({ alert }), /alert/);
+      assert.equal(sqlCalls, before);
+    }
+    await send({ group: "g", alert: true });
+    assert.deepEqual(delivered.at(-1), { channel: "browser", presentation: { title: "Ready", group: "g" } });
     for (const appId of ["acme.chat", "my_app", "Inventory", "3d-viewer"]) {
       const before = sqlCalls;
       await assert.rejects(send({ group: "g" }, appId), /group.*app ID.*lowercase letter.*lowercase letters, digits, and hyphens/);
@@ -67,7 +74,7 @@ test("send validates browser metadata before persistence and normalizes previews
     }
     for (const metadata of [
       {}, { group: "g", badge: 0 }, { group: "conversation:abc_1.2-3", badge: 2 },
-      { group: "g".repeat(128), badge: Number.MAX_SAFE_INTEGER }, { badge: 1 },
+      { group: "g".repeat(128), badge: Number.MAX_SAFE_INTEGER }, { badge: 1 }, { group: "g", alert: false }, { alert: false },
     ]) {
       await send(metadata);
       assert.deepEqual(delivered.at(-1), { channel: "browser", presentation: { title: "Ready", ...metadata } });
@@ -109,7 +116,7 @@ test("send validates browser metadata before persistence and normalizes previews
       assert.equal(sqlCalls, before);
     }
     for (const { query, values } of eventWrites) {
-      assert.equal(/group|badge|preview/.test(query), false);
+      assert.equal(/group|badge|preview|alert/.test(query), false);
       assert.equal(values.includes("conversation:abc_1.2-3"), false);
       assert.equal(values.includes("Hello world !"), false);
     }
