@@ -935,7 +935,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("reduces a collapsible sidebar to an intentional icon rail", () => {
-      expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*sidebar-item-label[^}]*\{display:none!important/);
+      expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*sidebar-item-meta[^}]*\{display:none!important/);
+      // Labels leave the view but stay the entries' accessible names, and the rail marks itself for their hints.
+      expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*sidebar-item-label\)[^{]*\{position:absolute;[^}]*clip:rect\(0/);
+      expect(css).toMatch(
+        /data-sidebar-collapsed=true\] \.k2b-app-workspace__sidebar\[data-workspace-collapsible=true\]\{--k2b-sidebar-rail:1\}/,
+      );
       expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*:is\(\.k2b-app-workspace__sidebar-item,[^{]*\)\{justify-content:center/);
     });
 

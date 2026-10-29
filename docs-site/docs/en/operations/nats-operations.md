@@ -5,13 +5,13 @@ section: Operations
 order: 1165
 description: Inspect NATS infrastructure, investigate Sync failures, and configure independent outage monitoring.
 tags: [nats, sync, observability, operations]
-updated: 2026-09-30
+updated: 2026-10-28
 ---
 
 # NATS operations
 
-Use **Observability → NATS** (`/admin/observability/nats`) to inspect broker
-infrastructure. Use **Observability → Sync** (`/admin/observability/sync`) to
+Use **Observability → NATS & Sync** (`/admin/observability/nats`) to inspect broker
+infrastructure. Use **Observability → NATS & Sync → Sync** (`/admin/observability/nats/sync`) to
 investigate application work and perform supported recovery actions. Both
 pages require administrator access.
 
@@ -186,7 +186,7 @@ schedule point to that schedule.
 
 ## Alert on dead letters and broker health
 
-Configure health webhooks under **Observability → Webhooks**. The existing
+Configure health webhooks under **Observability → Alerts & webhooks**. The existing
 `gateway.health_check_schedule` setting controls evaluation; its default is
 every five minutes. The webhook's scope, minimum status, change behavior, and
 repeat settings still apply.

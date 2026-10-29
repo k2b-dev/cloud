@@ -50,7 +50,7 @@ const mount = (options: {
   url?: string;
   state?: "new" | "ended" | "expired";
   userAgent?: string;
-  platform?: "apple-mobile" | "apple-in-app" | "android";
+  platform?: "apple-mobile" | "apple-in-app" | "apple-desktop" | "android";
   clearDrafts?: boolean;
   before?: (dom: DomTestHarness) => void;
 }): Mounted => {
@@ -108,6 +108,23 @@ const waiting = () => Response.json({ state: "waiting", code: "482913", account:
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  test("mounting an iPad keeps both server-selected variants and the mobile Share guide", async () => {
+    const page = mount({
+      standalone: false,
+      platform: "apple-desktop",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+    });
+    try {
+      await Bun.sleep(0);
+      expect(page.dom.root.querySelector('.pwa-coarse-only [data-platform="apple-mobile"]')?.textContent).toContain("Open Share");
+      expect(page.dom.root.querySelector(".pwa-fine-only")?.textContent).toBe("On a computer, use Example Cloud in the browser.");
+      expect(text(page.dom)).toContain("On the same device, copy the link there and paste it here.");
+      expect(text(page.dom)).not.toContain("This app is for phones");
+    } finally {
+      page.dispose();
+    }
+  });
+
   test("the welcome after an ended pairing deletes the app's drafts only on the launch's order", () => {
     for (const clearDrafts of [false, true]) {
       const page = mount({
@@ -354,10 +371,10 @@ else {
       "ACCOUNT_MISMATCH",
       {
         message:
-          "Chrome on this phone is signed in to Example Cloud with another account. Sign out there first, or pair from that account.",
+          "Chrome on this device is signed in to Example Cloud with another account. Sign out there first, or pair from that account.",
       },
     ],
-    [429, "LIMIT_REACHED", { message: "You have paired the most phones allowed. Remove one on the web." }],
+    [429, "LIMIT_REACHED", { message: "You have paired the most devices allowed. Remove one on the web." }],
   ] as const)
     test(`waiting ends on ${code}`, async () => {
       const fetch = mockFetch((_method, path) => {
@@ -416,7 +433,7 @@ else {
       },
     });
     try {
-      expect(text(page.dom)).toContain("This phone was signed out. Connect it again.");
+      expect(text(page.dom)).toContain("This device was signed out. Connect it again.");
       button(page.dom, "Scan code")!.click();
       await waitFor(
         () => text(page.dom).includes("Camera access is off. Allow it in settings, or paste the link instead."),
