@@ -1065,7 +1065,9 @@ export default function Workspace(props: {
                               activityHref: (baseId, path, scope) =>
                                 activityUrl({ baseId, path, ...(scope === "folder" ? { scope } : {}) }),
                             }}
-                            onBrowseChange={(options) => void go(filesUrl(directory().base.id, directory().path, null, null, null, options))}
+                            onBrowseChange={(options) =>
+                              void go(filesUrl(directory().base.id, directory().path, null, null, null, options))
+                            }
                             onChanged={(selectPath) => {
                               setMarksRevision((value) => value + 1);
                               // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
