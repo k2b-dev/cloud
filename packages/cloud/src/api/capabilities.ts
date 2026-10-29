@@ -59,12 +59,13 @@ import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/
 import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { hasOAuthScope } from "../server/oauth-scope";
+import { ratelimit } from "../server/ratelimit";
 import { appAccessAuthority, canUseApp } from "../services/app-access";
 import { discoverableApps } from "../services/app-discovery";
 import { authorityFromParentInvocation, invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import type { CloudInvocationClaims, InvocationAuthority } from "../services/identity/invocation-token";
-import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId, signAppQueryInvocation } from "../services/identity/invocation-token";
 import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import {
@@ -73,6 +74,7 @@ import {
   nestedInvocationLeases,
   nestedSourceDeadline,
 } from "../services/identity/nested-invocation";
+import type { AuthenticatedWorkload } from "../services/identity/workload-auth";
 import { logger } from "../services/logging";
 import { withMandateIssueAuthority } from "../services/mandates";
 import * as settings from "../services/settings";
@@ -80,6 +82,9 @@ import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
+// One 500-recipient batch: one bulk check plus one badge and one final send check per person.
+export const APP_QUERY_REQUESTS_PER_MINUTE = 1 + 500 * 2;
+const appQueryLimit = ratelimit({ id: "app-queries", limit: APP_QUERY_REQUESTS_PER_MINUTE, windowSecs: 60 });
 const log = logger("capabilities");
 const DEFAULT_CATALOG_LIMIT = 10;
 const MAX_CATALOG_LIMIT = 25;
@@ -122,12 +127,14 @@ export type CapabilityRouteDependencies = {
   withMandateIssueAuthority?: typeof withMandateIssueAuthority;
   queryTimeoutMs?: number;
   actionTimeoutMs?: number;
+  checkAppQueryRate?: (appId: string) => Promise<{ limited: boolean }>;
   reviewTimeoutMs?: number;
   appUrl?: () => Promise<string>;
 };
 
 export type CapabilityDispatchDependencies = Pick<
   CapabilityRouteDependencies,
+  | "checkAppQueryRate"
   | "getCapability"
   | "fetch"
   | "queryTimeoutMs"
@@ -276,6 +283,8 @@ export type CapabilityDispatchParams = {
   assistantTurn?: { conversationId: string; turnId: string };
   /** Core-only absolute child deadline; cannot be extended by the application. */
   deadline?: number;
+  /** Core-only authenticated workload. Never populated from request JSON. */
+  workload?: AuthenticatedWorkload;
   mandate?: MandatedCapabilityAuthority;
   callingAppId?: string;
   /** Internal observation only: called immediately before attempting the app request. */
@@ -341,6 +350,32 @@ const runCapabilityDispatch = async (
       404,
     );
     return error;
+  }
+  if (params.workload) {
+    if (
+      params.authority ||
+      params.mandate ||
+      params.parentInvocation ||
+      params.review ||
+      params.kind !== "queries" ||
+      !("callers" in operation) ||
+      !operation.callers?.includes(params.workload.appId) ||
+      operation.stream
+    )
+      return errorResponse("FORBIDDEN", "App caller is not allowed for this query", 403);
+    try {
+      if (
+        (
+          await deadline.wait(() =>
+            (params.dependencies?.checkAppQueryRate ?? ((appId) => appQueryLimit.check(appId)))(params.workload!.appId),
+          )
+        ).limited
+      )
+        return errorResponse("RATE_LIMITED", "App query rate limit exceeded; retry after one minute", 429);
+    } catch {
+      deadline.check();
+      return errorResponse("APP_UNAVAILABLE", "App query rate limiter unavailable", 503);
+    }
   }
   if (params.review && (params.kind !== "actions" || !("review" in operation) || operation.review !== true)) {
     const error = errorResponse(
@@ -488,6 +523,33 @@ const runCapabilityDispatch = async (
           });
         })()
       : await (async () => {
+          if (params.workload) {
+            const workload = params.workload;
+            return deadline.wait(() =>
+              (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
+                "invocation",
+                async (signer) => {
+                  deadline.check();
+                  const signed = await signAppQueryInvocation({
+                    workload,
+                    targetAppId: params.appId,
+                    capabilityId: params.capabilityId,
+                    schemaHash: operation.schemaHash,
+                    input: input.data,
+                    requestId,
+                    signer,
+                  });
+                  observed.invocationId = signed.claims.jti;
+                  return new Headers({
+                    "content-type": "application/json",
+                    accept: "application/json",
+                    authorization: `Bearer ${signed.token}`,
+                  });
+                },
+                { signal, timeoutMs: deadline.remainingMs() },
+              ),
+            );
+          }
           if (!params.authority) throw new Error("Resolved request authority is required for Cloud invocation issuance");
           const authority = params.authority;
           const signed = await deadline.wait(() =>
@@ -665,12 +727,15 @@ const runCapabilityDispatch = async (
   try {
     params.onUpstreamAttempt?.();
     const fetchResponse = () =>
-      fetchUpstream(`${entry.endpoint}/${params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`, {
-        method: "POST",
-        headers,
-        body: requestBody,
-        signal,
-      });
+      fetchUpstream(
+        `${entry.endpoint}/${params.workload ? "app-queries" : params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`,
+        {
+          method: "POST",
+          headers,
+          body: requestBody,
+          signal,
+        },
+      );
     // A read may be released at its deadline; Action effects retain their existing uncertainty handling.
     response = params.kind === "queries" || params.review ? await deadline.wait(fetchResponse) : await fetchResponse();
   } catch (error) {
@@ -895,12 +960,12 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
         origin: params.origin,
         invocationId: observed.invocationId,
         parentInvocationId: params.parentInvocation?.jti,
-        viaAppId: params.parentInvocation ? params.callingAppId : undefined,
+        viaAppId: params.workload?.appId ?? (params.parentInvocation ? params.callingAppId : undefined),
         appId: params.appId,
         capability: `${params.appId}.${params.capabilityId}`,
         kind: params.kind === "queries" ? "query" : "action",
         destructive: observed.destructive,
-        actorKind: principal?.type ?? null,
+        actorKind: params.workload ? "app" : (principal?.type ?? null),
         actorId: principal?.id ?? null,
         userId: actor?.kind === "user" ? actor.user.id : (actor?.delegatedUser?.id ?? (principal?.type === "user" ? principal.id : null)),
         accessSubject: subject && subject.id !== principal?.id ? subject : null,

@@ -6,6 +6,7 @@ import {
   CalendarListDataSchema,
   CalendarListInputSchema,
   type CapabilityActionReview,
+  type CapabilityAppExecutionContext,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CapabilityResult,
@@ -19,10 +20,12 @@ import {
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { resolveUserReaders } from "@k2b/cloud/services/identity";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
-import type { z } from "zod";
+import { sql } from "bun";
+import { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
   ActivityDataSchema,
@@ -140,7 +143,13 @@ import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
 import { spacesService } from "./service";
-import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./service/access";
+import {
+  getActorsSpacePermissions,
+  isSpaceResourceId,
+  resolveSpaceApiKeyPermission,
+  SPACE_RESOURCE_TYPE,
+  SPACES_APP_ID,
+} from "./service/access";
 import * as activity from "./service/activity";
 import { spaceActivityRow } from "./service/activity-timeline";
 import { CalendarSourceError, listSourceCalendars, readSourceEvents } from "./service/calendar-source";
@@ -2256,6 +2265,12 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
     });
   });
 
+const ReadableInputSchema = ItemReadInputSchema.pick({ id: true })
+  .extend({
+    userIds: z.array(z.uuid()).max(500).describe("At most 500 current Chat participants or thread followers to check."),
+  })
+  .strict();
+
 export const spacesCapabilities = defineCapabilities({
   protocolVersion: 2,
   calendarSource: { calendars: "calendar.list", events: "calendar.events" },
@@ -2522,6 +2537,25 @@ export const spacesCapabilities = defineCapabilities({
       data: EventListDataSchema,
       openWorld: false,
       run: (input, context) => runItemList(input, context, "event"),
+    },
+    "item.readable": {
+      title: "Check item readers",
+      description: "Return only the supplied people who can currently read one item. Unknown and deleted elements return an empty subset.",
+      callers: ["chat"],
+      input: ReadableInputSchema,
+      data: z.object({ readable: z.array(z.uuid()).max(500) }).strict(),
+      openWorld: false,
+      run: async (input: z.output<typeof ReadableInputSchema>, context: CapabilityExecutionContext | CapabilityAppExecutionContext) => {
+        // A person must use the ordinary reader, which authorizes their own content read.
+        if (context.actor.kind !== "app")
+          return { ok: false as const, error: { code: "FORBIDDEN", message: "App authority required", status: 403 as const } };
+        const [element] = await sql<{ space_id: string }[]>`SELECT space_id FROM spaces.items WHERE short_id = ${input.id}`;
+        if (!element) return ok({ data: { readable: [] } });
+        const readers = await resolveUserReaders(input.userIds);
+        const permissions = await getActorsSpacePermissions(element.space_id, readers);
+        const readable = new Set(readers.filter((_, index) => permissions[index] !== "none").map((reader) => reader.actor.user.id));
+        return ok({ data: { readable: [...new Set(input.userIds)].filter((id) => readable.has(id)) } });
+      },
     },
     "item.read": {
       title: "Read Space item",

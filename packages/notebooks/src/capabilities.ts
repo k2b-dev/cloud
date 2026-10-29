@@ -1,4 +1,5 @@
 import {
+  type CapabilityAppExecutionContext,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CloudResourceView,
@@ -11,8 +12,10 @@ import {
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { resolveUserReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { z } from "zod";
+import { sql } from "bun";
+import { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
 import {
   ActivityDataSchema,
@@ -54,7 +57,7 @@ import { notebookCapabilityMessages } from "./capability-messages";
 import { notebooksCapabilityPresentation } from "./capability-presentation";
 import { NoteComposeInputSchema } from "./commands";
 import { noteContentHash, summarizeNoteEditBlocks } from "./lib/note-edit";
-import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
+import { getActorsNotebookPermissions, NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
 import * as activity from "./service/activity";
 import { notebookActivityRow } from "./service/activity-timeline";
 import { resolveNotebookApiKeyPermission } from "./service/api-key-permissions";
@@ -1095,6 +1098,12 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
   );
 };
 
+const ReadableInputSchema = NoteReadInputSchema.pick({ id: true })
+  .extend({
+    userIds: z.array(z.uuid()).max(500).describe("At most 500 current Chat participants or thread followers to check."),
+  })
+  .strict();
+
 export const notebooksCapabilities = defineCapabilities({
   protocolVersion: 2,
   commands: {
@@ -1224,6 +1233,25 @@ export const notebooksCapabilities = defineCapabilities({
       data: NoteTreeDataSchema,
       openWorld: false,
       run: (input, context) => runNoteTree(input, context, true),
+    },
+    "note.readable": {
+      title: "Check note readers",
+      description: "Return only the supplied people who can currently read one note. Unknown and deleted elements return an empty subset.",
+      callers: ["chat"],
+      input: ReadableInputSchema,
+      data: z.object({ readable: z.array(z.uuid()).max(500) }).strict(),
+      openWorld: false,
+      run: async (input: z.output<typeof ReadableInputSchema>, context: CapabilityExecutionContext | CapabilityAppExecutionContext) => {
+        // A person must use the ordinary reader, which authorizes their own content read.
+        if (context.actor.kind !== "app")
+          return { ok: false as const, error: { code: "FORBIDDEN", message: "App authority required", status: 403 as const } };
+        const [element] = await sql<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE short_id = ${input.id}`;
+        if (!element) return ok({ data: { readable: [] } });
+        const readers = await resolveUserReaders(input.userIds);
+        const permissions = await getActorsNotebookPermissions(element.notebook_id, readers);
+        const readable = new Set(readers.filter((_, index) => permissions[index] !== "none").map((reader) => reader.actor.user.id));
+        return ok({ data: { readable: [...new Set(input.userIds)].filter((id) => readable.has(id)) } });
+      },
     },
     "note.read": {
       title: "Read note",

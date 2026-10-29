@@ -163,7 +163,22 @@ const registry = defineEnv({
   },
   CLOUD_CORE_INTERNAL_ORIGIN: {
     schema: z.string(),
-    doc: "Direct Core listener origin for OAuth issuance, mandate-backed background work and internal callbacks; host-run callers use the Core port, not the gateway.",
+    doc: "Direct Core listener origin for OAuth issuance, app queries, mandate-backed background work and internal callbacks; host-run callers use the Core port, not the gateway.",
+  },
+  CLOUD_APP_IDS: {
+    schema: envList.pipe(
+      z
+        .array(
+          z
+            .string()
+            .min(1)
+            .max(80)
+            .regex(/^[a-z][a-z0-9-]*$/),
+        )
+        .max(200),
+    ),
+    default: [],
+    doc: "Deployment inventory of known app IDs, including offline and optional apps. App-query providers reject caller IDs outside this list at startup; listing an app grants no invocation rights.",
   },
   CLOUD_APP_CREDENTIAL: {
     schema: z.string(),

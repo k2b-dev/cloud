@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # Chat system conversations
@@ -70,6 +70,15 @@ are previous conversation authors, excluding the caller. Mentioning someone
 does not grant access: the feed, count, message reads, and content-bearing live
 events still use that reader's own container and item authority. The personal
 `for-you` live hint carries no content or resource identity.
+
+## Background notifications
+
+Follows, mentions, and replies in item threads can send notifications after
+Chat checks the current recipients through the owning application's
+[app-to-app Query](/en/docs/platform/app-to-app-queries). Only current participants
+or followers enter that check. Configure the app workload before enabling this
+path; [Chat notifications](/en/docs/operations/chat-notifications) describes
+its health state, limits, and immediate pre-send recheck.
 
 ## Search the chat list
 

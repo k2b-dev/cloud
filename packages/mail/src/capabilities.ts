@@ -89,11 +89,19 @@ const requestContext = (context: CapabilityExecutionContext): MailRequestContext
 
 const localizeCapabilityErrors = <T extends CapabilityDefinitions>(definitions: T): T => {
   for (const definition of Object.values(definitions.queries ?? {})) {
-    const run = definition.run;
-    definition.run = async (input, context) => {
-      const result = await run(input, context);
-      return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
-    };
+    if (definition.callers !== undefined) {
+      const run = definition.run;
+      definition.run = async (input, context) => {
+        const result = await run(input, context);
+        return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+      };
+    } else {
+      const run = definition.run;
+      definition.run = async (input, context) => {
+        const result = await run(input, context);
+        return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+      };
+    }
   }
   for (const definition of Object.values(definitions.actions ?? {})) {
     const run = definition.run;

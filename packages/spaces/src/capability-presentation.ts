@@ -251,6 +251,11 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl beschreibbarer Elemente.",
           },
         },
+        "item.readable": {
+          title: "Leseberechtigte prüfen",
+          description:
+            "Liefert nur die angegebenen Personen, die den Space-Eintrag aktuell lesen dürfen. Unbekannte und gelöschte Einträge liefern eine leere Liste.",
+        },
         "item.read": {
           title: "Artikel Space lesen",
           description:

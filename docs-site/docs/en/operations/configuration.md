@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-26
+updated: 2026-10-29
 ---
 
 # Configuration reference
@@ -45,7 +45,8 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `CLOUD_IDENTITY_NEXT_KEY` | string | secret | unset | no | Core only: pre-distributed next KEK before promoting it to current; cannot be combined with `CLOUD_IDENTITY_PREVIOUS_KEY`. |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | string | secret | unset | no | Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed. |
 | `CLOUD_OAUTH_BROKER_SECRET` | string | secret | unset | no | Core and OAuth only: 64-hex secret that lets the OAuth app request token signatures from Core; generate independently with `openssl rand -hex 32`. |
-| `CLOUD_CORE_INTERNAL_ORIGIN` | string | runtime | unset | no | Direct Core listener origin for OAuth issuance, mandate-backed background work and internal callbacks; host-run callers use the Core port, not the gateway. |
+| `CLOUD_CORE_INTERNAL_ORIGIN` | string | runtime | unset | no | Direct Core listener origin for OAuth issuance, app queries, mandate-backed background work and internal callbacks; host-run callers use the Core port, not the gateway. |
+| `CLOUD_APP_IDS` | list | runtime | empty list | no | Deployment inventory of known app IDs, including offline and optional apps. App-query providers reject caller IDs outside this list at startup; listing an app grants no invocation rights. |
 | `CLOUD_APP_CREDENTIAL` | string | secret | unset | no | App-bound workload credential provisioned through Core's admin workload API; background apps such as Mail need one with `identity:invoke`. |
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the Core listener for session and invocation JWKS; unset fetches keys from the public issuer origin. |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the OAuth listener for OAuth JWKS; unset fetches keys from the public issuer origin. |

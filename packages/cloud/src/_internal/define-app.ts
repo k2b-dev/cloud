@@ -10,6 +10,7 @@ import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
+import { createAppQueryRoutes, validateCapabilityCallers } from "./app-queries";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -698,6 +699,7 @@ export const defineApp = <
       // flag so the registry never points at a URL that 404s.
       const advertiseOpenapi = !!(opts.openapi && startOpts.openapi);
       const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities, meta.routes) : undefined;
+      if (compiledCapabilities) validateCapabilityCallers(compiledCapabilities.manifest, new Set(env.CLOUD_APP_IDS));
       if (startOpts.capabilities) bindAppEvents(meta.id, startOpts.capabilities, compiledCapabilities);
       const compiledHelp = startOpts.help
         ? compileHelp({
@@ -877,6 +879,7 @@ export const defineApp = <
         server.route("/api/_internal/events/v1", createAppEventDeliveryRoutes(compiledCapabilities));
 
       if (compiledCapabilities) {
+        server.route("/api/_internal/capabilities/v1/app-queries", createAppQueryRoutes(compiledCapabilities));
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>
           withCapabilityRequestTimeout(c, kind, async () => {
             // Framework-owned endpoints run before the app's settings middleware,

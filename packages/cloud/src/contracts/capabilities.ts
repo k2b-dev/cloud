@@ -911,7 +911,22 @@ export type CapabilityPresentationCatalog = {
   translations: Readonly<Record<string, CapabilityPresentationTranslation>>;
 };
 
-export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
+/** App authority has no grant-bearing subject, user, nested exchange, or interactive credential. */
+export type CapabilityAppExecutionContext = {
+  actor: { kind: "app"; appId: string };
+  accessSubject: { type: "none" };
+  user: null;
+  authority?: never;
+  query?: never;
+  idempotencyKey?: never;
+  locale: string;
+  requestId: string;
+  origin: CapabilityOrigin;
+  via?: CapabilityVia;
+  signal: AbortSignal;
+};
+
+type CapabilityQueryBase<Input extends z.ZodType, Data extends z.ZodType> = {
   title: string;
   description: string;
   input: Input;
@@ -919,16 +934,33 @@ export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, 
   openWorld: boolean;
   stream?: CapabilityStreamDefinition;
   universalSearch?: CapabilityUniversalSearchDefinition;
-  run: (
-    input: z.output<Input>,
-    context: CapabilityExecutionContext,
-  ) => CapabilityInvocationResult<z.output<Data>> | Promise<CapabilityInvocationResult<z.output<Data>>>;
 };
+export type CapabilityQueryDefinition<
+  Input extends z.ZodType = z.ZodType<any>,
+  Data extends z.ZodType = z.ZodType<any>,
+> = CapabilityQueryBase<Input, Data> &
+  (
+    | {
+        callers?: never;
+        run: (
+          input: z.output<Input>,
+          context: CapabilityExecutionContext,
+        ) => CapabilityInvocationResult<z.output<Data>> | Promise<CapabilityInvocationResult<z.output<Data>>>;
+      }
+    | {
+        callers: readonly string[];
+        run: (
+          input: z.output<Input>,
+          context: CapabilityExecutionContext | CapabilityAppExecutionContext,
+        ) => CapabilityInvocationResult<z.output<Data>> | Promise<CapabilityInvocationResult<z.output<Data>>>;
+      }
+  );
 
 export type CapabilityIdempotencyPolicy = "none" | "required";
 export type CapabilityActionApprovalPolicy = "rememberable" | "none";
 
 export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
+  callers?: never;
   title: string;
   description: string;
   input: Input;
@@ -1044,6 +1076,16 @@ const CapabilityOperationManifestBaseSchema = z
   .strict();
 
 export const CapabilityQueryManifestSchema = CapabilityOperationManifestBaseSchema.extend({
+  callers: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(80)
+        .regex(/^[a-z][a-z0-9-]*$/),
+    )
+    .max(200)
+    .optional(),
   openWorld: z.boolean(),
   universalSearch: z
     .object({ tags: z.array(CapabilitySearchTagManifestSchema).max(100), scopeTypes: z.array(CapabilityLocalIdSchema).max(100).optional() })

@@ -12,6 +12,7 @@ import { badgeCount } from "./badge";
 import { titles } from "./conversation-titles";
 import type { MessageRow } from "./message-store";
 import { type NotificationChoice, resolveNotifications } from "./notification-levels";
+import { readableSystemRecipients, reportSystemNotificationHealth } from "./system-notification-access";
 
 export const DELIVERY_BATCH = 500;
 export const PUSH_DELAY_MS = 3_000;
@@ -50,10 +51,19 @@ export const alertKey = (userId: string) => `chat:push:alert:${userId}`;
 const permissions = async (
   conversation: ConversationRow,
   people: { id: string; profile: string }[],
+  threadId: string | null,
 ): Promise<Map<string, PermissionLevel>> => {
   const result = new Map<string, PermissionLevel>();
   // System chat grants belong to the resource provider; Chat's grants cannot authorize their contents.
-  if (conversation.kind === "system") return result;
+  if (conversation.kind === "system") {
+    for (const id of await readableSystemRecipients(
+      conversation.id,
+      threadId,
+      people.map((person) => person.id),
+    ))
+      result.set(id, "read");
+    return result;
+  }
   const allow = await discoveryAllowed();
   for (const guest of [false, true]) {
     const group = people.filter((person) => (person.profile === "guest") === guest);
@@ -117,7 +127,7 @@ export const deliverMessage = async (messageId: string): Promise<boolean> => {
     if (!conversation) return false;
     const candidates =
       message.kind === "text" ? await messageCandidates(db, message, conversation) : await addedCandidates(db, message, conversation);
-    const access = await permissions(conversation, candidates);
+    const access = await permissions(conversation, candidates, message.thread_id);
     const [flags] = await db<{ channel: boolean; now: Date }[]>`SELECT clock_timestamp() AS now,
       EXISTS(SELECT 1 FROM chat.conversation_access WHERE conversation_id = ${conversation.id}::uuid AND role = 'discoverable') AS channel`;
     for (const person of candidates) {
@@ -266,7 +276,8 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
       await clear();
       return null;
     }
-    const permission = (await permissions(conversation, [person])).get(userId) ?? "none";
+    const permission =
+      conversation.kind === "system" ? "read" : ((await permissions(conversation, [person], latest.thread_id)).get(userId) ?? "none");
     if (permission === "none") {
       await clear();
       return null;
@@ -350,13 +361,23 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
       reason: pending.reason,
       threadName: thread?.name ?? null,
       href: `/app/chat/c/${conversation.short_id}${thread ? `/t/${thread.short_id}` : ""}/m/${chosen.short_id}`,
-      further: pending.message_count - 1,
+      // Earlier coalesced messages can belong to other, now unreadable elements.
+      further: conversation.kind === "system" ? 0 : pending.message_count - 1,
       preview,
       badge: await badgeCount(context, db),
       alert,
     };
     const definition =
       pending.reason === "added" ? app.notifications.added : personalReason ? app.notifications.mention : app.notifications.message;
+    if (
+      conversation.kind === "system" &&
+      (!(await readableSystemRecipients(conversation.id, chosen.thread_id, [userId], db)).has(userId) ||
+        (chosen.thread_id !== latest.thread_id &&
+          !(await readableSystemRecipients(conversation.id, latest.thread_id, [userId], db)).has(userId)))
+    ) {
+      await clear();
+      return null;
+    }
     const result = await notifications.send(definition, {
       recipient: { userId },
       data,
@@ -387,6 +408,7 @@ export const notificationLifecycle = {
       if (delayMs !== null) context.resubmit({ delayMs });
     });
     notificationOutbox.start();
+    reportSystemNotificationHealth();
     log.info("Chat notification workers started", { deliveryBatch: DELIVERY_BATCH, pushDelayMs: PUSH_DELAY_MS, retention: "sync-default" });
   },
   async stop() {

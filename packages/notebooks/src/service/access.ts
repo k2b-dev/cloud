@@ -5,8 +5,10 @@ import {
   createAccess,
   deleteAccess,
   getEffectivePermission,
+  getEffectivePermissions,
   type PermissionLevel,
   type Principal,
+  type RequestActor,
   updateAccess,
 } from "@k2b/cloud/server";
 import {
@@ -496,4 +498,27 @@ export const updateNotebookAccess = async (params: {
     await invalidated({ notebookId: params.notebookId, reason: "permissions", scopes: ["permissions"] });
   }
   return result;
+};
+
+/** Bulk equivalent of interactive Notebook read authority, including resource and credential ceilings. */
+export const getActorsNotebookPermissions = async (
+  notebookId: string,
+  readers: readonly { actor: RequestActor; subject: AccessSubject }[],
+): Promise<PermissionLevel[]> => {
+  const granted = await getEffectivePermissions({
+    accessIds: sql`SELECT access_id FROM notebooks.notebook_access WHERE notebook_id = ${notebookId}::uuid`,
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers.map(({ actor }, index) => {
+    if (actor.kind !== "service_account") return granted[index] ?? "none";
+    const account = actor.serviceAccount;
+    if (
+      account.kind === "resource_bound" &&
+      (account.appId !== NOTEBOOKS_APP_ID || account.resourceType !== NOTEBOOK_RESOURCE_TYPE || account.resourceId !== notebookId)
+    )
+      return "none";
+    return account.kind === "user_delegated"
+      ? (granted[index] ?? "none")
+      : resolveNotebookApiKeyPermission(granted[index] ?? "none", actor.scopes);
+  });
 };

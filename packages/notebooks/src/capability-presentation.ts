@@ -190,6 +190,11 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
         },
+        "note.readable": {
+          title: "Leseberechtigte prüfen",
+          description:
+            "Liefert nur die angegebenen Personen, die die Notiz aktuell lesen dürfen. Unbekannte und gelöschte Einträge liefern eine leere Liste.",
+        },
         "note.read": {
           title: "Notiz lesen",
           description:

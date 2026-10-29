@@ -16,6 +16,7 @@ import { FOR_YOU_COUNT_CAP, FOR_YOU_PAGE_SIZE, type ForYouPageSchema, ForYouQuer
 import { titles } from "./conversation-titles";
 import { type MessageRow, messageViews } from "./message-store";
 import { RESOURCE_PAGE_SIZE, readerBatch, readResource } from "./resource-access";
+import { readableSystemRecipients } from "./system-notification-access";
 import { visibleMessages } from "./thread-access";
 import type { ThreadRow } from "./threads";
 
@@ -174,7 +175,27 @@ const countUnread = async (context: ChatContext, db: typeof sql, conversationId?
   for (let batch = 0; batch < FOR_YOU_COUNT_BATCHES && total < FOR_YOU_COUNT_CAP; batch++) {
     context.caller?.signal?.throwIfAborted();
     const page = await candidates(db, context, RESOURCE_PAGE_SIZE, cursor, true, conversationId);
-    total += (await visible(db, context, page)).rows.length;
+    // Counting needs only yes/no, never cached titles or content. Item permission includes its owning container.
+    const systems = await db<{ id: string; thread_id: string | null; conversation_id: string }[]>`
+      SELECT m.id, m.thread_id, m.conversation_id FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
+      WHERE m.id = ANY(${toPgUuidArray(page.map((row) => row.id))}::uuid[]) AND c.kind = 'system'
+    `;
+    const systemIds = new Set(systems.map((row) => row.id));
+    total += (
+      await visible(
+        db,
+        context,
+        page.filter((row) => !systemIds.has(row.id)),
+      )
+    ).rows.length;
+    if (context.accessSubject.type === "user") {
+      const userId = context.accessSubject.userId;
+      for (const threadId of new Set(systems.map((row) => row.thread_id))) {
+        const group = systems.filter((row) => row.thread_id === threadId);
+        if (group.length && (await readableSystemRecipients(group[0]!.conversation_id, threadId, [userId], db)).has(userId))
+          total += group.length;
+      }
+    }
     if (page.length < RESOURCE_PAGE_SIZE) break;
     cursor = position(page.at(-1)!);
   }

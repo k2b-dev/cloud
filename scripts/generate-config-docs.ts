@@ -10,6 +10,7 @@ import { Glob } from "bun";
 import { z } from "zod";
 import { type EnvScope, type EnvSpec, type EnvSpecs, envBoolean, envList, envString } from "../packages/cloud/src/config/define-env";
 import { env } from "../packages/cloud/src/config/env";
+import { appIds } from "./workspace";
 
 const root = new URL("..", import.meta.url).pathname;
 const check = process.argv.includes("--check");
@@ -58,6 +59,10 @@ const composeInputs: Record<string, { value: string; doc: string; optional?: tru
   POSTGRES_PASSWORD: { value: "change-me", doc: "Postgres password for the same connection." },
   POSTGRES_DB: { value: "cloud", doc: "Postgres database name for the same connection." },
   CLOUD_HOST: { value: "cloud.example.com", doc: "Public hostname routed by Traefik to the gateway; also forms APP_URL." },
+  CLOUD_CHAT_APP_CREDENTIAL: {
+    value: "",
+    doc: "Chat only: Compose passes this workload credential to Chat as CLOUD_APP_CREDENTIAL for system notification reader queries.",
+  },
   CLOUD_MAIL_APP_CREDENTIAL: { value: "", doc: "Mail only: Compose passes this workload credential to Mail as CLOUD_APP_CREDENTIAL." },
   CLOUD_DEV_POSTGRES_PORT: {
     value: "5432",
@@ -243,12 +248,22 @@ const outputs = async (): Promise<Record<string, string>> => {
   const previousUpdated = existing.match(/^updated: (\d{4}-\d{2}-\d{2})$/m)?.[1];
   let reference = referencePage(registries, previousUpdated ?? today);
   if (reference !== existing) reference = referencePage(registries, today);
+  const composeInventory = Object.fromEntries(
+    await Promise.all(
+      ["compose.dev.yml", "compose.prod.yml"].map(async (file) => {
+        const content = await Bun.file(`${root}${file}`).text();
+        const line = `  CLOUD_APP_IDS: \${CLOUD_APP_IDS:-${appIds().join(",")}}`;
+        return [file, content.replace(/^  CLOUD_APP_IDS:.*\n/m, "").replace(/^(  CLOUD_CORE_INTERNAL_ORIGIN:.*)$/m, `$1\n${line}`)];
+      }),
+    ),
+  );
   return {
+    ...composeInventory,
     ".env.example": developmentEnv(
       registries,
-      [...new Set([...(await composeKeys("compose.yml")), ...(await composeKeys("compose.dev.yml"))])].sort(),
+      [...new Set(["CLOUD_APP_IDS", ...(await composeKeys("compose.yml")), ...(await composeKeys("compose.dev.yml"))])].sort(),
     ),
-    ".env.prod.example": productionEnv(registries, await composeKeys("compose.prod.yml")),
+    ".env.prod.example": productionEnv(registries, [...new Set(["CLOUD_APP_IDS", ...(await composeKeys("compose.prod.yml"))])].sort()),
     [referencePath]: reference,
   };
 };

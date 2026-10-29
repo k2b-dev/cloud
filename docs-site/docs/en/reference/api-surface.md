@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-27
+updated: 2026-10-29
 ---
 
 # API surface
@@ -546,3 +546,12 @@ filtering helpers are platform-owned.
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+### App-only capability authority
+
+`CapabilityAppExecutionContext` and Query `callers` are exported from
+`@k2b/cloud/contracts`. The server capability client's `CapabilityCaller.workload`
+selects app-only Query authority. `resolveUserReaders()` is exported from
+`@k2b/cloud/services/identity` for bounded current-person read decisions. Read
+[App-to-app queries](/en/docs/platform/app-to-app-queries) before using these
+surfaces; none grants an app the supplied people's authority.

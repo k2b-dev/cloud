@@ -1,4 +1,5 @@
 import { afterEach, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { env } from "@k2b/cloud/config";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { browserNotifications, notifications, serviceAccountCredentials, toPgUuidArray } from "@k2b/cloud/services";
 import { processNotificationDelivery } from "@k2b/cloud/services/notifications/dispatcher";
@@ -14,6 +15,7 @@ import { app } from "../config";
 import { type PushData, PushDataSchema, renderPush } from "../notifications";
 import { badgeCount } from "./badge";
 import { alertKey, allowAlert, deliverMessage, notificationLifecycle, notificationOutbox, sendPush } from "./notification-delivery";
+import { readableSystemRecipients, systemNotificationDependencies, systemNotificationHealth } from "./system-notification-access";
 
 const typedNotifications: { send: typeof sendTypedNotification } = notifications;
 setDefaultTimeout(30_000);
@@ -33,6 +35,9 @@ suiteFor(
     return p;
   };
   let send: ReturnType<typeof spyOn<typeof typedNotifications, "send">> | undefined;
+  let reader: ReturnType<typeof spyOn<typeof systemNotificationDependencies, "invoke">> | undefined;
+  const credentialDescriptor = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_CREDENTIAL");
+  const configureSystem = () => Object.defineProperty(env, "CLOUD_APP_CREDENTIAL", { value: "fixture-workload", configurable: true });
   const sent: { key: string; data: PushData; locale?: string }[] = [];
   const capture = () => {
     send = spyOn(typedNotifications, "send").mockImplementation(async (definition, input) => {
@@ -41,6 +46,10 @@ suiteFor(
     });
   };
   afterEach(async () => {
+    reader?.mockRestore();
+    reader = undefined;
+    if (credentialDescriptor) Object.defineProperty(env, "CLOUD_APP_CREDENTIAL", credentialDescriptor);
+    else Reflect.deleteProperty(env, "CLOUD_APP_CREDENTIAL");
     send?.mockRestore();
     send = undefined;
     sent.length = 0;
@@ -361,6 +370,7 @@ suiteFor(
     expect(renderPush(sent[0]!.data, { locale: "en" }).preview).toContain("Planning assistant (Agent)");
   });
   test("system follows and stale Chat membership cannot authorize background delivery", async () => {
+    Object.defineProperty(env, "CLOUD_APP_CREDENTIAL", { value: undefined, configurable: true });
     const { author, recipient, chat } = await setup();
     const message = await post(author, chat.shortId);
     const thread = testShortId();
@@ -376,6 +386,146 @@ suiteFor(
     await due(chat.id);
     await sendPush(recipient.id, chat.id);
     expect(sent).toHaveLength(0);
+  });
+  const asSystem = async (chatId: string, authorId: string, messageIds: string[], recipientId: string) => {
+    const [thread] = await sql<
+      { id: string }[]
+    >`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id)
+      VALUES (${testShortId()}, ${chatId}::uuid, 'Task', 'user', ${authorId}::uuid, 'spaces.item', ${testShortId()}) RETURNING id`;
+    await sql`UPDATE chat.conversations SET kind = 'system', resource_type = 'spaces.space', resource_id = ${testShortId()} WHERE id = ${chatId}::uuid`;
+    await sql`UPDATE chat.messages SET thread_id = ${thread!.id}::uuid WHERE id = ANY(${toPgUuidArray(messageIds)}::uuid[])`;
+    await sql`INSERT INTO chat.thread_follows (principal_type, principal_id, conversation_id, thread_id)
+      VALUES ('user', ${recipientId}::uuid, ${chatId}::uuid, ${thread!.id}::uuid)`;
+    return thread!.id;
+  };
+  test("system followers receive F3 pushes; Chat filters candidates before the owner query", async () => {
+    const { author, recipient, chat } = await setup();
+    const outsider = await person("Outside reader");
+    const message = await post(author, chat.shortId);
+    const threadId = await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+    // A follow selects the personal notification reason; it never authorizes content itself.
+    configureSystem();
+    reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (appId, capabilityId, input, caller) => {
+      expect(appId).toBe("spaces");
+      expect(capabilityId).toBe("item.readable");
+      expect(input.userIds).not.toContain(outsider.id);
+      expect(caller.workload).toEqual({ appId: "chat" });
+      return { ok: true, data: { data: { readable: input.userIds } } };
+    });
+    expect(await readableSystemRecipients(chat.id, threadId, [recipient.id, outsider.id])).toEqual(new Set([recipient.id]));
+    await deliverMessage(message.uuid);
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.data.reason).toBe("follow");
+  });
+  test("readable system mentions count in the badge and push; a fresh revocation suppresses the next push", async () => {
+    const { author, recipient, chat } = await setup();
+    const first = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    const second = await post(author, chat.shortId, "Hello Lea again", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    await asSystem(chat.id, author.id, [first.uuid, second.uuid], recipient.id);
+    configureSystem();
+    let readable = true;
+    reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => ({
+      ok: true,
+      data: { data: { readable: readable ? input.userIds : [] } },
+    }));
+    expect(await badgeCount(recipient.context)).toBe(2);
+    await deliverMessage(first.uuid);
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.key).toBe("mention");
+    await deliverMessage(second.uuid);
+    readable = false;
+    expect(await badgeCount(recipient.context)).toBe(0);
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(1);
+  });
+  for (const revoked of ["chosen", "latest"] as const) {
+    test(`system coalescing rechecks the ${revoked} element before exposing an older personal message`, async () => {
+      const { author, recipient, chat } = await setup();
+      const mention = await post(author, chat.shortId, "Hello Lea", {
+        mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+      });
+      const latest = await post(author, chat.shortId, "Newer ordinary message");
+      const chosenThread = await asSystem(chat.id, author.id, [mention.uuid], recipient.id);
+      const [chosen] = await sql<{ resource_id: string }[]>`SELECT resource_id FROM chat.threads WHERE id = ${chosenThread}::uuid`;
+      const latestElement = testShortId();
+      const [thread] = await sql<
+        { id: string }[]
+      >`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id)
+        VALUES (${testShortId()}, ${chat.id}::uuid, 'Other item', 'user', ${author.id}::uuid, 'spaces.item', ${latestElement}) RETURNING id`;
+      await sql`UPDATE chat.messages SET thread_id = ${thread!.id}::uuid WHERE id = ${latest.uuid}::uuid`;
+      await sql`UPDATE chat.participants SET notify = 'all' WHERE conversation_id = ${chat.id}::uuid AND principal_id = ${recipient.id}::uuid`;
+      configureSystem();
+      let revokedElement: string | undefined;
+      reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => ({
+        ok: true,
+        data: { data: { readable: input.id === revokedElement ? [] : input.userIds } },
+      }));
+      await deliverMessage(mention.uuid);
+      await deliverMessage(latest.uuid);
+      const [pending] = await sql<
+        { message_id: string; personal_message_id: string }[]
+      >`SELECT message_id, personal_message_id FROM chat.notification_pending WHERE conversation_id = ${chat.id}::uuid AND user_id = ${recipient.id}::uuid`;
+      expect(pending).toMatchObject({ message_id: latest.uuid, personal_message_id: mention.uuid });
+      revokedElement = revoked === "chosen" ? chosen!.resource_id : latestElement;
+      await due(chat.id);
+      await sendPush(recipient.id, chat.id);
+      expect(sent).toHaveLength(0);
+    });
+  }
+  test("system bundles expose no aggregate count from an earlier revoked element", async () => {
+    const { author, recipient, chat } = await setup();
+    const earlier = await post(author, chat.shortId, "Earlier private discussion");
+    const chosen = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    const latest = await post(author, chat.shortId, "Latest readable discussion");
+    const earlierThread = await asSystem(chat.id, author.id, [earlier.uuid], recipient.id);
+    await asSystem(chat.id, author.id, [chosen.uuid, latest.uuid], recipient.id);
+    const [earlierResource] = await sql<{ resource_id: string }[]>`SELECT resource_id FROM chat.threads WHERE id = ${earlierThread}::uuid`;
+    configureSystem();
+    let revokedElement: string | undefined;
+    reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => ({
+      ok: true,
+      data: { data: { readable: input.id === revokedElement ? [] : input.userIds } },
+    }));
+    await deliverMessage(earlier.uuid);
+    await deliverMessage(chosen.uuid);
+    await deliverMessage(latest.uuid);
+    revokedElement = earlierResource!.resource_id;
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.data).toMatchObject({ text: "Latest readable discussion", further: 0 });
+  });
+  test("system replies push when readable, and missing configuration is visible and closed", async () => {
+    const { author, recipient, chat } = await setup();
+    const original = await post(recipient, chat.shortId, "Question");
+    const reply = await post(author, chat.shortId, "Answer", { replyTo: original.id });
+    const threadId = await asSystem(chat.id, author.id, [original.uuid, reply.uuid], recipient.id);
+    configureSystem();
+    reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => ({
+      ok: true,
+      data: { data: { readable: input.userIds } },
+    }));
+    await deliverMessage(reply.uuid);
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.data.reason).toBe("reply");
+    Object.defineProperty(env, "CLOUD_APP_CREDENTIAL", { value: undefined, configurable: true });
+    const calls = reader.mock.calls.length;
+    expect(systemNotificationHealth().status).toBe("unavailable");
+    expect(await readableSystemRecipients(chat.id, threadId, [recipient.id])).toEqual(new Set());
+    expect(reader.mock.calls).toHaveLength(calls);
   });
   test("platform dispatcher applies DND without catch-up", async () => {
     const { author, recipient, chat } = await setup();

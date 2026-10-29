@@ -30,6 +30,7 @@ import {
   CapabilityActionPolicySchema,
   type CapabilityActionReviewResult,
   type CapabilityActionSentences,
+  type CapabilityAppExecutionContext,
   type CapabilityCalendarSourceDeclaration,
   CapabilityCalendarSourceManifestSchema,
   type CapabilityCommandDefinition,
@@ -116,6 +117,7 @@ const TYPE_FIELDS = {
   pages: true,
 } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
+  callers: true,
   title: true,
   description: true,
   input: true,
@@ -138,7 +140,7 @@ const ACTION_FIELDS = {
   policy: true,
   review: true,
   run: true,
-} satisfies DefinedFields<CapabilityActionDefinition>;
+} satisfies DefinedFields<Omit<CapabilityActionDefinition, "callers">>;
 const COMMAND_FIELDS = {
   title: true,
   description: true,
@@ -667,6 +669,7 @@ const compileOperationSchemas = (definition: CapabilityQueryDefinition | Capabil
     schemaHash: capabilityHash({
       inputSchema,
       dataSchema,
+      ...("callers" in definition && definition.callers !== undefined ? { callers: definition.callers } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
     }),
   };
@@ -727,6 +730,18 @@ export const compileCapabilities = (
     registerLocalId(localId, "Query");
     const label = `Query ${localId}`;
     assertDefinedFields(definition, QUERY_FIELDS, label);
+    if (definition.callers !== undefined) {
+      z.array(
+        z
+          .string()
+          .min(1)
+          .max(80)
+          .regex(/^[a-z][a-z0-9-]*$/),
+      )
+        .max(200)
+        .parse(definition.callers);
+      if (definition.stream) throw new Error(`${label}: app callers cannot use streams`);
+    }
     assertDefinedStreamFields(definition.stream, label);
     if (
       definition.stream &&
@@ -756,6 +771,7 @@ export const compileCapabilities = (
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       openWorld: definition.openWorld,
       universalSearch: normalizeSearchTags(definition, label),
+      ...(definition.callers !== undefined ? { callers: [...definition.callers] } : {}),
     } satisfies CapabilityQueryManifest;
     for (const type of manifest.universalSearch?.scopeTypes ?? []) {
       if (!typeIds.has(qualifiedId(appId, type))) throw new Error(`${label} declares an unknown search scope type ${type}`);
@@ -1157,9 +1173,11 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
   if (operation.stream?.direction === "write" && (!("idempotency" in operation) || operation.idempotency !== "required")) {
     throw new Error(`Operation ${operation.localId} write streams require an idempotent Action`);
   }
+  if ("callers" in operation && operation.callers !== undefined && operation.stream) throw new Error("App callers cannot use streams");
   const expectedSchemaHash = capabilityHash({
     inputSchema: operation.inputSchema,
     dataSchema: operation.dataSchema,
+    ...("callers" in operation && operation.callers !== undefined ? { callers: operation.callers } : {}),
     ...(operation.stream ? { stream: operation.stream } : {}),
   });
   if (operation.schemaHash !== expectedSchemaHash) throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
@@ -1542,13 +1560,17 @@ const cancelledInvocation = (locale: string) => ({
   },
 });
 
+const isAppCapabilityContext = (
+  context: CapabilityExecutionContext | CapabilityAppExecutionContext,
+): context is CapabilityAppExecutionContext => context.actor.kind === "app";
+
 export const invokeCompiledCapability = async (params: {
   compiled: CompiledCapabilities;
   kind: "query" | "action";
   localId: string;
   input: unknown;
   expectedSchemaHash: string | null;
-  context: CapabilityExecutionContext;
+  context: CapabilityExecutionContext | CapabilityAppExecutionContext;
   onUnexpectedError?: (error: unknown) => void;
 }): Promise<CapabilityInvocationResult<unknown>> => {
   if (!hasOAuthScope(params.context.authority, params.kind === "query" ? "read" : "write", "admin"))
@@ -1575,7 +1597,7 @@ export const invokeCompiledCapability = async (params: {
       },
     };
   }
-  let context: CapabilityExecutionContext = {
+  let context: CapabilityExecutionContext | CapabilityAppExecutionContext = {
     ...params.context,
     via: capabilityVia(params.context.origin),
   };
@@ -1624,7 +1646,7 @@ export const invokeCompiledCapability = async (params: {
         },
       };
     }
-    context = { ...context, idempotencyKey: idempotencyKey.data };
+    if (!isAppCapabilityContext(context)) context = { ...context, idempotencyKey: idempotencyKey.data };
   }
   const input = operation.definition.input.safeParse(params.input);
   if (!input.success) {
@@ -1652,7 +1674,15 @@ export const invokeCompiledCapability = async (params: {
   // cross into application code for the first time with an aborted invocation.
   if (context.signal.aborted) return cancelledInvocation(context.locale);
   try {
-    const invoked = await operation.definition.run(input.data, context);
+    let invoked: CapabilityInvocationResult<unknown>;
+    if (isAppCapabilityContext(context)) {
+      const definition = operation.definition;
+      if (params.kind !== "query" || !("callers" in definition) || !definition.callers?.includes(context.actor.appId))
+        return { ok: false, error: { code: "FORBIDDEN", message: "App caller is not allowed", status: 403 } };
+      invoked = await definition.run(input.data, context);
+    } else {
+      invoked = await operation.definition.run(input.data, context);
+    }
     if (!invoked.ok) {
       return normalizeProviderError(invoked.error, "Capability returned an invalid error", params.onUnexpectedError);
     }

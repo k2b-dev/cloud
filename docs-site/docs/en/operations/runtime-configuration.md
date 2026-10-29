@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-23
+updated: 2026-10-29
 ---
 
 # Runtime configuration
@@ -122,9 +122,37 @@ at Core's direct listener, not the gateway. Do not load a shared environment
 file containing Core's KEKs into every application.
 
 The repository's development and production Compose files accept
-`CLOUD_MAIL_APP_CREDENTIAL` as an input. They pass it only to Mail as
-`CLOUD_APP_CREDENTIAL` and supply the private service origins. The input name
-is not a runtime variable read by Mail.
+`CLOUD_MAIL_APP_CREDENTIAL` and `CLOUD_CHAT_APP_CREDENTIAL` as inputs. Each is
+passed only to its owning app as `CLOUD_APP_CREDENTIAL`; Compose supplies the
+private service origins. These input names are not runtime variables read by
+Mail or Chat.
+
+### App-query runtime upgrade
+
+Deploy Core and query providers with the same app-query contract before enabling
+Chat's system notifications. The capability migration allows app actors in the
+execution history. Source workload credentials remain app-specific.
+
+Set `CLOUD_APP_IDS` consistently on providers to the deployment's known app IDs,
+including optional apps that may be offline. Query caller validation uses this
+inventory rather than live presence, so a stopped optional Chat does not prevent
+Spaces or Notebooks from starting. The repository Compose defaults are generated
+from the workspace application list; custom installations extend or replace that
+list with their installed third-party IDs. A malformed or unknown caller fails
+startup. The inventory grants no authority by itself.
+
+Provision Chat through `POST /api/admin/identity/workloads/chat/credentials`
+with a credential name and `scopes: ["identity:invoke"]`. Store its one-time
+token in the operator's secret system and inject it only into Chat. Use
+`CLOUD_CHAT_APP_CREDENTIAL` with Compose, or `CLOUD_APP_CREDENTIAL` for a
+host-run Chat. Configure `CLOUD_CORE_INTERNAL_ORIGIN` for the latter. Confirm
+**Administration → Chat → System chat notifications** reports **Workload
+configured**, then exercise one readable item-thread mention. Configuration
+status alone does not verify credential validity; failed checks appear in the
+Chat logs. Missing configuration leaves system pushes and their badge counts
+closed while ordinary chats continue. See
+[App-to-app queries](/en/docs/platform/app-to-app-queries) for the trust and
+rate-limit contract.
 
 > Keep `APP_SECRET` stable and back it up. Cloud has no built-in key rotation;
 > changing it makes encrypted values unreadable. Settings then fall back to

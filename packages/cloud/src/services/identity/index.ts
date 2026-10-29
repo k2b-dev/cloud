@@ -45,6 +45,7 @@ export {
   signSessionToken,
   verifySessionToken,
 } from "./session-token";
+export { resolveUserReaders } from "./user-readers";
 export {
   type AuthenticatedWorkload,
   authenticateWorkloadCredential,

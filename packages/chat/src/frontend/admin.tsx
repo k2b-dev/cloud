@@ -30,6 +30,11 @@ export default ssr<AuthContext>(async (c) => {
             value={health.database.status === "ok" ? t.databaseReady : t.databaseUnavailable}
             sub={health.database.latencyMs === null ? undefined : t.latency({ value: health.database.latencyMs })}
           />
+          <StatCell
+            label={t.systemNotifications}
+            value={health.systemNotifications.status === "configured" ? t.systemNotificationsConfigured : t.systemNotificationsUnavailable}
+            sub={t.systemNotificationsSetup}
+          />
         </StatGrid>
       </div>
     </AdminLayout>

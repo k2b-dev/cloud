@@ -5,7 +5,7 @@ section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
 tags: [notifications, email, browser, do not disturb, quiet hours]
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # Notifications
@@ -784,3 +784,13 @@ removed a mail record before reconciliation, recovery records an error instead
 of automatically sending it again. Temporary backlog,
 quota, or availability failures leave recipients pending for another attempt;
 profile and input policy errors mark them as errors.
+
+## Check another application's read rights
+
+Background notifications must use the resource owner's current permission
+rules. A workload credential grants no person rights. For a small yes/no
+recipient check, the owner can declare an
+[App-to-app Query](/en/docs/platform/app-to-app-queries) for a named calling app.
+Filter candidates locally before calling it, keep the answer to a subset of
+those candidates, and check again before sending private content. Chat uses
+this path for item discussions; its badges use the same current checks.

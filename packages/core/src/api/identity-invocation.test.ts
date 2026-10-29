@@ -297,3 +297,31 @@ test("Core's actual entry policy lets the child broker authenticate its own invo
   expect(await response.json()).toMatchObject({ code: "FORBIDDEN" });
   expect((await server.request("http://core.test/api/_internal/identity/v1/invoke-child/other", { method: "POST" })).status).toBe(401);
 });
+
+test("app queries use workload identity without a mandate, while partial mandate requests fail", async () => {
+  let forwarded = 0;
+  const routes = createIdentityInvocationRoutes({
+    authenticateWorkload,
+    dispatchDependencies: {
+      getCapability: async () => ({
+        ...registryEntry,
+        manifest: { ...registryEntry.manifest, queries: registryEntry.manifest.queries.map((query) => ({ ...query, callers: ["mail"] })) },
+      }),
+      checkAppQueryRate: async () => ({ limited: false }),
+      withActiveSigner,
+      fetch: async (url, init) => {
+        forwarded++;
+        expect(String(url)).toContain("/app-queries/get");
+        expect(new Headers(init?.headers).get("authorization")).not.toContain(workloadToken);
+        return Response.json({ data: { id: "one" } });
+      },
+    },
+  });
+  const { mandateId: _mandate, mandateRevision: _revision, ...appQuery } = invocation();
+  expect((await routes.request(request(appQuery))).status).toBe(200);
+  expect(forwarded).toBe(1);
+  expect((await routes.request(request({ ...appQuery, mandateId }))).status).toBe(400);
+  expect((await routes.request(request({ ...appQuery, mandateRevision: 3 }))).status).toBe(400);
+  expect((await routes.request(request({ ...appQuery, actor: { kind: "user", userId } }))).status).toBe(400);
+  expect(forwarded).toBe(1);
+});

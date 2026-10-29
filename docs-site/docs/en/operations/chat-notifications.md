@@ -5,7 +5,7 @@ section: Operations
 order: 1076
 description: Configure Chat push content and inspect delivery workers and badge counts.
 tags: [chat, notifications, browser, operations]
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # Chat notifications
@@ -61,10 +61,25 @@ letters. Inspect the `chat:notification-outbox` log source for publication retri
 
 The additive startup migration creates `chat.notification_outbox`,
 `chat.notification_pending`, and `chat.notification_push_state`. Last push
-sequence and time survive process restarts. No environment variable is added.
+sequence and time survive process restarts.
 
-Push notifications currently cover ordinary chats and channels. System-chat
-push notifications are not available in this slice.
+Item discussions also deliver follows, mentions, and replies through the
+[app-to-app reader checks](/en/docs/platform/app-to-app-queries). Configure
+Chat's own workload credential as described in
+[Runtime configuration](/en/docs/operations/runtime-configuration#app-query-runtime-upgrade).
+Compose previously passed a workload credential only to Mail; Chat now accepts
+`CLOUD_CHAT_APP_CREDENTIAL` and receives it as `CLOUD_APP_CREDENTIAL`.
+
+Missing credentials or direct Core origin keep system delivery closed and
+produce a startup warning. `/api/chat/admin/health` and **Administration → Chat**
+show `systemNotifications.status` as `configured` or `unavailable` without
+exposing credentials. Invalid credentials and owner-query failures are logged.
+Configuration status is not proof of a successful owner read. Unavailable owner
+checks and rate limits retry through the existing jobs; explicit denials suppress
+that push. There is no permission cache for these checks: the chosen and latest
+message elements are rechecked immediately before sending. A later revocation
+cannot recall an already queued push. General system-chat messages remain
+closed because this contract checks only item and note IDs.
 
 ## Check the badge
 
