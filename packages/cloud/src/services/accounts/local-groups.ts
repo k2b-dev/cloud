@@ -2,6 +2,7 @@ import { sql } from "bun";
 import type { BaseGroup, GroupMember, MutationResult, UserProvider } from "../../contracts/shared";
 import { escapeLikePattern, isUniqueViolation } from "../postgres";
 import { buildBaseGroup, personalOwnerJoin } from "./base-group";
+import { recursiveServiceAccountGroupIdsSubquery } from "./group-sql";
 
 type DbRow = Record<string, unknown>;
 
@@ -177,7 +178,7 @@ export const remove = async (params: { id: string }): Promise<MutationResult<voi
   return { ok: true, data: undefined };
 };
 
-export const getMembers = async (params: { id: string; type?: "user" | "group"; recursive?: boolean }): Promise<GroupMember[]> => {
+export const getMembers = async (params: { id: string; type?: GroupMember["type"]; recursive?: boolean }): Promise<GroupMember[]> => {
   const group = await getLocalGroupById(params.id);
   if (!group) return [];
   const members: GroupMember[] = [];
@@ -243,6 +244,25 @@ export const getMembers = async (params: { id: string; type?: "user" | "group"; 
     for (const row of groupRows) {
       members.push({ type: "group", id: row.id as string, displayName: row.name as string });
     }
+  }
+
+  if (!params.type || params.type === "service_account") {
+    const rows = await sql<{ id: string; name: string; kind: "standalone" | "agent" }[]>`
+      SELECT sa.id, sa.name, sa.kind
+      FROM auth.service_accounts sa
+      WHERE sa.kind IN ('standalone', 'agent') AND ${
+        params.recursive === true
+          ? sql`${group.id}::uuid IN (${recursiveServiceAccountGroupIdsSubquery(sql`sa.id`)})`
+          : sql`EXISTS (
+              SELECT 1 FROM auth.service_account_groups sg
+              WHERE sg.service_account_id = sa.id AND sg.group_id = ${group.id}::uuid
+            )`
+      }
+      ORDER BY sa.name, sa.id
+    `;
+    members.push(
+      ...rows.map((row) => ({ type: "service_account" as const, id: row.id, displayName: row.name, serviceAccountKind: row.kind })),
+    );
   }
 
   return members;
@@ -387,9 +407,28 @@ export const getManagedGroups = async (params: { id: string; recursive?: boolean
   return rows.map((row) => row.group_id as string);
 };
 
-export const addMember = async (params: { id: string; user?: string; group?: string }): Promise<MutationResult<void>> => {
+export const addMember = async (params: {
+  id: string;
+  user?: string;
+  group?: string;
+  serviceAccount?: string;
+}): Promise<MutationResult<void>> => {
   const group = await getLocalGroupById(params.id);
   if (!group) return { ok: false, error: "Group not found", status: 404 };
+
+  if (params.serviceAccount) {
+    const [account] = await sql<{ id: string }[]>`
+      SELECT id FROM auth.service_accounts
+      WHERE id = ${params.serviceAccount}::uuid AND status = 'active' AND kind IN ('standalone', 'agent')
+    `;
+    if (!account) return { ok: false, error: "An active standalone or agent account is required", status: 400 };
+    const inserted = await sql`
+      INSERT INTO auth.service_account_groups (service_account_id, group_id)
+      VALUES (${account.id}::uuid, ${group.id}::uuid) ON CONFLICT DO NOTHING
+    `;
+    if (inserted.count === 0) return { ok: false, error: "Service account is already a direct member of this group", status: 409 };
+    return { ok: true, data: undefined };
+  }
 
   if (params.user) {
     const provider = await getUserProvider(params.user);
@@ -427,9 +466,20 @@ export const addMember = async (params: { id: string; user?: string; group?: str
   return { ok: false, error: "Missing member", status: 400 };
 };
 
-export const removeMember = async (params: { id: string; user?: string; group?: string }): Promise<MutationResult<void>> => {
+export const removeMember = async (params: {
+  id: string;
+  user?: string;
+  group?: string;
+  serviceAccount?: string;
+}): Promise<MutationResult<void>> => {
   const group = await getLocalGroupById(params.id);
   if (!group) return { ok: false, error: "Group not found", status: 404 };
+
+  if (params.serviceAccount) {
+    await sql`DELETE FROM auth.service_account_groups
+      WHERE service_account_id = ${params.serviceAccount}::uuid AND group_id = ${group.id}::uuid`;
+    return { ok: true, data: undefined };
+  }
 
   if (params.user) {
     await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${params.user}::uuid AND group_id = ${group.id}::uuid`;
