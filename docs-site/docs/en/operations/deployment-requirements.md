@@ -1257,6 +1257,12 @@ and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
 
+### Show app badges in the phone bar
+
+On phones, the floating bar shows the same count on an application's icon as
+the rail. It reads no extra route: the counts come from the rail's reads. No
+migration or configuration change is required.
+
 ### Let widgets declare settings
 
 Widget settings need no configuration change. Core gains `POST /api/widgets/v1`
