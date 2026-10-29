@@ -753,7 +753,7 @@ const getLastActivityByItemIds = async (itemIds: string[]): Promise<Map<string, 
   const rows = await sql<{ item_id: string; last_activity_at: Date }[]>`
     SELECT item_id, MAX(last_occurred_at) AS last_activity_at
     FROM spaces.activity_events
-    WHERE item_id = ANY(${toPgUuidArray(itemIds)}::uuid[])
+    WHERE item_id = ANY(${toPgUuidArray(itemIds)}::uuid[]) AND action NOT LIKE 'comment.%'
     GROUP BY item_id
   `;
   return new Map(rows.map((row) => [row.item_id, row.last_activity_at.toISOString()]));
@@ -1129,7 +1129,7 @@ export const listFiltered = async (params: {
       AND i.starts_at IS NULL
       AND i.ends_at IS NULL
       AND COALESCE(
-        (SELECT MAX(item_activity.last_occurred_at) FROM spaces.activity_events item_activity WHERE item_activity.item_id = i.id),
+        (SELECT MAX(item_activity.last_occurred_at) FROM spaces.activity_events item_activity WHERE item_activity.item_id = i.id AND item_activity.action NOT LIKE 'comment.%'),
         i.updated_at
       ) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`;
   } else if (activityFilter === "claimed") {
@@ -1490,7 +1490,7 @@ export const searchAcross = async (params: {
   const activityMatch =
     params.activity === "inactive"
       ? sql`i.completed_at IS NULL AND i.starts_at IS NULL AND i.ends_at IS NULL AND COALESCE(
-        (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id),
+        (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id AND activity.action NOT LIKE 'comment.%'),
         i.updated_at) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`
       : params.activity === "claimed"
         ? claimedMatch
