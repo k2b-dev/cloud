@@ -4,7 +4,7 @@ import type { User } from "../contracts/shared";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { isAccountExpired } from "./account-model";
 import { IDENTITY_JWKS_MAX_AGE_SECONDS } from "./identity/constants";
-import { getIdentityRuntimeConfig } from "./identity/runtime-config";
+import { getIdentityRuntimeConfig, readIdentityGroupsAdmin } from "./identity/runtime-config";
 import type { ServiceAccount } from "./service-accounts";
 import { buildProjectedUser, userProjectionJoin, userProjectionSql } from "./session/user";
 
@@ -59,6 +59,7 @@ export type AuthenticatedOAuthToken =
       kind: "service_account";
       payload: JWTPayload;
       serviceAccount: ServiceAccount;
+      oauthClientId: string;
       delegatedUser: User | null;
       scopes: string[];
     };
@@ -138,7 +139,7 @@ export const resolveOAuthTokenActor = async (
     if (serviceAccount.kind === "user_delegated" && !delegatedUser) return null;
     if (delegatedUser && isAccountExpired(delegatedUser.accountExpires)) return null;
     if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser, query))) return null;
-    return { kind: "service_account", payload, serviceAccount, delegatedUser, scopes };
+    return { kind: "service_account", payload, serviceAccount, oauthClientId: clientId, delegatedUser, scopes };
   }
 
   const rawUserId = getStringClaim(payload, "id");
@@ -159,6 +160,31 @@ export const resolveOAuthTokenActor = async (
   if (!user || isAccountExpired(user.accountExpires)) return null;
   if (!(await isAccountCategoryAllowed(user, query))) return null;
   return { kind: "user", payload, user, scopes };
+};
+
+/**
+ * Revalidate a retained, previously authenticated service-account OAuth reference.
+ * Identifiers are not credentials: callers must protect their provenance and keep
+ * the captured scopes and expiry as caps, then authorize the domain operation.
+ */
+export const isServiceAccountOAuthAuthorityCurrent = async (
+  authority: {
+    serviceAccountId: string;
+    clientId: string;
+    expiresAt: string | null | undefined;
+  },
+  options: { query?: typeof sql; groupsAdmin?: readonly string[] } = {},
+): Promise<boolean> => {
+  const expiry = authority.expiresAt ? Date.parse(authority.expiresAt) : NaN;
+  if (!Number.isFinite(expiry) || expiry <= Date.now()) return false;
+  const groupsAdmin =
+    options.groupsAdmin ?? (options.query ? await readIdentityGroupsAdmin(options.query) : (await getIdentityRuntimeConfig()).groupsAdmin);
+  const current = await resolveOAuthTokenActor(
+    { client_id: authority.clientId, service_account_id: authority.serviceAccountId },
+    [...groupsAdmin],
+    options.query ?? sql,
+  );
+  return current?.kind === "service_account";
 };
 
 export const verifyAccessToken = async (

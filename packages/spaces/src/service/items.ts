@@ -23,6 +23,7 @@ import type {
   UpdateItem,
 } from "@/contracts";
 import { INACTIVE_ITEM_DAYS } from "@/contracts";
+import { publishItemEvent } from "../app-events";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
@@ -215,9 +216,15 @@ export const persistCalendarEvent = async (params: {
   }
 
   const [current] = await params.db<
-    { space_id: string; starts_at: Date | null; recurrence_rrule: string | null; recurring_event_id: string | null }[]
+    {
+      space_id: string;
+      starts_at: Date | null;
+      recurrence_rrule: string | null;
+      recurring_event_id: string | null;
+      completed_at: Date | null;
+    }[]
   >`
-    SELECT space_id, starts_at, recurrence_rrule, recurring_event_id
+    SELECT space_id, starts_at, recurrence_rrule, recurring_event_id, completed_at
     FROM spaces.items
     WHERE id = ${params.itemId}::uuid
     FOR UPDATE
@@ -300,6 +307,9 @@ export const persistCalendarEvent = async (params: {
           updated_at = now()
       WHERE item.id = ${params.itemId}::uuid
     `;
+  }
+  if (params.completed && current.completed_at === null) {
+    await publishItemEvent(params.db, "item.completed", params.itemId, params.spaceId);
   }
   return { ok: true, data: { id: params.itemId, created: false } };
 };
@@ -774,7 +784,7 @@ const getLastActivityByItemIds = async (itemIds: string[]): Promise<Map<string, 
   const rows = await sql<{ item_id: string; last_activity_at: Date }[]>`
     SELECT item_id, MAX(last_occurred_at) AS last_activity_at
     FROM spaces.activity_events
-    WHERE item_id = ANY(${toPgUuidArray(itemIds)}::uuid[])
+    WHERE item_id = ANY(${toPgUuidArray(itemIds)}::uuid[]) AND action NOT LIKE 'comment.%'
     GROUP BY item_id
   `;
   return new Map(rows.map((row) => [row.item_id, row.last_activity_at.toISOString()]));
@@ -1168,7 +1178,7 @@ export const listFiltered = async (params: {
       AND i.starts_at IS NULL
       AND i.ends_at IS NULL
       AND COALESCE(
-        (SELECT MAX(item_activity.last_occurred_at) FROM spaces.activity_events item_activity WHERE item_activity.item_id = i.id),
+        (SELECT MAX(item_activity.last_occurred_at) FROM spaces.activity_events item_activity WHERE item_activity.item_id = i.id AND item_activity.action NOT LIKE 'comment.%'),
         i.updated_at
       ) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`;
   } else if (activityFilter === "claimed") {
@@ -1529,7 +1539,7 @@ export const searchAcross = async (params: {
   const activityMatch =
     params.activity === "inactive"
       ? sql`i.completed_at IS NULL AND i.starts_at IS NULL AND i.ends_at IS NULL AND COALESCE(
-        (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id),
+        (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id AND activity.action NOT LIKE 'comment.%'),
         i.updated_at) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`
       : params.activity === "claimed"
         ? claimedMatch
@@ -1816,6 +1826,7 @@ export const create = async (params: {
         },
         tx,
       );
+      await publishItemEvent(tx, "item.created", created.id, spaceId);
       await publishSpaceChange(tx, { type: "item.created", spaceId, itemId: created.id });
 
       return { id: created.id };
@@ -2243,6 +2254,7 @@ export const splitRecurring = async (params: {
         AND recurrence_id >= ${recurrenceId}::timestamptz
     `;
       await publishSpaceChange(tx, { type: "item.updated", spaceId: source.space_id, itemId: source.id });
+      await publishItemEvent(tx, "item.created", created.id, source.space_id);
       await publishSpaceChange(tx, { type: "item.created", spaceId: source.space_id, itemId: created.id });
 
       return { ok: true, data: { id: created.id } };
@@ -2492,6 +2504,7 @@ export const move = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: completes ? "item.completed" : "item.moved", spaceId: existing.space_id, itemId: id });
+    if (completes && completed) await publishItemEvent(tx, "item.completed", id, existing.space_id);
     if (completes) await publishDependentsChange(tx, { spaceId: existing.space_id, blockerItemId: id });
     return { ok: true, data: row };
   });
@@ -2624,6 +2637,7 @@ export const setCompleted = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: "item.completed", spaceId: current.space_id, itemId: id });
+    if (completed && current.completed_at === null) await publishItemEvent(tx, "item.completed", id, current.space_id);
     if (completed !== (current.completed_at !== null)) await publishDependentsChange(tx, { spaceId: current.space_id, blockerItemId: id });
     return { ok: true, data: row };
   });

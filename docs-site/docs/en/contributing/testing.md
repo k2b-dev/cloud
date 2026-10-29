@@ -715,6 +715,23 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
 | `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
+| `CLOUD_TEST_S3_ENDPOINT` | `http://127.0.0.1:3900` |
+| `CLOUD_TEST_S3_BUCKET` | `cloud-test` (must end in `-test`) |
+| `CLOUD_TEST_S3_ACCESS_KEY_ID` | Test-only S3 access key |
+| `CLOUD_TEST_S3_SECRET_ACCESS_KEY` | Test-only S3 secret key |
+| `CLOUD_TEST_S3_REGION` | `garage` |
+
+The object-store suite uses a disposable Garage 2.3 instance. Start only that
+fixture with `docker compose -f compose.test-s3.yml up -d --wait`; its Compose
+file declares the test-only key, secret, bucket, and loopback port. Export those
+values as the five `CLOUD_TEST_S3_*` entries above, then run
+`bun run test --integration --filter object-store`. Stop it with
+`docker compose -f compose.test-s3.yml down --volumes`. CI and nightly do this
+automatically. Missing S3 configuration skips the suite; an endpoint with
+missing credentials, region, a bucket without the `-test` suffix, or unusable
+storage fails. The suite also needs the database and Valkey test targets. It
+writes these connection values directly to the encrypted Core settings and
+restores them afterward; production S3 environment variables do not exist.
 
 The ports are the development stack's defaults. If you moved them with
 `CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, `CLOUD_DEV_NATS_PORT`, or `CLOUD_DEV_CLICKHOUSE_PORT`
@@ -885,7 +902,15 @@ bun run test --integration
 the suites across parallel jobs, balanced by measured suite time, which is how
 the gate runs them. `--max-minutes <m>` fails a run that takes longer than m
 minutes. `--exclude <name>` leaves out suites whose name or path matches, and
-`--filter <name>` keeps only those.
+`--filter <name>` keeps only those. Repeat `--filter` to run suites matching
+any of the given names or workspace paths, each suite once:
+
+```bash
+bun run test --filter packages/core --filter packages/cloud
+```
+
+`--exclude` removes matches from that union before sharding. Run
+`bun run test --help` for all runner options.
 
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right

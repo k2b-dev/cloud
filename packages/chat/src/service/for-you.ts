@@ -56,7 +56,7 @@ const candidates = (db: typeof sql, context: ChatContext, limit: number, cursor:
     JOIN chat.conversations c ON c.id = m.conversation_id
     LEFT JOIN chat.participants p ON p.conversation_id = c.id AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid
     LEFT JOIN chat.thread_reads tr ON tr.thread_id = m.thread_id AND tr.principal_type = ${self.type} AND tr.principal_id = ${self.id}::uuid
-    WHERE m.kind = 'text' AND NOT (m.author_type = ${self.type} AND m.author_id = ${self.id}::uuid)
+    WHERE m.kind = 'text' AND m.deleted_at IS NULL AND NOT (m.author_type = ${self.type} AND m.author_id = ${self.id}::uuid)
       AND ${cursor ? db`(m.created_at, m.id) < (${cursor.at}::timestamptz, ${cursor.id}::uuid)` : db`true`}
   ) SELECT * FROM page WHERE ${unreadOnly ? db`unread` : db`true`} ORDER BY created_at DESC, id DESC LIMIT ${limit}`;
 };

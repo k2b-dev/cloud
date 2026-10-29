@@ -71,4 +71,11 @@ describe("defineApp({ pwa })", () => {
       expect(() => defineApp({ ...inventory, id, routes: [], pwa: {} })).toThrow(`App "${id}" cannot declare pwa`);
     }
   });
+
+  test("package validation still rejects invalid app IDs without a part and reserved packages with a valid part", () => {
+    for (const id of ["_auth", "spaces/tasks", "Inventory"]) {
+      expect(() => defineApp({ ...inventory, id, routes: [] })).toThrow("Application IDs and packages must be lowercase names");
+    }
+    expect(() => defineApp({ ...inventory, package: "storage", pwa: {} })).toThrow("reserved for public storage routing");
+  });
 });

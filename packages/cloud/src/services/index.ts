@@ -104,7 +104,7 @@ export type {
   ServiceAccountCredentialOwner,
   ServiceAccountCredentialStatus,
 } from "./service-account-credentials";
-export { oauthTokens } from "./oauth-tokens";
+export { isServiceAccountOAuthAuthorityCurrent, oauthTokens } from "./oauth-tokens";
 export type { AuthenticatedOAuthToken } from "./oauth-tokens";
 export { webauthn } from "./webauthn";
 export type { WebAuthnRp } from "./webauthn";
@@ -280,3 +280,14 @@ export {
   requireAppAccessManager,
   type AppAccessSnapshot,
 } from "./app-access-management";
+
+export { storage } from "./object-store";
+export type {
+  ObjectStoreFile,
+  ObjectVisibility,
+  ObjectWriteData,
+  ObjectWriteOptions,
+  ObjectPresignOptions,
+  ObjectListOptions,
+  ObjectListResult,
+} from "./object-store";

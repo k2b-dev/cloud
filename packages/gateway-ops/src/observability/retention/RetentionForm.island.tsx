@@ -1,10 +1,10 @@
+import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
+import { createSettingsDraft, oneStepFailure, SaveRejected } from "@k2b/cloud/ssr/settings-draft";
 import { Checkbox, NoticeCard, NumberInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { gatewayOpsMessages } from "../../messages";
 import { areaMessages } from "../_components/area-messages";
-import { createDraftForm, oneStepFailure, SaveRejected } from "../_components/draft-form";
-import { SaveOutcome } from "../_components/SaveOutcome";
 import { apiClient as loggingClient } from "../logs/api-client";
 
 export type RetentionValues = { logs: number; events: number; rollups: number };
@@ -47,7 +47,7 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
   };
   const rejected = async (key: Key, response: Pick<Response, "json" | "status">): Promise<never> => {
     const body = (await response.json().catch(() => null)) as { message?: string; code?: string } | null;
-    const message = body?.message ?? t().notSaved;
+    const message = body?.message ?? g().saveFailed;
     if (body?.code === "setting_unreadable") {
       try {
         await refreshUnreadable(key);
@@ -59,7 +59,7 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
   };
   const confirmed = (key: Key) => unreadable()[key] === true && replace()[key] === true;
 
-  const form = createDraftForm<RetentionValues>({
+  const form = createSettingsDraft<RetentionValues>({
     initial: props.values,
     locale,
     validate: (value) =>
@@ -109,7 +109,7 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
   );
   return (
     <div class="flex max-w-2xl flex-col gap-4 px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">
-      <SaveOutcome t={t()} outcome={form.outcome()} onRetry={() => void form.save()} />
+      <SettingsSaveOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
       <Show when={unreadableKeys().length > 0}>
         <NoticeCard tone="warning" title={g().unreadableTitle} detail={g().unreadableDetail}>
           <For each={unreadableKeys()}>

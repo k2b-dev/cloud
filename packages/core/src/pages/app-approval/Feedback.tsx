@@ -13,15 +13,17 @@ export default function ApprovalFeedback(props: { error: unknown; returnTo?: str
   const message = () =>
     recent()
       ? t().recent
-      : code() === "FORBIDDEN"
-        ? t().forbidden
-        : code() === "CONFLICT"
-          ? t().conflict
-          : code() === "LIMIT_REACHED"
-            ? t().limit
-            : code() === "UNAVAILABLE"
-              ? t().unavailable
-              : t().failure;
+      : code() === "ACCOUNT_MISMATCH"
+        ? t().accountMismatch
+        : code() === "FORBIDDEN"
+          ? t().forbidden
+          : code() === "CONFLICT"
+            ? t().conflict
+            : code() === "LIMIT_REACHED"
+              ? t().limit
+              : code() === "UNAVAILABLE"
+                ? t().unavailable
+                : t().failure;
   const reauthenticate = async () => {
     if (busy()) return;
     setBusy(true);
@@ -29,7 +31,7 @@ export default function ApprovalFeedback(props: { error: unknown; returnTo?: str
       props.beforeReauthenticate?.();
       const target = new URL(props.returnTo ?? "/me/security", window.location.origin);
       target.searchParams.set("reauthenticate", "1");
-      window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search, credential: "legacy" })}`);
+      window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search })}`);
     } catch {
       setLogoutFailed(true);
       setBusy(false);

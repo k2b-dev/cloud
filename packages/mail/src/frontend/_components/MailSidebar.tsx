@@ -94,6 +94,8 @@ export default function MailSidebar(
     onOpenPlaceRowHiddenChange?: (hidden: boolean) => void;
   },
 ) {
+  // Share the controller projection instead of rebuilding it for every sidebar field.
+  const openMailbox = createMemo(() => props.open);
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   const overviewText = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
@@ -101,16 +103,16 @@ export default function MailSidebar(
 
   // Only the open mailbox's ID decides the rows: live counts and a rename update the row in place, so a focused row
   // keeps its focus.
-  const openMailboxId = createMemo(() => props.open?.mailboxId ?? null);
+  const openMailboxId = createMemo(() => openMailbox()?.mailboxId ?? null);
   // The open mailbox stays listed even when the readable-mailbox list leaves it out.
   const listed = createMemo<MailSidebarMailbox[]>(() => {
     const openId = openMailboxId();
     if (!openId || props.mailboxes.some((mailbox) => mailbox.id === openId)) return props.mailboxes;
-    const name = untrack(() => props.open?.mailboxName ?? "");
+    const name = untrack(() => openMailbox()?.mailboxName ?? "");
     return [{ id: openId, name, health: "active", healthReason: null, receivingAddress: null }, ...props.mailboxes];
   });
   /** The open mailbox's name follows the page, so a rename shows at once. */
-  const mailboxName = (mailbox: MailSidebarMailbox) => (isOpen(mailbox.id) ? (props.open?.mailboxName ?? mailbox.name) : mailbox.name);
+  const mailboxName = (mailbox: MailSidebarMailbox) => (isOpen(mailbox.id) ? (openMailbox()?.mailboxName ?? mailbox.name) : mailbox.name);
   const ordered = createMemo(() => orderMailboxes(listed(), props.preferences.pinnedMailboxIds()));
   const visibleMailboxes = createMemo(() => ordered().filter((mailbox) => !props.preferences.isHidden(mailbox.id)));
   const hiddenMailboxes = createMemo(() => ordered().filter((mailbox) => props.preferences.isHidden(mailbox.id)));
@@ -125,14 +127,14 @@ export default function MailSidebar(
     const counted = countsById().get(mailboxId) ?? { unread: 0, needsAction: 0 };
     // The open mailbox follows the page: its Needs action count is the tab's live count, and its folders below show
     // their live unread counts, so the row draws no unread dot that would only be as old as the page.
-    const open = props.open;
+    const open = openMailbox();
     return open?.mailboxId === mailboxId ? { unread: 0, needsAction: open.viewCounts.needs_action } : counted;
   };
 
   // The open mailbox's commands, for the command palette.
   const commandMailbox = createMemo(
     () => {
-      const open = props.open;
+      const open = openMailbox();
       return open ? { mailboxId: open.mailboxId, mailboxName: open.mailboxName, canCompose: open.canWrite && !open.assignedOnly } : null;
     },
     undefined,
@@ -166,7 +168,7 @@ export default function MailSidebar(
         description: copy.composeDescription({ name: open.mailboxName }),
         icon: "ti ti-mail-plus",
         shortcut: "mod+alt+n",
-        action: () => untrack(() => props.open)?.onCompose({ fallback: () => navigateTo(href), progressToast: true }),
+        action: () => untrack(() => openMailbox())?.onCompose({ fallback: () => navigateTo(href), progressToast: true }),
       }),
     );
   });
@@ -280,13 +282,13 @@ export default function MailSidebar(
   const [dropFolderId, setDropFolderId] = createSignal<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = createSignal<Set<string>>(new Set());
   const [moreExpanded, setMoreExpanded] = createSignal(false);
-  const folderTree = createMemo(() => buildVisibleMailFolderTree(props.open?.folders ?? []));
+  const folderTree = createMemo(() => buildVisibleMailFolderTree(openMailbox()?.folders ?? []));
   const flatFolders = createMemo(() => flattenMailFolderTree(folderTree()).map(({ folder }) => folder));
   const primaryFolders = createMemo(() => flatFolders().filter((folder) => PRIMARY_FOLDER_ROLES.has(folder.role)));
   const secondaryFolders = createMemo(() => flatFolders().filter((folder) => SECONDARY_FOLDER_ROLES.has(folder.role)));
   const customFolderTree = createMemo(() => excludeMailFolderTreeRoles(folderTree(), SYSTEM_FOLDER_ROLES));
   const customFolderBranchIds = createMemo(() => folderBranchIds(customFolderTree()));
-  const activeFolderId = () => props.open?.activeFolderId ?? null;
+  const activeFolderId = () => openMailbox()?.activeFolderId ?? null;
   const openPlaceRowHidden = createMemo(() => {
     if (openIsHidden() && !hiddenOpen()) return true;
     const activeId = activeFolderId();
@@ -298,9 +300,12 @@ export default function MailSidebar(
     return hidden(customFolderTree());
   });
   createEffect(on(openPlaceRowHidden, (hidden) => props.onOpenPlaceRowHiddenChange?.(hidden)));
-  const sendProblemsActive = () => !props.open?.scheduledMode && props.open?.activeView === "send_problems";
+  const sendProblemsActive = () => !openMailbox()?.scheduledMode && openMailbox()?.activeView === "send_problems";
   /** A folder, Scheduled, or Send problems is open: the sidebar marks that row instead of the mailbox. */
-  const placeActive = () => Boolean(props.open && (props.open.scheduledMode || activeFolderId() || sendProblemsActive()));
+  const placeActive = () => {
+    const current = openMailbox();
+    return Boolean(current && (current.scheduledMode || activeFolderId() || sendProblemsActive()));
+  };
   const moreOpen = () => moreExpanded() || secondaryFolders().some((folder) => activeFolderId() === folder.id);
   const expandedFolderIds = () => customFolderBranchIds().filter((id) => !collapsedFolders().has(id));
   const setExpandedFolderIds = (expandedIds: readonly string[]) => {
@@ -314,7 +319,7 @@ export default function MailSidebar(
     try {
       const value = JSON.parse(event.dataTransfer?.getData("application/x-cloud-mail-conversation") ?? "") as { itemId?: unknown };
       if (typeof value.itemId !== "string") return;
-      void props.open?.onMoveConversation({ itemId: value.itemId, destinationFolderId });
+      void openMailbox()?.onMoveConversation({ itemId: value.itemId, destinationFolderId });
     } catch {
       // Ignore unrelated drags; only Mail conversation payloads are accepted.
     }
@@ -322,7 +327,7 @@ export default function MailSidebar(
 
   // These parts render only while a mailbox is open. They read it through `open()`, so live counts and a renamed
   // mailbox show without recreating the rows.
-  const open = () => props.open!;
+  const open = () => openMailbox()!;
   // `count` is the folder's unread count; Drafts pass their total and Sent nothing.
   const folderNode = (
     node: MailFolderTreeNode<MailFolderView>,
@@ -504,9 +509,12 @@ export default function MailSidebar(
     const hidden = () => props.preferences.isHidden(mailbox.id);
     const counts = () => stats(mailbox.id);
     // The open mailbox's health follows the page, so a resumed or reconnected mailbox clears its warning at once.
-    const current = () => (isOpen(mailbox.id) && props.open ? { ...mailbox, ...props.open.mailbox } : mailbox);
+    const current = () => {
+      const open = openMailbox();
+      return isOpen(mailbox.id) && open ? { ...mailbox, ...open.mailbox } : mailbox;
+    };
     const health = () => mailboxHealthPresentation(current(), locale());
-    const rowOpen = () => (isOpen(mailbox.id) ? props.open : null);
+    const rowOpen = () => (isOpen(mailbox.id) ? openMailbox() : null);
     // One number per row: needs action. Unread is a dot; both exact counts live in the tooltip and sr-only text.
     const countLabels = () => [
       ...(counts().needsAction > 0 ? [overviewText().needsActionCount({ count: counts().needsAction })] : []),
@@ -674,7 +682,7 @@ export default function MailSidebar(
     ];
   };
   const mailboxEntry = (mailbox: MailSidebarMailbox): NavigationItem => {
-    const open = isOpen(mailbox.id) ? props.open : null;
+    const open = isOpen(mailbox.id) ? openMailbox() : null;
     return {
       id: `mailbox:${mailbox.id}`,
       label: mailboxName(mailbox),
@@ -690,7 +698,7 @@ export default function MailSidebar(
   };
   const navigation = createNavigation({
     items: () => [
-      { id: "focus", label: overviewText().focus, icon: "ti ti-focus-2", href: "/app/mail", active: !props.open },
+      { id: "focus", label: overviewText().focus, icon: "ti ti-focus-2", href: "/app/mail", active: !openMailbox() },
       { id: "mailboxes", label: overviewText().mailboxes, section: true, children: visibleMailboxes().map(mailboxEntry) },
       ...(hiddenMailboxes().length > 0
         ? [{ id: "hidden", label: messages().hiddenMailboxes, children: hiddenMailboxes().map(mailboxEntry) }]
@@ -703,8 +711,8 @@ export default function MailSidebar(
       const url = new URL(event.href, window.location.origin);
       const mailboxRow =
         props.mailboxes.some((mailbox) => url.pathname === `/app/mail/${mailbox.id}`) &&
-        (url.pathname !== `/app/mail/${props.open?.mailboxId}` || !url.search);
-      return mailboxRow && props.onOpenMailbox ? props.onOpenMailbox(event) : props.open?.onNavigate(event);
+        (url.pathname !== `/app/mail/${openMailbox()?.mailboxId}` || !url.search);
+      return mailboxRow && props.onOpenMailbox ? props.onOpenMailbox(event) : openMailbox()?.onNavigate(event);
     },
     onAction: (action) => {
       if (action === "new-mailbox") void createMailbox();
@@ -713,12 +721,12 @@ export default function MailSidebar(
 
   return (
     <>
-      <Show when={props.open}>{(open) => <WorkspaceNavigationProvider navigation={navigation} label={open().mailboxName} />}</Show>
+      <Show when={openMailbox()}>{(open) => <WorkspaceNavigationProvider navigation={navigation} label={open().mailboxName} />}</Show>
       <AppWorkspace.Sidebar label={overviewText().mailboxes} mobile={props.mobile ?? "hidden"} class="mail-sidebar">
         <AppWorkspace.SidebarDesktop>
-          <AppWorkspace.SidebarBody scrollPreserveKey={props.open ? `mail-sidebar-${props.open.mailboxId}` : false}>
+          <AppWorkspace.SidebarBody scrollPreserveKey={openMailboxId() ? `mail-sidebar-${openMailboxId()}` : false}>
             <AppWorkspace.SidebarSection>
-              <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-focus-2" title={overviewText().focus} active={!props.open}>
+              <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-focus-2" title={overviewText().focus} active={!openMailbox()}>
                 <AppWorkspace.SidebarItemLabel marquee={false}>{overviewText().focus}</AppWorkspace.SidebarItemLabel>
               </AppWorkspace.SidebarItem>
             </AppWorkspace.SidebarSection>

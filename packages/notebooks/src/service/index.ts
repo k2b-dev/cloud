@@ -170,6 +170,7 @@ export const notebooksService = {
         hasNext: page * perPage < result.total,
       };
     },
+    findByTitle: notes.findByTitle,
     get: notes.get,
     getByShortId: notes.getByShortId,
     getWithContent: notes.getWithContent,

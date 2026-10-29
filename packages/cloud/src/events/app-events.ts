@@ -13,7 +13,9 @@ import {
 import { CapabilityAppIdSchema, type CapabilityDefinitions } from "../contracts/capabilities";
 import { registerAppEventPublisher, wakeAppEventDelivery } from "./app-event-delivery";
 
-const bindings = new WeakMap<CapabilityDefinitions, { appId: string; compiled: CompiledCapabilities }>();
+type EventBinding = { appId: string; compiled: CompiledCapabilities };
+const bindings = new WeakMap<CapabilityDefinitions, EventBinding>();
+const bindingsByApp = new Map<string, EventBinding>();
 
 /** Framework hook: bind the exact declaration object when defineApp assigns its app ID. */
 export const bindAppEvents = (appId: string, definitions: CapabilityDefinitions, compiledInput?: CompiledCapabilities): void => {
@@ -21,12 +23,14 @@ export const bindAppEvents = (appId: string, definitions: CapabilityDefinitions,
   const prior = bindings.get(definitions);
   if (prior && prior.appId !== appId) throw new Error(`Capabilities are already bound to ${prior.appId}`);
   const compiled = compiledInput ?? prior?.compiled ?? compileCapabilities(appId, definitions);
-  bindings.set(definitions, { appId, compiled });
+  const binding = { appId, compiled };
+  bindings.set(definitions, binding);
+  bindingsByApp.set(appId, binding);
   if (compiled.events.size > 0) registerAppEventPublisher(appId);
 };
 
-export const appEventBinding = (definitions: CapabilityDefinitions) => {
-  const binding = bindings.get(definitions);
+export const appEventBinding = (definitions: CapabilityDefinitions | string) => {
+  const binding = typeof definitions === "string" ? bindingsByApp.get(definitions) : bindings.get(definitions);
   if (!binding)
     throw new Error("Bind event capabilities with defineApp before publishing or testing; a test harness accepts an explicit appId");
   return binding;
@@ -41,7 +45,7 @@ export type AppEventPublishInput<T extends CapabilityDefinitions, Key extends ke
 
 /** The same declaration, JSON and byte validation for publishers and producer fixtures. */
 export const buildAppEventEnvelope = <const T extends CapabilityDefinitions, Key extends Extract<keyof EventDeclarations<T>, string>>(
-  definitions: T,
+  definitions: T | string,
   localId: Key,
   input: AppEventPublishInput<T, Key>,
   identity: { id: string; time: string },
@@ -73,20 +77,23 @@ export const buildAppEventEnvelope = <const T extends CapabilityDefinitions, Key
 };
 
 /** Writes in the domain transaction; wake only after commit. Delivery is at least once. */
-export const appEvents = <const T extends CapabilityDefinitions>(definitions: T) => ({
+export const appEvents = <const T extends CapabilityDefinitions>(definitions: T | string) => ({
   publish: async <Key extends Extract<keyof EventDeclarations<T>, string>>(
     tx: SQL,
     localId: Key,
     input: AppEventPublishInput<T, Key>,
   ): Promise<AppEventEnvelope> => {
-    const envelope = buildAppEventEnvelope(definitions, localId, input, { id: crypto.randomUUID(), time: new Date().toISOString() });
+    const envelope = buildAppEventEnvelope<T, Key>(definitions, localId, input, {
+      id: crypto.randomUUID(),
+      time: new Date().toISOString(),
+    });
     // A full valid resource ref can exceed the existing outbox's 600-character key bound.
     const orderingKey = capabilityHash(envelope.subject);
     await tx`SELECT events.enqueue(${envelope.id}::uuid, ${envelope.source}, 'event', ${orderingKey}, ${JSON.stringify(envelope)}::text::jsonb)`;
     return envelope;
   },
   wake: (): void => {
-    const binding = bindings.get(definitions);
+    const binding = typeof definitions === "string" ? bindingsByApp.get(definitions) : bindings.get(definitions);
     if (binding) wakeAppEventDelivery(binding.appId);
   },
 });

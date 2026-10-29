@@ -1,5 +1,5 @@
 import { Button, FilterChip, IconButton, TextInput, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, Show } from "solid-js";
+import { createEffect, createMemo, Show } from "solid-js";
 import { DEFAULT_MAIL_QUICK_SEARCH_FIELDS } from "../../search-url";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { type createMailboxSearch, isDefaultQuickSearch } from "./mailbox-search";
@@ -9,11 +9,19 @@ type Search = ReturnType<typeof createMailboxSearch>;
 export function MailSearchTrigger(props: { search: Search; unseen?: boolean }) {
   const locale = useLocale();
   const text = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  let trigger: HTMLButtonElement | undefined;
+  createEffect(() => {
+    const search = props.search;
+    if (trigger) search.triggerRef(trigger);
+  });
   return (
     <span class="mail-search-trigger">
       <Tooltip.Anchor content={text().openSearch}>
         <IconButton
-          ref={props.search.triggerRef}
+          ref={(element) => {
+            trigger = element;
+            props.search.triggerRef(element);
+          }}
           type="button"
           label={text().openSearch}
           aria-expanded={props.search.opened()}
@@ -34,10 +42,18 @@ export function MailSearchTrigger(props: { search: Search; unseen?: boolean }) {
 export function MailSearchInput(props: { search: Search; mailboxName: string }) {
   const locale = useLocale();
   const text = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  let input: HTMLInputElement | undefined;
+  createEffect(() => {
+    const search = props.search;
+    if (input) search.inputRef(input);
+  });
   return (
-    <form class="mail-head-search-input" data-mail-head-search role="search" onSubmit={props.search.submitSearch}>
+    <form class="mail-head-search-input" data-mail-head-search role="search" onSubmit={(event) => props.search.submitSearch(event)}>
       <TextInput
-        ref={props.search.inputRef}
+        ref={(element) => {
+          input = element;
+          props.search.inputRef(element);
+        }}
         error={props.search.validationError() ? text().searchTooLong : undefined}
         type="search"
         name="q"

@@ -4,12 +4,15 @@ import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { bindResourceAppAccess } from "../_internal/app-access-resources";
 import { compileCapabilities } from "../_internal/capabilities";
+import { appAccess, compileAppAccess } from "../contracts/app-access";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import type { AuthContext } from "../server";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
 import type { signInvocationToken } from "../services/identity/invocation-token";
+import { issueInvocationToken } from "../services/identity/issue-invocation";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createSearchRoutes as buildSearchRoutes } from "./search";
 import type { SearchStreamLine } from "./search/schemas";
@@ -132,6 +135,73 @@ const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0
 };
 
 describe("global capability search", () => {
+  test("shares one deadline across resource discovery, issuance revalidation and provider I/O", async () => {
+    const deadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const accessSignals: AbortSignal[] = [];
+    const declaration = appAccess.resources({
+      adapters: {
+        workspace: {
+          hasAnyRight: async (_subject, { signal }) => {
+            accessSignals.push(signal);
+            return true;
+          },
+        },
+      },
+    });
+    const stop = bindResourceAppAccess(app.appId, declaration);
+    let providerSignal: AbortSignal | null | undefined;
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [app],
+      listApps: async () => [
+        {
+          id: app.appId,
+          name: app.appName,
+          description: "",
+          icon: app.appIcon,
+          routes: [],
+          baseUrl: "http://test.invalid",
+          access: compileAppAccess(declaration),
+        },
+      ],
+      signInvocation: (params, options) =>
+        issueInvocationToken(params, {
+          ...options,
+          resolve: async () => ({
+            actor: {
+              kind: "user",
+              user: { id: params.authority.sub, roles: ["user"] } as AuthContext["Variables"]["user"],
+            },
+            accessSubject: { type: "user", userId: params.authority.sub },
+            credentialKind: "session",
+            scopes: [],
+          }),
+          getApp: async () => ({ id: app.appId, access: compileAppAccess(declaration) }),
+          sign: async (params) => fakeInvocation(params),
+        }),
+      fetch: async (_url, init) => {
+        providerSignal = init?.signal;
+        return Response.json({ data: [] });
+      },
+    });
+    try {
+      const response = await routes.request("/search?q=needle");
+      expect(response.status).toBe(200);
+      expect(timeout).toHaveBeenCalledTimes(1);
+      expect(timeout).toHaveBeenCalledWith(8_000);
+      expect(accessSignals).toHaveLength(2);
+      expect(providerSignal?.aborted).toBe(false);
+      expect(accessSignals.every((signal) => !signal.aborted)).toBe(true);
+      deadline.abort();
+      expect(providerSignal?.aborted).toBe(true);
+      expect(accessSignals.every((signal) => signal.aborted)).toBe(true);
+    } finally {
+      stop();
+      timeout.mockRestore();
+    }
+  });
+
   test.each(["invalid data", "unknown field", "invalid reference", "too many items", "invalid presentation"])(
     "isolates %s across providers and concurrent or repeated requests",
     async (invalidCase) => {
