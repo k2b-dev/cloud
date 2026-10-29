@@ -30,6 +30,7 @@ import {
   SettingsGroup,
   SettingsModal,
   SettingsPage,
+  SaveStatus,
   SettingsPanelFooter,
   SettingsSaveBar,
   SettingsSection,
@@ -81,6 +82,32 @@ its neighbours are framed.
 Inside `SettingsModal`, use `SettingsGroup` for a flat form group and
 `SettingsCollection` for compact entity management. Neither component owns a
 backend or adds another paper inside the modal.
+
+## Show the save status in a column head
+
+In a settings area built from `AppWorkspace` levels, the form level shows its
+save state in the level head instead of a footer. `SaveStatus` keeps one fixed
+place there: the state, then Discard and Save.
+
+```tsx
+<AppWorkspace.MainPane
+  id="detail"
+  label="Retention"
+  actions={<SaveStatus state={state()} savedAt={savedAt()} onDiscard={discard} onSave={save} />}
+>
+  …
+</AppWorkspace.MainPane>
+```
+
+`state` is `saved`, `draft`, `saving`, `failed`, `invalid`, `unknown`, or
+`readonly`. The status reserves its width, so a change of state never moves the
+title or the buttons. Discard and Save stay in place and are disabled while
+nothing waits; with `invalid` or `saveDisabled`, Save stays disabled, and with
+`readonly` both buttons are gone. Show the reason for `failed`, `invalid`, and
+`unknown` at the field or above the form. For `unknown`, the connection broke
+during the save: offer to check the current state rather than to save again.
+On a phone, put the same status at the bottom of the level when the head has no
+room.
 
 ## Compose controlled tabs
 
@@ -223,6 +250,12 @@ type SettingsSaveBarProps = {
 };
 
 type SettingsPanelFooterProps = SettingsSaveBarProps;
+
+type SaveStatusState = "saved" | "draft" | "saving" | "failed" | "invalid" | "unknown" | "readonly";
+type SaveStatusProps = {
+  state: MaybeAccessor<SaveStatusState>; savedAt?: MaybeAccessor<string | undefined>; invalidCount?: MaybeAccessor<number>;
+  onDiscard?: () => void; onSave?: () => void; saveLabel?: string; saveDisabled?: MaybeAccessor<boolean>; class?: string;
+};
 
 ```
 

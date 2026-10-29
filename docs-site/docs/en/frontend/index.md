@@ -32,7 +32,7 @@ enhanced navigation, mutations, and realtime updates improve that path.
 | Local browser interaction | The smallest interactive application island | [Islands](/en/docs/frontend/islands-and-hydration) |
 | Standalone installation of one application | Platform installation assets and automatic SSR integration | [App-PWA](/en/docs/frontend/app-pwa) |
 | Shared-device pairing and customer signatures | Application visit flow using platform sessions | [Visit example](/en/docs/frontend/app-pwa-example) |
-| Phone pages in the installable mobile app (preview) | Application, framed by `PwaLayout` | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
+| Device pages in the installable Cloud app (preview) | Application, framed by `PwaLayout` | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages) |
 
 Use the URL for filters, sorting, pagination, selection, and the active view.
 See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).

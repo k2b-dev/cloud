@@ -115,7 +115,7 @@ describe("Gateway health webhook queries", () => {
 
   test("retries only reconciliation after a persisted webhook write", async () => {
     const dom = createDomTestHarness();
-    const { WebhookEditor } = await import("./HealthWebhooksButton.island");
+    const { WebhookEditor } = await import("./webhook-editor");
     const originalFetch = globalThis.fetch;
     const write = deferred<Response>();
     let writeCount = 0;
@@ -161,7 +161,7 @@ describe("Gateway health webhook queries", () => {
 
   test("aborts a pending editor write and ignores its late response after disposal", async () => {
     const dom = createDomTestHarness();
-    const { WebhookEditor } = await import("./HealthWebhooksButton.island");
+    const { WebhookEditor } = await import("./webhook-editor");
     const originalFetch = globalThis.fetch;
     const write = deferred<Response>();
     let writeSignal: AbortSignal | undefined;

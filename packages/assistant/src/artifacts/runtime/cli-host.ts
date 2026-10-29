@@ -3,9 +3,11 @@ import "../html/check-host";
 import { createRoot } from "solid-js";
 import { createArtifactAgentRuntime } from "../agent-runtime";
 import type { CapabilityDecision, CodeApproval } from "./capabilities";
+import { runMachine } from "./machine-host";
 
 declare global {
   interface Window {
+    assistantMachineExecute: (input: unknown) => Promise<unknown>;
     assistantCodeApprove: (request: CodeApproval) => Promise<CapabilityDecision>;
     assistantCodeExecute: (call: Parameters<AiFrontendToolHandler>[0]) => ReturnType<AiFrontendToolHandler>;
     assistantCodeCall: (call: Parameters<AiFrontendToolHandler>[0]) => ReturnType<AiFrontendToolHandler>;
@@ -15,6 +17,7 @@ declare global {
 // The CLI owns this trusted browser page. User code only runs inside the same
 // sandboxed iframe/worker used by the Assistant UI, never in this page or Bun.
 createRoot(() => {
+  window.assistantMachineExecute = runMachine;
   const httpHost = {
     approve: async (request: import("../http-host").HttpApproval) => (await window.assistantCodeApprove(request)).approved,
   };

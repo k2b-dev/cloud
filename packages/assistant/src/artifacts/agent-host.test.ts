@@ -30,7 +30,13 @@ test("a cancelled turn can discard only its host's own scratch scopes", async ()
     capabilityTransport: async () => {
       throw new Error("Unexpected capability");
     },
-    host: Promise.resolve({ health: async () => {}, execute: async () => null, call: async () => null, close: async () => {} }),
+    host: Promise.resolve({
+      machine: async () => null,
+      health: async () => {},
+      execute: async () => null,
+      call: async () => null,
+      close: async () => {},
+    }),
   };
   const authorization = spyOn(aiConversations, "getConversation").mockRejectedValue(new Error("Execution authorization revoked"));
   const turn = spyOn(aiConversations, "getTurn").mockResolvedValue(null);
@@ -84,7 +90,13 @@ test("the managed background host returns NEEDS_APPROVAL with the exact message 
     capabilityTransport: async () => {
       throw new Error("Unexpected dispatch");
     },
-    host: Promise.resolve({ health: async () => {}, execute: async () => null, call: async () => null, close: async () => {} }),
+    host: Promise.resolve({
+      machine: async () => null,
+      health: async () => {},
+      execute: async () => null,
+      call: async () => null,
+      close: async () => {},
+    }),
   };
   const authorization = spyOn(cloudAi, "authorizeCodeExecution").mockResolvedValue({
     conversation: {
