@@ -2490,3 +2490,57 @@ test("notification hints refresh the canonical list, open metadata and thread fo
     store.dispose();
   }
 });
+
+for (const [kind, originalLoaded] of [
+  ["chat", true],
+  ["system", true],
+  ["chat", false],
+  ["system", false],
+] as const)
+  test(`message mutations retain a ${kind} history window with original loaded=${originalLoaded}`, async () => {
+    const original = { ...message(2), body: "Original", contentRevision: 0 };
+    const reply = { ...message(3), replyTo: { id: original.id, author: original.author, preview: "Original", attachments: [] } };
+    let edited = {
+      ...original,
+      rev: 11,
+      contentRevision: 1,
+      body: "Corrected",
+      editedAt: "2026-10-12T00:01:00.000Z",
+      deletedAt: null as string | null,
+    };
+    let pageReads = 0;
+    const { store, connection } = fixture({
+      messages: async () => {
+        pageReads++;
+        return page(10);
+      },
+      changes: async () => ({ rev: edited.rev, more: false, conversation: null, messages: [{ ...edited, systemText: null }] }),
+    });
+    store.open({
+      threads: noThreads,
+      view: "all",
+      cursor: "history",
+      conversation: { ...conversation, kind, rev: 10 },
+      page: {
+        items: (originalLoaded ? [original, reply] : [reply]).map((row) => ({ ...row, systemText: null })),
+        rev: 10,
+        seqHead: 10,
+        from: originalLoaded ? 2 : 3,
+        to: 3,
+      },
+    });
+    const historyRev = store.openConversation!.historyRev;
+    try {
+      await connection.get("conversation").apply({ type: "message-changed", conversationId: conversation.id });
+      expect(store.openConversation?.messages.map((row) => row.seq)).toEqual(originalLoaded ? [2, 3] : [3]);
+      expect(store.openConversation?.messages.at(-1)?.replyTo).toMatchObject({ preview: "Corrected" });
+      expect(store.openConversation?.historyRev).toBe(historyRev);
+      expect(store.openConversation?.hasNewer).toBe(true);
+      edited = { ...edited, rev: 12, contentRevision: 2, body: "", deletedAt: "2026-10-12T00:02:00.000Z" };
+      await store.refreshMessages(conversation.id);
+      expect(store.openConversation?.messages.at(-1)?.replyTo).toEqual({ deleted: true });
+      expect(pageReads).toBe(0);
+    } finally {
+      store.dispose();
+    }
+  });

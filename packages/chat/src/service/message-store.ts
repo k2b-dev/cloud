@@ -28,6 +28,9 @@ export type MessageRow = {
   system_code: string | null;
   system_params: unknown;
   created_at: Date;
+  content_rev?: bigint | string;
+  edited_at?: Date | null;
+  deleted_at?: Date | null;
   thread_id: string | null;
   reply_to_seq: bigint | string | null;
 };
@@ -46,12 +49,15 @@ export const projectMessage = (
   conversationId,
   seq: Number(row.seq),
   rev: Number(row.rev),
+  contentRevision: Number(row.content_rev ?? 0),
   kind: row.kind,
   author: { type: row.author_type, id: row.author_id, name: row.author_name },
-  body: row.body_md,
+  body: row.deleted_at ? null : row.body_md,
   refs: row.refs,
   system: row.kind === "system" ? SystemMessageSchema.parse({ code: row.system_code, params: row.system_params }) : null,
   createdAt: row.created_at.toISOString(),
+  editedAt: row.edited_at?.toISOString() ?? null,
+  deletedAt: row.deleted_at?.toISOString() ?? null,
 });
 const systemPeople = (system: SystemMessage | null) => {
   if (!system) return [];
@@ -135,7 +141,7 @@ export const messageViews = async (
     message.replyTo =
       seq == null
         ? null
-        : original
+        : original && !original.deletedAt
           ? {
               id: original.id,
               author: original.author,

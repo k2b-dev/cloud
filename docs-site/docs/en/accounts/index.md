@@ -38,7 +38,7 @@ an email link, FreeIPA, a passkey or a paired app. Until you confirm, you cannot
 open applications or use the new session for API access. You can cancel and
 sign out instead. Later sign-ins continue directly to your destination.
 
-Operators configure the documents under **Administration → Legal**. Configure
+Operators configure the documents under **Administration → Base settings → Legal** (`/admin/base/legal`). Configure
 them before inviting users. Existing sessions remain valid after an upgrade;
 accounts without a recorded acceptance are asked at their next sign-in.
 

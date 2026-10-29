@@ -19,7 +19,9 @@ class FakeEngine {
     this.options = options;
     FakeEngine.last = this;
   }
+  /** A started engine plays the stream, so the video has a picture. */
   start() {
+    Object.defineProperty(this.video, "videoWidth", { configurable: true, value: 640 });
     return FakeEngine.start();
   }
   async pause(stopStreamImmediately = false) {
@@ -213,13 +215,24 @@ describe("QrScanner", () => {
     expect(calls.errors).toEqual(["unavailable"]);
   });
 
-  test("reports a camera that opens but does not play as unavailable", async () => {
+  test("a camera that opens but does not play offers to try again, which plays it from the click", async () => {
     FakeEngine.start = async () => {
-      throw new DOMException("The play() request was interrupted.", "AbortError");
+      throw new DOMException("Playback needs a gesture.", "NotAllowedError");
     };
     const calls = await mount();
-    expect(calls.errors).toEqual(["unavailable"]);
-    expect(FakeEngine.last?.destroyed).toBe(true);
+    const stream = video().srcObject;
+    expect(status()).toBe("The camera is on, but its picture did not start.");
+    expect(calls.errors).toEqual([]);
+    expect(FakeEngine.last?.destroyed).toBe(false);
+    const played: (MediaProvider | null)[] = [];
+    video().play = async () => {
+      played.push(video().srcObject);
+    };
+    document.querySelector<HTMLButtonElement>(".k2b-qr-scanner__retry")!.click();
+    await settle();
+    expect(played).toEqual([stream]);
+    expect(status()).toBe("Point the camera at the pairing code.");
+    expect(document.querySelector(".k2b-qr-scanner__retry")).toBeNull();
   });
 
   test("a request that fails after the host unmounted the scanner is neither retried nor reported", async () => {

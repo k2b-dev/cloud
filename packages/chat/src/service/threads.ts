@@ -83,11 +83,11 @@ const projectList = async (
   );
   const latest = await db<MessageRow[]>`SELECT m.* FROM chat.threads t
     CROSS JOIN LATERAL (SELECT * FROM chat.messages WHERE conversation_id = ${conversationId}::uuid
-      AND thread_id = t.id AND kind = 'text' ORDER BY seq DESC LIMIT 1) m
+      AND thread_id = t.id AND kind = 'text' AND deleted_at IS NULL ORDER BY seq DESC LIMIT 1) m
     WHERE t.conversation_id = ${conversationId}::uuid AND t.id = ANY(${toPgUuidArray(visible.map(({ row }) => row.id))}::uuid[])
     UNION ALL
     (SELECT * FROM chat.messages WHERE conversation_id = ${conversationId}::uuid
-      AND thread_id IS NULL AND kind = 'text' ORDER BY seq DESC LIMIT 1)`;
+      AND thread_id IS NULL AND kind = 'text' AND deleted_at IS NULL ORDER BY seq DESC LIMIT 1)`;
   const views = await messageViews(db, latest, input.conversationId, input.accessSubject, input.locale);
   const previews = new Map(
     views.map((message) => [

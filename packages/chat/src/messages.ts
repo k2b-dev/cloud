@@ -21,6 +21,15 @@ export const chatMessages = i18n.define({
       unfollowSummary: "Stop following an item discussion",
       followingLabel: "Following",
       notFollowingLabel: "Not following",
+      mutationRefreshFailed: "The message was saved, but could not be refreshed. Close this dialog and reload the chat.",
+      editMessage: "Edit message",
+      deleteMessage: "Delete message",
+      messageMutationExpired: "You can only edit or delete your own messages within ten minutes.",
+      messageChanged: "This message changed. Close this dialog and open the current message again.",
+      deleteMessageHint: "Delete this message for everyone? This cannot be undone.",
+      saveMessage: "Save",
+      mutationFailed: "The message could not be saved. Try again.",
+      messageBody: "Message",
 
       pinPickedUp: ({ title }: { title: string }) => `Picked up ${title}. Use the arrow keys to move, Enter to place, Escape to cancel.`,
       pinMoveTarget: ({ title }: { title: string }) => `Move beside ${title}`,
@@ -458,6 +467,16 @@ export const chatMessages = i18n.define({
       unfollowSummary: "Einer Item-Diskussion nicht mehr folgen",
       followingLabel: "Du folgst",
       notFollowingLabel: "Du folgst nicht",
+      mutationRefreshFailed:
+        "Die Nachricht wurde gespeichert, konnte aber nicht neu geladen werden. Schließe diesen Dialog und lade den Chat neu.",
+      editMessage: "Nachricht bearbeiten",
+      deleteMessage: "Nachricht löschen",
+      messageMutationExpired: "Du kannst eigene Nachrichten nur in den ersten zehn Minuten bearbeiten oder löschen.",
+      messageChanged: "Die Nachricht wurde geändert. Schließe diesen Dialog und öffne die aktuelle Nachricht erneut.",
+      deleteMessageHint: "Diese Nachricht für alle löschen? Das lässt sich nicht rückgängig machen.",
+      saveMessage: "Speichern",
+      mutationFailed: "Die Nachricht konnte nicht gespeichert werden. Versuche es erneut.",
+      messageBody: "Nachricht",
 
       pinPickedUp: ({ title }: { title: string }) =>
         `${title} aufgenommen. Mit den Pfeiltasten verschieben, mit Eingabe ablegen, mit Escape abbrechen.`,

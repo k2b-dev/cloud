@@ -292,7 +292,7 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
           (SELECT jsonb_build_object('kind', a.kind, 'name', a.filename) FROM chat.attachments a
             WHERE a.message_id = chat.messages.id ORDER BY a.created_at, a.id LIMIT 1) AS attachment,
           left(regexp_replace(body_md, ${"[\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"}, ' ', 'g'), 600) AS body, created_at
-        FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' AND ${visibility} ORDER BY seq DESC LIMIT 1
+        FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' AND deleted_at IS NULL AND ${visibility} ORDER BY seq DESC LIMIT 1
       ) m LEFT JOIN chat.threads t ON t.id = m.thread_id WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
     `
     : [];
