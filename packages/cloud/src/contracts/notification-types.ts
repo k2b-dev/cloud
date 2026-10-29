@@ -37,6 +37,8 @@ export type NotificationPresentation = {
   group?: string;
   /** Non-negative safe integer for the app badge; zero clears it. Browser-only. */
   badge?: number;
+  /** `false` shows or replaces the browser notification without sound or vibration. Defaults to `true`. Browser-only. */
+  alert?: boolean;
   /** Same-origin absolute path. Validated again before persistence and navigation. */
   targetHref?: `/${string}`;
 };

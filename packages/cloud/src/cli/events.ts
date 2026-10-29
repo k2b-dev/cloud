@@ -99,15 +99,26 @@ const build = (locale?: string) => {
     commands: [
       command("ls", {
         summary: t("List declared event types", "Deklarierte Event-Typen auflisten"),
-        flags: { app: flag.string({ description: t("Publisher application ID", "ID der veröffentlichenden Anwendung") }) },
+        flags: {
+          app: flag.string({ description: t("Publisher application ID", "ID der veröffentlichenden Anwendung") }),
+          automation: flag.enum(["true", "false"], {
+            description: t("Filter by automation metadata", "Nach Automationsmetadaten filtern"),
+          }),
+        },
         async run({ ctx, flags }) {
           const result = await catalog(ctx);
-          const events = flags.app ? result.events.filter((event) => event.type.startsWith(`${flags.app}.`)) : result.events;
+          const events = result.events.filter(
+            (event) =>
+              (!flags.app || event.type.startsWith(`${flags.app}.`)) &&
+              (flags.automation === undefined || event.automation === (flags.automation === "true")),
+          );
           printRows(ctx, { events }, events, [
             { key: "type", label: "TYPE" },
             { key: "version", label: "VERSION" },
             { key: "title", label: t("TITLE", "TITEL") },
             { key: "subject", label: "SUBJECT" },
+            { key: "place", label: "PLACE", value: (event) => event.place ?? "—" },
+            { key: "automation", label: "AUTOMATION", value: (event) => (event.automation ? t("yes", "ja") : t("no", "nein")) },
           ]);
         },
       }),

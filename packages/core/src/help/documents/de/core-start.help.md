@@ -21,7 +21,7 @@ Core stellt die Seiten und Dienste der ganzen Plattform bereit: Anmeldung, Profi
 
 :::reference
 - **Eigenes Konto prüfen:** Öffne dein Profil. Es zeigt Kontotyp, Kontodienst, Rollen, Gruppen, Ablaufdaten, Profilfelder, API-Schlüssel, Passkeys und deine letzten Kontoereignisse.
-- **Eine Administrationsseite finden:** Öffne die Administrationsübersicht. Sie verlinkt die Administrationsseiten der Apps, etwa Gateway Ops, Konten, IPA Hosts oder App-Einstellungen.
+- **Eine Administrationsseite finden:** Öffne die Administrationsübersicht. Sie verlinkt die Administrationsseiten der Apps, etwa Gateway Ops, Zugänge, IPA Hosts oder App-Einstellungen.
 - **Einen Hinweis veröffentlichen:** Nutze **Ankündigungen** für Plattformmeldungen oder Banner im gemeinsamen Layout.
 - **Plattformvorgaben ändern:** Nutze die Core-Einstellungen für die globale Dienstkonfiguration. Jede Einstellung stammt aus der Datenbank, der Umgebung oder ihrem Standardwert.
 :::

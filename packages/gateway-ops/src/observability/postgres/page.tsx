@@ -1,6 +1,5 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime as formatDate, formatNumber } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import {
   ButtonLink,
   DataPanel,
@@ -14,6 +13,7 @@ import {
   ViewTabs,
 } from "@k2b/ui";
 import { ssr } from "../../config";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 
 /** Seconds to a compact age; sessions report ages, not durations. */
 const formatSeconds = (seconds: number | null, locale: string): string => {
@@ -183,14 +183,10 @@ export default ssr<AuthContext>(async (c) => {
     { id: "comment", header: t.description, value: (extension) => extension.comment, cellClass: "max-w-[34rem]" },
   ];
 
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title="Postgres">
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-postgres-title">
-          <h1 class="text-base font-semibold text-primary">Postgres</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.postgresDescription}</p>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="postgres" attention={attention}>
+      <ObservabilityPane label={areaText(locale).postgres} description={t.postgresDescription}>
         <p class="text-xs text-dimmed">{t.postgresConnectionsDescription}</p>
 
         <StatGrid columns={5}>
@@ -511,7 +507,7 @@ export default ssr<AuthContext>(async (c) => {
             }}
           />
         </DataTable.Panel>
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });
