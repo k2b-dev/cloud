@@ -25,6 +25,9 @@ describe("Core compression boundaries", () => {
     "/admin/ai",
     "/admin/ai?sec=providers&p=example",
     "/admin/settings/__new_route__",
+    "/admin/signin",
+    "/admin/signin/linux",
+    "/admin/signin/__new_route__",
   ]) {
     test(`${path} opts out before authentication`, async () => {
       const response = await pages.request(path);
@@ -58,6 +61,8 @@ test("every admin page the sidebar links is mounted in the pages router", async 
     "/admin/outgoing-mail",
     "/admin/base",
     "/admin/base/places",
+    "/admin/signin",
+    "/admin/signin/linux",
     "/admin/apps",
   ]) {
     const response = await pages.request(path);

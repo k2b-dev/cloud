@@ -127,6 +127,8 @@ beforeAll(async () => {
         items = items.map((task) => (task.id === changed.id ? changed : task));
         return Response.json(changed);
       }
+      // The shell reads the capability catalog on its own (#2075); an empty catalog keeps that read out of the error list.
+      if (url.pathname === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
       if (url.pathname === "/api/spaces/workspace/view" && request.method === "GET") {
         requests.push({ path: url.pathname, method: request.method, body: null });
         return Response.json({ kind: "list", currentView: "list", itemsResult: result() });

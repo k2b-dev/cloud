@@ -43,6 +43,8 @@ export default function LinuxIdentityPanel(props: {
   search?: string;
   scope?: "ready" | "all";
   documentationBase?: string;
+  /** Inside a titled level of the Sign-in & security area, which already shows the title and the guide link. */
+  embedded?: boolean;
 }) {
   const locale = useLocale();
   const t = () => linuxMessages.resolve([locale()]).t;
@@ -53,9 +55,9 @@ export default function LinuxIdentityPanel(props: {
   const [reserved, setReserved] = createSignal(false);
   const [selected, setSelected] = createSignal<string[]>([]);
   const pageHref = (cursor?: string | null, nextScope = props.scope ?? "ready") => {
-    const params = new URLSearchParams({ tab: "linux", scope: nextScope, search: props.search ?? "" });
+    const params = new URLSearchParams({ scope: nextScope, search: props.search ?? "" });
     if (cursor) params.set("after", cursor);
-    return `/admin/settings?${params}`;
+    return `/admin/signin/linux?${params}`;
   };
   const [notice, setNotice] = createSignal("");
   const [progress, setProgress] = createSignal({ done: 0, total: 0 });
@@ -163,6 +165,7 @@ export default function LinuxIdentityPanel(props: {
   ];
   return (
     <SettingsPage
+      header={!props.embedded}
       title={t().title}
       subtitle={t().subtitle}
       icon="ti ti-terminal-2"
