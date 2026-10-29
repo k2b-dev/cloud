@@ -3244,6 +3244,11 @@ html {
   padding-inline: 0.5rem;
 }
 
+/* A navigation surface used as a level leaves the inset to its body. */
+.k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"][data-workspace-level] {
+  padding-inline: 0;
+}
+
 .k2b-ui .k2b-app-workspace__level-body[data-scroll="false"] {
   display: flex;
   flex-direction: column;
