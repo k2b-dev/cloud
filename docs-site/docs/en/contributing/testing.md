@@ -543,6 +543,14 @@ response that does not finish. The navigation diagnosis lists that response
 under "Requests still open". When the test server wrote the whole response,
 look at the sockets on the server's port while the page waits:
 
+A test server can record what it receives and answers with
+`recordTestServer()` from `packages/ui/test/browser.ts`: wrap its `fetch`
+with `record`, call `listen` with its URL, and `stop` when it stops. The
+navigation diagnosis then prints, under each request that is still open,
+whether the server never received it, received it without answering, or
+answered it. The Chat harness in
+`packages/chat/src/frontend/ChatWorkspace.browser-fixture.ts` does this.
+
 ```bash
 sudo ss -tnoiepm state all '( sport = :PORT or dport = :PORT )'
 grep -A1 '^TcpExt' /proc/net/netstat
