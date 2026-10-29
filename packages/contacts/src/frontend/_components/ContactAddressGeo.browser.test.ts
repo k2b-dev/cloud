@@ -84,6 +84,8 @@ test("a failed lookup offers a retry in place", async () => {
   const page = await open("failed", { view: "detail", contact: jana(null), availability: availability.configured });
   try {
     await page.getByText("Karte nicht geladen").waitFor();
+    // The address section is below the fold; measure after the click target's scroll.
+    await page.getByRole("button", { name: "Erneut versuchen" }).scrollIntoViewIfNeeded();
     const before = await mapBox(page);
     harness.state.locate = { state: "located", location: { status: "not_found", checkedAt: "2026-10-22T10:00:00.000Z" } };
     await page.getByRole("button", { name: "Erneut versuchen" }).click();
@@ -230,6 +232,8 @@ test.each(["submission", "reload"] as const)("the focused address editor preserv
     await page.getByRole("heading", { name: "Jana Berger", exact: true }).waitFor();
     if (boundary === "reload") {
       await page.reload();
+      await page.waitForFunction(() => "clientHeight" in window);
+      await expandAddresses(page);
       await page.getByText("Ulm-Wiblingen", { exact: false }).first().waitFor();
       expect(await routeLatitude()).toBeCloseTo(48.40841, 5);
       expect(harness.state.locateRequests).toBe(lookupsBeforeSave);
@@ -257,8 +261,9 @@ test.each(["submission", "reload"] as const)("the focused address editor preserv
 });
 
 const expandAddresses = async (page: Page) => {
-  const summary = page.locator('.k2b-detail-panel__section-summary[aria-expanded="false"]', { hasText: "Adressen" });
-  if (await summary.isVisible()) await summary.click();
+  const summary = page.locator(".k2b-detail-panel__section-summary", { hasText: "Adressen" });
+  await summary.waitFor();
+  if ((await summary.getAttribute("aria-expanded")) === "false") await summary.click();
 };
 const editAddress = async (page: Page) => {
   await expandAddresses(page);
@@ -289,7 +294,11 @@ test.each([false, true])("a manually changed address gets its new location (relo
       harness.releaseLocate();
     }
     expect((await located).ok()).toBe(true);
-    if (reload) await page.reload();
+    if (reload) {
+      await page.reload();
+      await page.waitForFunction(() => "clientHeight" in window);
+      await expandAddresses(page);
+    }
     await page.locator(".k2b-map-view__pin").waitFor();
     expect(await page.getByRole("link", { name: /Route planen/ }).getAttribute("href")).toContain("49%2C10");
     expect(harness.state.locateRequests).toBe(1);
@@ -421,8 +430,9 @@ test.each([500, 409] as const)("address ID after reorder preserves edits and rec
     await page.getByRole("button", { name: "Kontakt neu laden" }).click();
     await page.getByRole("heading", { name: "Jana Berger", exact: true }).waitFor();
     expect(new URL(page.url()).searchParams.has("address")).toBe(false);
-    await page.getByText("Aktuelle Straße 7", { exact: true }).waitFor();
     await page.waitForFunction(() => "clientHeight" in window);
+    await expandAddresses(page);
+    await page.getByText("Aktuelle Straße 7", { exact: true }).waitFor();
     await page.bringToFront();
     await page.locator(`[data-contact-address-edit="${target.id}"]`).click();
     expect(await page.getByRole("textbox", { name: /Straße und Hausnummer/ }).inputValue()).toBe("Aktuelle Straße 7");
@@ -677,6 +687,7 @@ test("URL reconciliation reads the current contact instead of reusing its stale 
         }),
       ),
     );
+    await expandAddresses(page);
     await page.getByText("Aktuelle Adresse 9", { exact: true }).waitFor();
     await editAddress(page);
     expect(await page.getByRole("textbox", { name: /Straße und Hausnummer/ }).inputValue()).toBe("Aktuelle Adresse 9");
@@ -855,6 +866,7 @@ test("editing an address after an earlier lookup cannot reuse the old point", as
     availability: availability.configured,
   });
   try {
+    await expandAddresses(page);
     await page.locator(".k2b-map-view__pin").waitFor();
     expect(harness.state.locateRequests).toBe(1);
     await editAddress(page);
