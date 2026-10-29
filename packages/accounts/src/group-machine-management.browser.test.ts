@@ -88,6 +88,9 @@ for (const width of [390, 768, 1440])
             });
           }
           if (url.pathname.endsWith("/action-notice")) return route.fulfill({ json: { markdown: null, failed: false } });
+          // Avatar pictures load on their own; they are not membership writes.
+          if (url.pathname.endsWith("/avatar"))
+            return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg"/>' });
           // The shell reads the capability catalog on its own; it is not a membership write.
           if (url.pathname.endsWith("/capabilities/v1/catalog"))
             return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
