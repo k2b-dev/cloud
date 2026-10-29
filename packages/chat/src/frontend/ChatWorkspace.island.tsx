@@ -2416,12 +2416,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
               reactions={(id) => reactionsById().get(id) ?? []}
               onReact={react}
-              onEdit={
-                current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "edit") : undefined
-              }
-              onDelete={
-                current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "delete") : undefined
-              }
+              onEdit={current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "edit") : undefined}
+              onDelete={current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "delete") : undefined}
               onCopy={copy}
               // With the info open, Esc closes it first; the workspace owns that.
               onEscape={() => panel() === null && markOpenRead()}
