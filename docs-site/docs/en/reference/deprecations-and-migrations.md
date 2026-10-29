@@ -19,6 +19,24 @@ and inspect primary GIDs through user Linux identity diagnostics. See the
 [operator upgrade note](/en/docs/operations/linux-identities#upgrade-group-exports-and-integrations)
 for consumer checks and retained Files directories.
 
+## Notebooks page discussion moved to the discussion commands
+
+`cld notebooks comments` now means comments on a passage of the text, with
+replies and suggestions. The page discussion of a note moved to
+`cld notebooks discussion` with unchanged flags and JSON output:
+
+| Before | Now |
+| --- | --- |
+| `comments list <note>` | `discussion list <note>` |
+| `comments add <note> --content …` | `discussion add <note> --content …` |
+| `comments update <note> <id>` | `discussion update <note> <id>` |
+| `comments delete <note> <id>` | `discussion delete <note> <id>` |
+
+`comments add` without `--quote` fails and names `discussion add`. Scripts
+that post page discussion entries must switch to `discussion`. Capability IDs
+are unchanged: `notebooks.annotation.*` are the comments on the text, and
+`notebooks.comment.*` is the page discussion.
+
 ## Base settings are one administration area with new addresses
 
 **Administration → Base settings** collects General, Legal, PDF rendering,
@@ -1978,7 +1996,7 @@ or `--content <text>` instead of `--file`, `--stdin`, and `--content`. See
 | `lock-note` | `lock <note>` |
 | `search --all`, `tag-notes` | `search [query] [--notebook] [--tags]` |
 | `favorite`, `unfavorite`, `favorites` | `favorites add`, `favorites remove`, `favorites list` |
-| `comments`, `add-comment`, `update-comment`, `delete-comment` | `comments list`, `add`, `update`, `delete` |
+| `comments`, `add-comment`, `update-comment`, `delete-comment` | `discussion list`, `add`, `update`, `delete` (named `comments` until the page discussion moved) |
 | `versions`, `version`, `restore-version` | `versions list`, `versions cat`, `versions restore --into` |
 | `upload-attachment` | `attach <note> <file>` |
 | `attachments`, `download-attachment`, `delete-attachment` | `attachments list`, `download`, `delete` |
