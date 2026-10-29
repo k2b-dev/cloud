@@ -7,6 +7,7 @@ import { migrate } from "./migrate";
 import { router } from "./router";
 import { chatService } from "./service";
 import { maintenanceLifecycle } from "./service/maintenance";
+import { notificationLifecycle } from "./service/notification-delivery";
 
 const result = await app.start({
   capabilities: chatCapabilities,
@@ -14,7 +15,14 @@ const result = await app.start({
   help: chatHelp,
   openapi: apiRoutes,
   lifecycle: {
-    ...maintenanceLifecycle,
+    start: async () => {
+      await maintenanceLifecycle.start();
+      await notificationLifecycle.start();
+    },
+    stop: async () => {
+      await notificationLifecycle.stop();
+      await maintenanceLifecycle.stop();
+    },
     setup: async () => {
       await migrate();
     },

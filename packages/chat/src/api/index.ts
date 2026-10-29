@@ -20,6 +20,7 @@ import { chatMessages } from "../messages";
 import { chatRequestContext as context } from "../request-context";
 import { ChatHealthSchema, chatService } from "../service";
 import { attachmentHeaders } from "../service/attachment-content";
+import { BadgeSchema, badgeCount } from "../service/badge";
 import {
   AddMembersSchema,
   AttachmentParamSchema,
@@ -41,6 +42,7 @@ import {
   DiscoveryPreviewSchema,
   DiscoveryStateSchema,
   DiscoveryUpdateSchema,
+  FollowingSchema,
   ForResourceSchema,
   ForYouPageSchema,
   ForYouQuerySchema,
@@ -61,6 +63,8 @@ import {
   MessageParamSchema,
   MessageQuerySchema,
   MessageViewSchema,
+  NotificationsSchema,
+  NotificationUpdateSchema,
   PeoplePageSchema,
   PeopleQuerySchema,
   PersonalConversationSchema,
@@ -114,6 +118,9 @@ const description = (summary: string, schema: z.ZodType) =>
   });
 const app = new Hono<AuthContext>()
   .use(rateLimit())
+  .get("/badge", auth.requireRole("authenticated"), description("Read the Chat badge count", BadgeSchema), async (c) =>
+    respond(c, ok({ count: await badgeCount(context(c)) })),
+  )
   .get(
     "/admin/health",
     auth.requireRole("admin"),
@@ -308,6 +315,68 @@ const app = new Hono<AuthContext>()
   )
   .use("/conversations", auth.requireRole("authenticated"))
   .use("/conversations/*", auth.requireRole("authenticated"))
+  .get(
+    "/conversations/:conversation/notifications",
+    description("Read your effective chat notification level", NotificationsSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.notificationPreferences.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
+  )
+  .put(
+    "/conversations/:conversation/notifications",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Set your chat notification level",
+      ...requiresAuth,
+      description:
+        "Requires a participant row and current read access. Only none accepts for: 1h, 8h, 1w or forever. Expired mutes resolve to the current default. The server computes expiry.",
+      responses: {
+        200: jsonResponse(NotificationsSchema, "Saved notification choice"),
+        403: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Membership required"),
+        404: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Chat unavailable"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", NotificationUpdateSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.notificationPreferences.set({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
+  .put(
+    "/conversations/:conversation/threads/:thread/follow",
+    description("Follow an item discussion in a system chat", FollowingSchema),
+    validator("param", ThreadParamSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.threadFollows.set({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          threadId: c.req.valid("param").thread,
+          following: true,
+        }),
+      ),
+  )
+  .delete(
+    "/conversations/:conversation/threads/:thread/follow",
+    description("Stop following an item discussion in a system chat", FollowingSchema),
+    validator("param", ThreadParamSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.threadFollows.set({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          threadId: c.req.valid("param").thread,
+          following: false,
+        }),
+      ),
+  )
   .post(
     "/conversations",
     describeRoute({

@@ -36,7 +36,8 @@ import {
 } from "./access";
 import { titles } from "./conversation-titles";
 import { validateDiscovery, writeDiscovery } from "./discovery";
-import { forYouUnread } from "./for-you";
+import { forYouUnread, mentionsUnread } from "./for-you";
+import { notificationProjection } from "./notification-projection";
 import { TransactionFailure, value } from "./transaction-failure";
 
 export { value };
@@ -66,7 +67,7 @@ import {
 import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { publishMembership } from "./live-updates";
-import { appendMessage, personSnapshots } from "./message-store";
+import { appendMessage, personSnapshots, queueAddedNotification } from "./message-store";
 import { projectRead, type ReadProjection, readProjection, unreadQuery } from "./read-state";
 import { readerBatch, readResource } from "./resource-access";
 import { messageCondition, type ThreadBudget, visibleThreadIdPage } from "./thread-access";
@@ -233,30 +234,37 @@ const appendAdded = async (
   ids: string[],
   groupIds: string[],
   affected: string[],
+  notificationUserIds: string[],
   serviceIds: string[] = [],
 ) => {
+  let notificationMessage: string | undefined;
   if (ids.length || serviceIds.length)
-    await appendMessage(
-      db,
-      row,
-      context,
-      {
-        kind: "system",
-        system: {
-          code: "members_added",
-          params: { members: [...(await personSnapshots(db, ids)), ...(await personSnapshots(db, serviceIds, "service_account"))] },
+    notificationMessage = (
+      await appendMessage(
+        db,
+        row,
+        context,
+        {
+          kind: "system",
+          system: {
+            code: "members_added",
+            params: { members: [...(await personSnapshots(db, ids)), ...(await personSnapshots(db, serviceIds, "service_account"))] },
+          },
         },
-      },
-      affected,
-    );
-  if (groupIds.length)
-    await appendMessage(
+        affected,
+      )
+    ).short_id;
+  if (groupIds.length) {
+    const added = await appendMessage(
       db,
       row,
       context,
       { kind: "system", system: { code: "groups_added", params: { groups: await groupSnapshots(db, groupIds) } } },
       ids.length || serviceIds.length ? [] : affected,
     );
+    notificationMessage ??= added.short_id;
+  }
+  if (notificationMessage) await queueAddedNotification(db, notificationMessage, notificationUserIds);
 };
 
 const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: typeof sql, ids?: string[]) => {
@@ -338,14 +346,18 @@ const lifecycleFlags = async (rows: ConversationRow[], context: ChatContext, db:
     : [];
   return new Map(found.map((row) => [row.id, { withGuests: row.with_guests, peerDeactivated: row.peer_deactivated }]));
 };
-const project = (
+const project = async (
+  db: typeof sql,
+  context: ChatContext,
   row: ConversationRow,
   permission: Exclude<PermissionLevel, "none">,
   title: string,
   lastMessage: z.infer<typeof ConversationSchema>["lastMessage"],
   flags: { withGuests: boolean; peerDeactivated: boolean },
   state: Pick<z.infer<typeof ConversationSchema>, "archived" | "pinnedRank" | "read" | "unread" | "threads" | "channel" | "member">,
-): z.infer<typeof ConversationSchema> => ({
+): Promise<z.infer<typeof ConversationSchema>> => ({
+  notifications: await notificationProjection(db, context, { ...row, permission }),
+  mentionsUnread: await mentionsUnread(context, row.id, db),
   id: row.short_id,
   ...(row.kind === "system" && row.resource_type && row.resource_id
     ? { kind: row.kind, resource: { type: row.resource_type, id: row.resource_id } }
@@ -381,15 +393,20 @@ export const projectConversations = async (
       )}`
     ).map((row) => [row.conversation_id, projectRead(row)]),
   );
-  return rows.map((row) =>
-    project(
-      row,
-      z.enum(["read", "write", "admin"]).parse(capPermission(permissionFromRank(row.permission_rank), context.actor)),
-      names.get(row.id)!,
-      latest.get(row.id) ?? null,
-      flags.get(row.id)!,
-      states.get(row.id)!,
-    ),
+  return readerBatch(
+    rows,
+    (row) =>
+      project(
+        db,
+        context,
+        row,
+        z.enum(["read", "write", "admin"]).parse(capPermission(permissionFromRank(row.permission_rank), context.actor)),
+        names.get(row.id)!,
+        latest.get(row.id) ?? null,
+        flags.get(row.id)!,
+        states.get(row.id)!,
+      ),
+    context.caller?.signal,
   );
 };
 
@@ -517,6 +534,11 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       let latestMessage = await appendMessage(db, row, input, { kind: "system", system: { code: "conversation_created", params: {} } }, [
         ...new Set([...allIds, ...groupPeople, ...services.map((id) => `service_account:${id}`)]),
       ]);
+      await queueAddedNotification(
+        db,
+        latestMessage.short_id,
+        [...new Set([...allIds, ...groupPeople])].filter((id) => id !== callerId),
+      );
       if (groups.length)
         latestMessage = await appendMessage(db, row, input, {
           kind: "system",
@@ -538,7 +560,9 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       const latest = await lastMessages([row], input, db);
       return ok({
         outcome: "created",
-        conversation: project(
+        conversation: await project(
+          db,
+          input,
           { ...row, rev: latestMessage.rev },
           "admin",
           names.get(row.id)!,
@@ -583,7 +607,9 @@ const getInSnapshot = async (
   const latest = await lastMessages([row], input, db, visibleIds);
   return ok({
     ...(row.kind === "system" ? { summaryCursor: page.nextCursor } : {}),
-    ...project(
+    ...(await project(
+      db,
+      input,
       resource
         ? {
             ...row,
@@ -597,7 +623,7 @@ const getInSnapshot = async (
       latest.get(row.id) ?? null,
       (await lifecycleFlags([row], input, db)).get(row.id)!,
       read,
-    ),
+    )),
   });
 };
 const get = (
@@ -683,7 +709,9 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     const names = await titles([row], input, db);
     const latest = await lastMessages([row], input, db);
     return ok(
-      project(
+      await project(
+        db,
+        input,
         row,
         before.permission,
         names.get(before.id)!,
@@ -880,6 +908,9 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
     await lockConversation(db, input.conversationId);
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.add");
     if (!allowed.ok) return allowed;
+    const beforeMembers = new Set(
+      (await db<{ id: string }[]>`${memberUsers(allowed.data.id, db)} LIMIT ${MAX_PARTICIPANTS + 1}`).map((person) => person.id),
+    );
     const principals = await newMembers(db, allowed.data.id, parsed.data.members);
     const valid = await validateMembers(principals, input, db, true, input.conversationId);
     if (!valid.ok) return valid;
@@ -898,6 +929,7 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
       ids,
       groups.map((group) => group.groupId),
       [...new Set([...ids, ...groupPeople, ...services.map((id) => `service_account:${id}`)])],
+      [...new Set([...ids, ...groupPeople])].filter((id) => !beforeMembers.has(id)),
       services,
     );
     await record(db, input, allowed.data.short_id, "chat.member.add", { count: principals.length });

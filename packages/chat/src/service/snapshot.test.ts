@@ -39,6 +39,8 @@ const context: ChatRequestContext = {
   },
 };
 const conversation = ConversationSchema.parse({
+  notifications: null,
+  mentionsUnread: 0,
   threads: 0,
   channel: false,
   member: true,

@@ -40,6 +40,18 @@ Browser recognition compares absolute links with the canonical origin from
 pasted links; root-relative links work without it. No additional service or
 secret is required. See [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
 
+## Upgrade notification channel exclusions
+
+Core's startup migration adds `excluded_channels` (default `[]`) and
+`excluded_reason` (default `null`) to the notification catalog. Apply it before
+starting updated applications. Catalog registration retries while the new
+columns are missing. No new service or configuration is required.
+
+An application's excluded channels override older saved preferences for new
+sends; existing queued deliveries are unchanged. See
+[User preferences](/en/docs/platform/notifications#user-preferences) for the
+application contract.
+
 ## Upgrade personal Linux group retirement
 
 This security fix changes account deletion: the account and its personal Linux
@@ -1243,8 +1255,10 @@ before enabling sensitive content on lock screens or paired devices.
 The rail and the app grid can show a count on an application's icon when the
 application declares
 [`nav.badge`](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon).
-No database migration or configuration change is required, and no built-in
-application declares a badge yet, so the shell looks and behaves as before.
+Chat declares `/api/chat/badge` and uses the same count for browser push.
+Deploy its additive notification migration with the Chat image; see
+[Chat notifications](/en/docs/operations/chat-notifications). Other applications
+show counts only when they declare their own badge route.
 
 Each application renders the shell with its own platform package, so badges
 appear on the pages of applications built with this release; pages of older
