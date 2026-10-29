@@ -11,6 +11,21 @@
   display: none;
 }
 
+/* iPadOS Safari reports a Mac. Pick its installation steps before JavaScript runs. */
+.pwa-coarse-only {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .pwa-coarse-only {
+    display: block;
+  }
+
+  .pwa-fine-only {
+    display: none;
+  }
+}
+
 @media (display-mode: standalone) {
   .pwa-standalone-only {
     display: block;
@@ -62,6 +77,10 @@
   line-height: 1.5rem;
   text-align: center;
   text-wrap: balance;
+}
+/* A heading the screen moves focus to, so a screen reader starts there; it is not a control and shows no ring. */
+.pwa-welcome__block h2[tabindex="-1"]:focus {
+  outline: none;
 }
 
 .pwa-welcome__block > p {

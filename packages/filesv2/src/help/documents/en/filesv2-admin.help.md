@@ -14,7 +14,7 @@ Enter the Filegate **Backend URL** and **Backend token**. The application must b
 
 Enable Cloud and FreeIPA independently and select their Filegate roots. **Advanced paths** contains the optional base prefix and the home, group, and archive paths relative to that prefix. Keep these paths separate so the areas and reserved directories do not overlap.
 
-Cloud storage requires enabled local Linux identities. Only eligible user accounts and POSIX groups have directories. **Create local directories automatically** (`cloud.autoCreate`) is off by default. Automatic archiving is on by default and can be disabled separately; it archives managed directories of deleted local accounts or groups, and groups with POSIX disabled. Files remain recoverable. An unknown identity state never counts as deletion.
+Personal and group Cloud storage requires enabled local Linux identities. Only eligible user accounts and POSIX groups have directories. **Create local directories automatically** (`cloud.autoCreate`) is off by default. Automatic archiving is on by default and can be disabled separately; it archives managed directories of deleted local accounts or groups, and groups with POSIX disabled. Files remain recoverable. An unknown identity state never counts as deletion.
 
 FreeIPA home creation has its own `freeipa.autoCreate` setting, also off by default. Enable it in the Files configuration to create homes for active FreeIPA users with complete POSIX UID and primary GID. These homes use the configured FreeIPA root and paths and the user's Unix ownership. Cloud automatic creation remains independent and uses daemon ownership. FreeIPA group creation and archiving remain explicit actions.
 
@@ -23,6 +23,14 @@ New users and existing eligible users are checked at startup, after configuratio
 `auto_create_off` means that area's automatic creation is disabled; `posix_incomplete` means UID or primary GID is missing and takes precedence for FreeIPA even while automatic creation is off. `not_configured` means the storage connection or required area is unavailable. `done` confirms provisioning; `failed` includes an error code and is retried during reconciliation.
 
 **Collabora Online** connects a document editor for text documents, spreadsheets and presentations. Enter the **Collabora address** browsers load the editor from; leaving it empty disables editing. Choose the **format of new documents**: OpenDocument or Microsoft Office. **Advanced** holds two optional addresses for deployments in which this application reaches Collabora, or Collabora reaches this Cloud, under different addresses than browsers use. Collabora must be able to reach this Cloud's address, and this application must reach Collabora.
+
+## Create machine storage {icon="server"}
+
+In **Settings → Machine storage**, choose an agent or standalone service account and select **Create storage**. Open the new storage row and grant named users, groups or machines access to a **Relative path**. Empty means the whole storage; a narrower grant includes that file or folder and its descendants. Choose **Read**, **Read and write**, or **Read, write and share**. Ownership alone grants no access, including to the owner.
+
+Machine storage uses its own Cloud directory and the existing Files service identity. It needs no local Linux provisioning and never uses a person's Unix identity. FreeIPA machine storage is unavailable without an independently provisioned machine Unix identity. Machine storage is excluded from the human directory lifecycle and automatic archiving.
+
+Use **Revoke** to remove a path grant. The next transfer request or upload commit checks current access again. Disabling a machine account or revoking its public link also denies the next request; a stream already admitted can finish. If creation fails, fix the connection and retry with the same owner. Files resumes the existing binding.
 
 ## Read the Overview {icon="layout-dashboard"}
 
@@ -93,8 +101,8 @@ Directory and file commands address a directory as `<storage>/<users|groups>/<na
 
 ## Manage templates {icon="template"}
 
-The **Templates** tab stores reusable files independently of storage bases. Upload a file or choose an existing file you can read. Each template is a separate snapshot, up to 20 MiB. Name it, optionally describe it, and grant **Use** to users, groups or everyone signed in. Without a grant, only administration lists it. These are Cloud access grants; no POSIX group or access to the original folder is required.
+The **Templates** tab stores reusable files independently of storage bases. Upload a file or choose an existing file you can read. Each template is a separate snapshot, up to 20 MiB. Name it, optionally describe it, and give **Use** access to users, groups, agents, standalone service accounts or everyone signed in. Without access, only administration lists it. These are Cloud permissions; no POSIX group or access to the original folder is required.
 
-Users choose **Add → Template** in a writable folder. The template grant never bypasses the destination's write permissions. Replacing a template file or deleting the template does not affect files previously created from it. Imported originals can also be changed or removed independently. Template bytes and access records are stored in PostgreSQL and must be included in database backups.
+Users choose **Add → Template** in a writable folder. The template access never bypasses the destination's write permissions. Replacing a template file or deleting the template does not affect files previously created from it. Imported originals can also be changed or removed independently. Template bytes and access entries are stored in PostgreSQL and must be included in database backups.
 
-The CLI offers `admin templates list|upload|import|update|replace|delete` and `admin templates access list|grant|revoke`. Delete requires `--yes`. Use `--help` for arguments and `--input-file` or `--stdin` for a grant's JSON principal.
+The CLI offers `admin templates list|upload|import|update|replace|delete` and `admin templates access list|grant|revoke`. Delete requires `--yes`. Use `--help` for arguments and `--input-file` or `--stdin` for an access entry’s JSON principal.

@@ -3,13 +3,14 @@ import type { Sync } from "@k2b/sync";
 import { env } from "../config/env";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 
 describe("application startup readiness", () => {
-  for (const mode of ["setup", "start", "ready", "advertise", "calendar", null, "skip"] as const) {
+  for (const mode of ["package", "setup", "start", "ready", "advertise", "calendar", null, "skip"] as const) {
     const skipSetup = mode === "skip";
     const failure = skipSetup ? null : mode;
     test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
@@ -36,6 +37,7 @@ describe("application startup readiness", () => {
         }),
       } as unknown as Sync;
       const spies = [
+        spyOn(applicationPackage, "registerApplicationPackage").mockImplementation(() => step("package")),
         spyOn(processSync, "startProcessSync").mockImplementation(async () => {
           processSync.bindProcessSync(sync);
           events.push("connect");
@@ -92,9 +94,9 @@ describe("application startup readiness", () => {
             },
           },
         });
-        if (failure === "calendar") {
-          await expect(started).rejects.toThrow("calendarSource does not match");
-          expect(events).toEqual(["connect", "disconnect"]);
+        if (failure === "calendar" || failure === "package") {
+          await expect(started).rejects.toThrow(failure === "package" ? "failed:package" : "calendarSource does not match");
+          expect(events).toEqual(["connect", "package", "disconnect"]);
           expect(() => processSync.getProcessSync()).toThrow("not available");
         } else if (failure) {
           await expect(started).rejects.toThrow(`failed:${failure}`);

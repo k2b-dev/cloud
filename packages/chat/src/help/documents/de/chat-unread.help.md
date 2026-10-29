@@ -6,7 +6,7 @@ description: Finde neue Nachrichten und markiere Chats auf deinen Geräten als u
 order: 120
 ---
 
-Ungelesen sind Nachrichten anderer Personen nach der Stelle, an der du aufgehört hast zu lesen. Deine eigenen Nachrichten und Chat-Hinweise zählen nie mit. Bei mehr als 99 Nachrichten steht **99+**. Deine Leseposition bleibt auf deinen Geräten synchron.
+Ungelesen sind Nachrichten anderer Personen nach der Stelle, an der du aufgehört hast zu lesen. Deine eigenen Nachrichten und Chat-Hinweise zählen nie mit. Bei mehr als 99 Nachrichten steht **99+**. In der Cloud-App zählt der Eintrag Chat die ungelesenen Nachrichten in allen deinen Chats. Deine Leseposition bleibt auf deinen Geräten synchron.
 
 ## Weiterlesen {icon="messages"}
 

@@ -222,6 +222,8 @@ suite("share authority, public privacy and durable inbox budgets", () => {
       authorized: authorize,
       readOnlyAuthorized: (actor, baseId, path) => authorize(actor, baseId, path, path === "Inbox"),
       displayNames: async (rows) => rows.map((row) => ({ ...row, displayName: "Current Alice" })),
+      shareAuthority: async () => {},
+      guardShare: (current) => current,
       async writableParent(requestActor, baseId, path) {
         const current = await authorize(requestActor, baseId, path.split("/").slice(0, -1).join("/"), true);
         return { ...current, relative: path };

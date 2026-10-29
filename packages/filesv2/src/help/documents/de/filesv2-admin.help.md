@@ -14,7 +14,7 @@ Trage die **Backend-URL** und den **Backend-Token** von Filegate ein. Die Anwend
 
 Aktiviere Cloud und FreeIPA unabhängig und wähle ihre Filegate-Roots. **Erweiterte Pfade** enthält den optionalen Basispfad und die dazu relativen Nutzer-, Gruppen- und Archivpfade. Halte diese Pfade getrennt, damit sich Bereiche und reservierte Verzeichnisse nicht überschneiden.
 
-Cloud-Ablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur berechtigte Nutzerkonten und POSIX-Gruppen haben Verzeichnisse. **Lokale Verzeichnisse automatisch erstellen** (`cloud.autoCreate`) ist zunächst ausgeschaltet. Die automatische Archivierung ist standardmäßig eingeschaltet und separat deaktivierbar. Sie archiviert verwaltete Verzeichnisse gelöschter lokaler Konten oder Gruppen sowie von Gruppen mit deaktiviertem POSIX. Die Dateien bleiben wiederherstellbar. Ein unbekannter Identitätszustand gilt nie als Löschung.
+Persönliche Cloud-Ablagen und Gruppenablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur berechtigte Nutzerkonten und POSIX-Gruppen haben Verzeichnisse. **Lokale Verzeichnisse automatisch erstellen** (`cloud.autoCreate`) ist zunächst ausgeschaltet. Die automatische Archivierung ist standardmäßig eingeschaltet und separat deaktivierbar. Sie archiviert verwaltete Verzeichnisse gelöschter lokaler Konten oder Gruppen sowie von Gruppen mit deaktiviertem POSIX. Die Dateien bleiben wiederherstellbar. Ein unbekannter Identitätszustand gilt nie als Löschung.
 
 Für FreeIPA-Nutzerablagen gibt es die unabhängige Einstellung `freeipa.autoCreate`, ebenfalls standardmäßig ausgeschaltet. Aktiviere sie in der Dateien-Konfiguration, um Ablagen für aktive FreeIPA-Nutzer mit vollständiger POSIX-UID und primärer GID anzulegen. Dabei gelten Root und Pfade des FreeIPA-Bereichs sowie die Unix-Eigentümerschaft des Nutzers. Die automatische Cloud-Erstellung bleibt unabhängig und verwendet die Eigentümerschaft des Daemons. FreeIPA-Gruppenablagen und Archivierung bleiben ausdrückliche Aktionen.
 
@@ -23,6 +23,14 @@ Neue und bestehende berechtigte Nutzer werden beim Start, nach Konfigurationsän
 `auto_create_off` bedeutet, dass die automatische Erstellung für diesen Bereich aus ist. `posix_incomplete` bedeutet, dass UID oder primäre GID fehlen; bei FreeIPA hat dieser Zustand auch bei ausgeschalteter Erstellung Vorrang. `not_configured` weist auf eine fehlende Verbindung oder einen nicht verfügbaren Bereich hin. `done` bestätigt die Bereitstellung; `failed` enthält einen Fehlercode und wird beim Abgleich erneut versucht.
 
 **Collabora Online** bindet einen Editor für Textdokumente, Tabellen und Präsentationen an. Trage die **Collabora-Adresse** ein, von der Browser den Editor laden; bleibt sie leer, ist die Bearbeitung deaktiviert. Wähle das **Format neuer Dokumente**: OpenDocument oder Microsoft Office. **Erweitert** enthält zwei optionale Adressen für Umgebungen, in denen diese Anwendung Collabora oder Collabora diese Cloud über andere Adressen erreicht als Browser. Collabora muss die Adresse dieser Cloud erreichen können und diese Anwendung Collabora.
+
+## Maschinenablagen erstellen {icon="server"}
+
+Wähle unter **Einstellungen → Maschinenablagen** einen Agenten oder ein eigenständiges Dienstkonto und dann **Ablage erstellen**. Öffne die neue Ablage und erteile benannten Nutzern, Gruppen oder Maschinen Zugriff auf einen **Relativen Pfad**. Leer bedeutet die gesamte Ablage; ein engerer Pfad umfasst diese Datei oder diesen Ordner und alle Unterordner. Wähle **Lesen**, **Lesen und schreiben** oder **Lesen, schreiben und freigeben**. Eigentum allein gewährt auch dem Eigentümer keinen Zugriff.
+
+Maschinenablagen verwenden ein eigenes Cloud-Verzeichnis und die bestehende Dienstidentität von Dateien. Sie benötigen keine lokale Linux-Einrichtung und verwenden niemals die Unix-Identität einer Person. Maschinenablagen in FreeIPA sind ohne unabhängig eingerichtete Maschinenidentität nicht verfügbar. Der menschliche Verzeichnislebenszyklus und die automatische Archivierung erfassen Maschinenablagen nicht.
+
+Mit **Entziehen** entfernst du eine Pfadberechtigung. Die nächste Übertragungsanfrage oder Upload-Veröffentlichung prüft den aktuellen Zugriff erneut. Auch das Deaktivieren eines Maschinenkontos oder Sperren seines öffentlichen Links verweigert die nächste Anfrage; eine bereits zugelassene Übertragung kann enden. Scheitert die Erstellung, korrigiere die Verbindung und versuche es mit demselben Eigentümer erneut. Dateien setzt die vorhandene Zuordnung fort.
 
 ## Übersicht lesen {icon="layout-dashboard"}
 
@@ -93,7 +101,7 @@ Verzeichnis- und Dateibefehle adressieren ein Verzeichnis als `<ablage>/<users|g
 
 ## Vorlagen verwalten {icon="template"}
 
-Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen, optional eine Beschreibung und das Recht **Verwenden** an Nutzer, Gruppen oder alle Angemeldeten. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
+Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen, optional eine Beschreibung und das Recht **Verwenden** an Nutzer, Gruppen, Agenten, eigenständige Dienstkonten oder alle Angemeldeten. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
 
 Nutzer wählen **Hinzufügen → Vorlage** in einem beschreibbaren Ordner. Das Vorlagenrecht ersetzt niemals das Schreibrecht im Ziel. Das Ersetzen des Vorlageninhalts oder das Löschen einer Vorlage verändert keine bereits daraus erzeugten Dateien. Auch die importierte Originaldatei kann unabhängig geändert oder entfernt werden. Vorlageninhalte und Rechte liegen in PostgreSQL und müssen in Datenbank-Backups enthalten sein.
 

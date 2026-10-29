@@ -76,6 +76,7 @@ test("user-delegated OAuth keeps the same administrator mutation ceiling", async
     for (const scopes of [["read"], ["write"], ["admin"]]) {
       verify.mockResolvedValue({
         kind: "service_account",
+        oauthClientId: "admin-scope-client",
         serviceAccount: {
           id: "22222222-2222-4222-8222-222222222222",
           name: "Delegate",

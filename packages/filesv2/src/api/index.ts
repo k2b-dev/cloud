@@ -66,6 +66,7 @@ import { createActivityActionsApi } from "./activity-actions";
 import { createActivityExportApi } from "./activity-export";
 import { apiError, describeError } from "./api-error";
 import { inlinePdfApi } from "./inline-pdf";
+import { machineStorageApi } from "./machine-storage";
 import { errorMessage } from "./messages";
 import { templateApi } from "./templates";
 import { wopiApi } from "./wopi";
@@ -81,7 +82,7 @@ const api = new Hono<AuthContext>()
   // Collabora reaches these routes with an editor token instead of a session; they must answer before the role check.
   .route("/wopi", wopiApi)
   .use(rateLimit())
-  .use("*", auth.requireRole("user"))
+  .use("*", auth.requireRole("authenticated"))
   .onError((error, c) => {
     const { code, status } = apiError(error);
     if (status >= 500)
@@ -90,6 +91,7 @@ const api = new Hono<AuthContext>()
   })
   .route("/", createActivityExportApi({ export: filesService.exportActivity, preview: filesService.previewActivityExport }))
   .route("/", activityApi)
+  .route("/admin/machine-storage", machineStorageApi)
   .route("/templates", templateApi)
   .route("/", inlinePdfApi)
   .route(

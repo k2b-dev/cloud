@@ -268,7 +268,7 @@ or the pages you receive.
 
 Files records folder creation, renames, moves, copies, uploads, document creation,
 template use, Office saves, trash and restores, version changes, and permanent
-deletion through the web, mobile app, API and CLI, other apps, and agents. It also
+deletion through the web, Cloud app, API and CLI, other apps, and agents. It also
 records storage creation, adoption, archiving and retirement, link creation and
 revocation, template administration, and administrative reads. Each selected item
 has its own entry; items changed in one batch share a batch ID. Moving a folder

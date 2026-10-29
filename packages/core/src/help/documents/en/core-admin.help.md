@@ -8,7 +8,7 @@ order: 120
 
 The Core administration pages configure platform services. They also link to the administration pages that each app registers.
 
-The account settings link to the matching English guide with **Documentation**. The guide opens in a new tab. In **Settings → General**, **Documentation website** selects the public documentation, your own mirror, or your local Fibel server. This setting changes only the documentation links. It does not configure app sign-in, and the built-in Help stays independent of it.
+The account settings link to the matching English guide with **Documentation**. The guide opens in a new tab. In **Base settings → General**, **Documentation website** selects the public documentation, your own mirror, or your local Fibel server. This setting changes only the documentation links. It does not configure app sign-in, and the built-in Help stays independent of it.
 
 ## Find the administration pages {icon="user-cog"}
 
@@ -41,15 +41,15 @@ In **Admin → Settings → Sign-in → Sign-in locations**, check the source an
 ## Find the other settings groups {icon="settings"}
 
 :::reference
-- **Settings → General:** Branding, public links, and global schedules.
+- **Base settings:** **General** holds branding, public links, and global schedules. **Legal** holds the Terms of Service, the Privacy Policy, and the Imprint. **PDF rendering** holds the Gotenberg connection, its credentials, and render limits. **Places & maps** and **CLI** follow.
 - **Accounts & sign-in → Registration & requests:** Guest self-registration, FreeIPA access requests, account defaults, expiry, and reminders. On a new installation, requests are off until you turn them on. An upgrade keeps the earlier behavior. When you turn off new requests, pending requests stay available for processing.
 - **Follow-up notices:** In **Registration & requests**, set an optional Liquid-Markdown notice for successful user or group changes. Use `action` to choose the instructions for each change, and check the preview with sample data. Empty output adds no notice. The notice is an instruction for the administrator or group manager who made the change, not a notification to the user. Cloud has no built-in NFS instructions.
 - **Accounts & sign-in → Operations:** Open filtered lifecycle logs, FreeIPA sync logs, or scheduled jobs. Maintenance repairs account expiry dates, not Linux identities, and can restore access for expired accounts. A toast confirms that the job is queued. Check its logs to see when it finishes. Single records and request processing stay in Accounts.
 - **Accounts & sign-in → Linux identities:** Reserve an ID range and set defaults for home and shell. While assignment is on, new local full accounts and promoted guests get Linux attributes automatically. Turning it on does not change older full accounts; use **Backfill existing accounts** for them. Turning assignment off hides the backfill table and keeps existing identities in Accounts. Linux identities do not enable computer sign-in or sudo.
 - **Accounts & sign-in → FreeIPA:** FreeIPA connection settings, sync rules, and group mapping.
 - **AI:** Configure model profiles and provider credentials, and check background work. Use **Skills** or **Projects** to restore access when nobody has **Manage** access to a shared resource any more. These recovery pages can give access or permanently delete resources that are no longer needed. An app does not install a deleted app Skill again until you choose **Restore**.
-- **Settings → Outgoing mail** and **Settings → PDF rendering:** SMTP delivery, sender credentials, the Gotenberg connection and its credentials, and render limits. Internal SMTP and bounce IMAP hosts require the operator to set `OUTGOING_MAIL_ALLOWED_TARGETS` in Core; the default permits only public targets.
-- **Settings → Email templates**, **Settings → Security**, and **Settings → Legal:** Transactional email templates, rate limits, defaults for access protection, Terms of Service, Privacy Policy, and Imprint.
+- **Settings → Outgoing mail:** SMTP delivery and sender credentials. Internal SMTP and bounce IMAP hosts require the operator to set `OUTGOING_MAIL_ALLOWED_TARGETS` in Core; the default permits only public targets.
+- **Settings → Email templates** and **Settings → Security:** Transactional email templates, rate limits, and defaults for access protection.
 :::
 
 ## Sign in as the first administrator {icon="key"}

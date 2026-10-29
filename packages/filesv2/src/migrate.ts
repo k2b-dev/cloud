@@ -2,6 +2,7 @@ import { sql } from "bun";
 import { migrateActivity } from "./data/activity-migration";
 import { migrateActivityObservations } from "./data/activity-observations-migration";
 import { migrateHomeProvisioning } from "./data/home-provisioning";
+import { migrateMachineStorage } from "./data/machine-storage";
 import { migrateShareAccess } from "./data/share-access-migration";
 import { migrateSharing } from "./data/sharing-migration";
 import { migrateTemplates } from "./data/templates";
@@ -130,6 +131,7 @@ export async function migrate(): Promise<void> {
   await migrateActivity();
   await migrateActivityObservations();
   await migrateShareAccess();
+  await migrateMachineStorage();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
   await migrateHomeProvisioning();
 }

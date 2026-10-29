@@ -36,11 +36,13 @@ import {
   CreateConversationSchema,
   CreateOutcomeSchema,
   CreateThreadSchema,
+  DeleteMessageSchema,
   DiscoveryEntriesSchema,
   DiscoveryOptionsSchema,
   DiscoveryPreviewSchema,
   DiscoveryStateSchema,
   DiscoveryUpdateSchema,
+  EditMessageSchema,
   ForResourceSchema,
   ForYouPageSchema,
   ForYouQuerySchema,
@@ -84,6 +86,7 @@ import {
   ThreadParamSchema,
   ThreadQuerySchema,
   ThreadSchema,
+  UNREAD_TOTAL_CAP,
   UpdateConversationSchema,
   UpdateMemberSchema,
   UpdateThreadSchema,
@@ -347,6 +350,21 @@ const app = new Hono<AuthContext>()
           query: { archived, unread, ...(ids ? { ids: ids.join(",") } : {}), ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) },
         }),
       );
+    },
+  )
+  .get(
+    "/conversations/unread-count",
+    description(
+      "Count unread messages in all your chats, up to 100, with a line for the Cloud app's Start",
+      z.object({ count: z.number().int().min(0).max(UNREAD_TOTAL_CAP), text: z.string() }),
+    ),
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const total = await chatService.readState.unreadTotal(context(c));
+      if (!total.ok) return respond(c, total);
+      const { t } = chatMessages.resolve([getLocale(c)]);
+      const { count } = total.data;
+      return respond(c, ok({ count, text: count ? t.summaryUnread({ count }) : t.summaryAllRead }));
     },
   )
   .post(
@@ -748,6 +766,38 @@ const app = new Hono<AuthContext>()
       respond(
         c,
         chatService.messages.list({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
+      ),
+  )
+  .patch(
+    "/conversations/:conversation/messages/:message",
+    description("Edit your own message within ten minutes", MessageViewSchema),
+    validator("param", MessageParamSchema, invalidInput),
+    validator("json", EditMessageSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.messages.edit({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          messageId: c.req.valid("param").message,
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
+  .delete(
+    "/conversations/:conversation/messages/:message",
+    description("Delete your own message within ten minutes", MessageViewSchema),
+    validator("param", MessageParamSchema, invalidInput),
+    validator("json", DeleteMessageSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.messages.delete({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          messageId: c.req.valid("param").message,
+          input: c.req.valid("json"),
+        }),
       ),
   )
   .get(

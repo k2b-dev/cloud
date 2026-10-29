@@ -1,4 +1,6 @@
 import { formatDateTime } from "@k2b/cloud/shared";
+import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
+import { createSettingsDraft, oneStepFailure } from "@k2b/cloud/ssr/settings-draft";
 import { Button, InlineGuidance, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -12,8 +14,6 @@ import {
 import { toInput, WebhookFields } from "../../frontend/webhook-editor";
 import { gatewayOpsMessages } from "../../messages";
 import { areaMessages } from "../_components/area-messages";
-import { createDraftForm, oneStepFailure } from "../_components/draft-form";
-import { SaveOutcome } from "../_components/SaveOutcome";
 
 /** One alert in the detail column: its fields save with the button in the level head; test and delete act at once. */
 export default function WebhookDetail(props: { webhook: HealthWebhook; apps: HealthApp[]; timeZone: string }) {
@@ -22,7 +22,7 @@ export default function WebhookDetail(props: { webhook: HealthWebhook; apps: Hea
   const g = () => gatewayOpsMessages.resolve([locale()]).t;
   const [testing, setTesting] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
-  const form = createDraftForm<HealthWebhookInput>({
+  const form = createSettingsDraft<HealthWebhookInput>({
     initial: toInput(props.webhook),
     locale,
     validate: (value): Record<string, string> => ({
@@ -83,7 +83,7 @@ export default function WebhookDetail(props: { webhook: HealthWebhook; apps: Hea
 
   return (
     <div class="flex max-w-2xl flex-col gap-5 px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">
-      <SaveOutcome t={t()} outcome={form.outcome()} onRetry={() => void form.save()} />
+      <SettingsSaveOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
       <Show when={props.webhook.lastError}>
         {(error) => (
           <InlineGuidance tone="danger" icon="ti ti-alert-triangle">
