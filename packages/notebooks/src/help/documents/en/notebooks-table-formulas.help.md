@@ -47,7 +47,7 @@ Table formulas turn cells of a Markdown table into computed values. They are sma
 
 ### Autocomplete and rendering use the same functions
 
-Table autocomplete, the edit preview, and the read mode use the same function names.
+Function and column suggestions are available while editing a cell in **Formatted** and in the **Markdown** view. Both views and the read mode use the same function names.
 
 ### Names are case-insensitive
 

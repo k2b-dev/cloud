@@ -25,8 +25,15 @@ import { escapeHtml } from "./shared";
 // Create a configured marked instance
 type MarkdownProfile = "content" | "help";
 type LinkStyle = "widget" | "plain";
+type MarkdownOutput = "cloud" | "email";
 
-const createMarked = (profile: MarkdownProfile, links: LinkStyle, infoBlocks: MarkedExtension, locale?: string) => {
+const createMarked = (
+  profile: MarkdownProfile,
+  links: LinkStyle,
+  infoBlocks: MarkedExtension,
+  locale?: string,
+  output: MarkdownOutput = "cloud",
+) => {
   const marked = new Marked();
 
   marked.use({
@@ -38,12 +45,12 @@ const createMarked = (profile: MarkdownProfile, links: LinkStyle, infoBlocks: Ma
   // Note: katexExtension must come before codeExtension to handle ```math blocks
   marked.use(infoBlocks);
   marked.use(taskListExtension());
-  marked.use(tablesExtension());
+  marked.use(tablesExtension(output === "email"));
   // Plain output keeps marked's own link renderer and renders code blocks as a bare `pre`.
   // Cloud links are calm reference pills and quiet web links from `@k2b/ui`.
   if (links === "widget") marked.use(linksExtension({ internalTarget: profile === "help" ? "_self" : "_blank", locale }));
   marked.use(imagesExtension());
-  marked.use(katexExtension());
+  marked.use(katexExtension(output === "email"));
   marked.use(links === "widget" ? codeExtension() : plainCodeExtension());
   // Inline-style decorators come last so they run after structural tokenizers.
   marked.use(markExtension());
@@ -57,12 +64,12 @@ const createMarked = (profile: MarkdownProfile, links: LinkStyle, infoBlocks: Ma
 // headers choose the locale, and `markdownInfoBlocks()` returns one extension
 // for every locale that shares a catalog, so the cache stays bounded.
 const instances = new Map<MarkedExtension, Map<string, Marked>>();
-const markedFor = (profile: MarkdownProfile, links: LinkStyle = "widget", locale?: string): Marked => {
+const markedFor = (profile: MarkdownProfile, links: LinkStyle = "widget", locale?: string, output: MarkdownOutput = "cloud"): Marked => {
   const infoBlocks = markdownInfoBlocks({ locale });
   const byStyle = instances.get(infoBlocks) ?? new Map<string, Marked>();
   instances.set(infoBlocks, byStyle);
-  const key = `${profile}:${links}`;
-  const instance = byStyle.get(key) ?? createMarked(profile, links, infoBlocks, locale);
+  const key = `${profile}:${links}:${output}`;
+  const instance = byStyle.get(key) ?? createMarked(profile, links, infoBlocks, locale, output);
   byStyle.set(key, instance);
   return instance;
 };
@@ -70,18 +77,21 @@ const markedFor = (profile: MarkdownProfile, links: LinkStyle = "widget", locale
 const marked = markedFor("content");
 
 export type MarkdownRenderOptions = {
+  /** `"email"` keeps strikethrough and structural table alignment, and renders table formulas and math as literal source. Defaults to Cloud's styled output with formula evaluation. */
+  output?: MarkdownOutput;
   /** `"plain"` renders each link as an ordinary anchor around its text, for HTML read outside Cloud such as email. It also renders a code block, fenced or indented and including a Mermaid fence, as its source in a `pre` without the language label. The default renders references to Cloud content as calm pills and web links as quiet text links. */
   links?: LinkStyle;
   /** Request locale for the screen-reader names of untitled info blocks. Defaults to English on the server and the page language in the browser. */
   locale?: string;
 };
 
-const sanitizeRenderedHtml = (html: string, profile: MarkdownProfile = "content"): string => {
+const sanitizeRenderedHtml = (html: string, profile: MarkdownProfile = "content", output: MarkdownOutput = "cloud"): string => {
   const callouts = markdownCalloutSanitizeOptions();
   return sanitizeHtml(html, {
     ...callouts,
     allowedTags: [
       ...sanitizeHtml.defaults.allowedTags,
+      ...(output === "email" ? ["del"] : []),
       "annotation",
       "aside",
       "br",
@@ -137,6 +147,7 @@ const sanitizeRenderedHtml = (html: string, profile: MarkdownProfile = "content"
       input: ["checked", "class", "disabled", "type"],
       math: ["xmlns"],
       pre: ["class"],
+      ...(output === "email" ? { th: ["align"], td: ["align"] } : {}),
       ...callouts.allowedAttributes,
       span: ["aria-hidden", "class", "style", "title"],
     },
@@ -192,10 +203,10 @@ const sanitizeRenderedHtml = (html: string, profile: MarkdownProfile = "content"
 export function renderMarkdown(content: string, options: MarkdownRenderOptions = {}): string {
   if (!content || typeof content !== "string") return "";
 
-  const html = markedFor("content", options.links, options.locale).parse(content);
+  const html = markedFor("content", options.links, options.locale, options.output).parse(content);
   if (typeof html !== "string") return "";
 
-  return sanitizeRenderedHtml(html);
+  return sanitizeRenderedHtml(html, "content", options.output);
 }
 
 /**
@@ -204,10 +215,10 @@ export function renderMarkdown(content: string, options: MarkdownRenderOptions =
 export function renderMarkdownSync(content: string, options: MarkdownRenderOptions = {}): string {
   if (!content || typeof content !== "string") return "";
 
-  const html = markedFor("content", options.links, options.locale).parse(content);
+  const html = markedFor("content", options.links, options.locale, options.output).parse(content);
   if (typeof html !== "string") return "";
 
-  return sanitizeRenderedHtml(html);
+  return sanitizeRenderedHtml(html, "content", options.output);
 }
 
 /**

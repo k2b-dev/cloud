@@ -134,6 +134,8 @@ export type DropdownProps = {
    * Defaults to `menu`. A controlled menu (`open`) always stays a menu.
    */
   phone?: "menu" | "sheet";
+  /** Content above the phone sheet's menu. `close` dismisses it with normal history and focus restoration. */
+  sheetTop?: (close: () => void) => JSX.Element;
   /**
    * Renders the entries only once the menu first opens, for a menu repeated on every row of a long list: the page
    * then carries each row's trigger, not each row's entries. Fixed for the menu's lifetime.
@@ -662,6 +664,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
         items: props.items,
         label: props.label ?? messages().dropdownMenu,
         locale: locale(),
+        top: props.sheetTop,
         signal: current.signal,
       }).finally(() => {
         sheet = undefined;

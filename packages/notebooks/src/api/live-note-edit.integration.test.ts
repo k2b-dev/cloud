@@ -85,11 +85,13 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
       const read = async () => {
         const response = await app.request(path, { headers });
         expect(response.status).toBe(200);
-        return (await response.json()) as { contentMd: string; yjsSnapshot: string };
+        return (await response.json()) as { contentMd: string; yjsSnapshot: string; yjsRestoreRevision: string };
       };
 
       // The open editor: stored snapshot, live subscription, and publishes shaped like ws.ts.
-      Y.applyUpdate(doc, Buffer.from((await read()).yjsSnapshot, "base64"), "initial");
+      const initial = await read();
+      expect(initial.yjsRestoreRevision).toBe("0");
+      Y.applyUpdate(doc, Buffer.from(initial.yjsSnapshot, "base64"), "initial");
       const anchored = await notebooksService.note.getAnchoredYjsState({ noteId });
       const topic = createYjsTopic();
       const subscription = topic.hub({ tenantId: noteId }).subscribe({ after: anchored!.streamCursor!, signal: live.signal });
@@ -105,6 +107,7 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
               tenantId: noteId,
               data: {
                 kind: "sync",
+                restoreRevision: initial.yjsRestoreRevision,
                 payload: toBase64(update),
                 originNodeId: NODE_ID,
                 originPeerId: "browser",
@@ -120,6 +123,7 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
 
       // `cld notebooks cat` sees the unsnapshotted edit, so its hash guards the next edit.
       const current = await read();
+      expect(current.yjsRestoreRevision).toBe(initial.yjsRestoreRevision);
       expect(current.contentMd).toBe("# Plan\n\nfirst\ntyped in browser\n");
       const response = await app.request(path, {
         method: "PATCH",

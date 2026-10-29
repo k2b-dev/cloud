@@ -15,12 +15,17 @@
     "test:integration": "bun --no-env-file scripts/test-integration.ts"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "catalog:",
+    "@codemirror/commands": "catalog:",
+    "@codemirror/state": "catalog:",
+    "@codemirror/view": "catalog:",
     "@k2b/cloud": "workspace:*",
-    "@k2b/ui": "workspace:*",
     "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
+    "@k2b/ui": "workspace:*",
     "@zone-eu/mailsplit": "5.4.17",
+    "diff": "catalog:",
     "fast-xml-parser": "5.11.1",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
@@ -35,7 +40,10 @@
     "sanitize-html": "catalog:",
     "seroval": "catalog:",
     "solid-js": "catalog:",
+    "y-codemirror.next": "catalog:",
+    "y-protocols": "catalog:",
     "yaml": "catalog:",
+    "yjs": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

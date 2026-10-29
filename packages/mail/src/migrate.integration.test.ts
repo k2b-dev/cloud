@@ -731,7 +731,16 @@ suite("mail baseline schema", () => {
         ) AS triggers,
         to_regclass('ai.workflow_task') IS NOT NULL AS workflow_ai_table
     `;
-    expect(shape).toEqual({ extensions: 3, functions: 10, triggers: 32, workflow_ai_table: true });
+    // Baseline and workflow-effect triggers plus conversation retention and shared-draft history retention.
+    expect(shape).toEqual({ extensions: 3, functions: 10, triggers: 33, workflow_ai_table: true });
+    const [retention] = await sql<{ definition: string; enabled: string }[]>`
+      SELECT pg_get_triggerdef(oid) AS definition, tgenabled AS enabled FROM pg_trigger
+      WHERE tgrelid = 'mail.draft_document_revisions'::regclass
+        AND tgname = 'trim_draft_document_revisions' AND NOT tgisinternal
+    `;
+    expect(retention?.enabled).toBe("O");
+    expect(retention?.definition).toContain("AFTER INSERT OR UPDATE OF state ON mail.draft_document_revisions");
+    expect(retention?.definition).toContain("FOR EACH ROW EXECUTE FUNCTION mail.trim_inserted_draft_document_revision()");
   });
 
   test("gives every public resource a stable short ID next to its UUID key", async () => {

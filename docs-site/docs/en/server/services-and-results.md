@@ -134,6 +134,23 @@ The HTTP status comes from the `ServiceError`.
 
 `respond()` also accepts a function that returns `Result<T>`.
 
+When a failed operation needs to return recovery information, pass selected fields
+through `errorDetails`. This overload accepts the legacy error shape with an
+explicit HTTP status:
+
+```ts
+return respond(
+  c,
+  { ok: false, error: "Published but not saved", status: 500, code: "save_failed" },
+  { errorDetails: { accepted: true, cursor: result.cursor, receipt: result.receipt } },
+);
+```
+
+The response keeps these fields beside `message` and `code`, so the client can
+recover a published change without submitting it twice. The error result owns
+`message` and `code`; details cannot override them. Select only fields that the
+caller may read. Do not spread an entire service result into the response.
+
 ## Return a success message
 
 Use `respondMessage()` for `Result<void>`:
