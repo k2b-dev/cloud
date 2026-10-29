@@ -150,7 +150,7 @@ export class FilesRoot {
     return this.#read(args[0], () => this.#client.versions(...args));
   }
   mkdir(...args: Parameters<RootClient["mkdir"]>) {
-    return this.#mutate("mkdir", args[0], () => this.#client.mkdir(...args));
+    return filegateMutation(this.serverUrl, this.name, "mkdir", args[0], () => this.#client.mkdir(...args), undefined, { mkdir: args[1] });
   }
   async put(...args: Parameters<RootClient["put"]>) {
     await this.guard?.check("write", args[0]);
@@ -194,6 +194,7 @@ export class FilesRoot {
       path: args[2],
       move: args[3]?.move ?? false,
       onConflict: args[3]?.onConflict ?? "error",
+      options: args[3],
     });
   }
   async restore(...args: Parameters<RootClient["restore"]>) {

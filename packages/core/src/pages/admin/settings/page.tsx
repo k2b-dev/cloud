@@ -18,6 +18,13 @@ import { buildEntries } from "./entries";
 const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) =>
   [
     {
+      id: "storage",
+      title: t.storageSettings,
+      description: t.storageSettingsDescription,
+      icon: "ti ti-database",
+      group: "storage" as const,
+    },
+    {
       id: "user",
       title: t.userManagementSettings,
       description: t.userManagementSettingsDescription,
@@ -127,6 +134,7 @@ export default ssr<AuthContext>(async (c) => {
             approvalState={approvalState}
             signInLocations={signInLocations}
             accountSection={tab.id === "registration" ? "registration" : tab.id === "user" ? "sign-in" : undefined}
+            showTestStorageAction={tab.id === "storage"}
             showTestFreeIpaAction={tab.id === "freeipa"}
           />
         ) : null}

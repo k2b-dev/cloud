@@ -34,12 +34,22 @@ export const app = defineApp({
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `id` | Yes | Stable machine identity |
+| `id` | Yes | Stable machine identity: `^[a-z][a-z0-9-]{0,79}$` |
+| `package` | No | Shared object-store package; defaults to `id` |
 | `name` | Yes | Name shown by platform surfaces |
 | `icon` | Yes | Tabler icon class used across Cloud and as the favicon on rendered app pages |
 | `description` | Yes | Short application description |
 | `baseUrl` | Yes | Internal address used by the gateway |
 | `routes` | Yes | Public path prefixes routed to the service |
+
+App IDs and package names contain 1–80 lowercase letters, digits, or hyphens,
+beginning with a letter. `defineApp()` rejects invalid IDs for every app,
+including apps that do not use S3. Related apps can declare the same
+`package: "warenfluss"` to share storage. `storage` is reserved as an app ID and package name. A package name cannot be another
+app's ID or a built-in app's ID; `app.start()` rejects conflicting durable
+reservations. Choose the package before first startup. See
+[Object store](/en/docs/platform/object-store) for the area and key rules, and
+[Object store operations](/en/docs/operations/object-store) for database prerequisites.
 
 Use an address that resolves from the gateway container for `baseUrl`. Do not
 use the public browser URL.
@@ -170,7 +180,11 @@ pwa: { requiresRoles: ["user"] },
 Cloud appends `/pwa/<id>` to `routes` and publishes the part in the registry.
 The Cloud app lists it with the application's `name`, `icon`, and
 `description`. `requiresRoles` is optional and, like `nav.requiresRoles`,
-controls only visibility; routes and services still authorize.
+controls only visibility; routes and services still authorize. `badge` is an
+optional count route for the part's sidebar entry and tab, answered like
+`nav.badge`. `summary` is an optional route for the part's line on Start,
+answered with `{ "count": n, "text": "…" }`. Both must be below one of the
+app's own paths and may be the same route.
 
 `/pwa` is reserved. `defineApp()` throws at startup when `routes` lists `/pwa`
 or a path below it; the only exceptions are the Cloud app's own `/pwa` and

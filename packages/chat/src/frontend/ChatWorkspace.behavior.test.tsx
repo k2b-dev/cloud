@@ -56,6 +56,7 @@ class FakeWebSocket {
   onclose = null;
   onerror = null;
   conversationSubscription: string | undefined;
+  personalSubscription: string | undefined;
   constructor() {
     FakeWebSocket.instances.push(this);
   }
@@ -70,6 +71,8 @@ class FakeWebSocket {
       typeof frame.id === "string"
     )
       this.conversationSubscription = frame.id;
+    if (frame && typeof frame === "object" && "channel" in frame && frame.channel === "me" && "id" in frame && typeof frame.id === "string")
+      this.personalSubscription = frame.id;
   }
   open() {
     this.readyState = FakeWebSocket.OPEN;
@@ -122,6 +125,8 @@ describe("ChatWorkspace interactions", () => {
   const pendingSnapshots = new Map<string, Promise<Response>>();
   let membersRequests = 0;
   let memberName: string | null = null;
+  let aggregateUnread = 0;
+  let aggregateRequests = 0;
   let answer: (response: Response) => void;
   beforeEach(() => {
     setSystemTime(new Date(now));
@@ -134,6 +139,8 @@ describe("ChatWorkspace interactions", () => {
     pendingSnapshots.clear();
     membersRequests = 0;
     memberName = null;
+    aggregateUnread = 0;
+    aggregateRequests = 0;
     FakeWebSocket.instances = [];
     consoleErrors.length = 0;
     console.error = (...args: unknown[]) => {
@@ -148,6 +155,10 @@ describe("ChatWorkspace interactions", () => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         if (url.pathname === "/api/chat/preferences") return Response.json({ collapsed: [] });
         if (url.pathname === "/api/chat/system-chats") return Response.json({ items: [], spacesCursor: null, notebooksCursor: null });
+        if (url.pathname === "/api/chat/conversations/unread-count") {
+          aggregateRequests++;
+          return Response.json({ count: aggregateUnread });
+        }
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
           const pending = pendingSnapshots.get(snapshot[1]!);
@@ -227,7 +238,14 @@ describe("ChatWorkspace interactions", () => {
     panel: "info" | null = null,
     locale = "en",
     permission: typeof conversation.permission = "write",
-    initial: { url?: string; page?: NonNullable<ChatWorkspaceProps["open"]>["page"]; focus?: string | null; embedded?: boolean } = {},
+    initial: {
+      url?: string;
+      page?: NonNullable<ChatWorkspaceProps["open"]>["page"];
+      focus?: string | null;
+      embedded?: boolean;
+      app?: boolean;
+      conversation?: NonNullable<ChatWorkspaceProps["open"]>["conversation"];
+    } = {},
   ) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
     dom.window.history.replaceState(null, "", initial.url ?? (open ? `/app/chat/c/Chat01${panel ? "?panel=info" : ""}` : "/app/chat"));
@@ -235,12 +253,13 @@ describe("ChatWorkspace interactions", () => {
       view: "all",
       threadsPage: false,
       embedded: initial.embedded,
+      app: initial.app,
       cursor: "c.0",
       sidebar: { items: sidebar, nextCursor: null },
       open: open
         ? {
             threads: noThreads,
-            conversation: { ...conversation, permission },
+            conversation: { ...(initial.conversation ?? conversation), permission },
             page: initial.page ?? { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
             focus: initial.focus ?? null,
           }
@@ -386,6 +405,92 @@ describe("ChatWorkspace interactions", () => {
     await settle();
     expect(consoleErrors).toEqual([]);
   });
+  test("in the Cloud app a draft lives in the device's storage, so it survives the app being ended", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Seals arrive on Monday";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+    await settle();
+    const stored = Object.keys(dom.window.localStorage).filter((key) => key.startsWith("cloud.pwa.draft:"));
+    expect(stored).toHaveLength(1);
+    expect(dom.window.localStorage.getItem(stored[0]!)).toBe("Seals arrive on Monday");
+    expect(Object.keys(dom.window.sessionStorage).some((key) => key.startsWith("cloud.chat.draft:"))).toBe(false);
+    expect(consoleErrors).toEqual([]);
+  });
+  test("opening a system chat keeps the private unread total intact at Back", async () => {
+    const system = { ...conversation, kind: "system" as const, unread: 5 };
+    const privateChat = { ...conversation, id: "Chat02", unread: 10 };
+    const anotherSystem = { ...system, id: "Chat03", unread: 60 };
+    aggregateUnread = 40;
+    snapshots.set(system.id, {
+      cursor: "c.0",
+      conversation: system,
+      page: { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
+      threads: noThreads,
+      focus: null,
+    });
+    await mount(true, [system, privateChat, anotherSystem], null, "en", "write", {
+      url: "/pwa/chat/c/Chat01",
+      app: true,
+      conversation: system,
+    });
+    // A system chat's timeline goes back to its threads; that page carries the way back to the chat list.
+    const backToThreads = dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__back a[aria-label="Back to the threads"]');
+    expect(backToThreads?.getAttribute("href")).toBe("/pwa/chat/c/Chat01/threads");
+    backToThreads!.click();
+    await settle();
+    expect(dom.window.location.pathname).toBe("/pwa/chat/c/Chat01/threads");
+    const backToChats = dom.root.querySelector(".chat-threads-page .chat-conversation__back a");
+    expect(backToChats?.getAttribute("href")).toBe("/pwa/chat");
+    expect(backToChats?.getAttribute("aria-label")).toBe("Back to chats, 40 unread");
+    expect(backToChats?.querySelector(".chat-conversation__back-count")?.textContent).toBe("40");
+    expect(consoleErrors).toEqual([]);
+  });
+  test("Back excludes an open archived chat and refreshes its total when that chat is read", async () => {
+    const archivedChat = { ...conversation, archived: true, unread: 3 };
+    const listedChat = { ...conversation, id: "Chat02", unread: 2 };
+    aggregateUnread = 10;
+    await mount(true, [listedChat], null, "en", "write", {
+      url: "/pwa/chat/c/Chat01",
+      app: true,
+      conversation: archivedChat,
+    });
+    const backCount = () => dom.root.querySelector(".chat-conversation__back-count")?.textContent;
+    expect(backCount()).toBe("7");
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    expect(socket.personalSubscription).toBeDefined();
+    socket.message({ t: "ready", id: socket.personalSubscription, cursor: "c.0" });
+    // Two successive read updates keep the second one independent of any initial mount refresh.
+    for (const [unread, revision] of [
+      [2, 1],
+      [0, 2],
+    ] as const) {
+      aggregateUnread = 7 + unread;
+      const requestsBeforeRead = aggregateRequests;
+      socket.message({
+        t: "event",
+        id: socket.personalSubscription,
+        cursor: `c.${revision}`,
+        data: {
+          type: "read",
+          conversationId: archivedChat.id,
+          lastReadSeq: revision,
+          unreadFromSeq: null,
+          joinedSeq: 0,
+          unread,
+          asOfRev: revision,
+          threads: [],
+        },
+      });
+      const deadline = performance.now() + 2_000;
+      while (aggregateRequests === requestsBeforeRead || backCount() !== "7") {
+        if (performance.now() >= deadline) throw new Error("Unread total was not refreshed after reading an archived chat");
+        await settle();
+      }
+    }
+    expect(consoleErrors).toEqual([]);
+  });
   test("failed send retries the same client ID and body, then shows one sent row", async () => {
     await mount(true);
     const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
@@ -472,6 +577,31 @@ describe("ChatWorkspace interactions", () => {
     expect(posted).toHaveLength(0);
   });
 
+  test("in the Cloud app a draft the device could not keep is stored on Retry, without a conflict with itself", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const storage = dom.window.localStorage;
+    // The device's storage refuses the first keystroke, as a full or locked store does.
+    Object.defineProperty(dom.window, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new dom.window.DOMException("Quota exceeded", "QuotaExceededError");
+      },
+    });
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Seals arrive on Monday";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+    await settle();
+    const t = chatMessages.resolve(["en"]).t;
+    expect(dom.root.textContent).toContain(t.draftNotSaved);
+    Object.defineProperty(dom.window, "localStorage", { configurable: true, value: storage });
+    button(t.retry).click();
+    await settle();
+    expect(dom.root.textContent).not.toContain(t.draftNotSaved);
+    const stored = Object.keys(storage).filter((key) => key.startsWith("cloud.pwa.draft:"));
+    expect(stored.map((key) => storage.getItem(key))).toEqual(["Seals arrive on Monday"]);
+    expect(field.value).toBe("Seals arrive on Monday");
+    expect(consoleErrors).toEqual([]);
+  });
   test("a failed initial storage read does not cache an empty draft; retry restores it", async () => {
     const storage = dom.window.sessionStorage;
     storage.setItem(`cloud.chat.draft:${viewerId}:Chat01`, "Saved before reopening");
