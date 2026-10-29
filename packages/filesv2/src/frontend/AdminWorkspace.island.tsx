@@ -40,6 +40,7 @@ import { useAdminHistoryMessages } from "./admin-history-messages";
 import { type AdminLocation, type AdminSnapshot, type AdminView, adminHref, parseAdminLocation } from "./admin-location";
 import { useAdminMessages } from "./admin-messages";
 import { useAssetMessages } from "./asset-messages";
+import HomeProvisioning from "./HomeProvisioning";
 import { loadActivity } from "./history-api";
 import { useHistoryMessages } from "./history-messages";
 import Inventory from "./Inventory";
@@ -72,6 +73,8 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot; timeZone
         await apiClient.admin.$get(
           {
             query: {
+              // The history tab loads its own activity; the admin snapshot answers for the overview.
+              view: location.view === "activity" ? undefined : location.view,
               includeEntries: location.view === "directories" && !location.name && !location.archiveId ? "true" : "false",
               area: location.area,
               kind: location.kind,
@@ -627,6 +630,15 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot; timeZone
                     </DataTable.Panel>
                   </Match>
                 </Switch>
+              </Show>
+              <Show when={location().view === "overview" && result().provisioning}>
+                {(overview) => (
+                  <HomeProvisioning
+                    overview={overview()}
+                    settingsHref={adminHref(location(), { ...clearDetail, view: "settings" })}
+                    onNavigate={onNavigate}
+                  />
+                )}
               </Show>
             </SettingsPage>
           </Show>

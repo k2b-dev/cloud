@@ -289,11 +289,13 @@ describe("Filesv2 admin workspace", () => {
     expect(dom.window.location.search).toContain("q=alice");
   });
 
-  test("settings have one local automation pair, fixed dirty footer, discard and guarded navigation", async () => {
+  test("settings have the local automation pair and FreeIPA home creation, fixed dirty footer, discard and guarded navigation", async () => {
     const { dom, tab } = await setup("settings");
     await flush();
-    expect(dom.root.querySelectorAll('[role="switch"]').length).toBe(4);
-    expect(dom.root.textContent).toContain("FreeIPA directories are created and archived only through explicit administrative actions");
+    // Two area switches, the local automation pair, and automatic FreeIPA homes.
+    expect(dom.root.querySelectorAll('[role="switch"]').length).toBe(5);
+    expect(dom.root.textContent).toContain("Create FreeIPA homes automatically");
+    expect(dom.root.textContent).toContain("In FreeIPA, group directories and archiving remain explicit administrative actions.");
     const input = dom.root.querySelector<HTMLInputElement>('input[name="filegate-url"]')!;
     input.value = "http://changed:4000";
     input.dispatchEvent(new Event("input", { bubbles: true }));

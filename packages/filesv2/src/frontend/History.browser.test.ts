@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import {
   historyActivity,
   historyBase,
@@ -141,8 +141,7 @@ async function open(
     }
     globalThis.Date = PinnedDate as DateConstructor;
   }, new Date(historyNow).getTime());
-  const errors: string[] = [];
-  tab.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(tab);
   let fail = false;
   let recoveryFails = false;
   const recoveryRequests: { method: string; path: string; failed: boolean }[] = [];
@@ -527,7 +526,7 @@ for (const touch of [false, true])
     const { context, tab, errors } = await open(1200, "light", "", "en", true, true, touch);
     try {
       const host = tab.locator("#root");
-      const preview = tab.locator(".filesv2-inspector-preview");
+      const preview = tab.locator(".k2b-detail-panel__section").filter({ has: tab.getByRole("heading", { name: "Preview", exact: true }) });
       const modified = tab.locator(".filesv2-inspector-info .k2b-description-list__item").filter({ hasText: "Modified" });
       const versions = tab.locator(".filesv2-inspector-versions");
       const count = tab
@@ -543,7 +542,7 @@ for (const touch of [false, true])
       );
       expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(700);
       expect(await tab.evaluate(() => innerWidth)).toBe(1200);
-      expect(await preview.isVisible()).toBe(false);
+      expect(await preview.isVisible()).toBe(true);
       expect(await versions.isVisible()).toBe(false);
       expect(await versions.getAttribute("data-open")).toBeNull();
       expect(await count.innerText()).toBe("2");
@@ -559,8 +558,8 @@ for (const touch of [false, true])
         .evaluate((element) => element.getBoundingClientRect().height);
       if (touch) expect(rowHeight).toBeGreaterThanOrEqual(44);
       else expect(rowHeight).toBeLessThanOrEqual(32);
-      expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
-      expect(await preview.isVisible()).toBe(false);
+      expect(await versions.getByText(/^Initial draft · Mia Weber · /).isVisible()).toBe(true);
+      expect(await preview.isVisible()).toBe(true);
       await count.click();
       await versions.waitFor({ state: "hidden" });
       expect(await versions.getAttribute("data-open")).toBeNull();
@@ -572,7 +571,7 @@ for (const touch of [false, true])
       await preview.waitFor({ state: "visible" });
       await versions.waitFor({ state: "visible" });
       await count.waitFor({ state: "hidden" });
-      expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
+      expect(await versions.getByText(/^Initial draft · Mia Weber · /).isVisible()).toBe(true);
       // The current version has no menu, yet its date ends on the same edge as the dates of older versions.
       const dateEdges = await versions
         .locator("time")

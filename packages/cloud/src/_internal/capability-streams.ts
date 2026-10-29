@@ -9,6 +9,7 @@ import {
 } from "../contracts/capabilities";
 import { hasOAuthScope } from "../server/oauth-scope";
 import type { CompiledCapabilities } from "./capabilities";
+import { capabilityVia } from "./capability-origin";
 import { capabilityActionReceiptIssues } from "./capability-reviews";
 
 const failure = (status: number, code: string, message: string) => Response.json({ code, message }, { status });
@@ -38,13 +39,14 @@ export async function invokeCapabilityStream(params: {
     }
     return parsed;
   };
+  const context = { ...params.context, via: capabilityVia(params.context.origin) };
   try {
     const stream = CapabilityStreamSchema.parse(JSON.parse(Buffer.from(offer, "base64url").toString()));
     if (stream.direction !== definition.direction || stream.size > definition.maxBytes || Date.parse(stream.expiresAt) <= Date.now())
       return failure(410, "STREAM_EXPIRED", "Stream expired or outside its byte budget");
     if (definition.direction === "read") {
       if (params.verb !== "read") return failure(403, "STREAM_DENIED", "Read-only stream");
-      const response = await definition.read(stream, params.context);
+      const response = await definition.read(stream, context);
       if (!response.ok || !response.body) {
         await response.body?.cancel();
         return failure(502, "STREAM_FAILED", "Source could not be read");
@@ -65,18 +67,18 @@ export async function invokeCapabilityStream(params: {
         stream.size,
       );
       try {
-        const value = await definition.write(stream, body, params.context);
+        const value = await definition.write(stream, body, context);
         result = receipt(value);
       } finally {
         if (!body.locked) await body.cancel().catch(() => undefined);
       }
     } else if (params.verb === "status") {
-      const status = CapabilityStreamStatusSchema.parse(await definition.status(stream, params.context));
+      const status = CapabilityStreamStatusSchema.parse(await definition.status(stream, context));
       if (status.state === "completed") receipt(status.result);
       result = status;
     } else if (params.verb === "abort") {
-      await definition.abort(stream, params.context);
-      const status = CapabilityStreamStatusSchema.parse(await definition.status(stream, params.context));
+      await definition.abort(stream, context);
+      const status = CapabilityStreamStatusSchema.parse(await definition.status(stream, context));
       if (status.state === "completed") receipt(status.result);
       result = status;
     } else return failure(400, "STREAM_INVALID", "Unknown stream operation");

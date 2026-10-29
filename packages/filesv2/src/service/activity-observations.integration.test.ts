@@ -134,7 +134,7 @@ suite("contact observations with real Filegate and private history", () => {
       tokenConfigured: true,
       activityRetentionDays: 365,
       cloud: { ...area, root: "cloud", autoCreate: false, autoArchive: false },
-      freeipa: { ...area, root: "freeipa" },
+      freeipa: { ...area, root: "freeipa", autoCreate: false },
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
     };
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();

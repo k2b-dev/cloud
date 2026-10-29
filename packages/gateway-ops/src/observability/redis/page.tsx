@@ -1,11 +1,11 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatNumber, formatPercent } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { gatewayOpsMessages } from "../../messages";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import { getRedisDiagnostics, type RedisPrefixDiagnostic } from "../data/service";
 import { buildRedisFilterUrl, parseRedisFilterFromUrl } from "./_components/filter-state";
 import RedisDataFilters from "./_components/RedisDataFilters.island";
@@ -53,14 +53,10 @@ export default ssr<AuthContext>(async (c) => {
     { id: "share", header: t.sampleShare, value: (prefix) => prefix.share, headerClass: "text-right", cellClass: "text-right" },
   ];
 
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title="Redis">
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-redis-title">
-          <h1 class="text-base font-semibold text-primary">Redis</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.redisDescription}</p>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="valkey" attention={attention}>
+      <ObservabilityPane label={areaText(locale).valkey} description={t.redisDescription}>
         <StatGrid columns={5}>
           <StatCell
             label={t.keys}
@@ -162,7 +158,7 @@ export default ssr<AuthContext>(async (c) => {
             }}
           />
         </DataTable.Panel>
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });

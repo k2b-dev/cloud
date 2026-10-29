@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { accountIdentities } from "@k2b/cloud/services";
 import { testActor, testCall } from "../../test/files-call";
 import * as observationData from "../data/activity-observations";
@@ -12,40 +12,23 @@ import type { ActivityReaderDependencies } from "./activity-reader";
 import * as activityReaderModule from "./activity-reader";
 import { FilesError } from "./errors";
 import { connectFilegate } from "./filegate-facade";
+import { createFilesService } from "./index";
+import * as lifecycleModule from "./lifecycle";
 
-const readerActivity = mock(async (..._args: unknown[]) => ({ items: [] }));
+const readerActivity = mock(async (..._args: unknown[]) => ({
+  items: [],
+  next: null,
+  visibleCount: 0,
+  batches: [],
+  exhausted: true,
+  scanLimitReached: false,
+  searchLimitReached: false,
+}));
 let readerDeps: ActivityReaderDependencies | undefined;
-mock.module("./activity-reader", () => ({
-  ...activityReaderModule,
-  createActivityReader: (deps: ActivityReaderDependencies) => {
-    readerDeps = deps;
-    return { activity: readerActivity, movementChain: mock(), shareAccess: mock() };
-  },
-}));
-// This authorization-only fixture has no retained Cloud baseline. Real comparisons use the Filegate integration fixture.
-mock.module("../data/activity-observations", () => ({
-  ...observationData,
-  knownIdentityActivity: async () => null,
-}));
-mock.module("../data/operations", () => ({
-  ...operationModule,
-  operations: { ...operationModule.operations, pending: async () => null, retiredPath: async () => false },
-}));
+const createActivityReader = activityReaderModule.createActivityReader;
+const createDirectoryLifecycle = lifecycleModule.createDirectoryLifecycle;
 const storedRefs = new Map<string, { baseId: string; path: string }>();
-mock.module("../data/references", () => ({
-  ...referencesModule,
-  resolveEntryRefId: async (id: string) => storedRefs.get(id) ?? parseEntryRefId(id),
-}));
 let provisions = 0;
-mock.module("./lifecycle", () => ({
-  createDirectoryLifecycle: () => ({
-    provisionCandidate: async () => {
-      provisions++;
-      throw new Error("normal provisioning reached");
-    },
-  }),
-}));
-const { createFilesService } = await import("./index");
 const actor = testActor;
 const id = actor.kind === "user" ? actor.user.id : "";
 const fileId = "30000000-0000-4000-8000-000000000001";
@@ -58,7 +41,7 @@ const config = {
   unreadable: false,
   activityRetentionDays: 365,
   cloud: { ...area, autoCreate: true, autoArchive: true },
-  freeipa: { ...area, root: "freeipa" },
+  freeipa: { ...area, root: "freeipa", autoCreate: false },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 function fixture(ipa = false) {
@@ -225,7 +208,26 @@ beforeEach(() => {
   provisions = 0;
   readerActivity.mockClear();
   storedRefs.clear();
+  // Module replacements survive mock.restore() and leak into later service tests.
+  // Scope these doubles to each test so every other fixture gets the real composition.
+  spyOn(activityReaderModule, "createActivityReader").mockImplementation((deps) => {
+    readerDeps = deps;
+    return { ...createActivityReader(deps), activity: readerActivity };
+  });
+  // This authorization-only fixture has no retained Cloud baseline. Real comparisons use the Filegate integration fixture.
+  spyOn(observationData, "knownIdentityActivity").mockResolvedValue(null);
+  spyOn(operationModule.operations, "pending").mockResolvedValue(null);
+  spyOn(operationModule.operations, "retiredPath").mockResolvedValue(false);
+  spyOn(referencesModule, "resolveEntryRefId").mockImplementation(async (id) => storedRefs.get(id) ?? parseEntryRefId(id));
+  spyOn(lifecycleModule, "createDirectoryLifecycle").mockImplementation((deps) => ({
+    ...createDirectoryLifecycle(deps),
+    provisionCandidate: async () => {
+      provisions++;
+      throw new Error("normal provisioning reached");
+    },
+  }));
 });
+afterEach(() => mock.restore());
 test("history on a missing auto-created home never provisions; the normal path still does", async () => {
   const f = fixture();
   f.present = false;

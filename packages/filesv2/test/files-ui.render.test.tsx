@@ -28,7 +28,6 @@ describe("Filesv2 server-rendered feedback", () => {
     const html = renderToString(() => (
       <LocaleProvider locale="en">
         <Workspace
-          cloudUrl="https://cloud.test"
           timeZone="Europe/Berlin"
           initial={{
             source: `/app/filesv2?base=${encodeURIComponent(base.id)}&path=Old`,

@@ -46,7 +46,7 @@ databaseSuite()("Scheduled Code Mode", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: "test",
+        modelId: "test",
         runConfig: { kind: "chat", input: "Calculate", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "Calculate" }] },
         expectedRevision: task.revision,
@@ -148,7 +148,7 @@ databaseSuite()("Scheduled Code Mode", () => {
     }))!;
     const delivered = await aiChatTasks.deliverOccurrence({
       occurrenceId: occurrence.id,
-      modelProfileId: "test",
+      modelId: "test",
       runConfig: { kind: "chat", input: "Check invoices", toolSource: { kind: "none" } },
       userMessage: { role: "user", content: [{ type: "text", text: "Check invoices" }] },
       expectedRevision: task.revision,
@@ -178,7 +178,13 @@ databaseSuite()("Scheduled Code Mode", () => {
       capabilityTransport: async () => {
         throw new Error("Unexpected capability");
       },
-      host: Promise.resolve({ health: async () => {}, execute: async () => null, call: async () => null, close: async () => {} }),
+      host: Promise.resolve({
+        machine: async () => null,
+        health: async () => {},
+        execute: async () => null,
+        call: async () => null,
+        close: async () => {},
+      }),
     };
     try {
       const response = await hostFetch(context, session, "/api/assistant/artifacts/runtime/check/start", {

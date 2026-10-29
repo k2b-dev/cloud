@@ -1,16 +1,20 @@
-import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
-import { clipboard, query } from "@k2b/stdlib/solid";
+import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { query } from "@k2b/stdlib/solid";
 import {
   Avatar,
   Button,
   DescriptionList,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
+  FileGrid,
+  FileTypeIcon,
   Format,
+  fileKindLabel,
+  formatFileViewSize,
   IconButton,
   Placeholder,
   prompts,
+  StatusBadge,
   Tooltip,
   toast,
   useLocale,
@@ -26,7 +30,7 @@ import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
-import { apiFailure, contentLease, fileIcon, inlinePdfHref, previewKind } from "./file-preview";
+import { apiFailure, contentLease, inlinePdfHref, previewKind } from "./file-preview";
 import { formatWhen, type HistoryEnvironment } from "./history-actions";
 import { loadItemHistory, loadItemShares, loadShareAccess, restoreVersion, revokeShare } from "./history-api";
 import { useHistoryMessages } from "./history-messages";
@@ -34,17 +38,10 @@ import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-re
 import ItemHistory from "./ItemHistory";
 import { useFilesMessages } from "./messages";
 import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
-import { referenceHref } from "./urls";
 
-/**
- * Identity, a compact preview, one action bar, facts, versions and history of one entry; a summary for several.
- * The bar keeps the open action, download, share and favorite in view; every other action sits in its menu.
- * Phones show the approved short form: no preview, Info only with the change date and the version count, which opens
- * the versions in place, and no Info for a folder.
- */
+/** One entry in the shared details outline: header, preview, properties, versions or contents, then technical details; a summary for several. */
 export default function FileInspector(props: {
   base: BaseSummary;
-  cloudUrl: string;
   selected: readonly FileEntry[];
   paths: readonly string[];
   initial?: EntryResult | null;
@@ -128,18 +125,11 @@ export default function FileInspector(props: {
   const revision = (file: FileEntry) => JSON.stringify([props.base.id, props.base.locationKey, file.path, file.modified]);
   // The preview reads a `.pdf` anyway; once its bytes show it is no PDF, the viewer tab would only open an error page.
   const [notPdf, setNotPdf] = createSignal<string | null>(null);
-  const refClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
-  // The menu closes on copy, so a toast confirms the result the label shows while it stays open.
-  const copyReference = (item: FileEntry) => {
+  const cloudId = useCloudIdCopy();
+  const entryRef = (item: FileEntry) => {
     const id = item.resourceId ?? details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
-    if (!id) return;
-    const href = referenceHref(props.base.id, item, id);
-    void refClipboard
-      .copy({ cloudUrl: props.cloudUrl, ref: { type: ENTRY_TYPE, id }, fallbackText: new URL(href, props.cloudUrl).href })
-      .then((copied) => (copied ? toast.success(t().copiedReference) : toast.error(t().copyReferenceFailed)));
+    return id ? { type: ENTRY_TYPE, id } : null;
   };
-  const copyLabel = () =>
-    refClipboard.error() ? t().copyReferenceFailed : refClipboard.wasCopied() ? t().copiedReference : t().copyReference;
   const openInTab = async (item: FileEntry) => {
     // A PDF opens at the preview's page address, so its tab reloads and signs an expired session in again.
     if (previewKind(item) === "pdf") return void window.open(inlinePdfHref(props.base.id, item.path), "_blank", "noopener");
@@ -154,69 +144,53 @@ export default function FileInspector(props: {
       toast.error(error instanceof Error ? error.message : f().downloadFailed);
     }
   };
-  const kindLabel = (item: FileEntry) => {
-    if (item.directory) return t().kindFolder;
-    const kind = previewKind(item);
-    return kind === "image"
-      ? t().kindImage
-      : kind === "pdf"
-        ? "PDF"
-        : kind === "video"
-          ? "Video"
-          : kind === "audio"
-            ? "Audio"
-            : t().kindFile;
-  };
   const close = (
     <IconButton size="sm" variant="ghost" label={t().close} onClick={props.onClose}>
       <i class="ti ti-x" aria-hidden="true" />
     </IconButton>
   );
   const expand = (item: FileEntry) => props.onPreview(item, () => setNotPdf(revision(item)));
-  /** The container of an entry, as the approved detail names it: storage, then each folder above the entry. */
-  const place = (item: FileEntry) =>
-    [baseLabel(props.base, t(), locale()), ...item.path.split("/").filter(Boolean).slice(0, -1)].join(" › ");
-  /** Everything beyond the bar, with the same permissions and busy state the actions always had. */
-  const menuItems = (item: FileEntry): DropdownItem[] => {
-    const busy = !!props.busy;
-    const editor = !item.directory && !!props.editable?.(item) && !!previewKind(item);
-    return [
-      ...(!item.directory && notPdf() !== revision(item)
-        ? [{ disabled: busy, label: t().openInTab, icon: "ti ti-external-link", action: () => void openInTab(item) }]
-        : []),
-      // The bar's main action edits such a file; the large preview stays one step away.
-      ...(editor ? [{ disabled: busy, label: t().expand, icon: "ti ti-arrows-maximize", action: () => expand(item) }] : []),
-      { disabled: busy || item.actions?.move === false, label: t().rename, icon: "ti ti-pencil", action: () => props.onRename(item) },
-      { disabled: busy, label: t().duplicate, icon: "ti ti-copy", action: () => props.onDuplicate(item) },
-      {
-        disabled: busy || item.actions?.move === false,
-        label: t().moveTo,
-        icon: "ti ti-arrow-move-right",
-        action: () => props.onMove(item),
-      },
-      { disabled: busy, label: t().copyTo, icon: "ti ti-folder-symlink", action: () => props.onCopy(item) },
-      ...(props.onShareInbox && item.directory && item.actions?.write !== false
-        ? [{ disabled: busy, label: t().shareInbox, icon: "ti ti-inbox", action: () => props.onShareInbox?.(item) }]
-        : []),
-      {
-        label: copyLabel(),
-        icon: refClipboard.error() ? "ti ti-alert-circle" : refClipboard.wasCopied() ? "ti ti-check" : "ti ti-link",
-        immediate: true,
-        action: () => copyReference(item),
-      },
-      {
-        items: [
-          {
-            disabled: busy || item.actions?.move === false,
-            label: t().trashSelection,
-            icon: "ti ti-trash",
-            variant: "danger" as const,
-            action: () => props.onTrash(item),
-          },
-        ],
-      },
-    ];
-  };
+  const readOnly = (item: FileEntry) => item.actions?.write === false;
+  const metaLine = (item: FileEntry) =>
+    item.directory ? t().kindFolder : `${fileKindLabel({ name: item.name }, locale())} · ${formatFileViewSize(item.size, locale())}`;
+  // Rarer commands on the entry; Share and Download stay beside the main action.
+  const headerMenu = (item: FileEntry): DropdownItem[] => [
+    {
+      items: [
+        ...(!item.directory && notPdf() !== revision(item)
+          ? [{ label: t().openInTab, icon: "ti ti-external-link", disabled: props.busy, action: () => void openInTab(item) }]
+          : []),
+        {
+          label: t().rename,
+          icon: "ti ti-pencil",
+          disabled: props.busy || item.actions?.move === false,
+          action: () => props.onRename(item),
+        },
+        { label: t().duplicate, icon: "ti ti-copy", disabled: props.busy, action: () => props.onDuplicate(item) },
+        {
+          label: t().moveTo,
+          icon: "ti ti-arrow-move-right",
+          disabled: props.busy || item.actions?.move === false,
+          action: () => props.onMove(item),
+        },
+        { label: t().copyTo, icon: "ti ti-folder-symlink", disabled: props.busy, action: () => props.onCopy(item) },
+        ...(props.onShareInbox && item.directory && !readOnly(item)
+          ? [{ label: t().shareInbox, icon: "ti ti-inbox", disabled: props.busy, action: () => props.onShareInbox?.(item) }]
+          : []),
+      ],
+    },
+    {
+      items: [
+        {
+          label: t().trashSelection,
+          icon: "ti ti-trash",
+          variant: "danger",
+          disabled: props.busy || item.actions?.move === false,
+          action: () => props.onTrash(item),
+        },
+      ],
+    },
+  ];
   return (
     <DetailPanel class="filesv2-inspector">
       <Show
@@ -238,12 +212,23 @@ export default function FileInspector(props: {
             }
           >
             {(item) => {
-              // One versions request feeds the Info count on phones and the versions list.
               const versions = createVersions(
                 () => props.base,
                 item,
                 () => details.refresh(),
               );
+              const versionsId = createUniqueId();
+              const [versionsOpen, setVersionsOpen] = createSignal(false);
+              const versionsLabel = () =>
+                versions.state() === "ready"
+                  ? String((versions.items()?.length ?? 0) + 1)
+                  : versions.state() === "error"
+                    ? h().versionsFailed
+                    : t().loadingDetails;
+              const showVersions = () => {
+                setVersionsOpen(true);
+                requestAnimationFrame(() => document.getElementById(versionsId)?.scrollIntoView({ block: "nearest" }));
+              };
               const currentAuthor = () => {
                 const history = props.history?.initial;
                 const request = itemHistoryRequest(props.base, {
@@ -260,115 +245,37 @@ export default function FileInspector(props: {
                 );
                 return change?.actor.kind === "user" ? change.actor.name : null;
               };
-              const contentsKey = () => JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified]);
-              const contents = query.create({
-                source: contentsKey,
-                enabled: () => item().directory,
-                load: async (key, { abortSignal }) => {
-                  const response = await apiClient.bases[":baseId"].entries.$get(
-                    { param: { baseId: props.base.id }, query: { path: item().path } },
-                    { init: { signal: abortSignal } },
-                  );
-                  if (!response.ok) return apiFailure(response, h().folderContentsFailed);
-                  const page = await response.json();
-                  const paths = new Set(page.items.map((entry) => entry.path));
-                  if (page.readme) paths.add(page.readme.path);
-                  // Reuse one listing response, including its README lookup; do not follow child-page cursors.
-                  // A cursor means this is a lower bound, never a total.
-                  return { key, count: paths.size, complete: !page.next };
-                },
-              });
-              let contentsStatus: HTMLSpanElement | undefined;
-              const contentsLabel = () => {
-                if (contents.error()) return h().folderContentsFailed;
-                const value = contents.data();
-                if (!value || value.key !== contentsKey()) return t().loadingDetails;
-                return value.complete ? h().folderItems(value.count) : h().folderItemsAtLeast(value.count);
-              };
-              const versionsId = createUniqueId();
-              const [versionsOpen, setVersionsOpen] = createSignal(false);
-              const versionsLabel = () =>
-                versions.state() === "ready"
-                  ? String((versions.items()?.length ?? 0) + 1)
-                  : versions.state() === "error"
-                    ? h().versionsFailed
-                    : t().loadingDetails;
-              const toggleVersions = () => {
-                const open = !versionsOpen();
-                setVersionsOpen(open);
-                if (open) requestAnimationFrame(() => document.getElementById(versionsId)?.scrollIntoView({ block: "nearest" }));
-              };
               return (
                 <>
                   <DetailPanel.Header
-                    icon={fileIcon(item())}
+                    kind={
+                      <>
+                        <span>{item().directory ? t().kindFolder : t().kindFile}</span>
+                        <Show when={readOnly(item())}>
+                          <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} />
+                        </Show>
+                      </>
+                    }
                     title={<span class="break-all">{item().name}</span>}
                     subtitle={
                       <span>
-                        {kindLabel(item())}
-                        <Show when={item().directory}>
-                          {" · "}
-                          <span ref={contentsStatus} class="filesv2-inspector-count" role="status" aria-atomic="true" tabIndex={-1}>
-                            {contentsLabel()}
-                          </span>
-                          <Show when={contents.error()}>
-                            <Button
-                              size="xs"
-                              variant="text"
-                              onClick={() => {
-                                contentsStatus?.focus();
-                                void contents.refresh();
-                              }}
-                            >
-                              {t().retry}
-                            </Button>
-                          </Show>
-                        </Show>
-                        <Show when={!item().directory}>
-                          {" · "}
-                          <Format.Bytes value={item().size} />
-                        </Show>
+                        {metaLine(item())}
+                        {" · "}
+                        <Format.DateTime value={item().modified} />
                       </span>
                     }
+                    menu={[...headerMenu(item()), ...cloudId.section(entryRef(item()))]}
+                    menuLabel={t().moreActions}
                     actions={close}
-                  />
-                  <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
-                    <div class="filesv2-inspector-lead">
-                      {/* A compact glimpse; the bar's Preview, a click on an image, or the menu opens it large. */}
-                      <Show when={!item().directory && previewKind(item())}>
-                        <div class="filesv2-inspector-preview" role="group" aria-label={t().preview}>
-                          <Show
-                            keyed
-                            when={
-                              previewKind(item()) === "image"
-                                ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
-                                : null
-                            }
-                            fallback={
-                              <Show keyed when={revision(item())}>
-                                {(key) => (
-                                  <FilePreview
-                                    variant="plain"
-                                    previewLines={5}
-                                    onExpandPreview={() => void expand(item())}
-                                    baseId={props.base.id}
-                                    locationKey={props.base.locationKey}
-                                    entry={item()}
-                                    onDownload={() => props.onDownload([item()])}
-                                    onNotPdf={() => setNotPdf(key)}
-                                  />
-                                )}
-                              </Show>
-                            }
-                          >
-                            <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
-                              <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
-                            </button>
-                          </Show>
-                        </div>
-                      </Show>
-                      <div class="filesv2-inspector-actions">
-                        <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onOpen(item())}>
+                    primaryActions={
+                      <>
+                        <Button
+                          size="sm"
+                          variant="subtle"
+                          class="filesv2-details-main"
+                          disabled={props.busy}
+                          onClick={() => props.onOpen(item())}
+                        >
                           <i
                             class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
                             aria-hidden="true"
@@ -376,34 +283,20 @@ export default function FileInspector(props: {
                           {item().directory
                             ? t().open
                             : props.editable?.(item())
-                              ? props.canEdit === false || item().actions?.write === false
+                              ? props.canEdit === false || readOnly(item())
                                 ? t().openReadOnly
                                 : t().edit
                               : t().preview}
                         </Button>
-                        <Tooltip.Anchor content={f().download}>
-                          <IconButton
-                            size="sm"
-                            variant="ghost"
-                            label={f().download}
-                            disabled={props.busy}
-                            onClick={() => props.onDownload([item()])}
-                          >
-                            <i class="ti ti-download" aria-hidden="true" />
-                          </IconButton>
-                        </Tooltip.Anchor>
+                        <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload([item()])}>
+                          <i class="ti ti-download" aria-hidden="true" />
+                          {f().download}
+                        </Button>
                         <Show when={props.onShare && item().actions?.share !== false}>
-                          <Tooltip.Anchor content={t().shareSelection}>
-                            <IconButton
-                              size="sm"
-                              variant="ghost"
-                              label={t().shareSelection}
-                              disabled={props.busy}
-                              onClick={() => props.onShare?.(item())}
-                            >
-                              <i class="ti ti-share" aria-hidden="true" />
-                            </IconButton>
-                          </Tooltip.Anchor>
+                          <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onShare?.(item())}>
+                            <i class="ti ti-share" aria-hidden="true" />
+                            {t().share}
+                          </Button>
                         </Show>
                         <Tooltip.Anchor content={favorite(item()) ? t().removeFavorite : t().addFavorite}>
                           <IconButton
@@ -422,18 +315,50 @@ export default function FileInspector(props: {
                             </Show>
                           </IconButton>
                         </Tooltip.Anchor>
-                        <Dropdown.Root items={menuItems(item())} label={t().actions} menuClass="filesv2-inspector-menu" phone="sheet">
-                          <Dropdown.Trigger iconOnly size="sm" label={t().actions}>
-                            <i class="ti ti-dots" aria-hidden="true" />
-                          </Dropdown.Trigger>
-                        </Dropdown.Root>
-                      </div>
-                    </div>
-                    <DetailPanel.Summary
-                      title={t().info}
-                      class={item().directory ? "filesv2-inspector-info filesv2-inspector-info--folder" : "filesv2-inspector-info"}
-                    >
-                      {/* Rows marked for one form only; phones keep the change date and the version count. */}
+                      </>
+                    }
+                  />
+                  <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
+                    <Show when={!item().directory && previewKind(item())}>
+                      <DetailPanel.Section
+                        title={t().preview}
+                        actions={
+                          <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
+                            <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                          </IconButton>
+                        }
+                      >
+                        <Show
+                          keyed
+                          when={
+                            previewKind(item()) === "image"
+                              ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
+                              : null
+                          }
+                          fallback={
+                            <Show keyed when={revision(item())}>
+                              {(key) => (
+                                <FilePreview
+                                  variant="plain"
+                                  previewLines={5}
+                                  onExpandPreview={() => void expand(item())}
+                                  baseId={props.base.id}
+                                  locationKey={props.base.locationKey}
+                                  entry={item()}
+                                  onDownload={() => props.onDownload([item()])}
+                                  onNotPdf={() => setNotPdf(key)}
+                                />
+                              )}
+                            </Show>
+                          }
+                        >
+                          <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
+                            <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
+                          </button>
+                        </Show>
+                      </DetailPanel.Section>
+                    </Show>
+                    <DetailPanel.Section title={t().properties} class="filesv2-inspector-info">
                       <DescriptionList
                         layout="rows"
                         size="sm"
@@ -441,11 +366,12 @@ export default function FileInspector(props: {
                           {
                             term: t().location,
                             description: (
-                              <span class="break-words" data-inspector-only="desktop" title={`${props.base.name} / ${item().path}`}>
-                                {place(item())}
+                              <span class="break-all" title={`${props.base.name} / ${item().path}`}>
+                                {`${baseLabel(props.base, t(), locale())} / ${item().path}`}
                               </span>
                             ),
                           },
+                          { term: t().storageArea, description: props.base.area === "cloud" ? t().cloudArea : t().freeipaArea },
                           {
                             term: f().modified,
                             description: (
@@ -460,14 +386,6 @@ export default function FileInspector(props: {
                           ...(!item().directory
                             ? [
                                 {
-                                  term: f().size,
-                                  description: (
-                                    <span data-inspector-only="desktop">
-                                      <Format.Bytes value={item().size} />
-                                    </span>
-                                  ),
-                                },
-                                {
                                   term: t().versions,
                                   description: (
                                     <span data-inspector-only="phone">
@@ -478,7 +396,7 @@ export default function FileInspector(props: {
                                           aria-label={`${h().showVersions} (${versionsLabel()})`}
                                           aria-expanded={versionsOpen()}
                                           aria-controls={versionsId}
-                                          onClick={toggleVersions}
+                                          onClick={() => (versionsOpen() ? setVersionsOpen(false) : showVersions())}
                                         >
                                           {versionsLabel()}
                                         </Button>
@@ -490,7 +408,16 @@ export default function FileInspector(props: {
                             : []),
                         ]}
                       />
-                    </DetailPanel.Summary>
+                    </DetailPanel.Section>
+                    <Show when={item().directory}>
+                      <FolderContents
+                        base={props.base}
+                        folder={item()}
+                        busy={props.busy}
+                        onOpen={props.onOpen}
+                        onDownload={(file) => props.onDownload([file])}
+                      />
+                    </Show>
                     <EntryHistory
                       base={props.base}
                       entry={item()}
@@ -504,11 +431,44 @@ export default function FileInspector(props: {
                       currentAuthor={currentAuthor()}
                       versionsId={versionsId}
                       versionsOpen={versionsOpen()}
-                      onShowVersions={() => {
-                        setVersionsOpen(true);
-                        requestAnimationFrame(() => document.getElementById(versionsId)?.scrollIntoView({ block: "nearest" }));
-                      }}
+                      onShowVersions={showVersions}
                     />
+                    <DetailPanel.Group title={item().directory ? t().moreAboutFolder : t().moreAboutFile}>
+                      <DetailPanel.Section title={t().technicalDetails} collapsible summary={t().technicalSummary}>
+                        <DescriptionList
+                          layout="rows"
+                          size="sm"
+                          items={[
+                            {
+                              term: t().kind,
+                              description: item().directory ? t().kindFolder : fileKindLabel({ name: item().name }, locale()),
+                            },
+                            ...(!item().directory ? [{ term: f().size, description: <Format.Bytes value={item().size} /> }] : []),
+                            {
+                              term: f().modified,
+                              description: (
+                                <>
+                                  <Show when={props.history?.env} fallback={<Format.DateTime value={item().modified} />}>
+                                    {(env) => <time datetime={item().modified}>{formatWhen(item().modified, locale(), h(), env())}</time>}
+                                  </Show>
+                                  <Show when={currentAuthor()}>{(name) => <span>, {name()}</span>}</Show>
+                                </>
+                              ),
+                            },
+                          ]}
+                        />
+                        <Show when={cloudId.available() && entryRef(item())}>
+                          {(ref) => (
+                            <DetailPanel.Action
+                              type="button"
+                              leading={<i class="ti ti-copy" aria-hidden="true" />}
+                              title={cloudIdMessages.resolve([locale()]).t.copy}
+                              onClick={() => cloudId.copy(ref())}
+                            />
+                          )}
+                        </Show>
+                      </DetailPanel.Section>
+                    </DetailPanel.Group>
                   </DetailPanel.Body>
                 </>
               );
@@ -517,18 +477,24 @@ export default function FileInspector(props: {
         }
       >
         <DetailPanel.Header
-          icon="ti ti-stack"
+          kind={<span>{t().selection}</span>}
           title={t().selected(props.paths.length)}
           actions={close}
           primaryActions={
-            <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload(props.selected)}>
+            <Button
+              size="sm"
+              variant="subtle"
+              class="filesv2-details-main"
+              disabled={props.busy}
+              onClick={() => props.onDownload(props.selected)}
+            >
               <i class="ti ti-download" aria-hidden="true" />
               {t().downloadZip}
             </Button>
           }
         />
         <DetailPanel.Body>
-          <DetailPanel.Summary title={t().selection}>
+          <DetailPanel.Section title={t().properties}>
             <DescriptionList
               layout="rows"
               size="sm"
@@ -544,17 +510,105 @@ export default function FileInspector(props: {
               ]}
             />
             <Show when={props.selected.some((entry) => entry.directory)}>
-              <p class="text-sm text-dimmed">{t().unknownFolders}</p>
+              <p class="filesv2-details-none">{t().unknownFolders}</p>
             </Show>
-          </DetailPanel.Summary>
+          </DetailPanel.Section>
         </DetailPanel.Body>
       </Show>
     </DetailPanel>
   );
 }
 
+const isImage = (entry: FileEntry) => previewKind(entry) === "image";
+
+/** The first page of a folder: files and subfolders as rows, then images as tiles; the folder itself shows the rest. */
+function FolderContents(props: {
+  base: BaseSummary;
+  folder: FileEntry;
+  busy?: boolean;
+  onOpen: (entry: FileEntry) => void;
+  onDownload: (entry: FileEntry) => void;
+}) {
+  const t = useBrowserMessages();
+  const locale = useLocale();
+  const key = () => JSON.stringify([props.base.id, props.base.locationKey, props.folder.path, props.folder.modified]);
+  const contents = query.create({
+    source: key,
+    load: async (source, { abortSignal }) => {
+      const response = await apiClient.bases[":baseId"].entries.$get(
+        { param: { baseId: props.base.id }, query: { path: props.folder.path } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) return apiFailure(response, t().contentsFailed);
+      const page = await response.json();
+      return { key: source, items: page.items, next: page.next };
+    },
+  });
+  const page = () => (contents.data()?.key === key() ? contents.data() : undefined);
+  // Short and full list keep one order: files and folders first, then images.
+  const rows = createMemo(() => {
+    const items = page()?.items ?? [];
+    return [...items.filter((entry) => !isImage(entry)), ...items.filter(isImage)];
+  });
+  const meta = (entry: FileEntry) =>
+    entry.directory ? t().kindFolder : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
+  return (
+    <DetailPanel.Section title={t().contents} count={page() && !page()?.next && rows().length > 0 ? rows().length : undefined}>
+      <Show
+        when={!contents.error()}
+        fallback={
+          <Placeholder state="error" variant="compact" align="left" title={t().contentsFailed} onRetry={() => void contents.refresh()} />
+        }
+      >
+        <Show when={page()} fallback={<Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />}>
+          <Show when={rows().length > 0} fallback={<p class="filesv2-details-none">{t().emptyTitle}</p>}>
+            <FileGrid
+              rows={rows()}
+              getRowId={(entry) => entry.path}
+              label={t().contents}
+              layout="list"
+              limit={5}
+              actionVisibility="progressive"
+              moreMeta={page()?.next ? t().moreInFolder : undefined}
+              groups={(all) => [
+                { id: "files", label: t().files, rows: all.filter((entry) => !isImage(entry)) },
+                { id: "images", label: t().filterImages, rows: all.filter(isImage), layout: "tiles" },
+              ]}
+              renderPreview={(entry) =>
+                isImage(entry) ? (
+                  <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={entry} large />
+                ) : (
+                  <FileTypeIcon name={entry.name} folder={entry.directory} />
+                )
+              }
+              renderLabel={(entry) => entry.name}
+              renderMeta={meta}
+              renderActions={(entry) => (
+                <Show when={!entry.directory}>
+                  <Tooltip.Anchor content={t().downloadNamed(entry.name)}>
+                    <IconButton
+                      size="sm"
+                      variant="ghost"
+                      label={t().downloadNamed(entry.name)}
+                      disabled={props.busy}
+                      onClick={() => props.onDownload(entry)}
+                    >
+                      <i class="ti ti-download" aria-hidden="true" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                </Show>
+              )}
+              onOpen={props.onOpen}
+            />
+          </Show>
+        </Show>
+      </Show>
+    </DetailPanel.Section>
+  );
+}
+
 /**
- * The saved versions of a file, read once for the Info count and the versions list. A second read of the file after
+ * The saved versions of a file, read once for the Properties count and the versions list. A second read of the file after
  * the list confirms that the list belongs to the shown file state; on a mismatch the details refresh first.
  */
 function createVersions(base: () => BaseSummary, entry: () => FileEntry, onStale: () => Promise<void>) {
@@ -886,7 +940,6 @@ function VersionsSection(props: {
     <DetailPanel.Group label={t().versions}>
       <DetailPanel.Section
         title={t().versions}
-        tone="neutral"
         actions={
           <span class="inline-flex size-4" role="status">
             <Show when={props.versions.state() === "ready" && props.versions.refreshing()}>
@@ -954,7 +1007,9 @@ function VersionsSection(props: {
                         ? h().versionN.replace("{n}", String(props.number(version)))
                         : t().versionLabel(when(version.created))
                     }
-                    description={version.comment ? `${version.comment}${version.author ? ` · ${version.author}` : ""}` : undefined}
+                    description={[version.comment, version.author, formatFileViewSize(version.size, props.locale)]
+                      .filter(Boolean)
+                      .join(" · ")}
                     // Filegate's author metadata names the comment editor, not the content author.
                     leading={
                       <span aria-hidden="true" class="flex">

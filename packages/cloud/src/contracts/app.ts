@@ -1,5 +1,6 @@
 import type { Sync } from "@k2b/sync";
 import type { AppAccessRule } from "./app-access";
+import type { AppInstallable } from "./installable";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { AppRegistryHelpSummary } from "./registry";
 import type { Role } from "./shared";
@@ -49,9 +50,16 @@ export type AppAdminNavigationLink = {
   icon: string;
 };
 
+/** Platform admin areas an app can contribute to with `adminNav[].section`. */
+export const APP_ADMIN_AREAS = ["ai", "observability"] as const;
+export type AppAdminArea = (typeof APP_ADMIN_AREAS)[number];
+
 export type AppAdminNavigationGroup = {
-  /** Contribute links to the platform AI section instead of a separate group. */
-  section?: "ai";
+  /**
+   * Contribute links to a platform admin area instead of a separate group. The admin sidebar shows the area as one
+   * entry; the owner renders the area's columns itself. `"ai"` is the AI area, `"observability"` the Observability area.
+   */
+  section?: AppAdminArea;
   /** Stable key used only to localize this presentation group. */
   id?: string;
   label: string;
@@ -158,6 +166,8 @@ export type AppMeta = {
   searchLinks?: readonly AppSearchLink[];
   /** The app's pages in the installable mobile app (preview), at `href` = `/pwa/<id>`. */
   pwa?: AppPwaPart;
+  /** One standalone installation under this app's own declared route. */
+  installable?: AppInstallable;
   panel?: AppPanel;
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an

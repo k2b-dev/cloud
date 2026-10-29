@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-20
+updated: 2026-10-28
 ---
 
 # Define an application
@@ -144,8 +144,14 @@ Each group needs a `label` and `links`. Each link needs a `label`, `href`, and
 Tabler `icon`. Add a stable group `id` when its label is translated through
 `presentation`.
 
-An application contributing AI administration can set `section: "ai"` on its
-group. The layout adds those links to the existing AI administration section.
+Set `section` on a group to contribute to a platform administration area
+instead of adding a group of its own:
+
+| `section` | Area | What the sidebar shows |
+| --- | --- | --- |
+| `"ai"` | AI | The AI area lists the links among its own sections. |
+| `"observability"` | Observability | One entry, Observability, that stays active on every contributed link. The area lists other apps' links under **From apps** in its first column. |
+
 Route and resource authorization still belong to the application; this field
 only selects where authorized navigation is displayed.
 
@@ -171,6 +177,14 @@ or a path below it; the only exceptions are the mobile app's own `/pwa` and
 Core's `/pwa/_auth`. It also throws when an application declares `pwa` with the
 id `pwa`, `settings`, or `offline`, or with an id that is not lowercase letters,
 digits, and hyphens starting with a letter.
+
+## Add a standalone App-PWA
+
+Declare `installable` to give this application one independent installation at
+its own `/app/<id>/<surface>/` path. Cloud generates the manifest, themed icons,
+worker, offline document, and automatic SSR installation hint. It adds no mobile
+app session or device permissions. See [App-PWA](/en/docs/frontend/app-pwa) for
+the complete declaration and route requirements.
 
 ## Translate registered presentation
 
@@ -261,6 +275,7 @@ The remaining options declare application-owned contributions:
 | `legalLinks` | Application-owned legal and information links | — |
 | `presentation` | Localized overlays for registered human-facing app metadata | [Internationalization](/en/docs/build/internationalization) |
 | `openapi` | Public OpenAPI document path | [Typed HTTP APIs](/en/docs/server/http#publish-openapi) |
+| `installable` | One standalone installation per application | [App-PWA](/en/docs/frontend/app-pwa) |
 | `pwa` | Pages in the mobile app (preview) | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
 
 Definitions establish ownership and types. They do not run an operation.

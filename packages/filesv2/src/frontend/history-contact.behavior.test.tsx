@@ -52,7 +52,6 @@ if (modules) {
       dispose = render(
         () =>
           createComponent(Workspace, {
-            cloudUrl: "https://cloud.test",
             timeZone: "UTC",
             retentionDays: 365,
             initial: {
@@ -135,7 +134,6 @@ if (modules) {
           dispose = render(
             () =>
               createComponent(Workspace, {
-                cloudUrl: "https://cloud.test",
                 timeZone: "UTC",
                 retentionDays: 365,
                 initial: {

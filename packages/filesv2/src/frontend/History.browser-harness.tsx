@@ -7,12 +7,7 @@ export default function HistoryHarness(props: { source: string; locale: string }
   return (
     <LocaleProvider locale={props.locale}>
       <PageTrailProvider trail={{ title: props.locale === "de" ? "Aktivität" : "Activity", ancestors: [] }}>
-        <Workspace
-          initial={historySnapshot(props.source)}
-          cloudUrl="http://files-history.test"
-          timeZone="Europe/Berlin"
-          retentionDays={365}
-        />
+        <Workspace initial={historySnapshot(props.source)} timeZone="Europe/Berlin" retentionDays={365} />
       </PageTrailProvider>
     </LocaleProvider>
   );

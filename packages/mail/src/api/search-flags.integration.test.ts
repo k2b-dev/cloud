@@ -7,7 +7,6 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailSearchExpression } from "../contracts";
 import { projectMailboxPageData } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { MAIL_SEARCH_MATCHES_NOTHING } from "../search-state";
 import type { MailRequestContext } from "../service/auth";
 import { createMailbox } from "../service/mailboxes";
@@ -105,7 +104,6 @@ suite("Mail flags belong to an included placement of the same message", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const [row] = await sql<{ id: string; uid: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-flags-${suffix}`}, 'local', 'user', 'Flag owner', false) RETURNING id, uid`;
     owner = {

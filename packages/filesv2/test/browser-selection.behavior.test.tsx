@@ -57,9 +57,7 @@ test("view changes preserve selection; superseded details cannot replace current
   const [directory, setDirectory] = createSignal(initial);
   const [source, setSource] = createSignal("/app/filesv2?base=home");
   const dispose = render(
-    () => (
-      <Browser directory={directory()} bases={[initial.base]} cloudUrl="https://cloud.test" source={source()} onNavigate={async () => {}} />
-    ),
+    () => <Browser directory={directory()} bases={[initial.base]} source={source()} onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -86,8 +84,8 @@ test("view changes preserve selection; superseded details cannot replace current
   await flush();
   expect(dom.root.querySelector("h2")?.textContent).toBe("B.txt");
   expect(dom.window.location.search).toContain("file=B.txt");
-  // The details panel names the place that holds the entry and keeps the technical location as tooltip.
-  expect(dom.root.querySelector<HTMLElement>('[title="Home / B.txt"]')?.textContent).toBe("Personal");
+  // The details panel labels the personal base and keeps the technical location as tooltip.
+  expect(dom.root.querySelector<HTMLElement>('[title="Home / B.txt"]')?.textContent).toBe("Personal / B.txt");
   [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Grid"))!.click();
   await flush();
   expect(dom.root.querySelector('.k2b-file-grid__item[aria-selected="true"]')?.textContent).toContain("B.txt");
@@ -110,7 +108,6 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
     () => (
       <FileInspector
         base={base()}
-        cloudUrl="https://cloud.test"
         selected={[entry]}
         paths={[entry.path]}
         initial={{ base: initial.base, entry, favorite: false }}
@@ -134,13 +131,7 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   await flush();
   const button = () => dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")!;
   expect(button().getAttribute("aria-pressed")).toBe("false");
-  const bar = () => [...button().closest(".filesv2-inspector-actions")!.querySelectorAll("button:not([role='menuitem'])")];
-  expect(bar().map((action) => action.getAttribute("aria-label") ?? action.textContent?.trim())).toEqual([
-    "Preview",
-    "Download",
-    "Add to favorites",
-    "Actions",
-  ]);
+  expect(button().parentElement?.parentElement?.textContent).toContain("Download");
   button().click();
   button().click();
   await flush();
@@ -169,125 +160,65 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   expect(button().getAttribute("aria-pressed")).toBe("true");
 });
 
-test("details keep every action: a compact bar, the rest in one menu with the same permissions and busy state", async () => {
+test("a folder lists its contents, files before images, and keeps rarer commands in its menu", async () => {
   const dom = createDomTestHarness();
   const { default: FileInspector } = await import("../src/frontend/FileInspector");
-  const calls: string[] = [];
+  const folder = { name: "Fotos", path: "Fotos", directory: true, size: 0, modified: "2026-09-18T00:00:00Z" };
+  const opened: string[] = [];
+  const trashed: string[] = [];
   const noop = () => {};
-  const record = (name: string) => () => void calls.push(name);
-  const [busy, setBusy] = createSignal(false);
-  const show = (entry: FileEntry) =>
-    render(
-      () => (
-        <FileInspector
-          base={initial.base}
-          cloudUrl="https://cloud.test"
-          selected={[entry]}
-          paths={[entry.path]}
-          initial={{ base: initial.base, entry, favorite: false }}
-          busy={busy()}
-          onClose={noop}
-          onOpen={record("open")}
-          onPreview={noop}
-          onDownload={record("download")}
-          onRename={record("rename")}
-          onDuplicate={record("duplicate")}
-          onMove={record("move")}
-          onCopy={record("copy")}
-          onTrash={record("trash")}
-          onShare={record("share")}
-          onShareInbox={record("inbox")}
-          onChanged={noop}
-        />
-      ),
-      dom.root,
-    );
-  let dispose = show({ ...initial.items[0]!, actions: { write: true, move: true, share: true } });
+  const dispose = render(
+    () => (
+      <FileInspector
+        base={initial.base}
+        selected={[folder]}
+        paths={[folder.path]}
+        initial={{ base: initial.base, entry: folder, favorite: false }}
+        onClose={noop}
+        onOpen={(entry) => opened.push(entry.path)}
+        onPreview={noop}
+        onDownload={noop}
+        onRename={noop}
+        onDuplicate={noop}
+        onMove={noop}
+        onCopy={noop}
+        onTrash={(entry) => trashed.push(entry.path)}
+        onChanged={noop}
+      />
+    ),
+    dom.root,
+  );
   cleanup = () => {
     dispose();
     dom.cleanup();
   };
   await flush();
-  const bar = () =>
-    [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-inspector-actions button:not([role='menuitem'])")].map(
-      (action) => action.getAttribute("aria-label") ?? action.textContent?.trim(),
-    );
-  const menu = () => [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-inspector-menu [role='menuitem']")];
-  const item = (label: string) => menu().find((action) => action.textContent?.trim() === label)!;
-  expect(bar()).toEqual(["Preview", "Download", "Share publicly", "Add to favorites", "Actions"]);
-  expect(menu().map((action) => action.textContent?.trim())).toEqual([
-    "Open in new tab",
-    "Rename",
-    "Duplicate",
-    "Move to…",
-    "Copy to…",
-    "Copy Cloud reference",
-    "Move to trash",
-  ]);
-  // The long list no longer pushes versions and history down.
-  expect(dom.root.querySelector(".k2b-detail-panel__body .k2b-detail-panel__action")).toBeNull();
-  // The approved order: identity, preview, the bar, then Info; the header keeps only identity and close.
-  const lead = dom.root.querySelector(".filesv2-inspector-lead")!;
-  expect([...lead.children].map((child) => child.className)).toEqual(["filesv2-inspector-preview", "filesv2-inspector-actions"]);
-  expect(lead.nextElementSibling?.classList.contains("filesv2-inspector-info")).toBe(true);
-  expect(dom.root.querySelector(".k2b-detail-panel__header .filesv2-favorite")).toBeNull();
-  // Phones keep only the change date and the version count; this storage keeps no versions, which Info says.
-  const only = (form: string) =>
-    [...dom.root.querySelectorAll(`.filesv2-inspector-info [data-inspector-only="${form}"]`)].map(
-      (value) => value.closest(".k2b-description-list__item")?.querySelector("dt")?.textContent,
-    );
-  expect(only("desktop")).toEqual(["Location", "Size"]);
-  expect(only("phone")).toEqual(["Versions"]);
-  expect(dom.root.querySelector('.filesv2-inspector-info [data-inspector-only="phone"]')?.textContent).toBe(
-    "Versions are not enabled for this storage.",
-  );
-  for (const label of ["Rename", "Duplicate", "Move to…", "Copy to…", "Move to trash"]) item(label).click();
-  expect(calls).toEqual(["rename", "duplicate", "move", "copy", "trash"]);
-
-  // While another action runs, the bar and every changing menu action wait.
-  setBusy(true);
+  expect(dom.root.querySelector(".k2b-detail-panel__header")?.textContent).toContain("Folder");
+  // The first page fails: the section says so and retries; the rest of the panel stays usable.
+  expect(branchRequests).toHaveLength(1);
+  expect(branchRequests[0]!.input).toEqual({ param: { baseId: "home" }, query: { path: "Fotos" } });
+  branchRequests[0]!.resolve(Response.json({ code: "unavailable", message: "Offline" }, { status: 503 }));
   await flush();
-  expect(
-    [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-inspector-actions button:not([role='menuitem'])")]
-      .filter((action) => action.disabled)
-      .map((action) => action.getAttribute("aria-label") ?? action.textContent?.trim()),
-  ).toEqual(["Preview", "Download", "Share publicly", "Add to favorites"]);
-  expect(
-    menu()
-      .filter((action) => !action.disabled)
-      .map((action) => action.textContent?.trim()),
-  ).toEqual(["Copy Cloud reference"]);
-  setBusy(false);
-
-  // Without move or share rights, those actions stay visible but disabled or leave, as before; a writable folder offers its inbox.
-  dispose();
-  dispose = show({
-    name: "Docs",
-    path: "Docs",
-    directory: true,
-    size: 0,
-    modified: "2026-09-18T00:00:00Z",
-    actions: { write: true, move: false, share: false },
-  });
+  const retry = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Try again"));
+  expect(retry).toBeDefined();
+  retry!.click();
   await flush();
-  expect(bar()).toEqual(["Open", "Download", "Add to favorites", "Actions"]);
-  // A folder starts with the bar, has no versions, and phones hide its Info.
-  expect([...dom.root.querySelector(".filesv2-inspector-lead")!.children].map((child) => child.className)).toEqual([
-    "filesv2-inspector-actions",
-  ]);
-  expect(dom.root.querySelector(".filesv2-inspector-info")?.classList.contains("filesv2-inspector-info--folder")).toBe(true);
-  expect(dom.root.querySelector(".filesv2-inspector-versions, [data-inspector-only='phone']")).toBeNull();
-  expect(menu().map((action) => [action.textContent?.trim(), action.disabled])).toEqual([
-    ["Rename", true],
-    ["Duplicate", false],
-    ["Move to…", true],
-    ["Copy to…", false],
-    ["Share as upload inbox", false],
-    ["Copy Cloud reference", false],
-    ["Move to trash", true],
-  ]);
-  item("Share as upload inbox").click();
-  expect(calls.at(-1)).toBe("inbox");
+  expect(branchRequests).toHaveLength(2);
+  const entry = (name: string) => ({ name, path: `Fotos/${name}`, directory: false, size: 2048, modified: "2026-09-18T00:00:00Z" });
+  const items = ["a.jpg", "b.jpg", "Plan.pdf", "c.png", "Notes.txt", "Liste.xlsx", "d.jpg"].map(entry);
+  branchRequests[1]!.resolve(Response.json({ base: initial.base, path: "Fotos", items, next: null }));
+  await flush();
+  const names = () => [...dom.root.querySelectorAll(".k2b-file-grid__name")].map((name) => name.textContent);
+  // The short list shows the first five in the full list's order: files first, then images.
+  expect(names()).toEqual(["Plan.pdf", "Notes.txt", "Liste.xlsx", "a.jpg", "b.jpg"]);
+  expect(dom.root.textContent).toContain("Show all 7");
+  dom.root.querySelector<HTMLButtonElement>(".k2b-file-grid__open")?.click();
+  expect(opened).toEqual(["Fotos/Plan.pdf"]);
+  // Rename, move, trash and the other rarer commands stay one click away in "More actions".
+  const menu = [...dom.root.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim());
+  expect(menu).toEqual(["Rename", "Duplicate", "Move to…", "Copy to…", "Move to trash"]);
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].at(-1)!.click();
+  expect(trashed).toEqual(["Fotos"]);
 });
 
 test("tree branches cannot cross full cloud base identities or accept a superseded branch response", async () => {
@@ -296,10 +227,7 @@ test("tree branches cannot cross full cloud base identities or accept a supersed
   const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
   const first = { ...initial, base: { ...initial.base, id: "cloud:groups:first" }, items: [folder] };
   const [directory, setDirectory] = createSignal(first);
-  const dispose = render(
-    () => <Browser directory={directory()} bases={[directory().base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
-    dom.root,
-  );
+  const dispose = render(() => <Browser directory={directory()} bases={[directory().base]} onNavigate={async () => {}} />, dom.root);
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -348,7 +276,6 @@ test("tree navigation keeps loaded ancestors and current files through folder ch
       <Browser
         directory={directory()}
         bases={[initial.base]}
-        cloudUrl="https://cloud.test"
         source={`/app/filesv2?base=home&path=${directory().path}`}
         onNavigate={async () => {}}
       />
@@ -382,10 +309,7 @@ test("a slow or failed tree root never hides the loaded folder and can be retrie
   const dom = createDomTestHarness();
   const Browser = await browserWithUploads();
   const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
-  const dispose = render(
-    () => <Browser directory={current} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
-    dom.root,
-  );
+  const dispose = render(() => <Browser directory={current} bases={[initial.base]} onNavigate={async () => {}} />, dom.root);
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -417,9 +341,7 @@ test("tree query changes reject late ancestor replies and navigation supersedes 
   const [directory, setDirectory] = createSignal<DirectoryResult>(current);
   const [source, setSource] = createSignal("/app/filesv2?base=home&path=Bilder&sort=name");
   const dispose = render(
-    () => (
-      <Browser directory={directory()} source={source()} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />
-    ),
+    () => <Browser directory={directory()} source={source()} bases={[initial.base]} onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -467,15 +389,7 @@ test("list and tree mark their active row with one class; checked rows in select
     items: [folder("Projects/Drafts"), { ...initial.items[0]!, name: "Notes.md", path: "Projects/Notes.md" }],
   };
   const dispose = render(
-    () => (
-      <Browser
-        directory={current}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        source="/app/filesv2?base=home&path=Projects"
-        onNavigate={async () => {}}
-      />
-    ),
+    () => <Browser directory={current} bases={[initial.base]} source="/app/filesv2?base=home&path=Projects" onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -532,15 +446,7 @@ test("outside select mode Shift+Arrow moves the one active row; in select mode i
   const Browser = await browserWithUploads();
   const items = ["A.txt", "B.txt", "C.txt"].map((name) => ({ ...initial.items[0]!, name, path: name }));
   const dispose = render(
-    () => (
-      <Browser
-        directory={{ ...initial, items }}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        source="/app/filesv2?base=home"
-        onNavigate={async () => {}}
-      />
-    ),
+    () => <Browser directory={{ ...initial, items }} bases={[initial.base]} source="/app/filesv2?base=home" onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -576,4 +482,72 @@ test("outside select mode Shift+Arrow moves the one active row; in select mode i
   await flush();
   expect(names('.filesv2-list__row[aria-selected="true"]')).toEqual(["A.txt", "B.txt"]);
   expect(names(".filesv2-list__row--active")).toEqual([]);
+});
+
+test("inspector commands retain their permissions and busy state beside history", async () => {
+  const dom = createDomTestHarness();
+  const { default: FileInspector } = await import("../src/frontend/FileInspector");
+  const calls: string[] = [];
+  const noop = () => {};
+  const [busy, setBusy] = createSignal(false);
+  const record = (name: string) => () => void calls.push(name);
+  const show = (file: FileEntry) =>
+    render(
+      () => (
+        <FileInspector
+          base={initial.base}
+          selected={[file]}
+          paths={[file.path]}
+          initial={{ base: initial.base, entry: file, favorite: false }}
+          busy={busy()}
+          onClose={noop}
+          onOpen={record("open")}
+          onPreview={noop}
+          onDownload={record("download")}
+          onRename={record("rename")}
+          onDuplicate={record("duplicate")}
+          onMove={record("move")}
+          onCopy={record("copy")}
+          onTrash={record("trash")}
+          onShare={record("share")}
+          onShareInbox={record("inbox")}
+          onChanged={noop}
+        />
+      ),
+      dom.root,
+    );
+  let dispose = show(initial.items[0]!);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  await flush();
+  const commands = () => [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+  const command = (label: string) => commands().find((item) => item.textContent?.trim() === label)!;
+  for (const label of ["Rename", "Duplicate", "Move to…", "Copy to…", "Move to trash"]) command(label).click();
+  expect(calls).toEqual(["rename", "duplicate", "move", "copy", "trash"]);
+  setBusy(true);
+  await flush();
+  expect(commands().map((item) => [item.textContent?.trim(), item.disabled])).toEqual([
+    ["Open in new tab", true],
+    ["Rename", true],
+    ["Duplicate", true],
+    ["Move to…", true],
+    ["Copy to…", true],
+    ["Move to trash", true],
+  ]);
+  const primary = [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__primary-actions button")];
+  for (const label of ["Preview", "Download", "Share"])
+    expect(primary.find((item) => item.textContent?.trim() === label)?.disabled).toBe(true);
+  expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")?.disabled).toBe(true);
+  setBusy(false);
+  dispose();
+  dispose = show({ ...initial.items[0]!, actions: { write: false, move: false, share: false } });
+  await flush();
+  expect(command("Rename").disabled).toBe(true);
+  expect(command("Move to…").disabled).toBe(true);
+  expect(command("Move to trash").disabled).toBe(true);
+  expect(command("Duplicate").disabled).toBe(false);
+  expect(command("Copy to…").disabled).toBe(false);
+  expect(dom.root.querySelector(".k2b-detail-panel__primary-actions")?.textContent).not.toContain("Share");
 });

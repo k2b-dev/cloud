@@ -24,6 +24,8 @@ export default ssr<AuthContext>(async (c) => {
   let initial: AdminSnapshot;
   try {
     const result = await filesService.admin(requestCall(c), {
+      // The history tab loads its own activity; the admin snapshot answers for the overview.
+      view: location.view === "activity" ? undefined : location.view,
       includeEntries: location.view === "directories" && !location.name && !location.archiveId ? "true" : "false",
       area: location.area,
       kind: location.kind,

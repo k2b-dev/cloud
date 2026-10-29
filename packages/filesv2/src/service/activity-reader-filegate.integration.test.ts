@@ -98,7 +98,7 @@ suiteFor("database", "nats")("history through real Filegate and the owning autho
       unreadable: false,
       activityRetentionDays: 365,
       cloud: { ...area, root: "cloud", autoCreate: true, autoArchive: false },
-      freeipa: { ...area, root: "freeipa" },
+      freeipa: { ...area, root: "freeipa", autoCreate: false },
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
     };
     const transport: typeof fetch = Object.assign(

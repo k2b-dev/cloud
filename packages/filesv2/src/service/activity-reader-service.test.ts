@@ -53,7 +53,7 @@ function fixture() {
     unreadable: false,
     activityRetentionDays: 365,
     cloud: { ...area, autoCreate: false, autoArchive: false },
-    freeipa: { ...area, root: "freeipa" },
+    freeipa: { ...area, root: "freeipa", autoCreate: false },
     collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
   };
   const candidates = spyOn(activityReaderData, "candidates").mockResolvedValue([row]);

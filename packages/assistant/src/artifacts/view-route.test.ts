@@ -36,7 +36,7 @@ const turn: AiTurn = {
   conversationId: conversation.id,
   status: "running",
   attempt: 1,
-  modelProfileId: null,
+  modelId: null,
   createdAt: "",
   completedAt: null,
   error: null,
@@ -132,7 +132,13 @@ test("managed Chromium host reaches the view route as the user's actor", async (
     capabilityTransport: async () => {
       throw new Error("Unexpected capability");
     },
-    host: Promise.resolve({ health: async () => {}, execute: async () => null, call: async () => null, close: async () => {} }),
+    host: Promise.resolve({
+      machine: async () => null,
+      health: async () => {},
+      execute: async () => null,
+      call: async () => null,
+      close: async () => {},
+    }),
   };
   const authorization = spyOn(ai, "authorizeCodeExecution").mockResolvedValue({
     conversation,

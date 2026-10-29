@@ -1,6 +1,8 @@
 # Tooltip
 
 `Tooltip` adds a concise, non-interactive hint to an existing control. It opens for pointer hover and visible keyboard focus and keeps the surface inside the viewport.
+Pressing the target with a pointer, Space or Enter dismisses its hint and cancels a pending hint. It can open again after the pointer or focus leaves the target.
+Escape dismisses an open tooltip before an enclosing panel or dialog closes.
 
 ## Use Tooltip
 
@@ -39,11 +41,17 @@ shared `Button` components. Neither contract searches or rewrites descendant
 DOM. An icon-only control inside a `Tooltip.Anchor` leaves the hint to the
 anchor, so one target never shows two tooltips.
 
+The low-level `Tooltip` serves a component that already owns its target
+element: pass `target`, `content`, and optionally `placement`, `delay`, and
+`disabled`. When a container holds keyboard focus instead of the target, as a
+tree item does around its row, pass that container as `focusTarget`: its own
+visible focus opens the hint, which stays positioned at `target`.
+
 Placement is a preference. The surface flips to the opposite side when the requested side does not fit and clamps to the viewport.
 
 ## Accessibility
 
-The target receives `aria-describedby` after mount, unless the tooltip only repeats the target's `aria-label`, as a default icon-control tooltip does. Keep the control's own accessible name; a tooltip description does not replace `aria-label`.
+The target receives `aria-describedby` after mount, unless the tooltip only repeats the target's `aria-label`, as a default icon-control tooltip does. With `focusTarget`, the description goes to that container, and a container without an `aria-label` also takes none when the target's text already holds the hint; when the container encloses the surface, the surface is hidden from its name. Keep the control's own accessible name; a tooltip description does not replace `aria-label`.
 
 Tooltips open on hover and on visible focus, as from the keyboard. Focus without a focus ring, such as after a click or tap or when a closing menu or dialog returns it to a pointer user, opens no hint. Escape dismisses the current hint. Pointer down, pointer leave, focus out, scrolling, and resizing also close it. Touch input never opens a tooltip; on touch devices the label stays the accessible name.
 

@@ -1,4 +1,4 @@
-import { describe, expect, jest, mock, spyOn, test } from "bun:test";
+import { describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateKeyPair } from "jose";
@@ -173,6 +173,98 @@ const dispatchCapability = (params: Parameters<typeof performDispatch>[0]) =>
   });
 
 describe("capability API", () => {
+  test("event catalog uses full literal type IDs and includes authorized subscribers outside the page", async () => {
+    const schema = z.strictObject({ id: z.uuid() });
+    const publisher = {
+      ...entry("alpha"),
+      ...compileCapabilities(
+        "alpha",
+        defineCapabilities({
+          protocolVersion: 2,
+          types: { item: { title: "Item", description: "An item." } },
+          events: {
+            created: { version: 1, title: "Created", description: "An item was created.", subject: "item", schema, automation: false },
+          },
+        }),
+      ),
+    };
+    const subscriber = {
+      ...entry("zeta"),
+      ...compileCapabilities(
+        "zeta",
+        defineCapabilities({
+          protocolVersion: 2,
+          subscribes: { "alpha.created": { version: 1, schema, run: async () => {} } },
+        }),
+      ),
+    };
+    const hidden = { ...subscriber, appId: "hidden", manifest: { ...subscriber.manifest, appId: "hidden" } };
+    const apps = [publisher, subscriber, hidden];
+    const lookups: string[] = [];
+    const result = CapabilityCatalogSchema.parse(
+      await loadCapabilityCatalogPage(
+        { limit: 1 },
+        {
+          listApps: async () =>
+            apps.map((app) => ({
+              ...summary(app),
+              ...(app.appId === "hidden" ? { access: { kind: "roles" as const, roles: ["admin"] } } : {}),
+            })),
+          eventSubscriptions: async () => [
+            {
+              appId: "zeta",
+              subscriptionId: "zeta:alpha.created@1",
+              eventType: "alpha.created",
+              version: 1,
+              state: "blocked",
+              reason: "event_not_declared",
+              firstSeenAt: "2000-01-01T00:00:00.000Z",
+            },
+            {
+              appId: "hidden",
+              subscriptionId: "hidden:alpha.created@1",
+              eventType: "alpha.created",
+              version: 1,
+              state: "active",
+              reason: null,
+              firstSeenAt: "2000-01-01T00:00:00.000Z",
+            },
+          ],
+          getCapability: async (id) => {
+            lookups.push(id);
+            return apps.find((app) => app.appId === id) ?? null;
+          },
+        },
+        "en",
+        resourceAuthority,
+      ),
+    );
+    expect(result.apps).toHaveLength(1);
+    expect(result.apps[0]?.events).toEqual([
+      {
+        type: "alpha.created",
+        version: 1,
+        title: "Created",
+        description: "An item was created.",
+        subject: "alpha.item",
+        place: null,
+        automation: false,
+        dataSchema: publisher.manifest.events![0]!.dataSchema,
+        subscribers: [
+          {
+            appId: "zeta",
+            subscriptionId: "zeta:alpha.created@1",
+            state: "blocked",
+            reason: "event_not_declared",
+            firstSeenAt: "2000-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    ]);
+    expect(lookups).toEqual(["alpha"]);
+    expect(result.page).toEqual({ hasMore: true, nextCursor: "alpha" });
+  });
+
   test("paginates the live catalog deterministically", async () => {
     const apps = [entry("zeta"), entry("alpha"), entry("middle")];
     const byId = new Map(apps.map((app) => [app.appId, app]));
@@ -261,6 +353,7 @@ describe("capability API", () => {
     const catalog = CapabilityCatalogSchema.parse(await (await routes.request("/capabilities/v1/catalog")).json());
     expect(catalog.apps.map((entry) => entry.manifest.queries.map((query) => query.localId))).toEqual([["book.read"]]);
     expect(catalog.apps[0]?.manifest.manifestHash).toBe(manifest.manifestHash);
+    expect(catalog.apps[0]?.manifest).not.toHaveProperty("calendarSource");
 
     const leftOut = await routes.request("/capabilities/v1/actions/library/book.archive", {
       method: "POST",
@@ -1783,5 +1876,105 @@ test("OAuth scope denial records exactly one denied capability execution", async
     expect(rows[0]).toMatchObject({ status: "denied", errorCode: "FORBIDDEN", capability: "demo.rename", kind: "action" });
   } finally {
     recordExecution = previous;
+  }
+});
+
+test("calendar sources are discovered and read through Core's normal capability routes", async () => {
+  setSystemTime(new Date("2026-03-01T00:00:00Z"));
+  const { invokeCompiledCapability } = await import("../_internal/capabilities");
+  const contract = await import("../contracts/calendar-source");
+  const { listCalendarSources, readCalendarEvents } = await import("../capabilities/server");
+  const descriptor = { id: "team", name: "Team", suggested: true, visibility: "details" as const, writable: false };
+  const deadline = {
+    type: "deadline" as const,
+    id: "review",
+    calendarId: "team",
+    title: "Review",
+    due: { kind: "date" as const, date: "2026-03-20" },
+    done: false,
+    occurrence: null,
+    ref: null,
+    open: null,
+    version: "v1",
+  };
+  const provider = compileCapabilities(
+    "absence",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: {
+        calendars: {
+          title: "Calendars",
+          description: "List calendars.",
+          input: contract.CalendarListInputSchema,
+          data: contract.CalendarListDataSchema,
+          openWorld: false,
+          run: async () => ok({ data: { items: [descriptor], next: null } }),
+        },
+        events: {
+          title: "Events",
+          description: "Read calendar items.",
+          input: contract.CalendarEventsInputSchema,
+          data: contract.CalendarEventsDataSchema,
+          openWorld: false,
+          run: async () => ok({ data: { items: [deadline], next: null } }),
+        },
+      },
+      calendarSource: { calendars: "calendars", events: "events" },
+    }),
+  );
+  const app: CapabilityRegistryEntry = { ...entry("absence"), manifest: provider.manifest };
+  const upstream: string[] = [];
+  const routes = createCapabilityRoutes({
+    listApps: async () => [summary(app)],
+    getCapability: async (id) => (id === app.appId ? app : null),
+    authenticate,
+    fetch: async (url, init) => {
+      const request = new Request(url, init);
+      const localId = new URL(request.url).pathname.split("/").at(-1)!;
+      upstream.push(localId);
+      const { input } = await request.json();
+      const result = await invokeCompiledCapability({
+        compiled: provider,
+        kind: "query",
+        localId,
+        input,
+        expectedSchemaHash: request.headers.get("x-cloud-capability-schema-hash"),
+        context: {
+          actor: resourceAuthority.actor,
+          accessSubject: resourceAuthority.accessSubject,
+          user: null,
+          requestId: "calendar-wire",
+          locale: "en",
+          origin: "http",
+          signal: request.signal,
+        },
+      });
+      return result.ok ? Response.json(result.data) : Response.json(result.error, { status: result.error.status });
+    },
+  });
+  const previous = env.CLOUD_CORE_INTERNAL_ORIGIN;
+  Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: "http://core.test", configurable: true });
+  try {
+    const credentials = {
+      cookie: "session=test",
+      requestId: "calendar-wire",
+      locale: "en",
+      transport: async (request: Request) => routes.request(new Request(request.url.replace("/api/", "/"), request)),
+    };
+    const sources = await listCalendarSources(credentials, { deadline: Date.now() + 2500 });
+    expect(sources).toMatchObject([{ appId: "absence", state: "ok", calendars: [descriptor] }]);
+    const result = await readCalendarEvents({
+      credentials,
+      calendars: [{ appId: "absence", calendarId: "team" }],
+      from: "2026-03-01T00:00:00Z",
+      to: "2026-04-01T00:00:00Z",
+      deadline: Date.now() + 2500,
+    });
+    expect(result.items).toEqual([{ ...deadline, appId: "absence" }]);
+    expect(result.sources).toEqual([{ appId: "absence", state: "ok", error: null }]);
+    expect(upstream).toEqual(["calendars", "events"]);
+  } finally {
+    Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: previous, configurable: true });
+    setSystemTime();
   }
 });

@@ -59,7 +59,6 @@ const fingerprint = (items: readonly FileEntry[]) => JSON.stringify(items);
 export default function Workspace(props: {
   initial: WorkspaceSnapshot;
   preferences?: Record<string, ViewPreference>;
-  cloudUrl: string;
   /** The request's zone from SSR, so history days and ranges match on server and client. */
   timeZone?: string;
   /** Configured history retention, named when a history search finds nothing. */
@@ -1003,7 +1002,6 @@ export default function Workspace(props: {
                           <Browser
                             directory={directory()}
                             bases={snapshot().bases.items}
-                            cloudUrl={props.cloudUrl}
                             after={after()}
                             source={snapshot().source}
                             detail={snapshot().detail}
