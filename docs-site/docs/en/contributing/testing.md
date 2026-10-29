@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-27
+updated: 2026-10-29
 ---
 
 # Testing
@@ -1054,7 +1054,7 @@ their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
 Unit tests run in seven shards, WebKit tests in ten, and integration tests in
-three. Each mode uses its own measured seconds per suite in
+four. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
