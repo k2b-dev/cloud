@@ -156,18 +156,33 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_API_TEST !== "1") {
       createdBy: user.id,
       createdAt: notebook.createdAt,
     };
-    token.mockResolvedValue({ kind: "service_account", payload: {}, serviceAccount: account, delegatedUser: null, scopes: ["read"] });
+    token.mockResolvedValue({
+      kind: "service_account",
+      payload: {},
+      serviceAccount: account,
+      oauthClientId: "table-test-client",
+      delegatedUser: null,
+      scopes: ["read"],
+    });
     expect((await post()).status).toBe(403);
     token.mockResolvedValue({
       kind: "service_account",
       payload: {},
       serviceAccount: { ...account, resourceId: note.id },
+      oauthClientId: "table-test-client",
       delegatedUser: null,
       scopes: ["write"],
     });
     expect((await post()).status).toBe(403);
     expect(action).not.toHaveBeenCalled();
-    token.mockResolvedValue({ kind: "service_account", payload: {}, serviceAccount: account, delegatedUser: null, scopes: ["write"] });
+    token.mockResolvedValue({
+      kind: "service_account",
+      payload: {},
+      serviceAccount: account,
+      oauthClientId: "table-test-client",
+      delegatedUser: null,
+      scopes: ["write"],
+    });
     expect((await post()).status).toBe(200);
     expect(action).toHaveBeenLastCalledWith(
       expect.objectContaining({ createdBy: null, actor: { kind: "service_account", id: account.id } }),

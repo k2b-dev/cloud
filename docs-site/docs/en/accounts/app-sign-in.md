@@ -106,9 +106,9 @@ show these rows above the comparison code:
   These two rows appear only when Cloud's location database (GeoIP) knows the
   address; without a database, or for an unknown address, both are left out.
   The network line names the operator; Cloud never labels a VPN or data center.
-- **Same internet address as this phone**, only when true. Its absence says
+- **Same internet address as this device**, only when true. Its absence says
   nothing about whether the addresses match.
-- **Started at {time}**, in your phone's time zone.
+- **Started at {time}**, in your device's time zone.
 - **Known browser · since {date}** if this browser signed in to this account
   before, or the calm note **Cloud does not know this browser yet**. During
   the first 14 days after the Cloud update, the app makes no known/new claim.
@@ -147,7 +147,7 @@ accounts or the password for FreeIPA. Existing passkeys remain
 available at the bottom of the page. If your email is shared by multiple
 accounts, use your username for app sign-in.
 
-Cloud Login can notify paired phones about new sign-in requests. For that,
+Cloud Login can notify paired devices about new sign-in requests. For that,
 Cloud needs outbound HTTPS to the authenticator origin, and the authenticator
 must have [push notifications](/en/docs/operations/cloud-login#send-push-notifications)
 configured. Notifications contain only the Cloud address and an opaque

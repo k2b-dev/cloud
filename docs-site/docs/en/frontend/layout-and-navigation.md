@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-18
+updated: 2026-10-28
 ---
 
 # Layout and navigation
@@ -79,7 +79,7 @@ wider than the card scrolls sideways inside it, as from 768 px. The card
 keeps space for the bar at its end and when scrolling to a focused control.
 The bar sits 8 px above the bottom safe area; the title row and canvas keep
 the top and side safe areas. Anonymous phones retain Home in the header, its
-bottom line, a flat surface, and document scrolling. The phone app's own flat
+bottom line, a flat surface, and document scrolling. The device app's own flat
 bottom bar is unchanged.
 
 Applications need no changes for any of this. `AppWorkspace` adds its compact
@@ -453,8 +453,8 @@ The Core sign-in, password, and consent pages use the same class.
 
 Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
-the mobile app (the `pwa` application), the menu also shows **App**, which
-leads to `/me/app`, where people pair and remove phones. The menu ends with
+the Cloud app (the `pwa` application), the menu also shows **App**, which
+leads to `/me/app`, where people pair and remove devices. The menu ends with
 **Sign out**. Applications do not add their own link to any of these.
 Anonymous `Layout` pages expose the same preferences in the header without
 profile actions, and `MinimalLayout` pages show them in their footer.
@@ -689,10 +689,52 @@ The default remains `scroll={true}` for ordinary admin pages. Set `contentClass`
 when the page owns its content insets; it replaces the default shell padding.
 
 App-owned admin groups come from `adminNav` in the application declaration.
-A group may declare `section: "ai"` to contribute its links to the shared AI
-section instead of creating a separate navigation group. This placement is
-available to any application and does not grant access; its routes and services
-still enforce their own permissions. Omit `section` for an independent group.
+A group may declare `section: "ai"` or `section: "observability"` to contribute
+its links to that shared area instead of creating a separate navigation group.
+This placement is available to any application and does not grant access; its
+routes and services still enforce their own permissions. Omit `section` for an
+independent group.
+
+## Build an administration area
+
+An administration area groups related admin pages: its sections form a first
+column, and the open section sits beside it as `AppWorkspace` levels.
+`AdminArea` from `@k2b/cloud/ssr` renders the admin layout, the first column and
+the levels; the owner builds every section's content by hand.
+
+```tsx
+<AdminArea
+  c={c}
+  label="Inventory"
+  sectionsLabel="Inventory sections"
+  href="/admin/inventory"
+  groups={[{ items: [{ id: "stock", label: "Stock", href: "/admin/inventory", icon: "ti ti-box" }] }]}
+  current="stock"
+  title="Stock"
+>
+  <AdminAreaPane label="Stock" saveStatus>
+    <StockSettingsForm />
+  </AdminAreaPane>
+</AdminArea>
+```
+
+Each section has its own address under the area, such as
+`/admin/inventory/stock`, and keeps its selection in the URL. An item's `mark`
+(`"warning"` or `"error"`) shows a dot that names `markLabel` to screen readers.
+`AdminAreaPane` fills the width beside the first column. A list with a detail
+level adds its own `AppWorkspace.MainPane` and a `minSize`, so a wide list pushes
+the first column aside instead of being squeezed.
+
+A settings form in an area saves with a button in the level head. Build its
+state with `createSettingsDraft` from `@k2b/cloud/ssr/settings-draft` in the form
+island and set `saveStatus` on `AdminAreaPane`: the head then shows
+`SettingsSaveStatus` with the state, Discard and Save, and a phone shows them at
+the bottom of the level. Put `SettingsSaveOutcome` from
+`@k2b/cloud/ssr/SettingsSaveOutcome` above the form. A save that writes several
+values reports each stored step with `commit`; throw `SaveRejected` when the
+server refused the write, and any other error when the outcome is unclear, so
+the person checks the current state instead of saving twice. One form per page
+registers with the head.
 
 ## Use anchors for navigation
 
