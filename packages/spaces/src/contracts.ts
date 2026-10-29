@@ -174,7 +174,7 @@ export const SpaceItemSchema = z.object({
   createdBy: UuidSchema.nullable().describe("Creator user UUID"),
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
-  lastActivityAt: z.string().optional().describe("Most recent item, comment, or checklist activity timestamp (ISO)"),
+  lastActivityAt: z.string().optional().describe("Most recent item or checklist activity timestamp (ISO); comments do not count"),
   reactions: z
     .array(SpaceItemReactionSchema)
     .max(MAX_ITEM_REACTION_EMOJI)

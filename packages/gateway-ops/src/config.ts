@@ -47,12 +47,11 @@ export const app = defineApp({
       },
     },
   },
-  // Petrol rather than red: the console uses red for failures and amber for
+  // Stone rather than red: the console uses red for failures and amber for
   // warnings throughout, so a red chrome carried the same hue as its own most
-  // urgent signal. Deep cyan stays clear of every status colour — the blue
-  // used for "running" is a much lighter tone — and reads as an instrument
-  // panel rather than an alarm.
-  appearance: { accent: "#155e75", background: { from: "#0e7490", to: "#155e75", angle: 135 } },
+  // urgent signal. Cyan belongs to the AI accent, so a neutral stone stays clear
+  // of both and reads as an instrument panel rather than an alarm.
+  appearance: { accent: "#57534e", background: { from: "#78716c", to: "#57534e", angle: 135 } },
   basePath: "/admin/observability",
   baseUrl: `http://app-gateway-ops:${port}`,
   adminHref: "/admin/observability",
