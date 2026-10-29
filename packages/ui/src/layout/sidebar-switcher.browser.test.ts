@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -411,6 +411,12 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
             heads.push(before);
             if (width > 600) {
               await page.locator(trigger).hover();
+              expect(await geometry(page)).toEqual(before);
+              // A name cut off shows in full in the Cloud hint after the usual delay; a whole name needs none.
+              await page.waitForTimeout(400);
+              expect(await page.locator(".k2b-tooltip:popover-open").allTextContents()).toEqual(long ? [fullName] : []);
+              expect(await page.locator(trigger).getAttribute("title")).toBeNull();
+              await settled(page);
               expect(await geometry(page)).toEqual(before);
             }
             await page.locator(trigger).click();

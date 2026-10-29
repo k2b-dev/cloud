@@ -14,7 +14,7 @@ const { default: Detail } = await import("./DeadLetterDetail");
 test("dead-letter detail renders complete identifiers and escaped, selectable bounded preview", () => {
   const html = renderToString(() =>
     createComponent(Detail, {
-      closeHref: "/admin/observability/sync?app=mail",
+      closeHref: "/admin/observability/nats/sync?app=mail",
       entry: {
         messageId: "message-full-id",
         tenantId: "tenant-full-id",
@@ -40,7 +40,7 @@ test("dead-letter detail renders complete identifiers and escaped, selectable bo
     expect(html).toContain(value);
   expect(html).toContain("&lt;script");
   expect(html).not.toContain('<script>alert("payload")</script>');
-  expect(html).toContain("/admin/observability/sync?app=mail");
+  expect(html).toContain("/admin/observability/nats/sync?app=mail");
   // K1 outline: kind line with state, properties, the error, then payload and identifiers under "More about this message".
   const kind = html.slice(html.indexOf('class="k2b-detail-panel__kind"'), html.indexOf("<h2>"));
   expect(kind).toContain("Dead letter");
