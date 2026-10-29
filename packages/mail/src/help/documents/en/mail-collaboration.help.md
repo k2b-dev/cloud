@@ -33,7 +33,7 @@ You can edit or delete your own comments for 10 minutes after posting. Nobody ca
 
 ## Use personal reminders and presence {icon="route"}
 
-**Personal reminder** is private to you. When you clear or change it, the reminders of other collaborators stay as they are. When the reminder is due, Mail creates a Cloud notification, if you still have access to the mailbox.
+The **Reminder** in conversation details is private to you. When you clear or change it, the reminders of other collaborators stay as they are. When the reminder is due, Mail creates a Cloud notification, if you still have access to the mailbox.
 
 When live presence is available, **Active collaborators** shows the people who are viewing the conversation or writing in it now. Presence is only a hint. The shared draft lease decides who can edit a draft. While someone holds it, Mail rejects draft changes from everyone else until one of them takes over.
 
