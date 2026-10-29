@@ -24,6 +24,7 @@ import { logger } from "@k2b/cloud/services";
 import { RetentionGapError } from "@k2b/sync";
 import { sql } from "bun";
 import * as Y from "yjs";
+import { markNoteUpdated } from "../app-events";
 import * as notes from "./notes";
 import { yjsSnapshotWorker } from "./yjs-snapshot-worker";
 import { createYjsTopic, fromBase64, LEGACY_TOPIC_PREFIX, legacyYjsTopic, legacyYjsTopicInfo, NODE_ID, toBase64 } from "./yjs-sync";
@@ -99,7 +100,11 @@ const republish = async (noteId: string, captured: number, last: number, signal?
     start = end;
   }
   if (gap || malformed > 0) {
-    await sql`UPDATE notebooks.notes SET yjs_history_incomplete = TRUE WHERE id = ${noteId}::uuid`;
+    await sql.begin(async (tx) => {
+      const changed = await tx`UPDATE notebooks.notes SET yjs_history_incomplete = TRUE
+        WHERE id = ${noteId}::uuid AND NOT yjs_history_incomplete`;
+      if (changed.count > 0) await markNoteUpdated(tx, noteId);
+    });
     log.error("Legacy Yjs topic had lost or malformed updates; retained updates were migrated", { noteId, gap, malformed });
   }
   const recorded = await sql`
