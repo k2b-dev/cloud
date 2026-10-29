@@ -1,17 +1,21 @@
+import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
+import { AddressAutocomplete } from "@k2b/cloud/geo/ui";
 import { Button, IconButton, PanelDialog, RemoveButton, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import type { Accessor, Setter } from "solid-js";
-import { Index } from "solid-js";
+import { createUniqueId, Index, Match, Show, Switch } from "solid-js";
 import {
   type EditableAddress,
   type EditableBankAccount,
   type EditableEmail,
   type EditablePhone,
   type EditableWebsite,
+  editAddressField,
   emptyAddressRow,
   emptyBankAccountRow,
   emptyEmailRow,
   emptyPhoneRow,
   emptyWebsiteRow,
+  pickAddressSuggestion,
 } from "./ContactUpsertForm.model";
 import { type ContactFormText, contactFormMessages, contactRowLabels } from "./contact-form-messages";
 
@@ -202,9 +206,63 @@ export const ReachFields = (props: {
   );
 };
 
-export const AddressFields = (props: RowsProps<EditableAddress>) => {
+/** One line under the street field, at the same place in every state. */
+const AddressGeoHint = (props: { row: EditableAddress; t: ContactFormText }) => (
+  <Switch fallback={props.t.addressHint}>
+    <Match when={props.row.geo === "picked"}>
+      <span class="inline-flex items-center gap-1.5 text-[var(--k2b-success-text)]">
+        <i class="ti ti-circle-check" aria-hidden="true" />
+        {props.t.addressHintPicked}
+      </span>
+    </Match>
+    <Match when={props.row.geo === "changed" || props.row.geo === "own"}>
+      <span class="inline-flex items-center gap-1.5">
+        <i class="ti ti-info-circle" aria-hidden="true" />
+        {props.row.geo === "own" ? props.t.addressHintOwn : props.t.addressHintChanged}
+      </span>
+    </Match>
+  </Switch>
+);
+
+/** Street with address suggestions and the location hint; picking or editing updates the whole row. */
+export const AddressStreetField = (props: {
+  row: EditableAddress;
+  setRow: (row: EditableAddress) => void;
+  geoAvailability?: GeoAvailabilityData;
+}) => {
   const locale = useLocale();
   const t = () => contactFormMessages.resolve([locale()]).t;
+  const hintId = createUniqueId();
+  const enabled = () => props.geoAvailability?.configured !== false;
+  return (
+    <>
+      <AddressAutocomplete
+        label={t().addressLine1}
+        placeholder={t().addressLine1Placeholder}
+        icon="ti ti-home"
+        required
+        availability={props.geoAvailability}
+        aria-describedby={enabled() ? hintId : undefined}
+        value={props.row.line1}
+        onValueChange={(value) => props.setRow(editAddressField(props.row, "line1", value))}
+        onPick={(suggestion) => props.setRow(pickAddressSuggestion(props.row, suggestion))}
+        onOwnEntry={() => props.setRow({ ...props.row, geo: "own", location: null })}
+      />
+      {/* The hint keeps its place under the field in every state; two lines are reserved where it wraps. */}
+      <Show when={enabled()}>
+        <p id={hintId} class="mt-1.5 flex min-h-[2.5rem] items-start text-xs leading-5 text-dimmed sm:min-h-5">
+          <AddressGeoHint row={props.row} t={t()} />
+        </p>
+      </Show>
+    </>
+  );
+};
+
+export const AddressFields = (props: RowsProps<EditableAddress> & { geoAvailability?: GeoAvailabilityData }) => {
+  const locale = useLocale();
+  const t = () => contactFormMessages.resolve([locale()]).t;
+  const edit = (index: number, field: Parameters<typeof editAddressField>[1], value: string) =>
+    props.setRows((rows) => rows.map((row, rowIndex) => (rowIndex === index ? editAddressField(row, field, value) : row)));
   return (
     <PanelDialog.Section title={t().addressesTitle} subtitle={t().addressesSubtitle} icon="ti ti-map-pin">
       <div class="space-y-3">
@@ -235,28 +293,29 @@ export const AddressFields = (props: RowsProps<EditableAddress>) => {
                     onValueChange={(value) => props.setRows((rows) => updateRow(rows, index, { companyName: value }))}
                   />
                 </div>
-                <TextInput
-                  label={t().addressLine1}
-                  placeholder={t().addressLine1Placeholder}
-                  icon="ti ti-home"
-                  required
-                  value={() => address().line1}
-                  onValueChange={(value) => props.setRows((rows) => updateRow(rows, index, { line1: value }))}
-                />
-                <TextInput
-                  label={t().addressLine2}
-                  placeholder={t().addressLine2Placeholder}
-                  icon="ti ti-home"
-                  value={() => address().line2}
-                  onValueChange={(value) => props.setRows((rows) => updateRow(rows, index, { line2: value }))}
-                />
+                <div class="md:col-span-2">
+                  <AddressStreetField
+                    row={address()}
+                    setRow={(next) => props.setRows((rows) => updateRow(rows, index, next))}
+                    geoAvailability={props.geoAvailability}
+                  />
+                </div>
+                <div class="md:col-span-2">
+                  <TextInput
+                    label={t().addressLine2}
+                    placeholder={t().addressLine2Placeholder}
+                    icon="ti ti-home"
+                    value={() => address().line2}
+                    onValueChange={(value) => props.setRows((rows) => updateRow(rows, index, { line2: value }))}
+                  />
+                </div>
                 <TextInput
                   label={t().postalCode}
                   placeholder={t().postalCodePlaceholder}
                   icon="ti ti-map-pin"
                   required
                   value={() => address().postalCode}
-                  onValueChange={(value) => props.setRows((rows) => updateRow(rows, index, { postalCode: value }))}
+                  onValueChange={(value) => edit(index, "postalCode", value)}
                 />
                 <TextInput
                   label={t().city}
@@ -264,7 +323,7 @@ export const AddressFields = (props: RowsProps<EditableAddress>) => {
                   icon="ti ti-building-community"
                   required
                   value={() => address().city}
-                  onValueChange={(value) => props.setRows((rows) => updateRow(rows, index, { city: value }))}
+                  onValueChange={(value) => edit(index, "city", value)}
                 />
                 <TextInput
                   label={t().stateRegion}
@@ -272,7 +331,7 @@ export const AddressFields = (props: RowsProps<EditableAddress>) => {
                   description={t().stateRegionDescription}
                   icon="ti ti-map-2"
                   value={() => address().stateRegion}
-                  onValueChange={(value) => props.setRows((rows) => updateRow(rows, index, { stateRegion: value }))}
+                  onValueChange={(value) => edit(index, "stateRegion", value)}
                 />
                 <TextInput
                   label={t().countryCode}
@@ -280,7 +339,7 @@ export const AddressFields = (props: RowsProps<EditableAddress>) => {
                   description={t().countryCodeDescription}
                   icon="ti ti-flag"
                   value={() => address().countryCode}
-                  onValueChange={(value) => props.setRows((rows) => updateRow(rows, index, { countryCode: value }))}
+                  onValueChange={(value) => edit(index, "countryCode", value)}
                 />
               </div>
               <div class="mt-4 flex justify-end">

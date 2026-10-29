@@ -33,7 +33,7 @@ never from Query input. Inputs are strict: unknown fields are refused.
 | `address.autocomplete` | `text` (3–300 characters), optional `limit` (1–5, default 5), `countryCode`, `type`, `bias` point, and `area` | `suggestions` (up to 5 addresses) and `provenance` |
 | `address.geocode` | Either `text` (1–300 characters) or `fields`; optional `countryCode` | One `address` and `provenance`; ambiguity returns candidates in error details |
 | `address.reverse` | `point` | One `address` and `provenance` |
-| `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `limit` (1–20, default 20) | `places` and `provenance` |
+| `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `name` (1–300 characters after trimming) and `limit` (1–20, default 20) | `places` and `provenance` |
 | `map.style` | Optional `theme` (`light` or `dark`) | Same-origin `styleUrl` and attribution links |
 | `route.calculate` | `{ plan }`: 2–26 stops, route/per-leg options, optional optimization | A self-contained `route` with resolved stops, independent legs, meters, seconds, polyline6, and provenance |
 | `route.update` | `{ route, changes }` | Proposed `route`, `before`, `after`, `delta`, and optional insertion details |
@@ -65,13 +65,25 @@ One plausible candidate is returned; several produce
 verified entrance or delivery address.
 
 Addresses carry `line1`, `postalCode`, `city`, `stateRegion`, `countryCode`,
-`point`, `formatted`, `confidence` (number or null), and `provenance`.
+`point`, `formatted`, `confidence` (number or null), `buildingConfidence`
+(number or null), and `provenance`. `buildingConfidence` is the provider's
+certainty that `point` is this building (`rank.confidence_building_level`);
+it is null when the result is not a house-number match. Store a point for a
+typed address only when this value is high; Contacts requires at least 0.9.
 Unavailable text components are empty strings.
 
 Place categories are `museum`, `cafe`, `restaurant`, `bar`, `pub`, `bakery`,
 `supermarket`, `pharmacy`, `hotel`, `accommodation`, `fuel`, `parking`,
 `charging`, `toilets`, `park`, `viewpoint`, and `attraction`.
 `GeoCategorySchema` and `GEO_CATEGORIES` export the verified mapping.
+
+Use optional `name` to ask the provider for places matching a name, such as
+`"Wasserfall"`, within the required categories and geographic controls. This
+works for both area searches and route corridors. Outer whitespace is removed;
+case and internal whitespace are preserved in requests and cache keys. Omitting
+`name` keeps category-only search. Blank or longer than 300-character names are
+refused. Cloud returns provider matches rather than filtering a cached category
+result page by name.
 
 A place carries `id`, `name`, provider `categories`, `point`, `address`, and
 `provenance`. It may include `distanceMeters`, `openingHours` (the raw OSM
@@ -410,3 +422,89 @@ Tile and glyph failures retain pins with **Try again**. `CloudMap` refreshes
 free availability after a failure and shows the person/day or Cloud/month
 reset time when a budget is exhausted. Core bundles its glyph files as server
 assets; production images need no runtime UI package or external font host.
+
+
+## Export a map image for print or PDF
+
+`CloudMap` forwards the public `MapView` browser `ref` handle. Capture its
+complete fitted view with `handle.snapshot({ signal })` after it is ready.
+The PNG includes the same flat Cloud basemap, road labels, saved geometry,
+pin marks and attribution. Capture introduces no provider request chain:
+it never starts, pans, refits or retries a map. Existing tile requests remain
+authenticated in Core, attributed to the original actor/access subject and
+subject to the same budgets. All provider traffic stays on the EU endpoint;
+no key or user credential reaches a renderer.
+
+Use a fitted saved-document map rather than a panned interactive view. Reveal
+lazy maps before capture. Missing tiles or glyphs fail visibly; retry the map,
+then capture again. The [MapView guide](/en/ui/content/map-view) describes the
+complete-resource barrier, dimensions, cancellation and error codes.
+
+For offline PDF, use `geoMapSnapshotFingerprint` from
+`@k2b/cloud/contracts/geo-snapshot` to bind each PNG to the complete validated
+saved GeoDocument. Submit binary images to an application-owned, authenticated
+endpoint with the saved document revision. The shared
+[PDF preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots)
+validates membership, fingerprints, dimensions, byte budgets and real decoding.
+The application still owns resource authorization, revision checks, omission
+reporting and linked attribution. A client's image is presentation input; it
+cannot attest that the geography is truthful and must never become canonical
+saved map data.
+
+There is no server-side map renderer in this contract. Headless API or CLI PDF
+exports without browser image uploads must report unavailable map images and
+retain saved-source lists, or fail explicitly when map images are required.
+`MapViewFrame` remains a geometry fallback and does not supply a basemap PNG.
+## Use maps in Assistant
+
+Assistant's native places and route widgets use these same permission-aware
+Queries and `CloudMap`. The conversation owns saved map state and proposals;
+Core remains stateless for routes. Follow-ups update the first widget, and saving
+to a notebook uses the shared map document format through Notebook capabilities.
+See [Explore places and routes](/en/docs/ai/chat-interface#explore-places-and-routes)
+for selection, editing, recovery, and persistence behavior.
+## Suggest addresses in forms
+
+Import `AddressAutocomplete` from `@k2b/cloud/geo/ui` for a street field. It
+calls `address.autocomplete` from the browser as the signed-in person, after
+3 to 300 characters and a 250 ms pause, for at most 5 suggestions. A newer
+query waits for the open request instead of cancelling a call that Core may
+already have paid for, so one request per field is in flight.
+
+```tsx
+import { AddressAutocomplete } from "@k2b/cloud/geo/ui";
+
+<AddressAutocomplete
+  label="Street and number"
+  value={street()}
+  onValueChange={setStreet}
+  onPick={(address) => fillFields(address)}
+  onOwnEntry={() => keepTypedText()}
+  availability={ssrAvailability}
+/>
+```
+
+The field never fills other fields itself. `onPick` receives the chosen
+`GeoAddress` with `point` and `provenance`; keep both with the stored address
+and drop them when the person changes a location field later. Next to
+suggestions, the list offers the typed text as its own entry: last on wide
+screens, first on phones so the on-screen keyboard cannot hide it; without
+suggestions it says that the typed text is saved as written. Arrow keys move, Enter takes the
+active entry, and Escape closes the list and keeps the typed text. The source
+line **Geoapify · OpenStreetMap** sits under the list.
+
+Pass the SSR `geo.availability` result as `availability`. Without a configured
+key the field is a plain text input. An exhausted personal or Cloud budget,
+from the snapshot or from a refused request, shows one calm line with the reset
+time instead of suggestions and sends no further requests.
+
+## Link to a navigation app
+
+Cloud does no live navigation. `geoNavigationHref` from `@k2b/cloud/geo/ui`
+builds a link that hands a destination to the device's maps app:
+`geo:` on Android, Apple Maps on iPhone and iPad, and OpenStreetMap
+directions elsewhere. Pass a `point` when one is known, otherwise the address
+text. Choose the platform with `geoNavigationPlatform(navigator.userAgent)`
+after the first render, so server output and the first client render agree.
+The link carries only the destination and an optional name, and it leaves
+Cloud only when the person follows it.

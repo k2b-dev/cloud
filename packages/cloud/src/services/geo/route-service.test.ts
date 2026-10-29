@@ -750,3 +750,22 @@ test("dense paid overruns fit the cache and an explicit retry does not pay again
   expect(f.fetch).toHaveBeenCalledTimes(1);
   expect(f.used()).toBe(used);
 });
+
+test("three unresolved addresses exceed the default reservation before any provider work", async () => {
+  const f = setup({ daily: 300 });
+  await expect(
+    f.service.calculateRoute(
+      calculate([
+        { id: "A", address: { text: "Ulm" } },
+        { id: "B", address: { text: "Blaubeuren" } },
+        { id: "C", address: { text: "Stuttgart" } },
+      ]),
+      geoTestContext,
+    ),
+  ).rejects.toMatchObject({
+    code: "GEO_LIMIT_EXCEEDED",
+    details: { limit: "reservationCredits", actual: 325, max: 300 },
+  });
+  expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.acquire).not.toHaveBeenCalled();
+});

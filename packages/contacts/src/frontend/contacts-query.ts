@@ -36,6 +36,7 @@ export const readContactsQueryOptions = (href: string): ContactsQueryOptions => 
 export const buildContactsQueryHref = (href: string, patch: ContactsQueryPatch): string => {
   const url = new URL(href, "http://contacts.local");
   url.searchParams.delete("contactOutcome");
+  url.searchParams.delete("address");
   const options = { ...readContactsQueryOptions(href), ...patch };
   if (options.sort === "name") url.searchParams.delete("sort");
   else url.searchParams.set("sort", options.sort);
