@@ -13,6 +13,7 @@ import { FilesError } from "./errors";
 import { connectFilegate } from "./filegate-facade";
 import { createFilesService } from "./index";
 import * as lifecycleModule from "./lifecycle";
+import * as machineAccessModule from "./machine-access";
 
 const readerActivity = mock(async (..._args: unknown[]) => ({
   items: [],
@@ -204,6 +205,8 @@ function fixture(ipa = false) {
   };
 }
 beforeEach(() => {
+  // Human callers own no machine storage here; the lookup would otherwise reach the database.
+  spyOn(machineAccessModule, "storageCandidates").mockResolvedValue([]);
   provisions = 0;
   readerActivity.mockClear();
   storedRefs.clear();

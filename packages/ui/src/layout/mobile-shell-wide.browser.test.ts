@@ -175,6 +175,34 @@ describe("MobileShell on wide screens", () => {
         await page.context().close();
       }
     }, 30_000);
+
+  // The web's sidebar lies on the page's surface since 16.10.; the app's sidebar follows it, with the same tinted selection.
+  for (const theme of ["light", "dark"] as const)
+    test(`the sidebar lies on the page's surface and tints the open page like the web (${theme})`, async () => {
+      const page = await open(1024, 1366);
+      try {
+        const result = await page.evaluate((dark) => {
+          if (dark) document.body.setAttribute("data-theme", "dark");
+          const probe = document.createElement("span");
+          probe.style.background = "var(--k2b-app-workspace-selected)";
+          document.querySelector(".k2b-mobile-shell__sidebar")!.append(probe);
+          const fill = (selector: string) => getComputedStyle(document.querySelector(selector)!).backgroundColor;
+          return {
+            sidebar: fill(".k2b-mobile-shell__sidebar"),
+            page: fill(".k2b-mobile-shell"),
+            open: fill('.k2b-mobile-shell__sidebar a[aria-current="page"]'),
+            other: fill('.k2b-mobile-shell__sidebar a[href="/start"]'),
+            selected: getComputedStyle(probe).backgroundColor,
+          };
+        }, theme === "dark");
+        expect(result.sidebar).toBe(result.page);
+        expect(result.open).toBe(result.selected);
+        expect(result.open).not.toBe(result.page);
+        expect(result.other).toBe("rgba(0, 0, 0, 0)");
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
 });
 
 describe("AppWorkspace levels in a MobileShell", () => {

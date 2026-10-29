@@ -5,18 +5,19 @@ section: Accounts & sign-in
 order: 1085
 description: Pair a sign-in app with QR or a copy link, and remove a lost sign-in device or app device yourself or as an administrator.
 tags: [accounts, administration, authentication]
-updated: 2026-10-09
+updated: 2026-10-23
 ---
 
 # Pair and manage sign-in devices
 
-Cloud lists two kinds of paired phones separately:
+Cloud lists two kinds of paired devices separately:
 
 - **Sign-in devices** approve sign-ins for an account through an
   authenticator such as Cloud Login. Most of this page covers them.
-- **App devices** are phones paired with the mobile app (preview). Each one
-  holds its own app session. You pair and remove your own phones under **App**
+- **App devices** are devices paired with the Cloud app (preview). Each one
+  holds its own app session. You pair and remove your own devices under **App**
   in your profile menu (`/me/app`); for administrators, see
+  [Pair the Cloud app for someone](#pair-the-cloud-app-for-someone) and
   [Remove an app device for someone](#remove-an-app-device-for-someone).
 
 Removing one kind never affects the other.
@@ -68,9 +69,9 @@ When administrator-assisted pairing is enabled, an authorized administrator
 opens **Accounts → Users → the user → Pair sign-in app**.
 
 1. The dialog first shows a QR code for the configured sign-in app. The person
-   scans it with their phone and installs the app from the page that opens.
+   scans it with their device and installs the app from the page that opens.
 2. Choose **Next**, or **App is already installed** if the app is already on
-   the phone. The pairing starts only then, so installing does not use up the
+   the device. The pairing starts only then, so installing does not use up the
    five-minute pairing link.
 3. Check the named target account, pair as described above and compare the
    codes together. If you have to confirm your identity first, the dialog
@@ -114,7 +115,7 @@ Pair again after signing in.
 ## Revoke a device for someone
 
 When someone loses a device and cannot sign in, an administrator opens
-**Accounts → Users → the user**. **Sign-in devices** lists each active device
+**Accounts → Users → the user**. **Cloud Login** lists each active device
 with its name, when it was paired and when it was last used.
 
 1. Find the lost device by name and last use.
@@ -134,19 +135,19 @@ From the terminal, administrators use
 See [Cloud Login](/en/docs/operations/cloud-login#protect-the-app) for app-lock
 recovery. A synced passkey is not a backup of the authenticator's local vault.
 
-## Pair a phone with the mobile app
+## Pair a device with the Cloud app
 
-> **Preview:** the mobile app is not released yet.
+> **Preview:** the Cloud app is not released yet.
 
 Open **App** in your profile menu (`/me/app`). The page lists your paired
-phones with their platform and last use, and marks the phone you are using.
+devices with their platform and last use, and marks the device you are using.
 
-1. Choose **Pair a phone**. A dialog opens with a QR code and shows how long
+1. Choose **Pair a device**. A dialog opens with a QR code and shows how long
    the code still works: five minutes. **Copy link** copies the same link, for
-   example when you pair the phone you are reading this on.
+   example when you pair the device you are reading this on.
 2. In the app, tap **Scan code**, or copy the link and tap **Paste link**.
-   Without the app, scanning the code with the phone's camera opens the page
-   that shows how to install it; on the phone itself, choose **Install the
+   Without the app, scanning the code with the device's camera opens the page
+   that shows how to install it; on the device itself, choose **Install the
    app**. On Android, install it from Chrome. In Samsung Internet, the page
    offers **Open in Chrome** instead, because Android may block an app
    installed from there as built for an older Android version.
@@ -154,7 +155,7 @@ phones with their platform and last use, and marks the phone you are using.
    moves to code entry on its own. The app shows a six-digit code. Enter it in
    the dialog and choose **Pair**. The third wrong code ends the pairing; start
    again for a new one.
-4. The app finishes on its own, and the phone appears in the list.
+4. The app finishes on its own, and the device appears in the list.
 
 The QR code and the link only start the pairing. A photographed code or a
 forwarded link pairs nothing by itself: only the browser that opened the
@@ -162,37 +163,77 @@ dialog can confirm the six-digit code, and the link works once. Closing the
 dialog before you confirm the code cancels the pairing, so its link stops
 working. Pairing needs a sign-in from the last ten minutes; if asked, choose
 **Confirm it's you**, and the dialog opens again after sign-in.
-To remove a phone, choose **Remove** in its row. The app on that phone is
+To remove a device, choose **Remove** in its row. The app on that device is
 signed out at once.
 
-When a phone is paired, Cloud sends you a **New phone paired** notice with
-the phone's name, platform and pairing time, and a link to this page. If you
-did not pair that phone, remove it there and contact your administrator. The
+When a device is paired, Cloud sends you a **New device paired** notice with
+the device's name, platform and pairing time, and a link to this page. If you
+did not pair that device, remove it there and contact your administrator. The
 notice goes by email, or as a browser notification when your account has no
 email address; choose how it reaches you under **My account → Notifications**
-(**Phones paired with the mobile app**).
-You get it once per pairing, also for a phone that was removed right away, but
+(**Devices paired with the Cloud app**).
+You get it once per pairing, also for a device that was removed right away, but
 not when the app later renews its sign-in. The notice never contains the
 pairing link or code. While do not disturb or your quiet hours are on, a
 notice that would go as a browser notification is held back; it then appears
 only in your notification history.
 
+## Pair the Cloud app for someone
+
+The **Cloud app** is Cloud installed on a phone or tablet for tasks and chat.
+**Cloud Login** is the separate sign-in app; it confirms sign-ins and has no
+access to tasks or chat. User details show these in separate sections.
+
+An administrator can prepare the Cloud app for another person, for example on
+a shared iPad. Open **Accounts → Users → the person → Cloud app → Pair Cloud
+app**. This requires an administrator web sign-in from the last ten minutes.
+An app session or API key cannot start it. For a blocked or expired account,
+unblock or extend the account first; the disabled action explains why.
+
+1. Check the name in **Pair Cloud app for …**. The device will sign in as that
+   person. Open the Cloud app on the device and scan the QR code, or choose
+   **Copy link** in the dialog and paste it into the app. The dialog shows the
+   remaining validity; the link can be claimed once within five minutes.
+2. Enter the six-digit code shown on the device into the administrator dialog.
+   A wrong code shows the remaining attempts. The third wrong code ends the
+   pairing. The whole pairing expires after ten minutes.
+3. On the device, check **Sign in as …?** and **Set up by … (Administration)**.
+   Choose **Confirm** only if this is the intended device. The administrator
+   dialog waits for this decision and shows the same question under **What the
+   device shows**, so you can tell the person what to tap; only the person can
+   answer it. **Reject** ends the pairing and grants no access.
+4. Keep both screens open until the administrator dialog shows **Paired:** and
+   the device name. The device appears in the person's list. The person receives
+   the usual paired-device notice, including who set it up, through their
+   configured notification channels.
+
+**Cancel**, or closing the administrator dialog, ends an unfinished pairing. After a reload,
+the same tab resumes its pairing; if the device has not received the link,
+close the dialog and start again. Signing out the initiating administrator,
+ending their session, or removing their administrator role prevents completion.
+The same per-account limits apply to self-pairing and administrative pairing:
+five open pairings and twenty active devices. Your own pairing under **App**
+in the profile menu continues to finish after the web code confirmation.
+
+Cloud records administrative start, code confirmation, device acceptance or
+rejection, and successful enrollment with both accounts in the audit log. The
+administrator can remove the paired device from the person's **Cloud app** list
+at any time.
+
 ## Remove an app device for someone
 
-> **Preview:** the mobile app is not released yet. Until it is, no account has
-> app devices and the section below does not appear.
+> **Preview:** the Cloud app is not released yet.
 
-When someone loses a phone that is paired with the mobile app, an
-administrator opens **Accounts → Users → the user**. **App devices** lists each
-paired phone with its name, platform, when it was paired and when it was last
-used. The section appears only while the account has at least one paired phone,
-or with an error when the phones could not be loaded.
+When someone loses a device that is paired with the Cloud app, an
+administrator opens **Accounts → Users → the user**. **Cloud app** lists each
+paired device with its name, platform, when it was paired and when it was last
+used. An empty section offers **Pair Cloud app**; a failed load shows an error.
 
-1. Find the phone by name and last use.
-2. Choose the remove button in its row, then **Remove phone** to confirm.
+1. Find the device by name and last use.
+2. Choose the remove button in its row, then **Remove device** to confirm.
 
-Removing a phone ends its app sessions at once. At its next request, the app
-on that phone shows that it was signed out, and nobody can use it for that
+Removing a device ends its app sessions at once. At its next request, the app
+on that device shows that it was signed out, and nobody can use it for that
 account until it is paired again. Web sessions and sign-in devices stay as they
 are. Cloud records the removal in the audit log; the person is not notified.
 
@@ -201,6 +242,6 @@ From the terminal, administrators use
 `cld accounts users app-devices remove <user> <device-id> --yes`. Both accept
 `--json`; repeating a removal answers `revoked: false`.
 
-An administrator cannot do this from the mobile app: app sessions never carry
+An administrator cannot do this from the Cloud app: app sessions never carry
 the administrator role. For the HTTP routes, see
-[Account administration API](/en/docs/reference/account-administration#remove-phones-from-the-mobile-app).
+[Account administration API](/en/docs/reference/account-administration#remove-devices-from-the-cloud-app).

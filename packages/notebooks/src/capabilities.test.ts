@@ -464,6 +464,12 @@ describe("notebooks capabilities", () => {
 
     edit.mockClear();
     // Scopes cap the grant, and without a grant nothing is reachable.
+    permission.mockResolvedValue("admin");
+    const readOnly = await notebooksCapabilities.queries["note.read"].run(
+      { id: note.shortId, contentOffset: 0, contentLimit: 1 },
+      agentContext(["read"]),
+    );
+    expect(readOnly.ok && readOnly.data.data.container.permission).toBe("read");
     expect((await notebooksCapabilities.actions["note.edit"].run(editInput, agentContext(["read"]))).ok).toBeFalse();
     permission.mockResolvedValue("none");
     expect(
@@ -1318,6 +1324,7 @@ for (const [locale, prefix] of [
       const result = await operation.run(operation.input.parse({ id: note.shortId }), { ...userContext, locale });
       if (!result.ok) throw new Error("Expected note");
       expect(capabilityResultSchema(NoteDetailDataSchema).safeParse(result.data).success).toBeTrue();
+      expect(result.data.data.container).toMatchObject({ ref: { type: "notebooks.notebook", id: notebook.shortId }, permission: "read" });
       const ref = result.data.refs![0]!;
       if (ref.type !== "notebooks.note") throw new Error("Expected note reference");
       return ref;

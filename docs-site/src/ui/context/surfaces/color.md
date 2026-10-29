@@ -70,6 +70,7 @@ sidebar row also turns semibold; its label reserves that width in advance.
 | Selected sidebar row, object chip, or sidebar icon action | `AppWorkspace.SidebarItem` | `k2b-app-workspace` |
 | Selected navigation row | `Navigation` | `k2b-navigation` |
 | Selected settings category | `SettingsModal` | `k2b-settings` |
+| Open page in a touch app's sidebar, and the one that is loading | `MobileShell.Sidebar` | `k2b-mobile-shell` |
 
 ### Selected tabs, segments, and filters
 
@@ -116,6 +117,7 @@ and checked cards.
 | Keyboard-active or selected option | `Select`, `Combobox`, `MultiSelectInput` | `k2b-choice-option` |
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
 | Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
+| Chosen row with its sentence | `ChoiceList` | `k2b-choice-list` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |
@@ -185,6 +187,13 @@ light accent, such as yellow `#eab308`, is darkened only as far as needed. Any
 six-digit accent works. See
 [Define an application](/en/docs/build/define-app#set-the-application-appearance) and
 [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#keep-color-roles-independent).
+
+Cyan means AI. `--k2b-ai-accent` marks AI surfaces, which also carry ✦ or the
+word "KI", so no app color may look like it: keep the accent and every
+background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
+colors carry no hue and are fine. Only the Assistant, the AI app itself, may
+use cyan. In the Cloud repository the `ai-color` check enforces this for every
+built-in app and for the launchpad's fallback tile colors.
 
 ## Import
 

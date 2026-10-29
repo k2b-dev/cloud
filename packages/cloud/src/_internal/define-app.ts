@@ -1,6 +1,7 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
+import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
@@ -10,6 +11,7 @@ import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
+import { bindResourceAppAccess, RESOURCE_ACCESS_PATH } from "./app-access-resources";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -31,6 +33,7 @@ import { generateSpecs } from "hono-openapi";
 import { CLOUD_CLI_PLUGIN_ROUTE } from "../cli/plugin";
 import { env } from "../config/env";
 import type {
+  AppAdminArea,
   AppAdminNavigationGroup,
   AppAppearance,
   AppCliModules,
@@ -170,7 +173,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   adminHref?: string;
   /** Multi-link admin navigation contributed by this app. */
   adminNav?: ReadonlyArray<{
-    section?: "ai";
+    section?: AppAdminArea;
     id?: string;
     label: string;
     links: ReadonlyArray<{ label: string; href: string; icon: string }>;
@@ -186,7 +189,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
      * Same-origin path of a `GET` route this app serves below one of its
      * `routes`. After the page loads, the shell reads it with the person's
      * session and shows the returned `AppNavBadge` count on the app's icon in
-     * the rail and the app grid. Protect it like any other route.
+     * the rail, the phone bar, and the app grid. Protect it like any other route.
      */
     badge?: string;
   };
@@ -1037,6 +1040,8 @@ export const defineApp = <
         );
       }
 
+      cleanup.push(bindResourceAppAccess(meta.id, opts.access));
+      server.route(RESOURCE_ACCESS_PATH, createResourceAppAccessRoutes(meta));
       cleanup.push(() => stopAppAccessConnections());
       if (meta.access?.kind === "grants") {
         server.route(appAccessManagementPath(meta), createOwnedAppAccessRoutes(meta, opts.access?.canManage));

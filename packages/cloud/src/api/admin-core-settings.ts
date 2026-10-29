@@ -13,7 +13,7 @@ import { z } from "zod";
 import { listApps } from "../_internal/registry";
 import { enrichDirtyAiConversations } from "../ai/enrich";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
-import { settingsDeleteLegacyKeys, settingsListLegacyKeys } from "../services";
+import { settingsDeleteLegacyKeys, settingsListLegacyKeys, settingsService } from "../services";
 import { readAccountCategoryPolicy } from "../services/account-category-policy";
 import { audit } from "../services/audit";
 import { ConfigConflict } from "../services/config-conflict";
@@ -161,6 +161,22 @@ const app = new Hono<AuthContext>()
     );
     return c.json({ items });
   })
+  // The current values and versions of one settings group, so a form can continue after a save without a reload.
+  .get(
+    "/entries",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Read the settings of one group with their versions",
+      ...requiresAdmin,
+    }),
+    v("query", z.object({ group: z.string().min(1).max(64) })),
+    async (c) => {
+      const result = await settingsService.entry.list({ filter: { group: c.req.valid("query").group }, locale: getLocale(c) });
+      c.header("Cache-Control", "no-store");
+      return c.json({ items: result.items });
+    },
+  )
   .get("/legacy", auth.requireRole("admin"), async (c) => {
     return c.json(await settingsListLegacyKeys(await liveSettingKeys()));
   })

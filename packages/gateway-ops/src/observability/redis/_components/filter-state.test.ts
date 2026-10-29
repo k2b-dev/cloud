@@ -22,7 +22,7 @@ describe("Redis filter URLs", () => {
     expect(hasActiveRedisFilters({ ...defaultRedisFilter, search: "cloud:" })).toBe(true);
     expect(hasActiveRedisFilters({ ...defaultRedisFilter, depth: 1 })).toBe(true);
     const clear = buildRedisFilterUrl(defaultRedisFilter);
-    expect(clear).toBe("/admin/observability/redis");
+    expect(clear).toBe("/admin/observability/valkey");
     expect(parse(clear)).toEqual(defaultRedisFilter);
     expect(hasActiveRedisFilters(parse(clear))).toBe(false);
   });

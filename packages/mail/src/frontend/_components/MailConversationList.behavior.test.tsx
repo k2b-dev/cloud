@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { createComponent, createSignal } from "solid-js";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { Mailbox } from "../../contracts";
 import { resolveMailSearchRoute } from "../../search-state";
@@ -262,6 +262,53 @@ test.skipIf(isServer)("a direct folder search names its actual scope and can ret
     expect(next.searchParams.has("search")).toBe(false);
     expect(next.searchParams.get("q")).toBe("invoice");
   } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("an old page completion cannot mark the new A list as failed after A → B → A", async () => {
+  const dom = createDomTestHarness();
+  const { default: MailConversationList } = await import("./MailConversationList");
+  delegateEvents(["click"], dom.document);
+  const [mailboxId, setMailboxId] = createSignal("Box001");
+  let finish = (_loaded: boolean) => {};
+  const pending = new Promise<boolean>((resolve) => {
+    finish = resolve;
+  });
+  let loads = 0;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationList, {
+        ...listProps("/app/mail/Box001"),
+        get mailboxId() {
+          return mailboxId();
+        },
+        get requestUrl() {
+          return `/app/mail/${mailboxId()}`;
+        },
+        nextCursor: "next",
+        onLoadMore: () => {
+          loads++;
+          return pending;
+        },
+        onRefresh: async () => {},
+      }),
+    dom.root,
+  );
+  try {
+    const more = () => dom.root.querySelector<HTMLAnchorElement>('a[href*="cursor="]')!;
+    more().click();
+    expect(loads).toBe(1);
+    setMailboxId("Box002");
+    setMailboxId("Box001");
+    expect(more().textContent).toContain("More conversations");
+    finish(false);
+    await Bun.sleep(0);
+    expect(more().textContent).toContain("More conversations");
+    expect(more().textContent).not.toContain("Retry loading");
+  } finally {
+    finish(false);
     dispose();
     dom.cleanup();
   }

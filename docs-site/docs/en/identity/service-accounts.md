@@ -38,6 +38,9 @@ The request contract does not change. A standalone account authenticates as a
 `resourceType`, or `resourceId`. See
 [Request identity](/en/docs/identity/authentication).
 
+For Studio execution and its separate effect rights, see
+[Run Studio apps with a machine identity](/en/docs/identity/studio-machine-execution).
+
 ## Create the account
 
 Administrators create standalone accounts through Core's administrator API:
@@ -197,6 +200,8 @@ the agent runs the same `cld` commands as a person, under its own identity, and
 only sees what it was granted. Read the CLI's `cld admin reference` for the
 complete command list.
 
+For independently owned file storage and explicit path grants, see
+[Files machine storage](/en/docs/identity/files-machine-storage).
 ## Find names through a directory share
 
 An administrator can share exact people, groups, or accounts under **Accounts →

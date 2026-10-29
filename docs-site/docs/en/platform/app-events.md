@@ -15,15 +15,88 @@ has already happened. The publisher owns its event schema; each subscriber
 owns its handler and effects. Use a [Query or Action](/en/docs/platform/capabilities)
 when a caller needs an immediate answer or asks another application to do work.
 
-Cloud currently delivers **service events**, whose declarations have no `place`. Resource
-event subscriptions are refused with
-`resource_events_unsupported`; declaring a resource event does not enable its
-delivery. `automation` metadata does not grant authority or install a Routine.
+## Who receives an event
+
+- A **service event** has no `place`. Cloud delivers it to every application
+  that subscribes to it; deploying the application approves its declared
+  subscriptions.
+- A **resource event** has a `place`. Cloud delivers it only to a subscription
+  that a person stands behind with a mandate, such as an automation that runs
+  on that person's behalf. Before every delivery Cloud checks, through the
+  reader of the place's Type, that this person may still read the place. An
+  event never carries the rights of its publisher or of whoever caused it.
+- Applications receive service events only. An application subscription to a
+  resource event stays `blocked` with `resource_events_unsupported`. This is the
+  rule, not a missing feature: applications are not readers of places.
+
+Person-mandated subscriptions are not available yet, so resource events are
+stored and listed in the catalog but not delivered. `automation` metadata does
+not grant authority or install a Routine.
 
 Deployed applications are trusted parts of the installation and share the
 platform database and NATS credentials. Deploying an application is approval
 for its declared subscriptions. Core accepts an event only when its source
 application declared that event type and version.
+
+## Built-in resource events
+
+Spaces and Notebooks publish these version 1 events. Each `data` schema is a
+strict empty object (`{}`); the envelope's `subject` and `place` carry public
+resource IDs accepted by the corresponding Type readers.
+
+| Full event type | Subject Type | Place Type | When it is published |
+| --- | --- | --- | --- |
+| `spaces.item.created` | `spaces.item` | `spaces.space` | A task, calendar event, stored occurrence override, or split series is created. |
+| `spaces.item.completed` | `spaces.item` | `spaces.space` | An existing item changes from open to completed, including a drag, calendar cancellation, or transfer into a done column. |
+| `notebooks.notebook.created` | `notebooks.notebook` | `notebooks.notebook` | A notebook is created. |
+| `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
+| `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
+| `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
+
+The place Types have permission-aware readers: `spaces.space.read` and
+`notebooks.notebook.read`. Subject readers are `spaces.item.read`,
+`notebooks.notebook.read`, and `notebooks.note.read`. Read content through those
+readers; events contain no titles, text, names, email addresses, content counts,
+parent IDs, or previous-place references. Repeating completion or reopening an
+item does not publish `spaces.item.completed`.
+
+A Spaces transfer that completes an item publishes under its **new place only**.
+Its source receives no resource event naming the destination. A note move
+carries only the note and its current notebook refs; it omits parent and position.
+Moving notes between notebooks remains unsupported; copying creates a new note
+and emits `note.created` in the destination notebook.
+
+`notebooks.note.updated` uses trailing coalescing. A changed note records its
+first pending change and latest change in the domain transaction. A minute
+sweep publishes at most four notes, oldest pending first, when the latest
+change is at least 30 seconds old **or** the first pending change is at least
+five minutes old. These are eligibility thresholds; scheduler alignment and
+backlog can add delay. Pending changes survive restarts, including a save
+followed by locking the note. The sweep uses the note's current notebook and
+clears its marker atomically with the outbox event. A durable tick claim and
+row locks prevent replicas or retries from multiplying the batch limit.
+See the [shared capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity).
+
+Only the moved note is announced. Sibling position renumbering, resetting a
+level to automatic order, and a parent's derived `hasChildren` change do not
+mark notes. Cursor advancement, binary snapshot maintenance, rebuildable
+indexes, and unchanged or rejected saves do not count as content changes.
+Collaborative edits mark the note when persisted to its snapshot, including
+shared-log snapshot workers and server-side edits, rather than on each Yjs
+update. Existing workspace and collaborative text streams retain their own behavior.
+
+Creates and completions remain transactional discrete facts. Notebook metadata
+updates also remain transactional: one update affects one notebook and does
+not fan out to its notes. These event rates equal the corresponding domain
+write rates; they have no aggregate event throttle. The domain helpers can
+participate in a caller-owned transaction, so they rely on the platform's
+one-second outbox reconciliation instead of waking before that transaction
+commits. The note sweep owns its transaction and calls `wake()` after commit.
+
+**Applications do not receive these events.** They are resource events: an
+application subscription to them stays `blocked` with
+`resource_events_unsupported`, and only subscriptions a person stands behind
+with a mandate will receive them (see [Who receives an event](#who-receives-an-event)).
 
 ## Declare events and subscriptions
 
@@ -114,15 +187,48 @@ schema before invoking the handler; `envelope.data` is inferred as
 `filesv2:core.user.created@1`. Inspect the current catalog and subscription
 status rather than assuming that a declaration is deliverable.
 
-`cld capabilities catalog --json` and `--jsonl` include event and subscription
-manifests unchanged. Each app also has an `events` catalog with full event,
-subject and place type IDs, version, title, description, automation flag, data
-JSON Schema and matching subscribers. Subscriber states and `firstSeenAt` come
-from Core's persisted subscription records. Subscriber discovery uses the same app
-access filter, including subscribers outside the current publisher page. Use
-`cld events ls` for the administrative event catalog.
-Event-specific MCP discovery is not yet available; the capability MCP currently
-projects tools and resources.
+## Discover event declarations
+
+`cld capabilities catalog --json` and `--jsonl` include event
+and subscription manifests unchanged. Each app also has an `events` catalog
+with full event, subject and place type IDs, version, title, description,
+automation flag, data JSON Schema and matching subscribers. Subscriber states
+and `firstSeenAt` come from Core's persisted subscription records. Publisher
+and subscriber discovery use the capability catalog's app access filter,
+including subscribers outside the current publisher page.
+
+Administrators can use `cld events ls` for the persisted event catalog,
+including declarations of offline publishers. Its table shows the place type
+(`—` for service events) and automation flag (localized yes/no). Filter by
+publisher with `--app <appId>` and by metadata with `--automation true|false`;
+combine them to narrow the result. `--json` and `--jsonl` retain
+the full filtered `{ events: [...] }` response, including schemas and subscribers.
+
+MCP clients use two read-only tools on the
+[Cloud MCP server](/en/docs/platform/mcp):
+
+- `cloud__events__list` accepts optional `appId`, boolean `automation`, `cursor`,
+  and `limit` (1–100, default 100). It returns `{ events, nextCursor? }`.
+  Each event contains `appId` (publisher), `type`, `version`, `title`,
+  `description`, `subject`, `place` (full Type ID or `null`), and `automation`.
+- `cloud__events__read` accepts the exact `{ type, version }` from discovery.
+  It returns `{ event }` with those fields plus `dataSchema` (JSON Schema) and
+  `subscribers` (app ID, subscription ID, state, reason, and optional `firstSeenAt`).
+
+MCP discovery uses the same live, hash-checked declarations and access filter
+as the capability catalog. It needs OAuth `read` or `admin` scope; scopes do
+not expand app access. Hidden apps and their subscriptions are omitted. An
+unknown, hidden, or stale declaration returns `EVENT_NOT_FOUND` on read. A
+catalog lookup failure returns `APP_UNAVAILABLE`.
+List pages also respect the MCP response byte limit and may contain fewer
+entries than requested. Pass `nextCursor` unchanged with the same filters until
+it is absent. A read whose schema and subscriber list exceed the result budget returns
+`RESPONSE_TOO_LARGE`.
+
+These tools discover declarations only. They do not watch events, create
+subscriptions, or install Assistant Routines. A declared place and
+`automation: true` remain catalog metadata; they do not enable resource-event
+delivery or grant authority.
 
 ## Read the envelope
 
@@ -177,6 +283,20 @@ export async function recordCreatedUser(userId: string, provider: "local" | "ipa
   events.wake();
 }
 ```
+
+When importing the capability handlers would create a service dependency cycle,
+use a type-only import and resolve the application's platform binding lazily:
+
+```ts
+import type { publisherCapabilities } from "./capabilities";
+const events = appEvents<typeof publisherCapabilities>("inventory");
+```
+
+The app ID must match `defineApp`; `app.start({ capabilities })` installs the
+binding before lifecycle startup. Publication uses that binding's real schemas,
+refs, and byte validation. It rejects an unknown or unstarted app before
+writing. Standalone service tests still require
+`createAppEventTestHarness(appId, capabilities)`; there is no app-owned setter.
 
 The committed outbox row survives a process crash. Call `wake()` only after
 the transaction commits; periodic reconciliation also picks up committed
