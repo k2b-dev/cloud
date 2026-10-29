@@ -1,11 +1,13 @@
 ---
 id: chat-threads
 title: Use threads and replies
-icon: ti ti-hash
 kind: task
+icon: ti ti-hash
 description: Keep topics apart in threads, reply with a quote, and see every thread at once.
 order: 115
 ---
+
+For Space and Notebook chats, see [Spaces and Notebooks in Chat](help:chat-system-chats).
 
 A thread is a named strand in a chat, such as "Problems" in the chat "IT". Every chat with threads also has **General** for everything that fits no thread. Each thread keeps its own unread messages and its own draft.
 

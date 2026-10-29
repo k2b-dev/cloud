@@ -70,6 +70,13 @@ test("redirects the signed-in user with decoded identity and the normal session 
     actor: { kind: "user", user },
     accessSubject: { type: "user", userId: user.id },
     credentialKind: "session",
+    credentialProof: {
+      kind: "session",
+      userId: user.id,
+      sid: "test",
+      authEpoch: 0,
+      expiresAt: "2099-01-01T00:00:00Z",
+    },
     scopes: [],
   });
 });

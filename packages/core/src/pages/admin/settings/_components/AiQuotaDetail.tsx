@@ -129,11 +129,7 @@ export default function AiQuotaDetail(props: {
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <Show when={props.who.type === "user"}>
-          <ButtonLink
-            variant="ghost"
-            size="sm"
-            href={`/admin/settings?tab=ai-usage&view=comparisons&userId=${props.who.id}&range=${props.range}`}
-          >
+          <ButtonLink variant="ghost" size="sm" href={`/admin/ai?sec=usage&view=comparisons&userId=${props.who.id}&range=${props.range}`}>
             {t().historyLink}
           </ButtonLink>
         </Show>

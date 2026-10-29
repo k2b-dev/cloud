@@ -1,0 +1,1 @@
+| A client-only fixture is mistaken for SSR parity | A test starts with an empty root and proves only the browser render. | Pulse workspace tests render the real server component in an isolated process, compare visible text and geometry before and after the first client mount, and check that the supplied snapshot needs no initial API reads in Chromium and WebKit. |

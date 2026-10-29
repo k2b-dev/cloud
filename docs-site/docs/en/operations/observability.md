@@ -246,7 +246,8 @@ or price measurements remain unavailable; reported zero values remain zero.
 Credits follow configured model prices and are not a provider invoice.
 
 Use the four views to inspect totals, compare users and models, read feedback,
-and open complete stored errors. User, model, provider-model and application
+and read fixed Cloud error diagnostics, without provider messages or response
+bodies. User, model, provider-model and application
 filters apply across views. Filter chips apply selections immediately; data
 notes are expandable.
 Lists have bounded pagination; range, filters and snapshot time remain in the URL.

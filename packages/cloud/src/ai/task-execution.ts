@@ -11,7 +11,13 @@ const structuredOutputSchema = (fields: Extract<AiTaskRequest, { kind: "extract_
   for (const field of fields) {
     let schema: z.ZodType =
       field.type === "text"
-        ? z.string().max(field.maxLength ?? 20_000)
+        ? field.minLength === undefined
+          ? z.string().max(field.maxLength ?? 20_000)
+          : z
+              .string()
+              .trim()
+              .min(field.minLength)
+              .max(field.maxLength ?? 20_000)
         : field.type === "number"
           ? z.number()
           : field.type === "boolean"
@@ -28,13 +34,16 @@ const structuredOutputSchema = (fields: Extract<AiTaskRequest, { kind: "extract_
 /** Schema-validated AI calculations shared by workflows and interactive code. */
 export const executeAiTask = async (
   request: AiTaskRequest,
-  options: Pick<
-    RunAiStructuredInput<z.ZodType>,
-    "appId" | "attribution" | "signal" | "requestedModelId" | "resolveModel" | "usageSubject"
-  > & { taskPrefix: string },
+  options: Pick<RunAiStructuredInput<z.ZodType>, "appId" | "attribution" | "signal" | "model" | "resolveModel" | "usageSubject"> & {
+    taskPrefix: string;
+  },
   runStructured: typeof runAiStructured = runAiStructured,
 ) => {
-  const { taskPrefix, ...common } = options;
+  const { taskPrefix, ...provided } = options;
+  const common = {
+    ...provided,
+    model: provided.model ?? request.model ?? ({ class: "balanced" } satisfies import("../shared/ai-models").AiModelRequest),
+  };
   if (request.kind === "generate_text") {
     const result = await runStructured({
       ...common,

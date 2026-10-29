@@ -17,6 +17,8 @@ export function CalendarItemContent(props: {
   task: boolean;
   flag: { label: string } | null;
   extra: string[];
+  /** A lock before the title, for an entry that only says the time is taken. */
+  busy?: boolean;
 }) {
   // The day and week views size a band's title and time themselves; the item adds its flag and further colors.
   if (props.context.timeline) return <TimelineContent {...props} />;
@@ -40,6 +42,9 @@ export function CalendarItemContent(props: {
             style={{ color: "color-mix(in srgb, var(--k2b-calendar-accent) 75%, currentColor)" }}
             aria-hidden="true"
           />
+        </Show>
+        <Show when={props.busy}>
+          <i class="ti ti-lock shrink-0 text-[0.75rem] leading-none opacity-70" aria-hidden="true" />
         </Show>
         <Show when={props.context.leadingTime}>
           {/* The month view's start time, before the title as in the default event. */}
@@ -90,6 +95,7 @@ function TimelineContent(props: {
   context: CalendarEventRenderContext;
   flag: { label: string } | null;
   extra: string[];
+  busy?: boolean;
 }) {
   const band = () => props.context.fill && !props.context.allDay;
   return (
@@ -98,6 +104,9 @@ function TimelineContent(props: {
         <span class="k2b-calendar-event__time">{props.context.leadingTime}</span>
       </Show>
       <span class="k2b-calendar-event__title" data-spaces-calendar-item="">
+        <Show when={props.busy}>
+          <i class="ti ti-lock mr-0.5 opacity-70" aria-hidden="true" />
+        </Show>
         {props.event.title}
       </span>
       <Show when={band()}>

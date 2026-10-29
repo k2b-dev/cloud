@@ -9,9 +9,14 @@
 .assistant-apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 
 /* The Project choice sits under the composer, its icon in line with the composer's own controls. */
-.assistant-empty-project { display: flex; margin-block-start: .375rem; padding-inline: .5rem; }
-.k2b-ui .assistant-empty-project-trigger { max-width: 100%; color: var(--k2b-text-secondary); }
+.assistant-empty-project { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-block-start: .375rem; padding-inline: .5rem; }
+.k2b-ui .assistant-empty-project-trigger { min-width: 0; max-width: 100%; color: var(--k2b-text-secondary); }
 .k2b-ui .assistant-empty-project-trigger > .k2b-button__label { min-width: 0; gap: .375rem; }
+/* The side panel's quiet row under the composer, in the same text style as the Project choice. */
+.assistant-panel-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding-inline: .5rem; }
+.assistant-panel-row-end { display: flex; flex-shrink: 0; align-items: center; gap: .25rem; }
+.k2b-ui .assistant-panel-link { flex-shrink: 0; color: var(--k2b-text-secondary); }
+.k2b-ui .assistant-panel-link > .k2b-button__label { gap: .375rem; }
 
 .k2b-ui .assistant-project-link-choice > .k2b-button__label {
   width: 100%;

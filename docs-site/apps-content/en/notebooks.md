@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-20
+updated: 2026-10-27
 ---
 
 # Notebooks
@@ -13,7 +13,9 @@ updated: 2026-10-20
 Notebooks brings company handbooks, wikis, and working notes into one
 permission-scoped workspace. Notes use Markdown and can link to other notes,
 tags, and uploaded files. Editors work together in real time; readers see a
-dedicated Book view.
+dedicated Book view. A note opens with its saved text and connects for
+real-time editing on the first change, so reading and moving between notes
+costs no collaboration connection.
 
 Book keeps the normal Cloud navigation around its page tree and reading area,
 including on tag pages. It still requires sign-in and notebook access; choosing
@@ -31,6 +33,19 @@ Open the notebook name in the sidebar or phone menu to switch notebooks.
 Signed-in users can choose **New notebook** to create and open a blank notebook,
 including from Book view. Use the overview to start from a template.
 
+`notebook.activity` reads recorded changes for a `notebook` short ID,
+optionally one `item` (note short ID). Each edit bucket remains one row, with
+an actor, icon, localized sentence, last occurrence time, resource ref, and
+count. Each new passage comment (`annotation.create`) adds one separate row,
+with count 1 and an optional `href` to its `notebooks.annotation` reader. The
+reader opens the note with `?annotation=<id>`. Replies, comment edits,
+resolution and acceptance add no comment rows. Deleted comments, deleted notes,
+and notes the caller cannot read are omitted. Comments remain available when
+Chat is unavailable; the Chat row is only a projection. Follow `page.nextCursor` with
+`cursor`; `before` and `after` are exclusive ISO datetime bounds. `limit`
+defaults to 50 and accepts 1–100. See [Chat system conversations](/en/docs/operations/chat-system-chats#read-item-events)
+for the shared event contract.
+
 ## Use Notebooks
 
 - Capture project notes, decisions, research, meeting records, recipes, or
@@ -40,7 +55,9 @@ including from Book view. Use the overview to start from a template.
   dragging in the sidebar, with Alt+ArrowUp or Alt+ArrowDown, or with **Move
   up** and **Move down** in the note menu; the sidebar, Book, and export follow
   that order for everyone, and the folder menu sorts a level alphabetically
-  again.
+  again. Notebooks with thousands of notes open as fast as small ones: the
+  sidebar loads a level when it opens, shows 20 notes around the open one,
+  and loads up to 100 more on request.
 - Publish an internal handbook in Book view, with page navigation and tag
   filters but no editing controls or detail panel.
 - Discuss a page in a durable Markdown thread. New comments appear live for
@@ -72,6 +89,8 @@ including from Book view. Use the overview to start from a template.
   the dialog.
 - Add filtered page lists with `:::query` and page contents with `:::toc`, using
   your own named data instead of a fixed metadata schema.
+- See how notes link in **Links**. A notebook with more than 500 notes shows
+  the notes around the open note there, and says so above the graph.
 
 Use a separate notebook when content needs its own access rules, settings, or
 export boundary.
@@ -86,8 +105,11 @@ on the server with the page.
 Page links, tag filters, search, and pagination update the Book content without
 reloading the whole page when JavaScript is available. Browser Back and Forward
 preserve the reading route. Saved changes refresh the current page, navigation,
-and query results automatically. Without JavaScript, links and filters still
-work through regular page loads. Switching to Write or Read-only loads that
+and query results automatically. A query that matches more notes than one
+page shows 20 at a time, with page buttons below it; the address keeps the
+page, so a reload or a saved change shows the same rows. Without JavaScript,
+links and filters still work through regular page loads, and a query shows its
+first page. Switching to Write or Read-only loads that
 workspace as a new page.
 
 In the editor, type `:::` to insert a query, table of contents, or chart. Rich mode shows
@@ -320,8 +342,10 @@ Field names and equality are case-sensitive; text contains/prefix filters and
 tags ignore case. Negative comparisons do not match missing fields.
 
 Sort by `$title`, `$created`, or `$updated`, ascending or descending. The
-default is most recently updated first, up to 25 results; set `limit` from 1
-to 100. A notice identifies additional matches. Queries do not aggregate table
+default is most recently updated first. In Book and the editor, `limit` (1 to
+100, default 25) sets the rows per page, at most 20, and page buttons reach
+every match. The CLI, capabilities and PDFs return the first `limit` matches
+and say how many more match. Queries do not aggregate table
 rows, join datasets, evaluate expressions, or modify notes. Open **Help →
 Structured blocks** for the complete operator and limit reference.
 
@@ -379,6 +403,80 @@ exports, and snapshots. Cloud supplies identity, resource access,
 resource-bound API keys, settings, background schedules, dashboard widgets,
 application discovery, and the shared Help surface.
 
+### Automate passage comments
+
+`notebooks.annotation` identifies an inline comment thread owned by Notebooks.
+`annotation.list` and `annotation.read` return anchored source offsets, quoted
+text, status, replies, current author permissions, and `headingPath`.
+`annotation.replies` continues a thread's `repliesNextCursor`. Lists default
+to every non-deleted thread. Filter by exact `state`
+(`open|resolved|accepted|all`) and root `author` (user/service-account UUID or
+`me`, the authenticated actor) before paging. Follow `nextCursor`
+(or the capability envelope's `page.nextCursor`); pages contain at most 30
+roots or replies and may be shorter to fit the response budget.
+
+Use `annotation.create`, `annotation.reply`, `annotation.edit`,
+`annotation.delete`, `annotation.restore`, and `annotation.resolve`
+(`resolved: false` reopens) with write access. Agents and service accounts use
+the same grants as people. Editing, deleting, and restoring require the author
+and the original ten-minute window; a root with replies cannot be deleted.
+Create and reply require `Idempotency-Key`; changing the payload under a used
+key returns 409. `via` comes from the platform's Assistant or MCP origin and
+cannot be supplied by the caller. `stateVia` and `suggestionStateVia` preserve
+that origin for thread and suggestion status changes.
+
+`annotation.accept` and `annotation.undo-accept` require an unlocked note and
+a caller-stable `operationId` UUID. Retry that ID after an uncertain result.
+Replies may carry a replacement suggestion, including on somebody else's
+thread. A body or a suggestion that changes the current passage is required.
+Root and reply suggestions expose `suggestionState` (`open|accepted|rejected`,
+null without a suggestion), `suggestionStateBy` (Person or null),
+`suggestionStateAt` (ISO time or null), and `suggestionStateVia`
+(`assistant|mcp|null`). `Person` has `kind`, `id`, `name`, and optional
+`avatarHash`. Accept chooses `replyId`, or the root by default, and requires
+both an open thread and an open suggestion. It accepts that suggestion and the
+thread; other suggestions retain their status. Undo reopens the accepted
+suggestion and the thread. `annotation.reject` selects the same target and
+sets it to `rejected`, or reopens it with `rejected: false`, without changing
+text or thread state. Any writer may reject; repeating the same request is safe.
+
+Agents should list the person's open threads, read the passages in context,
+and propose suggestions as replies. They must never accept their own suggestions
+unless the person explicitly asks them to.
+
+Accept compares the live passage against `expectedText` (the quote by default);
+undo compares the accepted text before restoring only that range. A conflict
+returns 409 with `details.currentText` and `details.operationId`. Conflict text
+is capped at 2,000 UTF-16 characters; longer passages also return
+`details.currentTextTruncated: true` and `details.currentTextLength`. Select a
+smaller passage to make a new suggestion.
+
+REST uses `/api/notebooks/notes/:noteId/annotations`; GET its list with
+`?state=open&author=me`, and POST `/:annotationId/accept` with
+`{ operationId, expectedText?, replyId? }` or `/:annotationId/reject` with
+`{ replyId?, rejected? }` (default true). Read a thread without the note ID at
+`GET /api/notebooks/annotations/:annotationId`. Its list returns
+`{ text, contentHash, cursor, restoreRevision, items, nextCursor }`; offsets
+refer to exactly that Markdown snapshot. Capability lists omit `text`; compare
+`contentHash` with `note.read` before using the offsets. A deleted passage
+remains an orphan unless its exact surrounding context can be recovered
+unambiguously nearby. Quotes and suggestions allow 2,000 UTF-16 characters,
+context 32 on each side, and comment/reply text 5,000.
+
+Create accepts 1-based `occurrence` among exact quotes, alongside context and
+`offsetHint`. Missing/out-of-range quotes return HTTP 409
+`ANNOTATION_PASSAGE_NOT_FOUND`; ambiguous quotes return
+`ANNOTATION_PASSAGE_AMBIGUOUS`, both with `details.matches`.
+
+The CLI offers `cld notebooks annotations list|show|add|reply|edit|delete|restore|resolve|reopen|accept|reject|undo`.
+`list` accepts `--state` and `--author`; `show <thread-id>` follows replies within
+the response budget and retains a continuation for larger threads. `reply` can
+use `--suggestion` or `--suggestion-from <file|->`; `accept` and `reject` select
+reply suggestions with `--reply`.
+Run `cld notebooks annotations --help` for flags and use the bundled
+`annotations.md` CLI reference for retry IDs and reply pagination. Creating a comment records an
+`annotation.create` activity row; replies do not create activity rows.
+
 ## Find detailed product help
 
 Open **Help** inside Notebooks for writing, organization, structured blocks,
@@ -432,6 +530,11 @@ their file names carry the note ID, as in `backup--Ab12Cd.md`; this suffix
 exists only in the mirror. Each file starts with `id`, `title`, and
 `updatedAt` front matter, and `.cld-notebook.json` records one `path`,
 `contentHash`, `fileHash`, and `updatedAt` per note.
+
+The note list's `q` filter matches substrings in titles and words in saved
+page content. A final plain word of at least two characters also matches the
+start of a word: `backu` finds `backup`. A fragment from the middle of a body
+word does not match.
 
 `mv` also arranges a note among its siblings with `--before <note>`,
 `--after <note>`, `--first`, or `--last`, as in
