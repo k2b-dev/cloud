@@ -133,14 +133,13 @@ Deploy Core and query providers with the same app-query contract before enabling
 Chat's system notifications. The capability migration allows app actors in the
 execution history. Source workload credentials remain app-specific.
 
-Built-in app IDs are always known to providers, including optional apps that
-may be offline. Set `CLOUD_APP_IDS` consistently on providers for additional
-third-party IDs. Query caller validation uses this inventory rather than live
-presence, so a stopped optional Chat does not prevent Spaces or Notebooks
-from starting. A standard host-run installation needs no inventory override.
-The platform and repository Compose lists are generated from the workspace
-and checked for drift. A malformed or unknown caller fails startup; the
-inventory grants no authority by itself.
+Query providers validate caller ID syntax at startup. Unknown or offline
+callers do not block provider startup, and third-party apps need no environment
+inventory. Core denies a caller that is not currently registered, even if the
+provider declares it. Open **Administration → Apps**, select the provider, and
+inspect **App query callers** for **Caller not registered** warnings. Check the
+ID or start the calling app, then reload. The built-in app list is generated
+from the workspace and checked for drift; it grants no invocation rights.
 
 Provision Chat through `POST /api/admin/identity/workloads/chat/credentials`
 with a credential name and `scopes: ["identity:invoke"]`. Store its one-time

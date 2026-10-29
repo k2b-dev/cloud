@@ -43,6 +43,9 @@ const build = (locale?: string) => {
           if (access.roles.length) ctx.print(`${t("Roles", "Rollen")}: ${access.roles.join(", ")}`);
           if (access.grantCount !== null) ctx.print(`${t("Grants", "Freigaben")}: ${access.grantCount}`);
           ctx.print(`${t("Platform permissions", "Plattformrechte")}: ${access.platformPermissions.join(", ") || "—"}`);
+          for (const caller of result.unregisteredQueryCallers)
+            ctx.print(`${app.id}.${caller.queryId} · ${caller.callerAppId} · ${t("Caller not registered", "Aufrufer nicht registriert")}`);
+          printOmitted(result.unregisteredQueryCallers.length, result.totals.unregisteredQueryCallers);
           ctx.print(`\n${t("Sends", "Sendet")} (${result.sends.length}/${result.totals.sends})`);
           for (const event of result.sends) {
             ctx.print(`${event.type} v${event.version} · ${event.title} · ${event.subscriberCount} ${t("subscribers", "Abonnenten")}`);

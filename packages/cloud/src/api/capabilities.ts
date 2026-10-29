@@ -10,7 +10,7 @@ import {
   capabilityQueryChecksActionOutcome,
 } from "../_internal/capability-reviews";
 import { capabilityTimeoutMs, createCapabilityDeadline, withCapabilityRequestTimeout } from "../_internal/capability-timeout";
-import { getCapability, listApps } from "../_internal/registry";
+import { getApp, getCapability, listApps } from "../_internal/registry";
 import { resolveCommandLink } from "../capabilities/command-link";
 import {
   type CapabilityClaimScope,
@@ -120,6 +120,7 @@ const CapabilityCatalogQuerySchema = z
 export type CapabilityRouteDependencies = {
   listApps?: () => Promise<AppRegistryEntry[]>;
   eventSubscriptions?: () => Promise<CatalogSubscription[]>;
+  getApp?: (appId: string) => Promise<AppRegistryEntry | null>;
   getCapability?: (appId: string) => Promise<CapabilityRegistryEntry | null>;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   authenticate?: MiddlewareHandler<AuthContext>;
@@ -136,6 +137,7 @@ export type CapabilityRouteDependencies = {
 export type CapabilityDispatchDependencies = Pick<
   CapabilityRouteDependencies,
   | "checkAppQueryRate"
+  | "getApp"
   | "getCapability"
   | "fetch"
   | "queryTimeoutMs"
@@ -366,6 +368,13 @@ const runCapabilityDispatch = async (
       operation.stream
     )
       return errorResponse("FORBIDDEN", "App caller is not allowed for this query", 403);
+    try {
+      const caller = await deadline.wait(() => (params.dependencies?.getApp ?? getApp)(params.workload!.appId));
+      if (!caller) return errorResponse("FORBIDDEN", "App caller is not allowed for this query", 403);
+    } catch {
+      deadline.check();
+      return errorResponse("APP_UNAVAILABLE", "App registry unavailable", 503);
+    }
     try {
       if (
         (

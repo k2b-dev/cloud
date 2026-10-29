@@ -45,12 +45,27 @@ The app context is confined to capability execution. It never enters ordinary
 request authentication, grant checks, or a person fallback. Existing Queries
 without `callers` keep their person-context type.
 
-At startup, providers validate every caller against the platform's built-in
-application IDs plus `CLOUD_APP_IDS`, the operator's additional third-party inventory. Invalid app-ID syntax fails compilation;
-an unknown ID fails startup before catalog publication. Inventory entries do
-not grant access: the Query must still name the caller, and Core must authenticate
-its current workload credential. Optional or offline apps can be in the
-inventory without forcing a startup order.
+At startup, providers validate caller ID syntax only: at most 80 characters,
+starting with a lowercase letter and continuing with lowercase letters, digits,
+or hyphens. An unknown or currently offline caller does not prevent the
+provider from starting. Third-party callers need no environment inventory.
+The built-in app list is generated from the workspace and checked for drift;
+it grants no caller authority.
+
+Core requires both an explicit caller declaration and a current app registration,
+as well as the caller's active workload credential. An unregistered caller is
+denied before rate admission or forwarding, even when named by the provider.
+Registry failures fail closed. After the app registers, a declared third-party
+caller can use the same credential path as a built-in app.
+
+Open **Administration → Apps**, select the provider, and inspect **App query
+callers**. Each missing caller appears with its Query ID and **Caller not
+registered**. Check the declared ID or start the calling app, then reload.
+The admin details API and `cld apps show <provider>` expose the same diagnostics.
+The list shows at most 100 query/caller pairs and reports the total when truncated.
+These are live registration diagnostics; offline apps may still appear until
+the registry's heartbeat expires, and an offline provider has no current
+manifest to inspect.
 
 ## Call through Core
 

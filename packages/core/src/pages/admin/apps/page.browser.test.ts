@@ -185,7 +185,8 @@ const details: AppDetails = {
     },
   ],
   notifications: [],
-  totals: { sends: 1, hears: 2, notifications: 0 },
+  unregisteredQueryCallers: [{ queryId: "readers", callerAppId: "third-party-reader" }],
+  totals: { sends: 1, hears: 2, notifications: 0, unregisteredQueryCallers: 1 },
 };
 
 test("the detail page keeps access repair at its address and shows what the app hears, sends and notifies about", async () => {
@@ -227,10 +228,15 @@ test("the detail page keeps access repair at its address and shows what the app 
           expect(await heading.evaluate((element) => getComputedStyle(element).fontSize)).toBe(width >= 640 ? "20px" : "18px");
           const titles = await page.getByRole("heading", { level: 2 }).allInnerTexts();
           expect(titles.map((title) => title.trim())).toEqual(
-            de ? ["Wer Invoices nutzt", "Hört", "Sendet", "Benachrichtigungen"] : ["Who uses Invoices", "Hears", "Sends", "Notifications"],
+            de
+              ? ["Wer Invoices nutzt", "App-Aufrufer für Queries", "Hört", "Sendet", "Benachrichtigungen"]
+              : ["Who uses Invoices", "App query callers", "Hears", "Sends", "Notifications"],
           );
           const text = await page.locator("main").innerText();
           expect(text).toContain(de ? "Mail senden" : "Send mail");
+          expect(text).toContain(de ? "Aufrufer nicht registriert" : "Caller not registered");
+          expect(text).toContain("invoices.readers");
+          expect(text).toContain("third-party-reader");
           expect(text).toContain(de ? "Neu" : "New");
           expect(text).toContain(de ? "12 zugestellt · 1 wartet · 1 fehlgeschlagen" : "12 delivered · 1 waiting · 1 failed");
           expect(text).toContain(
@@ -275,7 +281,7 @@ test("a failed details read keeps the access repair of a running app and shows t
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain("Who uses Invoices");
-    expect(html).toContain("Events and notifications of this app could not be loaded.");
+    expect(html).toContain("App details could not be loaded.");
     expect(html).not.toContain("Hears");
   } finally {
     detail.mockRestore();

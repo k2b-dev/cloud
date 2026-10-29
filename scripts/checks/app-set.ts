@@ -30,12 +30,6 @@ export const rule: Rule = {
       builtinList ? [...builtinList[1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!) : [],
       findings,
     );
-    for (const file of ["compose.dev.yml", "compose.prod.yml"]) {
-      const source = readFileSync(join(workspaceRoot, file), "utf8");
-      const inventory = source.match(/^ {2}CLOUD_APP_IDS: \$\{CLOUD_APP_IDS:-([^}]+)\}/m)?.[1]?.split(",") ?? [];
-      compareSets(file, "CLOUD_APP_IDS default", apps, inventory, findings);
-    }
-
     const devFile = join(workspaceRoot, "compose.dev.yml");
     const devServices = [...readFileSync(devFile, "utf8").matchAll(/^ {2}(gateway|app-[a-z0-9-]+):/gm)].map((match) => match[1]!);
     compareSets(devFile, "compose.dev.yml", apps.map(devServiceName), devServices, findings);

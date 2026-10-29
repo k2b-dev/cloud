@@ -5,7 +5,7 @@ section: Operations
 order: 585
 description: Inspect event subscriptions and deliveries, diagnose blocked handlers, and redeliver retained work.
 tags: [events, operations, retries, retention]
-updated: 2026-10-27
+updated: 2026-10-29
 ---
 
 # Operate app events
@@ -53,7 +53,12 @@ cld apps show filesv2 --json
 ```
 
 `GET /api/app-events/apps/:appId` returns `{ app, access, sends, hears,
-notifications, totals }`. It requires the administrator role and, for OAuth,
+notifications, unregisteredQueryCallers, totals }`. The caller diagnostics list
+Query/caller pairs whose declared caller is absent from the live app registry;
+**Administration → Apps → provider → App query callers** shows **Caller not
+registered** for each. Reload after correcting an ID or starting the caller.
+The list is capped at 100 entries, with its full count in
+`totals.unregisteredQueryCallers`. It requires the administrator role and, for OAuth,
 the `admin` scope. Unknown app IDs return 404. Offline apps remain inspectable
 while Core has declarations, subscriptions, notification definitions or access
 records for them. Their saved, non-retired declarations remain visible; metadata

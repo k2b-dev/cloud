@@ -55,7 +55,8 @@ const fixture: AppDetails = {
       excludedReason: "SMS is unavailable for this kind.",
     },
   ],
-  totals: { sends: 1, hears: 1, notifications: 1 },
+  unregisteredQueryCallers: [{ queryId: "readers", callerAppId: "third-party-reader" }],
+  totals: { sends: 1, hears: 1, notifications: 1, unregisteredQueryCallers: 1 },
 };
 
 const context = (
@@ -126,6 +127,7 @@ test("show text groups app, access, sends, hears and notifications with new and 
     "new",
     "8 failed",
     "Notifications (1/1)",
+    "demo.readers · third-party-reader · Caller not registered",
     "Required: browser",
     "recommended: email",
     "excluded: sms",
@@ -197,7 +199,7 @@ test("show localizes human-facing status, automation and fallback failure text",
 });
 
 test("show discloses how many entries each bounded list omits", async () => {
-  const payload = { ...fixture, totals: { sends: 3, hears: 4, notifications: 5 } };
+  const payload = { ...fixture, totals: { ...fixture.totals, sends: 3, hears: 4, notifications: 5 } };
   const result = context(["show", "demo"], {}, "text", () => Response.json(payload));
   await apps.run(result.ctx);
   for (const omitted of [2, 3, 4]) expect(result.printed.join("\n")).toContain(`… ${omitted} more omitted`);

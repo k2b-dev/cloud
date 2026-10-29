@@ -26,7 +26,6 @@ x-shared-env: &shared-env
   CLOUD_IDENTITY_JWKS_ORIGIN: http://app-core:3000
   CLOUD_OAUTH_JWKS_ORIGIN: http://app-oauth:3000
   CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
-  CLOUD_APP_IDS: ${CLOUD_APP_IDS:-gateway,core,accounts,api-docs,assistant,capabilities,chat,contacts,dashboard,faq,filesv2,gateway-ops,grids,ipa-hosts,mail,notebooks,oauth,proxy-auth,pulse,pwa,quotes,spaces,tools,venue,weather}
 
 x-app-defaults: &app-defaults
   restart: unless-stopped

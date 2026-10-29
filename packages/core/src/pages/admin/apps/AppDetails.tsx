@@ -135,6 +135,25 @@ export default function AppDetails(props: {
       >
         {(details) => (
           <>
+            <Show when={details().unregisteredQueryCallers.length > 0}>
+              <SettingsSection title={t().queryCallers} subtitle={t().queryCallersHint} icon="ti ti-plug">
+                <ul class="m-0 flex list-none flex-col gap-3 p-0">
+                  <For each={details().unregisteredQueryCallers}>
+                    {(caller) => (
+                      <li class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                        <code class="break-all">{`${app().id}.${caller.queryId}`}</code>
+                        <span class="break-all">{caller.callerAppId}</span>
+                        <StatusBadge tone="warning" label={t().callerNotRegistered} />
+                      </li>
+                    )}
+                  </For>
+                </ul>
+                {more(details().unregisteredQueryCallers.length, details().totals.unregisteredQueryCallers, (count) =>
+                  t().moreHint({ count }),
+                )}
+              </SettingsSection>
+            </Show>
+
             <SettingsSection title={t().hears} subtitle={t().hearsHint} icon="ti ti-ear">
               {empty(
                 details().hears,

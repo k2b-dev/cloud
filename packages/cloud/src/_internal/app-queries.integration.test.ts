@@ -164,6 +164,7 @@ suiteFor(
           input: {},
           origin: "app",
           dependencies: {
+            getApp: async (id) => ({ id, name: id, description: "", icon: "", routes: [], baseUrl: "http://caller.test" }),
             getCapability: async () => ({
               appId: target,
               appName: "Provider",

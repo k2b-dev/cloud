@@ -14,7 +14,6 @@ import { type CapabilityAppExecutionContext, type CapabilityExecutionContext, de
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { LocalUserSchema } from "../contracts/shared";
 import { signAppQueryInvocation, verifyAppQueryInvocation, verifyInvocationToken } from "../services/identity/invocation-token";
-import { validateCapabilityCallers } from "./app-queries";
 import { compileCapabilities, invokeCompiledCapability, parseCapabilityManifest } from "./capabilities";
 
 const now = new Date("2026-10-29T00:00:00Z");
@@ -101,18 +100,73 @@ test("callers validate at compile and live registration; Actions reject them", (
   expect(parseCapabilityManifest(compiled.manifest, "spaces").queries.find((query) => query.localId === "readable")?.callers).toEqual([
     "chat",
   ]);
-  expect(() => validateCapabilityCallers(compiled.manifest, new Set(["chat"]))).not.toThrow();
-  expect(() => validateCapabilityCallers(compiled.manifest)).not.toThrow();
-  const typo = structuredClone(compiled.manifest);
-  typo.queries[0]!.callers = ["chta"];
-  expect(() => validateCapabilityCallers(typo)).toThrow("unknown caller app chta");
-  expect(() => validateCapabilityCallers(compiled.manifest, new Set(["chta"]))).toThrow("unknown caller app chat");
+  const unknown = compileCapabilities("spaces", {
+    ...definitions,
+    queries: { readable: { ...definitions.queries.readable, callers: ["third-party-reader"] } },
+  });
+  expect(parseCapabilityManifest(unknown.manifest, "spaces").queries[0]?.callers).toEqual(["third-party-reader"]);
   expect(() =>
     compileCapabilities("spaces", { ...definitions, queries: { readable: { ...definitions.queries.readable, callers: ["Bad ID"] } } }),
   ).toThrow();
   // @ts-expect-error Actions cannot acquire app callers, even through a declared value.
   const action: import("../contracts/capabilities").CapabilityActionDefinition = { ...definitions.actions.change, callers: ["chat"] };
   expect(() => compileCapabilities("spaces", { protocolVersion: 2, actions: { change: action } })).toThrow('unsupported field "callers"');
+});
+
+test("unknown declared callers compile but need live registration before dispatch", async () => {
+  const appId = "third-party-reader";
+  const provider = compileCapabilities("spaces", {
+    ...definitions,
+    queries: { readable: { ...definitions.queries.readable, callers: [appId] } },
+  });
+  expect(parseCapabilityManifest(provider.manifest, "spaces").queries[0]?.callers).toEqual([appId]);
+  let registered = false;
+  let forwarded = 0;
+  let admitted = 0;
+  const record = spyOn(executions, "recordCapabilityExecution").mockResolvedValue(workload.credentialId);
+  const dependencies: CapabilityDispatchDependencies = {
+    getCapability: async () => ({ ...entry, manifest: provider.manifest }),
+    getApp: async (id) => (registered ? { id, name: id, description: "", icon: "", routes: [], baseUrl: "http://caller.test" } : null),
+    checkAppQueryRate: async () => {
+      admitted++;
+      return { limited: false };
+    },
+    withActiveSigner: async (_, callback) => callback(signer, sql),
+    fetch: async () => {
+      forwarded++;
+      return Response.json({ data: { readable: [] } });
+    },
+  };
+  const dispatch = () =>
+    dispatchCapability({
+      request: new Request("http://core.test/invoke"),
+      workload: { ...workload, appId },
+      kind: "queries",
+      appId: "spaces",
+      capabilityId: "readable",
+      input: requestInput,
+      origin: "app",
+      dependencies,
+    });
+  setSystemTime(now);
+  try {
+    expect((await dispatch()).status).toBe(403);
+    expect(admitted).toBe(0);
+    expect(forwarded).toBe(0);
+    registered = true;
+    expect((await dispatch()).status).toBe(200);
+    expect(forwarded).toBe(1);
+    registered = false;
+    expect((await dispatch()).status).toBe(403);
+    expect(forwarded).toBe(1);
+    dependencies.getApp = async () => {
+      throw new Error("Registry unavailable");
+    };
+    expect((await dispatch()).status).toBe(503);
+    expect(forwarded).toBe(1);
+  } finally {
+    record.mockRestore();
+  }
 });
 
 test("app handlers receive no grant authority and undeclared queries and Actions never run", async () => {
@@ -184,6 +238,7 @@ test("dispatcher enforces callers, input bounds, app rate limit and app audit be
   const forwarded: string[] = [];
   const dependencies: CapabilityDispatchDependencies = {
     getCapability: async () => entry,
+    getApp: async (id) => ({ id, name: id, description: "", icon: "", routes: [], baseUrl: "http://caller.test" }),
     checkAppQueryRate: async () => ({ limited: false }),
     withActiveSigner: async (_, callback) => callback(signer, sql),
     fetch: async (url, init) => {

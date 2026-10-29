@@ -1,6 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
+import { z } from "zod";
 import { env } from "../config/env";
+import { defineCapabilities } from "../contracts/capabilities";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import { defineApp } from "./define-app";
@@ -9,10 +11,10 @@ import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 
 describe("application startup readiness", () => {
-  for (const mode of ["setup", "start", "ready", "advertise", "calendar", null, "skip"] as const) {
+  for (const mode of ["setup", "start", "ready", "advertise", "calendar", null, "skip", "unknown-caller"] as const) {
     const skipSetup = mode === "skip";
-    const failure = skipSetup ? null : mode;
-    test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
+    const failure = skipSetup || mode === "unknown-caller" ? null : mode;
+    test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : mode === "unknown-caller" ? "unknown caller" : "successful startup")}`, async () => {
       const events: string[] = [];
       const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
       Object.defineProperty(env, "APP_SECRET", { value: "startup-test-only", configurable: true });
@@ -78,6 +80,24 @@ describe("application startup readiness", () => {
           skipSetup,
           ...(mode === "calendar"
             ? { capabilities: { protocolVersion: 2 as const, calendarSource: { calendars: "missing", events: "missing" } } }
+            : {}),
+          ...(mode === "unknown-caller"
+            ? {
+                capabilities: defineCapabilities({
+                  protocolVersion: 2,
+                  queries: {
+                    readers: {
+                      title: "Readers",
+                      description: "Check readers",
+                      openWorld: false,
+                      callers: ["third-party-reader"],
+                      input: z.strictObject({}),
+                      data: z.strictObject({}),
+                      run: async () => ({ ok: true as const, data: { data: {} } }),
+                    },
+                  },
+                }),
+              }
             : {}),
           lifecycle: {
             setup: async () => {

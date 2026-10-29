@@ -1,6 +1,6 @@
 import { type SQL, sql } from "bun";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
-import { getApp, listCapabilities } from "../_internal/registry";
+import { getApp, listApps, listCapabilities } from "../_internal/registry";
 import {
   APP_DETAILS_FAILED_LIMIT,
   APP_DETAILS_LIST_LIMIT,
@@ -42,6 +42,7 @@ type NotificationRow = {
 type Dependencies = {
   db?: SQL;
   getApp?: (appId: string) => Promise<AppRegistryEntry | null>;
+  apps?: () => Promise<AppRegistryEntry[]>;
   capabilities?: () => Promise<CapabilityRegistryEntry[]>;
   grantCounts?: typeof appAccessGrantCounts;
 };
@@ -104,6 +105,17 @@ export function createAppDetailsService(dependencies: Dependencies = {}) {
         ? (dependencies.grantCounts ?? appAccessGrantCounts)(options.authority, [app])
         : Promise.resolve(new Map<string, number>()),
     ]);
+    const declaredCallers =
+      capabilities
+        .find((entry) => entry.appId === appId)
+        ?.manifest.queries.flatMap((query) =>
+          [...new Set(query.callers ?? [])].map((callerAppId) => ({ queryId: query.localId, callerAppId })),
+        ) ?? [];
+    // Live presence, not the built-in inventory or persisted app history, controls caller admission.
+    const registeredIds = new Set(declaredCallers.length ? (await (dependencies.apps ?? listApps)()).map((entry) => entry.id) : []);
+    const unregisteredQueryCallers = declaredCallers
+      .filter(({ callerAppId }) => !registeredIds.has(callerAppId))
+      .sort((a, b) => a.queryId.localeCompare(b.queryId) || a.callerAppId.localeCompare(b.callerAppId));
     const presentations = new Map<string, { title: string; description: string }>(
       capabilities.flatMap((entry) =>
         (resolveCapabilityManifestPresentation(entry.manifest, entry.presentation, locale).events ?? []).map(
@@ -182,6 +194,7 @@ export function createAppDetailsService(dependencies: Dependencies = {}) {
         grantCount: app?.access?.kind === "grants" ? (grantCounts.get(appId) ?? 0) : null,
         platformPermissions: [...(app?.platformPermissions ?? [])],
       },
+      unregisteredQueryCallers: unregisteredQueryCallers.slice(0, APP_DETAILS_LIST_LIMIT),
       sends: declarations.map((declaration) => {
         const presentation = presentations.get(`${declaration.type}@${declaration.version}`);
         return {
@@ -216,6 +229,7 @@ export function createAppDetailsService(dependencies: Dependencies = {}) {
         sends: declarations[0]?.total ?? 0,
         hears: subscriptions[0]?.total ?? 0,
         notifications: definitions[0]?.total ?? 0,
+        unregisteredQueryCallers: unregisteredQueryCallers.length,
       },
     };
   };

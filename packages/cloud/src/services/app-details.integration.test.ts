@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
@@ -141,8 +142,53 @@ suiteFor("database")("app administration detail", () => {
         excludedReason: "Keine SMS für diese Meldung.",
       },
     ]);
-    expect(result.totals).toEqual({ sends: 1, hears: 1, notifications: 1 });
+    expect(result.totals).toEqual({ sends: 1, hears: 1, notifications: 1, unregisteredQueryCallers: 0 });
     expect((await routes().request("/apps/demo")).status).toBe(200);
+  });
+
+  test("admin details flag unregistered query callers and refresh after third-party registration", async () => {
+    const manifest = compileCapabilities("demo", {
+      protocolVersion: 2,
+      queries: {
+        readers: {
+          title: "Readers",
+          description: "Check readers",
+          openWorld: false,
+          callers: ["chat", "third-party-reader"],
+          input: z.strictObject({}),
+          data: z.strictObject({}),
+          run: async () => ok({ data: {} }),
+        },
+      },
+    }).manifest;
+    let apps = [app];
+    const read = createAppDetailsService({
+      getApp: async () => app,
+      capabilities: async () => [{ ...capabilities, manifest }],
+      apps: async () => apps,
+    });
+    const result = AppDetailsSchema.parse(await read("demo", { authority: authority() }));
+    expect(result.unregisteredQueryCallers).toEqual([
+      { queryId: "readers", callerAppId: "chat" },
+      { queryId: "readers", callerAppId: "third-party-reader" },
+    ]);
+    expect(result.totals.unregisteredQueryCallers).toBe(2);
+    const response = await createAppEventRoutes(authenticate(authority()), undefined, read).request("/apps/demo");
+    expect(response.status).toBe(200);
+    expect(AppDetailsSchema.parse(await response.json()).unregisteredQueryCallers).toHaveLength(2);
+    const forbidden = await createAppEventRoutes(authenticate(authority(false)), undefined, read).request("/apps/demo");
+    expect(forbidden.status).toBe(403);
+    apps = [...apps, ...["chat", "third-party-reader"].map((id) => ({ ...app, id }))];
+    expect((await read("demo", { authority: authority() }))?.unregisteredQueryCallers).toEqual([]);
+    apps = [app];
+    manifest.queries = Array.from({ length: APP_DETAILS_LIST_LIMIT + 1 }, (_, index) => ({
+      ...manifest.queries[0]!,
+      localId: `readers${index}`,
+      callers: ["third-party-reader"],
+    }));
+    const bounded = await read("demo", { authority: authority() });
+    expect(bounded?.unregisteredQueryCallers).toHaveLength(APP_DETAILS_LIST_LIMIT);
+    expect(bounded?.totals.unregisteredQueryCallers).toBe(APP_DETAILS_LIST_LIMIT + 1);
   });
 
   test("offline apps retain persisted sends, hears and notifications; unknown app returns null and 404", async () => {

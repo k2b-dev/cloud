@@ -307,6 +307,7 @@ test("app queries use workload identity without a mandate, while partial mandate
         ...registryEntry,
         manifest: { ...registryEntry.manifest, queries: registryEntry.manifest.queries.map((query) => ({ ...query, callers: ["mail"] })) },
       }),
+      getApp: async (id) => ({ id, name: id, description: "", icon: "", routes: [], baseUrl: "http://caller.test" }),
       checkAppQueryRate: async () => ({ limited: false }),
       withActiveSigner,
       fetch: async (url, init) => {

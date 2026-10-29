@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CapabilityAppIdSchema, CapabilityLocalIdSchema } from "./capabilities";
 import { PlatformPermissionSchema } from "./outgoing-mail";
 import { RoleSchema } from "./shared";
 
@@ -26,6 +27,9 @@ export const AppDetailsSchema = z.object({
     grantCount: count.nullable(),
     platformPermissions: z.array(PlatformPermissionSchema),
   }),
+  unregisteredQueryCallers: z
+    .array(z.object({ queryId: CapabilityLocalIdSchema, callerAppId: CapabilityAppIdSchema }))
+    .max(APP_DETAILS_LIST_LIMIT),
   sends: z
     .array(
       z.object({
@@ -83,7 +87,7 @@ export const AppDetailsSchema = z.object({
       }),
     )
     .max(APP_DETAILS_LIST_LIMIT),
-  totals: z.object({ sends: count, hears: count, notifications: count }),
+  totals: z.object({ sends: count, hears: count, notifications: count, unregisteredQueryCallers: count }),
 });
 
 export type AppDetails = z.infer<typeof AppDetailsSchema>;

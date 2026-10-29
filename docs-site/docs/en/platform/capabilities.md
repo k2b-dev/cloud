@@ -34,9 +34,11 @@ with `callers: readonly string[]`. Core accepts only those named applications,
 authenticated by a current app-bound workload credential. The handler receives
 an app actor and a `none` access subject, never a person's grants. Undeclared
 Queries and all Actions retain the existing authority requirements. Providers
-validate caller IDs against the built-in app IDs plus the deployment's additional
-`CLOUD_APP_IDS` inventory at startup. Declared app Queries are app-only and absent
-from the ordinary catalog.
+validate caller ID syntax at startup; unknown or offline callers do not block
+startup. Core denies a caller without a current app registration, even when it
+is declared. **Administration → Apps → provider → App query callers** shows
+unregistered declared callers. Third-party apps need no environment inventory.
+Declared app Queries are app-only and absent from person-visible catalogs.
 
 ## Choose what to publish
 
