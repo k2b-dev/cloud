@@ -79,7 +79,7 @@ test("project context keeps allowed declared-app Skills, exact scopes and mobile
   };
   const allowed = await loadAssistantProjectContextSnapshot(mobile, project.shortId);
   expect(allowed?.skills.items).toEqual([{ ...skill, id: skill.shortId }]);
-  expect(skills).toHaveBeenCalledWith(project.id, mobile.accessSubject, { authority: mobile });
+  expect(skills).toHaveBeenCalledWith(project.id, mobile, { authority: mobile });
   expect(skills.mock.calls[0]?.[2]?.authority).toBe(mobile);
   app.access = { kind: "roles", roles: ["admin"] };
   expect((await loadAssistantProjectContextSnapshot(mobile, project.shortId))?.skills.items).toEqual([]);

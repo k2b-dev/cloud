@@ -65,7 +65,7 @@ type LogRow = {
 const rowColumns = sql.unsafe(`log.*, log.created_at::text AS cursor_at,
   (assignment.run_id = log.run_id AND assignment.user_id = log.assignment_user_id AND assignment.changed_at IS NULL
    AND (SELECT count(*) FROM mail.conversation_assignees current WHERE current.conversation_id = log.conversation_id) = 1
-   AND EXISTS (SELECT 1 FROM mail.conversation_assignees current WHERE current.conversation_id = log.conversation_id AND current.user_id = log.assignment_user_id)) AS provenance_current,
+   AND EXISTS (SELECT 1 FROM mail.conversation_assignees current WHERE current.conversation_id = log.conversation_id AND current.principal_id = log.assignment_user_id)) AS provenance_current,
   assignment.changed_by_id, assignment.changed_by_name, assignment.changed_at`);
 const rowFrom = sql.unsafe(
   `FROM mail.automation_log log LEFT JOIN mail.automation_assignment assignment ON assignment.conversation_id = log.conversation_id`,

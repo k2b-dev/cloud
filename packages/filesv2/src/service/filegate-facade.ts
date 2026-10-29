@@ -13,9 +13,14 @@ export function filegateCallTimeoutMs(input: Parameters<typeof fetch>[0], init?:
   return slow ? SLOW_CALL_TIMEOUT_MS : 10_000;
 }
 
-export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch {
+export function filegateApiFetch(transport: typeof fetch = fetch, requestAbort?: AbortSignal): typeof fetch {
   return Object.assign(
     (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      requestAbort?.throwIfAborted();
+      if (requestAbort) {
+        const signal = init?.signal ? AbortSignal.any([requestAbort, init.signal]) : requestAbort;
+        return transport(input, { ...init, signal });
+      }
       if (init?.signal) return transport(input, init);
       const budget = filegateCallTimeoutMs(input, init);
       // Bun's own socket idle timer (5 min by default) would otherwise end a silent slow call first.
@@ -25,8 +30,12 @@ export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch 
   );
 }
 
-export function connectFilegate(config: { url: string; token: string }, transport?: typeof fetch): FilesFilegate {
-  return FilesFilegate.connect(config, transport);
+export function connectFilegate(
+  config: { url: string; token: string },
+  transport?: typeof fetch,
+  requestAbort?: AbortSignal,
+): FilesFilegate {
+  return FilesFilegate.connect(config, transport, requestAbort);
 }
 
 export class FilesFilegate {
@@ -37,9 +46,14 @@ export class FilesFilegate {
   ) {
     this.#client = client;
   }
-  static connect(config: { url: string; token: string }, transport?: typeof fetch): FilesFilegate {
+  static connect(config: { url: string; token: string }, transport?: typeof fetch, requestAbort?: AbortSignal): FilesFilegate {
     return new FilesFilegate(
-      new Filegate({ baseUrl: config.url, token: config.token, transferBaseUrl: config.url, fetch: filegateApiFetch(transport) }),
+      new Filegate({
+        baseUrl: config.url,
+        token: config.token,
+        transferBaseUrl: config.url,
+        fetch: filegateApiFetch(transport, requestAbort),
+      }),
       config.url,
     );
   }

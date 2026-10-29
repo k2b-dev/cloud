@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as cloudServer from "@k2b/cloud/server";
 import type { CustomAppDefinition } from "./contracts";
 import {
   buildCustomAppGlobalRuntimeContext,
   buildCustomAppRuntimeContext,
   customAppDefinitionWithAvailableNavigation,
+  loadCustomAppAuthSubjectIds,
 } from "./runtime-context";
 
 const common = {
@@ -68,6 +70,43 @@ describe("Grids App runtime context", () => {
       "time.timeZone": "Europe/Berlin",
     });
   });
+
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind}: membership context includes the account without inventing user attributes`, async () => {
+      const id = "019fa000-0000-7000-8000-000000000005";
+      const access = {
+        actor: {
+          kind: "service_account" as const,
+          serviceAccount: {
+            id,
+            name: "Catalog assistant",
+            kind,
+            status: "active" as const,
+            delegatedUserId: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: null,
+            createdAt: "2026-08-10T00:00:00.000Z",
+          },
+          delegatedUser: null,
+          scopes: ["grids:read"],
+        },
+        accessSubject: { type: "service_account" as const, serviceAccountId: id },
+      };
+      const groups = spyOn(cloudServer, "getEffectiveGroupIds").mockResolvedValue([common.authSubjectIds[1]!]);
+      try {
+        const authSubjectIds = await loadCustomAppAuthSubjectIds(access);
+        expect(groups).toHaveBeenCalledWith({ serviceAccountId: id });
+        expect(authSubjectIds).toEqual([id, common.authSubjectIds[1]!]);
+        const context = buildCustomAppRuntimeContext({ ...common, access, authSubjectIds }).query;
+        expect(context["auth.subjects"]).toEqual(authSubjectIds);
+        for (const key of ["auth.id", "auth.name", "auth.username", "auth.email"] as const) expect(context[key]).toBeNull();
+      } finally {
+        groups.mockRestore();
+      }
+    });
+  }
 
   test("uses null auth identity for anonymous requests", () => {
     const query = buildCustomAppRuntimeContext({

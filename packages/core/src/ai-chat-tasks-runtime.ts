@@ -80,7 +80,9 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     });
     return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
   }
-  const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, { type: "user", userId: user.id }) : null;
+  const project = conversation.projectId
+    ? await aiProjects.snapshot(conversation.projectId, { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } })
+    : null;
   if (conversation.projectId && !project) {
     const status = await aiChatTasks.failOccurrence({
       occurrenceId: occurrence.id,

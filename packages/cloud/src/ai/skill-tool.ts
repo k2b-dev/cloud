@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { AccessSubject } from "../server";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { AI_SKILL_FILE_MOUNT } from "./file-mount";
+import type { AiResourceContext } from "./projects-authorization";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { type AiSkillCatalogEntry, mergeAiSkillCatalog, rankAiSkillCatalog, searchAiSkillCatalog } from "./skill-catalog";
 import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
@@ -12,7 +12,7 @@ import { defineAiTool } from "./tools";
 export async function loadSelectedAiSkills(
   ids: readonly string[],
   turnId: string,
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   allowed: boolean,
   authority: RequestAuthority | null = null,
 ) {
@@ -58,7 +58,7 @@ export const CloudAiLoadSkillOutputSchema = z.object({
   files: z.array(z.string()),
 });
 
-export const createCloudAiLoadSkillTool = (subject: AccessSubject, authority: RequestAuthority | null = null) =>
+export const createCloudAiLoadSkillTool = (subject: AiResourceContext, authority: RequestAuthority | null = null) =>
   defineAiTool({
     name: "load_skill",
     description:
@@ -92,7 +92,7 @@ export const CloudAiSearchSkillsOutputSchema = z.object({
 });
 
 export const createCloudAiSearchSkillsTool = (
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   localSkills: readonly AiSkillCatalogEntry[] = [],
   authority: RequestAuthority | null = null,
 ) =>

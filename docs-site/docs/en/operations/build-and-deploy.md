@@ -40,6 +40,15 @@ Existing memberships and grants are preserved. IPA groups, directory
 visibility, human group management, resource bindings, and credential scope
 limits keep their existing rules.
 
+### Update Grids principal fields and app sharing
+
+Rebuild and deploy Grids to use machine accounts in principal fields and
+published-app sharing. Grids App `@auth.subjects` includes local group memberships
+for active standalone and agent accounts; Core must have applied the membership
+migration described above. Existing field values and grants keep their meaning.
+Previous images do not accept the new `service_account` principal field
+values; use a compatible image once records contain those values.
+
 ## Build a standalone application
 
 ```bash
@@ -497,6 +506,14 @@ App Skills are offered only to people who may open the app, by the same rule
 as Help. Guests no longer see the Skills of apps that require a full account,
 such as Grids, Mail, Contacts, Spaces, and Weather. See
 [Ship Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill).
+
+### Update Project and Skill service callers
+
+Rebuild Core, Assistant, and custom applications that call Project or Skill
+services against the same Cloud package before deploying their images. Service
+calls now pass `AiResourceContext` with both `actor` and `accessSubject`; HTTP
+request shapes stay the same. This change requires no database migration.
+See the [service migration](/en/docs/reference/deprecations-and-migrations#project-and-skill-service-authorization-context).
 
 ## Enable panel providers
 

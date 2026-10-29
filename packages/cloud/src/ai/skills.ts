@@ -1,23 +1,28 @@
 import { type SQL, type SQLQuery, sql } from "bun";
 import { listApps } from "../_internal/registry";
 import { AuthenticatedPrincipalSchema, type ServiceAccountKind } from "../contracts/shared";
-import type { AccessSubject } from "../server";
 import type { RequestAuthority } from "../server/middleware/auth";
 import {
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   hasPermission,
   type PermissionLevel,
   type Principal,
 } from "../server/services/access";
 import { accessRevision } from "../server/services/access-revision";
-import { getRoles } from "../services/accounts/users";
-import { usableAppIds } from "../services/app-access";
+import { evaluateAppAccess, usableAppIds } from "../services/app-access";
 import { logger } from "../services/logging";
 import { toPgTextArray, toPgUuidArray } from "../services/postgres";
 import { mountAiSkillFilePath } from "./file-mount";
 import { aiProjects } from "./projects";
+import {
+  type AiResourceContext,
+  aiResourceAccessSubject,
+  aiResourcePermissionCap,
+  requireAiResourceCreation,
+} from "./projects-authorization";
 import { AI_SHORT_ID_PATTERN, withAiShortIdForDb } from "./short-id";
 import { type AiSkillContent, appSkillStatus, contentHash } from "./skill-content";
 import {
@@ -67,7 +72,7 @@ export type AiSkillAccess = {
   permission: AiSkillPermission;
   displayName?: string;
   avatarHash?: string | null;
-  /** Kind of a `service_account` principal; presentation only. */
+  /** Kind of a `service_account` principal, including manager eligibility. */
   serviceAccountKind?: ServiceAccountKind;
   createdAt: string;
 };
@@ -200,13 +205,21 @@ const jsonObject = (value: AiSkillExtraFrontmatter | string): AiSkillExtraFrontm
 const snapshotFiles = (value: SnapshotRow["files"]): { path: string; content: string }[] =>
   typeof value === "string" ? (JSON.parse(value) as { path: string; content: string }[]) : value;
 
-const principalForSubject = (subject: AccessSubject): Principal =>
-  subject.type === "user"
+const aiResourceUserId = (input: AiResourceContext | null): string | null => {
+  const subject = aiResourceAccessSubject(input);
+  return subject?.type === "user" ? subject.userId : null;
+};
+
+const principalForSubject = (input: AiResourceContext): Principal => {
+  const subject = aiResourceAccessSubject(input)!;
+  return subject.type === "user"
     ? { type: "user", userId: subject.userId }
     : { type: "service_account", serviceAccountId: subject.serviceAccountId };
+};
 
-const accessMatch = (subject: AccessSubject | null): SQLQuery =>
-  subject === null
+const accessMatch = (input: AiResourceContext | null, audience: SkillAudience): SQLQuery => {
+  const subject = aiResourceAccessSubject(input);
+  return subject === null || (aiResourcePermissionCap(input) === "none" && audience.brokerReadAppIds.length === 0)
     ? sql`FALSE`
     : buildAccessPrincipalCondition({
         subject,
@@ -217,6 +230,7 @@ const accessMatch = (subject: AccessSubject | null): SQLQuery =>
           authenticatedOnly: sql`access.authenticated_only`,
         },
       });
+};
 
 export const getRow = async (skillId: string, db: SQL = sql): Promise<SkillRow | null> =>
   (await db<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid`)[0] ?? null;
@@ -231,38 +245,64 @@ const getRowByName = async (name: string, db: SQL = sql): Promise<SkillRow | nul
  * Resolve before opening a transaction: role lookup uses its own pool connection, and a transaction that waits for a
  * second connection can exhaust the pool under concurrent requests.
  */
-type SkillAudience = { roles: readonly string[]; usableAppIds: readonly string[]; declaredAppIds: readonly string[] };
-const subjectRoles = async (subject: AccessSubject | null, authority: RequestAuthority | null = null): Promise<SkillAudience> => {
-  const actor = authority?.actor;
-  const roles = actor
-    ? actor.kind === "user"
-      ? actor.user.roles
-      : (actor.delegatedUser?.roles ?? [])
-    : subject?.type === "user"
-      ? await getRoles(subject.userId)
-      : [];
+type SkillAudience = {
+  roles: readonly string[];
+  usableAppIds: readonly string[];
+  declaredAppIds: readonly string[];
+  brokerReadAppIds: readonly string[];
+};
+const subjectRoles = async (subject: AiResourceContext | null, authority: RequestAuthority | null = null): Promise<SkillAudience> => {
+  const actor = authority?.actor ?? subject?.actor;
+  const roles = actor?.kind === "user" ? actor.user.roles : (actor?.delegatedUser?.roles ?? []);
   const apps = await listApps().catch(() => {
     logger("ai:skills").warn("App registry unavailable; app Skills are unavailable");
     return [];
   });
+  const usable = [...(await usableAppIds(authority, apps))];
+  const resourceActor = subject?.actor;
+  // App Skill brokers support independent machines, including resource bindings.
+  // Keep identity matching and credential checks even for legacy undeclared apps.
+  const brokerAuthority: RequestAuthority | null =
+    authority &&
+    resourceActor?.kind === "service_account" &&
+    !resourceActor.delegatedUser &&
+    ["standalone", "agent", "resource_bound"].includes(resourceActor.serviceAccount.kind) &&
+    subject?.accessSubject.type === "service_account" &&
+    subject.accessSubject.serviceAccountId === resourceActor.serviceAccount.id
+      ? { ...authority, actor: resourceActor, accessSubject: subject.accessSubject, scopes: resourceActor.scopes }
+      : null;
   return {
     roles,
-    usableAppIds: [...(await usableAppIds(authority, apps))],
+    usableAppIds: usable,
     declaredAppIds: apps.filter((app) => app.access !== undefined).map((app) => app.id),
+    brokerReadAppIds: usable.filter(
+      (id) =>
+        evaluateAppAccess(authority, { id, access: { kind: "signedIn" } }) &&
+        evaluateAppAccess(brokerAuthority, { id, access: { kind: "signedIn" } }),
+    ),
   };
 };
 
 // App access applies to every grant; the older navigation audience keeps its legacy grant behavior.
-const effectivePermission = (skillId: SQLQuery, subject: AccessSubject | null, roles: SkillAudience) => sql`
-  SELECT permission FROM (
+const effectivePermission = (skillId: SQLQuery, subject: AiResourceContext | null, roles: SkillAudience) => sql`
+  SELECT CASE
+    WHEN permission = 'none' THEN permission
+    WHEN ${aiResourcePermissionCap(subject)} = 'none' THEN
+      CASE WHEN EXISTS (
+        SELECT 1 FROM ai.app_skills app WHERE app.skill_id=${skillId}
+          AND app.app_id = ANY(${toPgTextArray([...roles.brokerReadAppIds])}::text[])
+      ) THEN 'read'::auth.permission_level ELSE 'none'::auth.permission_level END
+    WHEN ${aiResourcePermissionCap(subject)} = 'read' THEN 'read'::auth.permission_level
+    WHEN ${aiResourcePermissionCap(subject)} = 'write' AND permission = 'admin' THEN 'write'::auth.permission_level
+    ELSE permission END AS permission FROM (
     SELECT access.permission, (access.user_id IS NOT NULL OR access.group_id IS NOT NULL OR access.service_account_id IS NOT NULL) AS direct
       FROM ai.skill_access link JOIN auth.access access ON access.id=link.access_id
-      WHERE link.skill_id=${skillId} AND ${accessMatch(subject)}
+      WHERE link.skill_id=${skillId} AND ${accessMatch(subject, roles)}
     UNION ALL
     SELECT 'read'::auth.permission_level, false AS direct FROM ai.project_skills link
       JOIN ai.project_access project_access ON project_access.project_id=link.project_id
       JOIN auth.access access ON access.id=project_access.access_id
-      WHERE link.skill_id=${skillId} AND access.permission <> 'none' AND ${accessMatch(subject)}
+      WHERE link.skill_id=${skillId} AND access.permission <> 'none' AND ${accessMatch(subject, roles)}
   ) grants WHERE NOT EXISTS (
     SELECT 1 FROM ai.app_skills app WHERE app.skill_id=${skillId}
       AND (NOT app.available OR NOT(app.app_id = ANY(${toPgTextArray([...roles.usableAppIds])}::text[])) OR (NOT (app.app_id = ANY(${toPgTextArray([...roles.declaredAppIds])}::text[])) AND NOT grants.direct AND app.required_roles IS NOT NULL AND NOT(app.required_roles && ${toPgTextArray([...roles.roles])}::text[])))
@@ -271,7 +311,7 @@ const effectivePermission = (skillId: SQLQuery, subject: AccessSubject | null, r
 
 const permissionFor = async (
   skillId: string,
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   db: SQL,
   roles: SkillAudience,
 ): Promise<AiSkillPermission | "none"> => {
@@ -283,7 +323,7 @@ const permissionFor = async (
 
 const canMutate = async (
   skillId: string,
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   required: AiSkillPermission,
   db: SQL,
   roles: SkillAudience,
@@ -297,12 +337,13 @@ const canMutate = async (
   return false;
 };
 
-const enabledFor = async (skillId: string, subject: AccessSubject | null, db: SQL = sql): Promise<boolean> => {
-  if (subject?.type !== "user") return true;
+const enabledFor = async (skillId: string, subject: AiResourceContext | null, db: SQL = sql): Promise<boolean> => {
+  const accessSubject = aiResourceAccessSubject(subject);
+  if (accessSubject?.type !== "user") return true;
   const [disabled] = await db<{ disabled: boolean }[]>`
     SELECT true AS disabled
     FROM ai.skill_user_disabled
-    WHERE skill_id = ${skillId}::uuid AND user_id = ${subject.userId}::uuid
+    WHERE skill_id = ${skillId}::uuid AND user_id = ${aiResourceUserId(subject)}::uuid
   `;
   return !disabled;
 };
@@ -314,7 +355,7 @@ export const listReferences = async (skillId: string, db: SQL = sql): Promise<Ai
     ORDER BY path
   `;
 
-const toSkill = async (row: SkillRow, subject: AccessSubject | null, db: SQL, roles: SkillAudience): Promise<AiSkill | null> => {
+const toSkill = async (row: SkillRow, subject: AiResourceContext | null, db: SQL, roles: SkillAudience): Promise<AiSkill | null> => {
   const permission = await permissionFor(row.id, subject, db, roles);
   if (permission === "none") return null;
   const references = await listReferences(row.id, db);
@@ -343,7 +384,7 @@ const toSkill = async (row: SkillRow, subject: AccessSubject | null, db: SQL, ro
 
 const requireSkill = async (
   row: SkillRow | null,
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   required: AiSkillPermission,
   db: SQL,
   roles: SkillAudience,
@@ -420,40 +461,33 @@ const checkAccessRevision = async (skillId: string, expected: string | undefined
 };
 
 const updateSkillAccess = async (skillId: string, accessId: string, permission: AiSkillPermission, db: SQL): Promise<boolean> => {
-  const [bound] = await db<{ id: string; permission: AiSkillPermission }[]>`
-    SELECT access.id, access.permission
+  const [bound] = await db<{ id: string }[]>`
+    SELECT access.id
     FROM ai.skill_access skill_access
     JOIN auth.access access ON access.id = skill_access.access_id
     WHERE skill_access.skill_id = ${skillId}::uuid AND skill_access.short_id = ${accessId}
   `;
   if (!bound) return false;
-  if (bound.permission === "admin" && permission !== "admin") {
-    const [admins] = await db<{ count: number }[]>`
-      SELECT count(*)::int AS count FROM ai.skill_access skill_access
-      JOIN auth.access access ON access.id = skill_access.access_id
-      WHERE skill_access.skill_id = ${skillId}::uuid AND access.permission = 'admin'
-    `;
-    if ((admins?.count ?? 0) <= 1) throw new AiSkillLastAdminError();
-  }
+  const before = await listSkillAccess(skillId, db);
+  const guarded = ensureManagerRemains({
+    before,
+    after: before.map((entry) => (entry.shortId === accessId ? { ...entry, permission } : entry)),
+  });
+  if (!guarded.ok) throw new AiSkillLastAdminError();
   return (await db`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${bound.id}::uuid`).count === 1;
 };
 
 const revokeSkillAccess = async (skillId: string, accessId: string, db: SQL): Promise<boolean> => {
-  const [bound] = await db<{ access_id: string; permission: AiSkillPermission }[]>`
-    SELECT skill_access.access_id, access.permission
+  const [bound] = await db<{ access_id: string }[]>`
+    SELECT skill_access.access_id
     FROM ai.skill_access skill_access
     JOIN auth.access access ON access.id = skill_access.access_id
     WHERE skill_access.skill_id = ${skillId}::uuid AND skill_access.short_id = ${accessId}
   `;
   if (!bound) return false;
-  if (bound.permission === "admin") {
-    const [admins] = await db<{ count: number }[]>`
-      SELECT count(*)::int AS count FROM ai.skill_access skill_access
-      JOIN auth.access access ON access.id = skill_access.access_id
-      WHERE skill_access.skill_id = ${skillId}::uuid AND access.permission = 'admin'
-    `;
-    if ((admins?.count ?? 0) <= 1) throw new AiSkillLastAdminError();
-  }
+  const before = await listSkillAccess(skillId, db);
+  const guarded = ensureManagerRemains({ before, after: before.filter((entry) => entry.shortId !== accessId) });
+  if (!guarded.ok) throw new AiSkillLastAdminError();
   const deleted = await deleteAccess({ id: bound.access_id }, db);
   if (!deleted.ok) throw new Error(deleted.error.message);
   return true;
@@ -554,7 +588,7 @@ type SkillListOptions = {
   limit?: number;
 };
 async function listSkillSummaries(
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   options: SkillListOptions & {
     project?: { id: string; linked: boolean };
     manageOnly?: boolean;
@@ -562,7 +596,7 @@ async function listSkillSummaries(
   } = {},
 ): Promise<AiSkillSummary[]> {
   const roles = await subjectRoles(subject, options.authority);
-  const userId = subject?.type === "user" ? subject.userId : null;
+  const userId = aiResourceUserId(subject);
   const query = (options.query ?? "").trim().slice(0, 200);
   const limit = Math.max(1, Math.min(201, options.limit ?? 200));
   const rows = await withAiSkillSearch(query, async (bm25) => {
@@ -607,7 +641,7 @@ async function listSkillSummaries(
   }));
 }
 
-async function linkedSkillProjects(skillId: string, subject: AccessSubject | null) {
+async function linkedSkillProjects(skillId: string, subject: AiResourceContext | null) {
   const links = await sql<
     { projectId: string }[]
   >`SELECT project_id AS "projectId" FROM ai.project_skills WHERE skill_id=${skillId}::uuid ORDER BY project_id`;
@@ -621,8 +655,12 @@ async function linkedSkillProjects(skillId: string, subject: AccessSubject | nul
 
 export type AiConversationSkillUse = { name: string; description: string; turns: number; lastLoadedAt: string };
 
-const listSkillTurnFiles = async (turnId: string, subject: AccessSubject | null, roles: SkillAudience): Promise<AiSkillFileToolStat[]> => {
-  const userId = subject?.type === "user" ? subject.userId : null;
+const listSkillTurnFiles = async (
+  turnId: string,
+  subject: AiResourceContext | null,
+  roles: SkillAudience,
+): Promise<AiSkillFileToolStat[]> => {
+  const userId = aiResourceUserId(subject);
   const rows = await sql<SnapshotRow[]>`
       SELECT DISTINCT snapshot.skill_name, snapshot.description, snapshot.revision, snapshot.instructions,
              snapshot.files, snapshot.loaded_at
@@ -671,7 +709,7 @@ export const aiSkills = {
 
   async create(
     input: {
-      subject: AccessSubject;
+      subject: AiResourceContext;
       name: string;
       description: string;
       instructions: string;
@@ -680,6 +718,7 @@ export const aiSkills = {
     },
     authority: RequestAuthority | null = null,
   ): Promise<AiSkill> {
+    requireAiResourceCreation(input.subject);
     const fields = validatedFields(input);
     const roles = await subjectRoles(input.subject, authority);
     return sql.begin(async (tx) => {
@@ -706,13 +745,13 @@ export const aiSkills = {
     });
   },
 
-  async list(subject: AccessSubject | null, options: SkillListOptions = {}): Promise<AiSkillSummary[]> {
+  async list(subject: AiResourceContext | null, options: SkillListOptions = {}): Promise<AiSkillSummary[]> {
     return listSkillSummaries(subject, options);
   },
 
   async projectSkills(
     projectId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     options: { query?: string; page?: number; available?: boolean; authority?: RequestAuthority | null } = {},
   ) {
     if (!(await aiProjects.get(projectId, subject, options.available ? "admin" : "read"))) return null;
@@ -732,7 +771,7 @@ export const aiSkills = {
     skillId: string,
     projectId: string,
     linked: boolean,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     authority: RequestAuthority | null = null,
   ): Promise<boolean> {
     if (!(await aiProjects.get(projectId, subject, "admin"))) return false;
@@ -747,13 +786,13 @@ export const aiSkills = {
     });
   },
 
-  async linkedProjects(skillId: string, subject: AccessSubject | null, authority: RequestAuthority | null = null) {
+  async linkedProjects(skillId: string, subject: AiResourceContext | null, authority: RequestAuthority | null = null) {
     if (!(await this.get(skillId, subject, "admin", authority))) return null;
     return linkedSkillProjects(skillId, subject);
   },
 
   async search(
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     query: string,
     limit = 30,
     options: { modelInvocableOnly?: boolean; authority?: RequestAuthority | null } = {},
@@ -765,7 +804,7 @@ export const aiSkills = {
 
   async get(
     skillId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     required: AiSkillPermission = "read",
     authority: RequestAuthority | null = null,
   ): Promise<AiSkill | null> {
@@ -774,7 +813,7 @@ export const aiSkills = {
 
   async getByShortId(
     shortId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     required: AiSkillPermission = "read",
     authority: RequestAuthority | null = null,
   ): Promise<AiSkill | null> {
@@ -783,7 +822,7 @@ export const aiSkills = {
 
   async getByName(
     name: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     required: AiSkillPermission = "read",
     authority: RequestAuthority | null = null,
   ): Promise<AiSkill | null> {
@@ -792,7 +831,7 @@ export const aiSkills = {
 
   async update(
     skillId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: {
       expectedRevision: number;
       name: string;
@@ -828,7 +867,7 @@ export const aiSkills = {
     });
   },
 
-  async delete(skillId: string, subject: AccessSubject | null, authority: RequestAuthority | null = null): Promise<boolean> {
+  async delete(skillId: string, subject: AiResourceContext | null, authority: RequestAuthority | null = null): Promise<boolean> {
     const roles = await subjectRoles(subject, authority);
     return sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
@@ -844,7 +883,7 @@ export const aiSkills = {
 
   async listAccess(
     skillId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     authority: RequestAuthority | null = null,
   ): Promise<AiSkillAccess[] | null> {
     const roles = await subjectRoles(subject, authority);
@@ -857,7 +896,7 @@ export const aiSkills = {
 
   async grantAccess(
     skillId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { principal: Principal; permission: AiSkillPermission },
     expectedAccessRevision?: string,
     authority: RequestAuthority | null = null,
@@ -874,7 +913,7 @@ export const aiSkills = {
   async updateAccess(
     skillId: string,
     accessId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     permission: AiSkillPermission,
     expectedAccessRevision?: string,
     authority: RequestAuthority | null = null,
@@ -891,7 +930,7 @@ export const aiSkills = {
   async revokeAccess(
     skillId: string,
     accessId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     expectedAccessRevision?: string,
     authority: RequestAuthority | null = null,
   ): Promise<boolean> {
@@ -1032,23 +1071,23 @@ export const aiSkills = {
 
   async setEnabled(
     skillId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     enabled: boolean,
     authority: RequestAuthority | null = null,
   ): Promise<boolean | null> {
-    if (subject?.type !== "user") return null;
+    if (!aiResourceUserId(subject)) return null;
     const roles = await subjectRoles(subject, authority);
     return sql.begin(async (tx) => {
       if (!(await requireSkill(await getRow(skillId, tx), subject, "read", tx, roles))) return null;
       if (enabled) {
         await tx`
           DELETE FROM ai.skill_user_disabled
-          WHERE skill_id = ${skillId}::uuid AND user_id = ${subject.userId}::uuid
+          WHERE skill_id = ${skillId}::uuid AND user_id = ${aiResourceUserId(subject)}::uuid
         `;
       } else {
         await tx`
           INSERT INTO ai.skill_user_disabled (skill_id, user_id)
-          VALUES (${skillId}::uuid, ${subject.userId}::uuid)
+          VALUES (${skillId}::uuid, ${aiResourceUserId(subject)}::uuid)
           ON CONFLICT (skill_id, user_id) DO NOTHING
         `;
       }
@@ -1058,7 +1097,7 @@ export const aiSkills = {
 
   async setReference(
     skillId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { expectedRevision: number; path: string; content: string },
     authority: RequestAuthority | null = null,
   ): Promise<AiSkill | null> {
@@ -1075,7 +1114,7 @@ export const aiSkills = {
 
   async setReferences(
     skillId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { expectedRevision: number; references: readonly AiSkillReferenceInput[] },
     authority: RequestAuthority | null = null,
   ): Promise<AiSkill | null> {
@@ -1109,7 +1148,7 @@ export const aiSkills = {
 
   async removeReference(
     skillId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { expectedRevision: number; path: string },
     authority: RequestAuthority | null = null,
   ): Promise<AiSkill | null> {
@@ -1135,7 +1174,7 @@ export const aiSkills = {
   async loadForTurn(
     turnId: string,
     selector: string | { id: string },
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     authority: RequestAuthority | null = null,
   ): Promise<AiLoadedSkillSnapshot | null> {
     const name = typeof selector === "string" ? validateAiSkillName(selector) : null;
@@ -1181,7 +1220,7 @@ export const aiSkills = {
 
   async listTurnFiles(
     turnId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     authority: RequestAuthority | null = null,
   ): Promise<AiSkillFileToolStat[]> {
     return listSkillTurnFiles(turnId, subject, await subjectRoles(subject, authority));
@@ -1190,7 +1229,7 @@ export const aiSkills = {
   async readTurnFile(
     turnId: string,
     path: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     authority: RequestAuthority | null = null,
   ): Promise<AiSkillFileToolContent | null> {
     const roles = await subjectRoles(subject, authority);
@@ -1198,7 +1237,7 @@ export const aiSkills = {
     const stat = files.find((file) => file.path === path);
     if (!stat) return null;
     const [skillName] = path.split("/", 1);
-    const userId = subject?.type === "user" ? subject.userId : null;
+    const userId = aiResourceUserId(subject);
     const [row] = await sql<SnapshotRow[]>`
       SELECT DISTINCT snapshot.skill_name, snapshot.description, snapshot.revision, snapshot.instructions,
              snapshot.files, snapshot.loaded_at

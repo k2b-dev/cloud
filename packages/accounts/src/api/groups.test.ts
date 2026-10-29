@@ -118,7 +118,6 @@ test("full group managers add and remove named machine recipients, without openi
       actor: { userId: id },
       id,
       serviceAccountId: recipient,
-      provider: "local",
     });
   }
   expect(

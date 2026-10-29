@@ -7,6 +7,7 @@ import { migrateAiModelClassesInTransaction, migrateCloudAi } from "./migrate";
 import { aiModelCatalog } from "./model-catalog";
 import { deleteAiCatalogEntry } from "./model-delete";
 import { aiProjects } from "./projects";
+import { userResourceContext } from "./projects.test-fixture";
 import { getAiRequestHeaders, setAiRequestHeaders } from "./request-headers";
 
 const suite = databaseSuite();
@@ -74,7 +75,7 @@ suite("AI model catalog migration and revisions", () => {
     const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name)
       VALUES(${suffix},'local','user','Model replacement owner') RETURNING id`;
     if (!user) throw new Error("Missing replacement owner");
-    const subject = { type: "user", userId: user.id } satisfies import("../server").AccessSubject;
+    const subject = userResourceContext({ type: "user", userId: user.id });
     const before = (await aiModelCatalog.assignments()).find((row) => row.slot === "fast");
     if (!before) throw new Error("Missing fast assignment");
     const project = await aiProjects.create({ subject, name: "Retarget fixture", defaultModel: { id: sourceId } });

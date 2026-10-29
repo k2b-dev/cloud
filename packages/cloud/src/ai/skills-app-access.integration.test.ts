@@ -10,7 +10,9 @@ import * as appAccess from "../services/app-access";
 import * as appAccessMetrics from "../services/app-access-metrics";
 import { buildProjectedUser } from "../services/session/user";
 import { migrateCloudAi } from "./migrate";
-import { aiSkills } from "./skills";
+import { aiProjects } from "./projects";
+import { AiResourceCredentialError } from "./projects-authorization";
+import { AiSkillAppForbiddenError, aiSkills } from "./skills";
 import { __buildAiSkillsRoutesForTest } from "./skills-routes";
 
 const pass: MiddlewareHandler<AuthContext> = async (_c, next) => next();
@@ -34,12 +36,17 @@ databaseSuite()("Skill broker routes (integration)", () => {
       baseUrl: "http://notebooks.invalid",
       access: { kind: "signedIn" },
     };
-    const otherApp = { ...ownApp, id: `broker-other-${suffix}`, name: "Other app fixture" };
+    const otherApp: AppRegistryEntry = {
+      ...ownApp,
+      access: { kind: "roles", roles: ["admin"] },
+      id: `broker-other-${suffix}`,
+      name: "Other app fixture",
+    };
     const core: AppRegistryEntry = {
       ...ownApp,
       id: "core",
       name: "Core",
-      access: { kind: "signedIn", publicRoutes: ["/api/ai/skills", "/api/ai/skills/*"] },
+      access: { kind: "roles", roles: ["admin"], publicRoutes: ["/api/ai/skills", "/api/ai/skills/*"] },
     };
     const [owner] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
       VALUES (${`broker-owner-${suffix}`}, 'local', 'user', 'Broker fixture owner') RETURNING id`;
@@ -50,21 +57,20 @@ databaseSuite()("Skill broker routes (integration)", () => {
       credentialKind: "session",
       scopes: [],
     };
-    const resourceId = crypto.randomUUID();
-    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name, kind, app_id, resource_type, resource_id)
-      VALUES (${`broker-reader-${suffix}`}, 'resource_bound', ${ownApp.id}, 'notebook', ${resourceId}) RETURNING id`;
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name, kind)
+      VALUES (${`broker-reader-${suffix}`}, 'standalone') RETURNING id`;
     const resolved: RequestAuthority = {
       actor: {
         kind: "service_account",
         serviceAccount: {
           id: account!.id,
           name: "Broker fixture reader",
-          kind: "resource_bound",
+          kind: "standalone",
           status: "active",
           delegatedUserId: null,
-          appId: ownApp.id,
-          resourceType: "notebook",
-          resourceId,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
           createdBy: null,
           createdAt: "2026-10-01T00:00:00Z",
         },
@@ -94,6 +100,7 @@ databaseSuite()("Skill broker routes (integration)", () => {
     const audience = spyOn(appAccess, "usableAppIds");
     const metrics = spyOn(appAccessMetrics, "recordAppAccessDenied").mockImplementation(() => {});
     const created: string[] = [];
+    let projectId: string | null = null;
     const deniedCreateName = `broker-create-${suffix}`;
     try {
       const installed = [];
@@ -104,7 +111,7 @@ databaseSuite()("Skill broker routes (integration)", () => {
       ] as const) {
         const skill = await aiSkills.create(
           {
-            subject: ownerSubject,
+            subject: ownerAuthority,
             name: `broker-${label}-${suffix}`,
             description: "Broker fixture.",
             instructions: "Original instructions.",
@@ -132,7 +139,7 @@ databaseSuite()("Skill broker routes (integration)", () => {
       }
       const allowed = await routes.request(`/api/ai/skills/${own!.shortId}`);
       expect(allowed.status).toBe(200);
-      expect(await allowed.json()).toMatchObject({ skill: { id: own!.shortId, source: { appId: ownApp.id }, permission: "admin" } });
+      expect(await allowed.json()).toMatchObject({ skill: { id: own!.shortId, source: { appId: ownApp.id }, permission: "read" } });
       for (const target of [other!, ungranted!]) {
         const response = await routes.request(`/api/ai/skills/${target.shortId}`);
         expect(response.status).toBe(404);
@@ -161,6 +168,92 @@ databaseSuite()("Skill broker routes (integration)", () => {
       expect(unchanged?.instructions).toBe("Original instructions.");
       expect(await sql`SELECT id FROM ai.skills WHERE name=${deniedCreateName}`).toHaveLength(0);
 
+      // A broker-only credential must not expose user Skills or Projects, even
+      // with admin grants. An app-prefixed write/admin scope still only reads.
+      const privateSkill = await aiSkills.create({
+        subject: ownerAuthority,
+        name: `broker-private-${suffix}`,
+        description: "Private fixture.",
+        instructions: "Private instructions.",
+      });
+      created.push(privateSkill.id);
+      const project = await aiProjects.create({ subject: ownerAuthority, name: `Broker project ${suffix}` });
+      projectId = project.id;
+      const principal = { type: "service_account" as const, serviceAccountId: account!.id };
+      await aiSkills.admin.grantAccess(privateSkill.id, { principal, permission: "admin" });
+      await aiProjects.admin.grantAccess(project.id, { principal, permission: "admin" });
+      expect(await aiSkills.linkProject(privateSkill.id, project.id, true, ownerAuthority)).toBe(true);
+      if (resolved.actor.kind !== "service_account") throw new Error("Missing machine fixture");
+      const machine = resolved.actor;
+      for (const [kind, scopes] of [
+        ["standalone", [`${ownApp.id}:read`]],
+        ["standalone", [`${ownApp.id}:write`]],
+        ["standalone", [`${ownApp.id}:admin`]],
+        ["agent", [`${ownApp.id}:read`]],
+        ["resource_bound", ["read"]],
+        ["resource_bound", ["admin"]],
+      ] as const) {
+        resolved.actor = {
+          ...machine,
+          scopes: [...scopes],
+          serviceAccount: {
+            ...machine.serviceAccount,
+            kind,
+            appId: kind === "resource_bound" ? ownApp.id : null,
+            resourceType: kind === "resource_bound" ? "notebook" : null,
+            resourceId: kind === "resource_bound" ? suffix : null,
+          },
+        };
+        resolved.scopes = [...scopes];
+        // Let both apps admit machines: credential scope/binding must still
+        // exclude the other app even though it also grants this account admin.
+        registered.mockResolvedValue([core, ownApp, { ...otherApp, access: { kind: "signedIn" } }]);
+        for (const query of ["", `?name=${own!.name}`, `?q=${own!.name}`]) {
+          const response = await routes.request(`/api/ai/skills${query}`);
+          expect(response.status).toBe(200);
+          expect(await response.json()).toEqual({ skills: [expect.objectContaining({ id: own!.shortId, permission: "read" })] });
+        }
+        expect(await (await routes.request(`/api/ai/skills/${own!.shortId}`)).json()).toMatchObject({
+          skill: { id: own!.shortId, permission: "read" },
+        });
+        for (const target of [other!, ungranted!, privateSkill]) {
+          expect((await routes.request(`/api/ai/skills/${target.shortId}`)).status).toBe(404);
+        }
+        expect(await aiProjects.get(project.id, resolved)).toBeNull();
+        expect(await aiProjects.list(resolved)).toEqual([]);
+        await expect(aiSkills.get(own!.id, resolved, "write", resolved)).rejects.toThrow(AiSkillAppForbiddenError);
+        await expect(aiSkills.get(own!.id, resolved, "admin", resolved)).rejects.toThrow(AiSkillAppForbiddenError);
+        await expect(
+          aiSkills.update(own!.id, resolved, { ...own!, expectedRevision: own!.revision, instructions: "Changed." }, resolved),
+        ).rejects.toThrow(AiSkillAppForbiddenError);
+        await expect(aiSkills.delete(own!.id, resolved, resolved)).rejects.toThrow(AiSkillAppForbiddenError);
+        await expect(
+          aiSkills.grantAccess(own!.id, resolved, { principal: { type: "authenticated" }, permission: "read" }, undefined, resolved),
+        ).rejects.toThrow(AiSkillAppForbiddenError);
+        await expect(
+          aiSkills.create({ subject: resolved, name: deniedCreateName, description: "Denied.", instructions: "Denied." }, resolved),
+        ).rejects.toThrow(AiResourceCredentialError);
+        expect(await aiSkills.get(own!.id, resolved)).toBeNull(); // Missing broker authority.
+        const mismatched = { ...resolved, accessSubject: { type: "service_account" as const, serviceAccountId: crypto.randomUUID() } };
+        expect(await aiSkills.get(own!.id, mismatched, "read", resolved)).toBeNull();
+
+        // Legacy app entries also retain the binding and scope checks.
+        registered.mockResolvedValue([core, { ...ownApp, access: undefined }, { ...otherApp, access: undefined }]);
+        expect(await aiSkills.get(own!.id, resolved, "read", resolved)).toMatchObject({ permission: "read" });
+        expect(await aiSkills.get(other!.id, resolved, "read", resolved)).toBeNull();
+        // Request authority may be narrower than the actor (for example OAuth).
+        expect(await aiSkills.get(own!.id, resolved, "read", { ...resolved, scopes: [`${otherApp.id}:read`] })).toBeNull();
+        const narrowerActor = { ...resolved, actor: { ...resolved.actor, scopes: [`${otherApp.id}:read`] } };
+        expect(await aiSkills.get(own!.id, narrowerActor, "read", resolved)).toBeNull();
+        for (const deniedScopes of [[], ["ai:inference"], [`${otherApp.id}:read`]]) {
+          const denied = { ...resolved, actor: { ...resolved.actor, scopes: deniedScopes }, scopes: deniedScopes };
+          expect(await aiSkills.get(own!.id, denied, "read", denied)).toBeNull();
+        }
+      }
+      const [afterBroker] = await sql`SELECT revision, instructions FROM ai.skills WHERE id=${own!.id}::uuid`;
+      expect(afterBroker?.revision).toBe(own!.revision);
+      expect(afterBroker?.instructions).toBe("Original instructions.");
+
       registered.mockResolvedValue([core, { ...ownApp, access: { kind: "roles", roles: ["admin"] } }, otherApp]);
       expect((await routes.request(`/api/ai/skills/${own!.shortId}`)).status).toBe(404);
       expect(await (await routes.request("/api/ai/skills")).json()).toEqual({ skills: [] });
@@ -173,6 +266,7 @@ databaseSuite()("Skill broker routes (integration)", () => {
       registered.mockRestore();
       registeredCore.mockRestore();
       for (const id of created) await aiSkills.admin.delete(id);
+      if (projectId) await aiProjects.admin.delete(projectId);
       await sql`DELETE FROM ai.app_skills WHERE app_id IN (${ownApp.id}, ${otherApp.id})`;
       await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id=${owner!.id}::uuid`;

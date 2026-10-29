@@ -39,6 +39,41 @@ A Cloud-only Skill such as `assistant-code-mode` teaches Cloud tools. Pulling
 it into a local folder gives other agents instructions for tools they may not
 have.
 
+## Share Projects and Skills
+
+Both `cld assistant projects access` and `cld assistant skills access` provide:
+
+| Command | Use |
+| --- | --- |
+| `list <resource>` | Show direct grants, names, account kinds, and access IDs |
+| `grant <resource> --service-account <name-or-uuid> --permission read` | Add a direct grant |
+| `set <resource> --service-account <name-or-uuid> --permission write` | Create or update a direct grant |
+| `set <resource> --access-id <grant-id> --permission read` | Update one grant |
+| `revoke <resource> --access-id <grant-id> --yes` | Remove one grant |
+| `revoke <resource> --service-account <name-or-uuid> --yes` | Remove a recipient's direct grant |
+| `search-principals <query> [--kind user,group,service_account]` | Search the directory for recipients |
+
+A resource is its exact name or short ID. Recipient flags are `--user`,
+`--group`, `--service-account`, and `--authenticated`; choose one. Human
+recipients accept UUIDs, exact names, and, for users, uid or email. Service
+accounts accept UUIDs or exact names. Ambiguous names fail before a write.
+Name lookup and principal search require directory access. A userless actor
+uses recipient UUIDs; the CLI does not grant it directory access.
+
+Standalone and agent accounts can manage Projects within their grants and
+the credential's `read`, `write`, or `admin` scopes. Creating a Project requires
+`write` or `admin`. These accounts can also read Skills granted to them.
+Skill access commands and other Skill writes require a user-backed caller
+with Core access, even when a machine account has an `admin` grant and scope.
+Resource-bound credentials are unsupported. Service accounts of kind
+`user_delegated` or `resource_bound` cannot replace the last eligible manager.
+Public grants are rejected. Grant changes require `admin` permission.
+
+The established Project syntax remains accepted:
+`projects access grant <project> <recipient> --type user|group|service_account`
+(default permission `read`), `projects access update <project> <access-id>
+--permission <level>`, and `projects access revoke <project> <access-id> --yes`.
+
 ## Assistant in editors
 
 `cld assistant acp` (shortcut `cld acp`) runs Assistant as an ACP v1 agent over
@@ -611,7 +646,7 @@ cld assistant projects create "Release notes" --instructions-file ./release-note
 cld assistant projects knowledge add "Release notes" "Editorial guidelines" --content-file ./guidelines.md
 cld assistant projects files put "Release notes" ./glossary.csv
 cld assistant projects references add "Release notes" grids.record <record-id> --label "Current catalog"
-cld assistant projects access grant "Release notes" <group-id> --type group --permission write
+cld assistant projects access grant "Release notes" --group "Editors" --permission write
 cld assistant chats create --project <project-id>
 ```
 
