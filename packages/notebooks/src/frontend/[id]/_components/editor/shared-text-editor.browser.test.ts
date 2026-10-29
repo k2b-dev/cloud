@@ -640,8 +640,10 @@ describe("Notebook on the shared text editor", () => {
       await page.keyboard.press("Enter");
       expect(await activeCell(page)).toBe("3,1");
       await page.keyboard.press("Enter");
-      expect(await activeCell(page)).toBeNull();
+      // Leaving deletes the empty row on the server; its result must not pull the caret back into the table.
       await page.waitForFunction((before) => window.noteHarness.text() === before, before);
+      await settled(page);
+      expect(await activeCell(page)).toBeNull();
       await cell(page, 1, 0).click();
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("2");

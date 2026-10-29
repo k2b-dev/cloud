@@ -1159,7 +1159,15 @@ const focusTableTarget = (view: EditorView, target: TableTarget | null) => {
 };
 
 /** Structural actions also work in source mode, without a mounted table widget. */
-export const runTableAction = (view: EditorView, tableFrom: number, r: number, c: number, action: MenuAction) => {
+export const runTableAction = (
+  view: EditorView,
+  tableFrom: number,
+  r: number,
+  c: number,
+  action: MenuAction,
+  /** `false` when the gesture already moved the caret out of the table: the result must not pull it back. */
+  options: { follow?: boolean } = {},
+) => {
   const tables = tablesIn(view.state);
   const index = tables.findIndex((table) => table.from === tableFrom);
   const t = tables[index];
@@ -1179,7 +1187,7 @@ export const runTableAction = (view: EditorView, tableFrom: number, r: number, c
     }
     // A new user gesture while waiting owns the caret. Remote redraws do not.
     const interactionRoot = view.dom;
-    let follow = true,
+    let follow = options.follow !== false,
       settled = false;
     const relinquish = () => {
       follow = false;
@@ -1246,7 +1254,7 @@ export const runTableAction = (view: EditorView, tableFrom: number, r: number, c
     deleteRow: [Math.max(1, r - 1), c],
     deleteCol: [r, Math.max(0, c - 1)],
   } as Record<string, [number, number]>;
-  if (!dispatchChanges(view, ops[action](), true)) return;
+  if (!dispatchChanges(view, ops[action](), true) || options.follow === false) return;
   if (action === "deleteTable") {
     active.delete(view);
     syncs.delete(view);
@@ -1565,7 +1573,7 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
       else if (r > 1 && T.gridLine(t, last)?.cells.every((cell) => !T.displayCell(cell.text).trim())) {
         // Match the list-like exit: remove the empty trailing row when allowed.
         // F3 A keeps deletion server-only; offline we can still leave the table.
-        if (!host?.structure || host.structure.available()) runTableAction(view, t.from, r, c, "deleteRow");
+        if (!host?.structure || host.structure.available()) runTableAction(view, t.from, r, c, "deleteRow", { follow: false });
         leave(view, wrap, "after");
       } else if (dispatchChanges(view, T.insertRow(t, last), true)) move(view, wrap, last + 1, c);
       return;
