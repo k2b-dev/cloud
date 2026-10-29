@@ -1,7 +1,9 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
+import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { contactsService } from "../service";
@@ -143,6 +145,21 @@ suite("Contacts REST access for standalone agents", () => {
       expect(renamed.status).toBe(200);
       expect(await renamed.json()).toMatchObject({ id: granted.shortId, name: `Renamed ${suffix}` });
       expect((await managerWithAdminScope(`/books/${granted.shortId}/export.vcf`)).status).toBe(200);
+
+      // ACL management uses the same binding and scope limits as book data.
+      await sql`UPDATE auth.access SET permission = 'admin' WHERE service_account_id = ${bound.id}::uuid`;
+      expect((await boundCall(`/books/${granted.shortId}/access`)).status).toBe(403);
+      const boundAdmin = await apiAs(bound, ["admin"]);
+      expect((await boundAdmin(`/books/${granted.shortId}/access`)).status).toBe(200);
+      expect((await boundAdmin(`/books/${other.shortId}/access`)).status).toBe(403);
+      expect(
+        (
+          await boundAdmin(`/books/${other.shortId}/access`, {
+            method: "POST",
+            body: { principal: { type: "service_account", serviceAccountId: stranger.id }, permission: "read" },
+          })
+        ).status,
+      ).toBe(403);
     } finally {
       await sql`DELETE FROM events.outbox WHERE app_id = 'contacts' AND ordering_key IN (${granted.id}, ${other.id})`;
       await sql`DELETE FROM contacts.books WHERE id IN (${granted.id}::uuid, ${other.id}::uuid)`;
@@ -153,4 +170,69 @@ suite("Contacts REST access for standalone agents", () => {
       }
     }
   });
+});
+
+const sharingSuite = suiteFor("database", "nats", "valkey");
+sharingSuite("Contact book sharing by machine managers", () => {
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind}: a named manager uses and changes grants with its credential, and revocation takes effect`, async () => {
+      const suffix = crypto.randomUUID();
+      const [owner] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
+        VALUES (${`contacts-parity-${suffix}`}, 'local', 'user', 'Mara Lind') RETURNING id`;
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+        VALUES (${`Contact helper ${suffix}`}, ${kind}) RETURNING id`;
+      const book = { id: crypto.randomUUID(), shortId: testShortId() };
+      try {
+        await sql`INSERT INTO contacts.books (id, short_id, name) VALUES (${book.id}::uuid, ${book.shortId}, 'Research contacts')`;
+        const [ownerGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access (user_id, permission)
+          VALUES (${owner!.id}::uuid, 'admin') RETURNING id`;
+        await sql`INSERT INTO contacts.book_access (book_id, access_id) VALUES (${book.id}::uuid, ${ownerGrant!.id}::uuid)`;
+        const cookie = `session_token=${await createTestSession(owner!.id)}`;
+        const human = (path: string, method: string, body?: unknown) =>
+          contactsApi.request(path, {
+            method,
+            headers: { cookie, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          });
+        const accessPath = `/books/${book.shortId}/access`;
+        const machine = await apiAs(account!, ["admin"]);
+        expect((await machine(`/books/${book.shortId}`)).status).toBe(403);
+        const granted = await human(accessPath, "POST", {
+          principal: { type: "service_account", serviceAccountId: account!.id },
+          permission: "admin",
+        });
+        expect(granted.status).toBe(200);
+        const entry = await granted.json();
+        expect(entry).toMatchObject({ displayName: `Contact helper ${suffix}`, serviceAccountKind: kind });
+        expect((await machine(`/books/${book.shortId}`)).status).toBe(200);
+        expect(
+          (await machine(`/books/${book.shortId}/contacts`, { method: "POST", body: { firstName: "Fictional", lastName: "Contact" } }))
+            .status,
+        ).toBe(200);
+        const readOnly = await apiAs(account!, ["read"]);
+        expect((await readOnly(accessPath)).status).toBe(403);
+        expect((await readOnly(`${accessPath}/${ownerGrant!.id}`, { method: "PATCH", body: { permission: "read" } })).status).toBe(403);
+        expect((await machine(accessPath)).status).toBe(200);
+        const shared = await machine(accessPath, {
+          method: "POST",
+          body: { principal: { type: "authenticated" }, permission: "read" },
+        });
+        expect(shared.status).toBe(200);
+        expect((await machine(`${accessPath}/${(await shared.json()).id}`, { method: "DELETE" })).status).toBe(200);
+        // After the human manager steps down, the machine manager can restore them.
+        expect((await human(`${accessPath}/${ownerGrant!.id}`, "PATCH", { permission: "read" })).status).toBe(200);
+        expect((await machine(`${accessPath}/${entry.id}`, { method: "DELETE" })).status).toBe(409);
+        expect((await machine(`${accessPath}/${ownerGrant!.id}`, { method: "PATCH", body: { permission: "admin" } })).status).toBe(200);
+        expect((await human(`${accessPath}/${entry.id}`, "DELETE")).status).toBe(200);
+        expect((await machine(`/books/${book.shortId}`)).status).toBe(403);
+        expect((await machine(accessPath)).status).toBe(403);
+        expect((await machine(`/books/${book.shortId}/contacts`, { method: "POST", body: { firstName: "Refused" } })).status).toBe(403);
+      } finally {
+        await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM contacts.book_access WHERE book_id=${book.id}::uuid)`;
+        await sql`DELETE FROM contacts.books WHERE id=${book.id}::uuid`;
+        await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${owner!.id}::uuid`;
+      }
+    });
+  }
 });

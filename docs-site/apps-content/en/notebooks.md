@@ -207,6 +207,24 @@ References, Attachments, Linked from, and Activity. Activity uses translated
 sentences and ends with who created the note. Hover or focus a timestamp for
 its exact date; use the versions link to open saved history.
 
+## Share a notebook with an integration or agent
+
+Grant a standalone service account or agent access under **Sharing → Access**.
+The entry shows its account name and kind. With **Manage** (`admin`) access
+and an `admin` credential scope, either kind can list, grant, change, and
+revoke access through `/api/notebooks/:id/access`. A `read` or `write` scope
+cannot manage access, even when the account has **Manage** access.
+Revoking its grant removes the access that its existing tokens received from
+that grant. Resource API keys remain confined to their own notebook.
+
+To hand management over, grant the new manager first, then lower or remove
+the old manager's entry. Standalone service accounts and agents can be the
+remaining manager. A change that removes the last manager returns
+`LAST_MANAGER` (HTTP 409); grant another manager before retrying.
+[Resource authorization](/en/docs/identity/authorization#keep-at-least-one-manager)
+defines which entries count. Creating resource API keys still requires a
+user-backed identity.
+
 ## Reserve deleting and locking notes for admins
 
 By default, everyone with write access can delete notes and lock them

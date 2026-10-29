@@ -43,6 +43,7 @@ suite("Spaces agent work", () => {
         actor,
         claimedAt: expect.any(String),
         displayName: "Task worker",
+        serviceAccountKind: "resource_bound",
         avatarHash: null,
       });
       const claimedOnly = await listFiltered({ spaceId, filter: ItemFilterSchema.parse({ type: "task", activity: "claimed" }) });

@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.45.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.44.0...npm-cloud-v0.45.0) (2026-10-29)
+
+
+### Features
+
+* **accounts:** include agents in local group membership ([#1834](https://github.com/k2b-dev/cloud/issues/1834)) ([d7720d0](https://github.com/k2b-dev/cloud/commit/d7720d0fa61071c89e8c319c2d1fc1010d4f2d68)), closes [#1723](https://github.com/k2b-dev/cloud/issues/1723)
+* **accounts:** keep personal Linux groups out of exports ([#1949](https://github.com/k2b-dev/cloud/issues/1949)) ([36268f4](https://github.com/k2b-dev/cloud/commit/36268f4a0bde3bb46435c7114634b1c5f13e4436))
+* **ai:** preserve caller identity in Project and Skill access ([eb4fc71](https://github.com/k2b-dev/cloud/commit/eb4fc71e94e51c54a78f4bc1c995d541b0646e66))
+* **cloud:** give every agent a robot and a page to change its picture ([#1855](https://github.com/k2b-dev/cloud/issues/1855)) ([3612533](https://github.com/k2b-dev/cloud/commit/361253360abe327d645ce3afdffe36b36b9b7d4d))
+* **core:** show Administration › Sign-in & security as one area ([#2040](https://github.com/k2b-dev/cloud/issues/2040)) ([91ff763](https://github.com/k2b-dev/cloud/commit/91ff7634b8b4d26a205f224be891a043c3c69bd3))
+* **grids:** run workflows under revocable machine mandates ([#1851](https://github.com/k2b-dev/cloud/issues/1851)) ([7878ff4](https://github.com/k2b-dev/cloud/commit/7878ff490703d63ba7ecfb0383fe455c1c2f976e))
+* **notebooks:** edit tables directly with the shared text editor ([#1737](https://github.com/k2b-dev/cloud/issues/1737)) ([11ee4f6](https://github.com/k2b-dev/cloud/commit/11ee4f65f176cc2a3646c18a0846dca29e3b7d40)), closes [#1762](https://github.com/k2b-dev/cloud/issues/1762)
+
+
+### Bug Fixes
+
+* **test:** every browser test page answers the shell's capability catalog read ([#2080](https://github.com/k2b-dev/cloud/issues/2080)) ([0fd10db](https://github.com/k2b-dev/cloud/commit/0fd10db4d1ddd0489b84061ae8a09d65151d814f))
+* **workflows:** keep expression matching linear on long input ([eb4fc71](https://github.com/k2b-dev/cloud/commit/eb4fc71e94e51c54a78f4bc1c995d541b0646e66))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.34.0 to 0.35.0
+
 ## [0.44.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.43.0...npm-cloud-v0.44.0) (2026-10-29)
 
 

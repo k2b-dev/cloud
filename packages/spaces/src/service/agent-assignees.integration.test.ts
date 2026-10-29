@@ -152,7 +152,7 @@ suite("Spaces service-account assignees", () => {
       const claimId = await f.claim(itemId);
       expect(await change({ ...f.context(itemId), operation: "claim", claimId })).toMatchObject({ ok: true });
       expect((await get({ id: itemId }))?.assignees).toEqual([
-        { id: f.agent.id, kind: "service_account", displayName: f.agent.name, avatarHash: null },
+        { id: f.agent.id, kind: "service_account", serviceAccountKind: "agent", displayName: f.agent.name, avatarHash: null },
       ]);
       const filtered = async (values: Record<string, unknown>) =>
         (
