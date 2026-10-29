@@ -8,7 +8,7 @@ import { chatMessages } from "../messages";
 import type { ConversationSchema, PersonalConversationSchema } from "../service/contracts";
 import { ThreadRows } from "./ChatThreads";
 import { lastMessageLine, listTime } from "./chat-format";
-import { containerIcon, systemMembers } from "./system-chats";
+import { containerIcon } from "./system-chats";
 import { chatHasThreads } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -227,12 +227,12 @@ export default function ChatList(props: {
                     like any other chat again. */}
                   <Show when={expanded()}>
                     <span class="chat-list__preview chat-list__members">
-                      {row().kind === "system" ? systemMembers(row().resource?.type, t()) : t().members({ count: row().memberCount })}
+                      {row().kind === "system" ? t().systemMembers : t().members({ count: row().memberCount })}
                     </span>
                   </Show>
                   <span class="chat-list__preview" data-collapsed-only={expanded() ? "" : undefined}>
                     {row().kind === "system" && !row().lastMessage
-                      ? systemMembers(row().resource?.type, t())
+                      ? t().systemMembers
                       : row().channel
                         ? channelLine(row(), t())
                         : lastMessageLine(row(), props.viewerId, locale())}

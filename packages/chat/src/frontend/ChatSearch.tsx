@@ -3,7 +3,7 @@ import { AppWorkspace, Button, InlineGuidance, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { chatMessages } from "../messages";
 import { createSearchApi, type SearchHit, type SearchResult } from "./search-api";
-import { containerIcon, systemMembers } from "./system-chats";
+import { containerIcon } from "./system-chats";
 import { threadHref } from "./threads";
 
 type ChatHit = Extract<SearchHit, { kind: "chat" }>;
@@ -127,7 +127,7 @@ export default function ChatSearch(props: {
                     <AppWorkspace.SidebarItem
                       onClick={() => void props.onSystem(system().ref)}
                       icon={containerIcon(system().icon)}
-                      description={<span class="chat-list__preview">{systemMembers(system().ref.type, t())}</span>}
+                      description={<span class="chat-list__preview">{t().systemMembers}</span>}
                     >
                       {system().name}
                     </AppWorkspace.SidebarItem>

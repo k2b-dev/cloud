@@ -396,3 +396,37 @@ test("system chat links keep personal Unread separate from the thread directory 
   expect(html).toContain("/app/chat/panel/c/Chat01?panel=info&amp;listFilter=unread");
   expect(html).not.toContain("/app/chat/panel/c/Chat01?panel=info&amp;filter=unread");
 });
+
+test("a skipped discussion provider leaves a visible notice with retry, not a silent gap", () => {
+  const list = {
+    href: (id: string) => `/app/chat/c/${id}`,
+    onPersonal: () => {},
+    pending: false,
+    activeId: null,
+    viewerId,
+    dateConfig: props().dateConfig,
+    now: () => new Date(now),
+    onOpen: () => {},
+    onMarkRead: () => {},
+    onMarkUnread: () => {},
+  };
+  const html = renderChild("de", () =>
+    createComponent(ChatSystemChats, {
+      list,
+      current: null,
+      updates: [],
+      unavailableId: null,
+      expanded: true,
+      onExpanded: () => {},
+      onOpen: () => {},
+      state: {
+        page: () => ({ items: [], cursors: {}, skipped: ["inventory.shelf"] }),
+        status: () => "ready",
+        more: () => false,
+        load: async () => {},
+      },
+    }),
+  );
+  expect(html).toContain("Einige Orte konnten gerade nicht geladen werden.");
+  expect(html).toContain("Erneut versuchen");
+});

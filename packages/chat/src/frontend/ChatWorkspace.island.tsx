@@ -91,7 +91,7 @@ import {
   threadsPageHref as threadsPageAddress,
   UNREAD_COUNT_PATH,
 } from "./route";
-import { containerIcon, openResourceThread, openSystemChat, systemMembers } from "./system-chats";
+import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
 
 import { openThreadDialog } from "./ThreadDialog";
 import {
@@ -2367,7 +2367,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 system() && openThread()
                   ? current().title
                   : system()
-                    ? systemMembers(current().resource?.type, t())
+                    ? t().systemMembers
                     : current().channel
                       ? t().subscribers({ count: current().memberCount })
                       : undefined

@@ -1,7 +1,6 @@
 import { createApiClient } from "@k2b/cloud/browser";
 import type { z } from "zod";
 import type { ApiType } from "../api";
-import type { chatMessages } from "../messages";
 import {
   ConversationSchema,
   type ForResourceSchema,
@@ -15,7 +14,6 @@ import {
 export type SystemChatPage = z.infer<typeof SystemChatPageSchema>;
 export type ThreadQuery = z.input<typeof ThreadQuerySchema>;
 export const containerIcon = (icon: string | null | undefined) => icon ?? "ti ti-messages";
-export const systemMembers = (_type: string | undefined, t: ReturnType<typeof chatMessages.resolve>["t"]) => t.systemMembers;
 
 const client = () => createApiClient<ApiType>({ baseUrl: "/api/chat" });
 const response = async <T>(result: Pick<Response, "ok" | "status" | "json">, schema: z.ZodType<T>): Promise<T> => {

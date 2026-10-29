@@ -95,6 +95,14 @@ export default function ChatSystemChats(props: {
             </Button>
           </InlineGuidance>
         </Show>
+        <Show when={props.state.status() === "ready" && props.state.page()?.skipped.length}>
+          <InlineGuidance tone="warning" role="status">
+            {t().systemChatsPartial}{" "}
+            <Button variant="text" size="xs" onClick={() => void props.state.load(false)}>
+              {t().retry}
+            </Button>
+          </InlineGuidance>
+        </Show>
         <Show when={props.state.status() === "ready" && rows().length === 0}>
           <p class="chat-system-chats__empty">{t().systemChatsEmpty}</p>
         </Show>
