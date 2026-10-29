@@ -194,6 +194,11 @@ export const isMandatePolicyNarrowing = (current: MandatePolicyV1, next: Mandate
         }),
       ));
 
+/**
+ * True when a background mandate permits one operation. Unattended Actions must fit the live
+ * capability policy whenever the mandate has grants or preapproves Actions; a `require_approval`
+ * mandate without grants runs an Action only after its separate approval completed through Cloud.
+ */
 export const mandatePolicyAllows = (
   policy: MandatePolicyV1,
   input: {

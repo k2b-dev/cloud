@@ -569,7 +569,7 @@ describe("service worker scope", () => {
     }
   });
 
-  test("only the mobile app serves a service worker script below /pwa", async () => {
+  test("only the Cloud app serves a service worker script below /pwa", async () => {
     const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
     const hits: string[] = [];
     const upstream = Bun.serve({

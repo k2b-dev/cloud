@@ -40,6 +40,8 @@ export function AppAccessDeniedContent(props: {
       <p class="mb-4 text-[15px] text-secondary">
         {props.revoked ? (
           t().revokedDescription
+        ) : props.app.access?.kind === "resources" ? (
+          t().deniedResources
         ) : grants() ? (
           t().deniedGrants
         ) : (
