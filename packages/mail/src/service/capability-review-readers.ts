@@ -47,6 +47,8 @@ export type AssignmentReviewChange = {
   added: CapabilityPerson[];
   removed: CapabilityPerson[];
   addedTotal: number;
+  granted: CapabilityPerson[];
+  grantedTotal: number;
   removedTotal: number;
 };
 /** One bounded response for up to 50 conversations, including nested-group grants.
@@ -60,21 +62,32 @@ export const loadAssignmentReviewChange = async (params: {
   actorUserId: string | null;
 }): Promise<AssignmentReviewChange> => {
   const [row] = await sql<
-    { requested: CapabilityPerson[]; added: CapabilityPerson[]; removed: CapabilityPerson[]; added_total: number; removed_total: number }[]
+    {
+      requested: CapabilityPerson[];
+      added: CapabilityPerson[];
+      removed: CapabilityPerson[];
+      added_total: number;
+      removed_total: number;
+      granted: CapabilityPerson[];
+      granted_total: number;
+    }[]
   >`
-    WITH RECURSIVE requested AS (
+    WITH RECURSIVE directory AS NOT MATERIALIZED (
+      SELECT id, display_name, uid, mail, true AS is_user FROM auth.users
+      UNION ALL SELECT id, name AS display_name, name AS uid, NULL::text AS mail, false AS is_user FROM auth.service_accounts
+    ), requested AS (
       SELECT id FROM mail.conversations WHERE mailbox_id = ${params.mailboxId}::uuid
         AND short_id IN (SELECT value FROM jsonb_array_elements_text(${params.conversationIds}::jsonb))
     ), changes AS (
-      SELECT DISTINCT u.id AS user_id, u.display_name, u.uid, u.mail,
+      SELECT DISTINCT u.id AS user_id, u.display_name, u.uid, u.mail, u.is_user,
         ${params.mode !== "remove"} AND u.id <> COALESCE(${params.actorUserId}::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
           AND u.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${params.assigneeUserIds}::jsonb))
-          AND EXISTS (SELECT 1 FROM requested c WHERE NOT EXISTS (SELECT 1 FROM mail.conversation_assignees ca WHERE ca.conversation_id = c.id AND ca.user_id = u.id)) AS added,
-        ${params.mode !== "add"} AND EXISTS (SELECT 1 FROM mail.conversation_assignees ca JOIN requested c ON c.id = ca.conversation_id WHERE ca.user_id = u.id)
+          AND EXISTS (SELECT 1 FROM requested c WHERE NOT EXISTS (SELECT 1 FROM mail.conversation_assignees ca WHERE ca.conversation_id = c.id AND ca.principal_id = u.id)) AS added,
+        ${params.mode !== "add"} AND EXISTS (SELECT 1 FROM mail.conversation_assignees ca JOIN requested c ON c.id = ca.conversation_id WHERE ca.principal_id = u.id)
           AND CASE WHEN ${params.mode === "remove"} THEN u.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${params.assigneeUserIds}::jsonb))
             ELSE u.id NOT IN (SELECT value::uuid FROM jsonb_array_elements_text(${params.assigneeUserIds}::jsonb)) END AS removed
-      FROM auth.users u WHERE u.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${params.assigneeUserIds}::jsonb))
-        OR u.id IN (SELECT ca.user_id FROM mail.conversation_assignees ca JOIN requested c ON c.id = ca.conversation_id)
+      FROM directory u WHERE u.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${params.assigneeUserIds}::jsonb))
+        OR u.id IN (SELECT ca.principal_id FROM mail.conversation_assignees ca JOIN requested c ON c.id = ca.conversation_id)
     ), memberships(user_id, group_id) AS (
       SELECT ug.user_id, ug.group_id FROM auth.user_groups_v2 ug JOIN changes c ON c.user_id = ug.user_id
       UNION SELECT m.user_id, gg.parent_group_id FROM memberships m JOIN auth.group_groups_v2 gg ON gg.child_group_id = m.group_id
@@ -82,21 +95,24 @@ export const loadAssignmentReviewChange = async (params: {
       SELECT c.*, EXISTS (
         SELECT 1 FROM mail.mailbox_access ma JOIN auth.access a ON a.id = ma.access_id
         WHERE ma.mailbox_id = ${params.mailboxId}::uuid AND a.permission IN ('read','write','admin') AND
-          (a.user_id = c.user_id OR a.group_id IN (SELECT group_id FROM memberships WHERE user_id = c.user_id)
-            OR a.authenticated_only OR (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL))
+          ((NOT c.is_user AND a.service_account_id = c.user_id) OR (c.is_user AND (a.user_id = c.user_id OR a.group_id IN (SELECT group_id FROM memberships WHERE user_id = c.user_id)
+            OR a.authenticated_only OR (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL))))
       ) AS full_access, EXISTS (
         SELECT 1 FROM mail.mailbox_assigned_access ma JOIN auth.access a ON a.id = ma.access_id
         WHERE ma.mailbox_id = ${params.mailboxId}::uuid AND a.permission IN ('read','write','admin') AND
-          (a.user_id = c.user_id OR a.group_id IN (SELECT group_id FROM memberships WHERE user_id = c.user_id))
+          ((NOT c.is_user AND a.service_account_id = c.user_id) OR (c.is_user AND (a.user_id = c.user_id OR a.group_id IN (SELECT group_id FROM memberships WHERE user_id = c.user_id))))
       ) AS assigned_access FROM changes c
-    ), added AS (SELECT * FROM grants WHERE added ORDER BY user_id),
+    ), added AS (SELECT * FROM grants WHERE added AND is_user ORDER BY user_id),
+    granted AS (SELECT * FROM grants WHERE added AND NOT is_user AND assigned_access AND NOT full_access ORDER BY user_id),
     removed AS (SELECT * FROM grants WHERE removed AND assigned_access AND NOT full_access ORDER BY user_id)
     SELECT
-      COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('name', COALESCE(NULLIF(display_name,''), uid), 'userId', id, 'address', NULLIF(mail,''))) ORDER BY requested.ordinality)
+      COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('name', COALESCE(NULLIF(display_name,''), uid), 'userId', CASE WHEN is_user THEN id END, 'address', NULLIF(mail,''))) ORDER BY requested.ordinality)
         FROM jsonb_array_elements_text(${params.assigneeUserIds}::jsonb) WITH ORDINALITY requested(value, ordinality)
-        JOIN auth.users ON id = requested.value::uuid), '[]'::jsonb) AS requested,
-      COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('name', COALESCE(NULLIF(display_name,''), uid), 'userId', user_id, 'address', NULLIF(mail,'')))) FROM (SELECT * FROM added LIMIT 20) a), '[]'::jsonb) AS added,
-      COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('name', COALESCE(NULLIF(display_name,''), uid), 'userId', user_id, 'address', NULLIF(mail,'')))) FROM (SELECT * FROM removed LIMIT 20) r), '[]'::jsonb) AS removed,
+        JOIN directory ON id = requested.value::uuid), '[]'::jsonb) AS requested,
+      COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('name', COALESCE(NULLIF(display_name,''), uid), 'userId', CASE WHEN is_user THEN user_id END, 'address', NULLIF(mail,'')))) FROM (SELECT * FROM added LIMIT 20) a), '[]'::jsonb) AS added,
+      COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object('name', COALESCE(NULLIF(display_name,''), uid), 'userId', CASE WHEN is_user THEN user_id END, 'address', NULLIF(mail,'')))) FROM (SELECT * FROM removed LIMIT 20) r), '[]'::jsonb) AS removed,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('name', display_name)) FROM (SELECT * FROM granted LIMIT 20) g), '[]'::jsonb) AS granted,
+      (SELECT count(*)::int FROM granted) AS granted_total,
       (SELECT count(*)::int FROM added) AS added_total, (SELECT count(*)::int FROM removed) AS removed_total
   `;
   return {
@@ -104,6 +120,8 @@ export const loadAssignmentReviewChange = async (params: {
     added: row?.added ?? [],
     removed: row?.removed ?? [],
     addedTotal: row?.added_total ?? 0,
+    granted: row?.granted ?? [],
+    grantedTotal: row?.granted_total ?? 0,
     removedTotal: row?.removed_total ?? 0,
   };
 };

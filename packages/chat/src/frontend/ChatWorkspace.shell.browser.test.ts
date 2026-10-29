@@ -14,7 +14,7 @@ beforeAll(async () => {
     return harness.props({ chat, panel: url.searchParams.get("panel") === "info" ? "info" : undefined });
   });
   harness = await startChatHarness({ renderPage: shell.render });
-  browser = await launchBrowser();
+  browser = await launchBrowser({ serveShellCatalog: true });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();

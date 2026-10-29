@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1087
 description: Configure account lifetimes and reminders, then inspect or repair expiry dates.
 tags: [accounts, administration, authentication]
-updated: 2026-09-09
+updated: 2026-10-28
 ---
 
 # Manage account expiry and maintenance
@@ -49,7 +49,7 @@ Global cleanup scheduling uses **General** settings.
 
 ## Inspect activity
 
-Open **Administration → Accounts & sign-in → Operations**.
+Open **Administration → Sign-in & security → Account operations**.
 Its links open account lifecycle logs, FreeIPA sync logs and scheduled jobs
 with the relevant filters already selected. Adjust the time window when
 looking for an older run. Use individual account history for record-specific changes.

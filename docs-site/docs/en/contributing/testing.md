@@ -242,6 +242,11 @@ WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
 changes `visibility` starts no animation for `settled()` to wait for. See
 `hover()` in `packages/ui/src/layout/sidebar-row-label-room.browser.test.ts`.
 
+A browser test that opens its own context or page gives itself a budget, as
+the Chat suites do (`test(name, run, 30_000)`), and keeps the page's shorter
+limit for each step (`page.setDefaultTimeout(5_000)`). Bun's default of 5 s
+is meant for one step, not for a page load, a mount, and a flow.
+
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
 condition. `settled()` waits for fonts, for the running finite animations on
@@ -431,6 +436,15 @@ check enforces this rule. Await promises directly and assert on their values;
 for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
+
+Every page from `launchBrowser()` answers Cloud's own capability catalog read
+(`GET /api/capabilities/v1/catalog`) with an empty catalog, in the page and
+without a request. Shared browser modules make this read by themselves, such as
+the file-provider discovery while a page is idle, so a fixture that serves only
+its own endpoints would see it at random. A test file that serves a catalog,
+counts its reads, or fails it on purpose launches with
+`launchBrowser({ serveShellCatalog: true })`; its pages then send the read to
+the fixture. Other methods and paths always reach the fixture.
 
 Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
 and assert `expect(errors).toEqual([])`; new tests do not register a

@@ -51,7 +51,7 @@ Bun.plugin(plugin());
 beforeAll(async () => {
   const { startConversationPanelFixture } = await import("./ChatPanel.browser-fixture");
   fixture = await startConversationPanelFixture();
-  browser = await launchBrowser();
+  browser = await launchBrowser({ serveShellCatalog: true });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
@@ -1466,8 +1466,14 @@ for (const { embedded, width } of [
       releaseComposer = resolve;
     });
     let catalogRequests = 0;
-    // A preceding catalog request may fail before the command menu's own request has settled.
-    const initialRequested = !embedded ? page.waitForRequest((request) => request.url().includes("/capabilities/v1/catalog")) : undefined;
+    // The page's file-provider discovery reads the catalog on its own once it is idle (in WebKit after 1 s), so it
+    // could otherwise land after the recovery and count as a second recovered load (#1876). Each case waits for that
+    // first read of the document it tests, while the catalog still fails, before the command menu opens.
+    const initialRequested = page.waitForRequest(
+      (request) =>
+        request.url().includes("/capabilities/v1/catalog") &&
+        (!embedded || new URL(request.frame().url()).pathname === "/app/assistant/panel"),
+    );
     await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
       const ordinal = ++catalogRequests;
       if (!embedded) {
@@ -1521,7 +1527,7 @@ for (const { embedded, width } of [
       const view = embedded ? page.frameLocator("[data-cloud-panel-frame]") : page;
       await view.locator('html[data-fixture-ready="true"]').waitFor();
       const composer = view.locator('textarea:not([aria-hidden="true"])');
-      if (initialRequested) await initialRequested;
+      await initialRequested;
       const failed = page.waitForResponse(
         (response) =>
           response.url().includes("/capabilities/v1/catalog") &&

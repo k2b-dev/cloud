@@ -9,6 +9,8 @@ export type MailWorkflowFolderCatalogEntry = {
 export type MailWorkflowAssignableUserCatalogEntry = {
   id: string;
   name: string;
+  type?: "user" | "service_account";
+  serviceAccountKind?: "standalone" | "agent" | "resource_bound";
 };
 
 export type MailWorkflowSenderIdentityCatalogEntry = {

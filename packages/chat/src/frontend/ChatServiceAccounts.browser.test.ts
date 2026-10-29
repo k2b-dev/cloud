@@ -13,7 +13,7 @@ let browser: Browser;
 let context: BrowserContext | undefined;
 beforeAll(async () => {
   harness = await startChatHarness();
-  browser = await launchBrowser();
+  browser = await launchBrowser({ serveShellCatalog: true });
 }, 60_000);
 afterEach(async () => {
   await context?.close();
