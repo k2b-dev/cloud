@@ -1017,7 +1017,14 @@ export const accountsAppService = {
         });
         return paginateItems(filtered, config.pagination);
       },
-      add: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      add: async (config: {
+        actor: AccountsActor;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1036,17 +1043,25 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.member.add",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
-      remove: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      remove: async (config: {
+        actor: AccountsActor;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1065,13 +1080,14 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.member.remove",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
@@ -1256,6 +1272,7 @@ export const accountsAppService = {
       profile?: UserProfile;
       userIds?: string[];
       groupIds?: string[];
+      serviceAccountIds?: string[];
       serviceAccountKinds?: ServiceAccountKind[];
       serviceAccountStatus?: ServiceAccountStatus;
       excludeUserIds?: string[];
@@ -1288,6 +1305,7 @@ export const accountsAppService = {
         profile: config.profile,
         userIds: config.userIds,
         groupIds: config.groupIds,
+        serviceAccountIds: config.serviceAccountIds,
         serviceAccountKinds: config.serviceAccountKinds,
         serviceAccountStatus: config.serviceAccountStatus,
         excludeUserIds: config.excludeUserIds,
