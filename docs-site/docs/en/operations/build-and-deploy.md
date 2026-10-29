@@ -37,6 +37,7 @@ before the first machine member is added.
 The updated applications resolve local group grants for active standalone
 and agent accounts. Spaces assignee eligibility and group coverage include
 these members.
+and agent accounts. Group coverage includes these members.
 Existing memberships and grants are preserved. IPA groups, directory
 visibility, human group management, resource bindings, and credential scope
 limits keep their existing rules.
