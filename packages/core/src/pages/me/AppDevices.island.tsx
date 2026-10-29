@@ -288,7 +288,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     const target = new URL("/me/app", window.location.origin);
     target.searchParams.set("pair", "1");
     target.searchParams.set("reauthenticate", "1");
-    window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search, credential: "legacy" })}`);
+    window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search })}`);
   };
 
   /** Only a code on its way to the server holds the dialog open; everything else may be cancelled. */

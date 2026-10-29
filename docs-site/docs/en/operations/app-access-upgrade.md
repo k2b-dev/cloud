@@ -5,7 +5,7 @@ section: Operations
 order: 1190
 description: Roll out declarative application access while preserving public routes and existing callers.
 tags: [operations, upgrades, identity]
-updated: 2026-10-22
+updated: 2026-10-28
 ---
 
 # Upgrade application access declarations
@@ -93,3 +93,32 @@ other routes.
 API Docs and Tools no longer appear in navigation for signed-out visitors.
 Their public direct URLs remain available. Signed-in discovery still depends
 on the caller's app access and the application's navigation placement.
+
+## Roll out resource-derived app access
+
+Upgrade Core and discovery consumers to a Cloud version supporting
+`appAccess.resources()` before starting an application with that declaration.
+Older registry readers reject an unknown rule. No database migration, copied
+app grants, or synchronization job is needed for resource-derived access.
+Built-in applications keep their declared rules until deliberately changed.
+
+The application must be reachable from Core at its registered `baseUrl`.
+Other application processes require `CLOUD_CORE_INTERNAL_ORIGIN` to resolve
+resource-derived discovery; the gateway blocks these internal routes. Core alone signs the target-bound existence
+probe; keep private identity keys in Core. Probe tokens cannot authorize app
+operations or be exchanged for further probes. The framework mounts these checks
+before app entry, and they return only an allow/deny status. The authenticated
+Core relay uses the existing configurable Cloud request rate limit. Overload
+and transport errors deny discovery until a later request succeeds.
+
+If an app disappears unexpectedly, verify its running version, Core's route
+to it, and its adapter's existence query. Query failures and the ten-second
+probe deadline deny access. Do not repair a resource-derived rule by creating
+an app-access list: restore the resource permission or fix the query.
+The adapter must preserve resource eligibility, group semantics and bound-key
+limits and cancel its query when the probe aborts.
+
+Revocation takes effect on the next request; there is no cache across
+requests. Open live connections retain the one-minute revalidation bound.
+Verify grant, last-right removal, group removal, guest and service-account
+entry, and matching search and CLI visibility before adopting the rule.

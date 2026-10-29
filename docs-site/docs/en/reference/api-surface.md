@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # API surface
@@ -158,8 +158,10 @@ log.info("Import completed", { itemCount: 42 });
 
 Use the capability guide to choose the narrow API:
 
+- [Retained service-account authority](/en/docs/identity/authentication#retain-service-account-authority): `isServiceAccountOAuthAuthorityCurrent` from `@k2b/cloud/services` revalidates protected OAuth references before domain authorization.
 - [Settings](/en/docs/platform/settings): `SettingUnreadableError`, `SettingRead`, and `StoredSettingState` from `@k2b/cloud/services`; `app.settings.read()` reports stored state before a partial update.
 - [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, `geoRouteContract`, geo input/result schemas, route plans/updates, and provenance types come from `@k2b/cloud/contracts`.
+- [Object store](/en/docs/platform/object-store): `storage` from `@k2b/cloud/services` supplies app-bound private documents and permanent public image URLs.
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
@@ -543,7 +545,9 @@ for consent, ordering, and the rule that refs never grant access.
 addresses and normalize shared network budgets. See
 [Limit requests](/en/docs/server/middleware#limit-requests).
 
-Application entry declarations use `appAccess` from `@k2b/cloud`; see
+Application entry declarations use `appAccess` from `@k2b/cloud`, including
+`appAccess.resources()` and `ResourceAppAccessAdapter` for deriving entry from
+existing resource rights; see
 [App access](/en/docs/identity/app-access). The batch resolver and registry
 filtering helpers are platform-owned.
 

@@ -48,7 +48,6 @@ packages/mail/src/frontend/_components/MailIdentitySettings.behavior.test.tsx | 
 packages/notebooks/src/frontend/[id]/_components/detail/detail-panel.browser.test.ts | 1
 packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browser.test.ts | 1
 packages/notebooks/src/frontend/[id]/_components/versions/VersionHistory.behavior.test.tsx | 2
-packages/pwa/src/frontend/_components/Welcome.behavior.test.tsx | 1
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-days.browser-suite.ts | 1
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-month.browser-suite.ts | 1
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts | 1

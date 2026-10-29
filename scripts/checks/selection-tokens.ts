@@ -137,11 +137,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Control: the trigger of a select that shows its applied filter value; select controls keep the platform fill.",
   },
   {
-    file: "packages/core/src/pages/admin/settings/_components/LegalSettingsForm.island.tsx",
-    subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"',
-    reason: "Status: custom value-source badge.",
-  },
-  {
     file: "packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx",
     subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"',
     reason: "Status: custom value-source badge.",

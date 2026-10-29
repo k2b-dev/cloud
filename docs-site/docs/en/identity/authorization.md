@@ -784,3 +784,5 @@ local recipient separately.
 Grids can run scheduled and record-event workflows under a named machine account
 with its own base grant and an exact-workflow, revocable mandate. See
 [Machine workflow mandates](./machine-workflow-mandates.md).
+For independently owned file storage and explicit path grants, see
+[Files machine storage](/en/docs/identity/files-machine-storage).

@@ -170,6 +170,7 @@ export const get = async (
  * Create a new comment
  */
 export const create = async (params: {
+  requestId?: string;
   itemId: string;
   recurrenceId?: string | null;
   dateConfig?: DateContext;
@@ -177,6 +178,7 @@ export const create = async (params: {
   content: string;
 }): Promise<MutationResult<SpaceComment>> => {
   const { itemId, author, content } = params;
+  const id = params.requestId ?? crypto.randomUUID();
   const recurrenceId = params.recurrenceId ?? null;
   const userId = author.kind === "user" ? author.id : null;
   const serviceAccountId = author.kind === "service_account" ? author.id : null;
@@ -195,11 +197,29 @@ export const create = async (params: {
       if (!item) return { ok: false, error: "Item not found", status: 404 };
 
       const [row] = await tx<DbComment[]>`
-      INSERT INTO spaces.comments (short_id, item_id, recurrence_id, user_id, service_account_id, content)
-      VALUES (${shortId}, ${itemId}, ${recurrenceId}, ${userId}, ${serviceAccountId}, ${content})
+      INSERT INTO spaces.comments (id, short_id, item_id, recurrence_id, user_id, service_account_id, content)
+      VALUES (${id}::uuid, ${shortId}, ${itemId}, ${recurrenceId}, ${userId}, ${serviceAccountId}, ${content})
+      ON CONFLICT (id) DO NOTHING
       RETURNING id, item_id, recurrence_id, user_id, content, created_at, updated_at
     `;
-      if (!row) return { ok: false, error: "Failed to create comment", status: 500 };
+      if (!row) {
+        const [existing] = await tx<(DbComment & { service_account_id: string | null; same_occurrence: boolean })[]>`
+          SELECT id, item_id, recurrence_id, user_id, service_account_id, content, created_at, updated_at,
+                 recurrence_id IS NOT DISTINCT FROM ${recurrenceId}::timestamptz AS same_occurrence
+          FROM spaces.comments WHERE id = ${id}::uuid FOR SHARE
+        `;
+        if (
+          !existing ||
+          existing.item_id !== itemId ||
+          !existing.same_occurrence ||
+          existing.user_id !== userId ||
+          existing.service_account_id !== serviceAccountId ||
+          existing.content !== content
+        ) {
+          return { ok: false, error: "Request ID belongs to a different comment", status: 409 };
+        }
+        return { ok: true, data: { row: existing } };
+      }
       await activity.record(
         {
           spaceId: item.space_id,
