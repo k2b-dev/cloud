@@ -74,6 +74,8 @@ test("real store converges to V5 under per-key FIFO, random cross-key order, dup
       const part = model.parts.get(viewerId);
       const latest = model.msgs.findLast((m) => m.kind === "text");
       return ConversationSchema.parse({
+        notifications: null,
+        mentionsUnread: 0,
         threads: 0,
         channel: false,
         member: true,

@@ -53,9 +53,11 @@ const projectList = async (
   const after = db`(SELECT boundary.last_activity_at FROM chat.threads boundary
     WHERE boundary.conversation_id = ${conversationId}::uuid AND boundary.short_id = ${query.cursor ?? ""})`;
   const recent = db`SELECT id FROM chat.threads WHERE conversation_id = ${conversationId}::uuid ORDER BY last_activity_at DESC, short_id LIMIT 4`;
+  const self = subjectPrincipal(input.accessSubject);
   const rows = await db<
-    (ThreadRow & { recent: boolean })[]
-  >`SELECT *, ${system && query.short ? db`id IN (${recent})` : db`false`} AS recent
+    (ThreadRow & { recent: boolean; following: boolean })[]
+  >`SELECT *, EXISTS(SELECT 1 FROM chat.thread_follows f WHERE f.thread_id = chat.threads.id
+      AND f.principal_type = ${self.type} AND f.principal_id = ${self.id}::uuid) AS following, ${system && query.short ? db`id IN (${recent})` : db`false`} AS recent
     FROM chat.threads WHERE conversation_id = ${conversationId}::uuid
     AND ${onlyId ? db`short_id = ${onlyId}` : db`true`}
     AND ${
@@ -113,6 +115,7 @@ const projectList = async (
       .map(({ row, resource }) => {
         const state = states.find((state) => state.id === row.id)!;
         return {
+          ...(system && row.resource_type ? { following: row.following } : {}),
           id: row.short_id,
           name: resource?.name ?? row.name,
           description: resource ? resource.description : row.description,

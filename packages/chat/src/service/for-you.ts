@@ -37,15 +37,23 @@ const allowedPersonal = (context: ChatContext) => {
   return bound.ok && bound.data === null && capPermission("read", context.actor) !== "none";
 };
 /** Only recipient-indexed mentions and indexed replies to the subject's messages enter this page. */
-const candidates = (db: typeof sql, context: ChatContext, limit: number, cursor: Cursor | null, unreadOnly = false) => {
+const candidates = (
+  db: typeof sql,
+  context: ChatContext,
+  limit: number,
+  cursor: Cursor | null,
+  unreadOnly = false,
+  conversationId?: string,
+) => {
   const self = subjectPrincipal(context.accessSubject);
   return db<Candidate[]>`WITH targets AS (
     SELECT mm.message_id, true AS mention FROM chat.message_mentions mm
+      ${conversationId ? db`JOIN chat.messages mentioned ON mentioned.id = mm.message_id AND mentioned.conversation_id = ${conversationId}::uuid` : db``}
       WHERE mm.principal_type = ${self.type} AND mm.principal_id = ${self.id}::uuid
     UNION ALL
     SELECT reply.id, false FROM chat.messages original JOIN chat.messages reply
       ON reply.conversation_id = original.conversation_id AND reply.reply_to_seq = original.seq
-      WHERE original.author_type = ${self.type} AND original.author_id = ${self.id}::uuid
+      WHERE ${conversationId ? db`original.conversation_id = ${conversationId}::uuid AND` : db``} original.author_type = ${self.type} AND original.author_id = ${self.id}::uuid
   ), distinct_targets AS (SELECT message_id, bool_or(mention) AS mention FROM targets GROUP BY message_id), page AS (
     SELECT m.*, c.short_id AS conversation, target.mention,
       to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
@@ -159,17 +167,21 @@ const list = async (context: ChatContext & { query?: unknown }): Promise<Result<
  * longer read sees a lower count rather than a slow list. Honor request cancellation.
  */
 const FOR_YOU_COUNT_BATCHES = 5;
-export const forYouUnread = async (context: ChatContext, db: typeof sql = sql) => {
+const countUnread = async (context: ChatContext, db: typeof sql, conversationId?: string) => {
   if (!allowedPersonal(context)) return 0;
   let total = 0;
   let cursor: Cursor | null = null;
   for (let batch = 0; batch < FOR_YOU_COUNT_BATCHES && total < FOR_YOU_COUNT_CAP; batch++) {
     context.caller?.signal?.throwIfAborted();
-    const page = await candidates(db, context, RESOURCE_PAGE_SIZE, cursor, true);
+    const page = await candidates(db, context, RESOURCE_PAGE_SIZE, cursor, true, conversationId);
     total += (await visible(db, context, page)).rows.length;
     if (page.length < RESOURCE_PAGE_SIZE) break;
     cursor = position(page.at(-1)!);
   }
   return Math.min(total, FOR_YOU_COUNT_CAP);
 };
+export const forYouUnread = (context: ChatContext, db: typeof sql = sql) => countUnread(context, db);
+/** Same recipient sources, read boundary, deduplication and visibility as the For you count. */
+export const mentionsUnread = (context: ChatContext, conversationId: string, db: typeof sql = sql) =>
+  countUnread(context, db, conversationId);
 export const forYou = { list };

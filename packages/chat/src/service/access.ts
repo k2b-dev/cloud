@@ -1,4 +1,5 @@
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
+import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   buildAccessPrincipalCondition,
@@ -21,6 +22,7 @@ export type ChatContext = {
   locale?: string;
   requestId?: string;
   caller?: CapabilityCaller;
+  capabilityQuery?: CapabilityExecutionContext["query"];
   credentialPrincipal?: string;
   credentialScopes?: readonly string[];
 };
