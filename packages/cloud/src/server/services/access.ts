@@ -5,6 +5,7 @@ import { accessMessages } from "../../access/messages";
 import { recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } from "../../services/accounts/group-sql";
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";
+import type { RequestAuthority } from "../middleware/auth";
 
 export type AccessDb = typeof sql;
 
@@ -312,6 +313,13 @@ export const deleteAccess = async (params: { id: string }, db: AccessDb = sql): 
  * Each app implements this to connect their resources to auth.access.
  */
 export type ResourceAccessAdapter<TResourceId = string> = {
+  /**
+   * Whether any resource in this adapter has an effective read/write/admin right.
+   * Use an existence query, never enumerate resources. Preserve domain eligibility,
+   * principal semantics, resource binding and credential ceilings. Use db and signal.
+   * Optional for existing adapters; required when selected by appAccess.resources().
+   */
+  hasAnyRight?: (subject: AccessSubject, context: { authority: RequestAuthority; db: AccessDb; signal: AbortSignal }) => Promise<boolean>;
   /** Get all access entries for a resource */
   list: (resourceId: TResourceId) => Promise<AccessEntry[]>;
   /** Add an access entry to a resource */

@@ -185,7 +185,7 @@ own connection behavior.
 
 Administrators can clear the settings cache for Core and applications currently
 registered in discovery under
-**Administration → Settings → General**. This removes cached values and missing-row
+**Administration → Base settings → General**. This removes cached values and missing-row
 markers; it does not reset stored settings, sign out users, or clear security
 state. The action uses `DELETE /api/admin/core/settings/cache` and requires an
 administrator in both the route and service. A toast confirms completion.

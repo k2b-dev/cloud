@@ -174,7 +174,7 @@ export const SpaceItemSchema = z.object({
   createdBy: UuidSchema.nullable().describe("Creator user UUID"),
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
-  lastActivityAt: z.string().optional().describe("Most recent item, comment, or checklist activity timestamp (ISO)"),
+  lastActivityAt: z.string().optional().describe("Most recent item or checklist activity timestamp (ISO); comments do not count"),
   reactions: z
     .array(SpaceItemReactionSchema)
     .max(MAX_ITEM_REACTION_EMOJI)
@@ -864,6 +864,7 @@ export const SetCompletedSchema = CompletionInputSchema;
 export type SetCompleted = z.infer<typeof SetCompletedSchema>;
 
 export const CreateCommentSchema = z.object({
+  requestId: z.uuid().optional().describe("Stable request UUID; reuse it when retrying the same comment"),
   content: z.string().min(1).max(5000).describe("Comment content"),
 });
 export type CreateComment = z.infer<typeof CreateCommentSchema>;

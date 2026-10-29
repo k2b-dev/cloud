@@ -72,6 +72,7 @@ import { createForYouApi } from "./for-you-api";
 import { createItemEventsApi } from "./item-events-api";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import type { ChosenMember } from "./MemberPicker";
+import { openMessageMutationDialog } from "./MessageMutationDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
@@ -718,6 +719,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       return known &&
         known.body === item.body &&
         known.status === item.status &&
+        known.revision === item.revision &&
         known.at === item.at &&
         known.seq === item.seq &&
         known.origin?.label === item.origin?.label &&
@@ -747,6 +749,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         status: own ? "sent" : undefined,
         seq: message.seq,
         messageId: message.id,
+        revision: message.contentRevision ?? 0,
+        edited: !!message.editedAt,
+        deleted: !!message.deletedAt,
       });
     });
     // Events stand between the stored messages by time; the window's own bounds keep out what belongs to other pages.
@@ -1047,6 +1052,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     void store
       .react(current.id, item.messageId, emoji, on)
       .catch((error: unknown) => toast.error(error instanceof ChatRequestError ? error.message : t().requestFailed));
+  };
+  const mutate = (item: ChatFeedItem, operation: "edit" | "delete") => {
+    const current = openChat();
+    if (!current || !item.messageId || item.revision === undefined) return;
+    void openMessageMutationDialog({
+      locale: locale(),
+      conversationId: current.id,
+      messageId: item.messageId,
+      revision: item.revision,
+      body: item.body,
+      operation,
+      onSaved: () => store?.refreshMessages(current.id),
+    });
   };
   const copy = (item: ChatFeedItem) =>
     void clipboard.copy(item.body).then(
@@ -2622,6 +2640,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
                         reactions={(id) => reactionsById().get(id) ?? []}
                         onReact={react}
+                        onEdit={
+                          current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "edit") : undefined
+                        }
+                        onDelete={
+                          current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "delete") : undefined
+                        }
                         onCopy={copy}
                         // With the info open, Esc closes it first; the workspace owns that.
                         onEscape={() => panel() === null && markOpenRead()}

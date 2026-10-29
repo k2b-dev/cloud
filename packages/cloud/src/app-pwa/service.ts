@@ -1,10 +1,17 @@
 import { sql, type TransactionSQL } from "bun";
 import { z } from "zod";
+import { GeoAutocompleteInputSchema } from "../contracts/geo";
 import { isInstallablePath } from "../contracts/installable";
 import { PWA_LIMITS } from "../contracts/pwa";
+import { ratelimit } from "../server/ratelimit";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { getEffectivePermission, hasPermission } from "../server/services/access";
 import { audit } from "../services/audit";
+import { GeoError } from "../services/geo/errors";
+import { coreGeo } from "../services/geo/service";
+import { geoPlan, readGeoConfig } from "../services/geo/settings";
 import { pairingSecret } from "../services/pairing-secret";
+import { get as getSetting } from "../services/settings";
 import { databaseClock, lockWebAuthority } from "./authority";
 import {
   type AppPwaActor,
@@ -22,9 +29,11 @@ import {
   parseAppPwaInput as parse,
   pwaFail,
 } from "./contracts";
+import { AppPwaCoreQueryError } from "./core-query-error";
 import { appPwaQr, parseAppPwaQr } from "./protocol";
 import { appPwaSchemaName, setupAppPwa } from "./schema";
 import { withAppPwaTransaction } from "./transaction";
+import { untilAppPwaAbort } from "./transport-input";
 
 type Browser = { credential_hash: string; device_id: string | null; expires_at: Date };
 type Device = {
@@ -121,6 +130,9 @@ const liveVisit = (visit: Visit, time: Date) =>
 export const createAppPwaService = (options: AppPwaOptions) => {
   if (typeof options.authorizeStaff !== "function" || typeof options.authorizeVisit !== "function")
     throw new Error("App-PWA requires staff and visit-subject authorization");
+  const coreQueries = new Set(options.coreQueries ?? []);
+  if (!Array.isArray(options.coreQueries ?? []) || [...coreQueries].some((query) => query !== "address.autocomplete"))
+    throw new Error("Unsupported App-PWA Core query");
   const db = options.db ?? sql;
   const appId = options.app.id;
   const path = options.app.installable.path;
@@ -343,6 +355,32 @@ export const createAppPwaService = (options: AppPwaOptions) => {
     if (visit.device_id !== device.id || visit.browser_hash !== device.browser_hash) return pwaFail("NOT_FOUND", 404);
     return visit;
   };
+  const coreActor = async (tx: TransactionSQL, device: Device, beforeCommit: BeforeCommit, visitId?: string): Promise<AppPwaActor> => {
+    const currentVisit = visitId ?? device.active_visit_id;
+    if (!currentVisit) return deviceActor(device);
+    const visit = await boundVisit(tx, device, currentVisit);
+    if (device.active_visit_id !== visit.id) return pwaFail("REVOKED", 410);
+    // Device mode resumes after a visit ends. Explicit visit requests never fall back.
+    if (!visitId && !liveVisit(visit, await databaseClock(tx))) return deviceActor(device);
+    beforeCommit.deadline((time) => checkVisit(visit, time));
+    checkVisit(visit, await databaseClock(tx));
+    return visitActor(device, visit);
+  };
+  const recordCoreQuery = (actor: AppPwaActor, outcome: "allowed" | "denied" | "failed", code?: string, tx?: TransactionSQL) =>
+    audit.record(
+      {
+        action: "app_pwa.core.query",
+        outcome,
+        target: { type: "core.query", id: "address.autocomplete" },
+        ...(code ? { error: { code } } : {}),
+        metadata: {
+          appId,
+          subject: { type: "user", userId: actor.ownerUserId },
+          via: { kind: actor.kind, appId, deviceId: actor.deviceId, ...(actor.kind === "visit" ? { visitId: actor.visitId } : {}) },
+        },
+      },
+      tx,
+    );
   const readAttempt = async (tx: TransactionSQL, visitId: string, attemptId: string) => {
     const [row] = await tx<Attempt[]>`SELECT route, input_digest, result FROM ${tables.attempts}
       WHERE app_id = ${appId} AND visit_id = ${visitId}::uuid AND attempt_id = ${parse(AppPwaId, attemptId)}::uuid`;
@@ -627,6 +665,59 @@ export const createAppPwaService = (options: AppPwaOptions) => {
         },
         signal,
       ),
+    coreQuery: async (
+      credential: string,
+      visitId: string | undefined,
+      query: string,
+      input: unknown,
+      signal?: AbortSignal,
+      locale?: string,
+    ) => {
+      const requestSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_SECONDS * 1000)]);
+      return untilAppPwaAbort(requestSignal, async () => {
+        if (query !== "address.autocomplete" || !coreQueries.has(query)) return pwaFail("FORBIDDEN", 403);
+        const value = parse(GeoAutocompleteInputSchema, bounded(input, options.budgets.requestBytes));
+        const actor = await guest(
+          credential,
+          (tx, device, _signal, beforeCommit) => coreActor(tx, device, beforeCommit, visitId),
+          requestSignal,
+        );
+        try {
+          // No pairing transaction or settings lock spans a pool checkout or provider request.
+          // Bound each device/visit by both the operator's request budget and the Geo plan's RPS.
+          const [requestRate, geoConfig] = await Promise.all([getSetting<number>("security.rate_limit_per_second"), readGeoConfig()]);
+          if (requestSignal.aborted) return pwaFail("UNAVAILABLE", 503);
+          const limiter = ratelimit({ id: `app-pwa:${appId}:core`, limit: Math.min(requestRate, geoPlan(geoConfig).rps) });
+          if ((await limiter.check(`device:${actor.deviceId}`)).limited) return pwaFail("RATE_LIMITED", 429);
+          if (actor.kind === "visit" && (await limiter.check(`visit:${actor.visitId}`)).limited) return pwaFail("RATE_LIMITED", 429);
+          if (requestSignal.aborted) return pwaFail("UNAVAILABLE", 503);
+          const result = bounded(await coreGeo.autocompleteForAppPwa(value, { actor, signal: requestSignal, locale }));
+          await guest(
+            credential,
+            async (tx, device, _signal, beforeCommit) => {
+              const current = await coreActor(tx, device, beforeCommit, actor.kind === "visit" ? actor.visitId : undefined);
+              // A newly opened visit changes device-mode authority; retry with its current status.
+              if (current.kind !== actor.kind) return pwaFail("UNAVAILABLE", 503);
+              if (current.deviceId !== actor.deviceId || current.ownerUserId !== actor.ownerUserId) return pwaFail("REVOKED", 410);
+              await recordCoreQuery(current, "allowed", undefined, tx);
+              return null;
+            },
+            requestSignal,
+          );
+          return result;
+        } catch (error) {
+          const code = error instanceof AppPwaError || error instanceof GeoError ? error.code : "UNAVAILABLE";
+          await recordCoreQuery(
+            actor,
+            error instanceof AppPwaError || (error instanceof GeoError && error.status < 500) ? "denied" : "failed",
+            code,
+          );
+          if (error instanceof GeoError) throw new AppPwaCoreQueryError(error);
+          if (error instanceof AppPwaError) throw error;
+          return pwaFail("UNAVAILABLE", 503);
+        }
+      });
+    },
     query: (credential: string, visitId: string, route: string, input: unknown, signal?: AbortSignal) =>
       guest(
         credential,

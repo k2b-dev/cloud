@@ -26,6 +26,8 @@ export const appApprovalMessages = i18n.define({
       identifier: "Email or username",
       identifierPlaceholder: "Email or username",
       signIn: "Sign in with app",
+      accountMismatch:
+        "Sign in with the account already open in this browser. If your session expired, open the sign-in page and start again.",
       signInHint: "Use an app already paired with this Cloud account. Without a paired app, use the alternative sign-in below.",
       waiting: "Compare this code with your app, then confirm there.",
       signedIn: "Signed in – continuing…",
@@ -47,14 +49,14 @@ export const appApprovalMessages = i18n.define({
       confirmPairingIdentity: "Confirm your identity before pairing a new device.",
       checkingIdentity: "Checking identity…",
       install: "Install app",
-      installHint: "Scan the QR code with your phone or copy the link to open the sign-in app. On Android, install it from Chrome.",
+      installHint: "Scan the QR code with your device or copy the link to open the sign-in app. On Android, install it from Chrome.",
       installQr: "Sign-in app installation QR code",
       copyInstallLink: "Copy link",
       installLinkCopied: "App link copied",
       step: ({ number }: { number: number }) => `Step ${number} of 2`,
       installStep: "Install the sign-in app",
       installStepHint:
-        "Scan the QR code with the phone that will approve sign-ins, then install the app from the page that opens. On Android, install it from Chrome. Continue here once it is installed.",
+        "Scan the QR code with the device that will approve sign-ins, then install the app from the page that opens. On Android, install it from Chrome. Continue here once it is installed.",
       alreadyInstalled: "App is already installed",
       next: "Next",
       pairStep: "Connect the app",
@@ -150,6 +152,8 @@ export const appApprovalMessages = i18n.define({
       identifier: "E-Mail oder Kürzel",
       identifierPlaceholder: "E-Mail oder Kürzel",
       signIn: "Mit App anmelden",
+      accountMismatch:
+        "Melde dich mit dem Konto an, das in diesem Browser geöffnet ist. Falls deine Sitzung abgelaufen ist, öffne die Anmeldeseite und beginne erneut.",
       signInHint:
         "Nutze eine bereits mit diesem Cloud-Account gekoppelte App. Ohne gekoppelte App nutze die alternative Anmeldung darunter.",
       waiting: "Vergleiche diesen Code mit deiner App und bestätige dort.",
@@ -173,14 +177,14 @@ export const appApprovalMessages = i18n.define({
       checkingIdentity: "Identität wird geprüft …",
       install: "App installieren",
       installHint:
-        "Scanne den QR-Code mit deinem Handy oder kopiere den Link, um die Anmelde-App zu öffnen. Installiere sie auf Android mit Chrome.",
+        "Scanne den QR-Code mit deinem Gerät oder kopiere den Link, um die Anmelde-App zu öffnen. Installiere sie auf Android mit Chrome.",
       installQr: "QR-Code zur Installation der Anmelde-App",
       copyInstallLink: "Link kopieren",
       installLinkCopied: "App-Link kopiert",
       step: ({ number }) => `Schritt ${number} von 2`,
       installStep: "Anmelde-App installieren",
       installStepHint:
-        "Scanne den QR-Code mit dem Handy, das künftig Anmeldungen bestätigt, und installiere die App über die Seite, die sich öffnet. Nutze auf Android dafür Chrome. Fahre hier fort, sobald sie installiert ist.",
+        "Scanne den QR-Code mit dem Gerät, das künftig Anmeldungen bestätigt, und installiere die App über die Seite, die sich öffnet. Nutze auf Android dafür Chrome. Fahre hier fort, sobald sie installiert ist.",
       alreadyInstalled: "App ist schon installiert",
       next: "Weiter",
       pairStep: "App verbinden",

@@ -21,7 +21,7 @@ export const AppDetailsSchema = z.object({
   }),
   access: z.object({
     /** Null means Core has no current access declaration for an offline app. */
-    kind: z.enum(["grants", "signedIn", "noGuests", "roles", "legacy"]).nullable(),
+    kind: z.enum(["grants", "signedIn", "noGuests", "roles", "resources", "legacy"]).nullable(),
     roles: z.array(RoleSchema),
     grantCount: count.nullable(),
     platformPermissions: z.array(PlatformPermissionSchema),
@@ -78,6 +78,8 @@ export const AppDetailsSchema = z.object({
         recipientKind: z.enum(["user", "email"]),
         requiredChannels: z.array(z.string()),
         recommendedChannels: z.array(z.string()),
+        excludedChannels: z.array(z.string()),
+        excludedReason: z.string().nullable(),
       }),
     )
     .max(APP_DETAILS_LIST_LIMIT),

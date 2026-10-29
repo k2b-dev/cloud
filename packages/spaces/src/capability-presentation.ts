@@ -43,6 +43,10 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "task.compose": { title: "Neue Aufgabe", description: "Eine Aufgabe in Spaces erstellen." },
         "event.compose": { title: "Neuer Termin", description: "Einen Termin in Spaces erstellen." },
       },
+      events: {
+        "item.created": { title: "Eintrag erstellt", description: "Eine Aufgabe oder ein Termin wurde in einem Space erstellt." },
+        "item.completed": { title: "Eintrag abgeschlossen", description: "Ein offener Eintrag wurde abgeschlossen." },
+      },
       types: {
         comment: {
           title: "Space-Kommentar",
