@@ -26,7 +26,9 @@ suite("resource-derived app entry and discovery", () => {
   test("the same existing right controls entry, search and CLI; the next request observes revocation", async () => {
     setSystemTime(new Date("2026-10-28T12:00:00Z"));
     await sql.begin(async (db) => {
-      await db`CREATE TEMP TABLE app_resource_rights (resource_id text NOT NULL, access_id uuid NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE) ON COMMIT DROP`;
+      // PostgreSQL forbids temporary-to-permanent foreign keys. Keep revoked
+      // grant IDs here so the existence query must reject stale references too.
+      await db`CREATE TEMP TABLE app_resource_rights (resource_id text NOT NULL, access_id uuid NOT NULL) ON COMMIT DROP`;
       const uid = `app-resources-${crypto.randomUUID()}`;
       const [user] = await db<
         { id: string }[]
