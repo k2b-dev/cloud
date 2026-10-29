@@ -42,7 +42,7 @@ const appIconPalette: readonly [AppIconPaletteEntry, ...AppIconPaletteEntry[]] =
   { from: "#7c3aed" },
   { from: "#d97706" },
   { from: "#e11d48" },
-  { from: "#0891b2" },
+  { from: "#c026d3" },
   { from: "#52525b" },
 ];
 

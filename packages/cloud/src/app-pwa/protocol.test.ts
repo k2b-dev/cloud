@@ -1,6 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { redis } from "bun";
 import { z } from "zod";
+import { GeoError } from "../services/geo/errors";
+import * as settings from "../services/settings";
 import { AppPwaError, appPwaCommand } from "./contracts";
+import { AppPwaCoreQueryError } from "./core-query-error";
 import { appPwaQr, parseAppPwaQr } from "./protocol";
 import { appPwaDigest, createAppPwaService } from "./service";
 import { appPwaCookie, appPwaCredential, createAppPwaRouter } from "./transport";
@@ -100,6 +104,69 @@ describe("App-PWA protocol", () => {
     const service = createAppPwaService(options);
     expect(service.cookieName).toMatch(/^__Secure-cloud-app-pwa-signing-/);
     await expect(service.bootstrap()).rejects.toMatchObject({ code: "UNAVAILABLE" });
+  });
+  test("Core query allowlist rejects unknown queries and actions at construction", () => {
+    expect(() => createAppPwaService({ ...options, coreQueries: ["address.autocomplete"] })).not.toThrow();
+    for (const query of ["address.geocode", "message.send", "__proto__", "address.autocomplete "]) {
+      // @ts-expect-error Exercise runtime configuration from JavaScript as well as typed callers.
+      expect(() => createAppPwaService({ ...options, coreQueries: [query] })).toThrow("Unsupported App-PWA Core query");
+    }
+    // @ts-expect-error An object is not a query allowlist.
+    expect(() => createAppPwaService({ ...options, coreQueries: {} })).toThrow();
+  });
+  test("Core-query transport preserves budget errors, locale, and the device credential", async () => {
+    const service = createAppPwaService({ ...options, coreQueries: ["address.autocomplete"] });
+    const details = { scope: "person", resetsAt: "2038-02-11T00:00:00.000Z" };
+    const query = spyOn(service, "coreQuery").mockRejectedValue(
+      new AppPwaCoreQueryError(
+        new GeoError("GEO_BUDGET_EXHAUSTED", { ...details, availableCredits: 123, requiredCredits: 1, shortfallCredits: 0 }),
+      ),
+    );
+    const config = spyOn(settings, "get").mockResolvedValue(100);
+    const admission = spyOn(redis, "send").mockResolvedValue([1, 0, "1"]);
+    try {
+      const router = createAppPwaRouter(service);
+      const visitId = "33333333-3333-4333-8333-333333333333";
+      const response = await router.fetch(
+        new Request(`${origin}${router.guestApiPath}/core/query/address.autocomplete`, {
+          method: "POST",
+          headers: {
+            origin,
+            "content-type": "application/json",
+            "x-cloud-locale": "de",
+            "X-App-Pwa-CSRF": service.csrf(secret),
+            cookie: `${service.cookieName}=${secret}; session_token=irrelevant`,
+            authorization: "Bearer irrelevant",
+          },
+          body: JSON.stringify({ visitId, input: { text: "Orle" } }),
+        }),
+      );
+      expect(response.status).toBe(429);
+      expect(await response.json()).toEqual({ code: "GEO_BUDGET_EXHAUSTED", details });
+      expect(response.headers.get("cache-control")).toBe("no-store, no-transform");
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      expect(query.mock.calls[0]?.slice(0, 4)).toEqual([secret, visitId, "address.autocomplete", { text: "Orle" }]);
+      expect(query.mock.calls[0]?.[5]).toBe("de");
+    } finally {
+      query.mockRestore();
+      config.mockRestore();
+      admission.mockRestore();
+    }
+  });
+  test("the guest Geo error envelope never exposes costs or financial balances", () => {
+    const failed = new AppPwaCoreQueryError(new GeoError("GEO_PROVIDER_FAILED", { costs: { settledCredits: 5, unknownCredits: 10 } }));
+    expect(failed.code).toBe("GEO_PROVIDER_FAILED");
+    expect(failed.details).toBeUndefined();
+    const budget = new AppPwaCoreQueryError(
+      new GeoError("GEO_BUDGET_EXHAUSTED", {
+        scope: "cloud",
+        resetsAt: "2038-03-01T00:00:00.000Z",
+        requiredCredits: 10,
+        availableCredits: 1,
+        shortfallCredits: 9,
+      }),
+    );
+    expect(budget.details).toEqual({ scope: "cloud", resetsAt: "2038-03-01T00:00:00.000Z" });
   });
   test("closed router rejects transport before dependencies and never exposes generic routes", async () => {
     const router = createAppPwaRouter(createAppPwaService(options));

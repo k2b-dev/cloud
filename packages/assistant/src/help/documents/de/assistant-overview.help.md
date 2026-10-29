@@ -55,7 +55,7 @@ Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone
 
 **Braucht dich** sagt „Der letzte Lauf ist fehlgeschlagen.“ oder „Was sie darf, hat sich geändert. Bitte neu bestätigen.“ Braucht eine Aktion deine Freigabe, heißt es: „Das macht der Assistant nur mit dir, und Routinen fragen nie.“ Unter den technischen Details findest du den ursprünglichen Fehler.
 
-Archivierst du einen Chat, pausieren seine Routinen. Stellst du ihn wieder her, werden diese Routinen fortgesetzt. Hat sich inzwischen geändert, was eine Routine darf, bittet sie dich, das neu zu bestätigen. Eine einmalige Routine, deren Zeit vorbei ist, braucht eine neue Zeit, bevor sie weiterlaufen kann. Stellst du einen Chat in der App auf dem Telefon wieder her, bleiben seine Routinen pausiert; setze sie im Web fort.
+Archivierst du einen Chat, pausieren seine Routinen. Stellst du ihn wieder her, werden diese Routinen fortgesetzt. Hat sich inzwischen geändert, was eine Routine darf, bittet sie dich, das neu zu bestätigen. Eine einmalige Routine, deren Zeit vorbei ist, braucht eine neue Zeit, bevor sie weiterlaufen kann. Stellst du einen Chat in der App auf dem Gerät wieder her, bleiben seine Routinen pausiert; setze sie im Web fort.
 
 Pausieren und Löschen halten eine laufende Routine sofort an. Im Chat steht „Angehalten, während die Routine lief“ und was sie schon erfolgreich geändert hat. Nichts wird rückgängig gemacht. Den ganzen Lauf siehst du unter **Hintergrundlauf**.
 
