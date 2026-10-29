@@ -432,6 +432,15 @@ for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 
+Every page from `launchBrowser()` answers Cloud's own capability catalog read
+(`GET /api/capabilities/v1/catalog`) with an empty catalog, in the page and
+without a request. Shared browser modules make this read by themselves, such as
+the file-provider discovery while a page is idle, so a fixture that serves only
+its own endpoints would see it at random. A test file that serves a catalog,
+counts its reads, or fails it on purpose launches with
+`launchBrowser({ serveShellCatalog: true })`; its pages then send the read to
+the fixture. Other methods and paths always reach the fixture.
+
 Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
 and assert `expect(errors).toEqual([])`; new tests do not register a
 `pageerror` listener of their own. The `page-errors` check enforces this rule;
