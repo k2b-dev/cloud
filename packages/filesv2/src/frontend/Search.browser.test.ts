@@ -86,12 +86,15 @@ const box = (tab: Page, selector: string) =>
   });
 
 describe("Files search in a browser", () => {
-  for (const [device, options] of [
-    ["desktop", desktop],
-    ["phone", phone],
+  for (const [device, options, lang] of [
+    ["desktop", desktop, "en"],
+    ["phone", phone, "en"],
+    ["phone German", phone, "de"],
   ] as const) {
     test(`${device}: results mark the match in name and folder and count all hits; loading keeps the geometry`, async () => {
-      const { tab, errors } = await open(options, "results");
+      const { tab, errors } = await open(options, "results", lang);
+      const loadingLabel = lang === "de" ? "Suche läuft…" : "Searching…";
+      const selectLabel = lang === "de" ? "Auswählen" : "Select";
       try {
         const row = tab.locator(".filesv2-list__row", { hasText: "Rechnung Oktober.pdf" });
         expect(await row.locator(".filesv2-list__name mark").allTextContents()).toEqual(["Rechnung"]);
@@ -102,10 +105,17 @@ describe("Files search in a browser", () => {
         expect(await tab.locator(".filesv2-list__row", { hasText: "Team Nordlicht" }).locator(".filesv2-list__name").textContent()).toBe(
           "Rechnungen",
         );
-        expect(await tab.locator(".filesv2-toolbar").textContent()).toContain("7 results");
-        expect(await tab.getByRole("group", { name: "Search filters" }).getByRole("button").count()).toBe(3);
+        expect(await tab.locator(".filesv2-toolbar").textContent()).toContain(lang === "de" ? "7 Treffer" : "7 results");
+        expect(
+          await tab
+            .getByRole("group", { name: lang === "de" ? "Suchfilter" : "Search filters" })
+            .getByRole("button")
+            .count(),
+        ).toBe(3);
         // The list, grid and tree switch has no meaning for results.
-        expect(await tab.getByRole("radiogroup", { name: "View" }).isVisible()).toBe(false);
+        expect(await tab.getByRole("radiogroup", { name: lang === "de" ? "Ansicht" : "View" }).isVisible()).toBe(false);
+        expect(await tab.locator(".filesv2-toolbar").getByText(loadingLabel, { exact: true }).isVisible()).toBe(false);
+        expect(await tab.getByRole("button", { name: selectLabel, exact: true }).isVisible()).toBe(true);
         await settled(tab);
         const heights = await tab.$$eval(".filesv2-list__row", (rows) => rows.map((item) => item.getBoundingClientRect().height));
         expect(new Set(heights)).toEqual(new Set([40]));
@@ -124,11 +134,19 @@ describe("Files search in a browser", () => {
         await settled(tab);
         // Nothing above the results moves, and the placeholder rows sit where the hits were.
         expect(await box(tab, ".filesv2-toolbar")).toEqual(toolbar);
-        expect(await tab.locator(".filesv2-toolbar").textContent()).toContain("Searching…");
+        expect(await tab.locator(".filesv2-toolbar").getByText(loadingLabel, { exact: true }).isVisible()).toBe(true);
+        expect(await tab.getByRole("button", { name: selectLabel, exact: true }).isVisible()).toBe(false);
         const rows = await tab.$$eval(".filesv2-search-loading__row", (items) => items.map((item) => item.getBoundingClientRect()));
         expect(new Set(rows.map((item) => item.height))).toEqual(new Set([40]));
         expect(rows[0]!.top).toBe(firstHit.top);
         expect(await tab.locator(".filesv2-list__row").count()).toBe(0);
+        await show(tab, "results");
+        await row.waitFor();
+        await settled(tab);
+        expect(await box(tab, ".filesv2-toolbar")).toEqual(toolbar);
+        expect(await box(tab, ".filesv2-list__row")).toEqual(firstHit);
+        expect(await tab.locator(".filesv2-toolbar").getByText(loadingLabel, { exact: true }).isVisible()).toBe(false);
+        expect(await tab.getByRole("button", { name: selectLabel, exact: true }).isVisible()).toBe(true);
         expect(errors).toEqual([]);
       } finally {
         await tab.context().close();

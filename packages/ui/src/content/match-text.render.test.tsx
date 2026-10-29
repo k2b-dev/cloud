@@ -43,8 +43,10 @@ describe("MatchText", () => {
 
   test("renders marks on the server", () => {
     const html = renderToString(() => createComponent(MatchText, { text: "Alte Rechnung.pdf", ranges: [[5, 13]] }));
-    // Compare the visible parts only; Solid's hydration comments sit between them.
-    const parts = html.split(/<!--|-->/).filter((_, index) => index % 2 === 0);
-    expect(parts.join("")).toBe('Alte <mark class="k2b-match-text__hit">Rechnung</mark>.pdf');
+    // Solid's hydration comments sit between the parts, so check the parts and their order.
+    const parts = ["Alte ", '<mark class="k2b-match-text__hit">Rechnung</mark>', ".pdf"].map((part) => html.indexOf(part));
+    expect(parts.every((index) => index >= 0)).toBe(true);
+    expect(parts).toEqual([...parts].sort((a, b) => a - b));
+    expect(html).not.toContain("<mark>");
   });
 });

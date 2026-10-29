@@ -1598,17 +1598,21 @@ export default function Browser(props: {
               <Show
                 when={selecting()}
                 fallback={
-                  <span class="flex min-h-6 items-center gap-2 text-xs text-dimmed" role={searching() ? "status" : undefined}>
-                    {props.pendingSearch
-                      ? b().searching
-                      : searching()
-                        ? !props.directory.failure && searchCount()
-                        : b().pageItems(props.directory.items.length)}
-                    <Show when={props.directory.items.length && !props.pendingSearch}>
-                      <span aria-hidden="true">·</span>
-                      <Button size="xs" variant="text" onClick={() => toggleSelecting(true)}>
-                        {b().select}
-                      </Button>
+                  <span class="grid min-h-6 items-center text-xs text-dimmed" role={searching() ? "status" : undefined}>
+                    {/* Both states reserve their space so the toolbar cannot rewrap when a search starts. */}
+                    <span class="col-start-1 row-start-1 flex items-center gap-2" classList={{ invisible: props.pendingSearch }}>
+                      {searching() ? !props.directory.failure && searchCount() : b().pageItems(props.directory.items.length)}
+                      <Show when={props.directory.items.length}>
+                        <span aria-hidden="true">·</span>
+                        <Button size="xs" variant="text" onClick={() => toggleSelecting(true)}>
+                          {b().select}
+                        </Button>
+                      </Show>
+                    </span>
+                    <Show when={searching()}>
+                      <span class="col-start-1 row-start-1" classList={{ invisible: !props.pendingSearch }}>
+                        {b().searching}
+                      </span>
                     </Show>
                   </span>
                 }

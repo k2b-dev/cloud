@@ -127,9 +127,9 @@ query. **Sort and filter**
 switches between best match, name, date, and size, and to exact names only
 (`match=exact&in=name`). Query, scope, filters, match mode, and order stay in
 the URL, so reload, back, and shared links show the same search; folder sort
-preferences do not apply to searches. While a search runs, the results area
-shows placeholder rows of the list's geometry. Filegate gives every search a
-10-second budget: an exceeded budget shows **This search takes too long** with
+preferences do not apply to searches. While a search runs, the toolbar keeps its
+size and the results area shows placeholder rows of the list's geometry.
+Filegate gives every search a 10-second budget: an exceeded budget shows **This search takes too long** with
 exact-name search (indexed storage) and the way back to the folder, never a
 partial result. Other failures keep the search field and filters and offer a
 retry. Cloud retries a busy root (`429 search_busy`) twice after one second,
