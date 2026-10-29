@@ -68,6 +68,7 @@ type Props = {
   approvalState?: ApprovalAvailability;
   /** Present on the sign-in tab; `status` is null when the server could not read it. */
   signInLocations?: { status: GeoIpAdminStatus | null; actorId: string };
+  showTestStorageAction?: boolean;
   showTestFreeIpaAction?: boolean;
   aiEnrichmentOverview?: AiEnrichmentOverview | null;
   backgroundTaskPrompts?: Record<string, string[]>;
@@ -329,6 +330,22 @@ export default function CoreSettingsForm(props: Props) {
     setConflict(null);
   };
 
+  const [storageTestResult, setStorageTestResult] = createSignal<{ ok: boolean; message: string } | null>(null);
+  const testStorage = mutations.create<void, void>({
+    mutation: async () => {
+      setStorageTestResult(null);
+      const response = await coreClient.admin.core.settings["test-storage"].$post();
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const message =
+          body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : t().storageTestFailed;
+        throw new Error(message);
+      }
+    },
+    onSuccess: () => setStorageTestResult({ ok: true, message: t().storageReachable }),
+    onError: (error) => setStorageTestResult({ ok: false, message: error.message }),
+  });
+
   const testFreeIpa = mutations.create<void, void>({
     mutation: async () => {
       const response = await coreClient.admin.core.settings["test-freeipa"].$post();
@@ -347,6 +364,21 @@ export default function CoreSettingsForm(props: Props) {
 
   const headerActions = () => (
     <>
+      <Show when={props.showTestStorageAction}>
+        <Tooltip.Anchor content={hasChanges() ? t().testStoragePending : t().testStorageSaved}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => testStorage.mutate()}
+            loading={testStorage.loading()}
+            loadingLabel={t().testingConnection}
+            disabled={hasChanges()}
+          >
+            <i class="ti ti-plug-connected" /> {t().testConnection}
+          </Button>
+        </Tooltip.Anchor>
+      </Show>
       <Show when={props.showTestFreeIpaAction}>
         <Tooltip.Anchor content={hasChanges() ? t().testFreeIpaPending : t().testFreeIpaSaved}>
           <Button
@@ -403,7 +435,7 @@ export default function CoreSettingsForm(props: Props) {
       actions={
         <>
           <DocumentationLink base={props.documentationBase} topic={props.documentationTopic ?? ""} />
-          {props.showTestFreeIpaAction ? headerActions() : undefined}
+          {props.showTestFreeIpaAction || props.showTestStorageAction ? headerActions() : undefined}
         </>
       }
       footer={
@@ -493,7 +525,12 @@ export default function CoreSettingsForm(props: Props) {
         }}
       />
 
-      <Show when={props.showTestFreeIpaAction}>
+      <Show when={props.showTestStorageAction && storageTestResult()}>
+        <div role="status" aria-live="polite">
+          <NoticeCard tone={storageTestResult()?.ok ? "info" : "danger"} title={storageTestResult()?.message} />
+        </div>
+      </Show>
+      <Show when={props.showTestFreeIpaAction || props.showTestStorageAction}>
         <NoticeCard tone="info" title={t().testsUseSaved} detail={t().testsUseSavedDescription} />
       </Show>
 
@@ -560,6 +597,8 @@ type SettingSectionGroup = {
 const sectionDefs = (
   t: ReturnType<typeof settingsMessages.resolve>["t"],
 ): Record<string, { title: string; subtitle: string; icon: string }> => ({
+  "storage.connection": { title: t.connection, subtitle: t.storageConnectionDescription, icon: "ti ti-database" },
+  "storage.limits": { title: t.limits, subtitle: t.storageLimitsDescription, icon: "ti ti-gauge" },
   "app.identity": {
     title: t.identity,
     subtitle: t.identityDescription,
@@ -645,6 +684,8 @@ const sectionDefs = (
 });
 
 const sectionIdForEntry = (entry: SettingFieldDef): string => {
+  if (entry.key === "storage.max_object_bytes") return "storage.limits";
+  if (entry.key.startsWith("storage.")) return "storage.connection";
   if (entry.key === "app.logo" || entry.key === "app.favicon") return "app.branding";
   if (entry.key === "app.timezone" || entry.key === "app.cleanup_schedule") return "app.operations";
   if (entry.key.startsWith("app.")) return "app.identity";

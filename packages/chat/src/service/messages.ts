@@ -18,6 +18,7 @@ import {
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
 import { validateMentions } from "./mentions";
+import { mutateMessage } from "./message-mutations";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { openParticipant } from "./read-state";
 import { canReadThread, visibleMessages, visibleThreadIdPage } from "./thread-access";
@@ -69,7 +70,7 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       const [original] = await db<
         MessageRow[]
       >`SELECT * FROM chat.messages WHERE conversation_id = ${current.data.id}::uuid AND short_id = ${data.replyTo}`;
-      if (!original) return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
+      if (!original || original.deleted_at) return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
       threadId = original.thread_id;
       replyToSeq = original.seq;
     }
@@ -258,4 +259,4 @@ const changes = async (input: Input & { query: unknown }) => {
   });
 };
 
-export const messages = { send, list, get, changes, snapshot };
+export const messages = { send, list, get, changes, snapshot, edit: mutateMessage("edit"), delete: mutateMessage("delete") };

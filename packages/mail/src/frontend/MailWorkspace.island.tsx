@@ -49,7 +49,7 @@ import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTa
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailConversationList from "./_components/MailConversationList";
 import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
-import MailDetailsPanel from "./_components/MailDetailsPanel";
+import MailDetailsPanel, { MailDetailsSkeleton } from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, readMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
@@ -3358,20 +3358,21 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
               controller().data.selectedConversationId && controller().data.collaborationState && controller().data.conversationLocalTags
             }
             fallback={
-              <div class="flex h-full items-center justify-center p-4">
-                <Placeholder
-                  state={controller().routeLoading() ? "loading" : "error"}
-                  title={controller().routeLoading() ? controller().t().loadingDetails : controller().t().detailsUnavailable}
-                  description={
-                    controller().routeLoading()
-                      ? undefined
-                      : (controller().data.detailErrors.collaboration ??
-                        controller().data.detailErrors.tags ??
-                        controller().data.collaborationError ??
-                        controller().t().refreshConversation)
-                  }
-                />
-              </div>
+              <Show when={!controller().routeLoading()} fallback={<MailDetailsSkeleton label={controller().t().loadingDetails} />}>
+                <div class="flex h-full items-center justify-center p-4">
+                  <Placeholder
+                    state="error"
+                    title={controller().t().detailsUnavailable}
+                    description={
+                      controller().data.detailErrors.collaboration ??
+                      controller().data.detailErrors.tags ??
+                      controller().data.collaborationError ??
+                      controller().t().refreshConversation
+                    }
+                    onRetry={() => void controller().reconcileWorkspace()}
+                  />
+                </div>
+              </Show>
             }
           >
             <Show when={controller()} keyed>

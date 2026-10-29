@@ -19,6 +19,7 @@ Nutze **Kommentare** in den Notizdetails für Fragen, Feedback und Entscheidunge
 - **Hinzufügen:** Mit Zugriff **Bearbeiten** schreibst du Markdown-Kommentare. Andere Personen mit geöffnetem Detailbereich sehen neue Kommentare sofort.
 - **Korrigieren:** Du kannst deinen eigenen Kommentar zehn Minuten lang nach dem Veröffentlichen bearbeiten oder löschen.
 - **Gesperrte Notizen:** Eine Sperre friert den Notiztext ein, nicht die Diskussion. Mit Zugriff **Bearbeiten** kommentierst du auch eine gesperrte Notiz.
+- **Terminal:** `cld notebooks discussion` liest und schreibt diese Seitendiskussion. `cld notebooks comments` arbeitet mit Kommentaren zum Text.
 :::
 
 Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um diesen Inhalt vor oder nach einer Änderung zu besprechen.

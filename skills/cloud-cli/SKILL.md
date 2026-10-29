@@ -35,6 +35,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 | --- | --- |
 | Write a note with callouts, tasks, tables, formulas, charts, or data | `cld notebooks reference markdown.md`, then `cld notebooks write "<notebook>:<path>" --from note.md` |
 | Change part of an existing note | `cld notebooks reference`, then `cld notebooks cat <note> --json` and `cld notebooks edit` |
+| Review comments on a note's text, reply with suggestions, or accept them | `cld notebooks reference comments.md`, then `cld notebooks comments list <note> --state open`; the page discussion is `cld notebooks discussion` |
 | Upload a local file, create folders, or replace a file in Files | `cld filesv2 reference`, then `cld filesv2 put <local> <area>:/<folder>/ --parents` |
 | Find a file when you do not know its area | `cld filesv2 reference`, section "Find a file in every area" |
 | Put a spreadsheet or document (`.ods`, `.xlsx`, `.odt`, `.docx`) with content into Files | Build it locally first with LibreOffice; without it, build `.xlsx` and `.docx` with Python. `cld filesv2 reference` shows both. Then `cld filesv2 put` |

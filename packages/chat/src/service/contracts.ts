@@ -4,6 +4,8 @@ import { z } from "zod";
 export const MEMBER_PAGE_SIZE = 100;
 export const CONVERSATION_PAGE_SIZE = 50;
 export const UNREAD_CAP = 100;
+/** A count beside an entry shows "99+" above 99, so the total across chats stops at 100. */
+export const UNREAD_TOTAL_CAP = 100;
 export const MAX_THREADS = 100;
 export const READ_ALL_CONFIRM_FROM = 10;
 // One sidebar page bounds each transaction; the client repeats while more remain.
@@ -524,6 +526,9 @@ export const MessageSchema = z.object({
   body: z.string().nullable(),
   system: SystemMessageSchema.nullable(),
   createdAt: z.iso.datetime(),
+  contentRevision: z.number().int().nonnegative().optional(),
+  editedAt: z.iso.datetime().nullable().optional(),
+  deletedAt: z.iso.datetime().nullable().optional(),
 });
 export const MessageViewSchema = MessageSchema.extend({ systemText: z.string().nullable() });
 // Shared by the API and the composer, which must keep rejected text out of the send queue.
@@ -531,6 +536,17 @@ export const MessageViewSchema = MessageSchema.extend({ systemText: z.string().n
 export const MessageBodySchema = z
   .string()
   .refine((body) => /\S/u.test(body) && !body.includes("\u0000") && [...body].length <= MESSAGE_MAX_CODE_POINTS);
+export const MESSAGE_MUTATION_WINDOW_MS = 10 * 60 * 1000;
+export const withinMessageMutationWindow = (createdAt: string | Date, now: number): boolean => {
+  const age = now - new Date(createdAt).getTime();
+  return age >= 0 && age < MESSAGE_MUTATION_WINDOW_MS;
+};
+export const DeleteMessageSchema = z.strictObject({
+  clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+  /** Content revision, independent of reactions and other live changes. */
+  revision: z.number().int().nonnegative(),
+});
+export const EditMessageSchema = DeleteMessageSchema.extend({ body: MessageBodySchema });
 const MessageRefsSchema = z
   // PostgreSQL jsonb cannot represent NUL or unpaired UTF-16 surrogates in identifiers.
   .array(CloudResourceRefSchema.refine((ref) => !/[\u0000\uD800-\uDFFF]/u.test(ref.id)))
@@ -664,6 +680,7 @@ export const ChatLiveEventSchema = z.discriminatedUnion("type", [
   ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
   z.object({ type: z.literal("personal") }),
+  z.strictObject({ type: z.literal("message-changed"), conversationId: ShortIdSchema }),
   z.strictObject({ type: z.literal("for-you") }),
   SidebarPreferencesSchema.extend({ type: z.literal("preferences") }),
   z.strictObject({ type: z.literal("threads"), conversationId: ShortIdSchema }),

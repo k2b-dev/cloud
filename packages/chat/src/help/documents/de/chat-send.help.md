@@ -18,6 +18,7 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 :::reference
 - Auf dem Smartphone sind die Liste und der offene Chat getrennte Ansichten. Mit dem Zurück-Pfeil oder der Zurück-Geste deines Smartphones kehrst du zur Liste zurück.
 - Ein Link zu einer Nachricht öffnet den Chat bei dieser Nachricht und hebt sie kurz hervor.
+- In der Cloud-App hat Chat einen eigenen Eintrag. Auf dem Smartphone füllt der offene Chat den Bildschirm, und der Zurück-Pfeil zeigt, wie viele Nachrichten in deinen anderen Chats warten. Auf einem breiten iPad oder Monitor bleibt die Liste neben dem Chat stehen.
 :::
 
 ## Nachricht schreiben und senden {icon="send"}
@@ -39,7 +40,7 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 :::reference
 - **Wird gesendet:** Eine Uhr zeigt, dass Chat die Nachricht sendet.
 - **Gesendet:** Ein Häkchen zeigt, dass Chat die Nachricht angenommen hat.
-- **Nicht gesendet:** Chat konnte die Nachricht nicht senden. Wähle **Erneut senden**, um dieselbe Nachricht erneut zu senden, ohne eine Kopie zu erstellen. Um eine Nachricht zu entfernen, die Chat nicht senden kann, wähle **Verwerfen** neben **Erneut senden**. Spätere Nachrichten zeigen eine Uhr und warten, bis diese Nachricht gesendet oder verworfen ist. So bleibt die Reihenfolge, in der du sie geschrieben hast.
+- **Nicht gesendet:** Chat konnte die Nachricht nicht senden. Wähle **Erneut versuchen**, um dieselbe Nachricht erneut zu senden, ohne eine Kopie zu erstellen. Um eine Nachricht zu entfernen, die Chat nicht senden kann, wähle **Verwerfen** neben **Erneut versuchen**. Spätere Nachrichten zeigen eine Uhr und warten, bis diese Nachricht gesendet oder verworfen ist. So bleibt die Reihenfolge, in der du sie geschrieben hast.
 - Wenn du Chat mit noch nicht gesendeten Nachrichten verlässt oder neu lädst, fragt dein Browser zuerst nach, weil diese Nachrichten beim Verlassen verloren gehen.
 :::
 
@@ -104,3 +105,13 @@ Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben
 - Wähle eine Reaktion unter einer Nachricht, um deine hinzuzufügen oder zurückzunehmen.
 - Wer eine Nachricht lesen kann, kann auf sie reagieren, auch Leser eines Kanals, die dort nicht schreiben.
 :::
+
+## Eigene Nachricht bearbeiten oder löschen {icon="pencil"}
+
+In den ersten zehn Minuten nach dem Senden kannst du **…** an deiner Nachricht öffnen und **Nachricht bearbeiten** oder **Nachricht löschen** wählen. Auf dem Smartphone hältst du die Nachricht gedrückt, um ihr Menü zu öffnen. Du brauchst weiterhin **Schreiben** oder **Verwalten**.
+
+Eine Änderung erhält die Marke **bearbeitet**. Löschen entfernt Text, Dateien, geteilte Elemente und Reaktionen für alle. Ein Hinweis auf die gelöschte Nachricht erhält die Reihenfolge und Antworten. Löschen lässt sich nicht rückgängig machen.
+
+Scheitert das Speichern, bleibt dein Text im Dialog. Mit **Erneut versuchen** wiederholst du denselben Versuch. Wurde die Nachricht inzwischen geändert oder sind die zehn Minuten vorbei, schließe den Dialog und öffne die aktuelle Nachricht erneut.
+
+Bestehende Erwähnungen bleiben verknüpft, wenn Text und Position unverändert bleiben. Andere Verknüpfungen entfallen; erwähne die Person bei Bedarf erneut in einer neuen Nachricht.

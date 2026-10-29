@@ -60,7 +60,10 @@ else {
     const stop = installPageTrailRuntime(labels);
     const navigate = (navigationType: string) => {
       const event = new tab.dom.window.Event("navigate");
-      Object.defineProperty(event, "navigationType", { value: navigationType });
+      Object.defineProperties(event, {
+        navigationType: { value: navigationType },
+        destination: { value: { url: new URL("/app/elsewhere", location.href).href } },
+      });
       navigation.dispatchEvent(event);
     };
     const memory = () => JSON.parse(sessionStorage.getItem("cloud:page-trail") ?? "null");
@@ -74,6 +77,50 @@ else {
       main.scrollTop = 360;
       navigate("traverse");
       expect(memory().visits[0].regions).toEqual([{ key: "@main", top: 240, left: 0 }]);
+    } finally {
+      stop();
+      tab.close();
+    }
+  });
+
+  test("same-address menu history does not reread page geometry, but leaving the page remembers it", () => {
+    const tab = open();
+    const navigation = new tab.dom.window.EventTarget();
+    Object.defineProperty(window, "navigation", { configurable: true, value: navigation });
+    const main = document.createElement("main");
+    main.className = "layout-content-main";
+    document.body.append(main);
+    tab.visit("/app/things?q=red");
+    let reads = 0;
+    Object.defineProperty(main, "scrollTop", {
+      get: () => {
+        reads++;
+        return 240;
+      },
+    });
+    const stop = installPageTrailRuntime(labels);
+    const navigate = (url: string) => {
+      const event = new tab.dom.window.Event("navigate");
+      Object.defineProperties(event, {
+        navigationType: { value: "traverse" },
+        destination: { value: { url } },
+      });
+      navigation.dispatchEvent(event);
+    };
+    try {
+      navigate(location.href);
+      expect(reads).toBe(0);
+      expect(sessionStorage.getItem("cloud:page-trail")).toBeNull();
+      main.click();
+      expect(reads).toBe(1);
+      const captured = sessionStorage.getItem("cloud:page-trail");
+      navigate(location.href);
+      expect(reads).toBe(1);
+      expect(sessionStorage.getItem("cloud:page-trail")).toBe(captured);
+      navigate(new URL("/app/elsewhere", location.href).href);
+      expect(reads).toBe(2);
+      const memory = JSON.parse(sessionStorage.getItem("cloud:page-trail")!);
+      expect(memory.visits[0]).toEqual({ url: "/app/things?q=red", regions: [{ key: "@main", top: 240, left: 0 }], up: [] });
     } finally {
       stop();
       tab.close();

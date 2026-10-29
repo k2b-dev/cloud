@@ -116,6 +116,10 @@ export type AppPwaPart = {
   href: string;
   /** Coarse visibility in the mobile app, like `nav.requiresRoles`. Routes and services still authorize. */
   requiresRoles?: Role[];
+  /** Same-origin path of a `GET` route returning an `AppNavBadge`, counted beside the part in the app's sidebar. */
+  badge?: string;
+  /** Same-origin path of a `GET` route returning a `PwaPartSummary`, the line under the part on the app's Start. */
+  summary?: string;
 };
 
 /** One same-origin panel page contributed by an application. Routes and services still authorize. */
@@ -134,6 +138,8 @@ export type AppMeta = {
   access?: AppAccessRule;
   platformPermissions?: readonly PlatformPermission[];
   id: string;
+  /** Shared object-store package; omitted means the app ID. */
+  package?: string;
   name: string;
   icon: string;
   description: string;
@@ -192,6 +198,9 @@ export type AppMeta = {
  * response, or anything else shows none.
  */
 export type AppNavBadge = { count: number };
+
+/** What a part says about itself on the Cloud app's Start: a line in the reader's locale and the count behind it. */
+export type PwaPartSummary = AppNavBadge & { text: string };
 
 /** A widget endpoint and its board presentation; the handler owns resource authorization. */
 export type WidgetEndpoint = {

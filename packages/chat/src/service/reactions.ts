@@ -14,9 +14,11 @@ const target = async (db: typeof sql, input: Input) => {
   if (!allowed.ok) return allowed.error.code === "FORBIDDEN" ? notFound(input) : allowed;
   if (!MessageIdSchema.safeParse(input.messageId).success) return fail(err.badInput(catalog(input).invalidInput));
   // Item threads also require their resource reader, exactly like messages.get.
-  const [message] = await db<{ id: string; kind: string; thread_id: string | null }[]>`SELECT id, kind, thread_id FROM chat.messages
+  const [message] = await db<
+    { id: string; kind: string; thread_id: string | null; deleted_at: Date | null }[]
+  >`SELECT id, kind, thread_id, deleted_at FROM chat.messages
     WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${input.messageId}`;
-  return message?.kind === "text" && (await canReadThread(db, input, message.thread_id))
+  return message?.kind === "text" && !message.deleted_at && (await canReadThread(db, input, message.thread_id))
     ? ok({ conversation: allowed.data, message })
     : notFound(input);
 };

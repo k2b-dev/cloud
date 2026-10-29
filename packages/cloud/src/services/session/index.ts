@@ -31,6 +31,14 @@ import { loadJwtSession, loadJwtSessionIdentity } from "./user";
 
 const log = logger("auth:session");
 
+/** A browser already signed in must prove that same account before continuing. */
+export class SessionAccountMismatchError extends Error {
+  constructor() {
+    super("Sign in with the account already open in this browser.");
+    this.name = "SessionAccountMismatchError";
+  }
+}
+
 export type SessionKind = "web" | "app";
 
 export type SessionData = {
@@ -585,6 +593,12 @@ export const session = {
       appDeviceId?: string;
     },
   ): Promise<string> => {
+    if (c.req.header("X-Cloud-Reauthenticate") === "1") {
+      const currentToken = session.getWebToken(c);
+      const current = currentToken ? await session.authenticateRequest(c, currentToken) : null;
+      if (!current || current.user.id !== userId) throw new SessionAccountMismatchError();
+    }
+
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
     if (!Number.isFinite(expiryHours) || expiryHours < 1) throw new Error("user.session.expiry_hours must be a positive number");
     const ttlSeconds = Math.floor(expiryHours * 60 * 60);

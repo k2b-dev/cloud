@@ -18,6 +18,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::reference
 - On a phone, the list and the open chat are separate screens. Use the back arrow or your phone's back gesture to return to the list.
 - A link to a message opens the chat at that message and highlights it briefly.
+- In the Cloud app, Chat has its own entry. On a phone the open chat fills the screen, and the back arrow shows how many messages wait in your other chats. On a wide iPad or a monitor the list stays beside the chat.
 :::
 
 ## Write and send a message {icon="send"}
@@ -39,7 +40,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::reference
 - **Sending:** A clock means Chat is sending the message.
 - **Sent:** A check means Chat accepted the message.
-- **Not sent:** Chat could not send the message. Choose **Retry** to send the same message again without creating a copy. To remove a message that Chat cannot send, choose **Discard** next to **Retry**. Later messages show a clock and wait until this message is sent or discarded. This keeps the order in which you wrote them.
+- **Not sent:** Chat could not send the message. Choose **Try again** to send the same message again without creating a copy. To remove a message that Chat cannot send, choose **Discard** next to **Try again**. Later messages show a clock and wait until this message is sent or discarded. This keeps the order in which you wrote them.
 - If you leave or reload Chat with unsent messages, your browser asks first because those messages are lost when you leave.
 :::
 
@@ -104,3 +105,13 @@ The list shows the chat's members and the people who wrote in it. In a Space or 
 - Choose a reaction under a message to add yours or to take it back.
 - Everyone who can read a message can react to it, also readers of a channel who cannot write there.
 :::
+
+## Edit or delete your message {icon="pencil"}
+
+For ten minutes after sending, open **…** on your message and choose **Edit message** or **Delete message**. On a phone, touch and hold the message to open its menu. You still need **Write** or **Manage** access.
+
+Editing shows an **edited** mark. Deleting removes its text, files, shared elements, and reactions for everyone; a deleted-message placeholder keeps the conversation and replies in place. Deletion cannot be undone.
+
+If saving fails, the dialog keeps your text. Choose **Try again** for the same attempt. If the message changed elsewhere or the ten minutes passed, close the dialog and open the current message again.
+
+Existing mentions remain linked when their text and position stay unchanged. Other mention links are removed; mention the person again in a new message if needed.

@@ -37,7 +37,7 @@ type Attachment = {
 };
 
 /** What "Save to Files" reads: the attachment's own download route, with its known size. */
-const saveSource = (attachment: Attachment, downloadHref: string): SaveFileSource => ({
+export const saveSource = (attachment: Attachment, downloadHref: string): SaveFileSource => ({
   name: attachment.filename ?? "attachment",
   content: downloadHref,
   mediaType: attachment.contentType,
@@ -50,7 +50,7 @@ const attachmentFile = (attachment: Attachment) => ({
   size: attachment.sizeBytes,
 });
 
-const canPreviewAttachment = (attachment: Attachment): boolean => {
+export const canPreviewAttachment = (attachment: Attachment): boolean => {
   const mailKind = attachmentPreviewKind(attachment.contentType, attachment.sizeBytes);
   const file = attachmentFile(attachment);
   if (!mailKind || !canPreviewFile(file)) return false;
@@ -162,7 +162,7 @@ function MailAttachmentPreviewDialog(props: {
   );
 }
 
-const openAttachmentPreview = (attachment: Attachment, downloadHref: string, previewHref: string) => {
+export const openAttachmentPreview = (attachment: Attachment, downloadHref: string, previewHref: string) => {
   const kind = getFileViewPreviewKind(attachmentFile(attachment));
   const classes = [panelDialogWorkspaceOptions.panelClassName, "mail-attachment-dialog"];
   if (kind && READING.has(kind)) classes.push("mail-attachment-dialog--reading");
