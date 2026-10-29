@@ -19,10 +19,7 @@ export function createSystemChatList() {
     setMore(append);
     try {
       const previous = page();
-      const next = await loadSystemChats(
-        append ? { spacesCursor: previous?.spacesCursor ?? "", notebooksCursor: previous?.notebooksCursor ?? "" } : {},
-        request.signal,
-      );
+      const next = await loadSystemChats(append ? { cursors: previous?.cursors ?? {} } : {}, request.signal);
       if (request.signal.aborted) return;
       if (append && previous) {
         const items = new Map(previous.items.map((item) => [`${item.ref.type}:${item.ref.id}`, item]));
@@ -101,7 +98,7 @@ export default function ChatSystemChats(props: {
         <Show when={props.state.status() === "ready" && rows().length === 0}>
           <p class="chat-system-chats__empty">{t().systemChatsEmpty}</p>
         </Show>
-        <Show when={props.state.page()?.spacesCursor || props.state.page()?.notebooksCursor}>
+        <Show when={Object.values(props.state.page()?.cursors ?? {}).some(Boolean)}>
           <Button variant="ghost" size="sm" loading={props.state.status() === "loading"} onClick={() => void props.state.load(true)}>
             {t().showMoreChats}
           </Button>

@@ -16,6 +16,7 @@ import {
   SnapshotQuerySchema,
 } from "./contracts";
 import { conversations } from "./conversations";
+import { DiscussionReadStopped, discussionRead } from "./discussion-read";
 import { chatLive } from "./live";
 import { validateMentions } from "./mentions";
 import { mutateMessage } from "./message-mutations";
@@ -242,14 +243,18 @@ const changes = async (input: Input & { query: unknown }) => {
     const afterRev = parsed.data.afterRev;
     const head = Number(allowed.data.rev);
     if (afterRev > head) return fail({ code: "RESYNC_REQUIRED", status: 409, message: catalog(input).resyncRequired });
+    if (allowed.data.kind === "system" && input.caller) await discussionRead(input).catalog();
+    const changeLimit =
+      allowed.data.kind === "system" && input.caller ? Math.min(CHANGES_PAGE_SIZE, discussionRead(input).remaining) : CHANGES_PAGE_SIZE;
+    if (changeLimit <= 0) throw new DiscussionReadStopped("DISCUSSION_CALL_BUDGET");
     const candidates = await db<
       MessageRow[]
     >`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND rev > ${afterRev}
-      ORDER BY rev LIMIT ${CHANGES_PAGE_SIZE}`;
+      ORDER BY rev LIMIT ${changeLimit}`;
     const rows = await visibleMessages(db, input, candidates);
     const conversation = Number(allowed.data.changed_rev) > afterRev ? await conversations.get(input, db) : null;
     if (conversation && !conversation.ok) return conversation;
-    const more = candidates.length === CHANGES_PAGE_SIZE;
+    const more = candidates.length === changeLimit;
     return ok({
       rev: more ? Number(candidates.at(-1)!.rev) : head,
       more,

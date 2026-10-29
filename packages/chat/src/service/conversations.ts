@@ -36,6 +36,7 @@ import {
 } from "./access";
 import { titles } from "./conversation-titles";
 import { validateDiscovery, writeDiscovery } from "./discovery";
+import { providerFor } from "./discussion-read";
 import { forYouUnread, mentionsUnread } from "./for-you";
 import { notificationProjection } from "./notification-projection";
 import { TransactionFailure, value } from "./transaction-failure";
@@ -299,7 +300,7 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
   await readerBatch(found, async (row) => {
     if (!row.resource_type || !row.resource_id) return;
     const resource = await readResource(context, { type: row.resource_type, id: row.resource_id });
-    row.thread_name = resource?.name ?? row.thread_name;
+    row.thread_name = resource?.title ?? row.thread_name;
   });
   const absent = await Promise.all(
     (["user", "service_account"] as const).map((type) =>
@@ -606,20 +607,26 @@ const getInSnapshot = async (
   const names = await titles([row], input, db);
   const latest = await lastMessages([row], input, db, visibleIds);
   return ok({
-    ...(row.kind === "system" ? { summaryCursor: page.nextCursor } : {}),
+    ...(row.kind === "system"
+      ? {
+          summaryCursor: page.nextCursor,
+          discussionItemType: row.resource_type ? (await providerFor(input, row.resource_type, "container"))?.itemType : undefined,
+        }
+      : {}),
     ...(await project(
       db,
       input,
       resource
         ? {
             ...row,
-            name: resource.name,
-            purpose: resource.description,
+            name: resource.title,
+            icon: resource.icon,
+            purpose: resource.context ?? null,
             last_activity_at: latest.get(row.id) ? new Date(latest.get(row.id)!.createdAt) : row.created_at,
           }
         : row,
       row.permission,
-      resource?.name ?? names.get(row.id)!,
+      resource?.title ?? names.get(row.id)!,
       latest.get(row.id) ?? null,
       (await lifecycleFlags([row], input, db)).get(row.id)!,
       read,

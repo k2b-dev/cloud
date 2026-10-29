@@ -15,6 +15,7 @@ import {
   type ThreadSchema,
   UpdateThreadSchema,
 } from "./contracts";
+import { DiscussionReadStopped, discussionRead, providerFor } from "./discussion-read";
 import { chatLive } from "./live";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { ItemRefSchema, readResource } from "./resource-access";
@@ -45,8 +46,13 @@ const projectList = async (
   onlyId?: string,
 ): Promise<z.infer<typeof ThreadListSchema>> => {
   const query = ThreadQuerySchema.parse(input.query ?? {});
-  const [conversation] = await db<{ kind: string }[]>`SELECT kind FROM chat.conversations WHERE id = ${conversationId}::uuid`;
+  const [conversation] = await db<
+    { kind: string; resource_type: string; resource_id: string }[]
+  >`SELECT kind, resource_type, resource_id FROM chat.conversations WHERE id = ${conversationId}::uuid`;
   const system = conversation?.kind === "system";
+  if (system && input.caller) await discussionRead(input).catalog();
+  const pageLimit = system && input.caller ? Math.min(MAX_THREADS, discussionRead(input).remaining) : MAX_THREADS;
+  if (pageLimit <= 0) throw new DiscussionReadStopped("DISCUSSION_CALL_BUDGET");
   // The opaque thread ID identifies the activity boundary. Page candidates before reader checks and filters,
   // so empty visible pages still advance without scanning an unbounded number of resources.
   // Keep the timestamp in Postgres: converting it to Date would truncate the cursor's microseconds.
@@ -70,11 +76,14 @@ const projectList = async (
           : db`last_activity_at DESC, short_id`
         : db`(archived_at IS NOT NULL), CASE WHEN archived_at IS NULL THEN last_activity_at END DESC,
       CASE WHEN archived_at IS NOT NULL THEN name END, short_id`
-    } LIMIT ${system && query.short ? MAX_THREADS : MAX_THREADS + 1}`;
-  const page = rows.slice(0, MAX_THREADS);
+    } LIMIT ${system && query.short ? pageLimit : pageLimit + 1}`;
+  const page = rows.slice(0, pageLimit);
   // Candidate selection bounds both authorization and unread SQL. Never calculate
   // unread state for the whole directory just to choose a short refresh page.
-  const visible = await visibleThreadPage(input, page);
+  const visible = await visibleThreadPage(
+    input,
+    page.map((row) => ({ ...row, container_type: conversation?.resource_type, container_id: conversation?.resource_id })),
+  );
   const states = await threadStates(
     db,
     input.accessSubject,
@@ -102,7 +111,7 @@ const projectList = async (
   );
   return {
     general: { unread: states.find((state) => state.id === null)!.unread, lastMessage: previews.get(null) ?? null },
-    ...(system ? { nextCursor: !query.short && rows.length > MAX_THREADS ? page.at(-1)!.short_id : null } : {}),
+    ...(system ? { nextCursor: !query.short && rows.length > pageLimit ? page.at(-1)!.short_id : null } : {}),
     items: visible
       .filter(
         ({ row }) =>
@@ -117,8 +126,8 @@ const projectList = async (
         return {
           ...(system && row.resource_type ? { following: row.following } : {}),
           id: row.short_id,
-          name: resource?.name ?? row.name,
-          description: resource ? resource.description : row.description,
+          name: resource?.title ?? row.name,
+          description: resource ? (resource.context ?? null) : row.description,
           ...(row.resource_type ? { resource: projectResource(row, resource) } : {}),
           archived: row.archived_at !== null,
           unread: state.unread,
@@ -267,8 +276,9 @@ const forResource = async (input: Input & { input: unknown }): Promise<Result<Cr
     const c = allowed.data;
     if (c.kind !== "system") return fail(err.badInput(messages(input).invalidInput));
     const ref = parsed.data.ref;
-    const resource = await readResource(input, ref);
-    if (!resource || resource.container?.type !== c.resource_type || resource.container.id !== c.resource_id) return threadNotFound(input);
+    const resource = (await providerFor(input, ref.type, "item")) ? await readResource(input, ref) : null;
+    if (!resource || resource.container?.ref.type !== c.resource_type || resource.container.ref.id !== c.resource_id)
+      return threadNotFound(input);
     const [existing] = await db<ThreadRow[]>`SELECT * FROM chat.threads WHERE conversation_id = ${c.id}::uuid
       AND resource_type = ${ref.type} AND resource_id = ${ref.id}`;
     if (existing) return ok({ thread: await project(db, input, c.id, existing.short_id), created: false });
@@ -277,8 +287,8 @@ const forResource = async (input: Input & { input: unknown }): Promise<Result<Cr
     for (let attempt = 0; attempt < 10 && !row; attempt++) {
       [row] = await db<ThreadRow[]>`INSERT INTO chat.threads
         (short_id, conversation_id, name, description, created_by_type, created_by_id, resource_type, resource_id)
-        VALUES (${crypto.common.readableId(6)}, ${c.id}::uuid, ${Array.from(resource.name).slice(0, 80).join("")},
-          ${resource.description === null ? null : Array.from(resource.description).slice(0, 80).join("")}, ${self.type}, ${self.id}::uuid, ${ref.type}, ${ref.id})
+        VALUES (${crypto.common.readableId(6)}, ${c.id}::uuid, ${Array.from(resource.title).slice(0, 80).join("")},
+          ${resource.context == null ? null : Array.from(resource.context).slice(0, 80).join("")}, ${self.type}, ${self.id}::uuid, ${ref.type}, ${ref.id})
         ON CONFLICT (short_id) DO NOTHING RETURNING *`;
     }
     if (!row) throw new Error("Thread ID could not be allocated");

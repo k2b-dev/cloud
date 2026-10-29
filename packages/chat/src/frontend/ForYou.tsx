@@ -13,7 +13,7 @@ type Page = z.infer<typeof ForYouPageSchema>;
 export type ForYouItem = z.infer<typeof ForYouItemSchema>;
 
 /**
- * Mentions of and replies to the reader in every chat they may read, Space and notebook chats included, newest first.
+ * Mentions of and replies to the reader in every chat they may read, resource discussions included, newest first.
  * A row opens its thread at the message; reading it there clears its unread state, and the page reads again.
  */
 export default function ForYou(props: {

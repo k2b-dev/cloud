@@ -359,14 +359,16 @@ test("passes the authenticated caller credential into system chat discovery", as
   authenticate();
   const list = spyOn(chatService.systemChats, "list").mockResolvedValue({
     ok: true,
-    data: { items: [], spacesCursor: null, notebooksCursor: null },
+    data: { items: [], cursors: {}, skipped: [] },
   });
-  const response = await chatApi.request("/system-chats?spacesCursor=next", { headers: { authorization: "Bearer test-key" } });
+  const response = await chatApi.request("/system-chats?cursors=%7B%22inventory.collection%22%3A%22next%22%7D", {
+    headers: { authorization: "Bearer test-key" },
+  });
   expect(response.status).toBe(200);
   expect(list).toHaveBeenCalledWith(
     expect.objectContaining({
       caller: expect.objectContaining({ authorization: "Bearer test-key" }),
-      query: { spacesCursor: "next" },
+      query: { cursors: '{"inventory.collection":"next"}' },
     }),
   );
 });

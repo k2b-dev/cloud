@@ -78,7 +78,7 @@ const visible = async (db: typeof sql, context: ChatContext, rows: Candidate[]) 
       if (allowed.data.kind === "system" && allowed.data.resource_type && allowed.data.resource_id) {
         const resource = await readResource(context, { type: allowed.data.resource_type, id: allowed.data.resource_id });
         if (!resource) return null;
-        allowed.data.name = resource.name;
+        allowed.data.name = resource.title;
       }
       return {
         conversation: allowed.data,
@@ -133,7 +133,7 @@ const list = async (context: ChatContext & { query?: unknown }): Promise<Result<
             thread.resource_type && thread.resource_id
               ? await readResource(context, { type: thread.resource_type, id: thread.resource_id })
               : null;
-          return [thread.id, thread.resource_type ? (resource?.name ?? null) : thread.name] as const;
+          return [thread.id, thread.resource_type ? (resource?.title ?? null) : thread.name] as const;
         },
         context.caller?.signal,
       ),

@@ -190,9 +190,8 @@ const EVENT_ESTIMATE = 26;
 export default function ChatConversation(props: ChatConversationProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
-  const resourceLabel = () =>
-    props.resource?.kind === "note" ? t().goToNote : props.resource?.kind === "event" ? t().goToEvent : t().goToTask;
-  const resourceKind = () => (props.resource?.kind === "note" ? t().note : props.resource?.kind === "event" ? t().event : t().task);
+  const resourceLabel = () => t().openInType({ title: props.resource?.typeTitle ?? "" });
+  const resourceKind = () => props.resource?.typeTitle ?? "";
   const resourceStatus = () => props.resource?.status ?? (props.resource?.done ? t().threadsDone : null);
   const config = () => ({ ...props.dateConfig, locale: locale() });
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();

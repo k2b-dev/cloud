@@ -1,4 +1,4 @@
-import { CapabilitySemanticLinkSchema, CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { CapabilitySemanticLinkSchema, CloudResourceReaderViewSchema, CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const MEMBER_PAGE_SIZE = 100;
@@ -216,18 +216,12 @@ const ThreadReadSchema = z.strictObject({
   unreadFromSeq: z.number().int().min(1).nullable(),
 });
 const LastMessageSchema = z.strictObject({ id: MessageIdSchema, author: AuthorSchema, preview: z.string(), createdAt: z.iso.datetime() });
-export const ThreadResourceSchema = z.strictObject({
-  deadline: z.string().nullable().optional(),
-  deadlineAllDay: z.boolean().optional(),
-  assignees: z.array(z.string()).max(100).optional(),
-  startsAt: z.string().optional(),
-  endsAt: z.string().optional(),
-  allDay: z.boolean().optional(),
+export const ThreadResourceSchema = CloudResourceReaderViewSchema.extend({
   ref: CloudResourceRefSchema,
-  kind: z.enum(["task", "event", "note"]),
-  status: z.string().nullable(),
-  done: z.boolean(),
-  href: z.string(),
+  href: CapabilitySemanticLinkSchema.shape.href,
+  typeTitle: z.string(),
+  icon: z.string(),
+  color: z.string().optional(),
 });
 export const ThreadQuerySchema = z.strictObject({
   short: z.literal("true").optional(),
@@ -237,15 +231,26 @@ export const ThreadQuerySchema = z.strictObject({
   cursor: ThreadIdSchema.optional(),
 });
 export const ForResourceSchema = z.strictObject({
-  ref: CloudResourceRefSchema.extend({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema }),
+  ref: CloudResourceRefSchema,
 });
 export const SystemChatParamSchema = z.object({
-  resourceType: z.enum(["spaces.space", "notebooks.notebook"]),
-  resourceId: ShortIdSchema,
+  resourceType: CloudResourceRefSchema.shape.type,
+  resourceId: CloudResourceRefSchema.shape.id,
 });
+const SystemChatCursorsSchema = z.record(CloudResourceRefSchema.shape.type, z.string().max(16 * 1024));
 export const SystemChatQuerySchema = z.strictObject({
-  spacesCursor: z.string().max(256).optional(),
-  notebooksCursor: z.string().max(256).optional(),
+  cursors: z
+    .string()
+    .max(4 * 1024 * 1024)
+    .transform((value, ctx) => {
+      try {
+        return SystemChatCursorsSchema.parse(JSON.parse(value));
+      } catch {
+        ctx.addIssue({ code: "custom", message: "Invalid cursors" });
+        return z.NEVER;
+      }
+    })
+    .optional(),
 });
 export const ThreadSchema = z.strictObject({
   following: z.boolean().optional(),
@@ -353,6 +358,7 @@ export const ConversationSchema = z.object({
   summaryCursor: z.string().nullable().optional(),
   kind: z.enum(["chat", "system"]).optional(),
   resource: CloudResourceRefSchema.nullable().optional(),
+  discussionItemType: CloudResourceRefSchema.shape.type.optional(),
   threads: z.number().int().min(0),
   channel: z.boolean(),
   member: z.boolean(),
@@ -381,9 +387,20 @@ export const CreateOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("existing"), matches: z.array(ExistingMatchSchema) }),
 ]);
 export const SystemChatPageSchema = z.strictObject({
-  items: z.array(z.strictObject({ ref: CloudResourceRefSchema, name: z.string(), conversation: ConversationSchema.nullable() })).max(200),
-  spacesCursor: z.string().nullable(),
-  notebooksCursor: z.string().nullable(),
+  items: z
+    .array(
+      z.strictObject({
+        ref: CloudResourceRefSchema,
+        name: z.string(),
+        typeTitle: z.string(),
+        icon: z.string(),
+        color: z.string().optional(),
+        conversation: ConversationSchema.nullable(),
+      }),
+    )
+    .max(100),
+  cursors: SystemChatCursorsSchema,
+  skipped: z.array(CloudResourceRefSchema.shape.type),
 });
 export const ConversationPageSchema = z.object({
   items: z.array(ConversationSchema),
@@ -733,7 +750,7 @@ export const ItemEventsQuerySchema = z.strictObject({
   thread: z.union([ShortIdSchema, z.literal("all")]).default("all"),
   before: z.string().datetime({ offset: true }).max(40).optional(),
   after: z.string().datetime({ offset: true }).max(40).optional(),
-  cursor: z.string().min(1).max(256).optional(),
+  cursor: z.string().min(1).max(2048).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export const ItemEventSchema = z.object({
@@ -748,11 +765,11 @@ export const ItemEventSchema = z.object({
   count: z.number().int().min(1),
   thread: z.union([
     z.object({ id: ShortIdSchema, name: z.string() }),
-    z.object({ ref: z.object({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema }), name: z.string() }),
+    z.object({ ref: z.object({ type: CloudResourceRefSchema.shape.type, id: CloudResourceRefSchema.shape.id }), name: z.string() }),
   ]),
 });
 export const ItemEventsPageSchema = z.object({
   items: z.array(ItemEventSchema).max(100),
-  nextCursor: z.string().max(256).nullable(),
+  nextCursor: z.string().max(2048).nullable(),
   unavailable: z.literal(true).optional(),
 });

@@ -36,9 +36,9 @@ mit der Zurück-Funktion des Browsers kommst du zu Files zurück. Nach dem Öffn
 2. Wähle einen Treffer, um ihn zu öffnen.
 :::
 
-Die Suche findet deine Chats und Kanäle, die Chats von Spaces und Notebooks, die du öffnen kannst, und Threads nach Namen.
-Jeder Thread-Treffer sagt, wo er steht, zum Beispiel **Thread in IT** oder **Aufgabe in Frühlingsausstellung**. Du siehst höchstens acht Treffer.
-Antworten Spaces oder Notebooks nicht, siehst du die übrigen Treffer trotzdem, und **Erneut versuchen** fragt noch einmal.
+Die Suche findet deine Chats und Kanäle, Ressourcen-Diskussionen, die du öffnen kannst, und Threads nach Namen.
+Jeder Thread-Treffer sagt, wo er steht, zum Beispiel **Thread in IT** oder **Thread in Frühlingsausstellung**. Du siehst höchstens acht Treffer.
+Antwortet eine zugehörige App nicht, siehst du die übrigen Treffer trotzdem, und **Erneut versuchen** fragt noch einmal.
 Drücke `Escape` oder leere das Feld, um wieder die Liste zu sehen.
 
 ## Kanäle entdecken {icon="compass"}

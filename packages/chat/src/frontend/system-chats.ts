@@ -14,10 +14,8 @@ import {
 
 export type SystemChatPage = z.infer<typeof SystemChatPageSchema>;
 export type ThreadQuery = z.input<typeof ThreadQuerySchema>;
-export const containerIcon = (type: string | undefined) => (type === "notebooks.notebook" ? "ti ti-notebook" : "ti ti-layout-kanban");
-
-export const systemMembers = (type: string | undefined, t: ReturnType<typeof chatMessages.resolve>["t"]) =>
-  type === "notebooks.notebook" ? t.systemNotebookMembers : t.systemSpaceMembers;
+export const containerIcon = (icon: string | null | undefined) => icon ?? "ti ti-messages";
+export const systemMembers = (_type: string | undefined, t: ReturnType<typeof chatMessages.resolve>["t"]) => t.systemMembers;
 
 const client = () => createApiClient<ApiType>({ baseUrl: "/api/chat" });
 const response = async <T>(result: Pick<Response, "ok" | "status" | "json">, schema: z.ZodType<T>): Promise<T> => {
@@ -25,8 +23,11 @@ const response = async <T>(result: Pick<Response, "ok" | "status" | "json">, sch
   return schema.parse(await result.json());
 };
 
-export const loadSystemChats = async (query: { spacesCursor?: string; notebooksCursor?: string }, signal: AbortSignal) => {
-  const page = await response(await client()["system-chats"].$get({ query }, { init: { signal } }), SystemChatPageSchema);
+export const loadSystemChats = async (query: { cursors?: Record<string, string> }, signal: AbortSignal) => {
+  const page = await response(
+    await client()["system-chats"].$get({ query: query.cursors ? { cursors: JSON.stringify(query.cursors) } : {} }, { init: { signal } }),
+    SystemChatPageSchema,
+  );
   return page;
 };
 export const openSystemChat = async (param: z.infer<typeof SystemChatParamSchema>) =>

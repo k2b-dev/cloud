@@ -62,9 +62,8 @@ export const createChatSearch = (query: Accessor<string>) => {
 export type ChatSearchState = ReturnType<typeof createChatSearch>;
 
 /**
- * What the list's search finds, in place of the list: chats and channels as their ordinary rows, threads with the kind
- * of their item and where they live, and Spaces and notebooks whose chat nobody has started yet. The hits of the last
- * answer stay while the next one loads, so typing moves nothing. When Spaces or Notebooks cannot answer, the other hits
+ * What the list's search finds, in place of the list: chats and channels as their ordinary rows, threads with their provider icon and container, and containers whose chat nobody has started yet. The hits of the last
+ * answer stay while the next one loads, so typing moves nothing. When a resource provider cannot answer, the other hits
  * still show, with a line that says what is missing.
  */
 export default function ChatSearch(props: {
@@ -74,7 +73,7 @@ export default function ChatSearch(props: {
   active: { chatId: string | null; view: string };
   chatRow: (row: ChatHit["conversation"]) => JSX.Element;
   onThread: (chatId: string, thread: string, navigation: LinkNavigateEvent) => void | Promise<void>;
-  /** Starts the chat of a Space or notebook nobody has written in yet, and opens it. */
+  /** Starts the chat of a container nobody has written in yet, and opens it. */
   onSystem: (ref: SystemHit["ref"]) => void | Promise<void>;
 }): JSX.Element {
   const locale = useLocale();
@@ -85,24 +84,9 @@ export default function ChatSearch(props: {
   const items = () => answer()?.result.items ?? [];
   const place = (hit: ThreadHit) => {
     const title = hit.conversation.title;
-    switch (hit.thread.resource?.kind) {
-      case "task":
-        return t().searchTaskIn({ title });
-      case "event":
-        return t().searchEventIn({ title });
-      case "note":
-        return t().searchNoteIn({ title });
-      default:
-        return t().searchThreadIn({ title });
-    }
+    return t().searchThreadIn({ title });
   };
-  const threadIcon = (hit: ThreadHit) => {
-    const resource = hit.thread.resource;
-    if (!resource) return "ti ti-hash";
-    if (resource.kind === "event") return "ti ti-calendar-event";
-    if (resource.kind === "note") return "ti ti-note";
-    return resource.done ? "ti ti-circle-check" : "ti ti-circle";
-  };
+  const threadIcon = (hit: ThreadHit) => hit.thread.resource?.icon ?? "ti ti-hash";
 
   return (
     <div class="chat-search" aria-busy={status() === "loading"}>
@@ -142,7 +126,7 @@ export default function ChatSearch(props: {
                   {(system) => (
                     <AppWorkspace.SidebarItem
                       onClick={() => void props.onSystem(system().ref)}
-                      icon={containerIcon(system().ref.type)}
+                      icon={containerIcon(system().icon)}
                       description={<span class="chat-list__preview">{systemMembers(system().ref.type, t())}</span>}
                     >
                       {system().name}

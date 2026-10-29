@@ -69,7 +69,13 @@ test("archived results sort last; relevance beats activity and ties remain stabl
 });
 
 test("the result schema and ranking both cap output at eight hits", () => {
-  const hit = SearchHitSchema.parse({ kind: "system", ref: { type: "spaces.space", id: "Space1" }, name: "IT", conversation: null });
+  const hit = SearchHitSchema.parse({
+    kind: "system",
+    ref: { type: "spaces.space", id: "Space1" },
+    name: "IT",
+    icon: "ti ti-box",
+    conversation: null,
+  });
   expect(SearchResultSchema.parse({ items: Array(8).fill(hit), systemUnavailable: true }).items).toHaveLength(8);
   expect(SearchResultSchema.safeParse({ items: Array(9).fill(hit) }).success).toBe(false);
   expect(SearchResultSchema.safeParse({ items: [], systemUnavailable: false }).success).toBe(false);
@@ -82,11 +88,11 @@ test("the result schema and ranking both cap output at eight hits", () => {
   ).toHaveLength(8);
 });
 
-test("thread hits carry a minimal parent and optional item kind and completion", () => {
+test("thread hits carry a minimal parent and optional item icon and completion", () => {
   const thread = {
     kind: "thread",
     conversation: { id: "Chat01", title: "IT", kind: "system" },
-    thread: { id: "Task01", name: "Plan", resource: { kind: "task", done: true } },
+    thread: { id: "Task01", name: "Plan", resource: { icon: "ti ti-package", done: true } },
   } as const;
   expect(SearchHitSchema.parse(thread)).toEqual(thread);
   expect(SearchHitSchema.safeParse({ ...thread, thread: { ...thread.thread, resource: { kind: "unknown", done: true } } }).success).toBe(
@@ -123,7 +129,13 @@ test("chat hits reuse the complete list summary and keep system conversation sum
   expect(SearchHitSchema.parse({ kind: "chat", conversation })).toEqual({ kind: "chat", conversation });
   expect(SearchHitSchema.safeParse({ kind: "chat", conversation: null }).success).toBe(false);
   expect(
-    SearchHitSchema.parse({ kind: "system", ref: { type: "notebooks.notebook", id: "Book01" }, name: "IT", conversation }).conversation,
+    SearchHitSchema.parse({
+      kind: "system",
+      ref: { type: "notebooks.notebook", id: "Book01" },
+      name: "IT",
+      icon: "ti ti-book",
+      conversation,
+    }).conversation,
   ).toEqual(conversation);
 });
 
@@ -132,8 +144,8 @@ test("the search feedback catalog supplies the approved German text and English 
   const en = chatMessages.resolve(["en"]).t;
   expect(de.searchChats).toBe("Suchen");
   expect(de.searchNoResults({ q: "IT" })).toBe("Nichts gefunden für „IT“.");
-  expect(de.searchSystemUnavailable).toBe("Suche in Spaces und Notebooks fehlgeschlagen.");
+  expect(de.searchSystemUnavailable).toBe("Suche in Ressourcen-Diskussionen fehlgeschlagen.");
   expect(de.retry).toBe("Erneut versuchen");
-  expect(de.searchTaskIn({ title: "Frühlingsausstellung" })).toBe("Aufgabe in Frühlingsausstellung");
+  expect(de.searchThreadIn({ title: "Frühlingsausstellung" })).toBe("Thread in Frühlingsausstellung");
   expect(en.searchThreadIn({ title: "IT" })).toBe("Thread in IT");
 });

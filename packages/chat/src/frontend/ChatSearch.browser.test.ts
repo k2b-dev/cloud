@@ -41,7 +41,10 @@ const seed = () => {
   const posters = harness.addThread(fair, { name: "Print posters", count: 1, end: minutesAgo(10) });
   harness.resourceThread(fair, posters, {
     ref: { type: "spaces.item", id: "Item01" },
-    kind: "task",
+    title: "Item",
+    permission: "read",
+    typeTitle: "Item",
+    icon: "ti ti-package",
     status: "Open",
     done: false,
     href: "/app/spaces/items/Item01",
@@ -62,7 +65,7 @@ describe("Search in the chat list", () => {
         await field.fill("print");
         const results = list(page, mobile).locator(".chat-search");
         await results.getByText("Thread in IT").waitFor();
-        await results.getByText("Task in Spring fair").waitFor();
+        await results.getByText("Thread in Spring fair").waitFor();
         // The list itself is gone while searching.
         expect(await list(page, mobile).getByText("New chat").count()).toBe(0);
         expect(harness.searchQueries.at(-1)).toBe("print");
@@ -128,14 +131,14 @@ describe("Search in the chat list", () => {
       const sidebar = list(page, false);
       const search = sidebar.locator(".chat-search");
       await sidebar.getByRole("searchbox", { name: "Search" }).fill("print");
-      await search.getByText("Search in Spaces and Notebooks failed.").waitFor();
+      await search.getByText("Search in resource discussions failed.").waitFor();
       await search.getByText("Thread in IT").waitFor();
-      expect(await search.getByText("Task in Spring fair").count()).toBe(0);
+      expect(await search.getByText("Thread in Spring fair").count()).toBe(0);
       harness.failSearchSystem(false);
       await search.getByRole("button", { name: "Try again" }).click();
       await search.getByText("Print shop notes").waitFor();
-      await search.getByText("Task in Spring fair").waitFor();
-      expect(await search.getByText("Search in Spaces and Notebooks failed.").count()).toBe(0);
+      await search.getByText("Thread in Spring fair").waitFor();
+      expect(await search.getByText("Search in resource discussions failed.").count()).toBe(0);
       harness.failSearch();
       await sidebar.getByRole("searchbox", { name: "Search" }).fill("printe");
       await search.getByText("Search failed. Try again.").waitFor();
@@ -159,7 +162,7 @@ describe("Search in the chat list", () => {
     const { page, errors } = await load(desktop);
     try {
       const sidebar = list(page, false);
-      await sidebar.getByRole("button", { name: /Spaces and Notebooks/, expanded: false }).waitFor();
+      await sidebar.getByRole("button", { name: /Discussions/, expanded: false }).waitFor();
       await sidebar.getByRole("searchbox", { name: "Search" }).fill("posters");
       await sidebar
         .locator(".chat-search")
@@ -167,7 +170,7 @@ describe("Search in the chat list", () => {
         .click();
       await page.waitForURL(`**/app/chat/c/${fair}/t/${posters}`);
       await sidebar.getByRole("searchbox", { name: "Search" }).press("Escape");
-      await sidebar.getByRole("button", { name: /Spaces and Notebooks/, expanded: true }).waitFor();
+      await sidebar.getByRole("button", { name: /Discussions/, expanded: true }).waitFor();
       expect(errors).toEqual([]);
     } finally {
       await page.context().close();

@@ -361,74 +361,22 @@ for (const locale of ["en", "de"]) {
   });
 }
 
-for (const [zone, start, end, days] of [
-  ["Europe/Berlin", "2026-10-23T22:00:00.000Z", "2026-10-24T22:00:00.000Z", ["2026-10-24"]],
-  ["Europe/Berlin", "2026-10-23T22:00:00.000Z", "2026-10-25T23:00:00.000Z", ["2026-10-24", "2026-10-25"]],
-  ["America/Los_Angeles", "2026-10-24T07:00:00.000Z", "2026-10-25T07:00:00.000Z", ["2026-10-24"]],
-] as const) {
-  test(`all-day metadata uses calendar dates and inclusive end in ${zone}: ${end}`, () => {
-    const html = renderChild("en", () =>
-      createComponent(ThreadMetadata, {
-        dateConfig: { timeZone: zone, firstDayOfWeek: 1 },
-        resource: {
-          ref: { type: "spaces.item", id: "Item01" },
-          kind: "event",
-          startsAt: start,
-          endsAt: end,
-          allDay: true,
-          status: null,
-          done: false,
-          deadline: "2026-10-24",
-          deadlineAllDay: true,
-          href: "/app/spaces/Item01",
-        },
-      }),
-    );
-    const dates = [...html.matchAll(/datetime="([^"]+)"/g)].map((match) => match[1]!.slice(0, 10));
-    expect(dates).toEqual(["2026-10-24", ...days]);
-  });
-}
-
-test("timed events retain their exact instants, including their exclusive endpoint", () => {
-  const start = "2026-10-24T08:00:00.000Z",
-    end = "2026-10-24T09:00:00.000Z";
+test("thread metadata renders the provider's localized context without interpreting dates", () => {
   const html = renderChild("de", () =>
     createComponent(ThreadMetadata, {
       dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
       resource: {
-        ref: { type: "spaces.item", id: "Item01" },
-        kind: "event",
-        status: null,
-        done: false,
-        startsAt: start,
-        endsAt: end,
-        allDay: false,
-        href: "/app/spaces/Item01",
+        ref: { type: "inventory.item", id: "uuid" },
+        title: "Item",
+        permission: "read",
+        typeTitle: "Inventory item",
+        icon: "ti ti-package",
+        context: "Lieferung am 30. Oktober",
+        href: "/app/inventory/item",
       },
     }),
   );
-  expect(html).toContain(`datetime="${start}"`);
-  expect(html).toContain(`datetime="${end}"`);
-  expect(html).toContain("10:00");
-  expect(html).toContain("11:00");
-});
-
-test("all-day events without an end keep their local start date", () => {
-  const html = renderChild("en", () =>
-    createComponent(ThreadMetadata, {
-      dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
-      resource: {
-        ref: { type: "spaces.item", id: "Item01" },
-        kind: "event",
-        status: null,
-        done: false,
-        startsAt: "2026-10-23T22:00:00.000Z",
-        allDay: true,
-        href: "/app/spaces/Item01",
-      },
-    }),
-  );
-  expect([...html.matchAll(/datetime="([^"]+)"/g)].map((match) => match[1]!.slice(0, 10))).toEqual(["2026-10-24"]);
+  expect(html).toContain("Lieferung am 30. Oktober");
 });
 
 test("system chat links keep personal Unread separate from the thread directory filter", () => {

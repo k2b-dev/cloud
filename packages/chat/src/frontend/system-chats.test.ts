@@ -68,7 +68,11 @@ test("loading a sidebar page does not exhaust any conversation summary", async (
     async () => {
       calls++;
       return calls === 1
-        ? Response.json({ items: [{ ref: conversation.resource, name: "Space", conversation }], spacesCursor: null, notebooksCursor: null })
+        ? Response.json({
+            items: [{ ref: conversation.resource, name: "Space", typeTitle: "Collection", icon: "ti ti-box", conversation }],
+            cursors: {},
+            skipped: [],
+          })
         : Response.json({ ...conversation, summaryCursor: null });
     },
     { preconnect: original.preconnect },

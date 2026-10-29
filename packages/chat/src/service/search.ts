@@ -4,10 +4,11 @@ import { type SQLQuery, sql } from "bun";
 import { boundConversation, type ChatContext, capPermission, messages, readableMemberCondition, subjectPrincipal } from "./access";
 import { conversationSearchTitle } from "./conversation-titles";
 import { conversations } from "./conversations";
-import { type ResourceReaderDependencies, readContainers, readerBatch, readResource, resourceReaderDependencies } from "./resource-access";
+import { DiscussionReadStopped, discussionRead } from "./discussion-read";
+import { readContainers, readerBatch, readResource } from "./resource-access";
 import { SEARCH_LIMIT, type SearchHit, SearchQuerySchema, type SearchResult } from "./search-contracts";
 import { nameMatchRank, rankSearchCandidates, type SearchCandidate } from "./search-ranking";
-import { READER_REQUEST_BUDGET, SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
+import { SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
 
 const run = async <T>(query: SQLQuery<T>, signal?: AbortSignal): Promise<T> => {
   const cancel = () => query.cancel();
@@ -99,27 +100,30 @@ const system = async (context: ChatContext, q: string, bound: string | null) => 
   const onUnavailable = () => {
     unavailable = true;
   };
-  // Reserve the two existing summary container reads for each possible output hit.
-  let remaining = READER_REQUEST_BUDGET - 2 * SEARCH_LIMIT;
-  const dependencies: ResourceReaderDependencies = {
-    invoke: async (...args) => {
-      context.caller?.signal?.throwIfAborted();
-      if (remaining <= 0) throw new Error("Search reader budget exhausted");
-      remaining--;
-      return resourceReaderDependencies.invoke(...args);
-    },
+  const session = discussionRead(context);
+  const read = async (type: string, id: string) => {
+    try {
+      return await readResource(context, { type, id }, undefined, onUnavailable);
+    } catch (error) {
+      if (!(error instanceof DiscussionReadStopped)) throw error;
+      onUnavailable();
+      return null;
+    }
   };
-  const read = (type: string, id: string) => readResource(context, { type, id }, dependencies, onUnavailable);
   const candidates: Candidate[] = [];
-  const scope = { "spaces.space": new Set<string>(), "notebooks.notebook": new Set<string>() };
+  const scope = new Map<string, Set<string>>();
+  const providers = await session.catalog().catch(() => {
+    unavailable = true;
+    return [];
+  });
   const conversationIds = new Map<string, string>();
   // A failure in one owner leaves the other owner and ordinary results usable.
-  for (const type of ["spaces.space", "notebooks.notebook"] as const) {
+  for (const { containerType: type } of providers) {
     context.caller?.signal?.throwIfAborted();
     try {
-      const page = await readContainers(context, type, undefined, dependencies, q);
-      const directory = await readContainers(context, type, undefined, dependencies);
-      for (const entry of [...page.items, ...directory.items]) scope[type].add(entry.ref.id);
+      const page = await readContainers(context, type, undefined, undefined, q, SEARCH_LIMIT);
+      const directory = await readContainers(context, type, undefined, undefined, undefined, SEARCH_LIMIT);
+      scope.set(type, new Set([...page.items, ...directory.items].map((entry) => entry.ref.id)));
       for (const entry of page.items) {
         context.caller?.signal?.throwIfAborted();
         if (nameMatchRank(entry.name, q) === null) continue;
@@ -133,7 +137,7 @@ const system = async (context: ChatContext, q: string, bound: string | null) => 
         const key = `${type}:${entry.ref.id}`;
         if (row) conversationIds.set(key, row.short_id);
         candidates.push({
-          hit: { kind: "system", ref: entry.ref, name: entry.name, conversation: null },
+          hit: { kind: "system", ref: entry.ref, name: entry.name, icon: entry.icon, conversation: null },
           name: entry.name,
           archived: false,
           activity: row?.activity.toISOString() ?? "",
@@ -150,9 +154,9 @@ const system = async (context: ChatContext, q: string, bound: string | null) => 
     sql<SystemThreadRow[]>`SELECT c.short_id AS conversation_id, c.resource_type, c.resource_id,
       t.short_id AS thread_id, t.resource_type AS item_type, t.resource_id AS item_id, t.last_activity_at AS activity
     FROM chat.threads t JOIN chat.conversations c ON c.id = t.conversation_id
-    WHERE c.kind = 'system' AND (
-      (c.resource_type = 'spaces.space' AND c.resource_id = ANY(${toPgTextArray([...scope["spaces.space"]])}::text[])) OR
-      (c.resource_type = 'notebooks.notebook' AND c.resource_id = ANY(${toPgTextArray([...scope["notebooks.notebook"]])}::text[]))
+    WHERE c.kind = 'system' AND (c.resource_type, c.resource_id) IN (
+      SELECT * FROM unnest(${toPgTextArray([...scope].flatMap(([type, ids]) => [...ids].map(() => type)))}::text[],
+        ${toPgTextArray([...scope.values()].flatMap((ids) => [...ids]))}::text[])
     ) AND t.archived_at IS NULL AND t.resource_type IS NOT NULL AND t.resource_id IS NOT NULL
       AND ${bound ? sql`c.short_id = ${bound}` : sql`true`}
     ORDER BY t.last_activity_at DESC, t.short_id LIMIT ${SUMMARY_TRAVERSAL_BUDGET}`,
@@ -172,17 +176,17 @@ const system = async (context: ChatContext, q: string, bound: string | null) => 
   );
   for (const { row, container, resource } of items) {
     context.caller?.signal?.throwIfAborted();
-    if (!container || !resource?.kind || resource.container?.type !== row.resource_type || resource.container.id !== row.resource_id)
+    if (!container || !resource || resource.container?.ref.type !== row.resource_type || resource.container.ref.id !== row.resource_id)
       continue;
     const parent = candidates.find((candidate) => candidate.key === `${row.resource_type}:${row.resource_id}`);
     if (parent && parent.activity < row.activity.toISOString()) parent.activity = row.activity.toISOString();
     candidates.push({
       hit: {
         kind: "thread",
-        conversation: { id: row.conversation_id, title: container.name, kind: "system" },
-        thread: { id: row.thread_id, name: resource.name, resource: { kind: resource.kind, done: resource.done } },
+        conversation: { id: row.conversation_id, title: container.title, kind: "system" },
+        thread: { id: row.thread_id, name: resource.title, resource: { icon: resource.icon, done: resource.done } },
       },
-      name: resource.name,
+      name: resource.title,
       archived: false,
       activity: row.activity.toISOString(),
       key: `${row.conversation_id}:${row.thread_id}`,

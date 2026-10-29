@@ -14,7 +14,7 @@ import { chatHasThreads } from "./threads";
 type Conversation = z.infer<typeof ConversationSchema>;
 
 /**
- * A chat's face in the list: its initials in its own tint, a channel's sign in a circle, and a Space's or notebook's
+ * A chat's face in the list: its initials in its own tint, a channel's sign in a circle, and a container's
  * sign in a square, so a long list reads at a glance. A chosen icon replaces the initials. The tint follows the name, so a chat keeps it everywhere.
  */
 export function ChatAvatar(props: { row: Pick<Conversation, "title" | "kind" | "channel" | "icon" | "resource"> }): JSX.Element {
@@ -25,7 +25,7 @@ export function ChatAvatar(props: { row: Pick<Conversation, "title" | "kind" | "
       shape={props.row.kind === "system" ? "square" : "circle"}
       icon={
         props.row.kind === "system"
-          ? containerIcon(props.row.resource?.type)
+          ? containerIcon(props.row.icon)
           : (props.row.icon ?? (props.row.channel ? "ti ti-speakerphone" : undefined))
       }
     />

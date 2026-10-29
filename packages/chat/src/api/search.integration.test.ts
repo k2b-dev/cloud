@@ -1,17 +1,20 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
+import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { chatService } from "../service";
 import { ConversationSchema, ThreadSchema } from "../service/contracts";
 import { conversationSearchTitle } from "../service/conversation-titles";
-import { accessKey, type ResourceReaderDependencies, resourceReaderDependencies } from "../service/resource-access";
+import { DISCUSSION_CALL_LIMIT as READER_REQUEST_BUDGET } from "../service/discussion-read";
+import { mockDiscussionCatalog, standardData } from "../service/discussions.test-fixture";
+import { accessKey, authorizationKey, type ResourceReaderDependencies, resourceReaderDependencies } from "../service/resource-access";
 import { SearchResultSchema } from "../service/search-contracts";
-import { READER_REQUEST_BUDGET } from "../service/thread-access";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -31,8 +34,9 @@ suite("chat list search", () => {
   let reader: ReturnType<typeof spyOn>;
   const grant = (person: Person, type: string, id: string, data: Record<string, unknown>) => {
     keys.add(accessKey(`user:${person.id}`, { type, id }));
+    keys.add(authorizationKey(`user:${person.id}`, { type, id }));
     replies.set(`${person.headers.cookie}:${type}:${id}`, {
-      data: { id, ...data },
+      data: standardData(type, data),
       links: [{ rel: "open", href: `/app/${type.split(".")[0]}/${id}` }],
     });
   };
@@ -72,7 +76,9 @@ suite("chat list search", () => {
     expect(response.status).toBe(200);
     return ThreadSchema.parse(await response.json());
   };
+  let catalog: ReturnType<typeof mockDiscussionCatalog>;
   beforeEach(() => {
+    catalog = mockDiscussionCatalog();
     replies.clear();
     lists.clear();
     calls.length = 0;
@@ -81,26 +87,30 @@ suite("chat list search", () => {
     abortOnList = null;
     reader = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (app, capability, input, caller) => {
       calls.push({ app, capability, input, cookie: caller.cookie ?? undefined, signal: caller.signal });
-      if (abortOnList && capability.endsWith(".list")) {
+      if (abortOnList && capability.endsWith(".containers")) {
         abortOnList.abort();
         caller.signal?.throwIfAborted();
       }
       if (readerDown && capability.endsWith(".read")) throw new Error("Reader unavailable");
       if (down === app) throw new Error("Provider unavailable");
       const type = `${app}.${capability.split(".")[0]}`;
-      if (capability.endsWith(".list")) {
+      if (capability.endsWith(".containers")) {
         const override = lists.get(`${caller.cookie}:${type}`);
         if (override !== undefined) return override;
         const prefix = `${caller.cookie}:${type}:`;
         const q = String(input.query ?? "").toLowerCase();
         return {
-          data: [...replies.entries()]
-            .filter(([key]) => key.startsWith(prefix))
-            .flatMap(([, value]) => {
-              if (!value || !value.data || typeof value.data !== "object" || !("name" in value.data)) return [];
-              return String(value.data.name).toLowerCase().includes(q) ? [value.data] : [];
-            })
-            .slice(0, Number(input.limit)),
+          data: {
+            items: [...replies.entries()]
+              .filter(([key]) => key.startsWith(prefix))
+              .flatMap(([key, value]) => {
+                const parsed = z.object({ view: CloudResourceReaderViewSchema }).safeParse(value?.data);
+                if (!parsed.success || !parsed.data.view.title.toLowerCase().includes(q)) return [];
+                return [{ ref: { type, id: key.slice(prefix.length) }, title: parsed.data.view.title }];
+              })
+              .slice(0, Number(input.limit)),
+            next: null,
+          },
         };
       }
       const principal = personIds.get(caller.cookie ?? "");
@@ -115,6 +125,7 @@ suite("chat list search", () => {
     return result;
   };
   afterEach(async () => {
+    catalog.mockRestore();
     reader.mockRestore();
     if (keys.size) await redis.send("DEL", [...keys]);
     keys.clear();
@@ -252,10 +263,13 @@ suite("chat list search", () => {
     const chat = await open(owner, "spaces.space", space);
     // A stale list entry cannot replace the container reader.
     lists.set(`${owner.headers.cookie}:spaces.space`, {
-      data: [
-        { id: space, name: "Release Space", permission: "write" },
-        { id: denied, name: "Release secret", permission: "write" },
-      ],
+      data: {
+        items: [
+          { ref: { type: "spaces.space", id: space }, title: "Release Space" },
+          { ref: { type: "spaces.space", id: denied }, title: "Release secret" },
+        ],
+        next: null,
+      },
     });
     const result = await search(owner, "Release");
     expect(result.systemUnavailable).toBeUndefined();
@@ -266,13 +280,13 @@ suite("chat list search", () => {
           ref: { type: "spaces.space", id: space },
           conversation: expect.objectContaining({ id: chat.id, summaryCursor: null }),
         }),
-        { kind: "system", ref: { type: "notebooks.notebook", id: book }, name: "Release notes", conversation: null },
+        { kind: "system", ref: { type: "notebooks.notebook", id: book }, name: "Release notes", icon: "ti ti-box", conversation: null },
       ]),
     );
     expect(result.items).toHaveLength(2);
     for (const app of ["spaces", "notebooks"]) {
-      const call = calls.find((call) => call.app === app && call.capability.endsWith(".list"));
-      expect(call?.input).toEqual({ limit: 100, query: "Release" });
+      const call = calls.find((call) => call.app === app && call.capability.endsWith(".containers"));
+      expect(call?.input).toEqual({ limit: 8, query: "Release" });
       expect(call?.cookie).toBe(owner.headers.cookie);
       expect(call?.signal).toBeInstanceOf(AbortSignal);
     }
@@ -313,15 +327,15 @@ suite("chat list search", () => {
         {
           kind: "thread",
           conversation: { id: spaceChat.id, title: "Exhibition", kind: "system" },
-          thread: { id: taskThread.id, name: "Release task", resource: { kind: "task", done: true } },
+          thread: { id: taskThread.id, name: "Release task", resource: { icon: "ti ti-package", done: true } },
         },
         expect.objectContaining({
           kind: "thread",
-          thread: { id: eventThread.id, name: "Release event", resource: { kind: "event", done: false } },
+          thread: { id: eventThread.id, name: "Release event", resource: { icon: "ti ti-package", done: false } },
         }),
         expect.objectContaining({
           kind: "thread",
-          thread: { id: noteThread.id, name: "Release note", resource: { kind: "note", done: false } },
+          thread: { id: noteThread.id, name: "Release note", resource: { icon: "ti ti-package", done: false } },
         }),
       ]),
     );
@@ -354,7 +368,7 @@ suite("chat list search", () => {
       expect.objectContaining({ kind: "thread", thread: expect.objectContaining({ id: visible.id }) }),
     ]);
     expect(calls.length).toBeLessThanOrEqual(READER_REQUEST_BUDGET);
-    expect(calls.filter((call) => call.capability.endsWith(".list"))).toHaveLength(4);
+    expect(calls.filter((call) => call.capability.endsWith(".containers"))).toHaveLength(4);
     expect(calls.some((call) => call.input.id === foreignSpace || newer.some((row) => row.resource_id === call.input.id))).toBe(false);
   });
 
@@ -421,7 +435,7 @@ suite("chat list search", () => {
     const owner = await person();
     const chat = await namedChat(owner, "IT Support");
     lists.set(`${owner.headers.cookie}:spaces.space`, {
-      data: Array.from({ length: 12 }, () => ({ id: testShortId(), name: "IT", permission: "read" })),
+      data: { items: Array.from({ length: 8 }, () => ({ ref: { type: "spaces.space", id: testShortId() }, title: "IT" })), next: null },
     });
     readerDown = true;
     const result = await search(owner, "IT");
@@ -432,7 +446,9 @@ suite("chat list search", () => {
   test("reader failures and malformed owner lists set the partial-failure flag", async () => {
     const owner = await person();
     await namedChat(owner, "Release");
-    lists.set(`${owner.headers.cookie}:spaces.space`, { data: [{ id: testShortId(), name: "Release", permission: "read" }] });
+    lists.set(`${owner.headers.cookie}:spaces.space`, {
+      data: { items: [{ ref: { type: "spaces.space", id: testShortId() }, title: "Release" }], next: null },
+    });
     lists.set(`${owner.headers.cookie}:notebooks.notebook`, { data: "malformed" });
     readerDown = true;
     const result = await search(owner, "Release");

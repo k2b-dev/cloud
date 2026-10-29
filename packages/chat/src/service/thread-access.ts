@@ -1,27 +1,40 @@
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { sql } from "bun";
 import type { ChatContext } from "./access";
-import { RESOURCE_PAGE_SIZE, type ResourceDecision, readerBatch, readResource } from "./resource-access";
+import { discussionRead } from "./discussion-read";
+import { type ResourceDecision, readerBatch, readResource } from "./resource-access";
 
-export type ThreadReferenceRow = { id: string; resource_type: string | null; resource_id: string | null };
-export const threadResource = async (context: ChatContext, row: ThreadReferenceRow) =>
-  row.resource_type && row.resource_id ? readResource(context, { type: row.resource_type, id: row.resource_id }) : null;
+export type ThreadReferenceRow = {
+  id: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  container_type?: string | null;
+  container_id?: string | null;
+};
+export const threadResource = async (context: ChatContext, row: ThreadReferenceRow) => {
+  if (!row.resource_type || !row.resource_id) return null;
+  const resource = await readResource(context, { type: row.resource_type, id: row.resource_id }, undefined, () => {
+    throw new Error("Discussion reader unavailable");
+  });
+  if (!resource?.container) return null;
+  if (row.container_type && (resource.container.ref.type !== row.container_type || resource.container.ref.id !== row.container_id))
+    return null;
+  return resource;
+};
 export const canReadThread = async (db: typeof sql, context: ChatContext, id: string | null) => {
   if (id === null) return true;
-  const [row] = await db<ThreadReferenceRow[]>`SELECT id, resource_type, resource_id FROM chat.threads WHERE id = ${id}::uuid`;
+  const [row] = await db<
+    ThreadReferenceRow[]
+  >`SELECT t.id, t.resource_type, t.resource_id, c.resource_type AS container_type, c.resource_id AS container_id
+    FROM chat.threads t JOIN chat.conversations c ON c.id = t.conversation_id WHERE t.id = ${id}::uuid`;
   return !!row && (row.resource_type === null || (await threadResource(context, row)) !== null);
 };
 export const visibleThreadPage = async <T extends ThreadReferenceRow>(context: ChatContext, rows: T[]) =>
   (await readerBatch(rows, async (row) => ({ row, resource: await threadResource(context, row) }), context.caller?.signal)).filter(
     ({ row, resource }) => row.resource_type === null || resource !== null,
   );
-/** One request spends at most one 100-candidate page on summary item readers.
- * Together with the two 100-container discovery pages this is <= 302 reader
- * invocations (including both list calls), never 200 nested thread traversals.
- */
-export const READER_REQUEST_BUDGET = 3 * RESOURCE_PAGE_SIZE + 2;
-// Reserve both discovery calls and their container readers; spend the rest once.
-export const SUMMARY_TRAVERSAL_BUDGET = READER_REQUEST_BUDGET - 2 * (RESOURCE_PAGE_SIZE + 1);
+// Candidate work remains bounded even when all decisions are already cached.
+export const SUMMARY_TRAVERSAL_BUDGET = 60;
 export type ThreadBudget = { remaining: number };
 export const visibleThreadIdPage = async (
   db: typeof sql,
@@ -31,16 +44,24 @@ export const visibleThreadIdPage = async (
   budget: ThreadBudget = { remaining: SUMMARY_TRAVERSAL_BUDGET },
 ) => {
   context.caller?.signal?.throwIfAborted();
-  const [conversation] = await db<{ kind: string }[]>`SELECT kind FROM chat.conversations WHERE id = ${conversationId}::uuid`;
+  const [conversation] = await db<
+    { kind: string; resource_type: string; resource_id: string }[]
+  >`SELECT kind, resource_type, resource_id FROM chat.conversations WHERE id = ${conversationId}::uuid`;
   if (conversation?.kind !== "system") return { ids: undefined, nextCursor: null };
-  const limit = budget.remaining;
+  if (context.caller) await discussionRead(context).catalog();
+  const limit = Math.min(budget.remaining, context.caller ? discussionRead(context).remaining : budget.remaining);
   const rows = await db<(ThreadReferenceRow & { short_id: string })[]>`SELECT id, short_id, resource_type, resource_id FROM chat.threads
     WHERE conversation_id = ${conversationId}::uuid AND ${after ? db`short_id > ${after}` : db`true`}
     ORDER BY short_id LIMIT ${limit + 1}`;
   const page = rows.slice(0, limit);
   budget.remaining -= page.length;
   return {
-    ids: (await visibleThreadPage(context, page)).map(({ row }) => row.id),
+    ids: (
+      await visibleThreadPage(
+        context,
+        page.map((row) => ({ ...row, container_type: conversation.resource_type, container_id: conversation.resource_id })),
+      )
+    ).map(({ row }) => row.id),
     nextCursor: rows.length > limit ? (page.at(-1)?.short_id ?? after ?? "") : null,
   };
 };
@@ -52,23 +73,10 @@ export const visibleMessages = async <T extends { thread_id: string | null }>(db
   if (!ids.length) return rows;
   const threads = await db<
     ThreadReferenceRow[]
-  >`SELECT id, resource_type, resource_id FROM chat.threads WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])`;
+  >`SELECT t.id, t.resource_type, t.resource_id, c.resource_type AS container_type, c.resource_id AS container_id
+  FROM chat.threads t JOIN chat.conversations c ON c.id = t.conversation_id WHERE t.id = ANY(${toPgUuidArray(ids)}::uuid[])`;
   const visible = new Set((await visibleThreadPage(context, threads)).map(({ row }) => row.id));
   return rows.filter((row) => row.thread_id === null || visible.has(row.thread_id));
 };
 export const projectResource = (row: ThreadReferenceRow, resource: ResourceDecision | null) =>
-  resource?.kind && row.resource_type && row.resource_id
-    ? {
-        ref: { type: row.resource_type, id: row.resource_id },
-        kind: resource.kind,
-        status: resource.status,
-        deadline: resource.deadline,
-        deadlineAllDay: resource.deadlineAllDay,
-        assignees: resource.assignees,
-        startsAt: resource.startsAt,
-        endsAt: resource.endsAt,
-        allDay: resource.allDay,
-        done: resource.done,
-        href: resource.href,
-      }
-    : null;
+  resource && row.resource_type && row.resource_id ? { ref: { type: row.resource_type, id: row.resource_id }, ...resource } : null;

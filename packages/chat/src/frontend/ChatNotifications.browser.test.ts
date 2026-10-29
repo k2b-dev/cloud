@@ -280,7 +280,10 @@ describe("Chat notifications", () => {
     const thread = harness.addThread(chat, { name: "Sockel für Halle 2", description: "Item", count: 2, end: minutesAgo(5) });
     harness.resourceThread(chat, thread, {
       ref: { type: "spaces.item", id: "Item01" },
-      kind: "task",
+      title: "Sockel für Halle 2",
+      permission: "read",
+      typeTitle: "Item",
+      icon: "ti ti-package",
       status: "Offen",
       done: false,
       href: "/app/spaces/items/Item01",

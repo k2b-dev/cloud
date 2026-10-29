@@ -68,7 +68,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 3. Send the message.
 :::
 
-The list shows the chat's members and the people who wrote in it. In a Space or Notebook chat it shows the people who wrote there. The mentioned person finds the message under **For you**, as long as they may read it.
+The list shows the chat's members and the people who wrote in it. In a resource discussion it shows the people who wrote there. The mentioned person finds the message under **For you**, as long as they may read it.
 
 ## Share a Cloud element {icon="share"}
 

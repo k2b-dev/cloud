@@ -4,18 +4,18 @@ navTitle: Chat system chats
 section: Operations
 tags: [chat, permissions, operations]
 order: 1600
-description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-28
+description: Access, dependencies, and API behavior for Chat conversations attached to resource providers.
+updated: 2026-10-29
 ---
 
 # Chat system conversations
 
-Chat attaches a conversation to a Space or notebook and a thread to a task,
-event, or note. The Chat app lists these conversations under **Spaces and
-Notebooks**. Their item directory and message links work in the full page
-and below `/app/chat/panel` in the universal panel. Item changes can be read
-as a separate event feed alongside messages. Existing comments stay in their
-owning application.
+Chat attaches a conversation to a resource container and a thread to an item.
+Applications opt in through their catalog's `discussions` role. Built-in and
+third-party providers use the same contract. Chat lists these conversations
+under **Discussions**. Item directories and message links work in the full
+page and below `/app/chat/panel`. Providers can also offer an activity feed.
+Existing comments stay in their owning application.
 
 ## Open a conversation
 
@@ -23,9 +23,9 @@ All paths below start with `/api/chat`.
 
 | Request | Result |
 | --- | --- |
-| `GET /system-chats` | One page from each application's container list, including containers with no conversation yet. |
-| `POST /system-chats/:resourceType/:resourceId/open` | Create or return the container's conversation. Types are `spaces.space` and `notebooks.notebook`. |
-| `POST /conversations/:conversation/threads/for-resource` with `{ "ref": { "type": "spaces.item", "id": "…" } }` | Create or return an item thread. `notebooks.note` is also supported. |
+| `GET /system-chats` | A fair page from the catalog's discussion providers, including containers with no conversation yet. |
+| `POST /system-chats/:resourceType/:resourceId/open` | Create or return the container's conversation. The type must be a container declared by a discussion provider. |
+| `POST /conversations/:conversation/threads/for-resource` with `{ "ref": { "type": "inventory.item", "id": "…" } }` | Create or return an item thread. The type must be the provider's discussion item type. IDs are opaque strings up to 512 characters. |
 | `GET /conversations/:conversation/threads` | Authorized threads, with optional `filter=open\|done\|unread`, `q`, and `cursor`. |
 
 Message uploads and downloads use the same routes and limits as ordinary chats:
@@ -38,15 +38,30 @@ System conversations have `kind: "system"` and a container `resource` ref.
 Their message views include the same viewer-specific `reactions` as ordinary
 chat messages. Reaction live events carry a refresh hint on the item thread
 key; clients read the current reactions over HTTP.
-Item threads have `resource: { ref, kind, status, done, href }`. Their current
-name, description, and open link come from the reader. `status` is the column
-name resolved through the authorized `space.read` columns, or `null` when no
-label is available. `done` follows the reader's `completedAt`; notes have
-`done: false`. Optional `deadline`, `deadlineAllDay`, `assignees` (display
-names), `startsAt`, `endsAt`, and `allDay` retain the owning reader's task and
-event metadata. Missing fields stay absent; notes supply none of these task
-or event fields. Chat displays no numeric container membership count because
-these readers do not supply one.
+Item threads carry `resource: { ref, title, context?, status?, done?, permission,
+container?, href, typeTitle, icon, color? }`. The reader's standard `view`
+supplies the title, localized context and status, completion flag, permission,
+and container `{ ref, title }`. The catalog supplies the type title, icon and
+optional color. Chat does not interpret domain fields or resolve status labels.
+
+Chat no longer exposes separate assignees, deadlines, or exact event start and
+end times. A provider can include those details in its localized context line.
+Chat displays no numeric container membership count because the standard view
+does not supply one.
+
+`GET /system-chats` accepts `cursors`, a JSON object keyed by container type.
+Responses contain `{ items, cursors, skipped }`. Items include `ref`, `name`,
+`typeTitle`, `icon`, optional `color`, and nullable `conversation`. Send the
+returned cursors unchanged for the next page. An empty cursor means that
+provider is exhausted; nonempty cursors also preserve work for skipped providers.
+`skipped` identifies providers with unavailable lists or container readers.
+Unvisited providers lead the next round, so a large or unavailable provider cannot starve others. Refresh to
+restart discovery after the directory changes.
+
+Discovery, lists, readers and summaries share a maximum of 60 capability calls,
+4 MiB of returned envelopes, six parallel readers and a ten-second deadline.
+Each round divides available calls among the remaining providers and reserves
+reader and summary work. Providers left unvisited lead the next round. Summary counts can be partial; follow `summaryCursor` to continue them.
 
 Opening requires container read access. Creating an item thread and sending
 messages require container write access. The item reader must also authorize
@@ -84,8 +99,8 @@ archived threads are excluded.
 | Hit | Fields |
 | --- | --- |
 | Chat or subscribed channel | `{ kind: "chat", conversation }`, using the existing conversation-list summary. Generated titles use the caller's sidebar names and locale. |
-| Named thread or item thread | `{ kind: "thread", conversation: { id, title, kind }, thread: { id, name, resource? } }`. The optional item resource contains `{ kind: "task" \| "event" \| "note", done }`. |
-| Space or notebook | `{ kind: "system", ref, name, conversation }`. The container ref uses `spaces.space` or `notebooks.notebook`; `conversation` is `null` until its chat exists. |
+| Named thread or item thread | `{ kind: "thread", conversation: { id, title, kind }, thread: { id, name, resource? } }`. The optional item resource contains `{ icon, done? }`. |
+| Discussion container | `{ kind: "system", ref, name, icon, conversation }`. The container ref is declared by its provider; `conversation` is `null` until its chat exists. |
 
 Ordinary results include only chats where the caller is a member, including
 subscribed channels. Discovery access alone does not add a result. Search
@@ -93,17 +108,15 @@ covers ordinary titles and named threads before applying the result limit.
 It uses PostgreSQL and the existing membership indexes, with at most four
 member names used to derive each unnamed chat's title.
 
-Container discovery sends `query: q` and `limit: 100` to each owning app's
-existing list query. A second page of up to 100 containers per owner, without
-the text filter, scopes item discovery. Item discovery inspects the 100 most
-recently active non-archived item threads in those caller-listed containers
-and the matching container page. Their stored names are snapshots: matching uses each reader's current name and completion
-state. Container and item readers must both allow the caller, and the item's
-current parent must still match the conversation. The existing 60-second,
-credential-specific decision cache applies. Reader batches have at most eight
-concurrent calls. Search shares the existing 302-invocation reader budget,
-reserving two container reads for each possible system-chat summary. Budget
-exhaustion keeps available results and sets `systemUnavailable: true`.
+Container discovery sends `query: q` and `limit: 8` to the provider's
+container query. A second page of up to eight containers, without the text
+filter, scopes item discovery. Item discovery inspects up to 60 recently
+active item threads in those caller-listed containers. Their stored names are
+snapshots: matching uses each reader's current name. Container and item readers
+must both allow the caller, and the item's current container must still match
+the conversation. The 60-second decision cache applies. Search shares the
+same 60-call, 4-MiB and ten-second request budget. Budget exhaustion keeps
+available results and sets `systemUnavailable: true`.
 These candidate bounds mean an older item thread or a container beyond its owner's first matching page can be absent from search.
 
 When item threads remain, system-chat summaries include `summaryCursor: ""`:
@@ -113,8 +126,8 @@ return `summaryCursor: null`. Container activity uses General messages and
 readable item candidates. Open a container with no conversation through the
 existing `POST /system-chats/:resourceType/:resourceId/open` route.
 
-If either owner fails, search retains ordinary hits and successful results
-from the other owner, and sets `systemUnavailable: true`. Show the partial
+If a provider fails, search retains ordinary hits and successful results
+from other providers, and sets `systemUnavailable: true`. Show the partial
 failure separately and retry the same query. An explicit denial omits the
 resource. An empty successful response is `{ "items": [] }`.
 The standard Chat list request limiter applies (HTTP 429); disconnects cancel
@@ -147,53 +160,34 @@ including when the page is empty. IDs identify owner activity buckets;
 `count` reports the number of occurrences already recorded in that bucket.
 Clients should replace an existing row with the same ID when refreshing it.
 
-Events are read from Spaces or Notebooks rather than stored as Chat messages.
-They never advance unread state, become a conversation preview, trigger a
-notification, or enter Chat's live payloads. Each new Notebooks passage
-comment contributes one separate row linking to the comment's passage, such as
-“Maria left a comment”. Replies, edits, resolution and acceptance add no
-comment rows. Deleted comments and events for deleted or unreadable items are
-omitted. Notebooks owns the comments; a Chat outage does not prevent commenting.
-The owning app formats sentences in the caller's locale; Spaces receives the request's time zone for dates. An owner
-outage or malformed activity response returns HTTP 200 with
-`{ items: [], nextCursor: null, unavailable: true }`; retry this read to recover.
-Denied conversation, thread, or activity access returns 404.
-
-The owning queries are `spaces:space.activity` and
-`notebooks:notebook.activity`. They accept `container`, with `space` or
-`notebook` retained as aliases (container short ID). At least one is required;
-when both are present their IDs must match. They also take optional `item` (item short ID), `after`, `before`, `cursor`, and `limit`
-(default 50, maximum 100). Spaces also accepts an optional IANA `timeZone`,
-falling back to the installation zone. Each query returns a data array of
-`{ id, at, ref, actor: { type, id, name }, icon, sentence, count, href? }` and its
-continuation in `page.nextCursor`. Item reads and activity queries use the
-same owning application's grants and credential scope checks. A notebook edit
-bucket remains one row; the query does not create additional edit records.
-
-## Spaces inactivity
-
-Spaces marks an open task inactive after 30 days without changes to the task
-or its checklist. Comments and Chat discussion messages do not count as
-activity. Spaces does not query Chat for this filter; an active discussion can
-therefore accompany an inactive task.
+Events come from the provider's optional activity query. They never advance
+unread state, become a conversation preview, trigger a notification, or enter
+Chat's live payloads. The provider formats sentences in the caller's locale.
+Chat sends the request time zone, container ID and optional item ID through
+the standard activity input. It checks each item's current reader before
+returning an event. An owner outage or malformed activity response returns
+HTTP 200 with `{ items: [], nextCursor, unavailable: true }`; retry the same
+request to recover. Item reader failures preserve the incoming cursor. Denied conversation, thread, or activity access returns 404.
+Providers without activity return an empty complete page.
 
 ## Follow pages
 
-Container discovery requests at most 100 Spaces and 100 notebooks. Pass the
-returned `spacesCursor` and `notebooksCursor` independently to continue each
-source. Omit a source cursor for its first page, and pass the empty string
-for an exhausted source while advancing the other one. A container's
-`conversation` is `null` until someone opens it. Provider failures or malformed
-list responses fail discovery with `PROVIDER_UNAVAILABLE` (HTTP 500), so the
-client shows an error and retry instead of an empty or silently partial list.
+Container pages use the `cursors` map described above. A catalog failure
+returns `PROVIDER_UNAVAILABLE` (HTTP 500). A list failure or an exhausted budget preserves that provider's position and
+adds its type to `skipped`, while other providers can still contribute results.
+A failed summary also leaves that provider resumable.
+An individual container with a failed or malformed reader is omitted and its
+type is reported in `skipped`; the directory continues past it so one broken
+resource cannot block later containers. Refresh discovery to retry omitted
+containers. Retry unfinished provider pages with the returned map.
 
-A system thread page inspects at most 100 candidates by latest activity,
+A system thread page inspects at most 60 candidates, limited further by the remaining request budget, by latest activity,
 with the thread ID breaking ties.
 Visibility, search, and state filters apply within that page. Follow a non-null
 `nextCursor` even when `items` is empty. Ordinary chats retain their existing
 activity and archive ordering. `short=true` selects the four recent candidate
-threads, unread candidates, and optional `selected` thread within one
-100-candidate budget. The selected thread and recent candidates take priority.
+threads, unread candidates, and optional `selected` thread within the remaining
+request budget. The selected thread and recent candidates take priority.
 Candidate selection precedes item authorization and unread-state calculation;
 short refreshes never calculate unread state across the whole directory.
 The short selection has no continuation; use the directory for more threads.
@@ -215,14 +209,13 @@ not exhaust summary continuations before rendering. While a summary is partial,
 the row and section show `…` for an unknown count or `n+` for a lower bound.
 An incomplete zero does not mark the section as read, including for the open chat.
 
-The reader request budget is **302 calls**: two container-list calls, up to
-100 container readers per source, and 100 item readers shared across all
-summaries. `SUMMARY_TRAVERSAL_BUDGET` is the remaining 100 calls after reserving
-the two source pages from `READER_REQUEST_BUDGET`. A single summary also stops
-after 100 candidate threads. Hidden candidates consume the same traversal
-budget as readable ones. There are at most eight concurrent reader calls;
-request cancellation stops further batches. This bounds work, not response
-latency when an owning application is slow.
+Every reader consumes the same request budget as provider discovery. A single
+summary also stops after at most 60 candidates. Hidden candidates consume the
+same traversal budget as readable ones. Candidate limits shrink to the
+remaining budget so continuation never skips uninspected items. If a reader
+fails during a thread or message page, the request fails visibly; retry the same
+cursor. Budget exhaustion never becomes an authorization denial. Cancellation
+and the shared deadline stop outstanding reads.
 
 General and an individually selected thread authorize only the container and,
 for the latter, that item. Their snapshots contain only the selected thread's
@@ -255,13 +248,13 @@ retry path.
 
 Chat uses the public capability transport to Core with the requesting person's
 cookie or account credential. Core exchanges that credential for a restricted
-invocation; Chat never sends it directly to Spaces or Notebooks. Container
-reader permission `read`, `write`, and `manage` maps to Chat `read`, `write`,
-and `admin`. The current readers also expose `admin`, which maps to `admin`.
+invocation; Chat sends credentials only to Core. The standard view supplies
+`read`, `write`, or `admin` permission.
 Service accounts and agents retain their existing scope and resource caps.
 
 Valkey stores decisions for 60 seconds, separately for each principal,
-credential scope, and resource. A revoked permission can remain usable during
+credential scope, resource, and display locale. Live authorization uses a
+separate locale-independent permission projection for each resource. A revoked permission can remain usable during
 that interval. Reader failure or unavailable Valkey denies access when no
 valid decision exists. Chat's own grants never replace an unavailable reader.
 No credential is stored in the cache or a background job.
@@ -303,9 +296,6 @@ event in that batch has already advanced the live watermark.
 Access reconciliation instead replaces the authorized window and supersedes
 pending reads, so a delayed response cannot restore removed content.
 
-All-day event metadata uses the request time zone. Event ends are exclusive;
-the displayed range ends on the last included calendar day. A single-day
-event shows one date. Date-only task deadlines keep their calendar date.
 Automatic read failures appear with a retry in the existing composer hint or
 read-only status line, keeping the message viewport's layout stable.
 
@@ -314,7 +304,7 @@ read-only status line, keeping the message viewport's layout stable.
 Personal pins, archive, All/Unread filters, and saved collapsed sections apply
 to ordinary chats and subscribed channels. `SidebarPreferencesSchema.collapsed`
 accepts `pinned`, `chats`, and `channels`. System chats stay in the separate
-Spaces and Notebooks section; personal mutation requests for them return 403.
+Discussions section; personal mutation requests for them return 403.
 The ordinary conversation list excludes system chats in every list mode.
 
 Unread filtering uses each thread's read state before pagination. The workspace
@@ -430,11 +420,8 @@ without counting the edit as a new message.
 
 ## Item reader container context
 
-`spaces.item.read` and `notebooks.note.read` return a `container` object with
-the owning container's `ref`, `name`, and the caller's resolved `permission`
-(`read`, `write`, or `admin`). Both readers also return the shared
-[resource view](/en/docs/platform/resource-types-and-discussions), including
-localized context and the container title. This context comes from the same authorized
-read as the item itself. A consuming capability must use a fresh nested
-reader under the incoming authority; this metadata never grants access to
-other items or replaces credential scope and resource binding checks.
+The provider's standard `view.container` supplies the container's `ref` and
+`title`. Chat reads container and item permissions separately. A consuming
+capability uses a fresh nested reader under the incoming authority; display
+metadata never grants access to other items or replaces credential scope and
+resource binding checks.
