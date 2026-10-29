@@ -236,7 +236,8 @@ test("network loss stays visible and retry resumes status checks", async () => {
     // A status check is skipped while the claim's own check still runs, which takes real time while the page clock
     // stands still; one jump of 6 s could pass while it runs and leave no check scheduled. Advance one poll interval at
     // a time until a check reaches the lost network.
-    for (const deadline = Date.now() + 3_000; state.refused === 0 && Date.now() < deadline; ) await page.clock.fastForward(1000);
+    for (const deadline = performance.now() + 3_000; state.refused === 0 && performance.now() < deadline; )
+      await page.clock.fastForward(1000);
     expect(state.refused).toBeGreaterThan(0);
     await page.getByRole("alert").waitFor();
     const retry = page.getByRole("button", { name: "Kopplung erneut versuchen", exact: true });
