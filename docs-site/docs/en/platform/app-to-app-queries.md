@@ -2,7 +2,7 @@
 title: App-to-app reader checks
 navTitle: App reader checks
 section: Platform services
-order: 563
+order: 566
 description: Admit application-authority resource reader checks through Core without a person's mandate.
 tags: [capabilities, identity, authorization, resources]
 updated: 2026-10-29

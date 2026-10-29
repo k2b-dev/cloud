@@ -2,7 +2,7 @@
 title: Resource types and discussions
 navTitle: Resource discussions
 section: Platform services
-order: 562
+order: 564
 description: Declare resource containment, a standard reader presentation, and a discussions provider without application-specific consumers.
 tags: [capabilities, resources, discussions, authorization]
 updated: 2026-10-29
