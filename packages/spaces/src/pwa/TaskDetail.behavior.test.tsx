@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -293,18 +293,23 @@ test("a token-only storage failure sends nothing, so a fresh runtime cannot dupl
   let root = mount({ kind: "ready", task });
   type(commentField(root)!, "Ready to send");
   const storage = dom!.window.localStorage;
-  const write = storage.setItem.bind(storage);
-  const blocked = spyOn(storage, "setItem").mockImplementation((key, value) => {
-    if (key.endsWith(encodeURIComponent(":request"))) throw new Error("Quota exceeded");
+  const write = storage.setItem;
+  const requestKey = `${DRAFT}${encodeURIComponent(":request")}`;
+  const blocked = mock((key: string, value: string) => {
+    if (key === requestKey) throw new Error("Quota exceeded");
     write(key, value);
   });
+  // Happy DOM's Storage proxy ignores method assignment; define the fault explicitly.
+  Object.defineProperty(storage, "setItem", { configurable: true, value: blocked });
   try {
     sendButton(root).click();
+    expect(blocked).toHaveBeenCalledWith(requestKey, expect.any(String));
     await waitFor(() => root.textContent?.includes("Device storage is full") ?? false, "storage failure");
     expect(calls.filter((call) => call.path === COMMENTS)).toHaveLength(0);
     expect(storage.getItem(DRAFT)).toBe("Ready to send");
+    expect(storage.getItem(requestKey)).toBeNull();
   } finally {
-    blocked.mockRestore();
+    Object.defineProperty(storage, "setItem", { configurable: true, value: write });
   }
   const persistedText = storage.getItem(DRAFT)!;
   dispose();
