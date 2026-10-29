@@ -111,7 +111,8 @@ export const canExecuteRunBeforeHttp = async (scope: GridsWorkflowActionScope, s
       const cancel = control!;
       const cancelled = Promise.withResolvers<never>();
       abort = () => {
-        cancellation ??= cancel`SELECT pg_cancel_backend(${backend.pid})`.execute().finally(() => pool.close({ timeout: 0 }));
+        // Close the pool only in finally, after both reserved connections are released: closing it here waits for them.
+        cancellation ??= cancel`SELECT pg_cancel_backend(${backend.pid})`.execute();
         // The owner awaits cleanup below; keep rejection handled meanwhile.
         void cancellation.catch(() => undefined);
         cancelled.reject(signal.reason);
