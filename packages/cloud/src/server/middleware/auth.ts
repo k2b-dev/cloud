@@ -59,6 +59,8 @@ export type ServiceAccountRequestActor =
       delegatedUser: User;
       scopes: string[];
       credentialId?: string | null;
+      /** Public OAuth client identifier; safe to retain, never the bearer token. */
+      oauthClientId?: string | null;
       credentialExpiresAt?: string | null;
       delegation?: InvocationProvenance;
     }
@@ -68,6 +70,8 @@ export type ServiceAccountRequestActor =
       delegatedUser: null;
       scopes: string[];
       credentialId?: string | null;
+      /** Public OAuth client identifier; safe to retain, never the bearer token. */
+      oauthClientId?: string | null;
       credentialExpiresAt?: string | null;
       delegation?: InvocationProvenance;
     };
@@ -249,6 +253,7 @@ const loadAuthenticatedActorUncached = async (
       delegatedUser: authResult.delegatedUser,
       scopes: authResult.scopes,
       credentialId: null,
+      oauthClientId: authResult.oauthClientId,
       credentialExpiresAt: typeof authResult.payload.exp === "number" ? new Date(authResult.payload.exp * 1_000).toISOString() : null,
     };
     c.set("actor", actor);
