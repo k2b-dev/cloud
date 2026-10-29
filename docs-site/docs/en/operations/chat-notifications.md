@@ -50,7 +50,7 @@ The browser group is the exact public conversation ID, including for messages
 in threads. Destinations use `/app/chat/c/<chat>/m/<message>` or
 `/app/chat/c/<chat>/t/<thread>/m/<message>`. Later unread messages replace that
 chat's notification quietly. Personal notifications or reading since the last
-push can alert again; mentions bypass the rolling limit of one alert per person
+push can alert again; mentions and replies bypass the rolling limit of one alert per person
 per ten seconds.
 
 The jobs use Sync's default bounded retention: seven days and 256 maximum-size

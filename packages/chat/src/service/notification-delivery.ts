@@ -336,7 +336,8 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
     const alert = await allowAlert(
       userId,
       personalReason || state.last_push_at === null || participant?.read_since_push === true,
-      pending.reason === "mention",
+      // A mention or a reply to you always sounds, also inside another chat's 10-second alert window.
+      pending.reason === "mention" || pending.reason === "reply",
     );
     const data: PushData = {
       chat: conversation.short_id,
