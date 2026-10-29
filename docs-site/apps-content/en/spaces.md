@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-24
+updated: 2026-10-29
 ---
 
 # Spaces
@@ -641,3 +641,17 @@ Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
 formats remain unchanged and can retain metadata. Previously uploaded images
 are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
 for the supported formats and limits.
+
+## Integrate resource discussions
+
+The `space` and `item` capability readers return a standard localized
+`view` with the current title and caller permission. The `item` view also
+identifies its owning space and gives a one-line context. Existing reader
+fields remain available.
+
+The [discussions role](/en/docs/platform/resource-types-and-discussions)
+declares `item` inside `space`, lists authorized containers through
+`space.containers`, and reads activity through `space.activity`.
+Activity accepts `container` alongside the published `space` alias; when
+both are supplied they must identify the same space. The existing list
+and activity results remain compatible.

@@ -12,7 +12,10 @@ import {
   type CloudResourceView,
   capabilityPage,
   cloudResourceHref,
+  DiscussionContainersDataSchema,
+  DiscussionContainersInputSchema,
   defineCapabilities,
+  type ResourceReadableInput,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
@@ -22,6 +25,7 @@ import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/clo
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
+import { sql } from "bun";
 import type { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { spacesEvents } from "./app-events";
@@ -141,7 +145,13 @@ import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
 import { spacesService } from "./service";
-import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./service/access";
+import {
+  isSpaceResourceId,
+  readableSpacePrincipals,
+  resolveSpaceApiKeyPermission,
+  SPACE_RESOURCE_TYPE,
+  SPACES_APP_ID,
+} from "./service/access";
 import * as activity from "./service/activity";
 import { spaceActivityRow } from "./service/activity-timeline";
 import { CalendarSourceError, listSourceCalendars, readSourceEvents } from "./service/calendar-source";
@@ -317,7 +327,7 @@ const requireSpaceUuid = async (spaceId: string, context: CapabilityExecutionCon
   if (!space) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
   const granted = await spacesService.space.permission.get({ spaceId, subject: context.accessSubject });
   const permission = granted === "none" ? "none" : effectivePermission(granted, context);
-  if (!hasPermission(permission, required)) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
+  if (permission === "none" || !hasPermission(permission, required)) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
   const [publicSpace] = await spacesPublicResources.projectSpaces([space]);
   return publicSpace
     ? ok({ space: publicSpace, internalId: spaceId, permission })
@@ -365,7 +375,9 @@ const requireItem = async (
 };
 
 export const runSpaceActivity = async (input: z.output<typeof ActivityInputSchema>, context: CapabilityExecutionContext) => {
-  const access = await requireSpace(input.space, context);
+  const container = input.container ?? input.space;
+  if (!container) return fail(err.badInput("A container is required"));
+  const access = await requireSpace(container, context);
   if (!access.ok) return access;
   const item = input.item ? await requireItem(input.item, context) : null;
   if (item && (!item.ok || item.data.internalSpaceId !== access.data.internalId))
@@ -860,6 +872,7 @@ const runSpaceRead = async (input: z.infer<typeof SpaceReadInputSchema>, context
     data: {
       id: publicDetail.id,
       name: publicDetail.name,
+      view: { title: publicDetail.name, permission: access.data.permission, context: spacesMessages(context.locale).space },
       description: publicDetail.description,
       color: publicDetail.color,
       permission: access.data.permission as "read" | "write" | "admin",
@@ -1072,9 +1085,18 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
         : null;
   const column = data.kind === "task" && !data.completedAt ? await spacesService.column.get({ id: resolved.data.internalColumnId }) : null;
   const status = data.kind === "task" ? (data.completedAt ? t.done : column?.name)?.replace(/\s+/g, " ").trim() : undefined;
+  const resourceContext = `${place.slice(0, 200 - (fact ? fact.length + 3 : 0))}${fact ? ` · ${fact}` : ""}`;
   const result = {
     data: {
       ...data,
+      view: {
+        title: data.title,
+        context: resourceContext,
+        ...(status ? { status: status.slice(0, 60) } : {}),
+        done: Boolean(data.completedAt),
+        permission: resolved.data.permission,
+        container: { ref: { type: "spaces.space", id: data.spaceId }, title: resolved.data.space.name },
+      },
       container: {
         ref: { type: "spaces.space" as const, id: data.spaceId },
         name: resolved.data.space.name.slice(0, 200),
@@ -1090,7 +1112,7 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
     refs: [
       {
         ...itemRef(data, data.kind),
-        context: `${place.slice(0, 200 - (fact ? fact.length + 3 : 0))}${fact ? ` · ${fact}` : ""}`,
+        context: resourceContext,
         ...(status ? { status: status.slice(0, 60) } : {}),
       },
     ],
@@ -2271,6 +2293,21 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
     });
   });
 
+const readableSpace = async (input: ResourceReadableInput) => {
+  const id = await spacesPublicResources.resolvePublicId("spaces", input.id);
+  return id ? readableSpacePrincipals(id, input.principals) : [];
+};
+const readableItem = async (input: ResourceReadableInput) => {
+  if (input.container?.type !== "spaces.space") return [];
+  const [id, containerId] = await Promise.all([
+    spacesPublicResources.resolvePublicId("items", input.id),
+    spacesPublicResources.resolvePublicId("spaces", input.container.id),
+  ]);
+  if (!id || !containerId) return [];
+  const [item] = await sql<{ space_id: string }[]>`SELECT space_id FROM spaces.items WHERE id = ${id}::uuid`;
+  return item?.space_id === containerId ? readableSpacePrincipals(containerId, input.principals) : [];
+};
+
 export const spacesCapabilities = defineCapabilities({
   events: spacesEvents,
   protocolVersion: 2,
@@ -2307,6 +2344,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "A permission-scoped collaboration space.",
       icon: "ti ti-layout-kanban",
       reader: "space.read",
+      access: { readable: readableSpace },
       pages: ["/app/spaces/:id"],
     },
     item: {
@@ -2315,6 +2353,8 @@ export const spacesCapabilities = defineCapabilities({
       icon: "ti ti-checkbox",
       color: "emerald",
       reader: "item.read",
+      container: "space",
+      access: { readable: readableItem },
       pages: ["/app/spaces/:space?item=:id"],
     },
     comment: {
@@ -2324,7 +2364,25 @@ export const spacesCapabilities = defineCapabilities({
       reader: "comment.read",
     },
   },
+  discussions: { item: "item", containers: "space.containers", activity: "space.activity" },
   queries: {
+    "space.containers": {
+      title: "List discussion containers",
+      description: "List containers the caller can read, with opaque pagination.",
+      input: DiscussionContainersInputSchema,
+      data: DiscussionContainersDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const result = await runSpaceList({ ...input, minimumPermission: "read" }, context);
+        if (!result.ok) return result;
+        return ok({
+          data: {
+            items: result.data.data.map((container) => ({ ref: container.ref, title: container.name.slice(0, 500) })),
+            next: result.data.page?.hasMore ? result.data.page.nextCursor : null,
+          },
+        });
+      },
+    },
     "space.activity": {
       title: "Read item activity",
       description:

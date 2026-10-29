@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -8,6 +8,8 @@ import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
+  discussionsIssues,
+  typeViewIssues,
   type User,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
@@ -871,6 +873,7 @@ describe("spaces capabilities", () => {
       "space.activity",
       "space.assignee.list",
       "space.browse",
+      "space.containers",
       "space.list",
       "space.read",
       "space.search",
@@ -2591,6 +2594,11 @@ for (const [locale, taskContext, eventContext, due, done] of [
         name: containerName,
         permission: "read",
       });
+      const view = assertResourceView(result.data, { type: "spaces.space", id: spaceId });
+      expect(view).toMatchObject({ title: result.data.data.title, permission: "read", container: { title: containerName } });
+      expect(view.context).toBe(result.data.refs![0]!.context);
+      expect(view.status).toBe(result.data.refs![0]!.status);
+      expect(view.done).toBe(Boolean(result.data.data.completedAt));
       return result.data.refs![0]!;
     };
     expect(await read()).toMatchObject({ context: taskContext, status: "Offen" });
@@ -2606,6 +2614,8 @@ for (const [locale, taskContext, eventContext, due, done] of [
     const eventRef = await read();
     expect(eventRef.context).toBe(`${eventContext} · ${locale === "en" ? "Oct 30, 2026" : "30. Okt. 2026"}, 19:00`);
     expect(eventRef).not.toHaveProperty("status");
+    get.mockResolvedValue({ ...event, completedAt: createdAt });
+    await read();
     get.mockResolvedValue({ ...event, allDay: true, startsAt: "2026-10-31T07:00:00Z", endsAt: "2026-11-01T07:00:00Z" });
     expect((await read()).context).toBe(`${eventContext} · ${locale === "en" ? "Oct 31, 2026" : "31. Okt. 2026"}`);
     spyOn(spacesService.space, "get").mockResolvedValue({ ...space, name: "x".repeat(200) });
@@ -2663,4 +2673,64 @@ test("space.activity stops before listing when the owning reader denies the cont
   expect(result.ok).toBeFalse();
   if (!result.ok) expect(result.error.status).toBe(404);
   expect(list).not.toHaveBeenCalled();
+});
+
+test("declares compatible discussions and standard reader views", () => {
+  const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
+  expect(discussionsIssues(manifest)).toEqual([]);
+  for (const type of ["space", "item"]) expect(typeViewIssues(manifest, type)).toEqual([]);
+  expect(manifest.discussions).toEqual({ item: "item", containers: "space.containers", activity: "space.activity" });
+  expect(manifest.resourceTypes).toContainEqual({ type: "space", view: true, readable: true });
+  expect(manifest.resourceTypes).toContainEqual({ type: "item", container: "space", view: true, readable: true });
+});
+
+for (const permission of ["read", "write", "admin", "none"] as const) {
+  test(`standard Space and item views authorize ${permission} access`, async () => {
+    spyOn(settings, "get").mockResolvedValue("UTC");
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], virtualColumns: [], tags: [], templates: [] });
+    spyOn(spacesService.space.permission, "get").mockResolvedValue(permission);
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+    spyOn(spacesService.column, "get").mockResolvedValue(null);
+    const container = await spacesCapabilities.queries["space.read"].run({ id: spaceId }, { ...userContext, locale: "de" });
+    const item = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+    expect(container.ok).toBe(permission !== "none");
+    expect(item.ok).toBe(permission !== "none");
+    if (permission === "none") return;
+    if (container.ok) expect(assertResourceView(container.data)).toEqual({ title: space.name, context: "Space", permission });
+    if (item.ok) expect(assertResourceView(item.data, { type: "spaces.space", id: spaceId }).permission).toBe(permission);
+  });
+}
+
+test("activity accepts the shared container and published space alias and rejects ambiguity", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const list = spyOn(spacesService.activity, "list").mockResolvedValue({ items: [], nextCursor: null });
+  const operation = spacesCapabilities.queries["space.activity"];
+  for (const input of [{ space: spaceId }, { container: spaceId }, { container: spaceId, space: spaceId }]) {
+    const result = await operation.run(operation.input.parse(input), userContext);
+    expect(result.ok && result.data.data).toEqual([]);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ spaceId: spaceUuid }));
+  }
+  expect(operation.input.safeParse({}).success).toBeFalse();
+  expect(operation.input.safeParse({ container: otherSpaceId, space: spaceId }).success).toBeFalse();
+  expect(operation.input.safeParse({ container: spaceId, timeZone: "Mars/Base" }).success).toBeFalse();
+});
+
+test("discussion containers preserve authorized list pagination", async () => {
+  spyOn(spacesService.space, "listWithPermission").mockImplementation(async (input) => ({
+    items: [{ ...space, permission: "read" }],
+    total: 2,
+    page: input.pagination?.page ?? 1,
+    perPage: 1,
+    hasNext: input.pagination?.page === 1,
+  }));
+  const operation = spacesCapabilities.queries["space.containers"];
+  const first = await operation.run(operation.input.parse({ query: "Product", limit: 1 }), userContext);
+  if (!first.ok) throw new Error("Expected containers");
+  expect(operation.data.safeParse(first.data.data).success).toBeTrue();
+  expect(first.data.data).toEqual({ items: [{ ref: { type: "spaces.space", id: spaceId }, title: space.name }], next: expect.any(String) });
+  const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
+  expect(last.ok && last.data.data.next).toBeNull();
 });
