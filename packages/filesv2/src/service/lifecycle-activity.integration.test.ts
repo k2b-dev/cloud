@@ -186,7 +186,15 @@ suite("lifecycle committed history with real Filegate and Core audit", () => {
         autoCreate: false,
         autoArchive: false,
       },
-      freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix: ownedPrefix, homes: "users", groups: "groups", archive: "archive" },
+      freeipa: {
+        autoCreate: false,
+        enabled: false,
+        root: "freeipa",
+        prefix: ownedPrefix,
+        homes: "users",
+        groups: "groups",
+        archive: "archive",
+      },
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
     };
     client = new Filegate({ baseUrl: config.url, transferBaseUrl: config.url, token });
