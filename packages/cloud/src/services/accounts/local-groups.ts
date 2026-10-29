@@ -123,6 +123,7 @@ export const list = async (params: { page?: number; perPage?: number; search?: s
     SELECT COUNT(*)::int AS count
     FROM auth.groups g
     WHERE g.provider = 'local'
+      AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
       AND (${pattern}::text IS NULL OR LOWER(g.name) LIKE ${pattern} ESCAPE '\\' OR LOWER(g.description) LIKE ${pattern} ESCAPE '\\')
   `;
   const total = Number(countRow?.count ?? 0);
@@ -131,6 +132,7 @@ export const list = async (params: { page?: number; perPage?: number; search?: s
     FROM auth.groups g
     ${personalOwnerJoin()}
     WHERE g.provider = 'local'
+      AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
       AND (${pattern}::text IS NULL OR LOWER(g.name) LIKE ${pattern} ESCAPE '\\' OR LOWER(g.description) LIKE ${pattern} ESCAPE '\\')
     ORDER BY g.name
     LIMIT ${perPage} OFFSET ${offset}
@@ -232,6 +234,7 @@ export const getMembers = async (params: { id: string; type?: GroupMember["type"
           SELECT DISTINCT g.id, g.name
           FROM local_group_tree tree
           JOIN auth.groups g ON g.id = tree.child_group_id
+          WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
           ORDER BY g.name
         `
       : await sql<DbRow[]>`
@@ -239,6 +242,7 @@ export const getMembers = async (params: { id: string; type?: GroupMember["type"
           FROM auth.group_groups_v2 gg
           JOIN auth.groups g ON g.id = gg.child_group_id
           WHERE gg.parent_group_id = ${group.id} AND g.provider = 'local'
+            AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
           ORDER BY g.name
         `;
     for (const row of groupRows) {
@@ -330,6 +334,7 @@ export const getManagers = async (params: { id: string; type?: "user" | "group";
       FROM auth.group_manager_groups_v2 gmg
       JOIN auth.groups g ON g.id = gmg.manager_group_id
       WHERE gmg.group_id = ${group.id} AND g.provider = 'local'
+        AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
       ORDER BY g.name
     `;
     for (const row of groupRows) {
@@ -360,7 +365,8 @@ export const getParents = async (params: { id: string; recursive?: boolean }): P
           WHERE g.provider = 'local'
         )
         SELECT DISTINCT parent_group_id
-        FROM local_parent_tree
+        FROM local_parent_tree tree
+        WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = tree.parent_group_id)
       `
     : await sql<DbRow[]>`
         SELECT gg.parent_group_id
@@ -368,6 +374,7 @@ export const getParents = async (params: { id: string; recursive?: boolean }): P
         JOIN auth.groups g ON g.id = gg.parent_group_id
         WHERE gg.child_group_id = ${group.id}
           AND g.provider = 'local'
+          AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
         ORDER BY g.name
       `;
 
@@ -394,6 +401,7 @@ export const getManagedGroups = async (params: { id: string; recursive?: boolean
         JOIN auth.group_manager_groups_v2 gmg ON gmg.manager_group_id = tree.manager_group_id
         JOIN auth.groups g ON g.id = gmg.group_id
         WHERE g.provider = 'local'
+          AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
       `
     : await sql<DbRow[]>`
         SELECT gmg.group_id
@@ -401,6 +409,7 @@ export const getManagedGroups = async (params: { id: string; recursive?: boolean
         JOIN auth.groups g ON g.id = gmg.group_id
         WHERE gmg.manager_group_id = ${group.id}
           AND g.provider = 'local'
+          AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
         ORDER BY g.name
       `;
 
@@ -415,6 +424,9 @@ export const addMember = async (params: {
 }): Promise<MutationResult<void>> => {
   const group = await getLocalGroupById(params.id);
   if (!group) return { ok: false, error: "Group not found", status: 404 };
+  const [personal] = await sql`SELECT 1 FROM auth.personal_groups
+    WHERE group_id = ${group.id}::uuid OR group_id = ${params.group ?? null}::uuid`;
+  if (personal) return { ok: false, error: "Personal Linux groups cannot be used in group relationships", status: 409 };
 
   if (params.serviceAccount) {
     const [account] = await sql<{ id: string }[]>`
@@ -497,6 +509,9 @@ export const removeMember = async (params: {
 export const addManager = async (params: { id: string; user?: string; group?: string }): Promise<MutationResult<void>> => {
   const group = await getLocalGroupById(params.id);
   if (!group) return { ok: false, error: "Group not found", status: 404 };
+  const [personal] = await sql`SELECT 1 FROM auth.personal_groups
+    WHERE group_id = ${group.id}::uuid OR group_id = ${params.group ?? null}::uuid`;
+  if (personal) return { ok: false, error: "Personal Linux groups cannot be used in group relationships", status: 409 };
 
   if (params.user) {
     const provider = await getUserProvider(params.user);

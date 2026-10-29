@@ -147,6 +147,23 @@ suite("public account identity reads against isolated Postgres", () => {
     await db`DELETE FROM auth.user_posix WHERE user_id=${actor.user.id}::uuid`;
     expect((await service.groups(actor)).items.find((item) => item.id === personal)?.personal).toBe(true);
   });
+  test("reconciliation retains personal directory evidence after the live group is removed", async () => {
+    const admin = await user("admin", "local", true);
+    const owner = await user("legacy-owner");
+    const personal = await group("legacy-owner", "local", 200007);
+    await db`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number)
+      VALUES(${personal}::uuid,${owner.user.id}::uuid,'legacy-owner',200007)`;
+    const input = { kind: "groups" as const, identityId: personal, name: "legacy-owner" };
+    expect((await service.localLifecycle(input)).identity).toMatchObject({ state: "present", personal: true });
+    await db`DELETE FROM auth.groups WHERE id=${personal}::uuid`;
+    await db`UPDATE auth.personal_groups SET retired_at='2026-10-26T00:00:00Z' WHERE group_id=${personal}::uuid`;
+    expect((await service.localLifecycle(input)).identity).toEqual({ state: "absent", personal: true });
+    expect(await service.reconcile(admin, { kind: "groups", provider: "local", name: "legacy-owner" })).toEqual({
+      state: "absent",
+      personal: true,
+    });
+    expect(await service.reconcile(admin, { kind: "groups", provider: "local", name: "unrelated" })).toEqual({ state: "absent" });
+  });
   test("groups and inventories paginate without omitting records beyond fifty", async () => {
     const actor = await user("admin", "local", true);
     await db`INSERT INTO auth.groups(name,provider,gid_number) SELECT 'group-'||n,'local',200000+n FROM generate_series(1,53) n`;

@@ -10,6 +10,15 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## Personal Linux groups in exports
+
+Accounts group and entity exports and OAuth/OIDC group claims exclude personal
+Linux groups. Remove `--include-personal` from CLI commands; `include_personal`
+no longer opts into the API export. Use ordinary team groups in integrations
+and inspect primary GIDs through user Linux identity diagnostics. See the
+[operator upgrade note](/en/docs/operations/linux-identities#upgrade-group-exports-and-integrations)
+for consumer checks and retained Files directories.
+
 ## Sign-in and security are one administration area with new addresses
 
 **Administration → Sign-in & security** collects Sign-in, Registration,
