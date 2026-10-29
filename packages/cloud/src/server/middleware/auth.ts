@@ -2,6 +2,7 @@ import type { Context, Env, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import { matchedRoutes } from "hono/route";
 import { findTargetHandler } from "hono/utils/handler";
+import { bindAppAccessRequest } from "../../_internal/app-access-request";
 import { measureServerPhase } from "../../_internal/server-timing";
 import {
   AI_INFERENCE_SCOPE,
@@ -482,13 +483,21 @@ const getAuthority = <E extends AuthContext>(c: Context<E>): RequestAuthority =>
   const accessSubject = c.get("accessSubject");
   const credentialKind = c.get("credentialKind");
   if (!actor || !accessSubject || !credentialKind) throw new Error("Request authority has not been resolved");
-  return {
-    actor,
-    accessSubject,
-    credentialKind,
-    scopes: [...(c.get("credentialScopes") ?? [])],
-    ...(c.get("credentialProof") ? { credentialProof: c.get("credentialProof") } : {}),
-  };
+  return bindAppAccessRequest(
+    {
+      actor,
+      accessSubject,
+      credentialKind,
+      scopes: [...(c.get("credentialScopes") ?? [])],
+      ...(c.get("credentialProof") ? { credentialProof: c.get("credentialProof") } : {}),
+    },
+    c.req.raw,
+    credentialKind === "session"
+      ? c.get("sessionToken")
+      : credentialKind !== "invocation"
+        ? (session.getBearerToken(c) ?? undefined)
+        : undefined,
+  );
 };
 
 /**

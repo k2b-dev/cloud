@@ -33,6 +33,7 @@ export const resolveIssuanceAuthority = async (
 
 type RegisteredAppAccessOptions = {
   db?: SQL;
+  signal?: AbortSignal;
   getApp?: (id: string) => Promise<Pick<AppMeta, "id" | "access"> | null>;
 };
 
@@ -41,8 +42,10 @@ export const requireRegisteredAppAccess = async (
   appId: string,
   options: RegisteredAppAccessOptions = {},
 ): Promise<void> => {
+  options.signal?.throwIfAborted();
   const app = await (options.getApp ?? getApp)(appId).catch(() => null);
-  if (!app || !authority || !(await canUseApp(authority, app, { db: options.db }))) {
+  if (!app || !authority || !(await canUseApp(authority, app, { db: options.db, signal: options.signal }))) {
+    options.signal?.throwIfAborted();
     if (app) recordAppAccessDenied(app.id);
     throw new AppAccessDeniedError(app ?? { id: appId });
   }
@@ -57,6 +60,7 @@ export const issueInvocationToken = async (
     sign?: typeof signInvocationToken;
   } = {},
 ): ReturnType<typeof signInvocationToken> => {
+  dependencies.signal?.throwIfAborted();
   const authority = await (dependencies.resolve ?? resolveIssuanceAuthority)(
     params.authority,
     params.callingAppId,
@@ -66,5 +70,6 @@ export const issueInvocationToken = async (
   if (params.parent && (!authority || !matchesInvocationSubject(params.parent, authority)))
     throw new AppAccessDeniedError({ id: params.targetAppId });
   await requireRegisteredAppAccess(authority, params.targetAppId, dependencies);
+  dependencies.signal?.throwIfAborted();
   return (dependencies.sign ?? signInvocationToken)(params);
 };
