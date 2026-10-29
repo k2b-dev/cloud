@@ -3,6 +3,7 @@ import type { CloudThemePreference } from "../shared/theme";
 import { createProfileActions } from "./profile-actions";
 
 type ProfilePreferencesProps = {
+  userId?: string;
   /** Set while the installation offers the mobile app. */
   appHref?: string;
   avatarSrc?: string;
@@ -16,7 +17,7 @@ type ProfilePreferencesProps = {
  * bottom edge.
  */
 export default function ProfilePreferences(props: ProfilePreferencesProps) {
-  const { preferences, items, signOut, signingOut } = createProfileActions(props.initialTheme, props.appHref);
+  const { preferences, items, signOut, signingOut } = createProfileActions(props.initialTheme, props.appHref, props.userId);
 
   const avatar = () => <Avatar name={props.name} src={props.avatarSrc} size="sm" />;
 

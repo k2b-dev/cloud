@@ -14,7 +14,7 @@ const attachmentId = "00000000-0000-4000-8000-000000000003";
 const blobId = "00000000-0000-4000-8000-000000000004";
 
 describe("draft provider MIME", () => {
-  test("uses Mail's Markdown divider rule in provider draft copies", async () => {
+  test("uses Mail's formatting and literal formula rules in provider draft copies", async () => {
     const content = draftProviderContentSchema.parse({
       revision: 1,
       senderIdentityId: "00000000-0000-4000-8000-000000000005",
@@ -24,7 +24,7 @@ describe("draft provider MIME", () => {
       cc: [],
       bcc: [],
       subject: "Divider",
-      body: "Hello\n---\nWorld",
+      body: "~~Hello~~\n---\nWorld\n\n| Item | Formula |\n| :---: | ---: |\n| A | =1+2 |",
       format: "markdown",
       inReplyTo: null,
       references: [],
@@ -45,6 +45,12 @@ describe("draft provider MIME", () => {
     );
     expect(parsed.html).toContain("<hr");
     expect(parsed.html).not.toContain("<h2");
+    expect(parsed.html).toContain("<del>Hello</del>");
+    expect(parsed.html).toContain('align="center"');
+    expect(parsed.html).toContain('align="right"');
+    expect(parsed.html).toContain("=1+2");
+    expect(parsed.html).not.toMatch(/md-formula|ti-math-function/);
+    expect(parsed.text).toBe(content.body);
   });
 
   test("keeps Markdown quotes and code blocks in the HTML projection (#932)", async () => {

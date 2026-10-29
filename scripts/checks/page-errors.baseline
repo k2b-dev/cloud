@@ -26,7 +26,6 @@ packages/core/src/pages/admin/places-and-maps/PlacesAndMaps.browser.test.ts | 1
 packages/mail/src/frontend/MailOverview.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailAdminKept.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailComposeSettings.browser.test.ts | 1
-packages/mail/src/frontend/_components/MailComposerEditor.browser.test.ts | 2
 packages/mail/src/frontend/_components/MailConversationList.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailDraftCollaborationDialog.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailFolderSettings.browser.test.ts | 1
@@ -34,7 +33,7 @@ packages/mail/src/frontend/_components/MailMessageBody.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailRecipientInput.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailWorkflowDryRun.browser.test.ts | 1
 packages/mail/src/frontend/_components/MailboxDetails.browser.test.ts | 1
-packages/notebooks/src/frontend/[id]/_components/editor/note-preview.browser.test.ts | 5
+packages/notebooks/src/frontend/[id]/_components/editor/note-preview.browser.test.ts | 1
 packages/pulse/src/frontend/PulseWorkspace.browser.test.ts | 2
 packages/spaces/src/frontend/calendar/cloud-calendar.browser-suite.ts | 1
 packages/ssr/test/engine/nav-swap.engine.test.ts | 1

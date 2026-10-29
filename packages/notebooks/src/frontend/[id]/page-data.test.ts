@@ -58,6 +58,7 @@ const note = {
   yjsSnapshotAt: timestamp,
   contentMd: "# Welcome\n\nOur **handbook**.\n\n#team",
   yjsSnapshot: "collaboration-state-not-for-book",
+  yjsRestoreRevision: "0",
   createdBy: user.id,
   createdAt: timestamp,
   updatedAt: timestamp,

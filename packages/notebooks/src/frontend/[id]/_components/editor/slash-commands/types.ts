@@ -5,6 +5,8 @@ export type SlashCommandContext = {
   notebookId: string;
   notebookName: string;
   locale?: string;
+  /** Opens the same size picker as the toolbar. */
+  openTablePicker: () => void;
 };
 
 /**

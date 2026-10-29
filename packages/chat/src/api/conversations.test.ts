@@ -75,6 +75,27 @@ beforeEach(() => {
 });
 afterEach(() => mock.restore());
 
+test("notification preferences and follows require authentication before reaching a service", async () => {
+  const read = spyOn(chatService.notificationPreferences, "get");
+  const write = spyOn(chatService.notificationPreferences, "set");
+  const follow = spyOn(chatService.threadFollows, "set");
+  for (const [path, method, body] of [
+    ["/conversations/abcdef/notifications", "GET", undefined],
+    ["/conversations/abcdef/notifications", "PUT", { level: "all" }],
+    ["/conversations/abcdef/threads/ghijkl/follow", "PUT", undefined],
+    ["/conversations/abcdef/threads/ghijkl/follow", "DELETE", undefined],
+  ] as const) {
+    const response = await chatApi.request(path, {
+      method,
+      ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}),
+    });
+    expect(response.status).toBe(401);
+  }
+  expect(read).not.toHaveBeenCalled();
+  expect(write).not.toHaveBeenCalled();
+  expect(follow).not.toHaveBeenCalled();
+});
+
 test("admits a service account to the service and returns the localized personal-account creation requirement", async () => {
   authenticate();
   const response = await post("/conversations", {}, "de-DE");
@@ -106,6 +127,8 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
     data: {
       outcome: "created",
       conversation: {
+        notifications: null,
+        mentionsUnread: 0,
         threads: 0,
         channel: false,
         member: true,
@@ -223,6 +246,8 @@ test("rejects invalid message body and conflicting history cursors before the se
 test("snapshot reads the cursor before history and tolerates invalid message links", async () => {
   authenticate(true);
   const conversation = ConversationSchema.parse({
+    notifications: null,
+    mentionsUnread: 0,
     threads: 0,
     channel: false,
     member: true,

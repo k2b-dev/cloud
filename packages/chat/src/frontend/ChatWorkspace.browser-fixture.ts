@@ -600,6 +600,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     const start = new Date(options.end.getTime() - options.count * spacing);
     chats.set(id, {
       conversation: {
+        notifications: null,
+        mentionsUnread: 0,
         threads: 0,
         channel: false,
         member: true,

@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import { LocaleProvider, type PanesLayout } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
@@ -15,19 +16,32 @@ import {
 import MailComposer from "./MailComposer";
 import MailComposerEditor from "./MailComposerEditor";
 import { readMailDraftSeed, storeMailDraftSeed } from "./mail-draft-seed-store";
+import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
-export type MailComposerEditorHarnessOptions = { locale: "en" | "de" };
+export type MailComposerEditorHarnessOptions = {
+  locale: "en" | "de";
+  body?: string;
+  format?: "plain" | "markdown";
+  editorActive?: boolean;
+};
 export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftIntent; signatureTemplateId: string | null; seed?: boolean };
 
 declare global {
   interface Window {
     expireComposerSession: () => void;
+    composerEditorState: () => { source: string; focused: boolean; caret: number };
+    setComposerCaret: (position: number) => void;
     mountComposer: (options: MailComposerHarnessOptions) => void;
     mountComposerEditor: (options: MailComposerEditorHarnessOptions) => void;
     /** Replaces the preview, as a new compose preview response does. */
     setFormattingWarnings: (warnings: ComposeFormattingWarning[]) => void;
     /** Replaces the previewed HTML, as a compose preview response with a signature logo does. */
     setPreviewHtml: (html: string) => void;
+    editorBody: () => string;
+    editorSource: () => string | null;
+    replaceEditorBody: (body: string) => void;
+    setEditorFormat: (format: "plain" | "markdown") => void;
+    setEditorEditable: (editable: boolean) => void;
   }
 }
 
@@ -44,6 +58,17 @@ window.mountComposerEditor = (options) => {
     text: "First paragraph of the message.\n\nRegards",
     formattingWarnings: [],
   });
+  const [body, setBody] = createSignal(options.body ?? 'First paragraph <small>of</small> the <span class="x">message</span>.');
+  const [panes, setPanes] = createSignal<PanesLayout>(
+    options.editorActive ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } } : layout,
+  );
+  const [format, setFormat] = createSignal<"plain" | "markdown">(options.format ?? "markdown");
+  const [editable, setEditable] = createSignal(true);
+  window.editorBody = body;
+  window.editorSource = () => null;
+  window.replaceEditorBody = setBody;
+  window.setEditorFormat = setFormat;
+  window.setEditorEditable = setEditable;
   window.setFormattingWarnings = (formattingWarnings) => setPreview({ ...preview(), formattingWarnings });
   window.setPreviewHtml = (next) => setPreview({ ...preview(), html: next });
   render(
@@ -51,18 +76,20 @@ window.mountComposerEditor = (options) => {
       <LocaleProvider locale={options.locale}>
         <div class="flex min-h-0 w-full flex-1 flex-col">
           <MailComposerEditor
-            format={() => "markdown"}
-            body={() => 'First paragraph <small>of</small> the <span class="x">message</span>.'}
-            onBodyInput={() => undefined}
-            editable={() => true}
+            format={format}
+            body={body}
+            onBodyInput={setBody}
+            editable={editable}
             completions={() => []}
-            panes={() => layout}
-            onPanesChange={() => undefined}
+            panes={panes}
+            onPanesChange={setPanes}
             preview={preview}
             previewError={() => undefined}
             previewPending={() => false}
             onRetryPreview={() => undefined}
-            onEditorReady={() => undefined}
+            onEditorReady={(editor) => {
+              window.editorSource = () => editor.view.state.doc.toString();
+            }}
           />
         </div>
       </LocaleProvider>
@@ -162,6 +189,21 @@ window.mountComposer = (options) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
   document.documentElement.lang = options.locale;
+  const editor = () => {
+    const host = document.querySelector<HTMLElement>(".cm-editor");
+    const view = host ? EditorView.findFromDOM(host) : null;
+    if (!view) throw new Error("Composer editor is not ready");
+    return view;
+  };
+  window.composerEditorState = () => {
+    const view = editor();
+    return { source: view.state.doc.toString(), focused: view.hasFocus, caret: view.state.selection.main.head };
+  };
+  window.setComposerCaret = (position) => {
+    const view = editor();
+    view.dispatch({ selection: { anchor: position } });
+    view.focus();
+  };
   const draft = { ...initialDraft, intent: options.intent, signatureTemplateId: options.signatureTemplateId };
   Object.defineProperty(window, "WebSocket", { configurable: true, value: OfflineWebSocket });
   let expired = false;
@@ -223,8 +265,9 @@ window.mountComposer = (options) => {
       },
     },
   };
-  const restoredSeed = options.seed ? (readMailDraftSeed(localStorage, "Box001", seed.id) ?? seed) : undefined;
-  if (restoredSeed) storeMailDraftSeed(localStorage, restoredSeed);
+  const seedStorage = openMailUserDraftStorage(localStorage, "Usr001");
+  const restoredSeed = options.seed ? (readMailDraftSeed(seedStorage, "Box001", seed.id) ?? seed) : undefined;
+  if (restoredSeed) storeMailDraftSeed(seedStorage, restoredSeed);
   render(
     () => (
       <LocaleProvider locale={options.locale}>

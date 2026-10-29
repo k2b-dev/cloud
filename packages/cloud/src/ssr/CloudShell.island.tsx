@@ -111,7 +111,12 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   if (!data?.rail || !data.profile) return null;
-  const profile = { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) };
+  const profile = {
+    userId: data.profile.userId,
+    name: data.profile.name,
+    theme: data.theme,
+    ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}),
+  };
   createEffect(() => setAppLaunchpadContext(data.apps, data.legalLinks, profile));
   return (
     <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={t().apps}>
@@ -128,6 +133,7 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
           helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
         />
         <ProfilePreferences
+          userId={data.profile.userId}
           appHref={data.profile.appHref}
           avatarSrc={data.profile.avatarSrc}
           initialTheme={data.theme}
@@ -164,7 +170,12 @@ function HeaderControls(props: {
             <AppLaunchpadButton
               profile={
                 data.profile
-                  ? { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) }
+                  ? {
+                      userId: data.profile.userId,
+                      name: data.profile.name,
+                      theme: data.theme,
+                      ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}),
+                    }
                   : undefined
               }
               apps={data.apps}
@@ -188,7 +199,12 @@ function HeaderControls(props: {
             <AppLaunchpadButton
               profile={
                 data.profile
-                  ? { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) }
+                  ? {
+                      userId: data.profile.userId,
+                      name: data.profile.name,
+                      theme: data.theme,
+                      ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}),
+                    }
                   : undefined
               }
               apps={data.apps}
