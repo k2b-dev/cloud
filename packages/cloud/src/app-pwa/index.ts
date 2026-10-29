@@ -2,6 +2,7 @@ export {
   APP_PWA_LIMITS,
   type AppPwaActor,
   type AppPwaCommandContext,
+  type AppPwaCoreQuery,
   type AppPwaDeviceActor,
   type AppPwaDeviceContext,
   type AppPwaDeviceView,

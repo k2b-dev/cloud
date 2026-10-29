@@ -3,7 +3,7 @@ import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "./pwa";
 
-databaseSuite()("mobile app startup migration", () => {
+databaseSuite()("Cloud app startup migration", () => {
   test("a restart leaves a phone that still waits for its notice pending", async () => {
     await migrate();
     const userId = crypto.randomUUID();

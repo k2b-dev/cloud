@@ -499,3 +499,25 @@ test("an audit outage preserves the provider failure and costs without logging c
   expect(log).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(log.mock.calls)).not.toContain(GEO_TEST_KEY);
 });
+
+test("App-PWA autocomplete uses owner budget without constructing an employee actor", async () => {
+  const fixture = setup();
+  const actor = {
+    kind: "visit" as const,
+    appId: "signing",
+    deviceId: "11111111-1111-4111-8111-111111111111",
+    visitId: "33333333-3333-4333-8333-333333333333",
+    ownerUserId: "44444444-4444-4444-8444-444444444444",
+    subject: { customerId: "example" },
+  };
+  // @ts-expect-error App-PWA identity never authorizes the general Core entry point.
+  const forbidden = fixture.service.autocomplete({ text: "Orle" }, { ...geoTestContext, actor });
+  await expect(forbidden).rejects.toMatchObject({ code: "GEO_FORBIDDEN" });
+  const result = await fixture.service.autocompleteForAppPwa({ text: "Orle" }, { actor, locale: "de" });
+  expect(result.suggestions.length).toBeGreaterThan(0);
+  expect(fixture.reserve.mock.calls[0]?.[0]).toEqual({ type: "user", userId: actor.ownerUserId });
+  expect(fixture.reserve.mock.calls[0]?.[2]).toBe(1000);
+  expect(fixture.fetch).toHaveBeenCalledTimes(1);
+  expect(actor.kind).toBe("visit");
+  expect("user" in actor).toBe(false);
+});

@@ -24,6 +24,7 @@ import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
+import { spacesEvents } from "./app-events";
 import {
   ActivityDataSchema,
   ActivityInputSchema,
@@ -2257,6 +2258,7 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
   });
 
 export const spacesCapabilities = defineCapabilities({
+  events: spacesEvents,
   protocolVersion: 2,
   calendarSource: { calendars: "calendar.list", events: "calendar.events" },
   presentation: spacesCapabilityPresentation,

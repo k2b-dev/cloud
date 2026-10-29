@@ -12,6 +12,8 @@ export const UserNotificationPreferenceSchema = z.object({
   description: z.string(),
   recommendedChannels: z.array(z.string()),
   requiredChannels: z.array(z.string()),
+  excludedChannels: z.array(z.string()),
+  excludedReason: z.string().nullable(),
   selectedChannels: z.array(z.string()),
   effectiveChannels: z.array(z.string()),
   customized: z.boolean(),

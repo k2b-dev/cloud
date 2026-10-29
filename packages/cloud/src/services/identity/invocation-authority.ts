@@ -35,6 +35,8 @@ export const invocationAuthorityFromRequest = (authority: RequestAuthority): Inv
       delegated_user_id: actor.delegatedUser.id,
       credential_kind: authority.credentialKind,
       ...(actor.credentialId ? { credential_id: actor.credentialId } : {}),
+      ...(actor.oauthClientId ? { oauth_client_id: actor.oauthClientId } : {}),
+      ...(actor.credentialExpiresAt ? { credential_expires_at: actor.credentialExpiresAt } : {}),
       scopes: [...new Set(authority.scopes)].sort(),
     };
   }
@@ -49,6 +51,8 @@ export const invocationAuthorityFromRequest = (authority: RequestAuthority): Inv
     access_subject_id: actor.serviceAccount.id,
     credential_kind: authority.credentialKind,
     ...(actor.credentialId ? { credential_id: actor.credentialId } : {}),
+    ...(actor.oauthClientId ? { oauth_client_id: actor.oauthClientId } : {}),
+    ...(actor.credentialExpiresAt ? { credential_expires_at: actor.credentialExpiresAt } : {}),
     scopes: [...new Set(authority.scopes)].sort(),
   };
 };

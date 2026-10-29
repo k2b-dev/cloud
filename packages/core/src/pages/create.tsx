@@ -12,9 +12,9 @@ import aiAdminPage from "./admin/ai/page";
 import announcementsAdminPage from "./admin/announcements/page";
 import appCredentialsPage from "./admin/app-credentials/page";
 import appsAccessPage from "./admin/apps/page";
+import { cliPage, generalPage, legalPage, pdfPage, placesPage } from "./admin/base/page";
 import outgoingMailPage from "./admin/outgoing-mail/page";
 import adminPage from "./admin/page";
-import placesAndMapsPage from "./admin/places-and-maps/page";
 import railAdminPage from "./admin/rail/page";
 import settingsPage from "./admin/settings/page";
 import pairDevicePage from "./app-approval/pair.page";
@@ -106,7 +106,11 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/admin/apps", auth.requireRole("admin", ssr.access), ...appsAccessPage)
     .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), ...appCredentialsPage)
     .get("/admin/outgoing-mail", auth.requireRole("admin", ssr.access), ...outgoingMailPage)
-    .get("/admin/places-and-maps", auth.requireRole("admin", ssr.access), ...placesAndMapsPage)
+    .get("/admin/base", auth.requireRole("admin", ssr.access), ...generalPage)
+    .get("/admin/base/legal", auth.requireRole("admin", ssr.access), ...legalPage)
+    .get("/admin/base/pdf", auth.requireRole("admin", ssr.access), ...pdfPage)
+    .get("/admin/base/places", auth.requireRole("admin", ssr.access), ...placesPage)
+    .get("/admin/base/cli", auth.requireRole("admin", ssr.access), ...cliPage)
     .get("/admin/settings", auth.requireRole("admin", ssr.access), ...settingsPage)
     .get("/admin/ai", auth.requireRole("admin", ssr.access), ...aiAdminPage)
     // Keep legacy admin entry points useful when their optional UI apps are absent.

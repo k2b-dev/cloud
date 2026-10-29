@@ -9,8 +9,9 @@ import { createPgOutbox } from "../services/outbox";
 /**
  * Frozen shared stream. It only buffers events until Core has stored them, and
  * JetStream reserves `maxBytes` on every replica: 256 MiB hold 52,428 envelopes
- * at the 4096-byte limit plus 1024 Sync bytes, six days at the design rate of
- * 0.1 events per second. A longer Core outage becomes a visible gap.
+ * at the 4096-byte limit plus a 1024-byte transport allowance. The shared
+ * producer budget and thin-envelope outage scenarios are in operations/app-events.
+ * Retention passing unseen events becomes a visible gap.
  */
 export const appEventTopicConfig = () =>
   ({

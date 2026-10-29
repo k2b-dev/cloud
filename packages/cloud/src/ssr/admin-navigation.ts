@@ -14,13 +14,9 @@ const normalizeAdminHref = (href: string | undefined): string | undefined => {
 export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][], locale = "en"): AdminGroup[] => {
   const t = platformMessages.resolve([locale]).t;
   const settingsLinks: AdminLink[] = [
-    { href: "/admin/settings?tab=general", icon: "ti-app-window", label: t.general },
     { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
-    { href: "/admin/settings?tab=pdf-rendering", icon: "ti-file-type-pdf", label: t.pdfRendering },
-    { href: "/admin/places-and-maps", icon: "ti-map-2", label: t.placesAndMaps },
     { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
     { href: "/admin/settings?tab=security", icon: "ti-shield-lock", label: t.security },
-    { href: "/admin/settings?tab=legal", icon: "ti-file-text", label: t.legal },
   ];
   // Areas show as one entry each. The AI area belongs to Core; Observability exists when an app contributes it.
   const contributedApps = apps
@@ -52,6 +48,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     groups.filter((group) => group.section === "observability").flatMap((group) => group.links.map((link) => link.href)),
   );
   const areaLinks: AdminLink[] = [
+    { href: "/admin/base", icon: "ti-adjustments", label: t.baseSettings },
     { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
     ...(observabilityPaths.length > 0
       ? [

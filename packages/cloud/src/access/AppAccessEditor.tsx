@@ -217,6 +217,8 @@ export default function AppAccessEditor(props: AppAccessEditorProps) {
   };
   const fixedDescription = () => {
     switch (props.app.access?.kind) {
+      case "resources":
+        return t().resources;
       case "signedIn":
         return t().fixedSignedIn;
       case "noGuests":
