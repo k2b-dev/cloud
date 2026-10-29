@@ -159,6 +159,7 @@ export type OfficeEditorLaunch = {
 export type MarkdownLaunch = { kind: "markdown"; managed: boolean; base: BaseSummary; entry: FileEntry; canWrite: boolean; url: string };
 export type EditorLaunch = OfficeEditorLaunch | MarkdownLaunch;
 export const VersionRefSchema = z.object({ path: PathSchema, id: z.string().min(1).max(128) });
+export const VersionRestoreSchema = VersionRefSchema.extend({ expectedRevision: z.string().min(1).max(4096).optional() });
 export const VersionCommentSchema = VersionRefSchema.extend({ comment: z.string().trim().max(2000) });
 export const VersionRestoreAsSchema = VersionRefSchema.extend({ name: z.string().min(1).max(255) });
 export type FileVersion = { id: string; created: string; size: number; pinned: boolean; comment: string | null; author: string | null };

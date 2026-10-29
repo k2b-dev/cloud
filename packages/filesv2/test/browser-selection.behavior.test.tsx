@@ -2,7 +2,7 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import type { DirectoryResult } from "../src/contracts";
+import type { DirectoryResult, FileEntry } from "../src/contracts";
 import { browserWithUploads } from "./browser-with-uploads";
 
 const branchRequests: Array<{ input: unknown; signal: AbortSignal; resolve: (response: Response) => void }> = [];
@@ -171,7 +171,6 @@ test("a folder lists its contents, files before images, and keeps rarer commands
     () => (
       <FileInspector
         base={initial.base}
-        cloudUrl="https://cloud.test"
         selected={[folder]}
         paths={[folder.path]}
         initial={{ base: initial.base, entry: folder, favorite: false }}
@@ -483,4 +482,72 @@ test("outside select mode Shift+Arrow moves the one active row; in select mode i
   await flush();
   expect(names('.filesv2-list__row[aria-selected="true"]')).toEqual(["A.txt", "B.txt"]);
   expect(names(".filesv2-list__row--active")).toEqual([]);
+});
+
+test("inspector commands retain their permissions and busy state beside history", async () => {
+  const dom = createDomTestHarness();
+  const { default: FileInspector } = await import("../src/frontend/FileInspector");
+  const calls: string[] = [];
+  const noop = () => {};
+  const [busy, setBusy] = createSignal(false);
+  const record = (name: string) => () => void calls.push(name);
+  const show = (file: FileEntry) =>
+    render(
+      () => (
+        <FileInspector
+          base={initial.base}
+          selected={[file]}
+          paths={[file.path]}
+          initial={{ base: initial.base, entry: file, favorite: false }}
+          busy={busy()}
+          onClose={noop}
+          onOpen={record("open")}
+          onPreview={noop}
+          onDownload={record("download")}
+          onRename={record("rename")}
+          onDuplicate={record("duplicate")}
+          onMove={record("move")}
+          onCopy={record("copy")}
+          onTrash={record("trash")}
+          onShare={record("share")}
+          onShareInbox={record("inbox")}
+          onChanged={noop}
+        />
+      ),
+      dom.root,
+    );
+  let dispose = show(initial.items[0]!);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  await flush();
+  const commands = () => [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+  const command = (label: string) => commands().find((item) => item.textContent?.trim() === label)!;
+  for (const label of ["Rename", "Duplicate", "Move to…", "Copy to…", "Move to trash"]) command(label).click();
+  expect(calls).toEqual(["rename", "duplicate", "move", "copy", "trash"]);
+  setBusy(true);
+  await flush();
+  expect(commands().map((item) => [item.textContent?.trim(), item.disabled])).toEqual([
+    ["Open in new tab", true],
+    ["Rename", true],
+    ["Duplicate", true],
+    ["Move to…", true],
+    ["Copy to…", true],
+    ["Move to trash", true],
+  ]);
+  const primary = [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__primary-actions button")];
+  for (const label of ["Preview", "Download", "Share"])
+    expect(primary.find((item) => item.textContent?.trim() === label)?.disabled).toBe(true);
+  expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")?.disabled).toBe(true);
+  setBusy(false);
+  dispose();
+  dispose = show({ ...initial.items[0]!, actions: { write: false, move: false, share: false } });
+  await flush();
+  expect(command("Rename").disabled).toBe(true);
+  expect(command("Move to…").disabled).toBe(true);
+  expect(command("Move to trash").disabled).toBe(true);
+  expect(command("Duplicate").disabled).toBe(false);
+  expect(command("Copy to…").disabled).toBe(false);
+  expect(dom.root.querySelector(".k2b-detail-panel__primary-actions")?.textContent).not.toContain("Share");
 });

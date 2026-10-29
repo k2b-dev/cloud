@@ -1,3 +1,4 @@
+import { getWorkflowMachineAuthority } from "./workflow-machine-authority";
 /**
  * Grids workflow definitions, stored by the kernel.
  *
@@ -247,6 +248,7 @@ export const updateWorkflow = async (
     if (
       enabled &&
       !current.ownerUserId &&
+      !(await getWorkflowMachineAuthority(current.id, tx))?.serviceAccountId &&
       compiled.data.plan.triggers.some((trigger) => trigger.kind === "schedule" || trigger.kind === "recordEvent")
     ) {
       return fail(err.forbidden(workflowServiceText(locale).automaticOwnerRequired));

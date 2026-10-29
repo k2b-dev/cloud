@@ -60,9 +60,9 @@ empty directory.
 
 ## Browse, select, and preview
 
-The sidebar is a folder tree per storage location; its footer offers **Search**
-(the global Cloud search restricted to files), **Recent**, **Favorites**, and
-**Shares**. After every navigation exactly the current path is
+The sidebar has **Recent**, **Favorites**, **Shares**, and **Activity** above
+the folder trees. Its footer offers **Search**, the global Cloud search
+restricted to files. After every navigation exactly the current path is
 expanded; the tree holds only storage locations and folders. The list is a flat striped list;
 folders open on click (the opened folder's icon becomes a spinner, a leading
 **Parent folder** row names the folder above and goes up; the header shows
@@ -151,10 +151,18 @@ contexts require distinct Filegate roots. Deleting moves entries into the reserv
 `trash` folder with a restorable record; only administrators empty it.
 Renaming, duplicating and moving reuse Filegate transfers.
 
-The details panel shows a preview hero (images enlarge into a dialog),
-facts including the storage area, an action list, and, where the root keeps
-versions, a versions section with comments (stored as version metadata),
-download, restore in place, and restore as a new file. Restoring as a new file
+The details panel shows a compact preview, actions, facts, versions, and history.
+On phones, the preview is hidden and the version count opens the versions list.
+Folder details show the number of loaded items; “at least” means more items
+may remain. If the count cannot load, **Try again** retries it.
+
+Where storage keeps versions, the count includes the current file and retained
+versions. Each saved version offers a comment, download, restore in place, and
+restore as a new file. If refreshing the list fails, the last loaded versions
+remain visible with a retry; their actions stay disabled until the list loads.
+A person's name beside the current modification appears only when the recorded
+change matches the file's current revision. A version comment's author identifies
+the person who wrote the comment, not the content's author. Restoring as a new file
 uses Filegate's historical-copy operation and leaves
 the original file, modification time, identity, and history unchanged. Permanent
 version deletion is available only through the administrator file browser and CLI.
@@ -359,6 +367,76 @@ their stored person or link and an unknown channel.
 Each new document, file created from bytes or a template, and Office save gets its
 own entry. Direct-write responses confirm completion; a lost response remains
 uncertain. Template-created files retain the template reference.
+
+### Find changes in Activity
+
+**Activity** in the sidebar lists visible history across storage, newest
+first by day. Its filters live in the address
+(`/app/filesv2?view=activity&base=…&who=…&what=…&when=…&q=…`), so reload,
+back, and links keep them; an invalid value answers `400` instead of showing
+another filter. From a storage location, Activity opens filtered to it. The
+server renders the first page with the same request the browser uses for
+later pages. An empty page with a next cursor offers older entries and claims
+no absence. A failed load keeps the filters beside **Try again**. **Today** starts
+at midnight in your time zone, including on clock-change days.
+
+A search in Activity matches names and old paths. Its top result shows where
+the item is now, from the movement chain: confirmed by stable identity, or
+marked probable with path evidence only. **Go there** resolves the item again
+through `/api/filesv2/entries/:id` or the entry endpoint, so a stale entry
+never opens a place the person can no longer read. An empty ordinary search
+offers **Search in history** with the same words. An old folder address can
+show **This folder has moved** when visible history records its move or a move
+of an ancestor folder. A location inferred from an ancestor move is marked
+probable and checked at the opened folder’s current address. The old address
+stays open until you choose **Go there**. Leaving the view cancels a pending
+**Go there** lookup, so its response cannot change your later navigation.
+
+Recovery actions of a vanished item come from
+`GET /api/filesv2/activity/:activityId/recovery`, loaded beside the chain:
+**Restore** (`POST …/restore`, with an optional new name after a
+`path_conflict`), **Move back** (`POST …/move-back`, only for a verified stable
+endpoint in the same storage), **Show in trash**, **Open old place**, and
+**Check now** (`POST …/recheck`) for unclear entries. A recorded snapshot never
+grants an action; every request checks rights, identity, and journals again,
+and a `403` or `409` stays visible beside the action.
+
+**Message …** opens Chat's **New chat** form with the recorded person selected,
+after Chat checks their current availability and your guest restrictions. You
+decide whether to start a chat or choose an existing one; opening the form
+creates no chat and sends no message. If Chat cannot open, Files shows an error;
+try the action again when Chat is available. Cancel stays in Chat; browser Back
+returns to the Files view and its history filters.
+
+The details panel lists the four newest entries of the selected item below
+its versions, then older entries and **All in Activity**, filtered to that
+item. A folder includes changes to its descendants, such as uploaded files;
+**All in Activity** keeps that folder scope across reload and Back. A file
+keeps its exact item scope. Rows name version numbers for entries that carry
+a version ID, counted over the versions the list holds; the current content is the next number. An
+overwrite or editor save whose new revision is the file's current revision
+offers **Restore version N** for the newest retained version, through the
+existing version restore. In-place restoration in the details panel requires a current storage revision;
+without one, restore as a new file to preserve newer content. A revision is never treated as a version ID. For public links the person created, the
+panel shows page views, released downloads, the period's page networks when
+exact, networks by use, and access over time with older periods on request,
+for the last 30 days, next to **Revoke link**.
+
+### Read an execution record
+
+**View run** opens **Execution in Files** for that history entry. It shows
+the recorded action, its Files result, who acted and on whose behalf, the
+channel, time, and the before and after paths you may read. **Source context
+and references** holds the available request and invocation references.
+
+This page covers one recorded Files effect. It does not establish the outcome
+of the whole originating run, and the source conversation is not available
+through this record, including when someone else performed the action.
+Files checks your current history access whenever the page loads. Missing or
+inaccessible records disclose no details; a loading failure offers **Try again**.
+Reload opens the same record, and browser Back returns to the preceding Files
+view with its URL filters. Opening the record starts no writes or rechecks.
+
 
 ## Public shares
 
