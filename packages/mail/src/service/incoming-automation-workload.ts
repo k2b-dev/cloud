@@ -1,5 +1,4 @@
-import { mandates } from "@k2b/cloud/services";
-import { getAppWorkloadCredential } from "@k2b/cloud/services/identity";
+import { getAppWorkloadCredential, mandates } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { hasCurrentMailboxUserPermission } from "./collaborators";
 

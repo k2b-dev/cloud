@@ -1,5 +1,5 @@
 import { invokeCapability } from "@k2b/cloud/capabilities/server";
-import { getAppWorkloadCredential } from "@k2b/cloud/services/identity";
+import { getAppWorkloadCredential } from "@k2b/cloud/services";
 
 type MandateJob = { id: string; draftId: string; mandateId: string; mandateRevision: number };
 

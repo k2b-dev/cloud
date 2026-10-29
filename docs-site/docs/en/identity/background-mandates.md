@@ -203,7 +203,7 @@ run server Code Mode tools under the same routine-scoped authority; see
 
 Core automatically delivers an app-bound `identity:invoke` credential to each
 registered app instance. Use `getAppWorkloadCredential()` from
-`@k2b/cloud/services/identity` at call time so rotation takes effect. It returns
+`@k2b/cloud/services` at call time so rotation takes effect. It returns
 `undefined` when no valid credential is available; dependent work must fail
 closed with a visible reason. A transient refresh failure keeps the current
 token available until it expires. Never cache the returned token or pass it to a browser
@@ -279,7 +279,7 @@ Use the server capability helper with the current mandate revision:
 
 ```ts
 import { invokeCapability } from "@k2b/cloud/capabilities/server";
-import { getAppWorkloadCredential } from "@k2b/cloud/services/identity";
+import { getAppWorkloadCredential } from "@k2b/cloud/services";
 
 const credential = getAppWorkloadCredential();
 if (!credential) throw new Error("App workload authorization is unavailable");

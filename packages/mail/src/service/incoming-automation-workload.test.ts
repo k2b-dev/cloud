@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import * as identity from "@k2b/cloud/services/identity";
+import * as services from "@k2b/cloud/services";
 import { incomingAutomationMandateCaller } from "./incoming-automation-workload";
 import { mailWorkflowActionFailure } from "./workflow-action-errors";
 
@@ -12,7 +12,7 @@ describe("incoming automation mandate caller", () => {
   });
 
   test("uses the runtime accessor without an env credential", () => {
-    const accessor = spyOn(identity, "getAppWorkloadCredential").mockReturnValue("runtime-token");
+    const accessor = spyOn(services, "getAppWorkloadCredential").mockReturnValue("runtime-token");
     try {
       expect(incomingAutomationMandateCaller({ id: "test-mandate", revision: 1 }).authorization).toBe("Bearer runtime-token");
       expect(accessor).toHaveBeenCalledTimes(1);
