@@ -31,7 +31,7 @@ const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets")
 const publicDir = join(root, "public");
 const origin = "https://cloud.example.test";
 const CORE_CANVAS =
-  "--app-accent:#0284c7;--app-canvas-from:#38bdf8;--app-canvas-via:#ffffff;--app-canvas-to:#60a5fa;--app-canvas-angle:135deg;--app-canvas-strength:20%;--app-canvas-dark-strength:10%";
+  "--app-accent:#0284c7;--app-canvas-from:#3b82f6;--app-canvas-via:#ffffff;--app-canvas-to:#60a5fa;--app-canvas-angle:135deg;--app-canvas-strength:20%;--app-canvas-dark-strength:10%";
 
 /** Invented demo account and phones. */
 const user: User = {
@@ -192,7 +192,7 @@ const open = async (view: View, dark = false) => {
 };
 
 describe("/me/app in a browser", () => {
-  test("is absent without the mobile app and framed never", async () => {
+  test("is absent without the Cloud app and framed never", async () => {
     expect((await request([])).status).toBe(404);
     const response = await request([shell]);
     expect(response.headers.get("content-security-policy")).toBe("frame-ancestors 'none'");
@@ -236,9 +236,9 @@ describe("/me/app in a browser", () => {
             return {
               frames,
               current: main.querySelector('nav [aria-current="page"]')?.getAttribute("href"),
-              thisPhone: panel.textContent?.includes("This phone"),
+              thisPhone: panel.textContent?.includes("This device"),
               styles: styles.size,
-              pair: Array.from(panel.querySelectorAll("button")).filter((button) => button.textContent?.trim() === "Pair a phone").length,
+              pair: Array.from(panel.querySelectorAll("button")).filter((button) => button.textContent?.trim() === "Pair a device").length,
               overflow: document.documentElement.scrollWidth - window.innerWidth,
             };
           });

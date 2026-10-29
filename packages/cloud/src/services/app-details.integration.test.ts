@@ -98,10 +98,10 @@ suiteFor("database")("app administration detail", () => {
     `;
     await sql`
       INSERT INTO notifications.definitions(id, app_id, kind, label, description, presentation, recipient_kind,
-        required_channels, recommended_channels)
+        required_channels, recommended_channels, excluded_channels, excluded_reason)
       VALUES ('demo.notice', 'demo', 'notice', 'Notice', 'Notice description',
-        '{"baseLocale":"en","translations":{"de":{"label":"Nachricht","description":"Beschreibung"}}}',
-        'user', '{browser}', '{email}')
+        '{"baseLocale":"en","translations":{"de":{"label":"Nachricht","description":"Beschreibung","excludedReason":"Keine SMS für diese Meldung."}}}',
+        'user', '{browser}', '{email}', '{sms}', 'No SMS for this notification.')
     `;
   });
 
@@ -137,6 +137,8 @@ suiteFor("database")("app administration detail", () => {
         recipientKind: "user",
         requiredChannels: ["browser"],
         recommendedChannels: ["email"],
+        excludedChannels: ["sms"],
+        excludedReason: "Keine SMS für diese Meldung.",
       },
     ]);
     expect(result.totals).toEqual({ sends: 1, hears: 1, notifications: 1 });

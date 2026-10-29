@@ -78,6 +78,8 @@ export const AppDetailsSchema = z.object({
         recipientKind: z.enum(["user", "email"]),
         requiredChannels: z.array(z.string()),
         recommendedChannels: z.array(z.string()),
+        excludedChannels: z.array(z.string()),
+        excludedReason: z.string().nullable(),
       }),
     )
     .max(APP_DETAILS_LIST_LIMIT),
