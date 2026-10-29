@@ -5,6 +5,7 @@ import type { AppRegistryEntry } from "../contracts/registry";
 import type { User } from "../contracts/shared";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { type AppOptions, defineApp, type StartResult } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId } from "./process-identity";
@@ -51,6 +52,7 @@ export const publishedEntry = async (options: AppOptions, inspect?: (server: Sta
   // Only the methods used by startup are implemented; heartbeat transport is stubbed.
   const sync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };

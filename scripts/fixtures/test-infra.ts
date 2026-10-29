@@ -37,10 +37,13 @@
  *   CLOUD_TEST_FILEGATE_URL   http://host:4000
  *   CLOUD_TEST_GOTENBERG_URL  http://host:3001
  *   CLOUD_TEST_CLICKHOUSE_URL http://admin:password@host:8123 (dedicated test admin)
+ *   CLOUD_TEST_S3_ENDPOINT    http://host:3900 (dedicated Garage test instance)
+ *   CLOUD_TEST_S3_BUCKET      cloud-test (must end in -test)
+ *   CLOUD_TEST_S3_ACCESS_KEY_ID / CLOUD_TEST_S3_SECRET_ACCESS_KEY / CLOUD_TEST_S3_REGION
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
 import { afterAll, beforeAll, describe, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { S3Client, SQL, sql } from "bun";
 import {
   applyTestRuntimeEnv,
   dotenvLeak,
@@ -98,6 +101,13 @@ const applyMappings = (): Record<InfraKind, string | undefined> => {
     const value = readTestTarget(process.env, kind);
     if (kind === "database" && value) assertTestDatabaseName(value);
     if (kind === "valkey" && value) assertValkeyUrlWithoutIndex(value);
+    if (kind === "s3" && value) {
+      const bucket = read("CLOUD_TEST_S3_BUCKET");
+      if (!bucket?.endsWith("-test")) throw new Error("CLOUD_TEST_S3_BUCKET must name a dedicated bucket ending in -test.");
+      if (!read("CLOUD_TEST_S3_ACCESS_KEY_ID") || !read("CLOUD_TEST_S3_SECRET_ACCESS_KEY") || !read("CLOUD_TEST_S3_REGION")) {
+        throw new Error("Set CLOUD_TEST_S3_ACCESS_KEY_ID, CLOUD_TEST_S3_SECRET_ACCESS_KEY, and CLOUD_TEST_S3_REGION with the S3 endpoint.");
+      }
+    }
     resolved[kind] = value;
   }
   applyTestRuntimeEnv(process.env);
@@ -157,6 +167,17 @@ const httpReachable = async (url: string): Promise<void> => {
 };
 
 const probes: Record<InfraKind, (target: string) => Promise<void>> = {
+  s3: async (target) => {
+    const client = new S3Client({
+      endpoint: target,
+      bucket: read("CLOUD_TEST_S3_BUCKET"),
+      accessKeyId: read("CLOUD_TEST_S3_ACCESS_KEY_ID"),
+      secretAccessKey: read("CLOUD_TEST_S3_SECRET_ACCESS_KEY"),
+      region: read("CLOUD_TEST_S3_REGION"),
+      retry: 0,
+    });
+    await client.list({ maxKeys: 1 });
+  },
   database: async (target) => {
     const sql = new SQL(target);
     try {

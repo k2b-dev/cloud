@@ -90,6 +90,7 @@ import {
   ThreadParamSchema,
   ThreadQuerySchema,
   ThreadSchema,
+  UNREAD_TOTAL_CAP,
   UpdateConversationSchema,
   UpdateMemberSchema,
   UpdateThreadSchema,
@@ -418,6 +419,21 @@ const app = new Hono<AuthContext>()
           query: { archived, unread, ...(ids ? { ids: ids.join(",") } : {}), ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) },
         }),
       );
+    },
+  )
+  .get(
+    "/conversations/unread-count",
+    description(
+      "Count unread messages in all your chats, up to 100, with a line for the Cloud app's Start",
+      z.object({ count: z.number().int().min(0).max(UNREAD_TOTAL_CAP), text: z.string() }),
+    ),
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const total = await chatService.readState.unreadTotal(context(c));
+      if (!total.ok) return respond(c, total);
+      const { t } = chatMessages.resolve([getLocale(c)]);
+      const { count } = total.data;
+      return respond(c, ok({ count, text: count ? t.summaryUnread({ count }) : t.summaryAllRead }));
     },
   )
   .post(

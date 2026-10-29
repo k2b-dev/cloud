@@ -10,6 +10,7 @@ export type DeviceNotice =
   | { kind: "quiet"; reason: NonNullable<NotificationQuietState["reason"]>; until: string | null }
   | { kind: "none" };
 
+/** Chat in the browser (`/app/chat`) and in the Cloud app (`/pwa/chat`) share the device's line. */
 export const CHAT_DEVICE_NOTICE_COOKIE = "chat_device_notice";
 const COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 
@@ -27,4 +28,4 @@ export const parseDeviceNotice = (value: string | undefined, now: Date): DeviceN
 };
 
 export const deviceNoticeCookie = (notice: DeviceNotice): string =>
-  `${CHAT_DEVICE_NOTICE_COOKIE}=${encodeURIComponent(serializeDeviceNotice(notice))}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; Path=/app/chat; SameSite=Lax`;
+  `${CHAT_DEVICE_NOTICE_COOKIE}=${encodeURIComponent(serializeDeviceNotice(notice))}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; Path=/; SameSite=Lax`;

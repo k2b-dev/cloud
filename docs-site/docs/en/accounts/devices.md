@@ -61,7 +61,11 @@ has not received it, close the dialog and start a new pairing.
 
 Pairing, renaming and revoking require a Cloud session created within the last
 ten minutes. If prompted, choose **Confirm identity** and sign in with the same
-account. You do not need to sign out first.
+account. You do not need to sign out first. The page uses the same remembered
+sign-in method as a normal visit: Login and FreeIPA app sign-ins stay on the app, and a Login
+account that last used an email link stays on email. You can still choose
+another method, including a passkey. After signing in, the pairing dialog
+reopens where you left it.
 
 ## Help someone pair a device
 

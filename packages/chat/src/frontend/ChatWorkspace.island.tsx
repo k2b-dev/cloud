@@ -1,4 +1,6 @@
+import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
 import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
@@ -9,6 +11,7 @@ import {
   AppWorkspace,
   announce,
   Button,
+  ButtonLink,
   Dropdown,
   dialogCore,
   FilterToggle,
@@ -80,7 +83,14 @@ import { openNewChatDialog } from "./NewChatDialog";
 import { createNotificationCleanup } from "./notification-cleanup";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
-import { panelHref as conversationHref, parseRoute, type Route, threadsPageHref as threadsPageAddress } from "./route";
+import {
+  panelHref as conversationHref,
+  parseRoute,
+  type Route,
+  routeAddress,
+  threadsPageHref as threadsPageAddress,
+  UNREAD_COUNT_PATH,
+} from "./route";
 import { containerIcon, openResourceThread, openSystemChat, systemMembers } from "./system-chats";
 
 import { openThreadDialog } from "./ThreadDialog";
@@ -106,6 +116,8 @@ type Sends = ReturnType<typeof createChatSends>;
 export type ChatWorkspaceProps = {
   /** The same workspace served without the Cloud shell in its provider route. */
   embedded?: boolean;
+  /** The Cloud app's Chat below `/pwa/chat`: the list beside the open chat from 64 rem, one after the other below. */
+  app?: boolean;
   archived?: boolean;
   filter?: "all" | "unread";
   collapsed?: z.infer<typeof SidebarPreferencesSchema>["collapsed"];
@@ -172,7 +184,7 @@ const chatRoute = (chatId: string | null, view: ThreadView = "all", extra: Parti
  * Below 64 rem the list and a chat are separate pages.
  */
 export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
-  const basePath = props.embedded ? "/app/chat/panel" : "/app/chat";
+  const basePath = props.app ? "/pwa/chat" : props.embedded ? "/app/chat/panel" : "/app/chat";
   const panelHref = (id: string, info: "info" | null, message?: string | null, view: ThreadView = "all") =>
     conversationHref(id, info, message, view, basePath);
   const threadHref = (id: string, view: ThreadView, message?: string | null) => threadAddress(id, view, message, basePath);
@@ -292,7 +304,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     unsavedDrafts.add(id);
     try {
       if (!savedDrafts) throw new Error("Draft storage unavailable");
-      savedDrafts.write(id, text, savedTexts.get(id) ?? "");
+      savedDrafts.write(id, text, expectedDraft(id));
       savedTexts.set(id, text);
       unsavedDrafts.delete(id);
     } catch (error) {
@@ -300,13 +312,32 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       else setDraftStorageFailed(true);
     }
   };
+  /**
+   * The text another view of this tab may have saved meanwhile, such as the panel's iframe. The Cloud app is one
+   * window, and its device storage also hands back text it could not keep yet, which is no other view's edit.
+   */
+  const expectedDraft = (id: string) => (props.app ? undefined : (savedTexts.get(id) ?? ""));
+  /**
+   * The web keeps drafts for the tab. The Cloud app keeps them in the device's storage, so a chat's draft survives the
+   * app being ended in the background; signing out of the app deletes them.
+   */
+  const draftStorage = (): Pick<Storage, "getItem" | "setItem" | "removeItem"> =>
+    props.app
+      ? {
+          getItem: (key) => pwaDrafts.read(props.viewerId, key) ?? null,
+          setItem: (key, value) => {
+            if (!pwaDrafts.write(props.viewerId, key, value)) throw new Error("Draft storage unavailable");
+          },
+          removeItem: (key) => pwaDrafts.remove(props.viewerId, key),
+        }
+      : window.sessionStorage;
   const retryDraftStorage = () => {
     try {
-      savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
+      savedDrafts = chatDrafts(props.viewerId, draftStorage());
       for (const id of unsavedDrafts) {
         try {
           const text = drafts.get(id)!;
-          savedDrafts.write(id, text, savedTexts.get(id) ?? "");
+          savedDrafts.write(id, text, expectedDraft(id));
           savedTexts.set(id, text);
           unsavedDrafts.delete(id);
         } catch (error) {
@@ -425,6 +456,35 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [localBumps, setLocalBumps] = createSignal(0);
   let outbox: Sends | undefined;
   let feed: VirtualFeedController | undefined;
+
+  // The Cloud app counts unread messages in every chat, not only the loaded rows. When the rows' counts change, a read
+  // here or a message elsewhere, it reads the total again and lets the sidebar's count follow.
+  const [unreadTotal, setUnreadTotal] = createSignal<number>();
+  if (props.app) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const readTotal = async () => {
+      const response = await fetch(UNREAD_COUNT_PATH, { credentials: "same-origin", headers: { accept: "application/json" } }).catch(
+        () => null,
+      );
+      const body: unknown = response?.ok ? await response.json().catch(() => null) : null;
+      if (typeof body === "object" && body !== null && "count" in body && typeof body.count === "number") setUnreadTotal(body.count);
+    };
+    onMount(() => void readTotal());
+    createEffect(
+      on(
+        () => rows().reduce((sum, row) => sum + row.unread, 0),
+        () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            void readTotal();
+            refreshAppBadges();
+          }, 300);
+        },
+        { defer: true },
+      ),
+    );
+    onCleanup(() => clearTimeout(timer));
+  }
 
   const sortRows = () => setOrder(rows().map((row) => row.id));
   const listRows = createMemo(() => {
@@ -1477,8 +1537,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setPanel("info");
     setRoute({ ...route(), chatId: id, messageId, panel: "info" });
     const options = { scroll: "preserve" as const, state: { chatFromList: listDepth() === 1, chatInfoFromChat: true } };
-    if (navigation) navigation.push(viewHref(panelHref(id, "info", messageId, route().view)), options);
-    else navigate(viewHref(panelHref(id, "info", messageId, route().view)), options);
+    if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), options);
+    else navigate(viewHref(routeAddress(route(), basePath)), options);
   };
   const infoFromChat = () => {
     const state: unknown = history.state;
@@ -1507,8 +1567,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const messageId = route().messageId;
     setPanel(null);
     setRoute({ ...route(), chatId: id, messageId, panel: null });
-    if (navigation) navigation.push(viewHref(panelHref(id, null, messageId, route().view)), { scroll: "preserve" });
-    else navigate(viewHref(panelHref(id, null, messageId, route().view)), { scroll: "preserve" });
+    if (navigation) navigation.push(viewHref(routeAddress(route(), basePath)), { scroll: "preserve" });
+    else navigate(viewHref(routeAddress(route(), basePath)), { scroll: "preserve" });
   };
 
   /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
@@ -1816,7 +1876,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   onMount(() => {
     try {
-      savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
+      savedDrafts = chatDrafts(props.viewerId, draftStorage());
     } catch {
       setDraftStorageFailed(true);
     }
@@ -2128,7 +2188,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const infoLink = (current: Conversation) => (
     <IconButtonLink
       label={t().chatInfo}
-      href={listHref(panelHref(current.id, panel() === "info" ? null : "info", route().messageId, route().view))}
+      href={listHref(routeAddress({ ...route(), chatId: current.id, panel: panel() === "info" ? null : "info" }, basePath))}
       navigation="enhanced"
       onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
       aria-expanded={panel() === "info"}
@@ -2143,6 +2203,339 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         <i class="ti ti-dots text-xs" />
       </Dropdown.Trigger>
     </Dropdown.Root>
+  );
+
+  /** Unread messages in every chat but the open one, for the Cloud app's way back to the list. */
+  const othersUnread = (id: string) => {
+    const chats = rows().filter((row) => row.kind !== "system");
+    const loaded = chats.reduce((sum, row) => (row.id === id ? sum : sum + row.unread), 0);
+    const total = unreadTotal();
+    const current = conversation();
+    const opened =
+      chats.find((row) => row.id === id) ?? (current?.id === id && current.kind !== "system" && current.member ? current : undefined);
+    return total === undefined ? loaded : Math.max(loaded, total - (opened?.unread ?? 0));
+  };
+  const threadsPageOpen = () => (route().threads && openChat()?.id && threaded() ? conversation() : null);
+  const threadsPageView = (current: Conversation): JSX.Element => (
+    <ChatThreadsPage
+      basePath={basePath}
+      conversation={current}
+      canCreate={canCreateThread()}
+      creating={creatingThread()}
+      revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
+      threads={openChat()?.threads ?? null}
+      status={openChat()?.threadsStatus ?? "loading"}
+      viewerId={props.viewerId}
+      dateConfig={props.dateConfig}
+      now={now}
+      info={infoLink(current)}
+      backCount={props.app ? othersUnread(current.id) : undefined}
+      onBack={backToList}
+      onOpen={(view, navigation) => openView(current.id, view, navigation)}
+      onCreate={() => void createThread()}
+      onRetry={() => void store?.refreshThreads()}
+    />
+  );
+  const conversationView = (): JSX.Element => (
+    <>
+      {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
+      <Show when={openChat()?.id} keyed>
+        <Show when={conversation()}>
+          {(current) => (
+            <ChatConversation
+              actions={
+                <>
+                  <Show when={props.embedded}>
+                    <IconButtonLink
+                      href={listHref(conversationHref(current().id, null, route().messageId, route().view))}
+                      target={composerReady() ? undefined : "_top"}
+                      label={t().openFullView}
+                    >
+                      <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                    </IconButtonLink>
+                  </Show>
+                  <Show when={!system() && current().permission === "admin"}>
+                    <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
+                      <i class="ti ti-user-plus" aria-hidden="true" />
+                    </IconButton>
+                  </Show>
+                  <Show when={!system() && current().permission === "admin" && openThread() && !openThread()?.archived}>
+                    <ThreadMenu onRename={() => void renameThread()} onArchive={() => void archiveThread()} />
+                  </Show>
+                  <Show when={current().channel && current().member}>
+                    <Dropdown.Root
+                      position="bottom-right"
+                      items={[
+                        {
+                          label: t().unsubscribe,
+                          icon: "ti ti-bell-off",
+                          description: t().unsubscribeDescription,
+                          disabled: unsubscribing(),
+                          action: () => void unsubscribe(),
+                        },
+                      ]}
+                    >
+                      <Dropdown.Trigger iconOnly label={t().chatActions({ title: current().title })}>
+                        <i class="ti ti-dots" />
+                      </Dropdown.Trigger>
+                    </Dropdown.Root>
+                  </Show>
+                  <Show when={system() && openThread()?.resource && openThread()?.following !== undefined ? openThread() : null}>
+                    {(thread) => (
+                      <FollowToggle
+                        following={thread().following === true}
+                        onToggle={(on) =>
+                          store ? store.follow(current().id, thread().id, on) : Promise.reject(new Error("Chat is not live yet"))
+                        }
+                      />
+                    )}
+                  </Show>
+                  {infoLink(current())}
+                </>
+              }
+              chatId={current().id}
+              muted={current().notifications?.level === "none"}
+              title={system() && openThread() ? openThread()!.name : current().title}
+              resource={system() ? (openThread()?.resource ?? undefined) : undefined}
+              // A wider window picks the thread beside the title; a phone and a window with the thread column
+              // name the thread as the title instead. CSS decides, so server and browser render the same head.
+              titleExtra={
+                threaded() ? (
+                  <span class="chat-conversation__picker">
+                    <ThreadPicker
+                      chatId={current().id}
+                      threads={openChat()?.threads ?? null}
+                      unread={current().unread}
+                      view={openChat()?.view ?? "all"}
+                      basePath={basePath}
+                      canAdmin={canCreateThread()}
+                      system={system()}
+                      total={current().summaryCursor == null ? current().threads : undefined}
+                      creating={creatingThread()}
+                      onOverview={openOverview}
+                      onSelect={(view) => void openView(current().id, view)}
+                      onCreate={() => void createThread()}
+                    />
+                  </span>
+                ) : undefined
+              }
+              wideTitle={
+                threaded()
+                  ? {
+                      title: viewTitle(),
+                      chat: current().title,
+                      subtitle:
+                        openChat()?.view === "all"
+                          ? `${current().title} · ${t().allThreadsHint}`
+                          : openChat()?.view === "general"
+                            ? `${current().title} · ${t().generalHint}`
+                            : (openThread()?.description ?? current().title),
+                    }
+                  : undefined
+              }
+              backHref={threaded() ? listHref(threadsPageHref(current().id)) : undefined}
+              draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
+              notice={draftNotice()}
+              composerNotice={
+                notice() ? (
+                  <Show when={readFailure()} fallback={notice()}>
+                    {readNotice()}
+                  </Show>
+                ) : undefined
+              }
+              placeholder={placeholder()}
+              target={threaded() ? (openChat()?.view === "all" ? generalName() : viewTitle()) : undefined}
+              reply={
+                reply()
+                  ? {
+                      author: reply()?.authorName ?? "",
+                      text: reply()?.body ?? "",
+                      onCancel: () => setReply(null),
+                      onSelect: () => {
+                        const answered = reply();
+                        if (answered?.messageId) void jumpTo(current().id, answered.messageId);
+                      },
+                    }
+                  : undefined
+              }
+              onReply={notice() ? undefined : (item) => setReply(item)}
+              replyHint={replyHint}
+              unreadHint={unreadHint}
+              listHref={listHref()}
+              memberCount={current().memberCount}
+              subtitle={
+                system() && openThread()
+                  ? current().title
+                  : system()
+                    ? systemMembers(current().resource?.type, t())
+                    : current().channel
+                      ? t().subscribers({ count: current().memberCount })
+                      : undefined
+              }
+              items={items()}
+              hasOlder={openChat()?.hasOlder ?? false}
+              hasNewer={openChat()?.hasNewer ?? false}
+              onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
+              onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
+              onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
+              focusKey={focusKey()}
+              canWrite={
+                composerReady() &&
+                !busy() &&
+                current().permission !== "read" &&
+                (system() || current().member) &&
+                !draftStorageFailed() &&
+                draftConflicts()[draftId(route()) ?? ""] === undefined
+              }
+              hint={
+                <Show
+                  when={readFailure()}
+                  fallback={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
+                >
+                  {readNotice()}
+                </Show>
+              }
+              draft={draft()}
+              onDraftChange={changeDraft}
+              onSend={send}
+              // A discard that fails leaves the file to the nightly cleanup of unsent uploads (24 hours).
+              onDiscard={(attachment) => void uploads.discard(current().id, attachment).catch(() => {})}
+              onUpload={(file, signal) =>
+                uploads.upload(
+                  current().id,
+                  openChat()?.view && !["all", "general"].includes(openChat()!.view) ? openChat()!.view : null,
+                  file,
+                  signal,
+                )
+              }
+              people={{
+                search: async (query, signal) =>
+                  (
+                    await forYouApi.candidates(
+                      current().id,
+                      query,
+                      openChat()?.view && openChat()!.view !== "all" ? openChat()!.view : "general",
+                      signal,
+                    )
+                  ).items.map((candidate) => ({
+                    id: `${candidate.principal.type}:${candidate.principal.id}`,
+                    name: candidate.name,
+                    agent: candidate.agent,
+                  })),
+              }}
+              cards={cards()}
+              onPickResource={pickResource}
+              onBack={threaded() ? backToThreads : backToList}
+              backCount={props.app ? othersUnread(current().id) : undefined}
+              busy={busy()}
+              dateConfig={props.dateConfig}
+              now={now}
+              controller={(controller) => {
+                feed = controller;
+              }}
+              markerKey={marker()}
+              unreadGap={unreadGap() ? { key: unreadGap()?.key ?? null, jump: () => void jumpUnreadGap() } : undefined}
+              onVisibleChange={reportVisible}
+              onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
+              reactions={(id) => reactionsById().get(id) ?? []}
+              onReact={react}
+              onEdit={current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "edit") : undefined}
+              onDelete={current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "delete") : undefined}
+              onCopy={copy}
+              // With the info open, Esc closes it first; the workspace owns that.
+              onEscape={() => panel() === null && markOpenRead()}
+            />
+          )}
+        </Show>
+      </Show>
+    </>
+  );
+  const noAccessView = (): JSX.Element => (
+    <Placeholder
+      variant="panel"
+      class="flex-1"
+      icon="ti ti-lock"
+      title={t().threadUnavailable}
+      action={
+        <Show
+          when={props.app}
+          fallback={
+            <Link href={basePath} onNavigate={backToList}>
+              {t().backToChats}
+            </Link>
+          }
+        >
+          <ButtonLink class="chat-app__to-list" variant="secondary" href={basePath} navigation="enhanced" onNavigate={backToList}>
+            {t().backToChats}
+          </ButtonLink>
+        </Show>
+      }
+      description={t().noAccessDescription}
+    />
+  );
+  /**
+   * The Cloud app: the list as a column of its own and the open chat beside it; one at a time below 64 rem. Threads
+   * show in the list's rows and the picker, so the app has no thread column.
+   */
+  const appView = (): JSX.Element => (
+    <div
+      class="chat-app"
+      data-open={openChat() || noAccess() || route().channels ? "" : undefined}
+      data-info={panel() === "info" ? "" : undefined}
+    >
+      <section class="chat-app__list" aria-label={t().chats}>
+        <header class="chat-app__head">
+          <h1>{t().appName}</h1>
+          <Show when={liveStopped()}>
+            <span class="chat-app__status" role="status">
+              <i class="ti ti-plug-connected-x" aria-hidden="true" />
+              {t().disconnected}
+            </span>
+          </Show>
+          <IconButton label={t().newChat} onClick={() => void newChat()}>
+            <i class="ti ti-edit" aria-hidden="true" />
+          </IconButton>
+          {chatsActions()}
+        </header>
+        <div class="chat-app__rows">{listContent()}</div>
+      </section>
+      <div class="chat-app__main">
+        <Switch>
+          <Match when={route().channels}>
+            <DiscoverChannels
+              initial={takeInitialChannelPage()}
+              query={route().query ?? ""}
+              onQuery={(query) => {
+                setRoute({ ...route(), query });
+                // Typing only rewrites the address; it never animates the page.
+                navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
+                  replace: true,
+                  scroll: "preserve",
+                  viewTransition: false,
+                });
+              }}
+              revision={channelRevision()}
+              onSubscribe={subscribe}
+              onOpen={(id) => openChosen(id)}
+              onBack={backToList}
+              listHref={basePath}
+            />
+          </Match>
+          <Match when={threadsPageOpen()}>{(current) => threadsPageView(current())}</Match>
+          <Match when={openChat()?.id}>{conversationView()}</Match>
+          <Match when={noAccess()}>{noAccessView()}</Match>
+          <Match when={true}>
+            <Placeholder
+              variant="panel"
+              class="flex-1"
+              icon="ti ti-message-circle"
+              title={t().selectChatTitle}
+              description={t().selectChatDescription}
+            />
+          </Match>
+        </Switch>
+      </div>
+    </div>
   );
 
   const archiveLink = () => (
@@ -2242,19 +2635,23 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         <Show when={rows().length > 0 && !listError()}>
           <ChatDeviceNotice notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
         </Show>
-        <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-          {t().newChat}
-        </AppWorkspace.SidebarItem>
-        <AppWorkspace.SidebarItem
-          href={listHref(`${basePath}/for-you`)}
-          navigation="enhanced"
-          onNavigate={showForYou}
-          active={route().forYou}
-          icon="ti ti-at"
-          meta={<AppWorkspace.SidebarItemStatus unread={forYouUnread() || undefined} />}
-        >
-          {t().forYou}
-        </AppWorkspace.SidebarItem>
+        <Show when={!props.app}>
+          <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+            {t().newChat}
+          </AppWorkspace.SidebarItem>
+        </Show>
+        <Show when={!props.app}>
+          <AppWorkspace.SidebarItem
+            href={listHref(`${basePath}/for-you`)}
+            navigation="enhanced"
+            onNavigate={showForYou}
+            active={route().forYou}
+            icon="ti ti-at"
+            meta={<AppWorkspace.SidebarItemStatus unread={forYouUnread() || undefined} />}
+          >
+            {t().forYou}
+          </AppWorkspace.SidebarItem>
+        </Show>
         <div class="chat-list-filters" role="group" aria-label={t().chats}>
           <FilterToggle
             label={t().allChats}
@@ -2295,7 +2692,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               </Show>
               <AppWorkspace.SidebarSection
                 title={t().chats}
-                actions={chatsActions()}
+                actions={props.app ? undefined : chatsActions()}
                 collapsible
                 open={!collapsed().includes("chats")}
                 onOpenChange={(open) => void collapse("chats", open)}
@@ -2367,349 +2764,109 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           </IconButtonLink>
         </div>
       </Show>
-      <AppWorkspace mobileSurface="flush" class={`chat-workspace ${props.embedded ? "flex-1 min-h-0" : "h-full"}`}>
-        <AppWorkspace.Sidebar label={t().chats}>
-          <AppWorkspace.SidebarDesktop>
-            <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">{listContent(false)}</AppWorkspace.SidebarBody>
-            <AppWorkspace.SidebarFooter>{archiveLink()}</AppWorkspace.SidebarFooter>
-          </AppWorkspace.SidebarDesktop>
-        </AppWorkspace.Sidebar>
+      <AppWorkspace
+        mobileSurface="flush"
+        class={`chat-workspace ${props.app ? "chat-workspace--app h-full" : props.embedded ? "flex-1 min-h-0" : "h-full"}`}
+      >
+        <Show when={!props.app}>
+          <AppWorkspace.Sidebar label={t().chats}>
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">{listContent(false)}</AppWorkspace.SidebarBody>
+              <AppWorkspace.SidebarFooter>{archiveLink()}</AppWorkspace.SidebarFooter>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+        </Show>
         <AppWorkspace.Content>
           <AppWorkspace.Main
             scroll={false}
             aria-busy={busy()}
             class={`chat-workspace__main ${threaded() && !route().threads ? "chat-main chat-main--threads" : "chat-main"}`}
           >
-            {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
+            <Show when={!props.app} fallback={appView()}>
+              {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
                 render and the first frame agree, and crossing the width moves nothing in the reading column. The pane
                 stays in place for every chat, because a pane that appears later would take the conversation with it. */}
-            <AppWorkspace.MainPane
-              id="chat-threads"
-              label={t().threadsIn({ title: conversation()?.title ?? "" })}
-              class="chat-thread-pane"
-              defaultSize={336}
-              minSize={288}
-              maxSize={480}
-              scroll={false}
-            >
-              <Show when={threaded() && !route().threads ? conversation() : null}>
-                {(current) => (
-                  <ChatThreadColumn
-                    conversation={current()}
-                    basePath={basePath}
-                    canCreate={canCreateThread()}
-                    creating={creatingThread()}
-                    revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
-                    threads={openChat()?.threads ?? null}
-                    status={openChat()?.threadsStatus ?? "loading"}
-                    view={openChat()?.view ?? "all"}
-                    viewerId={props.viewerId}
-                    dateConfig={props.dateConfig}
-                    now={now}
-                    onOpen={(view, navigation) => openView(current().id, view, navigation)}
-                    onCreate={() => void createThread()}
-                    onRetry={() => void store?.refreshThreads()}
-                  />
-                )}
-              </Show>
-            </AppWorkspace.MainPane>
-            <Switch>
-              <Match when={route().forYou}>
-                <ForYou
-                  initial={takeInitialForYou()}
-                  revision={forYouRevision()}
-                  basePath={basePath}
-                  dateConfig={props.dateConfig}
-                  now={now}
-                  onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
-                  onBack={backToList}
-                />
-              </Match>
-              <Match when={route().channels}>
-                <DiscoverChannels
-                  initial={takeInitialChannelPage()}
-                  query={route().query ?? ""}
-                  onQuery={(query) => {
-                    setRoute({ ...route(), query });
-                    // Typing only rewrites the address; it never animates the page.
-                    navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
-                      replace: true,
-                      scroll: "preserve",
-                      viewTransition: false,
-                    });
-                  }}
-                  revision={channelRevision()}
-                  onSubscribe={subscribe}
-                  onOpen={(id) => openChosen(id)}
-                  onBack={backToList}
-                  listHref={basePath}
-                />
-              </Match>
-              <Match when={route().threads && openChat()?.id && threaded() ? conversation() : null}>
-                {(current) => (
-                  <ChatThreadsPage
-                    conversation={current()}
-                    basePath={basePath}
-                    canCreate={canCreateThread()}
-                    creating={creatingThread()}
-                    revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
-                    threads={openChat()?.threads ?? null}
-                    status={openChat()?.threadsStatus ?? "loading"}
-                    viewerId={props.viewerId}
-                    dateConfig={props.dateConfig}
-                    now={now}
-                    info={infoLink(current())}
-                    onBack={backToList}
-                    onOpen={(view, navigation) => openView(current().id, view, navigation)}
-                    onCreate={() => void createThread()}
-                    onRetry={() => void store?.refreshThreads()}
-                  />
-                )}
-              </Match>
-              <Match when={openChat()?.id}>
-                {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
-                <Show when={openChat()?.id} keyed>
-                  <Show when={conversation()}>
-                    {(current) => (
-                      <ChatConversation
-                        actions={
-                          <>
-                            <Show when={props.embedded}>
-                              <IconButtonLink
-                                href={listHref(conversationHref(current().id, null, route().messageId, route().view))}
-                                target={composerReady() ? undefined : "_top"}
-                                label={t().openFullView}
-                              >
-                                <i class="ti ti-arrows-maximize" aria-hidden="true" />
-                              </IconButtonLink>
-                            </Show>
-                            <Show when={!system() && current().permission === "admin"}>
-                              <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
-                                <i class="ti ti-user-plus" aria-hidden="true" />
-                              </IconButton>
-                            </Show>
-                            <Show when={!system() && current().permission === "admin" && openThread() && !openThread()?.archived}>
-                              <ThreadMenu onRename={() => void renameThread()} onArchive={() => void archiveThread()} />
-                            </Show>
-                            <Show when={current().channel && current().member}>
-                              <Dropdown.Root
-                                position="bottom-right"
-                                items={[
-                                  {
-                                    label: t().unsubscribe,
-                                    icon: "ti ti-bell-off",
-                                    description: t().unsubscribeDescription,
-                                    disabled: unsubscribing(),
-                                    action: () => void unsubscribe(),
-                                  },
-                                ]}
-                              >
-                                <Dropdown.Trigger iconOnly label={t().chatActions({ title: current().title })}>
-                                  <i class="ti ti-dots" />
-                                </Dropdown.Trigger>
-                              </Dropdown.Root>
-                            </Show>
-                            <Show when={system() && openThread()?.resource && openThread()?.following !== undefined ? openThread() : null}>
-                              {(thread) => (
-                                <FollowToggle
-                                  following={thread().following === true}
-                                  onToggle={(on) =>
-                                    store ? store.follow(current().id, thread().id, on) : Promise.reject(new Error("Chat is not live yet"))
-                                  }
-                                />
-                              )}
-                            </Show>
-                            {infoLink(current())}
-                          </>
-                        }
-                        chatId={current().id}
-                        muted={current().notifications?.level === "none"}
-                        title={system() && openThread() ? openThread()!.name : current().title}
-                        resource={system() ? (openThread()?.resource ?? undefined) : undefined}
-                        // A wider window picks the thread beside the title; a phone and a window with the thread column
-                        // name the thread as the title instead. CSS decides, so server and browser render the same head.
-                        titleExtra={
-                          threaded() ? (
-                            <span class="chat-conversation__picker">
-                              <ThreadPicker
-                                chatId={current().id}
-                                threads={openChat()?.threads ?? null}
-                                unread={current().unread}
-                                view={openChat()?.view ?? "all"}
-                                basePath={basePath}
-                                canAdmin={canCreateThread()}
-                                system={system()}
-                                total={current().summaryCursor == null ? current().threads : undefined}
-                                creating={creatingThread()}
-                                onOverview={openOverview}
-                                onSelect={(view) => void openView(current().id, view)}
-                                onCreate={() => void createThread()}
-                              />
-                            </span>
-                          ) : undefined
-                        }
-                        wideTitle={
-                          threaded()
-                            ? {
-                                title: viewTitle(),
-                                chat: current().title,
-                                subtitle:
-                                  openChat()?.view === "all"
-                                    ? `${current().title} · ${t().allThreadsHint}`
-                                    : openChat()?.view === "general"
-                                      ? `${current().title} · ${t().generalHint}`
-                                      : (openThread()?.description ?? current().title),
-                              }
-                            : undefined
-                        }
-                        backHref={threaded() ? listHref(threadsPageHref(current().id)) : undefined}
-                        draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
-                        notice={draftNotice()}
-                        composerNotice={
-                          notice() ? (
-                            <Show when={readFailure()} fallback={notice()}>
-                              {readNotice()}
-                            </Show>
-                          ) : undefined
-                        }
-                        placeholder={placeholder()}
-                        target={threaded() ? (openChat()?.view === "all" ? generalName() : viewTitle()) : undefined}
-                        reply={
-                          reply()
-                            ? {
-                                author: reply()?.authorName ?? "",
-                                text: reply()?.body ?? "",
-                                onCancel: () => setReply(null),
-                                onSelect: () => {
-                                  const answered = reply();
-                                  if (answered?.messageId) void jumpTo(current().id, answered.messageId);
-                                },
-                              }
-                            : undefined
-                        }
-                        onReply={notice() ? undefined : (item) => setReply(item)}
-                        replyHint={replyHint}
-                        unreadHint={unreadHint}
-                        listHref={listHref()}
-                        memberCount={current().memberCount}
-                        subtitle={
-                          system() && openThread()
-                            ? current().title
-                            : system()
-                              ? systemMembers(current().resource?.type, t())
-                              : current().channel
-                                ? t().subscribers({ count: current().memberCount })
-                                : undefined
-                        }
-                        items={items()}
-                        hasOlder={openChat()?.hasOlder ?? false}
-                        hasNewer={openChat()?.hasNewer ?? false}
-                        onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
-                        onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
-                        onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
-                        focusKey={focusKey()}
-                        canWrite={
-                          composerReady() &&
-                          !busy() &&
-                          current().permission !== "read" &&
-                          (system() || current().member) &&
-                          !draftStorageFailed() &&
-                          draftConflicts()[draftId(route()) ?? ""] === undefined
-                        }
-                        hint={
-                          <Show
-                            when={readFailure()}
-                            fallback={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
-                          >
-                            {readNotice()}
-                          </Show>
-                        }
-                        draft={draft()}
-                        onDraftChange={changeDraft}
-                        onSend={send}
-                        // A discard that fails leaves the file to the nightly cleanup of unsent uploads (24 hours).
-                        onDiscard={(attachment) => void uploads.discard(current().id, attachment).catch(() => {})}
-                        onUpload={(file, signal) =>
-                          uploads.upload(
-                            current().id,
-                            openChat()?.view && !["all", "general"].includes(openChat()!.view) ? openChat()!.view : null,
-                            file,
-                            signal,
-                          )
-                        }
-                        people={{
-                          search: async (query, signal) =>
-                            (
-                              await forYouApi.candidates(
-                                current().id,
-                                query,
-                                openChat()?.view && openChat()!.view !== "all" ? openChat()!.view : "general",
-                                signal,
-                              )
-                            ).items.map((candidate) => ({
-                              id: `${candidate.principal.type}:${candidate.principal.id}`,
-                              name: candidate.name,
-                              agent: candidate.agent,
-                            })),
-                        }}
-                        cards={cards()}
-                        onPickResource={pickResource}
-                        onBack={threaded() ? backToThreads : backToList}
-                        busy={busy()}
-                        dateConfig={props.dateConfig}
-                        now={now}
-                        controller={(controller) => {
-                          feed = controller;
-                        }}
-                        markerKey={marker()}
-                        unreadGap={unreadGap() ? { key: unreadGap()?.key ?? null, jump: () => void jumpUnreadGap() } : undefined}
-                        onVisibleChange={reportVisible}
-                        onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
-                        reactions={(id) => reactionsById().get(id) ?? []}
-                        onReact={react}
-                        onEdit={
-                          current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "edit") : undefined
-                        }
-                        onDelete={
-                          current().permission !== "read" && (system() || current().member) ? (item) => mutate(item, "delete") : undefined
-                        }
-                        onCopy={copy}
-                        // With the info open, Esc closes it first; the workspace owns that.
-                        onEscape={() => panel() === null && markOpenRead()}
-                      />
-                    )}
-                  </Show>
+              <AppWorkspace.MainPane
+                id="chat-threads"
+                label={t().threadsIn({ title: conversation()?.title ?? "" })}
+                class="chat-thread-pane"
+                defaultSize={336}
+                minSize={288}
+                maxSize={480}
+                scroll={false}
+              >
+                <Show when={threaded() && !route().threads ? conversation() : null}>
+                  {(current) => (
+                    <ChatThreadColumn
+                      conversation={current()}
+                      basePath={basePath}
+                      canCreate={canCreateThread()}
+                      creating={creatingThread()}
+                      revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
+                      threads={openChat()?.threads ?? null}
+                      status={openChat()?.threadsStatus ?? "loading"}
+                      view={openChat()?.view ?? "all"}
+                      viewerId={props.viewerId}
+                      dateConfig={props.dateConfig}
+                      now={now}
+                      onOpen={(view, navigation) => openView(current().id, view, navigation)}
+                      onCreate={() => void createThread()}
+                      onRetry={() => void store?.refreshThreads()}
+                    />
+                  )}
                 </Show>
-              </Match>
-              <Match when={noAccess()}>
-                <Placeholder
-                  variant="panel"
-                  class="flex-1"
-                  icon="ti ti-lock"
-                  title={t().threadUnavailable}
-                  action={
-                    <Link href={basePath} onNavigate={backToList}>
-                      {t().backToChats}
-                    </Link>
-                  }
-                  description={t().noAccessDescription}
-                />
-              </Match>
-              <Match when={true}>
-                <nav class="chat-list-page" aria-label={t().chats}>
-                  {listContent()}
-                </nav>
-                <div class="chat-select">
-                  <Placeholder
-                    variant="panel"
-                    class="flex-1"
-                    icon="ti ti-messages"
-                    title={rows().length ? t().selectChatTitle : t().noChatsTitle}
-                    description={rows().length ? t().selectChatDescription : t().noChatsDescription}
+              </AppWorkspace.MainPane>
+              <Switch>
+                <Match when={route().forYou}>
+                  <ForYou
+                    initial={takeInitialForYou()}
+                    revision={forYouRevision()}
+                    basePath={basePath}
+                    dateConfig={props.dateConfig}
+                    now={now}
+                    onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
+                    onBack={backToList}
                   />
-                </div>
-              </Match>
-            </Switch>
+                </Match>
+                <Match when={route().channels}>
+                  <DiscoverChannels
+                    initial={takeInitialChannelPage()}
+                    query={route().query ?? ""}
+                    onQuery={(query) => {
+                      setRoute({ ...route(), query });
+                      // Typing only rewrites the address; it never animates the page.
+                      navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
+                        replace: true,
+                        scroll: "preserve",
+                        viewTransition: false,
+                      });
+                    }}
+                    revision={channelRevision()}
+                    onSubscribe={subscribe}
+                    onOpen={(id) => openChosen(id)}
+                    onBack={backToList}
+                    listHref={basePath}
+                  />
+                </Match>
+                <Match when={threadsPageOpen()}>{(current) => threadsPageView(current())}</Match>
+                <Match when={openChat()?.id}>{conversationView()}</Match>
+                <Match when={noAccess()}>{noAccessView()}</Match>
+                <Match when={true}>
+                  <nav class="chat-list-page" aria-label={t().chats}>
+                    {listContent()}
+                  </nav>
+                  <div class="chat-select">
+                    <Placeholder
+                      variant="panel"
+                      class="flex-1"
+                      icon="ti ti-messages"
+                      title={rows().length ? t().selectChatTitle : t().noChatsTitle}
+                      description={rows().length ? t().selectChatDescription : t().noChatsDescription}
+                    />
+                  </div>
+                </Match>
+              </Switch>
+            </Show>
           </AppWorkspace.Main>
           <AppWorkspace.Detail
             id="chat-info"

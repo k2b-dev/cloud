@@ -325,6 +325,11 @@ jobs:
       CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
       CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
       CLOUD_TEST_GOTENBERG_URL: http://127.0.0.1:3001
+      CLOUD_TEST_S3_ENDPOINT: http://127.0.0.1:3900
+      CLOUD_TEST_S3_BUCKET: cloud-test
+      CLOUD_TEST_S3_ACCESS_KEY_ID: GK0123456789abcdef01234567
+      CLOUD_TEST_S3_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      CLOUD_TEST_S3_REGION: garage
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -334,8 +339,9 @@ jobs:
         run: |
           set -euo pipefail
           # The Files Filegate suites, the Notebooks shared-log suite and the Assistant artifact suite start their own containers from these images.
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0 dxflrs/garage:v2.3.0
           docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
+          docker compose -f compose.test-s3.yml up -d --wait
           "$GITHUB_WORKSPACE/.github/poppler.sh" install
           curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
       - uses: ./.github/actions/install
@@ -348,7 +354,10 @@ jobs:
       # Grids certification runs in its own sharded job below.
       - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/3 --max-minutes 20
       - if: always()
-        run: docker rm --force ci-nats
+        run: |
+          docker compose -f compose.test-s3.yml logs
+          docker compose -f compose.test-s3.yml down --volumes
+          docker rm --force ci-nats
 
   grids:
     needs: [changes, setup, mirror]

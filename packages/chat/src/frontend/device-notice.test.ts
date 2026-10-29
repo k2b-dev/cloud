@@ -22,10 +22,10 @@ test("the remembered notice survives the cookie, and anything else reads as none
     expect(parseDeviceNotice(value, now)).toEqual({ kind: "none" });
 });
 
-test("the cookie is scoped to Chat and kept for a year", () => {
+test("the cookie covers Chat in the browser and in the Cloud app and is kept for a year", () => {
   const cookie = deviceNoticeCookie({ kind: "quiet", reason: "doNotDisturb", until: "2026-10-28T12:00:00.000Z" });
   expect(cookie).toStartWith(`${CHAT_DEVICE_NOTICE_COOKIE}=doNotDisturb.2026-10-28T12%3A00%3A00.000Z;`);
-  expect(cookie).toContain("Path=/app/chat");
+  expect(cookie).toContain("Path=/;");
   expect(cookie).toContain("SameSite=Lax");
   expect(cookie).toContain(`Max-Age=${365 * 24 * 60 * 60}`);
 });

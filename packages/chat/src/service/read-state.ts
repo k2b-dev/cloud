@@ -23,6 +23,7 @@ import {
   type ReadState,
   type ReadUpdateSchema,
   UNREAD_CAP,
+  UNREAD_TOTAL_CAP,
 } from "./contracts";
 import { chatLive } from "./live";
 import { publishForYouRead } from "./mention-store";
@@ -409,4 +410,44 @@ const readAll = async (input: ChatContext & { input: unknown }): Promise<Result<
   if (result.ok && result.data.outcome === "done" && result.data.marked) chatLive.wake();
   return result;
 };
-export const readState = { read, markUnread, readAll };
+/** The reader's readable chats with unread messages, newest activity first. */
+const unreadChats = (
+  db: typeof sql,
+  input: ChatContext,
+  bound: Extract<ReturnType<typeof boundConversation>, { ok: true }>["data"],
+  limit: number,
+) => {
+  const self = subjectPrincipal(input.accessSubject);
+  return db<{ id: string }[]>`SELECT c.id FROM chat.conversations c
+    JOIN chat.participants p ON p.conversation_id = c.id AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid
+    WHERE EXISTS (SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = c.id AND ${readableMemberCondition(input.accessSubject, bound, db)})
+    AND EXISTS (SELECT 1 FROM (${threadStates(db, input.accessSubject, db`c.id`)}) states
+      WHERE states.unread > 0)
+    ORDER BY c.last_activity_at DESC, c.short_id DESC LIMIT ${limit}`;
+};
+
+/**
+ * Unread messages across all of the reader's chats, not only the first page of the list, up to `UNREAD_TOTAL_CAP`.
+ * Every chat counted has at least one, so reading that many chats is enough to reach the cap.
+ */
+const unreadTotal = async (input: ChatContext): Promise<Result<{ count: number }>> => {
+  const bound = boundConversation(input.actor, input.locale);
+  if (!bound.ok) return bound;
+  if (capPermission("read", input.actor) === "none") return ok({ count: 0 });
+  const chats = await unreadChats(sql, input, bound.data, UNREAD_TOTAL_CAP);
+  if (!chats.length) return ok({ count: 0 });
+  const rows = await sql<ReadProjection[]>`${unreadQuery(
+    sql,
+    input.accessSubject,
+    chats.map((chat) => chat.id),
+  )}`;
+  return ok({
+    count: Math.min(
+      UNREAD_TOTAL_CAP,
+      rows.reduce((sum, row) => sum + row.unread, 0),
+    ),
+  });
+};
+
+export const readState = { read, markUnread, readAll, unreadTotal };
