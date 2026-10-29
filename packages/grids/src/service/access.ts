@@ -69,11 +69,14 @@ type ScopedAccessEntry = AccessEntry & {
   tableName: null;
 };
 
-export const lockBaseAuthorization = async (baseIds: readonly string[], client: SqlClient): Promise<void> => {
+export const lockBaseAuthorization = async (baseIds: readonly string[], client: SqlClient, options?: { nowait: true }): Promise<void> => {
+  // Account-holding callers must fail before waiting on a base mutex whose
+  // owner may itself be waiting for these tables during a deletion cascade.
+  if (options?.nowait) await client`LOCK TABLE auth.user_groups_v2, auth.group_groups_v2, auth.service_account_groups IN SHARE MODE NOWAIT`;
   for (const baseId of [...new Set(baseIds)].sort()) {
     await client`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:base-authorization:${baseId}`}, 0))`;
   }
-  await client`LOCK TABLE auth.user_groups_v2, auth.group_groups_v2, auth.service_account_groups IN SHARE MODE`;
+  if (!options?.nowait) await client`LOCK TABLE auth.user_groups_v2, auth.group_groups_v2, auth.service_account_groups IN SHARE MODE`;
 };
 
 export const hasTransactionalBaseAdmin = async (

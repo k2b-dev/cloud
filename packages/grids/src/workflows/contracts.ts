@@ -67,6 +67,7 @@ export type GridsWorkflowPrincipal = {
   /** The authenticating service account, including delegated-user credentials. */
   actorServiceAccountId?: string | null;
   credential?: GridsWorkflowCredential | null;
+  mandate?: { id: string; revision: number; workflowId: string } | null;
 };
 
 export const GridsWorkflowPrincipalSchema = z
@@ -76,6 +77,7 @@ export const GridsWorkflowPrincipalSchema = z
     serviceAccountId: z.string().uuid().nullable(),
     actorServiceAccountId: z.string().uuid().nullable().default(null),
     credential: GridsWorkflowCredentialSchema.nullable().default(null),
+    mandate: z.object({ id: z.uuid(), revision: z.number().int().positive(), workflowId: z.uuid() }).strict().nullable().optional(),
   })
   .strict();
 
@@ -622,3 +624,28 @@ export const WorkflowAutocompleteResponseSchema = z.object({
 });
 
 export type WorkflowAutocompleteResponse = z.infer<typeof WorkflowAutocompleteResponseSchema>;
+
+export const WorkflowMachineAuthoritySchema = z.object({
+  hasHumanOwner: z.boolean(),
+  serviceAccountId: z.uuid().nullable(),
+  name: z.string().nullable(),
+  kind: z.enum(["standalone", "agent"]).nullable(),
+  accountStatus: z.string().nullable(),
+  mandate: z
+    .object({ id: z.uuid(), state: z.enum(["active", "paused", "revoked"]), revision: z.number().int(), permissionCap: z.literal("write") })
+    .nullable(),
+  canConfigure: z.boolean(),
+});
+
+const WorkflowMachineAuthoritySnapshotSchema = z
+  .object({
+    serviceAccountId: z.uuid().nullable(),
+    mandate: z.object({ id: z.uuid(), revision: z.number().int().positive() }).strict().nullable(),
+  })
+  .strict();
+
+export const WorkflowMachineAuthorityChangeSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("assign"), serviceAccountId: z.uuid(), expected: WorkflowMachineAuthoritySnapshotSchema }).strict(),
+  z.object({ action: z.enum(["pause", "resume", "revoke"]), expected: WorkflowMachineAuthoritySnapshotSchema }).strict(),
+]);
+export type WorkflowMachineAuthorityChange = z.infer<typeof WorkflowMachineAuthorityChangeSchema>;
