@@ -26,7 +26,8 @@ const states = {
   all: { unread: 120, mention: true, muted: true },
   mutedOnly: { muted: true },
 };
-const counted = new Set(["one", "many", "mention", "all"]);
+// A muted item is set aside: its count stays, but its label keeps the regular weight.
+const counted = new Set(["one", "many", "mention"]);
 // Each row variant and container, with the states it is checked in.
 const groups = {
   flat: Object.keys(states),

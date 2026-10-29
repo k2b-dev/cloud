@@ -46,8 +46,12 @@ const load = async (
   });
   const page = await context.newPage();
   if (extra.device?.permission) {
+    // A browser that can push: WebKit's test build lacks the Push API, which the device line needs to decide.
     await page.addInitScript((permission) => {
-      Object.defineProperty(Notification, "permission", { configurable: true, get: () => permission });
+      const target = window as unknown as Record<string, unknown>;
+      if (!("PushManager" in window)) target.PushManager = class {};
+      if (!("Notification" in window)) target.Notification = class {};
+      Object.defineProperty(target.Notification as object, "permission", { configurable: true, get: () => permission });
     }, extra.device.permission);
   }
   const quiet = extra.device?.quiet;
