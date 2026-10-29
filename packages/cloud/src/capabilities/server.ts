@@ -1,4 +1,8 @@
-import { resolveCapabilityActionWording, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import {
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityActionWording,
+  resolveCapabilityManifestPresentation,
+} from "../_internal/capabilities";
 import type { CapabilityActionWording } from "../_internal/capability-sentences";
 import { getApp, getCapability } from "../_internal/registry";
 import { dispatchCapability } from "../api/capabilities";
@@ -37,18 +41,22 @@ export const getCapabilityCatalogApp = async (
   try {
     const [capability, registeredApp] = await Promise.all([getCapability(appId), getApp(appId)]);
     const presentedApp = registeredApp && locale ? resolveAppPresentation(registeredApp, locale) : registeredApp;
+    const manifest =
+      capability &&
+      (locale ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale) : capability.manifest);
     return {
       ok: true,
       data:
-        capability && registeredApp && (await canUseApp(authority, registeredApp))
+        capability && registeredApp && manifest && (await canUseApp(authority, registeredApp))
           ? {
               appId: capability.appId,
               appName: presentedApp?.name ?? capability.appName,
               appIcon: capability.appIcon,
               appDescription: presentedApp?.description ?? capability.appDescription,
-              manifest: locale
-                ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale)
-                : capability.manifest,
+              manifest: {
+                ...manifest,
+                queries: manifest.queries.filter(isPersonVisibleCapabilityQuery),
+              },
             }
           : null,
     };
@@ -81,6 +89,7 @@ export const reviewCapabilityAction = async <TInput = unknown>(
   caller: CapabilityCaller,
 ): Promise<CapabilityReviewClientResult> => {
   try {
+    if (caller.workload) throw new Error("App query authority cannot review Actions");
     if (caller.authority) {
       if (caller.authorization || caller.cookie || caller.mandate || caller.transport)
         throw new Error("Use exactly one capability authority source");
@@ -132,7 +141,7 @@ export async function transferCapabilityStream(
   caller: CapabilityCaller,
   body?: BodyInit,
 ): Promise<Response> {
-  if (caller.mandate) throw new Error("Capability streams do not support background mandates yet");
+  if (caller.mandate || caller.workload) throw new Error("Capability streams require request authority");
   const path = `/api/capabilities/v1/streams/${verb}`;
   const headers = new Headers();
   headers.set("x-cloud-stream-id", stream.id);
@@ -172,6 +181,8 @@ export {
   listCalendarSources,
   readCalendarEvents,
 } from "./calendar-sources";
+export { type DiscussionProvider, discussionProviders } from "./discussion-providers";
+export { type ResourceReadersResult, readResourcePrincipals } from "./resource-readers";
 export {
   actionReview,
   type CapabilityReviewForms,

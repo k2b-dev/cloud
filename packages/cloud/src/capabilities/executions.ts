@@ -63,7 +63,7 @@ export type CapabilityExecutionInput = {
   capability: string;
   kind: "query" | "action";
   destructive: boolean;
-  actorKind?: "user" | "service_account" | null;
+  actorKind?: "user" | "service_account" | "app" | null;
   actorId?: string | null;
   userId?: string | null;
   /** Recorded only when the access subject differs from the acting principal. */
@@ -90,7 +90,7 @@ export type CapabilityExecution = {
   capability: string;
   kind: "query" | "action";
   destructive: boolean;
-  actorKind: "user" | "service_account" | null;
+  actorKind: "user" | "service_account" | "app" | null;
   actorId: string | null;
   userId: string | null;
   accessSubjectType: "user" | "service_account" | null;

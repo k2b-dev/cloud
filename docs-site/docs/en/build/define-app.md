@@ -285,7 +285,7 @@ The remaining options declare application-owned contributions:
 | Option | Contribution | Reference |
 | --- | --- | --- |
 | `settings` | Typed runtime configuration | [Settings](/en/docs/platform/settings) |
-| `platformPermissions` | Requested platform permissions: `"mail:send"` to send outgoing mail, `"mail:read"` to read other apps' mail an operator grants | [Outgoing mail](/en/docs/platform/outgoing-mail) |
+| `platformPermissions` | Requested platform permissions: `"mail:send"` to send outgoing mail, `"mail:read"` to read other apps' mail an operator grants, `"resources:readers"` for app-authority reader checks | [Outgoing mail](/en/docs/platform/outgoing-mail), [App reader checks](/en/docs/platform/app-to-app-queries) |
 | `notifications` | Notification definitions the application may send | [Notifications](/en/docs/platform/notifications) |
 | `skills` | Assistant Skills the application ships, from `src/skills.ts` | [Ship Assistant Skills](/en/docs/platform/assistant-skills) |
 | `widgets` | Dashboard widget endpoints | [Dashboard widgets](/en/docs/platform/dashboard-widgets) |
