@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { AppPwaActor } from "../../app-pwa/contracts";
 import type { AccessSubject, CapabilityExecutionContext, RequestActor } from "../../contracts";
 import {
   GeoAutocompleteDataSchema,
@@ -26,16 +27,26 @@ import { createGeoRouteService } from "./route-service";
 import { type GeoConfig, geoPlan, readGeoConfig } from "./settings";
 
 export type GeoContext = Partial<Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale" | "signal" | "requestId">>;
+/** Internal, narrow App-PWA autocomplete adapter; never a RequestActor or capability caller. */
+export type AppPwaGeoContext = { actor: AppPwaActor; locale?: string; signal?: AbortSignal; requestId?: string };
+type GeoCallContext = GeoContext | AppPwaGeoContext;
 export const geoIdentity = (context: GeoContext): { actor: RequestActor; accessSubject: AccessSubject } => {
   const { actor, accessSubject } = context;
   if (
     !actor ||
     !accessSubject ||
-    !(actor.kind === "user" ? actor.user?.id : actor.serviceAccount?.id) ||
+    !(actor.kind === "user" ? actor.user?.id : actor.kind === "service_account" ? actor.serviceAccount?.id : undefined) ||
     !(accessSubject.type === "user" ? accessSubject.userId : accessSubject.serviceAccountId)
   )
     throw new GeoError("GEO_FORBIDDEN");
   return { actor, accessSubject };
+};
+const geoCallIdentity = (context: GeoCallContext): { actor: RequestActor | AppPwaActor; accessSubject: AccessSubject } => {
+  if (context.actor?.kind === "device" || context.actor?.kind === "visit") {
+    if (!context.actor.ownerUserId) throw new GeoError("GEO_FORBIDDEN");
+    return { actor: context.actor, accessSubject: { type: "user", userId: context.actor.ownerUserId } };
+  }
+  return geoIdentity({ actor: context.actor, accessSubject: "accessSubject" in context ? context.accessSubject : undefined });
 };
 const bound = (name: string, value: number, min: number, max: number, integer = false) => {
   if (!Number.isFinite(value) || value > max || value < min || (integer && !Number.isInteger(value)))
@@ -84,10 +95,10 @@ export const createGeoService = (
   const recordTransition = async (
     event: "monthly_budget_exhausted" | "provider_key_rejected" | "route_cost_overrun",
     timezone: string,
-    context: GeoContext,
+    context: GeoCallContext,
     metadata?: Record<string, number>,
   ) => {
-    const identity = geoIdentity(context);
+    const identity = geoCallIdentity(context);
     try {
       await ledger.recordTransition(event, timezone, { ...context, ...identity }, now(), metadata);
       return true;
@@ -107,7 +118,7 @@ export const createGeoService = (
   const paid = async <T>(
     fn: GeoFunction,
     input: unknown,
-    context: GeoContext,
+    context: GeoCallContext,
     settings: GeoConfig,
     schema: z.ZodType<T>,
     request: (signal: AbortSignal) => Promise<T>,
@@ -115,7 +126,7 @@ export const createGeoService = (
     cacheInput = input,
     empty: (value: T) => boolean = () => false,
   ): Promise<T> => {
-    const identity = geoIdentity(context);
+    const identity = geoCallIdentity(context);
     const locale = context.locale ?? "en";
     const key = geoCacheKey(fn, cacheInput, locale);
     const hit = await cache.get(key, schema);
@@ -176,29 +187,37 @@ export const createGeoService = (
       await release();
     }
   };
+  const autocomplete = async (input: GeoAutocompleteInput, context: GeoCallContext) => {
+    geoCallIdentity(context);
+    const settings = await config();
+    if (!settings.apiKey.trim()) throw new GeoError("GEO_NOT_CONFIGURED");
+    const value = parse(GeoAutocompleteInputSchema, input);
+    bound("text", value.text.length, 3, 300);
+    bound("text", value.text.trim().length, 3, 300);
+    bound("limit", value.limit ?? 5, 1, 5, true);
+    country(value.countryCode);
+    area(value.area);
+    return paid(
+      "autocomplete",
+      value,
+      context,
+      settings,
+      GeoAutocompleteDataSchema,
+      (signal) => adapter.autocomplete(value, settings.apiKey, context.locale ?? "en", signal),
+      value.limit,
+      { ...value, limit: value.limit ?? 5 },
+      (result) => !result.suggestions.length,
+    );
+  };
   const routes = createGeoRouteService({ configured, adapter, cache, bucket, ledger, now, recordTransition });
   return {
     ...routes,
-    async autocomplete(input: GeoAutocompleteInput, context: GeoContext) {
-      const settings = await configured(context);
-      const value = parse(GeoAutocompleteInputSchema, input);
-      bound("text", value.text.length, 3, 300);
-      bound("text", value.text.trim().length, 3, 300);
-      bound("limit", value.limit ?? 5, 1, 5, true);
-      country(value.countryCode);
-      area(value.area);
-      return paid(
-        "autocomplete",
-        value,
-        context,
-        settings,
-        GeoAutocompleteDataSchema,
-        (signal) => adapter.autocomplete(value, settings.apiKey, context.locale ?? "en", signal),
-        value.limit,
-        { ...value, limit: value.limit ?? 5 },
-        (result) => !result.suggestions.length,
-      );
+    autocomplete: async (input: GeoAutocompleteInput, context: GeoContext) => {
+      geoIdentity(context);
+      return autocomplete(input, context);
     },
+    // Only the App-PWA service calls this after locking the pairing and optional visit authority.
+    autocompleteForAppPwa: (input: GeoAutocompleteInput, context: AppPwaGeoContext) => autocomplete(input, context),
     async geocode(input: GeoGeocodeInput, context: GeoContext) {
       const settings = await configured(context);
       const value = parse(GeoGeocodeInputSchema, input);
