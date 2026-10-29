@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { appHostCss } from "../../ui/test/app-host-fixture";
-import { launchBrowser } from "../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../ui/test/browser";
 
 const ui = resolve(import.meta.dir, "../../ui");
 let browser: Awaited<ReturnType<typeof launchBrowser>>;
@@ -57,12 +57,11 @@ for (const width of [390, 768, 1440])
       let writes: unknown[];
       beforeEach(async () => {
         tab = await browser.newPage({ viewport: { width, height: 900 } });
-        errors = [];
         added = false;
         revoked = false;
         failRevoke = true;
         writes = [];
-        tab.on("pageerror", (error) => errors.push(error.message));
+        errors = pageErrors(tab);
         await tab.clock.install({ time: new Date("2026-10-23T12:00:00Z") });
         await tab.route("https://cloud.example.test/api/**", async (route) => {
           const req = route.request(),
@@ -89,6 +88,9 @@ for (const width of [390, 768, 1440])
             });
           }
           if (url.pathname.endsWith("/action-notice")) return route.fulfill({ json: { markdown: null, failed: false } });
+          // The shell reads the capability catalog on its own; it is not a membership write.
+          if (url.pathname.endsWith("/capabilities/v1/catalog"))
+            return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
           writes.push({ method: req.method(), body: req.postDataJSON() });
           if (req.method() === "POST") added = true;
           else if (failRevoke) return route.fulfill({ status: 409, json: { message: "Refresh the group and try again" } });
