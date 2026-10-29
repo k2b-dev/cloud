@@ -39,6 +39,7 @@ import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
 import SharesOverview from "./SharesOverview";
 import StorageOverview from "./StorageOverview";
+import { searchRequest, searchState } from "./search-state";
 import TrashView from "./TrashView";
 import { snapshotTitle } from "./trail";
 import { UploadSurface } from "./UploadPanel";
@@ -123,28 +124,42 @@ export default function Workspace(props: {
         editor = await response.json();
       } else if (!filters && selected?.status === "existing" && view !== "trash") {
         // Activity loads and pages its own entries, so its filters can change without leaving the view.
-        const query = {
-          path: url.searchParams.get("path") ?? "",
-          after: url.searchParams.get("after") ?? undefined,
-          ...browseQuery(browseOptions(url.searchParams, preference(selected.id))),
-        };
-        const q = url.searchParams.get("q")?.trim();
-        const response = q
+        const page = { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined };
+        const search = searchState(url.searchParams);
+        const response = search
           ? await apiClient.bases[":baseId"].search.$get(
-              {
-                param: { baseId: selected.id },
-                query: { ...query, q, scope: url.searchParams.get("scope") === "folder" ? "folder" : "tree" },
-              },
+              { param: { baseId: selected.id }, query: { ...page, ...searchRequest(search) } },
               { init: { signal } },
             )
-          : await apiClient.bases[":baseId"].entries.$get({ param: { baseId: selected.id }, query }, { init: { signal } });
+          : await apiClient.bases[":baseId"].entries.$get(
+              {
+                param: { baseId: selected.id },
+                query: { ...page, ...browseQuery(browseOptions(url.searchParams, preference(selected.id))) },
+              },
+              { init: { signal } },
+            );
         if (!response.ok) {
-          const error = ErrorSchema.safeParse(await response.json());
-          if (query.after && !signal.aborted && error.success && error.data.code === "cursor_invalid") invalidCursors.add(source);
-          // An old folder address: the same lookup as SSR; without visible history it stays an error.
-          if (Number(response.status) === 404 && !q && query.path && !query.after)
-            moved = await movedLookup(selected.id, query.path, signal).catch(() => null);
-          if (!moved) throw new Error(error.success ? error.data.message : t().unavailable);
+          const error = ErrorSchema.safeParse(await response.json().catch(() => null));
+          const code = error.success ? error.data.code : "unavailable";
+          if (page.after && !signal.aborted && code === "cursor_invalid") invalidCursors.add(source);
+          // A failed search stays a search, so its field and filters can narrow it.
+          if (search && code !== "cursor_invalid" && !signal.aborted)
+            directory = {
+              base: selected,
+              path: page.path,
+              items: [],
+              next: null,
+              query: search.q,
+              scope: search.scope,
+              total: null,
+              failure: code,
+            };
+          else {
+            // An old folder address: the same lookup as SSR; without visible history it stays an error.
+            if (Number(response.status) === 404 && !search && page.path && !page.after)
+              moved = await movedLookup(selected.id, page.path, signal).catch(() => null);
+            if (!moved) throw new Error(error.success ? error.data.message : t().unavailable);
+          }
         } else directory = await response.json();
       }
       return {
@@ -311,6 +326,12 @@ export default function Workspace(props: {
   };
   const currentBrowse = () =>
     browseOptions(new URL(snapshot().source, "https://files.invalid").searchParams, preference(snapshot().selectedId ?? ""));
+  const currentSearch = () => searchState(new URL(snapshot().source, "https://files.invalid").searchParams);
+  /** A search is on its way: the results area waits for it instead of showing the previous page. */
+  const pendingSearch = () => {
+    const target = workspace.pendingSource();
+    return !!target && !!searchState(new URL(target, "https://files.invalid").searchParams);
+  };
   const [marksRevision, setMarksRevision] = createSignal(0);
   const dialogLifetime = new AbortController();
   onCleanup(() => dialogLifetime.abort());
@@ -493,7 +514,7 @@ export default function Workspace(props: {
   };
   createEffect(() => {
     const directory = snapshot().directory;
-    if (!directory || directory.query) return;
+    if (!directory || directory.query !== undefined) return;
     if (!directory.next && !after() && currentBrowse().type !== "files") {
       mergeFolders(
         treeId(directory.base.id, directory.path),
@@ -521,7 +542,14 @@ export default function Workspace(props: {
     let polling = false;
     const timer = setInterval(async () => {
       const directory = snapshot().directory;
-      if (polling || document.visibilityState !== "visible" || workspace.pending() || !directory || directory.query || currentView())
+      if (
+        polling ||
+        document.visibilityState !== "visible" ||
+        workspace.pending() ||
+        !directory ||
+        directory.query !== undefined ||
+        currentView()
+      )
         return;
       polling = true;
       const request = new AbortController();
@@ -1020,13 +1048,14 @@ export default function Workspace(props: {
                             onOpenDirectory={(path) =>
                               goTree(
                                 treeId(directory().base.id, path),
-                                filesUrl(directory().base.id, path, null, null, null, null, currentBrowse()),
+                                filesUrl(directory().base.id, path, null, null, null, currentBrowse()),
                               )
                             }
                             onOpenOverview={hasOverview() ? () => void go(filesUrl()) : undefined}
                             onOpenTrash={() => void go(viewUrl(directory().base.id, "trash"))}
-                            onSearch={(query) =>
-                              void go(filesUrl(directory().base.id, directory().path, null, null, query, null, currentBrowse()))
+                            pendingSearch={pendingSearch()}
+                            onSearch={(search) =>
+                              void go(filesUrl(directory().base.id, directory().path, null, null, search, currentBrowse()))
                             }
                             onSearchHistory={(query) => void go(activityUrl({ q: query }))}
                             history={{
@@ -1036,25 +1065,13 @@ export default function Workspace(props: {
                               activityHref: (baseId, path, scope) =>
                                 activityUrl({ baseId, path, ...(scope === "folder" ? { scope } : {}) }),
                             }}
-                            onBrowseChange={(options) =>
-                              void go(
-                                filesUrl(directory().base.id, directory().path, null, null, directory().query, directory().scope, options),
-                              )
-                            }
+                            onBrowseChange={(options) => void go(filesUrl(directory().base.id, directory().path, null, null, null, options))}
                             onChanged={(selectPath) => {
                               setMarksRevision((value) => value + 1);
                               // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
                               ensureLoaded(Object.keys(folders()), true);
                               return go(
-                                filesUrl(
-                                  directory().base.id,
-                                  directory().path,
-                                  null,
-                                  selectPath ?? null,
-                                  directory().query,
-                                  directory().scope,
-                                  currentBrowse(),
-                                ),
+                                filesUrl(directory().base.id, directory().path, null, selectPath ?? null, currentSearch(), currentBrowse()),
                                 true,
                               );
                             }}

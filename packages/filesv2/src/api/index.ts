@@ -61,6 +61,7 @@ import {
 import { isMarkdown } from "../document-assets";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
+import { SEARCH_REQUEST_SECONDS } from "../service/search";
 import { activityApi } from "./activity";
 import { createActivityActionsApi } from "./activity-actions";
 import { apiError, describeError } from "./api-error";
@@ -165,10 +166,17 @@ const api = new Hono<AuthContext>()
   )
   .get(
     "/bases/:baseId/search",
-    middleware.openapi({ summary: "Search names below an authorized folder", ...requiresAuth }),
+    middleware.openapi({ summary: "Search names and paths below an authorized folder", ...requiresAuth }),
     v("query", SearchQuerySchema),
-    async (c) =>
-      respond(c, ok(await filesService.search(requestCall(c), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+    async (c) => {
+      setRequestTimeout(c, SEARCH_REQUEST_SECONDS);
+      try {
+        const input = { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query"), signal: c.req.raw.signal };
+        return respond(c, ok(await filesService.search(requestCall(c), input)));
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
   )
   .post(
     "/bases/:baseId/directories",

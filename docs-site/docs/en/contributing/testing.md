@@ -236,6 +236,12 @@ before it. After a navigation, a test awaits `viewTransitionEnded(page)` from
 `packages/ui/test/browser.ts` before its next click or Back. See the Info and
 thread tests in `packages/chat/src/frontend`.
 
+After a pointer move, a test waits until the target matches `:hover`, or for
+the control that the hover reveals, before it reads what the hover changes.
+WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
+changes `visibility` starts no animation for `settled()` to wait for. See
+`hover()` in `packages/ui/src/layout/sidebar-row-label-room.browser.test.ts`.
+
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
 condition. `settled()` waits for fonts, for the running finite animations on

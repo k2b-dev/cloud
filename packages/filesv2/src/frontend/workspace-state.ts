@@ -1,17 +1,29 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
 import type { ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
-import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, MarkedEntry, SharePage } from "../contracts";
+import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, FileEntry, MarkedEntry, SharePage } from "../contracts";
 import type { ActivityFilters } from "./history-requests";
 
 /** An old folder address whose item the reader saw move away; shown instead of "not found". */
 export type MovedSnapshot = { baseId: string; path: string; entry: ActivityEntry; chain: ActivityChain };
 
+/**
+ * A folder page or a search page. A search that failed keeps its place with `failure`, the stable error code,
+ * so the search field and filters stay usable to narrow it.
+ */
+export type DirectoryView = Omit<DirectoryResult, "items"> & {
+  items: (FileEntry & { highlight?: [number, number][] })[];
+  query?: string;
+  scope?: "folder" | "tree";
+  total?: number | null;
+  truncated?: boolean;
+  failure?: string;
+};
 export type WorkspaceSnapshot = {
   source: string;
   bases: BasesResult;
   selectedId: string | null;
-  directory: (DirectoryResult & { query?: string; scope?: "folder" | "tree" }) | null;
+  directory: DirectoryView | null;
   errorCode: string | null;
   detail?: EntryResult | null;
   shares?: SharePage;
@@ -110,6 +122,8 @@ export function createWorkspaceState<T extends { source: string }>(options: {
   return {
     snapshot: () => state.data() ?? options.initial,
     pending: () => pending() !== null,
+    /** The address a navigation is loading, or null. */
+    pendingSource: () => pending()?.source ?? null,
     failure,
     navigate,
     // Deferred navigation work belongs to this location and ends on navigation, selection or disposal.
