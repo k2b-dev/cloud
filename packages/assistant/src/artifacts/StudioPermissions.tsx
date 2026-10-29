@@ -4,17 +4,21 @@ import { Button, InlineGuidance, NoticeCard, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, Show } from "solid-js";
 import type { artifactClient } from "./client";
 import { PUBLIC_APP_SHARING } from "./contracts";
+import { MachinePermissions } from "./MachinePermissions";
 import { artifactMessages } from "./messages";
 
 /** The same access contract in Studio and operator administration; public links follow PUBLIC_APP_SHARING. */
 export function StudioPermissions(props: {
+  artifactId?: string;
+  administrative?: boolean;
   entries: AccessEntry[];
   loadProjects: () => ReturnType<typeof artifactClient.projects>;
-  grant: (principal: Exclude<Principal, { type: "service_account" }>, level: "read" | "admin") => Promise<AccessEntry | null>;
+  grant: (principal: Principal, level: "read" | "admin") => Promise<AccessEntry | null>;
   change: (id: string, level: "read" | "admin" | null) => Promise<unknown>;
 }) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
+  const [machineRevision, setMachineRevision] = createSignal(0);
   const [publicIds, setPublicIds] = createSignal(props.entries.filter((e) => e.principal.type === "public").map((e) => e.id));
   const [addingPublic, setAddingPublic] = createSignal(false);
   const [projects, { refetch }] = createResource(props.loadProjects);
@@ -50,7 +54,7 @@ export function StudioPermissions(props: {
         initialEntries={props.entries}
         canEdit
         allowPublic={PUBLIC_APP_SHARING}
-        allowServiceAccounts={false}
+        allowServiceAccounts
         allowedLevels={(principal) =>
           principal.type === "public"
             ? [{ level: "read", label: t().use }]
@@ -60,13 +64,13 @@ export function StudioPermissions(props: {
               ]
         }
         grantAccess={async (principal, level) => {
-          if (principal.type === "service_account" || level === "write" || (principal.type === "public" && level !== "read"))
-            throw new Error(t().INVALID_INPUT);
+          if (level === "write" || (principal.type === "public" && level !== "read")) throw new Error(t().INVALID_INPUT);
           setAddingPublic(principal.type === "public");
           try {
             const entry = await props.grant(principal, level);
             if (!entry) throw new Error(t().REQUEST_FAILED);
             if (principal.type === "public") setPublicIds((ids) => [...ids, entry.id]);
+            setMachineRevision((value) => value + 1);
             return entry;
           } finally {
             setAddingPublic(false);
@@ -75,12 +79,17 @@ export function StudioPermissions(props: {
         updateAccess={async (id, level) => {
           if (level === "write" || (publicIds().includes(id) && level !== "read")) throw new Error(t().INVALID_INPUT);
           await props.change(id, level);
+          setMachineRevision((value) => value + 1);
         }}
         revokeAccess={async (id) => {
           await props.change(id, null);
+          setMachineRevision((value) => value + 1);
           setPublicIds((ids) => ids.filter((value) => value !== id));
         }}
       />
+      <Show when={props.artifactId}>
+        {(id) => <MachinePermissions artifactId={id()} administrative={props.administrative} revision={machineRevision()} />}
+      </Show>
     </div>
   );
 }

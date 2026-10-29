@@ -6,7 +6,7 @@ description: Agententaugliche Befehle für Konten, Gruppen, Anfragen, Audit-Erei
 order: 120
 ---
 
-Die Konten-CLI nutzt dieselben APIs wie die App. Agenten können Kontodaten deshalb ohne Browser auflisten, prüfen und ändern. Linux-Identitäten nutzen eine eigene API, die nur die Administration aufrufen kann.
+Die CLI der App Zugänge nutzt dieselben APIs wie die App. Agenten können Kontodaten deshalb ohne Browser auflisten, prüfen und ändern. Linux-Identitäten nutzen eine eigene API, die nur die Administration aufrufen kann.
 
 ## Die richtige Befehlsgruppe finden {icon="code"}
 

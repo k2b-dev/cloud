@@ -9,10 +9,10 @@ export const accountsSearchMessages = i18n.define({
       unavailable: "Account search requires a full user account.",
     },
     de: {
-      title: "Konten",
+      title: "Zugänge",
       description: "Nutzer, Gruppen und Service Accounts finden, die du öffnen kannst.",
       groups: "Gruppen finden, die du öffnen kannst.",
-      unavailable: "Die Kontensuche benötigt ein vollwertiges Benutzerkonto.",
+      unavailable: "Die Suche unter Zugänge benötigt ein vollwertiges Benutzerkonto.",
     },
   },
 });

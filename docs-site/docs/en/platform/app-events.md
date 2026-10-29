@@ -187,15 +187,48 @@ schema before invoking the handler; `envelope.data` is inferred as
 `filesv2:core.user.created@1`. Inspect the current catalog and subscription
 status rather than assuming that a declaration is deliverable.
 
-`cld capabilities catalog --json` and `--jsonl` include event and subscription
-manifests unchanged. Each app also has an `events` catalog with full event,
-subject and place type IDs, version, title, description, automation flag, data
-JSON Schema and matching subscribers. Subscriber states and `firstSeenAt` come
-from Core's persisted subscription records. Subscriber discovery uses the same app
-access filter, including subscribers outside the current publisher page. Use
-`cld events ls` for the administrative event catalog.
-Event-specific MCP discovery is not yet available; the capability MCP currently
-projects tools and resources.
+## Discover event declarations
+
+`cld capabilities catalog --json` and `--jsonl` include event
+and subscription manifests unchanged. Each app also has an `events` catalog
+with full event, subject and place type IDs, version, title, description,
+automation flag, data JSON Schema and matching subscribers. Subscriber states
+and `firstSeenAt` come from Core's persisted subscription records. Publisher
+and subscriber discovery use the capability catalog's app access filter,
+including subscribers outside the current publisher page.
+
+Administrators can use `cld events ls` for the persisted event catalog,
+including declarations of offline publishers. Its table shows the place type
+(`—` for service events) and automation flag (localized yes/no). Filter by
+publisher with `--app <appId>` and by metadata with `--automation true|false`;
+combine them to narrow the result. `--json` and `--jsonl` retain
+the full filtered `{ events: [...] }` response, including schemas and subscribers.
+
+MCP clients use two read-only tools on the
+[Cloud MCP server](/en/docs/platform/mcp):
+
+- `cloud__events__list` accepts optional `appId`, boolean `automation`, `cursor`,
+  and `limit` (1–100, default 100). It returns `{ events, nextCursor? }`.
+  Each event contains `appId` (publisher), `type`, `version`, `title`,
+  `description`, `subject`, `place` (full Type ID or `null`), and `automation`.
+- `cloud__events__read` accepts the exact `{ type, version }` from discovery.
+  It returns `{ event }` with those fields plus `dataSchema` (JSON Schema) and
+  `subscribers` (app ID, subscription ID, state, reason, and optional `firstSeenAt`).
+
+MCP discovery uses the same live, hash-checked declarations and access filter
+as the capability catalog. It needs OAuth `read` or `admin` scope; scopes do
+not expand app access. Hidden apps and their subscriptions are omitted. An
+unknown, hidden, or stale declaration returns `EVENT_NOT_FOUND` on read. A
+catalog lookup failure returns `APP_UNAVAILABLE`.
+List pages also respect the MCP response byte limit and may contain fewer
+entries than requested. Pass `nextCursor` unchanged with the same filters until
+it is absent. A read whose schema and subscriber list exceed the result budget returns
+`RESPONSE_TOO_LARGE`.
+
+These tools discover declarations only. They do not watch events, create
+subscriptions, or install Assistant Routines. A declared place and
+`automation: true` remain catalog metadata; they do not enable resource-event
+delivery or grant authority.
 
 ## Read the envelope
 

@@ -29,6 +29,7 @@ type BrowserDeliveryPayload = {
   group?: string;
   badge?: number;
   createdAt?: number;
+  alert?: false;
 };
 
 // RFC 8030 section 7.2 guarantees 4,096 bytes; aes128gcm adds a header, tag, and padding delimiter.
@@ -44,6 +45,7 @@ const browserPushMessage = (payload: BrowserDeliveryPayload): string =>
     ...(payload.group !== undefined ? { group: payload.group } : {}),
     ...(payload.badge !== undefined ? { badge: payload.badge } : {}),
     ...(payload.createdAt !== undefined ? { createdAt: payload.createdAt } : {}),
+    ...(payload.alert === false ? { alert: false } : {}),
   });
 
 const BrowserDeliveryPayloadSchema = z.object({
@@ -59,6 +61,7 @@ const BrowserDeliveryPayloadSchema = z.object({
     .optional(),
   badge: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   createdAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  alert: z.literal(false).optional(),
 });
 
 const BrowserDestinationContextSchema = z.object({
@@ -192,6 +195,7 @@ const browserDriver = {
       ...(group !== undefined ? { group } : {}),
       ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
       ...(presentation.group !== undefined || presentation.badge !== undefined ? { createdAt: Date.now() } : {}),
+      ...(presentation.alert === false ? { alert: false } : {}),
     });
     if (payload.preview !== undefined && Buffer.byteLength(browserPushMessage(payload), "utf8") > WEB_PUSH_PLAINTEXT_BUDGET) {
       const { preview: _preview, ...titleOnlyPayload } = payload;
