@@ -36,7 +36,7 @@ import {
 } from "./access";
 import { titles } from "./conversation-titles";
 import { validateDiscovery, writeDiscovery } from "./discovery";
-import { forYouUnread, mentionsUnread } from "./for-you";
+import { forYouUnread, mentionsUnread, prepareSystemReaderCounts } from "./for-you";
 import { notificationProjection } from "./notification-projection";
 import { TransactionFailure, value } from "./transaction-failure";
 
@@ -626,12 +626,17 @@ const getInSnapshot = async (
     )),
   });
 };
-const get = (
+const get = async (
   input: ChatContext & { conversationId: string; summaryCursor?: string; threadBudget?: ThreadBudget; selectedThread?: string | null },
   db?: typeof sql,
-) => (db ? getInSnapshot(input, db) : sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx)));
-const list = (input: ChatContext & { query?: unknown }): Promise<Result<z.infer<typeof ConversationPageSchema>>> =>
-  sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
+) => {
+  if (db) return getInSnapshot(input, db);
+  await prepareSystemReaderCounts(input);
+  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx));
+};
+const list = async (input: ChatContext & { query?: unknown }): Promise<Result<z.infer<typeof ConversationPageSchema>>> => {
+  await prepareSystemReaderCounts(input);
+  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
     if (!parsed.ok) return parsed;
     const bound = boundConversation(input.actor, input.locale);
@@ -675,6 +680,8 @@ const list = (input: ChatContext & { query?: unknown }): Promise<Result<z.infer<
           : null,
     });
   });
+};
+
 const update = async (input: ChatContext & { conversationId: string; input: unknown }) => {
   const parsed = parse(UpdateConversationSchema, input.input, input);
   if (!parsed.ok) return parsed;

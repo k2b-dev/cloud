@@ -25,7 +25,11 @@ export const ChatHealthSchema = z.object({
   /** `ok` when the database answers and the chat schema exists; the admin page and operators read this first. */
   status: z.enum(["ok", "unavailable"]),
   observedAt: z.string(),
-  systemNotifications: z.object({ status: z.enum(["configured", "unavailable"]), reason: z.string().nullable() }),
+  systemNotifications: z.object({
+    status: z.enum(["configured", "ok", "failing", "unavailable"]),
+    reason: z.string().nullable(),
+    checkedAt: z.string().nullable(),
+  }),
   database: z.object({
     status: z.enum(["ok", "unavailable"]),
     /** Round trip of the probe query in milliseconds; `null` when the database did not answer. */
@@ -48,7 +52,7 @@ const health = async (): Promise<ChatHealth> => {
   } catch (error) {
     log.warn("Chat health probe could not reach the database", { error: error instanceof Error ? error.message : String(error) });
     return {
-      systemNotifications: systemNotificationHealth(),
+      systemNotifications: await systemNotificationHealth(),
       status: "unavailable",
       observedAt: new Date().toISOString(),
       database: { status: "unavailable", latencyMs: null },
@@ -56,7 +60,12 @@ const health = async (): Promise<ChatHealth> => {
   }
   const latencyMs = Math.round(performance.now() - started);
   const status = ready ? "ok" : "unavailable";
-  return { systemNotifications: systemNotificationHealth(), status, observedAt: new Date().toISOString(), database: { status, latencyMs } };
+  return {
+    systemNotifications: await systemNotificationHealth(),
+    status,
+    observedAt: new Date().toISOString(),
+    database: { status, latencyMs },
+  };
 };
 
 export const chatService = {

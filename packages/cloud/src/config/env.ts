@@ -178,7 +178,7 @@ const registry = defineEnv({
         .max(200),
     ),
     default: [],
-    doc: "Deployment inventory of known app IDs, including offline and optional apps. App-query providers reject caller IDs outside this list at startup; listing an app grants no invocation rights.",
+    doc: "Additional known app IDs for third-party apps, including offline or optional apps. Built-in IDs are always known. App-query providers reject unknown caller IDs at startup; listing an app grants no invocation rights.",
   },
   CLOUD_APP_CREDENTIAL: {
     schema: z.string(),

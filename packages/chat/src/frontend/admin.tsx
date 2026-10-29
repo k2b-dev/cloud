@@ -32,7 +32,15 @@ export default ssr<AuthContext>(async (c) => {
           />
           <StatCell
             label={t.systemNotifications}
-            value={health.systemNotifications.status === "configured" ? t.systemNotificationsConfigured : t.systemNotificationsUnavailable}
+            value={
+              health.systemNotifications.status === "ok"
+                ? t.systemNotificationsOk
+                : health.systemNotifications.status === "configured"
+                  ? t.systemNotificationsConfigured
+                  : health.systemNotifications.status === "failing"
+                    ? t.systemNotificationsFailing
+                    : t.systemNotificationsUnavailable
+            }
             sub={t.systemNotificationsSetup}
           />
         </StatGrid>

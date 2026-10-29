@@ -1586,6 +1586,8 @@ export const invokeCompiledCapability = async (params: {
       },
     };
   }
+  if (!isAppCapabilityContext(params.context) && "callers" in operation.definition && operation.definition.callers !== undefined)
+    return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
   if (params.expectedSchemaHash !== operation.manifest.schemaHash) {
     return {
       ok: false,

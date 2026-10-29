@@ -34,7 +34,9 @@ with `callers: readonly string[]`. Core accepts only those named applications,
 authenticated by a current app-bound workload credential. The handler receives
 an app actor and a `none` access subject, never a person's grants. Undeclared
 Queries and all Actions retain the existing authority requirements. Providers
-validate caller IDs against the deployment's `CLOUD_APP_IDS` inventory at startup.
+validate caller IDs against the built-in app IDs plus the deployment's additional
+`CLOUD_APP_IDS` inventory at startup. Declared app Queries are app-only and absent
+from the ordinary catalog.
 
 ## Choose what to publish
 

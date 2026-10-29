@@ -107,60 +107,60 @@ const list = async (context: ChatContext & { query?: unknown }): Promise<Result<
   if (!parsed.success) return fail(err.badInput(messages(context).invalidInput));
   const cursor = parsed.data.cursor === undefined ? null : decodeForYouCursor(parsed.data.cursor);
   if (parsed.data.cursor !== undefined && !cursor) return fail(err.badInput(messages(context).invalidInput));
-  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
-    const scanned = await candidates(db, context, FOR_YOU_PAGE_SIZE + 1, cursor);
-    const page = scanned.slice(0, FOR_YOU_PAGE_SIZE);
-    const authorized = await visible(db, context, page);
-    const names = await titles([...authorized.conversations.values()], context, db);
-    const views = new Map<string, Awaited<ReturnType<typeof messageViews>>[number]>();
-    for (const conversation of authorized.conversations.values())
-      for (const message of await messageViews(
-        db,
-        authorized.rows.filter((row) => row.conversation === conversation.short_id),
-        conversation.short_id,
-        context.accessSubject,
-        context.locale,
-      ))
-        views.set(message.id, message);
-    const threadIds = [...new Set(authorized.rows.flatMap((row) => (row.thread_id ? [row.thread_id] : [])))];
-    const threads = threadIds.length
-      ? await db<ThreadRow[]>`SELECT * FROM chat.threads WHERE id = ANY(${toPgUuidArray(threadIds)}::uuid[])`
-      : [];
-    const threadNames = new Map(
-      await readerBatch(
-        threads,
-        async (thread) => {
-          const resource =
-            thread.resource_type && thread.resource_id
-              ? await readResource(context, { type: thread.resource_type, id: thread.resource_id })
-              : null;
-          return [thread.id, thread.resource_type ? (resource?.name ?? null) : thread.name] as const;
-        },
-        context.caller?.signal,
-      ),
-    );
-    const items: z.infer<typeof ForYouPageSchema>["items"] = [];
-    for (const row of authorized.rows) {
-      const conversation = authorized.conversations.get(row.conversation)!;
-      const message = views.get(row.short_id)!;
-      const name = row.thread_id ? threadNames.get(row.thread_id) : messages(context).general;
-      if (name == null) continue;
-      items.push({
-        kind: row.mention ? "mention" : "reply",
-        conversation: { id: row.conversation, kind: conversation.kind, title: names.get(conversation.id)! },
-        thread: { id: message.thread ?? "general", name },
-        message: {
-          id: message.id,
-          seq: message.seq,
-          author: message.author,
-          preview: messagePreview(message.body!),
-          createdAt: message.createdAt,
-        },
-        unread: row.unread,
-      });
-    }
-    return ok({ items, nextCursor: scanned.length > FOR_YOU_PAGE_SIZE ? encode(position(page.at(-1)!)) : null });
-  });
+  // Cross-app authorization has no shared SQL snapshot. Release each local query before asking an owner.
+  const db = sql;
+  const scanned = await candidates(db, context, FOR_YOU_PAGE_SIZE + 1, cursor);
+  const page = scanned.slice(0, FOR_YOU_PAGE_SIZE);
+  const authorized = await visible(db, context, page);
+  const names = await titles([...authorized.conversations.values()], context, db);
+  const views = new Map<string, Awaited<ReturnType<typeof messageViews>>[number]>();
+  for (const conversation of authorized.conversations.values())
+    for (const message of await messageViews(
+      db,
+      authorized.rows.filter((row) => row.conversation === conversation.short_id),
+      conversation.short_id,
+      context.accessSubject,
+      context.locale,
+    ))
+      views.set(message.id, message);
+  const threadIds = [...new Set(authorized.rows.flatMap((row) => (row.thread_id ? [row.thread_id] : [])))];
+  const threads = threadIds.length
+    ? await db<ThreadRow[]>`SELECT * FROM chat.threads WHERE id = ANY(${toPgUuidArray(threadIds)}::uuid[])`
+    : [];
+  const threadNames = new Map(
+    await readerBatch(
+      threads,
+      async (thread) => {
+        const resource =
+          thread.resource_type && thread.resource_id
+            ? await readResource(context, { type: thread.resource_type, id: thread.resource_id })
+            : null;
+        return [thread.id, thread.resource_type ? (resource?.name ?? null) : thread.name] as const;
+      },
+      context.caller?.signal,
+    ),
+  );
+  const items: z.infer<typeof ForYouPageSchema>["items"] = [];
+  for (const row of authorized.rows) {
+    const conversation = authorized.conversations.get(row.conversation)!;
+    const message = views.get(row.short_id)!;
+    const name = row.thread_id ? threadNames.get(row.thread_id) : messages(context).general;
+    if (name == null) continue;
+    items.push({
+      kind: row.mention ? "mention" : "reply",
+      conversation: { id: row.conversation, kind: conversation.kind, title: names.get(conversation.id)! },
+      thread: { id: message.thread ?? "general", name },
+      message: {
+        id: message.id,
+        seq: message.seq,
+        author: message.author,
+        preview: messagePreview(message.body!),
+        createdAt: message.createdAt,
+      },
+      unread: row.unread,
+    });
+  }
+  return ok({ items, nextCursor: scanned.length > FOR_YOU_PAGE_SIZE ? encode(position(page.at(-1)!)) : null });
 };
 /**
  * Keyset batches bound memory and concurrent readers. Stop at the display cap, at exhaustion, or after a fixed number
@@ -192,7 +192,12 @@ const countUnread = async (context: ChatContext, db: typeof sql, conversationId?
       const userId = context.accessSubject.userId;
       for (const threadId of new Set(systems.map((row) => row.thread_id))) {
         const group = systems.filter((row) => row.thread_id === threadId);
-        if (group.length && (await readableSystemRecipients(group[0]!.conversation_id, threadId, [userId], db)).has(userId))
+        if (
+          group.length &&
+          (await readableSystemRecipients(group[0]!.conversation_id, threadId, [userId], db, db === sql ? "interactive" : "cached")).has(
+            userId,
+          )
+        )
           total += group.length;
       }
     }
@@ -200,6 +205,23 @@ const countUnread = async (context: ChatContext, db: typeof sql, conversationId?
     cursor = position(page.at(-1)!);
   }
   return Math.min(total, FOR_YOU_COUNT_CAP);
+};
+/** Warm only bounded yes/no decisions before entering a local read snapshot. New candidates in the snapshot fail closed. */
+export const prepareSystemReaderCounts = async (context: ChatContext) => {
+  if (!allowedPersonal(context) || context.accessSubject.type !== "user") return;
+  let cursor: Cursor | null = null;
+  for (let batch = 0; batch < FOR_YOU_COUNT_BATCHES; batch++) {
+    context.caller?.signal?.throwIfAborted();
+    const page = await candidates(sql, context, RESOURCE_PAGE_SIZE, cursor, true);
+    const systems = await sql<{ conversation_id: string; thread_id: string | null }[]>`
+      SELECT DISTINCT m.conversation_id, m.thread_id FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
+      WHERE m.id = ANY(${toPgUuidArray(page.map((row) => row.id))}::uuid[]) AND c.kind = 'system'
+    `;
+    for (const row of systems)
+      await readableSystemRecipients(row.conversation_id, row.thread_id, [context.accessSubject.userId], sql, "interactive");
+    if (page.length < RESOURCE_PAGE_SIZE) break;
+    cursor = position(page.at(-1)!);
+  }
 };
 export const forYouUnread = (context: ChatContext, db: typeof sql = sql) => countUnread(context, db);
 /** Same recipient sources, read boundary, deduplication and visibility as the For you count. */

@@ -29,8 +29,8 @@ databaseSuite()("spaces app-query reader decisions", () => {
         (${`expired-${crypto.randomUUID()}`}, 'local', 'user'), (${`denied-${crypto.randomUUID()}`}, 'local', 'user') RETURNING id, profile`;
     const [person, guest, expired, denied] = users;
     const [parent] = await sql<
-      { id: string }[]
-    >`INSERT INTO spaces.spaces (short_id, name) VALUES (${testShortId()}, 'Reader fixture') RETURNING id`;
+      { id: string; short_id: string }[]
+    >`INSERT INTO spaces.spaces (short_id, name) VALUES (${testShortId()}, 'Reader fixture') RETURNING id, short_id`;
     const accessIds: string[] = [];
     try {
       await sql`UPDATE auth.users SET account_expires = now() - interval '1 day' WHERE id = ${expired!.id}::uuid`;
@@ -48,7 +48,10 @@ databaseSuite()("spaces app-query reader decisions", () => {
         { id: string; short_id: string }[]
       >`INSERT INTO spaces.items (short_id, space_id, column_id, title) VALUES (${testShortId()}, ${parent!.id}::uuid, ${column!.id}::uuid, 'Private title') RETURNING id, short_id`;
       const read = (id: string, userIds = users.map((user) => user.id)) =>
-        spacesCapabilities.queries["item.readable"].run({ id, userIds }, context);
+        spacesCapabilities.queries["item.readable"].run(
+          { id, container: { type: "spaces.space", id: parent!.short_id }, userIds },
+          context,
+        );
       expect(await read(element!.short_id)).toEqual({ ok: true, data: { data: { readable: [person!.id, guest!.id] } } });
       await coreSettings.set("user.category.guest.enabled", false);
       expect(await read(element!.short_id, [guest!.id])).toEqual({ ok: true, data: { data: { readable: [] } } });
@@ -63,7 +66,12 @@ databaseSuite()("spaces app-query reader decisions", () => {
         user: reader.actor.user,
       } satisfies CapabilityExecutionContext;
       expect(
-        (await spacesCapabilities.queries["item.readable"].run({ id: element!.short_id, userIds: [person!.id] }, peopleContext)).ok,
+        (
+          await spacesCapabilities.queries["item.readable"].run(
+            { id: element!.short_id, container: { type: "spaces.space", id: parent!.short_id }, userIds: [person!.id] },
+            peopleContext,
+          )
+        ).ok,
       ).toBe(false);
       expect(await read(testShortId())).toEqual({ ok: true, data: { data: { readable: [] } } });
       await sql`UPDATE auth.access SET permission = 'none' WHERE user_id = ${person!.id}::uuid AND id = ANY(${toPgUuidArray(accessIds)}::uuid[])`;
@@ -76,10 +84,53 @@ databaseSuite()("spaces app-query reader decisions", () => {
       await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users.map((user) => user.id))}::uuid[])`;
     }
   });
+  test("reader decisions retain the expected container after a move and original access revocation", async () => {
+    const [person] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile)
+      VALUES (${`move-${crypto.randomUUID()}`}, 'local', 'user') RETURNING id`;
+    const parents = await sql<{ id: string; short_id: string }[]>`INSERT INTO spaces.spaces (short_id, name)
+      VALUES (${testShortId()}, 'Original'), (${testShortId()}, 'Destination') RETURNING id, short_id`;
+    const [original, destination] = parents;
+    const accessIds: string[] = [];
+    try {
+      for (const container of parents) {
+        const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access (user_id, permission)
+          VALUES (${person!.id}::uuid, 'read') RETURNING id`;
+        accessIds.push(access!.id);
+        await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${container.id}::uuid, ${access!.id}::uuid)`;
+      }
+      const columns = [];
+      for (const container of parents) {
+        const [column] = await sql<{ id: string }[]>`INSERT INTO spaces.columns (short_id, space_id, name, rank)
+          VALUES (${testShortId()}, ${container.id}::uuid, 'Open', 1) RETURNING id`;
+        columns.push(column!.id);
+      }
+      const [element] = await sql<{ id: string; short_id: string }[]>`INSERT INTO spaces.items (short_id, space_id, column_id, title)
+        VALUES (${testShortId()}, ${original!.id}::uuid, ${columns[0]}::uuid, 'Move fixture') RETURNING id, short_id`;
+      const read = (containerId: string) =>
+        spacesCapabilities.queries["item.readable"].run(
+          {
+            id: element!.short_id,
+            container: { type: "spaces.space", id: containerId },
+            userIds: [person!.id],
+          },
+          context,
+        );
+      expect(await read(original!.short_id)).toMatchObject({ data: { data: { readable: [person!.id] } } });
+      await sql`UPDATE auth.access SET permission = 'none' WHERE id = ${accessIds[0]}::uuid`;
+      expect(await read(original!.short_id)).toMatchObject({ data: { data: { readable: [] } } });
+      await sql`UPDATE spaces.items SET space_id = ${destination!.id}::uuid, column_id = ${columns[1]}::uuid WHERE id = ${element!.id}::uuid`;
+      expect(await read(original!.short_id)).toEqual({ ok: true, data: { data: { readable: [] } } });
+      expect(await read(destination!.short_id)).toMatchObject({ data: { data: { readable: [person!.id] } } });
+    } finally {
+      await sql`DELETE FROM spaces.spaces WHERE id = ANY(${toPgUuidArray(parents.map((row) => row.id))}::uuid[])`;
+      if (accessIds.length) await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(accessIds)}::uuid[])`;
+      await sql`DELETE FROM auth.users WHERE id = ${person!.id}::uuid`;
+    }
+  });
   test("bulk helpers retain resource binding and scope ceilings", async () => {
     const [parent] = await sql<
-      { id: string }[]
-    >`INSERT INTO spaces.spaces (short_id, name) VALUES (${testShortId()}, 'Bound fixture') RETURNING id`;
+      { id: string; short_id: string }[]
+    >`INSERT INTO spaces.spaces (short_id, name) VALUES (${testShortId()}, 'Bound fixture') RETURNING id, short_id`;
     const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
       VALUES (${`bound-${crypto.randomUUID()}`}, 'resource_bound', 'spaces', 'space', ${parent!.id}) RETURNING id`;
     const [access] = await sql<
@@ -102,7 +153,10 @@ databaseSuite()("spaces app-query reader decisions", () => {
         VALUES (${testShortId()}, ${parent!.id}::uuid, 'Open', 1) RETURNING id`;
       const [element] = await sql<{ short_id: string }[]>`INSERT INTO spaces.items (short_id, space_id, column_id, title)
         VALUES (${testShortId()}, ${parent!.id}::uuid, ${column!.id}::uuid, 'Bound item') RETURNING short_id`;
-      const result = await spacesCapabilities.queries["item.readable"].run({ id: element!.short_id, userIds: [sa.id] }, context);
+      const result = await spacesCapabilities.queries["item.readable"].run(
+        { id: element!.short_id, container: { type: "spaces.space", id: parent!.short_id }, userIds: [sa.id] },
+        context,
+      );
       expect(result).toEqual({ ok: true, data: { data: { readable: [] } } });
     } finally {
       await sql`DELETE FROM spaces.spaces WHERE id = ${parent!.id}::uuid`;

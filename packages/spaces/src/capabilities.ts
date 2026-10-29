@@ -2267,6 +2267,13 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
 
 const ReadableInputSchema = ItemReadInputSchema.pick({ id: true })
   .extend({
+    container: z
+      .object({
+        type: z.literal("spaces.space").describe("Expected container resource type."),
+        id: ItemReadInputSchema.shape.id.describe("Public ID of the expected container."),
+      })
+      .strict()
+      .describe("Expected system conversation container."),
     userIds: z.array(z.uuid()).max(500).describe("At most 500 current Chat participants or thread followers to check."),
   })
   .strict();
@@ -2549,8 +2556,9 @@ export const spacesCapabilities = defineCapabilities({
         // A person must use the ordinary reader, which authorizes their own content read.
         if (context.actor.kind !== "app")
           return { ok: false as const, error: { code: "FORBIDDEN", message: "App authority required", status: 403 as const } };
-        const [element] = await sql<{ space_id: string }[]>`SELECT space_id FROM spaces.items WHERE short_id = ${input.id}`;
-        if (!element) return ok({ data: { readable: [] } });
+        const [element] = await sql<{ space_id: string }[]>`SELECT e.space_id FROM spaces.items e JOIN spaces.spaces c ON c.id = e.space_id
+          WHERE e.short_id = ${input.id} AND c.short_id = ${input.container.id}`;
+        if (input.container.type !== "spaces.space" || !element) return ok({ data: { readable: [] } });
         const readers = await resolveUserReaders(input.userIds);
         const permissions = await getActorsSpacePermissions(element.space_id, readers);
         const readable = new Set(readers.filter((_, index) => permissions[index] !== "none").map((reader) => reader.actor.user.id));

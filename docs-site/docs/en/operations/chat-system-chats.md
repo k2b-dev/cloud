@@ -76,7 +76,8 @@ events still use that reader's own container and item authority. The personal
 Follows, mentions, and replies in item threads can send notifications after
 Chat checks the current recipients through the owning application's
 [app-to-app Query](/en/docs/platform/app-to-app-queries). Only current participants
-or followers enter that check. Configure the app workload before enabling this
+or followers enter that check. The expected container comes from the system
+conversation; an element in another container returns no readers. Configure the app workload before enabling this
 path; [Chat notifications](/en/docs/operations/chat-notifications) describes
 its health state, limits, and immediate pre-send recheck.
 

@@ -72,14 +72,22 @@ Compose previously passed a workload credential only to Mail; Chat now accepts
 
 Missing credentials or direct Core origin keep system delivery closed and
 produce a startup warning. `/api/chat/admin/health` and **Administration → Chat**
-show `systemNotifications.status` as `configured` or `unavailable` without
-exposing credentials. Invalid credentials and owner-query failures are logged.
-Configuration status is not proof of a successful owner read. Unavailable owner
-checks and rate limits retry through the existing jobs; explicit denials suppress
-that push. There is no permission cache for these checks: the chosen and latest
-message elements are rechecked immediately before sending. A later revocation
-cannot recall an already queued push. General system-chat messages remain
-closed because this contract checks only item and note IDs.
+show `systemNotifications.status` as `configured` (no real check yet), `ok`,
+`failing`, or `unavailable`. The last real check for each owner is stored in
+Valkey; a failure remains visible until that owner succeeds. The health
+response includes `checkedAt` and a bounded failure reason without credentials.
+Owner failures are logged. Delivery retries failed checks; a successful empty
+reader subset suppresses the push. Interactive counts omit failed checks and
+continue serving the page.
+
+Delivery and final sends have no permission cache. They check the chosen and
+latest message elements against the system conversation's expected container.
+Interactive badge and For you counts cache yes/no decisions for at most 60
+seconds, with separate per-person and global admission before Core. See the
+[budget derivation](/en/docs/platform/app-to-app-queries#keep-the-answer-bounded).
+A cached count may lag revocation; final send authorization always stays fresh.
+A later revocation cannot recall an already queued push. General system-chat
+messages remain closed because this contract checks only item and note IDs.
 
 ## Check the badge
 

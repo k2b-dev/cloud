@@ -82,8 +82,9 @@ import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
-// One 500-recipient batch: one bulk check plus one badge and one final send check per person.
-export const APP_QUERY_REQUESTS_PER_MINUTE = 1 + 500 * 2;
+// One delivery batch: one bulk check and at most two final element checks per recipient.
+// Chat admits at most 500 interactive misses/minute separately, leaving these 1,001 slots for delivery.
+export const APP_QUERY_REQUESTS_PER_MINUTE = 1 + 500 * 2 + 500;
 const appQueryLimit = ratelimit({ id: "app-queries", limit: APP_QUERY_REQUESTS_PER_MINUTE, windowSecs: 60 });
 const log = logger("capabilities");
 const DEFAULT_CATALOG_LIMIT = 10;
@@ -230,7 +231,7 @@ export const loadCapabilityCatalogPage = async (
       appName: presentedEntry.name,
       appIcon: capability.appIcon,
       appDescription: presentedEntry.description,
-      manifest,
+      manifest: { ...manifest, queries: manifest.queries.filter((query) => query.callers === undefined) },
       ...(manifest.events ? { events: projectAppEventCatalog(manifest, manifest.events.length ? await loadSubscribers() : []) } : {}),
     };
     const projectedBytes = new TextEncoder().encode(JSON.stringify(projected)).byteLength;
@@ -351,6 +352,8 @@ const runCapabilityDispatch = async (
     );
     return error;
   }
+  if ("callers" in operation && operation.callers !== undefined && !params.workload)
+    return errorResponse("FORBIDDEN", "App authority required for this query", 403);
   if (params.workload) {
     if (
       params.authority ||

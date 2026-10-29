@@ -1,6 +1,7 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
+import { BUILT_IN_APP_IDS } from "../config/built-in-apps";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
@@ -699,7 +700,8 @@ export const defineApp = <
       // flag so the registry never points at a URL that 404s.
       const advertiseOpenapi = !!(opts.openapi && startOpts.openapi);
       const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities, meta.routes) : undefined;
-      if (compiledCapabilities) validateCapabilityCallers(compiledCapabilities.manifest, new Set(env.CLOUD_APP_IDS));
+      if (compiledCapabilities)
+        validateCapabilityCallers(compiledCapabilities.manifest, new Set([...BUILT_IN_APP_IDS, ...env.CLOUD_APP_IDS]));
       if (startOpts.capabilities) bindAppEvents(meta.id, startOpts.capabilities, compiledCapabilities);
       const compiledHelp = startOpts.help
         ? compileHelp({

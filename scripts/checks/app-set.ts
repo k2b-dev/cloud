@@ -21,6 +21,20 @@ export const rule: Rule = {
   run: async ({ workspaceRoot }) => {
     const apps = appIds(workspaceRoot);
     const findings: Finding[] = [];
+    const builtinsFile = join(workspaceRoot, "packages/cloud/src/config/built-in-apps.ts");
+    const builtinList = readFileSync(builtinsFile, "utf8").match(/= (\[[\s\S]*?\]);/);
+    compareSets(
+      builtinsFile,
+      "built-in app IDs",
+      apps,
+      builtinList ? [...builtinList[1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!) : [],
+      findings,
+    );
+    for (const file of ["compose.dev.yml", "compose.prod.yml"]) {
+      const source = readFileSync(join(workspaceRoot, file), "utf8");
+      const inventory = source.match(/^ {2}CLOUD_APP_IDS: \$\{CLOUD_APP_IDS:-([^}]+)\}/m)?.[1]?.split(",") ?? [];
+      compareSets(file, "CLOUD_APP_IDS default", apps, inventory, findings);
+    }
 
     const devFile = join(workspaceRoot, "compose.dev.yml");
     const devServices = [...readFileSync(devFile, "utf8").matchAll(/^ {2}(gateway|app-[a-z0-9-]+):/gm)].map((match) => match[1]!);

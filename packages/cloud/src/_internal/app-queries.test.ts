@@ -3,10 +3,16 @@ import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
-import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
+import {
+  type CapabilityDispatchDependencies,
+  createCapabilityRoutes,
+  dispatchCapability,
+  loadCapabilityCatalogPage,
+} from "../api/capabilities";
 import * as executions from "../capabilities/executions";
 import { type CapabilityAppExecutionContext, type CapabilityExecutionContext, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
+import { LocalUserSchema } from "../contracts/shared";
 import { signAppQueryInvocation, verifyAppQueryInvocation, verifyInvocationToken } from "../services/identity/invocation-token";
 import { validateCapabilityCallers } from "./app-queries";
 import { compileCapabilities, invokeCompiledCapability, parseCapabilityManifest } from "./capabilities";
@@ -96,6 +102,10 @@ test("callers validate at compile and live registration; Actions reject them", (
     "chat",
   ]);
   expect(() => validateCapabilityCallers(compiled.manifest, new Set(["chat"]))).not.toThrow();
+  expect(() => validateCapabilityCallers(compiled.manifest)).not.toThrow();
+  const typo = structuredClone(compiled.manifest);
+  typo.queries[0]!.callers = ["chta"];
+  expect(() => validateCapabilityCallers(typo)).toThrow("unknown caller app chta");
   expect(() => validateCapabilityCallers(compiled.manifest, new Set(["chta"]))).toThrow("unknown caller app chat");
   expect(() =>
     compileCapabilities("spaces", { ...definitions, queries: { readable: { ...definitions.queries.readable, callers: ["Bad ID"] } } }),
@@ -224,6 +234,114 @@ test("dispatcher enforces callers, input bounds, app rate limit and app audit be
       ).status,
     ).toBe(503);
     expect(forwarded).toHaveLength(1);
+  } finally {
+    record.mockRestore();
+  }
+});
+
+test("declared app queries reject person authority at dispatch and execution, without a handler guard", async () => {
+  const person = LocalUserSchema.parse({
+    id: workload.serviceAccountId,
+    uid: "person",
+    roles: ["user"],
+    provider: "local",
+    profile: "user",
+    givenname: "Reader",
+    sn: "Test",
+    displayName: "Reader Test",
+    mail: null,
+    avatarHash: null,
+    ipa: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    memberofGroup: [],
+    memberofGroupIds: [],
+    manages: [],
+    managesGroupIds: [],
+  });
+  const personContext: CapabilityExecutionContext = {
+    ...context,
+    actor: { kind: "user", user: person },
+    accessSubject: { type: "user", userId: person.id },
+    user: person,
+  };
+  seen = undefined;
+  expect(
+    await invokeCompiledCapability({
+      compiled,
+      kind: "query",
+      localId: "readable",
+      input: requestInput,
+      expectedSchemaHash: compiled.queries.get("readable")!.manifest.schemaHash,
+      context: personContext,
+    }),
+  ).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+  expect(seen).toBeUndefined();
+  const record = spyOn(executions, "recordCapabilityExecution").mockResolvedValue(workload.credentialId);
+  let forwarded = false;
+  try {
+    for (const origin of ["http", "mcp", "assistant", "app"] as const) {
+      const result = await dispatchCapability({
+        request: new Request("http://core.test/invoke"),
+        kind: "queries",
+        appId: "spaces",
+        capabilityId: "readable",
+        input: requestInput,
+        origin,
+        authority: { actor: personContext.actor, accessSubject: personContext.accessSubject, credentialKind: "session", scopes: [] },
+        dependencies: {
+          getCapability: async () => entry,
+          fetch: async () => {
+            forwarded = true;
+            return Response.json({ data: { readable: [] } });
+          },
+        },
+      });
+      expect(result.status).toBe(403);
+    }
+    expect(forwarded).toBe(false);
+    expect(seen).toBeUndefined();
+    const routeCompiled = compileCapabilities("spaces", { ...definitions, queries: { "item.readable": definitions.queries.readable } });
+    const routes = createCapabilityRoutes({
+      authenticate: async (c, next) => {
+        c.set("actor", personContext.actor);
+        c.set("accessSubject", personContext.accessSubject);
+        c.set("credentialKind", "session");
+        return next();
+      },
+      listApps: async () => [],
+      getCapability: async () => ({ ...entry, manifest: routeCompiled.manifest }),
+      fetch: async () => {
+        forwarded = true;
+        return Response.json({ data: { readable: [] } });
+      },
+    });
+    const response = await routes.request("/capabilities/v1/queries/spaces/item.readable", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: requestInput }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "FORBIDDEN", message: "App authority required for this query" });
+    expect(forwarded).toBe(false);
+    const catalog = await loadCapabilityCatalogPage(
+      { limit: 10 },
+      {
+        listApps: async () => [
+          {
+            id: "spaces",
+            name: "Spaces",
+            icon: "ti ti-box",
+            description: "Provider",
+            baseUrl: "http://provider.test",
+            routes: [],
+            capabilities: { protocolVersion: 2, manifestHash: compiled.manifest.manifestHash },
+          },
+        ],
+        getCapability: async () => entry,
+      },
+    );
+    expect(catalog.apps[0]!.manifest.queries.map((query) => query.localId)).toEqual(["private"]);
   } finally {
     record.mockRestore();
   }

@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { Hono } from "hono";
+import { BUILT_IN_APP_IDS } from "../config/built-in-apps";
 import { CAPABILITY_MAX_REQUEST_BYTES, type CapabilityManifest } from "../contracts/capabilities";
 import { resolveLocale } from "../server/locale";
 import { verifyAppQueryInvocation } from "../services/identity/invocation-token";
@@ -9,7 +10,10 @@ import { type CompiledCapabilities, invokeCompiledCapability, serializeCapabilit
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 
 /** Validate against the operator inventory before publishing a catalog; optional apps may be offline. */
-export const validateCapabilityCallers = (manifest: CapabilityManifest, knownAppIds: ReadonlySet<string>): void => {
+export const validateCapabilityCallers = (
+  manifest: CapabilityManifest,
+  knownAppIds: ReadonlySet<string> = new Set(BUILT_IN_APP_IDS),
+): void => {
   for (const query of manifest.queries)
     for (const caller of query.callers ?? [])
       if (!knownAppIds.has(caller)) throw new Error(`Query ${manifest.appId}.${query.localId}: unknown caller app ${caller}`);

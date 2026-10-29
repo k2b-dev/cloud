@@ -2034,6 +2034,16 @@ describe("mail capabilities", () => {
     expect(conversation).toMatchObject({ ok: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
   });
 
+  test("query error localization preserves the English result across repeated calls", async () => {
+    const query = mailCapabilities.queries["mailbox.read"];
+    const english = await query.run({ id: "XyZ123" }, { ...context, locale: "en" });
+    const german = await query.run({ id: "XyZ123" }, { ...context, locale: "de" });
+    expect(await query.run({ id: "XyZ123" }, { ...context, locale: "en" })).toEqual(english);
+    expect(english).toMatchObject({ ok: false, error: { code: "NOT_FOUND", status: 404 } });
+    expect(german).toMatchObject({ ok: false, error: { code: "NOT_FOUND", status: 404 } });
+    if (!english.ok && !german.ok) expect(english.error.message).not.toBe(german.error.message);
+  });
+
   test("localizes capability errors without changing their stable metadata", async () => {
     const result = await mailCapabilities.queries["mailbox.read"].run({ id: "XyZ123" }, { ...context, locale: "de-CH" });
 

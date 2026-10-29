@@ -1100,6 +1100,13 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
 
 const ReadableInputSchema = NoteReadInputSchema.pick({ id: true })
   .extend({
+    container: z
+      .object({
+        type: z.literal("notebooks.notebook").describe("Expected container resource type."),
+        id: NoteReadInputSchema.shape.id.describe("Public ID of the expected container."),
+      })
+      .strict()
+      .describe("Expected system conversation container."),
     userIds: z.array(z.uuid()).max(500).describe("At most 500 current Chat participants or thread followers to check."),
   })
   .strict();
@@ -1245,8 +1252,11 @@ export const notebooksCapabilities = defineCapabilities({
         // A person must use the ordinary reader, which authorizes their own content read.
         if (context.actor.kind !== "app")
           return { ok: false as const, error: { code: "FORBIDDEN", message: "App authority required", status: 403 as const } };
-        const [element] = await sql<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE short_id = ${input.id}`;
-        if (!element) return ok({ data: { readable: [] } });
+        const [element] = await sql<
+          { notebook_id: string }[]
+        >`SELECT e.notebook_id FROM notebooks.notes e JOIN notebooks.notebooks c ON c.id = e.notebook_id
+          WHERE e.short_id = ${input.id} AND c.short_id = ${input.container.id}`;
+        if (input.container.type !== "notebooks.notebook" || !element) return ok({ data: { readable: [] } });
         const readers = await resolveUserReaders(input.userIds);
         const permissions = await getActorsNotebookPermissions(element.notebook_id, readers);
         const readable = new Set(readers.filter((_, index) => permissions[index] !== "none").map((reader) => reader.actor.user.id));

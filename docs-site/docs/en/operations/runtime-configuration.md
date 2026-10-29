@@ -133,23 +133,26 @@ Deploy Core and query providers with the same app-query contract before enabling
 Chat's system notifications. The capability migration allows app actors in the
 execution history. Source workload credentials remain app-specific.
 
-Set `CLOUD_APP_IDS` consistently on providers to the deployment's known app IDs,
-including optional apps that may be offline. Query caller validation uses this
-inventory rather than live presence, so a stopped optional Chat does not prevent
-Spaces or Notebooks from starting. The repository Compose defaults are generated
-from the workspace application list; custom installations extend or replace that
-list with their installed third-party IDs. A malformed or unknown caller fails
-startup. The inventory grants no authority by itself.
+Built-in app IDs are always known to providers, including optional apps that
+may be offline. Set `CLOUD_APP_IDS` consistently on providers for additional
+third-party IDs. Query caller validation uses this inventory rather than live
+presence, so a stopped optional Chat does not prevent Spaces or Notebooks
+from starting. A standard host-run installation needs no inventory override.
+The platform and repository Compose lists are generated from the workspace
+and checked for drift. A malformed or unknown caller fails startup; the
+inventory grants no authority by itself.
 
 Provision Chat through `POST /api/admin/identity/workloads/chat/credentials`
 with a credential name and `scopes: ["identity:invoke"]`. Store its one-time
 token in the operator's secret system and inject it only into Chat. Use
 `CLOUD_CHAT_APP_CREDENTIAL` with Compose, or `CLOUD_APP_CREDENTIAL` for a
 host-run Chat. Configure `CLOUD_CORE_INTERNAL_ORIGIN` for the latter. Confirm
-**Administration → Chat → System chat notifications** reports **Workload
-configured**, then exercise one readable item-thread mention. Configuration
-status alone does not verify credential validity; failed checks appear in the
-Chat logs. Missing configuration leaves system pushes and their badge counts
+**Administration → Chat → System chat notifications** reports **Configured;
+not checked yet**, then exercise one readable item-thread mention. A real
+owner check changes the status to **Reader checks working** or **Reader checks
+failing**. The health response includes the last check timestamp and a bounded
+failure code; rotating a credential requires a new check to
+verify recovery. Missing configuration leaves system pushes and their badge counts
 closed while ordinary chats continue. See
 [App-to-app queries](/en/docs/platform/app-to-app-queries) for the trust and
 rate-limit contract.

@@ -1,4 +1,4 @@
-import { afterEach, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, setSystemTime, spyOn, test } from "bun:test";
 import { env } from "@k2b/cloud/config";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { browserNotifications, notifications, serviceAccountCredentials, toPgUuidArray } from "@k2b/cloud/services";
@@ -14,8 +14,16 @@ import { messageFixtures, type Person } from "../api/messages.test-fixture";
 import { app } from "../config";
 import { type PushData, PushDataSchema, renderPush } from "../notifications";
 import { badgeCount } from "./badge";
+import { conversations } from "./conversations";
+import { forYou, forYouUnread } from "./for-you";
 import { alertKey, allowAlert, deliverMessage, notificationLifecycle, notificationOutbox, sendPush } from "./notification-delivery";
-import { readableSystemRecipients, systemNotificationDependencies, systemNotificationHealth } from "./system-notification-access";
+import { resourceReaderDependencies } from "./resource-access";
+import {
+  INTERACTIVE_READER_PERSON_LIMIT,
+  readableSystemRecipients,
+  systemNotificationDependencies,
+  systemNotificationHealth,
+} from "./system-notification-access";
 
 const typedNotifications: { send: typeof sendTypedNotification } = notifications;
 setDefaultTimeout(30_000);
@@ -46,6 +54,8 @@ suiteFor(
     });
   };
   afterEach(async () => {
+    setSystemTime();
+    await redis.del("chat:system-reader:health:spaces", "chat:system-reader:health:notebooks");
     reader?.mockRestore();
     reader = undefined;
     if (credentialDescriptor) Object.defineProperty(env, "CLOUD_APP_CREDENTIAL", credentialDescriptor);
@@ -55,6 +65,8 @@ suiteFor(
     sent.length = 0;
     for (const p of people) {
       await redis.del(alertKey(p.id));
+      const keys = await redis.keys(`chat:system-reader:v1:${p.id}:*`);
+      if (keys.length) await redis.del(...keys);
       await sql`DELETE FROM notifications.events WHERE recipient_user_id = ${p.id}::uuid`;
     }
     await app.settings.remove("chat.push_preview");
@@ -304,6 +316,9 @@ suiteFor(
     await due(chat.id);
     await sendPush(recipient.id, chat.id);
     expect(sent[0]!.data.badge).toBe(1);
+    expect(
+      await sql`SELECT 1 FROM chat.notification_pending WHERE user_id = ${recipient.id}::uuid AND conversation_id = ${chat.id}::uuid`,
+    ).toHaveLength(0);
     expect(await badgeCount(author.context)).toBe(0);
     const response = await new Hono<AuthContext>()
       .route("/api/chat", chatApi)
@@ -435,6 +450,7 @@ suiteFor(
       data: { data: { readable: readable ? input.userIds : [] } },
     }));
     expect(await badgeCount(recipient.context)).toBe(2);
+    expect(reader.mock.calls).toHaveLength(1); // Two messages on one element share one owner decision.
     await deliverMessage(first.uuid);
     await due(chat.id);
     await sendPush(recipient.id, chat.id);
@@ -442,6 +458,12 @@ suiteFor(
     expect(sent[0]!.key).toBe("mention");
     await deliverMessage(second.uuid);
     readable = false;
+    // Interactive counts may retain a decision for at most 60 seconds; final sends never use it.
+    expect(await badgeCount(recipient.context)).toBe(2);
+    for (const key of await redis.keys(`chat:system-reader:v1:${recipient.id}:*`)) {
+      expect(await redis.ttl(key)).toBeLessThanOrEqual(60);
+      await redis.send("PEXPIRE", [key, "0"]);
+    }
     expect(await badgeCount(recipient.context)).toBe(0);
     await due(chat.id);
     await sendPush(recipient.id, chat.id);
@@ -523,9 +545,187 @@ suiteFor(
     expect(sent[0]!.data.reason).toBe("reply");
     Object.defineProperty(env, "CLOUD_APP_CREDENTIAL", { value: undefined, configurable: true });
     const calls = reader.mock.calls.length;
-    expect(systemNotificationHealth().status).toBe("unavailable");
+    expect((await systemNotificationHealth()).status).toBe("unavailable");
     expect(await readableSystemRecipients(chat.id, threadId, [recipient.id])).toEqual(new Set());
     expect(reader.mock.calls).toHaveLength(calls);
+  });
+  test("system reader input binds delivery, counts and final sends to the conversation container", async () => {
+    const { author, recipient, chat } = await setup();
+    const first = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    const second = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    const threadId = await asSystem(chat.id, author.id, [first.uuid, second.uuid], recipient.id);
+    const [conversation] = await sql<{ resource_id: string }[]>`SELECT resource_id FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+    const original = conversation!.resource_id;
+    let currentContainer = original;
+    configureSystem();
+    reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => {
+      expect(input.container).toEqual({ type: "spaces.space", id: original });
+      return { ok: true, data: { data: { readable: input.container.id === currentContainer ? input.userIds : [] } } };
+    });
+    await deliverMessage(first.uuid);
+    currentContainer = testShortId();
+    await deliverMessage(second.uuid);
+    expect(await forYouUnread(recipient.context)).toBe(0);
+    expect(await conversations.list(recipient.context)).toMatchObject({ ok: true, data: { forYouUnread: 0 } });
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(0);
+    expect(await readableSystemRecipients(chat.id, threadId, [recipient.id])).toEqual(new Set());
+  });
+  for (const status of [401, 429, 503, 500] as const) {
+    test(`reader failure ${status} leaves counts usable, records health, and retries delivery`, async () => {
+      const { author, recipient, chat } = await setup();
+      const message = await post(author, chat.shortId, "Hello Lea", {
+        mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+      });
+      const threadId = await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+      configureSystem();
+      reader = spyOn(systemNotificationDependencies, "invoke").mockResolvedValue({
+        ok: false,
+        error: { code: "APP_UNAVAILABLE", message: "fixture", status },
+      });
+      expect(await badgeCount(recipient.context)).toBe(0);
+      expect(await forYouUnread(recipient.context)).toBe(0);
+      expect(await conversations.list(recipient.context)).toMatchObject({ ok: true, data: { forYouUnread: 0 } });
+      expect(await systemNotificationHealth()).toMatchObject({ status: "failing", reason: `spaces: APP_UNAVAILABLE (${status})` });
+      expect((await systemNotificationHealth()).checkedAt).not.toBeNull();
+      await expect(deliverMessage(message.uuid)).rejects.toThrow("reader check unavailable");
+      expect(await sql`SELECT 1 FROM chat.messages WHERE id = ${message.uuid}::uuid AND notification_done`).toHaveLength(0);
+      reader.mockImplementation(async (_app, _query, input) => ({ ok: true, data: { data: { readable: input.userIds } } }));
+      expect(await readableSystemRecipients(chat.id, threadId, [recipient.id])).toEqual(new Set([recipient.id]));
+      expect((await systemNotificationHealth()).status).toBe("ok");
+    });
+  }
+  test("interactive misses are bounded per person while another person's delivery remains fresh", async () => {
+    const { author, recipient, chat } = await setup();
+    const other = await person("Another recipient");
+    const message = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    const threadId = await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+    await sql`INSERT INTO chat.participants (principal_type, principal_id, conversation_id, origin, joined_seq)
+      VALUES ('user', ${other.id}::uuid, ${chat.id}::uuid, 'ondemand', 0)`;
+    await sql`INSERT INTO chat.thread_follows (principal_type, principal_id, conversation_id, thread_id)
+      VALUES ('user', ${other.id}::uuid, ${chat.id}::uuid, ${threadId}::uuid)`;
+    const extraThreads = Array.from({ length: INTERACTIVE_READER_PERSON_LIMIT }, () => ({
+      id: crypto.randomUUID(),
+      short_id: testShortId(),
+      conversation_id: chat.id,
+      name: "Another element",
+      created_by_type: "user",
+      created_by_id: author.id,
+      resource_type: "spaces.item",
+      resource_id: testShortId(),
+    }));
+    await sql`INSERT INTO chat.threads ${sql(extraThreads)}`;
+    const extraMessages = extraThreads.map((thread, index) => ({
+      id: crypto.randomUUID(),
+      short_id: testShortId(10),
+      conversation_id: chat.id,
+      seq: message.seq + index + 1,
+      rev: message.seq + index + 1,
+      kind: "text",
+      author_type: "user",
+      author_id: author.id,
+      author_name: "Nora",
+      client_id: `flood-${index}`,
+      body_md: "Hello Lea",
+      thread_id: thread.id,
+    }));
+    await sql`INSERT INTO chat.messages ${sql(extraMessages)}`;
+    await sql`INSERT INTO chat.message_mentions (message_id, principal_type, principal_id, start_offset, end_offset, created_at)
+      SELECT id, 'user', ${recipient.id}::uuid, 6, 9, created_at FROM chat.messages
+      WHERE id = ANY(${toPgUuidArray(extraMessages.map((row) => row.id))}::uuid[])`;
+    configureSystem();
+    reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => ({
+      ok: true,
+      data: { data: { readable: input.userIds.filter((id) => id === other.id) } },
+    }));
+    const instant = new Date("2026-10-29T02:00:00Z");
+    setSystemTime(instant);
+    const window = Math.floor(instant.getTime() / 60_000);
+    const rateKeys = [window - 1, window].flatMap((part) => [
+      `cloud:ratelimit:chat:reader-person:${recipient.id}:${part}`,
+      `cloud:ratelimit:chat:reader-interactive:chat:${part}`,
+    ]);
+    try {
+      for (let request = 0; request < 12; request++) expect(await badgeCount(recipient.context)).toBe(0);
+      expect(reader.mock.calls).toHaveLength(INTERACTIVE_READER_PERSON_LIMIT);
+      const interactive = await redis.get(rateKeys[3]!);
+      // Only admitted person checks spend the shared interactive budget; denied traffic never reaches Core.
+      expect(Number(interactive ?? 0)).toBeLessThanOrEqual(INTERACTIVE_READER_PERSON_LIMIT);
+      await deliverMessage(message.uuid);
+      await due(chat.id);
+      await sendPush(other.id, chat.id);
+      expect(sent).toHaveLength(1);
+      expect(reader.mock.calls.slice(INTERACTIVE_READER_PERSON_LIMIT).some((call) => call[2].userIds.includes(other.id))).toBe(true);
+    } finally {
+      await redis.del(...rateKeys);
+    }
+  });
+  test("For you listing asks interactive owners without holding a read transaction", async () => {
+    const { author, recipient, chat } = await setup();
+    const message = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+    const [conversation] = await sql<{ resource_id: string }[]>`SELECT resource_id FROM chat.conversations WHERE id = ${chat.id}::uuid`;
+    const interactive = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (_app, query, input) => {
+      const [held] = await sql<{ held: boolean }[]>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid() AND state = 'idle in transaction'
+          AND query ~ 'chat\.(messages|threads|conversations)') AS held`;
+      expect(held!.held).toBe(false);
+      return {
+        data:
+          query === "space.read"
+            ? { id: input.id, name: "Original space", permission: "read" }
+            : { id: input.id, title: "Original item", kind: "task", spaceId: conversation!.resource_id },
+        links: [{ rel: "open", href: "/app/spaces" }],
+      };
+    });
+    try {
+      const page = await forYou.list(recipient.context);
+      expect(page).toMatchObject({ ok: true, data: { items: [{ message: { preview: "Hello Lea" } }] } });
+      expect(interactive.mock.calls.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      interactive.mockRestore();
+    }
+  });
+  test("owner checks release transactions and row locks, and local changes invalidate prepared sends", async () => {
+    const { author, recipient, chat } = await setup();
+    const message = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+    configureSystem();
+    let mute = false;
+    reader = spyOn(systemNotificationDependencies, "invoke").mockImplementation(async (_app, _query, input) => {
+      const [held] = await sql<{ held: boolean }[]>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid() AND state = 'idle in transaction'
+          AND query ~ 'chat\.(messages|threads|conversations|notification_push_state)') AS held`;
+      expect(held!.held).toBe(false);
+      await sql.begin(async (tx) => {
+        await tx`SELECT id FROM chat.messages WHERE id = ${message.uuid}::uuid FOR UPDATE NOWAIT`;
+        await tx`SELECT user_id FROM chat.notification_push_state WHERE user_id = ${recipient.id}::uuid AND conversation_id = ${chat.id}::uuid FOR UPDATE NOWAIT`;
+      });
+      if (mute)
+        await sql`UPDATE chat.participants SET notify = 'none' WHERE conversation_id = ${chat.id}::uuid AND principal_id = ${recipient.id}::uuid`;
+      return { ok: true, data: { data: { readable: input.userIds } } };
+    });
+    expect(await conversations.list(recipient.context)).toMatchObject({ data: { forYouUnread: 1 } });
+    const calls = reader.mock.calls.length;
+    expect(await sql.begin((db) => forYouUnread(recipient.context, db))).toBe(1);
+    expect(reader.mock.calls).toHaveLength(calls);
+    await deliverMessage(message.uuid);
+    await due(chat.id);
+    mute = true;
+    expect(await sendPush(recipient.id, chat.id)).toBe(0);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(0);
   });
   test("platform dispatcher applies DND without catch-up", async () => {
     const { author, recipient, chat } = await setup();
