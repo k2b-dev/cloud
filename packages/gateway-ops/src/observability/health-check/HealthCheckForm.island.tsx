@@ -1,11 +1,11 @@
+import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
+import { createSettingsDraft, saveFailure } from "@k2b/cloud/ssr/settings-draft";
 import { Checkbox, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { responseErrorMessage } from "../../frontend/health-webhook-queries";
 import { gatewayOpsMessages } from "../../messages";
 import { areaMessages } from "../_components/area-messages";
-import { createDraftForm, saveFailure } from "../_components/draft-form";
-import { SaveOutcome } from "../_components/SaveOutcome";
 
 type Props = { schedule: string; unreadable: boolean };
 
@@ -20,7 +20,7 @@ export default function HealthCheckForm(props: Props) {
   const [unreadable, setUnreadable] = createSignal(props.unreadable);
   const [replace, setReplace] = createSignal(false);
   const confirmed = () => unreadable() && replace();
-  const form = createDraftForm({
+  const form = createSettingsDraft({
     initial: { schedule: props.schedule },
     locale,
     validate: (value): Record<string, string> => (value.schedule.trim() ? {} : { schedule: t().scheduleRequired }),
@@ -31,7 +31,7 @@ export default function HealthCheckForm(props: Props) {
         param: { key: "gateway.health_check_schedule" },
         json: confirmed() ? { value: schedule, replaceUnreadable: true } : { value: schedule },
       });
-      if (!response.ok) throw saveFailure(response.status, await responseErrorMessage(response, t().notSaved));
+      if (!response.ok) throw saveFailure(response.status, await responseErrorMessage(response, g().saveFailed));
       setUnreadable(false);
       setReplace(false);
       return { schedule };
@@ -39,7 +39,7 @@ export default function HealthCheckForm(props: Props) {
   });
   return (
     <div class="flex max-w-2xl flex-col gap-4 px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">
-      <SaveOutcome t={t()} outcome={form.outcome()} onRetry={() => void form.save()} />
+      <SettingsSaveOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
       <Show when={unreadable()}>
         <NoticeCard tone="warning" title={g().unreadableTitle} detail={t().unreadableKeep({ value: props.schedule })}>
           <Checkbox

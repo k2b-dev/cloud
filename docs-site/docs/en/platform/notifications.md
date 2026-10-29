@@ -30,7 +30,7 @@ defines:
 - who can receive it;
 - which payload is valid;
 - what the recipient sees;
-- which delivery channels are recommended or required.
+- which delivery channels are recommended, required, or excluded.
 
 The send API accepts the bound definition. It does not accept an arbitrary
 event name.
@@ -39,7 +39,7 @@ event name.
 | --- | --- |
 | The domain event and when it has committed | Recipient resolution and user preferences |
 | The payload schema and presentation | Event and delivery persistence |
-| Whether a channel is recommended or required | Channel selection, fallback, and retries |
+| Whether a channel is recommended, required, or excluded | Channel selection, fallback, and retries |
 | Authorization for the operation that caused the event | Delivery history and operational status |
 
 A notification reports a domain change. The domain database remains the source
@@ -99,25 +99,30 @@ data at runtime.
 | `recipient` | Yes | `"user"` or `"email"`; fixes the address shape used by `send()` |
 | `label` | Yes | Non-empty name used by preference and operations surfaces |
 | `description` | Yes | Non-empty explanation of when the application emits the event |
-| `presentation` | No | Localized overlays for `label` and `description` |
+| `presentation` | No | Localized overlays for `label`, `description`, and `excludedReason` |
+| `excludedReason` | When channels are excluded | Trimmed, non-empty explanation shown beside excluded channels |
 | `data` | Yes | Zod schema used for type inference and runtime parsing |
 | `delivery.recommended` | No | Ordered, preference-aware channels; defaults to `[]` |
 | `delivery.required` | No | Channels that cannot be disabled; defaults to `[]` |
+| `delivery.excluded` | No | Channels this kind never prepares for delivery; defaults to `[]` |
 | `render` | Yes | Builds the channel-neutral presentation |
 | `email` | No | Builds an email-specific presentation when email is selected |
 
 `label` and `description` cannot be empty.
 
 When `presentation` is present, the complete `label` and `description`
-declaration belongs to `presentation.baseLocale`. Add partial overlays under
+declaration, including `excludedReason` when supplied, belongs to
+`presentation.baseLocale`. Add partial overlays under
 `presentation.translations`. Cloud canonicalizes BCP 47 locale keys and
 resolves an exact locale, then its language ancestors, then the base
 declaration. For example, `de-CH` uses a `de` overlay when no `de-CH` overlay
 exists. Notification preferences and delivery history receive this
 request-scoped presentation; stable definition IDs and keys do not change.
 
-Channel names cannot be duplicated within a delivery list or appear in both
-lists. An email-recipient definition must include `email` in
+Channel names cannot be duplicated within a delivery list or appear in more
+than one of the recommended, required, and excluded lists. Excluded channels
+require an `excludedReason`; its translations use the same per-field fallback as the
+label and description. An email-recipient definition must include `email` in
 `delivery.required`.
 
 `render` and `email` can also return a Promise.
@@ -227,6 +232,7 @@ delivery: {
 | --- | --- | --- | --- |
 | `recommended` | User preferences replace the ordered defaults | The first selected channel is queued; later choices are fallbacks | Cloud activates the next choice |
 | `required` | The user cannot disable the channel | Every required delivery is processed as part of `send()` | Missing or failed required delivery makes the result an error |
+| `excluded` | Neither preferences nor fallbacks can select the channel | Cloud never prepares a delivery for it | Older saved selections are ignored |
 
 Use required delivery only when the channel is part of the protocol. Ordinary
 product updates should normally be recommended so the recipient controls how
@@ -504,6 +510,37 @@ language as its approval card. Email
 adds the link to the approvals page. Existing events without those fields
 keep the general notice. See [Pending approvals notification](/en/docs/identity/approvals#pending-approvals-notification)
 for eligibility and bundling.
+
+## User preferences
+
+Under **My account → Notifications**, people choose optional channels for each
+active user-recipient kind. Registered excluded channels remain visible as
+disabled, unchecked rows with the application's localized `excludedReason`.
+**Use app default** restores only the recommended channels; it never selects
+an excluded channel.
+
+`GET /api/me/notifications/preferences` returns `excludedChannels` and the
+localized `excludedReason` (or `null` when none is declared) alongside the
+recommended, required, selected, and effective channels. The selected and
+effective lists omit excluded channels, including older saved selections.
+`PUT /api/me/notifications/preferences/:definitionId` rejects an excluded
+channel with HTTP 400. Removing a saved preference with `DELETE` restores the
+app defaults.
+
+For example, a frequent update can allow browser delivery while ruling out email:
+
+```ts
+const deliveryOptions = {
+  excludedReason: "Email for every update would be too much.",
+  delivery: { recommended: ["browser"], excluded: ["email"] },
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: { excludedReason: "Nicht verfügbar: Jede Aktualisierung als E-Mail wäre zu viel." },
+    },
+  },
+} as const;
+```
 
 ## Send a notification
 

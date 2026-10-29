@@ -361,7 +361,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
 | `@k2b/cloud/browser/hints` | Supported, browser | `markHintSeen`: remembers a moved-path hint in the browser cookie before dismissal or navigation | [One-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
-| `@k2b/cloud/browser/pwa-drafts` | Preview, browser | `pwaDrafts`: keep plain typed text per account and field across mobile app restarts; remove it after saving | [Keep drafts](/en/docs/frontend/mobile-app-pages#keep-drafts) |
+| `@k2b/cloud/browser/pwa-drafts` | Preview, browser | `pwaDrafts`: keep plain typed text per account and field across Cloud app restarts; remove it after saving | [Keep drafts](/en/docs/frontend/mobile-app-pages#keep-drafts) |
 | `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop and, under an open modal dialog, offers the reload once the dialog closes; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
 | `@k2b/cloud/browser/resource-links` | Supported, browser | Recognize pasted Cloud URLs with `resolveCloudUrl()` and read the canonical `cloudOrigin()` | [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
@@ -410,20 +410,20 @@ their presence is not an application support promise.
 
 ## Preview surfaces
 
-The mobile app is not released yet, so its part contract and the platform
+The Cloud app is not released yet, so its part contract and the platform
 exports behind it are `Preview`. Their guides say so at the top.
 
 | Surface | Status | Use | Guide |
 | --- | --- | --- | --- |
 | `installable` option and `AppInstallable` from `@k2b/cloud` | Supported | Give one application its own standalone installation | [App-PWA](/en/docs/frontend/app-pwa) |
-| `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the mobile app | [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app) |
-| `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#paths) |
-| `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#pwalayout) |
-| `ssr.pwaAccess` of the defined application | Preview, server-only | Handle a part request without an app session | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#serve-pages) |
-| `visiblePwaParts` and `VisiblePwaPart` from `@k2b/cloud/ssr` | Preview, platform-owned | The parts the mobile app lists on Start | — |
-| `PWA_*` constants, `isPwaPartId`, `isPwaShellAvailable`, pairing-link helpers and `Pwa*` schemas from `@k2b/cloud/contracts` | Preview, platform-owned | Paths, limits, pairing and phone contracts of the mobile app | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
-| `pwaDevices`, `PwaError` and their types from `@k2b/cloud/services` | Preview, platform-owned | Pairing, app sessions and phone administration | [Account administration API](/en/docs/reference/account-administration#remove-phones-from-the-mobile-app) |
-| `sessionKind` on `AuthContext`, `auth.isAppSession`, `auth.rejectAppSession` and `isAppSessionActor` from `@k2b/cloud/server` | Preview | Recognize the mobile app's session and refuse it where an action would outlive the phone | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
+| `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the Cloud app | [Define an application](/en/docs/build/define-app#add-pages-to-the-cloud-app) |
+| `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#paths) |
+| `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#pwalayout) |
+| `ssr.pwaAccess` of the defined application | Preview, server-only | Handle a part request without an app session | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#serve-pages) |
+| `visiblePwaParts` and `VisiblePwaPart` from `@k2b/cloud/ssr` | Preview, platform-owned | The parts the Cloud app lists on Start | — |
+| `PWA_*` constants, `isPwaPartId`, `isPwaShellAvailable`, pairing-link helpers and `Pwa*` schemas from `@k2b/cloud/contracts` | Preview, platform-owned | Paths, limits, pairing and device contracts of the Cloud app | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
+| `pwaDevices`, `PwaError` and their types from `@k2b/cloud/services` | Preview, platform-owned | Pairing, app sessions and device administration | [Account administration API](/en/docs/reference/account-administration#remove-devices-from-the-cloud-app) |
+| `sessionKind` on `AuthContext`, `auth.isAppSession`, `auth.rejectAppSession` and `isAppSessionActor` from `@k2b/cloud/server` | Preview | Recognize the Cloud app's session and refuse it where an action would outlive the device | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
 
 ## Platform-owned and limited surfaces
 

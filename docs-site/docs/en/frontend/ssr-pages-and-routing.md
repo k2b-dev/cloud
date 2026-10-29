@@ -144,7 +144,7 @@ The optional third argument accepts `title`, `description`,
 `action: { label, href, icon? }`, and `layout: "cloud" | "minimal" | "pwa"`
 (default `"cloud"`). Supply only safe, localized application copy, never
 internal error details. Use `"minimal"` for standalone pages without Cloud
-navigation. `"pwa"` (preview) renders the error as a page of the mobile app,
+navigation. `"pwa"` (preview) renders the error as a page of the Cloud app,
 with a link back to its Start page; it is for pages below `/pwa/`. A
 custom public page can instead set `c.status(404)` and retain its own render
 function. Keep independent widget or panel failures inside their page.
