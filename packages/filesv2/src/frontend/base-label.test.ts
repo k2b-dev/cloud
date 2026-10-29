@@ -8,4 +8,7 @@ describe("baseLabel", () => {
     expect(baseLabel({ name: "buchhaltung", kind: "groups" }, { personal: "Personal" }, "en")).toBe("buchhaltung");
     expect(baseLabel({ name: "alice", kind: "users" }, messages, "de")).toBe("Persönlich");
   });
+  test.each(["agent", "standalone"] as const)("%s storage shows its machine owner", (kind) => {
+    expect(baseLabel({ name: "machine-id", kind: "users", owner: { name: "Atlas", kind } }, messages, "de")).toBe("Atlas");
+  });
 });

@@ -78,6 +78,10 @@
   text-align: center;
   text-wrap: balance;
 }
+/* A heading the screen moves focus to, so a screen reader starts there; it is not a control and shows no ring. */
+.pwa-welcome__block h2[tabindex="-1"]:focus {
+  outline: none;
+}
 
 .pwa-welcome__block > p {
   margin: 0;

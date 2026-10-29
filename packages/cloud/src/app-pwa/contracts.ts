@@ -114,6 +114,8 @@ export const appPwaDeviceOperation = <I, O>(definition: {
   run: async (context, input) => parse(definition.output, await definition.handler(context, parse(definition.input, input))),
 });
 
+export type AppPwaCoreQuery = "address.autocomplete";
+
 export type AppPwaOptions = {
   app: { id: string; installable: Pick<AppInstallable, "path"> };
   /** Authoritative configured public origin, never a Host/Forwarded/request header. HTTPS is mandatory. */
@@ -131,6 +133,8 @@ export type AppPwaOptions = {
    * Called before issuance and again before commit, including issuance retries. */
   authorizeVisit(signIn: AppPwaWebSignIn, subject: unknown, tx: TransactionSQL): Promise<boolean>;
   queries?: Readonly<Record<string, AppPwaQuery>>;
+  /** Read-only platform queries available through the closed guest Core-query route. Empty by default. */
+  coreQueries?: readonly AppPwaCoreQuery[];
   commands?: Readonly<Record<string, AppPwaCommand>>;
   deviceOperations?: Readonly<Record<string, AppPwaDeviceOperation>>;
   /** Missing operation declarations deny access; operation registration alone grants nothing. */

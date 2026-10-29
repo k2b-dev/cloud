@@ -92,7 +92,7 @@ for (const width of [390, 768, 1440])
         searches = 0;
         searchFailure = false;
         await page.goto(`${server.url.href}${dark ? "?dark" : ""}`);
-        expect(await page.getByRole("link", { name: "Ortssuche", exact: true }).getAttribute("href")).toBe("/admin/places-and-maps");
+        expect(await page.getByRole("link", { name: "Ortssuche", exact: true }).getAttribute("href")).toBe("/admin/base/places");
         await page.screenshot({ path: resolve(screenshots, `settings-${dark ? "dark" : "light"}-${width}.png`), fullPage: true });
         await page.getByRole("button", { name: "Ort hinzufügen", exact: true }).click();
         const input = page.getByRole("combobox");

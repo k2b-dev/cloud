@@ -147,6 +147,8 @@ suite("share create/revoke atomic history and security audit", () => {
       return { ...(await authorize(requestActor, base, parent, true)), relative: path };
     },
     executionFor: () => null,
+    shareAuthority: async () => {},
+    guardShare: (current) => current,
     async requireAdmin(requestActor) {
       if (requestActor.kind !== "user" || !requestActor.user.roles.includes("admin")) throw new FilesError("forbidden", 403);
     },
