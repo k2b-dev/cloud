@@ -199,6 +199,12 @@ const room = async (page: Page, id: string) => {
 const hover = async (page: Page, id: string) => {
   const box = (await page.locator(`[href="#${id}"]`).boundingBox())!;
   await page.mouse.move(box.x + 12, box.y + box.height / 2);
+  // WebKit can apply :hover after the move resolves; revealing the actions only toggles visibility, which starts no
+  // animation for settled() to wait for. Measure only the row that the pointer hovers.
+  await page.waitForFunction(
+    (id) => document.querySelector(`.k2b-app-workspace__sidebar-item:has([href="#${id}"])`)?.matches(":hover") === true,
+    id,
+  );
 };
 
 describe("sidebar row label room", () => {
