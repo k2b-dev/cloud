@@ -22,7 +22,7 @@ export const stopAppAccessConnections = (): void => {
 export const appAccessDeniedBody = (app: AccessApp) => ({
   code: "app_access_denied" as const,
   app: app.id,
-  message: `You cannot use ${app.name ?? app.id}. ${app.access?.kind === "grants" ? "Ask someone who manages access to this app." : "Ask your Cloud administrator about access."}`,
+  message: `You cannot use ${app.name ?? app.id}. ${app.access?.kind === "grants" ? "Ask someone who manages access to this app." : app.access?.kind === "resources" ? "Ask someone who manages resource permissions in this app." : "Ask your Cloud administrator about access."}`,
 });
 
 export class AppAccessDeniedError extends Error {
