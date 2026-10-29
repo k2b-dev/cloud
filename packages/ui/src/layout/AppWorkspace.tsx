@@ -21,6 +21,7 @@ import { Dynamic, isServer } from "solid-js/web";
 import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
 import { useFilterMessages } from "../actions/filter-messages";
 import { dialogCore } from "../feedback/dialog-core";
+import { Tooltip } from "../feedback/Tooltip";
 import { RenderErrorBoundary } from "../internal/render-error";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
@@ -60,6 +61,7 @@ import BottomSheet, { bottomSheetAdaptiveOptions } from "./BottomSheet";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
+import { inSidebarRail, SidebarRailHint } from "./SidebarRailHint";
 import { AppWorkspaceSidebarSwitcher, type AppWorkspaceSidebarSwitcherProps } from "./SidebarSwitcher";
 import { createScrollFade, scrollFadeEdges } from "./scroll-fade";
 import { rememberSidebarScroll } from "./sidebar-scroll-memory";
@@ -68,6 +70,13 @@ import { useWorkspaceMessages } from "./workspace-messages";
 
 export type { AppWorkspaceWidthShare } from "./app-workspace-width";
 
+/** The narrowest container of each levels width class, as the stylesheet's breakpoints define them (48rem, 80rem). */
+const LEVEL_CLASS_WIDTH = { 1: 0, 2: 768, 3: 1280 } as const;
+/** The last shown level's minimum width when the level does not declare one; the stylesheet uses the same value. */
+const LEVEL_LAST_MIN = 320;
+/** The width the last shown level keeps at least: its declared minimum, never below the default. */
+const levelLastMin = (minSize: number | undefined) => Math.max(minSize ?? 0, LEVEL_LAST_MIN);
+const nonEmptyStyle = (style: Record<string, string>) => (Object.keys(style).length ? style : undefined);
 const ResizeContext = createContext(true);
 /** The enclosing workspace: its head names the sidebar, and a nested workspace leaves the page title to it. */
 const WorkspaceContext = createContext<{
@@ -286,6 +295,11 @@ export type AppWorkspaceMainPaneProps = {
   resizable?: boolean;
   resizeShadow?: boolean;
   defaultSize?: number | AppWorkspaceWidthShare;
+  /**
+   * The narrowest width in px, also for a person resizing it. Levels mode: the level needs it to be shown; when the
+   * deepest levels do not fit side by side at their minimum widths, the shallowest of them gives way, so a wide list
+   * pushes earlier columns aside.
+   */
   minSize?: number;
   maxSize?: number;
   class?: string;
@@ -687,10 +701,28 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
     return open;
   });
   const depth = () => Math.max(1, levels().findIndex((pane) => pane.props.id === props.level) + 1);
+  /** How many of the deepest levels a width class shows: up to its count, as long as their minimum widths fit. */
+  const levelCount = (widthClass: 1 | 2 | 3) => {
+    const all = levels();
+    let count = Math.min(widthClass, all.length);
+    while (count > 1) {
+      const end = Math.max(depth(), count);
+      const needed = all
+        .slice(end - count, end)
+        .reduce(
+          (sum, pane, offset) =>
+            sum + (end - count + offset + 1 === end ? levelLastMin(pane.props.minSize) : (pane.props.minSize ?? APP_WORKSPACE_PANE_MIN)),
+          0,
+        );
+      if (needed <= LEVEL_CLASS_WIDTH[widthClass]) break;
+      count--;
+    }
+    return count;
+  };
   const levelClasses = (index: number, kind: "shown" | "first" | "last" | "handle") =>
-    [1, 2, 3]
+    ([1, 2, 3] as const)
       .filter((widthClass) => {
-        const count = Math.min(widthClass, levels().length);
+        const count = levelCount(widthClass);
         const end = Math.max(depth(), count);
         const start = end - count + 1;
         return kind === "first"
@@ -848,15 +880,18 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                     data-scroll-fade-mode={
                       !levelsMode() && pane.props.scroll !== false && pane.props.scrollFade !== false ? "both" : undefined
                     }
-                    style={
-                      isAnchor()
-                        ? undefined
+                    style={nonEmptyStyle({
+                      ...(isAnchor()
+                        ? {}
                         : {
                             // A stored width keeps to this pane's limits before the controller attaches.
                             "--k2b-workspace-panel-size": `clamp(${minSize()}px, var(${variable}, ${appWorkspaceWidthCss(defaultSize(), "var(--k2b-workspace-width)")}), ${maxSize()}px)`,
                             "--k2b-workspace-panel-min": `${minSize()}px`,
-                          }
-                    }
+                          }),
+                      // The last shown level fills the rest, but never below its minimum; set on every level, so a workspace
+                      // nested in a wide level does not inherit that minimum.
+                      ...(levelsMode() ? { "--k2b-workspace-level-min": `${levelLastMin(pane.props.minSize)}px` } : {}),
+                    })}
                   >
                     {levelsMode() ? (
                       <>
@@ -1455,6 +1490,10 @@ type AppWorkspaceSidebarRowProps = {
   disabled?: boolean;
   tone?: AppWorkspaceSidebarItemTone;
   title?: string;
+  /** The plain label, which names the row in the collapsed rail when it has no `title`. */
+  hint?: string;
+  /** The element that holds keyboard focus for this row, when that is not the row itself. */
+  focusTarget?: () => HTMLElement | undefined;
   viewTransitionName?: string;
   class?: string;
   depth?: number;
@@ -1527,6 +1566,8 @@ function observeSidebarRowCover(row: HTMLElement): void {
 
 /** Shared visual and semantic row frame for flat sidebar items and tree items. */
 function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element {
+  const [link, setLink] = createSignal<HTMLElement>();
+  const [hinted, setHinted] = createSignal(false);
   const className = () =>
     `k2b-app-workspace__sidebar-item ${props.hasActions ? "has-action" : ""} ${props.active ? (props.activeClass ?? "is-active") : ""} ${props.class ?? ""}`;
   const data = () =>
@@ -1537,7 +1578,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
     );
   const common = () => ({
     class: className(),
-    title: props.title,
+    title: hinted() ? undefined : props.title,
     "data-tone": props.tone,
     style: {
       "view-transition-name": props.viewTransitionName,
@@ -1548,7 +1589,10 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
   const current = (): "page" | "true" | undefined => (props.active === "ancestor" ? "true" : props.active ? "page" : undefined);
 
   const Control = (control: { grouped: boolean }) => {
-    const attrs = () => (control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common());
+    const attrs = () => ({
+      ...(control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common()),
+      ref: setLink,
+    });
     return (
       <Show
         when={Boolean(props.href && !props.disabled)}
@@ -1583,12 +1627,28 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
     );
   };
   return (
-    <Show when={props.hasActions} fallback={<Control grouped={false} />}>
-      <div {...common()} ref={(row) => onMount(() => observeSidebarRowCover(row))} data-disabled={props.disabled ? "true" : undefined}>
-        <Control grouped />
-        {props.actions}
-      </div>
-    </Show>
+    <>
+      <Show when={props.hasActions} fallback={<Control grouped={false} />}>
+        <div {...common()} ref={(row) => onMount(() => observeSidebarRowCover(row))} data-disabled={props.disabled ? "true" : undefined}>
+          <Control grouped />
+          {props.actions}
+        </div>
+      </Show>
+      {/* The hint follows the row's link or button, also when actions or `disabled` replace it, and leaves the
+          row's own actions their own hints. */}
+      <Show when={link()} keyed>
+        {(element) => (
+          <SidebarRailHint
+            target={() => element}
+            label={props.title ?? props.hint}
+            focusTarget={props.focusTarget ?? (() => element)}
+            labelSelector=".k2b-app-workspace__sidebar-item-label-text"
+            titled={props.title !== undefined}
+            onArm={() => setHinted(true)}
+          />
+        )}
+      </Show>
+    </>
   );
 }
 
@@ -1761,6 +1821,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       disabled={props.disabled}
       tone={props.tone}
       title={props.title}
+      hint={typeof label() === "string" ? (label() as string) : undefined}
       viewTransitionName={props.viewTransitionName}
       class={props.class}
       depth={props.depth}
@@ -2038,6 +2099,8 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
             disabled={item.disabled}
             tone={item.tone}
             title={item.title}
+            hint={typeof item.label === "string" ? item.label : undefined}
+            focusTarget={() => treeItem}
             viewTransitionName={item.viewTransitionName}
             class={`k2b-app-workspace__nav-tree-row ${item.class ?? ""}`}
             depth={props.indented === false ? 0 : depth}
@@ -2182,38 +2245,51 @@ const AppWorkspaceSidebarIconGrid = (props: AppWorkspaceSidebarIconGridProps) =>
 );
 
 const AppWorkspaceSidebarIconAction = (props: AppWorkspaceSidebarIconActionProps) => {
+  let target: HTMLElement | undefined;
   const content = <i class={iconClass(props.icon)} aria-hidden="true" />;
   const attrs = () => ({
+    ref: (element: HTMLElement) => (target = element),
     class: `k2b-app-workspace__sidebar-icon-action ${props.active ? "is-active" : ""}`,
-    title: props.label,
     "aria-label": props.label,
     "data-tone": props.tone,
     style: { "view-transition-name": props.viewTransitionName },
     ...modeAttrs(props.sidebarMode),
   });
+  // The icon never shows its label, so the hint names it in every state; in the collapsed rail it sits beside the
+  // icon like the rail's other entries.
+  const hint = <Tooltip target={() => target} content={props.label} placement={inSidebarRail(target) ? "right" : undefined} delay={0} />;
   if (!props.href || props.disabled)
     return (
-      <button type="button" {...attrs()} disabled={props.disabled} onClick={props.onClick}>
-        {content}
-      </button>
+      <>
+        <button type="button" {...attrs()} disabled={props.disabled} onClick={props.onClick}>
+          {content}
+        </button>
+        {hint}
+      </>
     );
   if (props.navigation !== "enhanced" || !props.onNavigate)
     return (
-      <a href={props.href} {...attrs()} onClick={props.onClick}>
-        {content}
-      </a>
+      <>
+        <a href={props.href} {...attrs()} onClick={props.onClick}>
+          {content}
+        </a>
+        {hint}
+      </>
     );
   return (
-    <Link
-      href={props.href}
-      {...attrs()}
-      replace={props.replace}
-      scroll={props.scroll}
-      onNavigate={props.onNavigate}
-      onClick={props.onClick}
-    >
-      {content}
-    </Link>
+    <>
+      <Link
+        href={props.href}
+        {...attrs()}
+        replace={props.replace}
+        scroll={props.scroll}
+        onNavigate={props.onNavigate}
+        onClick={props.onClick}
+      >
+        {content}
+      </Link>
+      {hint}
+    </>
   );
 };
 

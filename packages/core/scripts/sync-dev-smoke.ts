@@ -10,7 +10,7 @@ import { z } from "zod";
 
 const gateway = "http://gateway:3000";
 const apiPaths = ["/api/admin/sync", "/api/admin/sync/core/resources", "/api/admin/sync/core/dead-letters", "/api/gateway/sync"];
-const adminPaths = ["/admin/gateway/apps", "/admin/observability/sync", "/admin/observability/jobs"];
+const adminPaths = ["/admin/observability/gateway", "/admin/observability/nats/sync", "/admin/observability/jobs"];
 const database = new URL(process.env.DATABASE_URL ?? "postgresql://invalid/invalid");
 if (
   process.env.NODE_ENV !== "development" ||

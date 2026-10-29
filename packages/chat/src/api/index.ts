@@ -20,6 +20,7 @@ import { chatMessages } from "../messages";
 import { chatRequestContext as context } from "../request-context";
 import { ChatHealthSchema, chatService } from "../service";
 import { attachmentHeaders } from "../service/attachment-content";
+import { BadgeSchema, badgeCount } from "../service/badge";
 import {
   AddMembersSchema,
   AttachmentParamSchema,
@@ -117,6 +118,9 @@ const description = (summary: string, schema: z.ZodType) =>
   });
 const app = new Hono<AuthContext>()
   .use(rateLimit())
+  .get("/badge", auth.requireRole("authenticated"), description("Read the Chat badge count", BadgeSchema), async (c) =>
+    respond(c, ok({ count: await badgeCount(context(c)) })),
+  )
   .get(
     "/admin/health",
     auth.requireRole("admin"),

@@ -95,6 +95,9 @@ const validatePresentation = (presentation: NotificationPresentation, appId: str
   if (presentation.badge !== undefined && (!Number.isSafeInteger(presentation.badge) || presentation.badge < 0)) {
     throw new Error("Notification badge must be a non-negative safe integer");
   }
+  if (presentation.alert !== undefined && typeof presentation.alert !== "boolean") {
+    throw new Error("Notification alert must be a boolean");
+  }
   return {
     title,
     ...(body ? { body } : {}),
@@ -102,6 +105,7 @@ const validatePresentation = (presentation: NotificationPresentation, appId: str
     ...(targetHref ? { targetHref } : {}),
     ...(presentation.group !== undefined ? { group: presentation.group } : {}),
     ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
+    ...(presentation.alert === false ? { alert: false } : {}),
   };
 };
 
@@ -274,10 +278,11 @@ export const sendTypedNotification = async <
   const candidateEventId = crypto.randomUUID();
   await ensureNotificationDefinition(definition);
 
-  const requiredChannels = unique([...(definition.delivery?.required ?? [])]);
+  const excluded = new Set<string>(definition.delivery?.excluded ?? []);
+  const requiredChannels = unique([...(definition.delivery?.required ?? [])]).filter((channel) => !excluded.has(channel));
   const requiredChannelSet = new Set<string>(requiredChannels);
   const preference = await preferredChannels(definition.id, resolved.recipient, definition.delivery?.recommended ?? []);
-  const preferred = preference.channels.filter((channel) => !requiredChannelSet.has(channel));
+  const preferred = preference.channels.filter((channel) => !requiredChannelSet.has(channel) && !excluded.has(channel));
 
   const identity = await sql.begin(async (tx) => {
     const eventRows = await tx<{ id: string }[]>`

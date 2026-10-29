@@ -197,6 +197,8 @@ beforeEach(() => {
           description: "Before your account expires.",
           recommendedChannels: ["inbox", "email"],
           requiredChannels: [],
+          excludedChannels: [],
+          excludedReason: null,
           selectedChannels: ["inbox", "email"],
           effectiveChannels: ["inbox", "email"],
           customized: false,
@@ -493,6 +495,51 @@ describe("account pages in a browser", () => {
         });
       }
   }, 120_000);
+
+  test("show registered excluded channels disabled and unchecked with the app reason", async () => {
+    const reason = "Nicht verfügbar: Jede Nachricht als E-Mail wäre zu viel.";
+    spies.unshift(
+      spyOn(services.notifications.user.preferences, "list").mockResolvedValue({
+        availableChannels: ["browser", "email"],
+        definitions: [
+          {
+            id: "demo.newUpdates",
+            appId: "demo",
+            kind: "newUpdates",
+            label: "Neue Meldungen",
+            description: "Wenn eine Meldung eingeht.",
+            recommendedChannels: ["browser"],
+            requiredChannels: [],
+            excludedChannels: ["email"],
+            excludedReason: reason,
+            selectedChannels: ["browser", "email"],
+            effectiveChannels: ["browser"],
+            customized: true,
+          },
+        ],
+      }),
+    );
+    for (const view of [desktop, phone]) {
+      for (const dark of [false, true]) {
+        const tab = await open(view, "/me/notifications", "de", dark);
+        try {
+          const email = tab.getByRole("checkbox", { name: "E-Mail", exact: true });
+          expect(await email.isDisabled()).toBe(true);
+          expect(await email.isChecked()).toBe(false);
+          expect(await tab.getByText(reason, { exact: true }).isVisible()).toBe(true);
+          const reasonId = await email.getAttribute("aria-describedby");
+          expect(reasonId).toBeTruthy();
+          expect(await tab.locator(`[id="${reasonId}"]`).textContent()).toBe(reason);
+          expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+          const shots = process.env.CORE_ACCOUNT_SHOTS;
+          if (shots)
+            await tab.screenshot({ path: `${shots}/notification-excluded-${dark ? "dark" : "light"}-${view.width}.png`, fullPage: true });
+        } finally {
+          await tab.close();
+        }
+      }
+    }
+  }, 60_000);
 
   test("reserve the browser notification button's height before the island hydrates", async () => {
     const tab = await open(phone, "/me/notifications", "en");

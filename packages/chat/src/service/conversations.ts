@@ -67,7 +67,7 @@ import {
 import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { publishMembership } from "./live-updates";
-import { appendMessage, personSnapshots } from "./message-store";
+import { appendMessage, personSnapshots, queueAddedNotification } from "./message-store";
 import { projectRead, type ReadProjection, readProjection, unreadQuery } from "./read-state";
 import { readerBatch, readResource } from "./resource-access";
 import { messageCondition, type ThreadBudget, visibleThreadIdPage } from "./thread-access";
@@ -234,30 +234,37 @@ const appendAdded = async (
   ids: string[],
   groupIds: string[],
   affected: string[],
+  notificationUserIds: string[],
   serviceIds: string[] = [],
 ) => {
+  let notificationMessage: string | undefined;
   if (ids.length || serviceIds.length)
-    await appendMessage(
-      db,
-      row,
-      context,
-      {
-        kind: "system",
-        system: {
-          code: "members_added",
-          params: { members: [...(await personSnapshots(db, ids)), ...(await personSnapshots(db, serviceIds, "service_account"))] },
+    notificationMessage = (
+      await appendMessage(
+        db,
+        row,
+        context,
+        {
+          kind: "system",
+          system: {
+            code: "members_added",
+            params: { members: [...(await personSnapshots(db, ids)), ...(await personSnapshots(db, serviceIds, "service_account"))] },
+          },
         },
-      },
-      affected,
-    );
-  if (groupIds.length)
-    await appendMessage(
+        affected,
+      )
+    ).short_id;
+  if (groupIds.length) {
+    const added = await appendMessage(
       db,
       row,
       context,
       { kind: "system", system: { code: "groups_added", params: { groups: await groupSnapshots(db, groupIds) } } },
       ids.length || serviceIds.length ? [] : affected,
     );
+    notificationMessage ??= added.short_id;
+  }
+  if (notificationMessage) await queueAddedNotification(db, notificationMessage, notificationUserIds);
 };
 
 const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: typeof sql, ids?: string[]) => {
@@ -527,6 +534,11 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       let latestMessage = await appendMessage(db, row, input, { kind: "system", system: { code: "conversation_created", params: {} } }, [
         ...new Set([...allIds, ...groupPeople, ...services.map((id) => `service_account:${id}`)]),
       ]);
+      await queueAddedNotification(
+        db,
+        latestMessage.short_id,
+        [...new Set([...allIds, ...groupPeople])].filter((id) => id !== callerId),
+      );
       if (groups.length)
         latestMessage = await appendMessage(db, row, input, {
           kind: "system",
@@ -896,6 +908,9 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
     await lockConversation(db, input.conversationId);
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.add");
     if (!allowed.ok) return allowed;
+    const beforeMembers = new Set(
+      (await db<{ id: string }[]>`${memberUsers(allowed.data.id, db)} LIMIT ${MAX_PARTICIPANTS + 1}`).map((person) => person.id),
+    );
     const principals = await newMembers(db, allowed.data.id, parsed.data.members);
     const valid = await validateMembers(principals, input, db, true, input.conversationId);
     if (!valid.ok) return valid;
@@ -914,6 +929,7 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
       ids,
       groups.map((group) => group.groupId),
       [...new Set([...ids, ...groupPeople, ...services.map((id) => `service_account:${id}`)])],
+      [...new Set([...ids, ...groupPeople])].filter((id) => !beforeMembers.has(id)),
       services,
     );
     await record(db, input, allowed.data.short_id, "chat.member.add", { count: principals.length });

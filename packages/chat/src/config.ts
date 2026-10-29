@@ -1,5 +1,7 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 
+import { NOTIFICATIONS } from "./notifications";
+
 export const app = defineApp({
   id: "chat",
   cli: { chat: { module: "src/cli.ts", references: "src/cli-references" } },
@@ -22,11 +24,28 @@ export const app = defineApp({
     href: "/app/chat",
     match: "/app/chat",
     section: "primary",
+    badge: "/api/chat/badge",
     requiresAuth: true,
     requiresRoles: ["user", "guest"],
   },
   panel: { href: "/app/chat/panel", label: "Chat", icon: "ti ti-messages", requiresRoles: ["user", "guest"] },
   settings: {
+    "chat.push_preview": {
+      kind: "boolean",
+      default: true,
+      label: "Message text in notifications",
+      description:
+        "Shows the start of the message in push notifications, including on the lock screen. Off: shows only who writes in which chat. Applies to everyone.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Nachrichtentext in Benachrichtigungen",
+            description:
+              "Zeigt den Anfang der Nachricht im Push, auch auf dem Sperrbildschirm. Aus: nur wer in welchem Chat schreibt. Gilt für alle.",
+          },
+        },
+      },
+    },
     "chat.discoverable_authenticated": {
       kind: "boolean",
       label: "Allow channels discoverable by all signed-in accounts",
@@ -43,6 +62,7 @@ export const app = defineApp({
       },
     },
   },
+  notifications: NOTIFICATIONS,
   openapi: "/api/chat/openapi.json",
   routes: ["/api/chat", "/app/chat", "/admin/chat", "/public/chat"],
 });
