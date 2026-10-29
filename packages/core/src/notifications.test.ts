@@ -41,7 +41,8 @@ describe("Core notification definitions", () => {
         expect(email.subject).toBe(title);
         expect(email.content).toStartWith(device);
 
-        const attribution = locale === "de" ? "Eingerichtet von Admin Example (Administration)." : "Set up by Admin Example (Administration).";
+        const attribution =
+          locale === "de" ? "Eingerichtet von Admin Example (Administration)." : "Set up by Admin Example (Administration).";
         expect(rendered.body).not.toContain("(Administration)");
         expect(email.content).not.toContain("(Administration)");
         expect((await notice.render(assistedData, { locale })).body).toBe(`${rendered.body} ${attribution}`);
