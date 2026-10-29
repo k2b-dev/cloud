@@ -135,7 +135,7 @@ function Harness() {
   let scrollPort: HTMLDivElement | undefined;
   const changeRichMode = (next: boolean) => {
     const current = view();
-    const restore = current && scrollPort ? keepReadingPosition(current, scrollPort) : null;
+    const restore = current && scrollPort ? keepReadingPosition(current, scrollPort, { selection: true }) : null;
     setRich(next);
     if (restore) queueMicrotask(() => current?.dom.isConnected && restore());
   };

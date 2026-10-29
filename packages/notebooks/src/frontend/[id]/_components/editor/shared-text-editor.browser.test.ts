@@ -469,8 +469,13 @@ describe("Notebook on the shared text editor", () => {
     }
   });
 
-  for (const device of [desktop, phone]) {
-    test(`switching views keeps the selected paragraph in a long note at ${device.viewport?.width}px`, async () => {
+  // Below the edge too: the edge line can be a grid that changes height with the view.
+  for (const [device, below] of [
+    [desktop, 0],
+    [phone, 0],
+    [phone, 180],
+  ] as const) {
+    test(`switching views keeps the selected paragraph in a long note at ${device.viewport?.width}px, ${below}px below the edge`, async () => {
       const doc = Array.from(
         { length: 60 },
         (_, index) =>
@@ -481,10 +486,10 @@ describe("Notebook on the shared text editor", () => {
         await page.evaluate(() => window.noteHarness.placeCaret("Paragraph 40 with selected words", 18, 14));
         const paragraph = page.locator(".cm-line").filter({ hasText: "Paragraph 40 with" }).first();
         await paragraph.scrollIntoViewIfNeeded();
-        await paragraph.evaluate((line) => {
+        await paragraph.evaluate((line, below) => {
           const port = line.closest(".k2b-scroll-area")!;
-          port.scrollTop += line.getBoundingClientRect().top - port.getBoundingClientRect().top;
-        });
+          port.scrollTop += line.getBoundingClientRect().top - port.getBoundingClientRect().top - below;
+        }, below);
         await page.evaluate(() => window.noteHarness.settle());
         const before = await paragraph.evaluate((line) => ({
           top: line.getBoundingClientRect().top,

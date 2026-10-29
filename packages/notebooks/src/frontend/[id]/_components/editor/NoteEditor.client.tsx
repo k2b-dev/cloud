@@ -960,7 +960,7 @@ function EditorInstance(
 
   const changeRichMode = (next: boolean) => {
     const view = editorView();
-    const restore = view && scrollPort ? keepReadingPosition(view, scrollPort) : null;
+    const restore = view && scrollPort ? keepReadingPosition(view, scrollPort, { selection: true }) : null;
     setRichMode(next);
     // Reactive presentation compartments settle before the next paint. The
     // outer scroll area must follow the same text as tables change height.
