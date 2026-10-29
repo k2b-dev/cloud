@@ -56,10 +56,14 @@ import {
   VersionCommentSchema,
   VersionRefSchema,
   VersionRestoreAsSchema,
+  VersionRestoreSchema,
 } from "../contracts";
 import { isMarkdown } from "../document-assets";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
+import { SEARCH_REQUEST_SECONDS } from "../service/search";
+import { activityApi } from "./activity";
+import { createActivityActionsApi } from "./activity-actions";
 import { apiError, describeError } from "./api-error";
 import { inlinePdfApi } from "./inline-pdf";
 import { machineStorageApi } from "./machine-storage";
@@ -85,9 +89,19 @@ const api = new Hono<AuthContext>()
       log.error("Files request failed", { code, status, method: c.req.method, path: c.req.path, error: describeError(error) });
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
+  .route("/", activityApi)
   .route("/admin/machine-storage", machineStorageApi)
   .route("/templates", templateApi)
   .route("/", inlinePdfApi)
+  .route(
+    "/",
+    createActivityActionsApi({
+      recovery: filesService.activityRecovery,
+      restore: filesService.restoreActivity,
+      moveBack: filesService.moveActivityBack,
+      recheck: filesService.recheckActivity,
+    }),
+  )
   .post(
     "/bases/:baseId/markdown",
     middleware.openapi({ summary: "Create an empty Markdown document", ...requiresAuth }),
@@ -152,10 +166,17 @@ const api = new Hono<AuthContext>()
   )
   .get(
     "/bases/:baseId/search",
-    middleware.openapi({ summary: "Search names below an authorized folder", ...requiresAuth }),
+    middleware.openapi({ summary: "Search names and paths below an authorized folder", ...requiresAuth }),
     v("query", SearchQuerySchema),
-    async (c) =>
-      respond(c, ok(await filesService.search(requestCall(c), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+    async (c) => {
+      setRequestTimeout(c, SEARCH_REQUEST_SECONDS);
+      try {
+        const input = { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query"), signal: c.req.raw.signal };
+        return respond(c, ok(await filesService.search(requestCall(c), input)));
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
   )
   .post(
     "/bases/:baseId/directories",
@@ -297,7 +318,7 @@ const api = new Hono<AuthContext>()
   .post(
     "/bases/:baseId/versions/restore",
     middleware.openapi({ summary: "Restore a version in place", ...requiresAuth }),
-    v("json", VersionRefSchema),
+    v("json", VersionRestoreSchema),
     async (c) =>
       respond(c, ok(await filesService.restoreVersion(requestCall(c), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
@@ -318,7 +339,7 @@ const api = new Hono<AuthContext>()
   )
   .get(
     "/shares",
-    middleware.openapi({ summary: "List public shares owned by the user", ...requiresAuth }),
+    middleware.openapi({ summary: "List own public shares, or item shares for the current creator or administrator", ...requiresAuth }),
     v("query", SharePageQuerySchema),
     async (c) => respond(c, ok(await filesService.listShares(requestCall(c), c.req.valid("query")))),
   )

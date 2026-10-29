@@ -183,7 +183,7 @@ Agents can change provider subscriptions with `cld mail folder subscribe` and `c
 - **View** for reading, search, comments, and personal reminders.
 - **Edit** for sending, provider mail operations, and collaboration changes.
 - **Manage** for transport, sharing, rules, workflows, and the mailbox lifecycle.
-- **View assigned only** or **Edit assigned only** for people and groups who work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
+- **View assigned only** or **Edit assigned only** for people, groups, agents, and standalone service accounts that work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
 
 **Automatic reply management access** is a mailbox setting above the access list:
 

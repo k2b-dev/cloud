@@ -5,7 +5,7 @@ section: Reference
 order: 1278
 description: Diagnose interrupted FreeIPA backfills and safely upgrade older background jobs.
 tags: [freeipa, operations, recovery]
-updated: 2026-09-09
+updated: 2026-10-28
 ---
 
 # Recover FreeIPA synchronization and maintenance
@@ -15,7 +15,7 @@ This reference is for operators investigating background work or upgrading it.
 
 ## Backfill account expiry dates
 
-Use **FreeIPA account expiry** under **Administration → Accounts & sign-in → Operations** to fill missing or premature expiry
+Use **FreeIPA account expiry** under **Administration → Sign-in & security → Account operations** to fill missing or premature expiry
 dates. Each accepted run fixes its target to the configured IPA account
 lifetime, with a minimum of seven days, at 23:59:59 UTC. Retries keep that
 target even if the settings or current date change. A later expiry read from

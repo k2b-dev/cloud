@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AiConversation, AiConversationService, AiStoredMessage } from "@k2b/cloud/ai";
 import { UniversalSearchDataSchema } from "@k2b/cloud/contracts";
+import { testIdentity } from "./artifacts/test-identity";
 import { searchAssistant } from "./search";
 
 const chat: AiConversation = {
@@ -45,7 +46,7 @@ const message: AiStoredMessage = {
 };
 const projects = { getByShortId: async () => null };
 const input = { query: "launch", tags: [], limit: 1 };
-const context = { accessSubject: { type: "user" as const, userId: "owner" }, locale: "de" };
+const context = { ...testIdentity("owner"), locale: "de" };
 const calls: unknown[] = [];
 const store: Pick<AiConversationService, "listConversations" | "getConversationByShortId" | "searchConversationMessages"> = {
   listConversations: async (request) => {
@@ -131,7 +132,7 @@ test("project search authorizes the project and filters owned chats before limit
   const result = await searchAssistant({ ...input, scope: { type: "assistant.project", id: "Proj01" } }, context, store, {
     getByShortId: async (id, subject) => {
       expect(id).toBe("Proj01");
-      expect(subject).toEqual(context.accessSubject);
+      expect(subject).toEqual(context);
       return project;
     },
   });

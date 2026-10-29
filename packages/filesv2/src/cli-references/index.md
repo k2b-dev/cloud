@@ -80,7 +80,7 @@ as `root.stableIds` in `admin inventory`. An older Files CLI plugin reads
 | `mv <source>... <destination>` | Renames or moves inside one area | `{base, entries, results}` |
 | `cp <source>... <folder>` | Copies into a folder of any area | `{base, entries, results}` |
 | `rm <entry>... --yes` | Moves entries to the trash | `{entries, results}` |
-| `search <folder> <query>` | Searches names below a folder | `{base, path, query, scope, items, next}` |
+| `search <folder> [query]` | Searches names and folder names below a folder | `{base, path, query, scope, items, next, total}` |
 | `trash list <area>` | Lists the trash | `{entries, next}` |
 | `trash restore <area> <trash-id> [--to <path>]` | Restores an entry | `{base, entry}` |
 | `versions list <file>` | Lists versions | array of `{id, created, size, pinned, comment, author}` |
@@ -116,12 +116,32 @@ before files across pages. A `cursor_invalid` error means: restart without
 instead of truncating when the result exceeds 10,000 entries, the server's scan
 budget for one listing; choose a narrower folder or a lower depth.
 
-`search <folder> <query>` matches name fragments below the folder, recursively;
-`--scope folder` limits hits to its direct entries. Storage without an index is
-scanned and fails with `search_limited` when a folder holds too many entries, so
-narrow the folder. FreeIPA search uses Unix-scoped live filesystem scans. An
-unreadable subtree fails the entire search. Continuations return 403 for revoked
-access or 404 for externally removed results; restart without `--after`.
+`search <folder> [query]` searches below the folder, recursively; `--scope
+folder` limits hits to its direct entries. By default it matches names and
+folder names below the folder (`--in path`), tolerates typos and abbreviations
+(`--match fuzzy`), and returns the best matches first (`--sort relevance`,
+which ignores `--order` and folder grouping). Use `--match exact --in name` for
+exact name parts only. Filters, or `--type files|directories`, narrow before
+ranking and make the query optional: `--ext pdf,docx` (excludes folders), `--min-size` and `--max-size` in
+bytes, `--modified-after` (inclusive) and `--modified-before` (exclusive) as
+RFC 3339 times. A query has at most eight words.
+
+```bash
+cld filesv2 search me:/ rechnug --json
+cld filesv2 search me:/Projects --ext pdf --modified-after 2026-10-01T00:00:00Z --sort modified --order desc --json
+```
+
+JSON output adds `total`, the number of all hits or null when unknown,
+`truncated`, true when relevance kept only the best hits so the pages end
+before `total`, and per item `highlight`: `[start, end)` Unicode code point ranges into the item's path
+below the searched folder. Every search has a 10-second budget; `search_limited`
+means it ran out, so narrow the folder, query, or filters instead of retrying
+unchanged. Storage without an index can only be searched in smaller folders.
+`search_busy` means other searches occupied the root; retry shortly. FreeIPA
+search uses Unix-scoped live filesystem scans. An unreadable subtree fails the
+entire search. Continuations return `cursor_invalid` when the results changed,
+403 for revoked access, or 404 for externally removed results; restart without
+`--after`.
 
 Missing, conflicting, or unknown storage is an error, never an empty folder;
 unknown statistics remain null.
@@ -358,6 +378,116 @@ moves and filesystem entries without Cloud records; an unknown `original` or
 area, including the name, and is required when the original location is
 unknown. Restore never overwrites an existing destination.
 
+## Find file history and old locations
+
+```bash
+cld filesv2 history me:/Documents/report.pdf --json
+cld filesv2 history team:/Projects --folder --json
+cld filesv2 history --search 'Old Projects/offer.pdf' --action item.move --json
+cld filesv2 history --actor <user-uuid> --from 2026-10-01T00:00:00Z --to 2026-10-20T23:59:59Z --limit 10 --json
+cld filesv2 history --search 'Old Projects/offer.pdf' --action item.move --after '<next>' --json
+cld filesv2 history show <activity-uuid> --json
+cld filesv2 history chain <activity-uuid> --json
+cld filesv2 shares access <share-uuid> --from 2026-10-01 --to 2026-10-20 --json
+```
+
+`history` reads one page, newest first. An address selects that path even
+when it no longer exists; `--folder` includes descendants. Without an address,
+it reads visible activity across bases. `--search` matches visible names and
+paths, including old paths and evidence from moved ancestor folders. Stable
+file IDs select identity history; inline path references select path history.
+Persisted `p:` references are resolved to their stored path without touching
+storage.
+History does not provision a missing home or adopt an unbound area.
+
+Filters are `--actor` (user UUID), `--action` (a history action code),
+`--from` and `--to` (inclusive ISO timestamps with a timezone). Use
+`cld filesv2 history --help` for action codes. `--limit` accepts 1–50 and
+defaults to 50. JSON and JSONL return the complete page object:
+`{items,next,visibleCount,batches,exhausted,scanLimitReached,searchLimitReached}`.
+Counts describe only the visible page. Pass `next` unchanged to `--after`
+with the same address and filters. A page can be empty and still have `next`:
+continue until it is null. Each request checks at most 500 candidate entries;
+a search stops after 200 visible matches. Narrow the filters when
+`searchLimitReached` is true.
+
+Current read permissions determine which sides of an entry are visible.
+Your own actions and administrator views can include saved snapshots;
+a snapshot grants no current access. A hidden side contains no path or
+identity. A disappearance-only side contains its old name and path,
+`directory` (null for unknown legacy metadata), and `publicBaseId` (null
+without current access to that base). It contains no size, revision, item ID,
+or observation. Fully visible `share.create` and `share.revoke` entries can
+include `share.expiresAt`; null means no expiry or a missing retained share.
+History
+never returns raw operation details, passwords or public-link tokens.
+
+`history show` reads one visible event by its UUID. Hidden or missing events
+return the same not-found result.
+
+`history chain` starts from an activity UUID returned by `history` and follows
+at most 20 movement steps. `endpoint` is null when no current authorized target
+can be established. `certainty: "verified"` means the endpoint's stable
+identity was checked; `"probable"` means only path evidence is available.
+`truncated` warns that the bounded chain stopped early. `historyComplete`
+is always false: retention gaps and changes outside Cloud remain possible.
+The command neither moves nor restores anything.
+
+`shares access` is available only to the link's creator and current
+administrators. Both UTC dates are inclusive; the inclusive window may not exceed
+3650 days. The result is `{from,to,pages,pageNetworks,downloads,passwordFailed,networks,timeline}`. A
+download count records an authorized download request, not proof of a
+completed transfer.
+
+`networks.items` contains shortened IPv4 `/24` or IPv6 `/48` networks from
+retained hourly buckets within the last 30 days, with per-network counters
+and `firstSeen`/`lastSeen` bucket times. These are not exact request times or
+individual people. Networks are ordered by page plus download counts,
+descending, with canonical network keys breaking ties. Password failures do
+not affect that order. `networks.known` counts distinct known retained networks;
+`overflow: true` means additional unclassified access exists, so the known
+count is only a lower bound. `rolledUp: true` means some totals have been
+aggregated by day and cannot identify networks. Follow `networks.next` with
+`shares access --after '<next>'` and the same dates. `--limit` selects 1–50
+networks per page (default 50). Ordering uses fresh totals on every page;
+concurrent access may reorder networks. `share_access_cursor_expired`/409
+means the cursor's network expired or the period changed: reload the first
+page. `networks.incomplete` also covers expired and unclassified accesses;
+when true, do not present `known` as the exact count for the whole period.
+
+`timeline.items` holds at most 50 latest UTC buckets with `date`,
+`granularity` (`hour` or `day`), `pages`, `pageNetworks`, `downloads`, `passwordFailed`,
+`knownNetworks`, and `overflow`. Hourly detail covers at most 30 days;
+expired or rolled-up days use daily rows. A day containing any expired or
+rolled-up data is combined into one daily row. Daily rows have null
+`knownNetworks` and retain no overflow evidence. Unclassified hourly access
+also gives null `knownNetworks`; hourly overflow marks a lower bound.
+
+Each row's required nullable `pageNetworks` counts distinct networks with
+page views in that bucket, excluding download-only and password-only
+networks. It is null for daily rows or hourly unknown/overflow page views.
+Unknown/overflow activity without page views does not invalidate it; an
+hourly row without page views returns zero. Use the row's `pages` and
+non-null `pageNetworks` for a bucket's page-view sentence; when null, show
+only the page count. `knownNetworks` still covers all access kinds.
+
+Pass `timeline.next` unchanged to `shares access --timeline-after '<next>'`
+with the same dates. Timeline and network cursors are independent; neither
+changes the period totals. There are no visitor identities or per-request
+timestamps in this response.
+
+The top-level `pageNetworks` is the exact number of networks with page views,
+excluding networks with only downloads or password failures. It is null when
+expired, rolled-up, overflow, or unclassified page views prevent an exact
+count. Use top-level `pages` and non-null `pageNetworks` for a whole-window
+sentence about page views; do not substitute the count of all access networks.
+
+Assistant and other capability clients use `activity.list`, `activity.get`, `activity.chain`
+and `share.access` with the same current-user authorization. Capability
+responses exceeding the platform byte limit fail with `result_too_large`;
+request a smaller `limit` for a history page, or use the CLI for a large chain.
+The CLI reads the API directly.
+
 ## Versions
 
 ```bash
@@ -479,7 +609,7 @@ when following a cursor; `--search` matches display names, names, and paths.
 Entries include `uid`, `gid`, `displayName` (the account or group display name,
 `null` when no identity exists for the directory name), and the currently
 allowed `actions`. Statuses are `existing`, `missing`, `unassigned`,
-`conflict`, `unknown`, `orphaned`, and `retired`. File and directory counts and
+`conflict`, `unknown`, `orphaned`, `retired`, and `legacy`. Recorded personal-group directories are `legacy` and are preserved until an administrator deliberately archives or migrates them. File and directory counts and
 byte totals are known only for complete observed scans; `observation` exposes
 `complete`, `freshness`, `source`, `started`, `completed`, and `indexBuilt`.
 Root statistics cover the whole root, including when a prefix is configured.

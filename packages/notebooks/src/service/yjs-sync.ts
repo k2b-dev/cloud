@@ -58,6 +58,7 @@ export const replayYjsTopicToCursor = (config: {
   after: string | null;
   targetCursor: string;
   doc: Y.Doc;
+  restoreRevision?: string;
   signal?: AbortSignal;
 }): Promise<SharedTextContributor[]> =>
   notebooksTextLog.replay({
@@ -65,6 +66,7 @@ export const replayYjsTopicToCursor = (config: {
     after: config.after,
     until: config.targetCursor,
     doc: config.doc,
+    restoreRevision: config.restoreRevision,
     signal: config.signal,
   });
 

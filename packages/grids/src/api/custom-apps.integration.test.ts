@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
@@ -46,7 +46,7 @@ const authenticateAs =
 const authenticateAsDelegatedServiceAccount = (
   user: User,
   serviceAccountId: string,
-  scopes = ["grids:write"],
+  scopes: string[] = [],
 ): MiddlewareHandler<AuthContext> => {
   const credentialId = testUuid();
   return async (c, next) => {
@@ -99,28 +99,55 @@ beforeAll(async () => {
 });
 
 describe("Grids App credential scope", () => {
-  postgresTest("rejects read-only credentials on every runtime mutation before evaluating published permissions", async () => {
-    const authenticate = authenticateAsDelegatedServiceAccount(userFor(testUuid()), testUuid(), ["grids:read"]);
-    const api = createCustomAppsApi({ loadOptionalActor: authenticate, requireAuthenticated: authenticate });
-    const routes = [
-      ["POST", "/runtime/ABC123/page/block/submit"],
-      ["POST", "/runtime/ABC123/sidebar/forms/action/submit"],
-      ["POST", "/runtime/ABC123/page/block/scanner"],
-      ["POST", "/runtime/ABC123/page/block/comments"],
-      ["PATCH", "/runtime/ABC123/page/block/comments/COM001"],
-      ["DELETE", "/runtime/ABC123/page/block/comments/COM001"],
-      ["PATCH", "/runtime/ABC123/page/block/record"],
-      ["POST", "/runtime/ABC123/page/block/record/files/DEF123"],
-      ["PUT", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
-      ["DELETE", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
-      ["POST", "/runtime/ABC123/page/block/actions/action"],
-      ["POST", "/runtime/ABC123/page/block/row-actions/action"],
-    ];
-    for (const [method, path] of routes) {
-      const response = await api.request(path!, { method, headers: { "Content-Type": "application/json" }, body: "{}" });
-      expect(response.status).toBe(403);
-    }
-  });
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`rejects read-only ${kind} credentials on every runtime mutation before evaluating published permissions`, async () => {
+      const serviceAccountId = testUuid();
+      const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
+        c.set("actor", {
+          kind: "service_account",
+          serviceAccount: {
+            id: serviceAccountId,
+            name: "Read-only Grids App account",
+            kind,
+            status: "active",
+            delegatedUserId: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          delegatedUser: null,
+          scopes: ["grids:read"],
+        });
+        c.set("accessSubject", { type: "service_account", serviceAccountId });
+        await next();
+      };
+      const api = createCustomAppsApi({ loadOptionalActor: authenticate, requireAuthenticated: authenticate });
+      const routes = [
+        ["POST", "/runtime/ABC123/page/block/submit"],
+        ["POST", "/runtime/ABC123/sidebar/forms/action/submit"],
+        ["POST", "/runtime/ABC123/page/block/scanner"],
+        ["POST", "/runtime/ABC123/page/block/comments"],
+        ["PATCH", "/runtime/ABC123/page/block/comments/COM001"],
+        ["DELETE", "/runtime/ABC123/page/block/comments/COM001"],
+        ["PATCH", "/runtime/ABC123/page/block/record"],
+        ["POST", "/runtime/ABC123/page/block/record/files/DEF123"],
+        ["PUT", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
+        ["DELETE", "/runtime/ABC123/page/block/record/files/DEF123/FIL001"],
+        ["POST", "/runtime/ABC123/page/block/actions/action"],
+        ["POST", "/runtime/ABC123/page/block/row-actions/action"],
+      ];
+      for (const [method, path] of routes) {
+        const response = await api.request(path!, { method, headers: { "Content-Type": "application/json" }, body: "{}" });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({
+          code: "FORBIDDEN",
+          message: "The API credential does not grant the required Grids scope.",
+        });
+      }
+    });
+  }
 });
 
 describe("Grids App Form runtime", () => {
@@ -1640,6 +1667,7 @@ describe("Grids App Form runtime", () => {
                 return accepted
                   ? {
                       runId,
+                      channel: accepted.channel,
                       baseId,
                       workflow: { id: workflowId, shortId: testShortId(), name: "Approve request" },
                       principal: accepted.principal,
@@ -1706,6 +1734,11 @@ describe("Grids App Form runtime", () => {
           },
         );
         expect(delegatedActionResponse.status).toBe(202);
+        expect([...statusRuns.values()][0]?.principal).toMatchObject({
+          userId: authenticatedUser.id,
+          serviceAccountId: null,
+          credential: { scopes: [], permissionCap: "admin", resourceBinding: null },
+        });
         const delegatedAction = (await delegatedActionResponse.json()) as { statusUrl: string };
         const statusPath = delegatedAction.statusUrl.replace(/^\/api\/grids/, "");
         const ownStatus = await firstServiceAccountApi.request(statusPath);

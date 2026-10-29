@@ -8,6 +8,7 @@ import MailComposerPage from "./MailComposerPage";
 import { mailComposerMessages } from "./mail-composer-messages";
 import type { MailComposerSignatures } from "./mail-composer-signature";
 import { readMailDraftSeed } from "./mail-draft-seed-store";
+import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 export default function MailDraftSeedComposerPage(props: {
   mailboxId: string;
@@ -30,7 +31,17 @@ export default function MailDraftSeedComposerPage(props: {
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const [seed, setSeed] = createSignal<MailDraftSeed | null>();
 
-  onMount(() => setSeed(readMailDraftSeed(localStorage, props.mailboxId, props.seedId)));
+  onMount(() => {
+    try {
+      setSeed(
+        props.currentActor.kind === "user"
+          ? readMailDraftSeed(openMailUserDraftStorage(localStorage, props.currentActor.id), props.mailboxId, props.seedId)
+          : null,
+      );
+    } catch {
+      setSeed(null);
+    }
+  });
 
   return (
     <Show

@@ -109,6 +109,7 @@ suite("Files activity with real storage", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
     await migrate();
     await migrateAudit();
+    await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
     if (testActor.kind !== "user") throw new Error("expected user fixture");
     actor = { ...testActor, user: { ...testActor.user, id: Bun.randomUUIDv7(), uid: "alice" } };
     ipa = {
@@ -170,6 +171,9 @@ suite("Files activity with real storage", () => {
           };
         },
         groups: async () => ({ items: [copyGroup], nextCursor: null }),
+        inventory: async () => {
+          throw new FilesError("forbidden", 403);
+        },
       },
       displayNames: resolveDisplayNames,
       bindings,
@@ -179,7 +183,7 @@ suite("Files activity with real storage", () => {
       publicOrigin: async () => "https://cloud.test",
       userById: async () => null,
       transfer: fetch,
-      connect: connectFilegate,
+      connect: (config, signal) => connectFilegate(config, undefined, signal),
     });
   });
   beforeEach(async () => {
@@ -719,7 +723,7 @@ suite("Files activity with real storage", () => {
       publicOrigin: async () => "https://cloud.test",
       userById: async () => null,
       transfer: fetch,
-      connect: connectFilegate,
+      connect: (config, signal) => connectFilegate(config, undefined, signal),
     };
   }
   function guardedTransport() {
@@ -1436,4 +1440,75 @@ suite("Files activity with real storage", () => {
       }
     },
   );
+  test("history move-back resolves the original stable item and records its new rename", async () => {
+    const original = await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-back-original" });
+    const before = await client.root("cloud").stat(`${home}/history-back-original`);
+    await service.rename(testCall(actor), { baseId: baseId(), path: original.entry.path, name: "history-back-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    expect((await service.activityRecovery(testCall(actor), { activityId: activity!.id })).canMoveBack).toBe(true);
+    const restored = await service.moveActivityBack(testCall(actor), { activityId: activity!.id });
+    expect(restored.entry.path).toBe("history-back-original");
+    expect((await client.root("cloud").stat(`${home}/history-back-original`)).id).toBe(before.id);
+    const rows = await sql<{ state: string; item_id: string; item_after_id: string }[]>`SELECT state,item_id,item_after_id
+      FROM filesv2.activity WHERE action='item.rename' ORDER BY started_at,id`;
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ state: "done", item_id: before.id, item_after_id: before.id });
+  });
+  test("history move-back at the original location returns without re-locking or writing", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-no-op-original" });
+    await service.rename(testCall(actor), { baseId: baseId(), path: "history-no-op-original", name: "history-no-op-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    await service.moveActivityBack(testCall(actor), { activityId: activity!.id });
+    const before = await sql`SELECT id,xmin::text FROM filesv2.activity ORDER BY id`;
+    const result = await service.moveActivityBack(testCall(actor), { activityId: activity!.id });
+    expect(result.entry.path).toBe("history-no-op-original");
+    expect(await sql`SELECT id,xmin::text FROM filesv2.activity ORDER BY id`).toEqual(before);
+  });
+  test("history move-back refuses a replacement at the former destination without publishing or recording a move", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-replaced-original" });
+    await service.rename(testCall(actor), { baseId: baseId(), path: "history-replaced-original", name: "history-replaced-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    await client.root("cloud").remove(`${home}/history-replaced-moved`, true);
+    const replacement = await client.root("cloud").mkdir(`${home}/history-replaced-moved`);
+    await expect(service.moveActivityBack(testCall(actor), { activityId: activity!.id })).rejects.toMatchObject({ code: "source_changed" });
+    expect((await client.root("cloud").stat(`${home}/history-replaced-moved`)).id).toBe(replacement.id);
+    expect((await sql`SELECT id FROM filesv2.activity WHERE action='item.rename'`).length).toBe(1);
+  });
+  test("history restoration preserves a name conflict and records restoration under the chosen new name", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-trash-original" });
+    const original = await client.root("cloud").stat(`${home}/history-trash-original`);
+    await service.remove(testCall(actor), { baseId: baseId(), paths: ["history-trash-original"] });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.trash'`;
+    expect((await service.activityRecovery(testCall(actor), { activityId: activity!.id })).trash?.canRestore).toBe(true);
+    const replacement = await client.root("cloud").mkdir(`${home}/history-trash-original`);
+    await expect(service.restoreActivity(testCall(actor), { activityId: activity!.id })).rejects.toMatchObject({ code: "path_conflict" });
+    const restored = await service.restoreActivity(testCall(actor), { activityId: activity!.id, name: "history-trash-restored" });
+    expect(restored.entry.path).toBe("history-trash-restored");
+    expect((await client.root("cloud").stat(`${home}/history-trash-restored`)).id).toBe(original.id);
+    expect((await client.root("cloud").stat(`${home}/history-trash-original`)).id).toBe(replacement.id);
+    const activityStates = await sql<{ state: string }[]>`SELECT state FROM filesv2.activity WHERE action='item.restore'`;
+    expect(activityStates.map((row) => row.state)).toEqual(["done"]);
+  });
+  test("history recovery rechecks user eligibility before touching a recorded item", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-revoked-original" });
+    await service.rename(testCall(actor), { baseId: baseId(), path: "history-revoked-original", name: "history-revoked-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    const guest: RequestActor = { ...actor, user: { ...actor.user, profile: "guest" } };
+    await expect(service.moveActivityBack(testCall(guest), { activityId: activity!.id })).rejects.toMatchObject({ status: 403 });
+    expect((await client.root("cloud").stat(`${home}/history-revoked-moved`)).directory).toBe(true);
+    expect((await sql`SELECT id FROM filesv2.activity WHERE action='item.rename'`).length).toBe(1);
+  });
+  test("manual evidence recheck selects one stale entry despite its backoff and leaves neighboring entries untouched", async () => {
+    const selected = await seed({ path: `${home}/history-recheck-selected` });
+    const neighbor = await seed({ path: `${home}/history-recheck-neighbor` });
+    // Relative to the same database clock used by recovery, independent of the calendar day this suite runs.
+    await sql`UPDATE filesv2.activity SET started_at=now()-interval '1 day',heartbeat_at=now()-interval '2 minutes',next_check_at=now()+interval '6 hours'`;
+    const checked = await service.recheckActivity(testCall(actor), { activityId: selected });
+    expect(checked.state).toBe("unclear");
+    expect((await row(selected)).checks).toBe(1);
+    expect((await row(neighbor)).checks).toBe(0);
+    // A second manual click cannot bypass the fresh claim just acquired by the first.
+    await service.recheckActivity(testCall(actor), { activityId: selected });
+    expect((await row(selected)).checks).toBe(1);
+  });
 });

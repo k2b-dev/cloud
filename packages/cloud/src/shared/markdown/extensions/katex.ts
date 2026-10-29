@@ -8,6 +8,7 @@
 
 import katex from "katex";
 import type { MarkedExtension, Tokens } from "marked";
+import { escapeHtml } from "../shared";
 
 /**
  * Token shape produced by the math tokenizers below. The marked extension API
@@ -40,7 +41,7 @@ function renderInlineMath(latex: string): string {
   }
 }
 
-export function katexExtension(): MarkedExtension {
+export function katexExtension(literal = false): MarkedExtension {
   return {
     extensions: [
       // ```math code blocks
@@ -63,6 +64,10 @@ export function katexExtension(): MarkedExtension {
           return undefined;
         },
         renderer(token: Tokens.Generic) {
+          if (literal) {
+            const source = token.raw.slice("```math\n".length, -"\n```".length);
+            return `<pre>${escapeHtml(source)}</pre>\n`;
+          }
           const latex = (token as MathToken).latex;
           return renderBlockMath(latex);
         },
@@ -87,6 +92,7 @@ export function katexExtension(): MarkedExtension {
           return undefined;
         },
         renderer(token: Tokens.Generic) {
+          if (literal) return `<p>${escapeHtml(token.raw)}</p>\n`;
           const latex = (token as MathToken).latex;
           return renderBlockMath(latex);
         },
@@ -111,6 +117,7 @@ export function katexExtension(): MarkedExtension {
           return undefined;
         },
         renderer(token: Tokens.Generic) {
+          if (literal) return escapeHtml(token.raw);
           const latex = (token as MathToken).latex;
           return renderInlineMath(latex);
         },

@@ -79,6 +79,75 @@ suite("JWT-only browser sessions", () => {
     }
   });
 
+  test("account-bound logout refuses replacement credentials and revokes without a cookie mutation", async () => {
+    const rendered = await fixture();
+    const current = await fixture();
+    try {
+      const token = await current.create();
+      const routes = new Hono().post("/logout", async (c) => {
+        const deleted = await session.delete(c, c.req.header("expected-user") ?? null);
+        return c.body(null, deleted ? 204 : 409);
+      });
+      const headers = { Cookie: `session_token=${token}`, "expected-user": rendered.userId };
+      const changed = await routes.request("/logout", { method: "POST", headers });
+      expect(changed.status).toBe(409);
+      expect(changed.headers.has("set-cookie")).toBe(false);
+      expect((await session.authenticate(token))?.user.id).toBe(current.userId);
+      const anonymous = await routes.request("/logout", { method: "POST", headers: { Cookie: headers.Cookie } });
+      expect(anonymous.status).toBe(409);
+      const matching = await routes.request("/logout", { method: "POST", headers: { ...headers, "expected-user": current.userId } });
+      expect(matching.status).toBe(204);
+      expect(matching.headers.has("set-cookie")).toBe(false);
+      expect(await session.authenticate(token)).toBeNull();
+      expect((await routes.request("/logout", { method: "POST", headers: { "expected-user": current.userId } })).status).toBe(204);
+    } finally {
+      await rendered.cleanup();
+      await current.cleanup();
+    }
+  });
+
+  test("a delayed bound logout response preserves a newer browser sign-in", async () => {
+    const first = await fixture();
+    const next = await fixture();
+    try {
+      const firstToken = await first.create();
+      let release!: () => void;
+      let revoked!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const ready = new Promise<void>((resolve) => {
+        revoked = resolve;
+      });
+      const routes = new Hono().post("/logout", async (c) => {
+        await session.delete(c, first.userId);
+        revoked();
+        await hold;
+        return c.body(null, 204);
+      });
+      const response = routes.request("/logout", { method: "POST", headers: { Cookie: `session_token=${firstToken}` } });
+      await ready;
+      try {
+        const nextToken = await next.create();
+        release();
+        expect((await response).headers.has("set-cookie")).toBe(false);
+        expect(await session.authenticate(firstToken)).toBeNull();
+        expect((await session.authenticate(nextToken))?.user.id).toBe(next.userId);
+      } finally {
+        release();
+        await response;
+      }
+      const unbound = new Hono().post("/logout", async (c) => {
+        await session.delete(c);
+        return c.body(null, 204);
+      });
+      expect((await unbound.request("/logout", { method: "POST" })).headers.get("set-cookie")).toContain("session_token=");
+    } finally {
+      await first.cleanup();
+      await next.cleanup();
+    }
+  });
+
   test("rejects opaque sessions without accessing their existing Redis records", async () => {
     const f = await fixture();
     const token = `${f.userId}:${crypto.randomUUID()}`;

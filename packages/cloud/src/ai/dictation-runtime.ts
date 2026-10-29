@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { lazySync } from "../_internal/process-sync";
+import { get as getUser } from "../services/accounts/users";
 import { logger, trace } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { aiModelAccess } from "./model-access";
@@ -85,8 +86,11 @@ export const processAiDictation = async (
     if (!conversation) throw new Error("Conversation unavailable.");
     const subject = { type: "user" as const, userId: task.user_id };
     await aiModelAccess.assertAllowed(task.model_profile_id, subject);
-    if (conversation.project_id && !(await aiProjects.snapshot(conversation.project_id, subject)))
-      throw new Error("Project access unavailable.");
+    if (conversation.project_id) {
+      const user = await getUser({ id: task.user_id });
+      if (!user || !(await aiProjects.snapshot(conversation.project_id, { actor: { kind: "user", user }, accessSubject: subject })))
+        throw new Error("Project access unavailable.");
+    }
     const result = await run({
       task: "dictation",
       traceParent: span,

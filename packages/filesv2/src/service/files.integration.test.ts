@@ -12,12 +12,13 @@ import { migratePosix } from "../../../core/src/migrate/core/posix";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import { bindings } from "../data/bases";
-import { ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../data/operations";
+import { operations, ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../data/operations";
 import { resolveEntryRefId } from "../data/references";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
 import { entryRefId } from "../resource-ref";
 import { createFilesService } from ".";
+import { systemCall } from "./activity";
 import { connectFilegate } from "./filegate-facade";
 import { createTemplateService } from "./templates";
 
@@ -1875,6 +1876,11 @@ suite("Files service and durable bindings", () => {
     ).rejects.toMatchObject({
       code: "invalid_path",
     });
+    await expect(
+      service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id, expectedRevision: "stale-view" }),
+    ).rejects.toMatchObject({ code: "version_restore_changed", status: 409 });
+    expect(nodes.get("cloud:users/admin/report.txt")).toEqual(originalNode);
+    expect(contents.get("cloud:users/admin/report.txt")).toBe(originalContent);
     const restored = await service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id });
     expect(restored.entry.modified).toBe(`restored:${v1.id}`);
     expect((await service.versionDownload(testCall(admin), { baseId, path: "report.txt", id: v1.id })).url).toContain(v1.id);
@@ -2420,8 +2426,8 @@ suite("Files service and durable bindings", () => {
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${personal!.id}),(${id(actor)},${team!.id})`;
     await sql`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id,home_directory,login_shell)
       VALUES(${id(actor)},'local',200001,200004,${personal!.id},'/home/quinn','/bin/bash')`;
-    const ownership = await sql<{ owner_id: string }[]>`SELECT owner_id FROM auth.personal_groups WHERE group_id=${personal!.id}`;
-    expect(ownership).toEqual([{ owner_id: id(actor) }]);
+    const [ownership] = await sql`SELECT owner_id,group_name,gid_number FROM auth.personal_groups WHERE group_id=${personal!.id}`;
+    expect(ownership).toMatchObject({ owner_id: id(actor), group_name: "quinn", gid_number: 200004 });
     const bases = await service.bases(testCall(actor));
     expect(bases.issues).toEqual([]);
     expect(bases.items.map((item) => [item.area, item.kind, item.name])).toEqual([
@@ -2435,6 +2441,104 @@ suite("Files service and durable bindings", () => {
       ["cloud", "users", "quinn"],
       ["cloud", "groups", "team"],
     ]);
+  });
+  test("personal-group directories stay Legacy after retirement and automatic maintenance preserves their contents", async () => {
+    const admin = await user("admin", "local", true);
+    const owner = await user("legacy-owner");
+    const [group] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider,gid_number)
+      VALUES('legacy-owner','local',200004) RETURNING id`;
+    directory("cloud", "groups/legacy-owner", 0, 200004);
+    await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number)
+      VALUES(${group!.id},${id(owner)},'legacy-owner',200004)`;
+    await service.adopt(testCall(admin), { area: "cloud", kind: "groups", identityId: group!.id });
+    // From the start: a personal group's directory lists in the identity pass while the group exists, later in the filesystem pass.
+    const inventory = async () => service.admin(testCall(admin), { area: "cloud", kind: "groups", status: "legacy" });
+    expect((await inventory()).items).toContainEqual(
+      expect.objectContaining({
+        name: "legacy-owner",
+        status: "legacy",
+        reason: "legacy_personal_group",
+        actions: expect.objectContaining({ browse: true, archive: true }),
+      }),
+    );
+    await sql`DELETE FROM auth.groups WHERE id=${group!.id}`;
+    await sql`UPDATE auth.personal_groups SET retired_at=now() WHERE group_id=${group!.id}`;
+    expect((await service.maintain()).archived).toBe(0);
+    expect(nodes.has("cloud:groups/legacy-owner")).toBeTrue();
+    expect((await inventory()).items.map((item) => item.status)).toEqual(["legacy"]);
+    const binding = await bindings.path("cloud", "groups/legacy-owner");
+    const pendingId = crypto.randomUUID();
+    await operations.insert(
+      {
+        id: pendingId,
+        area: "cloud",
+        kind: "groups",
+        root: "cloud",
+        server_url: config.url,
+        name: "legacy-owner",
+        action: "archive",
+        source: "groups/legacy-owner",
+        target: `archive/${pendingId}/contents`,
+        base_id: binding!.id,
+        archive_id: null,
+        actor_id: null,
+        actor_name: "automatic-policy",
+        snapshot: nodes.get("cloud:groups/legacy-owner")!,
+      },
+      systemCall("automatic-archive"),
+    );
+    expect((await service.maintain()).archived).toBe(0);
+    expect(nodes.has("cloud:groups/legacy-owner")).toBeTrue();
+    expect((await inventory()).items.map((item) => item.status)).toEqual(["legacy"]);
+    expect((await inventory()).items[0]?.reason).toBe("legacy_personal_group_pending");
+    expect((await operations.get(pendingId))?.state).toBe("pending");
+    await sql`DELETE FROM filesv2.operations WHERE id=${pendingId}::uuid`;
+    // Filesystem-only historical paths use the retained ownership name too.
+    await sql`DELETE FROM filesv2.bases WHERE identity_id=${group!.id}`;
+    expect((await inventory()).items.map((item) => item.status)).toEqual(["legacy"]);
+    const archived = await service.archive(testCall(admin), { area: "cloud", kind: "groups", name: "legacy-owner" });
+    expect(nodes.has("cloud:groups/legacy-owner")).toBeFalse();
+    expect(nodes.has(`cloud:${archived.path}`)).toBeTrue();
+  });
+  test("an unbound personal directory stays Legacy when a team reuses its name", async () => {
+    const admin = await user("admin", "local", true);
+    const owner = await user("former-owner");
+    const formerId = crypto.randomUUID();
+    await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number,retired_at)
+      VALUES(${formerId},${id(owner)},'former-owner',200004,now())`;
+    await sql`INSERT INTO auth.groups(name,provider,gid_number) VALUES('former-owner','local',200005)`;
+    directory("cloud", "groups/former-owner", 0, 200004);
+    // The team that reuses the name lists the directory in the identity pass, so read the inventory from its start.
+    const result = await service.admin(testCall(admin), { area: "cloud", kind: "groups" });
+    expect(result.items).toContainEqual(
+      expect.objectContaining({ name: "former-owner", status: "legacy", reason: "legacy_personal_group" }),
+    );
+    expect(nodes.has("cloud:groups/former-owner")).toBeTrue();
+  });
+  test("maintenance completes an already moved personal-group archive without another move", async () => {
+    const admin = await user("admin", "local", true);
+    const owner = await user("archived-owner");
+    const [group] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider,gid_number)
+      VALUES('archived-owner','local',200004) RETURNING id`;
+    await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number)
+      VALUES(${group!.id},${id(owner)},'archived-owner',200004)`;
+    directory("cloud", "groups/archived-owner", 0, 200004);
+    await service.adopt(testCall(admin), { area: "cloud", kind: "groups", identityId: group!.id });
+    await sql`ALTER TABLE filesv2.operations ADD CONSTRAINT test_pause_finish CHECK (state<>'complete')`.simple();
+    try {
+      await expect(service.archive(testCall(admin), { area: "cloud", kind: "groups", name: "archived-owner" })).rejects.toThrow();
+    } finally {
+      await sql`ALTER TABLE filesv2.operations DROP CONSTRAINT test_pause_finish`.simple();
+    }
+    const [pending] = await sql<
+      { id: string; target: string }[]
+    >`SELECT id,target FROM filesv2.operations WHERE action='archive' AND state='pending'`;
+    await sql`UPDATE filesv2.operations SET actor_id=NULL,actor_name='automatic-policy' WHERE id=${pending!.id}::uuid`;
+    expect(nodes.has("cloud:groups/archived-owner")).toBeFalse();
+    expect(nodes.has(`cloud:${pending!.target}`)).toBeTrue();
+    await service.maintain();
+    expect((await operations.get(pending!.id))?.state).toBe("complete");
+    expect(nodes.has(`cloud:${pending!.target}`)).toBeTrue();
   });
   test("guest and global Cloud prerequisite denial occurs before leases", async () => {
     const guest = await user("guest", "local", false, "guest");

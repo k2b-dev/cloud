@@ -106,7 +106,7 @@ To act on several conversations, select their checkboxes. Hold **Shift** while y
 - **Partial result:** If Mail can queue only some commands, it keeps the failed conversations selected and reports each failure.
 :::
 
-Choose **Assign** to change the assignees of the selected conversations. Choose **Assign to me**, **Remove me**, or **Remove all assignees**, or search for a person who can be assigned. A person that you add joins the other assignees and receives one notification for the whole selection. Mail confirms how many conversations changed and offers **Undo**. **Undo** reverses the change only in the conversations that it changed. **Remove all assignees** has no **Undo**. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
+Choose **Assign** to change the assignees of the selected conversations. Choose **Assign to me**, **Remove me**, or **Remove all assignees**, or search for a person, agent, or standalone service account that can be assigned. A person that you add joins the other assignees and receives one notification for the whole selection. Mail confirms how many conversations changed and offers **Undo**. **Undo** reverses the change only in the conversations that it changed. **Remove all assignees** has no **Undo**. If a conversation no longer belongs to the mailbox, Mail says how many conversations did not change.
 
 ### Work from Needs action
 

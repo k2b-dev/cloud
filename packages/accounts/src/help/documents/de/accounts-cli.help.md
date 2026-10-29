@@ -32,3 +32,11 @@ Nutze für Automatisierung die JSON-Ausgabe. Die Tabellenausgabe dient dem schne
 `cld admin linux` enthält die globale Konfiguration und eine seitenweise Vorschau. Exportiere die Konfiguration mit `config get --json`. Wende eine aktivierte Konfiguration mit `config set --config-file ./linux.json --range-reserved --yes` an. Das Vorbereiten einer Identität schaltet weder die Anmeldung am Rechner noch sudo oder gemeinsamen Speicher frei.
 
 Um eine lokale Gruppe mit GID in einem Schritt zu erstellen, führe `cld accounts groups create team --provider local --posix` aus. Ohne `--posix` bleibt sie eine logische Gruppe. Das Erstellen oder Umwandeln einer lokalen POSIX-Gruppe setzt eingeschaltete lokale Linux-Identitäten voraus. Schlägt einer der beiden Vorgänge fehl, bleibt keine teilweise erstellte Gruppe zurück.
+
+## Maschinenkonto einer lokalen Gruppe hinzufügen {icon="users-group"}
+
+Die Gruppenverwaltung und Administration können aktive eigenständige Dienstkonten und Agenten zu lokalen Gruppen hinzufügen. Öffne **Mitglieder**, wähle **Hinzufügen** und suche das Konto über seinen Namen. Aktiviere den Filter **Dienstkonten**, um Maschinenmitglieder zu sehen und direkte Mitgliedschaften zu entfernen. Name und Kontotyp unterscheiden sie von Personen und Gruppen.
+
+Im CLI verwendest du `cld accounts groups members add <gruppe> --service-account <name-oder-id> --yes`. Mit `remove` statt `add` entfernst du die Mitgliedschaft. `list --type service_account --recursive` zeigt auch geerbte Mitgliedschaften. Namen müssen genau und eindeutig passen; verwende bei mehreren Treffern die ID.
+
+Das Konto erbt Ressourcenfreigaben über lokale übergeordnete Gruppen, begrenzt durch die Scopes seines Zugangsschlüssels. Die Mitgliedschaft erstellt keine Linux- oder IPA-Identität und verleiht keine Installationsrolle. Für IPA-Gruppen gelten weiterhin die Verzeichnisregeln. Gruppen zu verwalten erfordert weiterhin ein vollständiges Konto, das die Gruppe verwalten darf oder Zugriff auf die Administration hat.

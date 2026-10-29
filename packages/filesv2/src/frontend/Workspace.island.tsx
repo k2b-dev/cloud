@@ -1,29 +1,50 @@
+import { openCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
-import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry, type MarkedEntry } from "../contracts";
+import ActivityView from "./ActivityView";
+import { createActivityVersionLoader } from "./activity-versions";
 import Browser from "./Browser";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { browseOptions, browseQuery, parsePreferences, type ViewPreference, viewFor } from "./browser-preferences";
 import Editor from "./Editor";
+import { historyExecutionHref } from "./execution-url";
 import { IssueMessage } from "./feedback";
 import { createFilesUploads } from "./files-uploads";
+import { type HistoryActions, type HistoryEnvironment, type HistoryTarget, isCurrent } from "./history-actions";
+import {
+  entryHref,
+  loadActivity,
+  loadBatchContext,
+  loadChain,
+  loadRecovery,
+  moveActivityBack,
+  recheckActivity,
+  resolveTarget,
+  restoreActivity,
+} from "./history-api";
+import { useHistoryMessages } from "./history-messages";
+import { type ActivityFilters, movedEntry, placeDescriber } from "./history-requests";
 import MarkdownDocument from "./MarkdownDocument";
 import { MarksMenu, MarksSidebarItem, openMarksDialog } from "./MarksMenu";
+import { MovedNotice } from "./MissingItemView";
 import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
 import SharesOverview from "./SharesOverview";
 import StorageOverview from "./StorageOverview";
+import { searchRequest, searchState } from "./search-state";
 import TrashView from "./TrashView";
 import { snapshotTitle } from "./trail";
 import { UploadSurface } from "./UploadPanel";
-import { editorUrl, filesUrl, showsOverview } from "./urls";
-import { createWorkspaceState, type WorkspaceSnapshot } from "./workspace-state";
+import { activityUrl, editorUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";
+import { createWorkspaceState, type MovedSnapshot, type WorkspaceSnapshot } from "./workspace-state";
 
 const ancestors = (path: string) => {
   const parts = path.split("/").filter(Boolean);
@@ -36,9 +57,17 @@ const viewUrl = (baseId: string | null | undefined, view: "trash" | "shares" | "
 const LIVE_REFRESH_MS = 20_000;
 const fingerprint = (items: readonly FileEntry[]) => JSON.stringify(items);
 
-export default function Workspace(props: { initial: WorkspaceSnapshot; preferences?: Record<string, ViewPreference> }) {
+export default function Workspace(props: {
+  initial: WorkspaceSnapshot;
+  preferences?: Record<string, ViewPreference>;
+  /** The request's zone from SSR, so history days and ranges match on server and client. */
+  timeZone?: string;
+  /** Configured history retention, named when a history search finds nothing. */
+  retentionDays?: number;
+}) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
+  const h = useHistoryMessages();
   const locale = useLocale();
   const apiError = async (response: { json: () => Promise<unknown> }) => {
     const parsed = ErrorSchema.safeParse(await response.json().catch(() => null));
@@ -58,11 +87,15 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       const bases = await basesResponse.json();
       const requested = url.searchParams.get("base");
       const overview = showsOverview(url.searchParams, bases.items.length);
+      const filters = url.searchParams.get("view") === "activity" ? parseActivityFilters(url.searchParams) : undefined;
+      if (filters === null) throw new Error(t().unavailable);
       const selected = overview
         ? undefined
-        : requested && url.searchParams.get("view") !== "shares"
-          ? bases.items.find((base) => base.id === requested)
-          : (bases.items.find((base) => base.status === "existing") ?? bases.items[0]);
+        : filters
+          ? bases.items.find((base) => base.id === filters.baseId)
+          : requested && url.searchParams.get("view") !== "shares"
+            ? bases.items.find((base) => base.id === requested)
+            : (bases.items.find((base) => base.status === "existing") ?? bases.items[0]);
       if (requested && !selected && url.searchParams.get("view") !== "shares") throw new Error(t().missingDescription);
       const view = url.searchParams.get("view");
       const file = url.searchParams.get("file");
@@ -70,6 +103,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       let shares: WorkspaceSnapshot["shares"];
       let editor: WorkspaceSnapshot["editor"];
       let marks: WorkspaceSnapshot["marks"];
+      let moved: MovedSnapshot | null = null;
       if (view === "shares") {
         const response = await apiClient.shares.$get({ query: {} }, { init: { signal } });
         if (!response.ok) throw await apiError(response);
@@ -88,32 +122,66 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         );
         if (!response.ok) throw await apiError(response);
         editor = await response.json();
-      } else if (selected?.status === "existing" && view !== "trash") {
-        const query = {
-          path: url.searchParams.get("path") ?? "",
-          after: url.searchParams.get("after") ?? undefined,
-          ...browseQuery(browseOptions(url.searchParams, preference(selected.id))),
-        };
-        const q = url.searchParams.get("q")?.trim();
-        const response = q
+      } else if (!filters && selected?.status === "existing" && view !== "trash") {
+        // Activity loads and pages its own entries, so its filters can change without leaving the view.
+        const page = { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined };
+        const search = searchState(url.searchParams);
+        const response = search
           ? await apiClient.bases[":baseId"].search.$get(
-              {
-                param: { baseId: selected.id },
-                query: { ...query, q, scope: url.searchParams.get("scope") === "folder" ? "folder" : "tree" },
-              },
+              { param: { baseId: selected.id }, query: { ...page, ...searchRequest(search) } },
               { init: { signal } },
             )
-          : await apiClient.bases[":baseId"].entries.$get({ param: { baseId: selected.id }, query }, { init: { signal } });
+          : await apiClient.bases[":baseId"].entries.$get(
+              {
+                param: { baseId: selected.id },
+                query: { ...page, ...browseQuery(browseOptions(url.searchParams, preference(selected.id))) },
+              },
+              { init: { signal } },
+            );
         if (!response.ok) {
-          const error = ErrorSchema.safeParse(await response.json());
-          if (query.after && !signal.aborted && error.success && error.data.code === "cursor_invalid") invalidCursors.add(source);
-          throw new Error(error.success ? error.data.message : t().unavailable);
-        }
-        directory = await response.json();
+          const error = ErrorSchema.safeParse(await response.json().catch(() => null));
+          const code = error.success ? error.data.code : "unavailable";
+          if (page.after && !signal.aborted && code === "cursor_invalid") invalidCursors.add(source);
+          // A failed search stays a search, so its field and filters can narrow it.
+          if (search && code !== "cursor_invalid" && !signal.aborted)
+            directory = {
+              base: selected,
+              path: page.path,
+              items: [],
+              next: null,
+              query: search.q,
+              scope: search.scope,
+              total: null,
+              failure: code,
+            };
+          else {
+            // An old folder address: the same lookup as SSR; without visible history it stays an error.
+            if (Number(response.status) === 404 && !search && page.path && !page.after)
+              moved = await movedLookup(selected.id, page.path, signal).catch(() => null);
+            if (!moved) throw new Error(error.success ? error.data.message : t().unavailable);
+          }
+        } else directory = await response.json();
       }
-      return { source, bases, selectedId: selected?.id ?? null, directory, errorCode: null, shares, editor, marks };
+      return {
+        source,
+        bases,
+        selectedId: selected?.id ?? null,
+        directory,
+        errorCode: null,
+        shares,
+        editor,
+        marks,
+        moved,
+        now: new Date().toISOString(),
+      };
     },
   });
+  async function movedLookup(baseId: string, path: string, signal: AbortSignal): Promise<MovedSnapshot | null> {
+    const page = await loadActivity({ baseId, path, scope: "item" }, signal, t().unavailable);
+    const entry = movedEntry(page, path);
+    if (!entry) return null;
+    return { baseId, path, entry, chain: await loadChain(entry, signal, t().unavailable, path) };
+  }
   const snapshot = workspace.snapshot;
   const overview = () => showsOverview(new URL(snapshot().source, "https://files.invalid").searchParams, snapshot().bases.items.length);
   const hasOverview = () => snapshot().bases.items.length > 1;
@@ -142,6 +210,87 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   const selected = () => snapshot().bases.items.find((base) => base.id === snapshot().selectedId);
   const currentPath = () => snapshot().directory?.path ?? "";
   const currentView = () => viewOf(snapshot().source);
+  /*
+   * Activity filters live in the address. A filter change pushes the address at once and the view reloads its own
+   * list, so a failed load keeps the filters beside "Try again". Back and forward load a snapshot, which resets them.
+   */
+  const [activitySource, setActivitySource] = createSignal(props.initial.source);
+  createEffect(on(snapshot, (loaded) => setActivitySource(loaded.source), { defer: true }));
+  const activityFilters = createMemo(
+    () => parseActivityFilters(new URL(activitySource(), "https://files.invalid").searchParams) ?? {},
+    undefined,
+    { equals: (previous, next) => JSON.stringify(previous) === JSON.stringify(next) },
+  );
+  const changeActivityFilters = (filters: ActivityFilters) => {
+    const target = activityUrl(filters);
+    setActivitySource(target);
+    workspace.rememberSource(target);
+    commitHistory(target, { scroll: "manual" });
+  };
+  // People to filter by are the actors this person has seen in Activity; the reader has no directory of them.
+  const [people, setPeople] = createSignal<Record<string, string>>({});
+  const notePeople = (entries: readonly ActivityEntry[]) => {
+    const seen = entries.filter((entry) => entry.actor.userId && entry.actor.name && !people()[entry.actor.userId]);
+    if (seen.length)
+      setPeople((current) => ({ ...current, ...Object.fromEntries(seen.map((entry) => [entry.actor.userId!, entry.actor.name!])) }));
+  };
+  if (props.initial.activity) notePeople(props.initial.activity.page.items);
+  const peopleOptions = () => {
+    const known = Object.entries(people()).map(([id, label]) => ({ id, label }));
+    const chosen = activityFilters().actor;
+    return chosen && !people()[chosen] ? [...known, { id: chosen, label: h().selectedPerson }] : known;
+  };
+  const historyEnv = createMemo<HistoryEnvironment>(() => ({
+    now: snapshot().now ?? props.initial.now ?? new Date().toISOString(),
+    timeZone: props.timeZone ?? "UTC",
+    executionHref: historyExecutionHref,
+    describePlace: placeDescriber(snapshot().bases.items, b(), locale()),
+  }));
+  /** Opens where a history entry's item is now, after the server checked identity and rights again. */
+  let historyTargetRequest: AbortController | undefined;
+  const openHistoryTarget = async (target: HistoryTarget) => {
+    if (workspace.pending()) return;
+    historyTargetRequest?.abort();
+    historyTargetRequest = new AbortController();
+    const signal = AbortSignal.any([historyTargetRequest.signal, workspace.navigationSignal()]);
+    try {
+      const resolved = await resolveTarget(target, h().actionFailed, signal);
+      if (!signal.aborted) await go(entryHref(resolved), false, signal);
+    } catch (error) {
+      if (!signal.aborted) toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+    }
+  };
+  /*
+   * Actions of vanished items run through the recovery endpoints, which resolve the entry again with current rights,
+   * identity and journals. A refusal (403, 409) surfaces beside the action; nothing here trusts a stored entry.
+   */
+  const activityActions: HistoryActions = {
+    loadVersion: createActivityVersionLoader(() => h().historyFailed),
+    onContact: async ({ userId }) => {
+      const signal = workspace.navigationSignal();
+      try {
+        const opened = await openCommand("chat.conversation.compose", { userId }, {}, signal);
+        if (!signal.aborted && !opened) toast.error(h().actionFailed);
+      } catch (error) {
+        if (!signal.aborted) toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+      }
+    },
+    onOpen: openHistoryTarget,
+    onShowVersions: (entry) => {
+      const side = isCurrent(entry.after) ? entry.after : isCurrent(entry.before) ? entry.before : null;
+      if (side) void openHistoryTarget({ kind: "side", side });
+    },
+    loadRecovery: (entry, signal) => loadRecovery(entry, signal, h().recoveryFailed),
+    onRestoreTrash: (entry, options) => restoreActivity(entry, options?.name, h().actionFailed),
+    onMoveBack: async (entry) => {
+      await moveActivityBack(entry, h().actionFailed);
+    },
+    onRecheck: async (entry) => {
+      await recheckActivity(entry, h().actionFailed);
+    },
+    onShowTrash: (trash) => void go(viewUrl(trash.baseId, "trash")),
+    onOpenOldLocation: (place) => void go(filesUrl(place.baseId, place.path)),
+  };
   const resetCursor = async (target: string) => {
     if (!invalidCursors.delete(target)) return;
     const url = new URL(target, window.location.origin);
@@ -152,6 +301,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   };
   let editorGuard: (() => Promise<boolean>) | null = null;
   const onNavigate = async (event: LinkNavigateEvent) => {
+    workspace.cancelNavigationActions();
     if (editorGuard && !(await editorGuard())) return;
     setCursorNotice(false);
     if (event.url.pathname !== "/app/filesv2") {
@@ -166,17 +316,30 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     });
     await resetCursor(target);
   };
-  const go = async (target: string, replace = false) => {
+  const go = async (target: string, replace = false, signal?: AbortSignal) => {
+    if (!signal) workspace.cancelNavigationActions();
     if (editorGuard && !(await editorGuard())) return;
+    if (signal?.aborted) return;
     setCursorNotice(false);
     await workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual" }));
     await resetCursor(target);
   };
   const currentBrowse = () =>
     browseOptions(new URL(snapshot().source, "https://files.invalid").searchParams, preference(snapshot().selectedId ?? ""));
+  const currentSearch = () => searchState(new URL(snapshot().source, "https://files.invalid").searchParams);
+  /** A search is on its way: the results area waits for it instead of showing the previous page. */
+  const pendingSearch = () => {
+    const target = workspace.pendingSource();
+    return !!target && !!searchState(new URL(target, "https://files.invalid").searchParams);
+  };
   const [marksRevision, setMarksRevision] = createSignal(0);
   const dialogLifetime = new AbortController();
   onCleanup(() => dialogLifetime.abort());
+  // From a storage, Activity opens filtered to it, as approved; inside Activity the entry keeps the current filters.
+  const activityHref = () =>
+    currentView() === "activity"
+      ? activityUrl(activityFilters())
+      : activityUrl(snapshot().selectedId && !currentView() ? { baseId: snapshot().selectedId! } : {});
   const navigation = createNavigation({
     items: () => [
       ...(hasOverview()
@@ -192,16 +355,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
             },
           ]
         : []),
-      ...snapshot().bases.items.map((base) => ({
-        id: base.id,
-        label: baseLabel(base, b(), locale()),
-        icon: base.kind === "users" ? "ti ti-home" : "ti ti-users",
-        href: filesUrl(base.id),
-        active: snapshot().selectedId === base.id,
-        navigation: "enhanced" as const,
-        scroll: "manual" as const,
-      })),
-      { id: "recent", label: b().recent, icon: "ti ti-history", action: "recent" },
+      { id: "recent", label: b().recent, icon: "ti ti-clock", action: "recent" },
       { id: "favorites", label: b().favorites, icon: "ti ti-star", action: "favorites" },
       {
         id: "shares",
@@ -210,6 +364,24 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         href: viewUrl(snapshot().selectedId, "shares"),
         navigation: "enhanced" as const,
       },
+      {
+        id: "activity",
+        label: b().activity,
+        icon: "ti ti-history",
+        href: activityHref(),
+        active: currentView() === "activity",
+        navigation: "enhanced" as const,
+        scroll: "manual" as const,
+      },
+      ...snapshot().bases.items.map((base) => ({
+        id: base.id,
+        label: baseLabel(base, b(), locale()),
+        icon: base.kind === "users" ? "ti ti-home" : "ti ti-users",
+        href: filesUrl(base.id),
+        active: snapshot().selectedId === base.id && currentView() !== "activity",
+        navigation: "enhanced" as const,
+        scroll: "manual" as const,
+      })),
     ],
     onAction: (kind) => {
       if (kind === "recent" || kind === "favorites")
@@ -225,6 +397,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   onMount(() =>
     onCleanup(
       listenPopState(async ({ url }) => {
+        workspace.cancelNavigationActions();
         if (url.pathname !== "/app/filesv2") return;
         const target = `${url.pathname}${url.search}`;
         if (target === workspace.committedSource() && !workspace.pending()) return;
@@ -341,7 +514,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   };
   createEffect(() => {
     const directory = snapshot().directory;
-    if (!directory || directory.query) return;
+    if (!directory || directory.query !== undefined) return;
     if (!directory.next && !after() && currentBrowse().type !== "files") {
       mergeFolders(
         treeId(directory.base.id, directory.path),
@@ -369,7 +542,14 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     let polling = false;
     const timer = setInterval(async () => {
       const directory = snapshot().directory;
-      if (polling || document.visibilityState !== "visible" || workspace.pending() || !directory || directory.query || currentView())
+      if (
+        polling ||
+        document.visibilityState !== "visible" ||
+        workspace.pending() ||
+        !directory ||
+        directory.query !== undefined ||
+        currentView()
+      )
         return;
       polling = true;
       const request = new AbortController();
@@ -529,6 +709,22 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       { defer: true },
     ),
   );
+  /** An old folder address: where the item went, never a silent redirect. */
+  const MovedHere = (movedProps: { moved: MovedSnapshot }) => {
+    const base = () => snapshot().bases.items.find((item) => item.id === movedProps.moved.baseId);
+    const name = () => movedProps.moved.path.split("/").at(-1) ?? movedProps.moved.path;
+    return (
+      <MovedNotice
+        entry={movedProps.moved.entry}
+        chain={movedProps.moved.chain}
+        openedItem={{ name: name(), directory: true }}
+        oldAddress={[...(base() ? [baseLabel(base()!, b(), locale())] : []), ...movedProps.moved.path.split("/")]}
+        env={historyEnv()}
+        actions={{ onOpen: openHistoryTarget }}
+        historyHref={activityUrl({ q: name() })}
+      />
+    );
+  };
   const editorView = () => (
     <AppWorkspace mobileSurface="flush">
       <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
@@ -576,51 +772,94 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     <>
       <UploadSurface queue={uploads} />
       <Show when={currentView() !== "edit"} fallback={editorView()}>
-        <AppWorkspace mobileSurface="flush">
+        <AppWorkspace
+          class={currentView() === "activity" ? "filesv2-workspace--activity" : snapshot().moved ? "filesv2-workspace--moved" : undefined}
+          mobileSurface="flush"
+          layoutState={() => ({ version: 2, sidebarWidth: 248, detailWidths: { "filesv2-inspector": 400 } })}
+        >
           <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
-          <AppWorkspace.Sidebar label={t().storage} collapsible>
+          <AppWorkspace.Sidebar label={t().storage} collapsible defaultSize={248}>
             <AppWorkspace.SidebarDesktop>
               <AppWorkspace.SidebarBody scrollPreserveKey="filesv2-storage">
-                <Show when={hasOverview()}>
-                  <AppWorkspace.SidebarItem href={filesUrl()} navigation="enhanced" onNavigate={onNavigate} active={overview()}>
-                    <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
-                    <AppWorkspace.SidebarItemLabel>{b().allStorage}</AppWorkspace.SidebarItemLabel>
+                {/* Places across all storage first, as approved: overview, recent, favorites, links and activity. */}
+                <AppWorkspace.SidebarSection>
+                  <Show when={hasOverview()}>
+                    <AppWorkspace.SidebarItem href={filesUrl()} navigation="enhanced" onNavigate={onNavigate} active={overview()}>
+                      <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
+                      <AppWorkspace.SidebarItemLabel>{b().allStorage}</AppWorkspace.SidebarItemLabel>
+                    </AppWorkspace.SidebarItem>
+                  </Show>
+                  <MarksSidebarItem kind="recent" onOpen={openMarked} revision={marksRevision()} />
+                  <MarksSidebarItem kind="favorites" onOpen={openMarked} revision={marksRevision()} />
+                  <AppWorkspace.SidebarItem
+                    href={viewUrl(snapshot().selectedId, "shares")}
+                    navigation="enhanced"
+                    onNavigate={onNavigate}
+                    active={currentView() === "shares"}
+                  >
+                    <AppWorkspace.SidebarItemIcon icon="ti ti-world-share" />
+                    <AppWorkspace.SidebarItemLabel>{b().shares}</AppWorkspace.SidebarItemLabel>
+                    <Show when={snapshot().shares} keyed>
+                      {(page) => (
+                        <AppWorkspace.SidebarItemMeta>
+                          {page.items.length}
+                          {page.next ? "+" : ""}
+                        </AppWorkspace.SidebarItemMeta>
+                      )}
+                    </Show>
                   </AppWorkspace.SidebarItem>
-                </Show>
-                <AppWorkspace.NavTree
-                  ariaLabel={t().storage}
-                  selectedId={
-                    // The trash opens from its storage root's listing, so that root stays highlighted while it is open.
-                    snapshot().selectedId && (!currentView() || currentView() === "trash")
-                      ? treeId(snapshot().selectedId!, currentPath())
-                      : null
-                  }
-                  expandedIds={expanded()}
-                  onExpandedIdsChange={(ids) => {
-                    setExpanded(ids);
-                    ensureLoaded(ids);
-                  }}
-                >
-                  <For each={bases()}>
-                    {(base) => (
-                      <AppWorkspace.NavTree.Item
-                        id={treeId(base.id, "")}
-                        label={treeLabel(treeId(base.id, ""), baseLabel(base, b(), locale()))}
-                        icon={base.kind === "users" ? "ti ti-home" : "ti ti-users"}
-                        href={filesUrl(base.id)}
-                        navigation="enhanced"
-                        meta={base.kind === "users" ? <span class="text-xs text-dimmed">{base.name}</span> : undefined}
-                        title={`${base.kind === "users" ? `${baseLabel(base, b(), locale())} · ${base.name}` : baseLabel(base, b(), locale())} (${t()[base.area]})`}
-                        onNavigate={(event) => withSpinner(treeId(base.id, ""), () => onNavigate(event))}
-                      >
-                        <Show when={base.status === "existing"}>
-                          <For each={folders()[treeId(base.id, "")] ?? []}>{(entry) => <Folder baseId={base.id} entry={entry} />}</For>
-                          <MoreFolders baseId={base.id} path="" />
-                        </Show>
-                      </AppWorkspace.NavTree.Item>
-                    )}
-                  </For>
-                </AppWorkspace.NavTree>
+                  <AppWorkspace.SidebarItem
+                    href={activityHref()}
+                    navigation="enhanced"
+                    scroll="manual"
+                    onNavigate={onNavigate}
+                    active={currentView() === "activity"}
+                  >
+                    <AppWorkspace.SidebarItemIcon icon="ti ti-history" />
+                    <AppWorkspace.SidebarItemLabel>{b().activity}</AppWorkspace.SidebarItemLabel>
+                    <Show when={currentView() !== "activity"}>
+                      <AppWorkspace.SidebarItemMeta>
+                        <StatusBadge tone="info" label={h().newFeature} />
+                      </AppWorkspace.SidebarItemMeta>
+                    </Show>
+                  </AppWorkspace.SidebarItem>
+                </AppWorkspace.SidebarSection>
+                <AppWorkspace.SidebarSection title={t().storage}>
+                  <AppWorkspace.NavTree
+                    ariaLabel={t().storage}
+                    selectedId={
+                      // The trash opens from its storage root's listing, so that root stays highlighted while it is open.
+                      snapshot().selectedId && (!currentView() || currentView() === "trash")
+                        ? treeId(snapshot().selectedId!, currentPath())
+                        : null
+                    }
+                    expandedIds={expanded()}
+                    onExpandedIdsChange={(ids) => {
+                      setExpanded(ids);
+                      ensureLoaded(ids);
+                    }}
+                  >
+                    <For each={bases()}>
+                      {(base) => (
+                        <AppWorkspace.NavTree.Item
+                          id={treeId(base.id, "")}
+                          label={treeLabel(treeId(base.id, ""), baseLabel(base, b(), locale()))}
+                          icon={base.kind === "users" ? "ti ti-home" : "ti ti-users"}
+                          href={filesUrl(base.id)}
+                          navigation="enhanced"
+                          meta={base.kind === "users" ? <span class="text-xs text-dimmed">{base.name}</span> : undefined}
+                          title={`${base.kind === "users" ? `${baseLabel(base, b(), locale())} · ${base.name}` : baseLabel(base, b(), locale())} (${t()[base.area]})`}
+                          onNavigate={(event) => withSpinner(treeId(base.id, ""), () => onNavigate(event))}
+                        >
+                          <Show when={base.status === "existing"}>
+                            <For each={folders()[treeId(base.id, "")] ?? []}>{(entry) => <Folder baseId={base.id} entry={entry} />}</For>
+                            <MoreFolders baseId={base.id} path="" />
+                          </Show>
+                        </AppWorkspace.NavTree.Item>
+                      )}
+                    </For>
+                  </AppWorkspace.NavTree>
+                </AppWorkspace.SidebarSection>
               </AppWorkspace.SidebarBody>
               <AppWorkspace.SidebarFooter>
                 <AppWorkspace.SidebarItem
@@ -632,217 +871,238 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                 >
                   {b().sidebarSearch}
                 </AppWorkspace.SidebarItem>
-                <MarksSidebarItem kind="recent" onOpen={openMarked} revision={marksRevision()} />
-                <MarksSidebarItem kind="favorites" onOpen={openMarked} revision={marksRevision()} />
-                <AppWorkspace.SidebarItem
-                  href={viewUrl(snapshot().selectedId, "shares")}
-                  navigation="enhanced"
-                  onNavigate={onNavigate}
-                  active={currentView() === "shares"}
-                >
-                  <AppWorkspace.SidebarItemIcon icon="ti ti-world-share" />
-                  <AppWorkspace.SidebarItemLabel>{b().shares}</AppWorkspace.SidebarItemLabel>
-                </AppWorkspace.SidebarItem>
               </AppWorkspace.SidebarFooter>
             </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
           <AppWorkspace.Content>
             <Show
-              when={currentView() !== "recent" && currentView() !== "favorites"}
+              when={currentView() !== "activity"}
               fallback={
-                <AppWorkspace.Main class="p-3">
-                  <MarksMenu
-                    kind={currentView() === "recent" ? "recent" : "favorites"}
-                    open
-                    close={() => {}}
-                    onOpen={openMarked}
-                    revision={marksRevision()}
+                <AppWorkspace.Main class="flex min-h-0 flex-col">
+                  <ActivityView
+                    env={historyEnv()}
+                    actions={activityActions}
+                    filters={activityFilters()}
+                    onFiltersChange={changeActivityFilters}
+                    bases={snapshot().bases.items.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) }))}
+                    people={peopleOptions()}
+                    initial={snapshot().activity}
+                    load={async (request, signal) => {
+                      const page = await loadActivity(request, signal, h().errorTitle);
+                      notePeople(page.items);
+                      return page;
+                    }}
+                    loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
+                    loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
+                    retentionDays={props.retentionDays ?? 365}
                   />
                 </AppWorkspace.Main>
               }
             >
               <Show
-                when={currentView() !== "shares"}
+                when={currentView() !== "recent" && currentView() !== "favorites"}
                 fallback={
-                  <SharesOverview
-                    shares={snapshot().shares ?? { items: [], next: null }}
-                    baseId={snapshot().selectedId}
-                    onNavigate={onNavigate}
-                  />
+                  <AppWorkspace.Main class="p-3">
+                    <MarksMenu
+                      kind={currentView() === "recent" ? "recent" : "favorites"}
+                      open
+                      close={() => {}}
+                      onOpen={openMarked}
+                      revision={marksRevision()}
+                    />
+                  </AppWorkspace.Main>
                 }
               >
                 <Show
-                  when={!(currentView() === "trash" && selected()?.status === "existing")}
+                  when={currentView() !== "shares"}
                   fallback={
-                    <TrashView
-                      base={selected()!}
+                    <SharesOverview
+                      shares={snapshot().shares ?? { items: [], next: null }}
+                      baseId={snapshot().selectedId}
                       onNavigate={onNavigate}
-                      onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))}
                     />
                   }
                 >
                   <Show
-                    when={!overview() || !!problem()}
+                    when={!(currentView() === "trash" && selected()?.status === "existing")}
                     fallback={
-                      <StorageOverview
-                        bases={snapshot().bases.items}
-                        issues={snapshot().bases.issues}
-                        onOpenRecent={openMarked}
+                      <TrashView
+                        base={selected()!}
                         onNavigate={onNavigate}
+                        onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))}
                       />
                     }
                   >
                     <Show
-                      when={snapshot().directory}
+                      when={!overview() || !!problem()}
                       fallback={
-                        <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
-                          <Show
-                            when={!workspace.pending()}
-                            fallback={centered(() => <Placeholder state="loading" variant="panel" description={t().loadingFiles} />)}
-                          >
+                        <StorageOverview
+                          bases={snapshot().bases.items}
+                          issues={snapshot().bases.issues}
+                          onOpenRecent={openMarked}
+                          onNavigate={onNavigate}
+                        />
+                      }
+                    >
+                      <Show
+                        when={snapshot().directory}
+                        fallback={
+                          <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
                             <Show
-                              when={!problem()}
-                              fallback={centered(() => (
-                                <Placeholder
-                                  state="error"
-                                  variant="panel"
-                                  title={t().loadFailed}
-                                  description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />}
-                                  action={retry()}
-                                />
-                              ))}
+                              when={!workspace.pending()}
+                              fallback={centered(() => <Placeholder state="loading" variant="panel" description={t().loadingFiles} />)}
                             >
                               <Show
-                                when={selected()}
+                                when={!problem()}
                                 fallback={centered(() => (
                                   <Placeholder
+                                    state="error"
                                     variant="panel"
-                                    icon="ti ti-folder-off"
-                                    title={t().noStorage}
-                                    description={
-                                      <div class="flex flex-col gap-2">
-                                        <p>{t().noStorageDescription}</p>
-                                        <For each={snapshot().bases.issues}>
-                                          {(issue) => (
-                                            <p>
-                                              <strong>{t()[issue.area]}: </strong>
-                                              <IssueMessage code={issue.code} />
-                                            </p>
-                                          )}
-                                        </For>
-                                      </div>
-                                    }
+                                    title={t().loadFailed}
+                                    description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />}
                                     action={retry()}
                                   />
                                 ))}
                               >
-                                {(base) => (
-                                  <Show
-                                    when={base().status === "existing"}
-                                    fallback={centered(() => (
-                                      <Placeholder
-                                        variant="panel"
-                                        state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
-                                        icon="ti ti-folder-off"
-                                        title={t()[base().status]}
-                                        description={<IssueMessage code={base().reason ?? base().status} />}
-                                        action={retry()}
-                                      />
-                                    ))}
-                                  >
-                                    <For each={snapshot().bases.issues}>
-                                      {(issue) => (
-                                        <InlineGuidance tone="info">
-                                          <strong>{t()[issue.area]}: </strong>
-                                          <IssueMessage code={issue.code} />
-                                        </InlineGuidance>
+                                <Show
+                                  when={snapshot().moved}
+                                  keyed
+                                  fallback={
+                                    <Show
+                                      when={selected()}
+                                      fallback={centered(() => (
+                                        <Placeholder
+                                          variant="panel"
+                                          icon="ti ti-folder-off"
+                                          title={t().noStorage}
+                                          description={
+                                            <div class="flex flex-col gap-2">
+                                              <p>{t().noStorageDescription}</p>
+                                              <For each={snapshot().bases.issues}>
+                                                {(issue) => (
+                                                  <p>
+                                                    <strong>{t()[issue.area]}: </strong>
+                                                    <IssueMessage code={issue.code} />
+                                                  </p>
+                                                )}
+                                              </For>
+                                            </div>
+                                          }
+                                          action={retry()}
+                                        />
+                                      ))}
+                                    >
+                                      {(base) => (
+                                        <Show
+                                          when={base().status === "existing"}
+                                          fallback={centered(() => (
+                                            <Placeholder
+                                              variant="panel"
+                                              state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
+                                              icon="ti ti-folder-off"
+                                              title={t()[base().status]}
+                                              description={<IssueMessage code={base().reason ?? base().status} />}
+                                              action={retry()}
+                                            />
+                                          ))}
+                                        >
+                                          <For each={snapshot().bases.issues}>
+                                            {(issue) => (
+                                              <InlineGuidance tone="info">
+                                                <strong>{t()[issue.area]}: </strong>
+                                                <IssueMessage code={issue.code} />
+                                              </InlineGuidance>
+                                            )}
+                                          </For>
+                                        </Show>
                                       )}
-                                    </For>
-                                  </Show>
-                                )}
+                                    </Show>
+                                  }
+                                >
+                                  {(moved) => <MovedHere moved={moved} />}
+                                </Show>
                               </Show>
                             </Show>
-                          </Show>
-                        </AppWorkspace.Main>
-                      }
-                    >
-                      {(directory) => (
-                        <Browser
-                          directory={directory()}
-                          bases={snapshot().bases.items}
-                          after={after()}
-                          source={snapshot().source}
-                          detail={snapshot().detail}
-                          preferences={props.preferences}
-                          issues={snapshot().bases.issues}
-                          onSelectionSource={workspace.rememberSource}
-                          onMarksChanged={() => setMarksRevision((value) => value + 1)}
-                          onBranchRefreshReady={(refresh) => {
-                            refreshBrowserBranches = refresh;
-                          }}
-                          pending={workspace.pending()}
-                          preserveSelection={preserveSelection()}
-                          error={workspace.failure()?.message}
-                          notice={cursorNotice() ? b().cursorReset : undefined}
-                          onRetry={() => void go(retryHref(), true)}
-                          onOpenDirectory={(path) =>
-                            goTree(
-                              treeId(directory().base.id, path),
-                              filesUrl(directory().base.id, path, null, null, null, null, currentBrowse()),
-                            )
-                          }
-                          onOpenOverview={hasOverview() ? () => void go(filesUrl()) : undefined}
-                          onOpenTrash={() => void go(viewUrl(directory().base.id, "trash"))}
-                          onSearch={(query) =>
-                            void go(filesUrl(directory().base.id, directory().path, null, null, query, null, currentBrowse()))
-                          }
-                          onBrowseChange={(options) =>
-                            void go(
-                              filesUrl(directory().base.id, directory().path, null, null, directory().query, directory().scope, options),
-                            )
-                          }
-                          onChanged={(selectPath) => {
-                            setMarksRevision((value) => value + 1);
-                            // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
-                            ensureLoaded(Object.keys(folders()), true);
-                            return go(
-                              filesUrl(
-                                directory().base.id,
-                                directory().path,
-                                null,
-                                selectPath ?? null,
-                                directory().query,
-                                directory().scope,
-                                currentBrowse(),
-                              ),
-                              true,
-                            );
-                          }}
-                          onShare={(paths) =>
-                            void openShareDialog({
-                              baseId: directory().base.id,
-                              kind: "download",
-                              paths,
-                              defaultTitle:
-                                paths.length === 1
-                                  ? paths[0]!.split("/").at(-1)!
-                                  : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b(), locale())} (${paths.length})`,
-                            })
-                          }
-                          onShareInbox={(folder) =>
-                            void openShareDialog({
-                              baseId: directory().base.id,
-                              kind: "inbox",
-                              folder,
-                              defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b(), locale()),
-                            })
-                          }
-                          editor={snapshot().bases.editor}
-                          onEdit={(entry) => void go(editorUrl(directory().base.id, entry.path))}
-                          onNavigate={onNavigate}
-                          uploads={uploads}
-                        />
-                      )}
+                          </AppWorkspace.Main>
+                        }
+                      >
+                        {(directory) => (
+                          <Browser
+                            directory={directory()}
+                            bases={snapshot().bases.items}
+                            after={after()}
+                            source={snapshot().source}
+                            detail={snapshot().detail}
+                            preferences={props.preferences}
+                            issues={snapshot().bases.issues}
+                            onSelectionSource={workspace.rememberSource}
+                            onMarksChanged={() => setMarksRevision((value) => value + 1)}
+                            onBranchRefreshReady={(refresh) => {
+                              refreshBrowserBranches = refresh;
+                            }}
+                            pending={workspace.pending()}
+                            preserveSelection={preserveSelection()}
+                            error={workspace.failure()?.message}
+                            notice={cursorNotice() ? b().cursorReset : undefined}
+                            onRetry={() => void go(retryHref(), true)}
+                            onOpenDirectory={(path) =>
+                              goTree(
+                                treeId(directory().base.id, path),
+                                filesUrl(directory().base.id, path, null, null, null, currentBrowse()),
+                              )
+                            }
+                            onOpenOverview={hasOverview() ? () => void go(filesUrl()) : undefined}
+                            onOpenTrash={() => void go(viewUrl(directory().base.id, "trash"))}
+                            pendingSearch={pendingSearch()}
+                            onSearch={(search) =>
+                              void go(filesUrl(directory().base.id, directory().path, null, null, search, currentBrowse()))
+                            }
+                            onSearchHistory={(query) => void go(activityUrl({ q: query }))}
+                            history={{
+                              env: historyEnv(),
+                              initial: snapshot().history,
+                              actions: { onOpen: openHistoryTarget, onRecheck: activityActions.onRecheck },
+                              activityHref: (baseId, path, scope) =>
+                                activityUrl({ baseId, path, ...(scope === "folder" ? { scope } : {}) }),
+                            }}
+                            onBrowseChange={(options) =>
+                              void go(filesUrl(directory().base.id, directory().path, null, null, null, options))
+                            }
+                            onChanged={(selectPath) => {
+                              setMarksRevision((value) => value + 1);
+                              // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
+                              ensureLoaded(Object.keys(folders()), true);
+                              return go(
+                                filesUrl(directory().base.id, directory().path, null, selectPath ?? null, currentSearch(), currentBrowse()),
+                                true,
+                              );
+                            }}
+                            onShare={(paths) =>
+                              void openShareDialog({
+                                baseId: directory().base.id,
+                                kind: "download",
+                                paths,
+                                defaultTitle:
+                                  paths.length === 1
+                                    ? paths[0]!.split("/").at(-1)!
+                                    : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b(), locale())} (${paths.length})`,
+                              })
+                            }
+                            onShareInbox={(folder) =>
+                              void openShareDialog({
+                                baseId: directory().base.id,
+                                kind: "inbox",
+                                folder,
+                                defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b(), locale()),
+                              })
+                            }
+                            editor={snapshot().bases.editor}
+                            onEdit={(entry) => void go(editorUrl(directory().base.id, entry.path))}
+                            onNavigate={onNavigate}
+                            uploads={uploads}
+                          />
+                        )}
+                      </Show>
                     </Show>
                   </Show>
                 </Show>

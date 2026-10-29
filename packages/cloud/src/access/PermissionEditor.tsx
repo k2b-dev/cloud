@@ -449,6 +449,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                   allowPublic={allowPublic()}
                   allowAuthenticated={allowAuthenticated()}
                   allowServiceAccounts={props.allowServiceAccounts}
+                  serviceAccountKinds={props.serviceAccountKinds}
+                  serviceAccountStatus={props.serviceAccountStatus ?? "active"}
                   placeholder={props.placeholder}
                   signedIn={props.signedIn}
                   disabled={saving()}
@@ -651,7 +653,7 @@ function AccessEntryRow(props: {
       >
         <Show when={!props.expanded} fallback={<PrincipalAvatar entry={props.entry} label={displayName()} />}>
           <Show
-            when={props.entry.principal.type === "user"}
+            when={props.entry.principal.type === "user" || props.entry.principal.type === "service_account"}
             fallback={
               <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700">
                 <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
@@ -660,8 +662,15 @@ function AccessEntryRow(props: {
           >
             <CloudAvatar
               username={displayName()}
-              userId={props.entry.principal.type === "user" ? props.entry.principal.userId : undefined}
+              userId={
+                props.entry.principal.type === "user"
+                  ? props.entry.principal.userId
+                  : props.entry.principal.type === "service_account"
+                    ? props.entry.principal.serviceAccountId
+                    : undefined
+              }
               avatarHash={props.entry.avatarHash}
+              kind={props.entry.principal.type === "service_account" ? "service_account" : "user"}
               size="xs"
               class="h-7 w-7"
             />

@@ -1,5 +1,14 @@
 import { type SQL, sql } from "bun";
-import type { BaseUser, MutationResult, PaginationResponse, Role, User, UserProfile, UserProvider } from "../../contracts/shared";
+import type {
+  BaseUser,
+  MutationResult,
+  PaginationResponse,
+  RequestActor,
+  Role,
+  User,
+  UserProfile,
+  UserProvider,
+} from "../../contracts/shared";
 import { freeipa } from "../../server/services";
 import { createAuthLoginUrl } from "../../shared/redirect";
 import { isAccountCategoryAllowed } from "../account-category-policy";
@@ -225,9 +234,10 @@ export const getMinimal = async (params: { id: string } | { uid: string }): Prom
 };
 
 /** Audience roles for a resolved access subject, including delegated users and group managers. */
-export const getRoles = async (userId: string): Promise<Role[]> => {
-  const { groupsAdmin } = await getFreeIpaConfig();
-  const [row] = await sql<DbRow[]>`SELECT u.provider, u.profile,
+export const getRoles = async (userId: string, options?: { db: typeof sql }): Promise<Role[]> => {
+  const db = options?.db ?? sql;
+  const groupsAdmin = options ? await getFreeIpaAdminGroups(db) : (await getFreeIpaConfig()).groupsAdmin;
+  const [row] = await db<DbRow[]>`SELECT u.provider, u.profile,
     CASE WHEN u.provider='local' THEN u.admin ELSE EXISTS (
       SELECT 1 FROM auth.ipa_user_effective_groups eg WHERE eg.user_id=u.id
         AND eg.group_name=ANY(${toPgTextArray(groupsAdmin)}::text[])
@@ -237,6 +247,26 @@ export const getRoles = async (userId: string): Promise<Role[]> => {
   if (!row) return [];
   const { provider, profile } = resolveProviderProfile(row);
   return buildRoles({ provider, profile, memberofGroup: [], manages: stringArray(row.manages), admin: Boolean(row.effective_admin) });
+};
+
+/**
+ * Revalidate installation authority and retain it until the caller commits.
+ * Lock users before grant/membership or mandate/profile locks, matching user
+ * deletion and provider sync. Projection and settings locks also cover rows
+ * inserted or replaced while lock acquisition was waiting.
+ */
+export const hasInstallationAdminInTransaction = async (actor: RequestActor, db: typeof sql): Promise<boolean> => {
+  if (actor.kind !== "user" || actor.sessionKind === "app" || !actor.user.roles.includes("admin")) return false;
+  const [user] = await db<{ provider: UserProvider; profile: UserProfile; expired: boolean }[]>`
+    SELECT provider, profile, (account_expires IS NOT NULL AND account_expires <= statement_timestamp()) AS expired
+    FROM auth.users WHERE id=${actor.user.id}::uuid FOR SHARE`;
+  if (!user || user.expired || user.profile !== "user") return false;
+  await db`LOCK TABLE settings.entries IN SHARE MODE`;
+  if (!(await isAccountCategoryAllowed(user, db))) return false;
+  if (user.provider === "ipa") {
+    await db`LOCK TABLE auth.ipa_user_effective_groups IN SHARE MODE`;
+  }
+  return (await getRoles(actor.user.id, { db })).includes("admin");
 };
 
 export const getByUid = async (params: { uid: string }): Promise<{ id: string; roles: Role[] } | null> => {
@@ -347,15 +377,15 @@ export const list = async (params: {
   };
 };
 
-/** Technical membership reads stay complete; human-facing lists exclude personal groups explicitly. */
-export const getGroups = async (params: { id: string; recursive?: boolean; includePersonal?: boolean }): Promise<string[]> => {
+/** Exported group names exclude personal groups; authorization uses the complete group ID projection. */
+export const getGroups = async (params: { id: string; recursive?: boolean }): Promise<string[]> => {
   if (params.recursive) {
     const rows = await sql<DbRow[]>`${recursiveUserGroupsSubquery({
       userId: params.id,
       select: sql`
         SELECT DISTINCT g.name FROM user_all_groups ag
         JOIN auth.groups g ON g.id = ag.group_id
-        WHERE (${params.includePersonal !== false} OR NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id))
+        WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
         ORDER BY g.name
       `,
     })}`;
@@ -364,7 +394,7 @@ export const getGroups = async (params: { id: string; recursive?: boolean; inclu
   const rows = await sql<DbRow[]>`
     SELECT g.name FROM auth.groups g
     WHERE g.id IN (SELECT group_id FROM auth.user_groups_v2 WHERE user_id = ${params.id}::uuid)
-      AND (${params.includePersonal !== false} OR NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id))
+      AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
     ORDER BY g.name
   `;
   return rows.map((row) => row.name as string);

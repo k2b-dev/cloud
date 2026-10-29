@@ -32,6 +32,12 @@ export async function migrateActivity(): Promise<void> {
     error_code text,
     detail jsonb NOT NULL DEFAULT '{}'
   )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_effective ON filesv2.activity(coalesce(finished_at,started_at) DESC,id DESC)`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_batch_effective ON filesv2.activity(batch_id, coalesce(finished_at,started_at) DESC, id DESC) WHERE batch_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_effective ON filesv2.activity(base_id, coalesce(finished_at,started_at) DESC, id DESC)`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_after_effective ON filesv2.activity(base_after_id, coalesce(finished_at,started_at) DESC, id DESC) WHERE base_after_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_actor_effective ON filesv2.activity(actor_user_id, coalesce(finished_at,started_at) DESC, id DESC) WHERE actor_kind='user'`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_chain_effective ON filesv2.activity(base_id, root, coalesce(finished_at,started_at), id) WHERE state='done'`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS filesv2_activity_operation ON filesv2.activity(operation_id) WHERE operation_id IS NOT NULL`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS filesv2_activity_trash_phase ON filesv2.activity(trash_id,action) WHERE trash_id IS NOT NULL AND action IN ('item.trash','item.restore')`.simple();
   // Upload reservation keys are text and remain case-sensitive, including legacy UUID spellings.

@@ -48,6 +48,8 @@ const request = (headers: Headers, path = "", method = "GET", body?: unknown) =>
 suite("chat conversations, people, and directory groups", () => {
   const users: string[] = [];
   const accounts: string[] = [];
+  // Bulk agents act nowhere, so one statement removes them; a person has about ten times as many references to check.
+  const agents: string[] = [];
   const groups: string[] = [];
   const conversations: string[] = [];
   const accessIds: string[] = [];
@@ -72,6 +74,13 @@ suite("chat conversations, people, and directory groups", () => {
     const rows = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
       SELECT ${prefix} || '-' || i, 'local', 'user', 'Person ' || lpad(i::text, 4, '0') FROM generate_series(1, ${count}) i RETURNING id`;
     users.push(...rows.map((row) => row.id));
+    return rows.map((row) => row.id);
+  };
+  const bulkAgents = async (count: number) => {
+    const prefix = `Chat bulk ${crypto.randomUUID()}`;
+    const rows = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+      SELECT ${prefix} || ' ' || i, 'agent' FROM generate_series(1, ${count}) i RETURNING id`;
+    agents.push(...rows.map((row) => row.id));
     return rows.map((row) => row.id);
   };
   const groupGrant = async (chat: { id: string }, groupId: string, owner: string, permission: PermissionLevel = "write") => {
@@ -148,6 +157,7 @@ suite("chat conversations, people, and directory groups", () => {
     if (groups.length) await sql`DELETE FROM auth.groups WHERE id = ANY(${toPgUuidArray(groups)}::uuid[])`;
     if (accounts.length)
       await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'service_account' AND principal_id = ANY(${toPgUuidArray(accounts)}::uuid[])`;
+    if (agents.length) await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(agents)}::uuid[])`;
     for (const id of accounts) {
       await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ${"p:service_account:" + id}`;
       await sql`DELETE FROM audit.events WHERE target_id = ${id} OR actor_uid = ${id} OR metadata->>'serviceAccountId' = ${id}`;
@@ -159,7 +169,7 @@ suite("chat conversations, people, and directory groups", () => {
       await sql`DELETE FROM audit.events WHERE actor_user_id = ANY(${toPgUuidArray(users)}::uuid[]) OR target_id = ANY(${toPgTextArray(users)}::text[])`;
       await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users)}::uuid[])`;
     }
-    users.length = accounts.length = groups.length = conversations.length = accessIds.length = 0;
+    users.length = accounts.length = agents.length = groups.length = conversations.length = accessIds.length = 0;
   });
 
   test("person preselection reads current guest membership and expiration without creating a chat", async () => {
@@ -1942,14 +1952,19 @@ suite("chat conversations, people, and directory groups", () => {
     const owner = await user(),
       outside = await user();
     const chat = await fixture(owner);
-    const ids = await bulkUsers(4999);
-    await sql`WITH grants AS (INSERT INTO auth.access (user_id, permission) SELECT id, 'write' FROM auth.users WHERE id = ANY(${toPgUuidArray(ids)}::uuid[]) RETURNING id)
+    // The person whose permission is resolved shares the channel with 4,998 agents; every member is its own principal.
+    const member = await user();
+    const ids = await bulkAgents(4998);
+    await sql`WITH grants AS (
+        INSERT INTO auth.access (user_id, service_account_id, permission)
+        SELECT ${member}::uuid, NULL::uuid, 'write'::auth.permission_level UNION ALL
+        SELECT NULL::uuid, id, 'write' FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])
+        RETURNING id)
       INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id) SELECT ${chat.id}::uuid, id, 'member', 'user', ${owner}::uuid FROM grants`;
     await sql`UPDATE chat.conversations SET name = 'Large channel', member_count = 5000 WHERE id = ${chat.id}::uuid`;
     const discovery = await createAccess({ principal: { type: "authenticated" }, permission: "read" });
     if (!discovery.ok) throw new Error(discovery.error.message);
     await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id) VALUES (${chat.id}::uuid, ${discovery.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
-    const member = ids.at(-1)!;
     const allowed = await requireConversation({ ...userContext(member), conversationId: chat.shortId, required: "write" });
     expect(allowed.ok && allowed.data.member_count).toBe(5000);
     const denied = await requireConversation({ ...userContext(outside), conversationId: chat.shortId, required: "write" });

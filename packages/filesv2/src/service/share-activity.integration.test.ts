@@ -132,6 +132,7 @@ suite("share create/revoke atomic history and security audit", () => {
     if (directory !== undefined && node.directory !== directory) throw new FilesError("not_directory", 400);
     const access: SharingAccess = {
       root,
+      info: { stableIds: true },
       node,
       target,
       relative: path,
@@ -142,6 +143,8 @@ suite("share create/revoke atomic history and security audit", () => {
   }
   const service = createSharingService({
     authorized: authorize,
+    readOnlyAuthorized: authorize,
+    displayNames: async (rows) => rows.map((row) => ({ ...row, displayName: "Alice" })),
     async writableParent(requestActor, base, path) {
       const parent = path.split("/").slice(0, -1).join("/");
       return { ...(await authorize(requestActor, base, parent, true)), relative: path };

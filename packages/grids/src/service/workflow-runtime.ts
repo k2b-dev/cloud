@@ -58,6 +58,7 @@ import { cleanupExpiredEvidenceExports } from "./evidence-exports";
 import { canAccessWorkflowExecutionTable, canAccessWorkflowRunTable, canExecuteWorkflow } from "./workflow-action-scope";
 import { getWorkflow, listScheduledWorkflows } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
+import { machineWorkflowOwnerPrincipal, resolveWorkflowInvocationPrincipal } from "./workflow-machine-authority";
 import { createWorkflowRecordEventRuntime } from "./workflow-record-events";
 import { publishWorkflowRunEvent } from "./workflow-run-events";
 import {
@@ -177,6 +178,7 @@ const workflowInvocationFingerprint = (input: {
       serviceAccountId: input.principal.serviceAccountId,
       actorServiceAccountId: input.principal.actorServiceAccountId ?? null,
       credential: input.principal.credential ?? null,
+      ...(input.principal.mandate ? { mandate: input.principal.mandate } : {}),
     },
     inputs: input.inputs,
     context: Object.fromEntries(Object.entries(input.context).filter(([key]) => key !== "workflow")),
@@ -250,10 +252,14 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
   const t = workflowServiceText(locale);
   const workflow = await getWorkflow(input.workflowId);
   if (!workflow) return fail({ ...err.notFound("workflow"), message: t.workflowNotFound });
+  const principal = await resolveWorkflowInvocationPrincipal(workflow.id, input.principal);
+  if (!principal.ok) return principal;
+  input = { ...input, principal: principal.data };
   const authorization = input.authorization ?? { kind: "workflow" };
   const claim = {
     baseId: workflow.baseId,
     workflowId: workflow.id,
+    channel: input.channel,
     principal: input.principal,
     authorization,
     launcherId: input.launcherId,
@@ -498,9 +504,34 @@ export const getWorkflowTriggerRuntimeState = async (
   const schedule = workflowScheduleConfig(workflow);
   const registered = schedule ? await workflowScheduler().get({ id: workflowScheduleId(workflow) }) : null;
 
+  const machine = await machineWorkflowOwnerPrincipal(workflow.id);
+  const stored = await getWorkflow(workflow.id);
+  const authorityBlocked =
+    workflow.enabled &&
+    (!stored ||
+      (!machine
+        ? !stored.ownerUserId
+        : !(await canExecuteWorkflow({
+            baseId: stored.baseId,
+            workflowId: workflow.id,
+            principal: machine,
+            launcherId: null,
+            authorization: { kind: "workflow" },
+          }))));
   return {
-    schedule: schedule ? scheduleRuntimeState(workflow, schedule, registered) : null,
-    recordEvents: recordEventRuntimeStates(workflow),
+    schedule: schedule
+      ? authorityBlocked
+        ? {
+            ...schedule,
+            state: "degraded",
+            nextRunAt: null,
+            problem: "Automatic execution authority is unavailable. Review its owner, mandate and base grant.",
+          }
+        : scheduleRuntimeState(workflow, schedule, registered)
+      : null,
+    recordEvents: authorityBlocked
+      ? recordEventRuntimeStates(workflow).map((trigger) => ({ ...trigger, state: "paused" as const }))
+      : recordEventRuntimeStates(workflow),
   };
 };
 
@@ -547,7 +578,7 @@ const registerSchedule = async (workflowId: string): Promise<void> => {
             // Registration is intentionally left to the external reconcile loop. Mutating this schedule inside its callback races its own persistence.
             return { runId: "", status: "stale" };
           }
-          const principal: GridsWorkflowPrincipal = {
+          const principal: GridsWorkflowPrincipal = (await machineWorkflowOwnerPrincipal(current.id)) ?? {
             userId: current.ownerUserId,
             groupIds: await loadWorkflowUserGroupIds(current.ownerUserId),
             serviceAccountId: null,

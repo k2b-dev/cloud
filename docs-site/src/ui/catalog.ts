@@ -117,6 +117,12 @@ const portableSections = [
         "ti ti-drag-drop",
         "Whole-area file drops with a calm overlay, nested targets, and dialog precedence.",
       ),
+      page(
+        "text-editor",
+        "TextEditor",
+        "ti ti-table",
+        "Markdown editing with directly editable tables and application-supplied collaboration.",
+      ),
       page("markdown-editor", "MarkdownEditor", "ti ti-markdown", "Standalone controlled Markdown editing with native textarea behavior."),
       page(
         "autocomplete",
@@ -296,6 +302,7 @@ const portableSections = [
       page("map-view", "MapView", "ti ti-map", "Server-rendered places and routes with a progressively loaded map image."),
       page("kbd", "Kbd", "ti ti-keyboard", "Accessible platform and locale aware shortcut caps."),
       page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
+      page("match-text", "MatchText", "ti ti-highlight", "Search matches marked in a result's name or path."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
@@ -423,7 +430,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 165;
+export const portableUiComponentCount = 166;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -474,6 +481,7 @@ export const documentedOnlyUiCatalogExports = {
   prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
   measureScrollFade: "Documented ScrollArea helper that measures a scrollport's fades at once for a reader in the same frame.",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
+  matchParts: "Documented MatchText helper for hosts that render search matches in their own markup.",
   keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",
   matchesChatCommand: "Documented Chat composer helper that filters application-owned slash rows with the composer's own matching.",

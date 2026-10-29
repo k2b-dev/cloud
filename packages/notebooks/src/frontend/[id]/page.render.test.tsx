@@ -191,6 +191,7 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
     yjsSnapshotAt: null,
     contentMd: `# ${title}`,
     yjsSnapshot: null,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -333,6 +334,7 @@ const renderNotebookWithNotes = async (
     yjsSnapshotAt: null,
     contentMd: `# ${title}`,
     yjsSnapshot: null,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -473,6 +475,7 @@ const renderEditorPage = async (
     yjsSnapshotAt: timestamp,
     contentMd: options.markdown === undefined ? previewMarkdown : options.markdown,
     yjsSnapshot: options.snapshot === undefined ? "c25hcHNob3Q=" : options.snapshot,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -594,6 +597,8 @@ test("write mode sends the saved Markdown and no collaboration state, which load
   const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
   const props = islandProps(editor?.attributes["data-props"]);
   expect(props.initialContent).toStartWith("# Wochenplan");
+  expect(props.initialDetail).toHaveProperty("contentMd");
+  expect(props.initialDetail).toMatchObject({ contentMd: props.initialContent });
   expect(props).not.toHaveProperty("initialSnapshot");
   expect(html).not.toMatch(/yjsSnapshot(?!At)/);
 });
@@ -678,7 +683,7 @@ const renderLinkedNotebook = async (
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
-  spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null }));
+  spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" }));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));

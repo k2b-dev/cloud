@@ -3,6 +3,7 @@ import { redis, sql } from "bun";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { userResourceContext } from "./projects.test-fixture";
 import * as aiSettings from "./settings";
 import { composeAiSystemPrompt } from "./system-prompt";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -378,8 +379,8 @@ suite("global AI conversation boundaries", () => {
   test("assigns a Project only once even when two requests race", async () => {
     const userId = await insertUser();
     const subject = { type: "user" as const, userId };
-    const first = await aiProjects.create({ subject, name: "First" });
-    const second = await aiProjects.create({ subject, name: "Second" });
+    const first = await aiProjects.create({ subject: userResourceContext(subject), name: "First" });
+    const second = await aiProjects.create({ subject: userResourceContext(subject), name: "Second" });
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
       const results = await Promise.all(
@@ -523,8 +524,8 @@ suite("global AI conversation boundaries", () => {
   test("changes or removes one Project between turns but not during an active turn", async () => {
     const userId = await insertUser();
     const subject = { type: "user" as const, userId };
-    const first = await aiProjects.create({ subject, name: "First Project" });
-    const second = await aiProjects.create({ subject, name: "Second Project" });
+    const first = await aiProjects.create({ subject: userResourceContext(subject), name: "First Project" });
+    const second = await aiProjects.create({ subject: userResourceContext(subject), name: "Second Project" });
     const chat = await aiConversations.createConversation({ ownerUserId: userId, projectId: first.id });
     try {
       await sql`

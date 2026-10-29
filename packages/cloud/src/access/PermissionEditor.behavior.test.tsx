@@ -322,12 +322,14 @@ describe("PermissionEditor service accounts", () => {
         try {
           for (const kind of kinds) {
             const row = rowOf(`Granted ${kind}`)!;
-            expect(row.querySelector(`i.${icons[kind]}`)).not.toBeNull();
+            // Every service account row shows the account's robot or photo in a square, never a bare icon.
+            const picture = row.querySelector(`img[src="/api/accounts/users/granted-${kind}/avatar"]`);
+            expect(picture?.getAttribute("data-shape")).toBe("square");
             expect(row.textContent).toContain(`(${labels[locale][kind]})`);
           }
           // An entry whose consumer did not resolve the kind makes no claim about it.
           const unknown = rowOf("Granted unknown")!;
-          expect(unknown.querySelector("i.ti-key")).not.toBeNull();
+          expect(unknown.querySelector('img[src="/api/accounts/users/granted-unknown/avatar"]')).not.toBeNull();
           expect(unknown.textContent).not.toContain("(");
 
           const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
@@ -351,7 +353,7 @@ describe("PermissionEditor service accounts", () => {
             { principal: { type: "service_account", serviceAccountId: `found-${selectedKind}` }, kind: selectedKind },
           ]);
           const added = rowOf(`Found ${selectedKind}`)!;
-          expect(added.querySelector(`i.${icons[selectedKind]}`)).not.toBeNull();
+          expect(added.querySelector(`img[src="/api/accounts/users/found-${selectedKind}/avatar"]`)).not.toBeNull();
           expect(added.textContent).toContain(`(${labels[locale][selectedKind]})`);
 
           // The editor changes its own copy; the entry the caller returned stays as the caller made it.
@@ -370,50 +372,52 @@ describe("PermissionEditor service accounts", () => {
     }
   }
 
-  test("grant selection defaults to active accounts, forwards kind eligibility, and keeps existing rows", async () => {
-    const dom = createDomTestHarness();
-    installPopoverApi(dom);
-    const originalFetch = globalThis.fetch;
-    const requests: URL[] = [];
-    globalThis.fetch = Object.assign(
-      async (input: string | URL | Request) => {
-        requests.push(new URL(input instanceof Request ? input.url : input.toString()));
-        return Response.json({ items: [] });
-      },
-      { preconnect: originalFetch.preconnect },
-    );
-    const { default: PermissionEditor } = await import("./PermissionEditor");
-    const dispose = render(
-      () => (
-        <PermissionEditor
-          initialEntries={[{ ...serviceEntry("agent"), displayName: "Disabled agent" }]}
-          allowAuthenticated={false}
-          serviceAccountKinds={["standalone", "agent"]}
-          grantAccess={async () => {
-            throw new Error("No selection expected");
-          }}
-          updateAccess={async () => {}}
-          revokeAccess={async () => {}}
-        />
-      ),
-      dom.root,
-    );
-    try {
-      delegateEvents(["input"]);
-      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
-      input.value = "helper";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      await waitFor(() => requests.length > 0, "filtered directory request");
-      expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
-      expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("standalone,agent");
-      expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
-      expect(dom.root.textContent).toContain("Disabled agent");
-    } finally {
-      dispose();
-      globalThis.fetch = originalFetch;
-      dom.cleanup();
-    }
-  });
+  for (const expanded of [false, true])
+    test(`${expanded ? "expanded" : "compact"}: grant selection defaults to active accounts, forwards kind eligibility, and keeps existing rows`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      const originalFetch = globalThis.fetch;
+      const requests: URL[] = [];
+      globalThis.fetch = Object.assign(
+        async (input: string | URL | Request) => {
+          requests.push(new URL(input instanceof Request ? input.url : input.toString()));
+          return Response.json({ items: [] });
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const { default: PermissionEditor } = await import("./PermissionEditor");
+      const dispose = render(
+        () => (
+          <PermissionEditor
+            expanded={expanded}
+            initialEntries={[{ ...serviceEntry("agent"), displayName: "Disabled agent" }]}
+            allowAuthenticated={false}
+            serviceAccountKinds={["standalone", "agent"]}
+            grantAccess={async () => {
+              throw new Error("No selection expected");
+            }}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        delegateEvents(["input"]);
+        const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.value = "helper";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await waitFor(() => requests.length > 0, "filtered directory request");
+        expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
+        expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("standalone,agent");
+        expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
+        expect(dom.root.textContent).toContain("Disabled agent");
+      } finally {
+        dispose();
+        globalThis.fetch = originalFetch;
+        dom.cleanup();
+      }
+    });
 
   test("an explicit status filter overrides the grant selection default", async () => {
     const dom = createDomTestHarness();
@@ -586,7 +590,8 @@ describe("PermissionEditor service accounts", () => {
       const rowOf = () =>
         Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes("Found later"));
       await waitFor(() => rowOf() !== undefined, "the new row");
-      expect(rowOf()!.querySelector("i.ti-key")).not.toBeNull();
+      // The row shows the account's robot whatever its kind; only the label stays away.
+      expect(rowOf()!.querySelector('img[src="/api/accounts/users/found-later/avatar"]')).not.toBeNull();
       expect(rowOf()!.textContent).not.toContain("(");
     } finally {
       dispose();
@@ -915,10 +920,10 @@ describe("PermissionEditor group coverage", () => {
     try {
       expect(view.panel().textContent).toContain("Loading members…");
       await waitFor(() => view.panel().querySelectorAll("li").length === 20, "the first page");
-      // Coverage follows access resolution: direct and nested members, users only.
+      // Coverage follows access resolution for direct and nested human and machine members.
       const memberRequest = view.requests.find((url) => url.searchParams.has("member_of_group_id"))!;
       expect(Object.fromEntries(memberRequest.searchParams)).toEqual({
-        kinds: "user",
+        kinds: "user,service_account",
         member_of_group_id: groupId,
         recursive: "true",
         page: "1",
@@ -936,7 +941,7 @@ describe("PermissionEditor group coverage", () => {
       expect(view.panel().hidden).toBe(false);
       // The count leads the list, then the directory hint.
       expect(Array.from(view.panel().children, (child) => child.textContent)).toEqual([
-        "23 people receive access through this group right now.",
+        "23 accounts receive access through this group right now.",
         "This group comes from the directory. Local accounts such as guests can't be members, so give them access directly.",
         expect.stringContaining("Member 1"),
         "Show 3 more",
@@ -1004,6 +1009,37 @@ describe("PermissionEditor group coverage", () => {
       dom.cleanup();
     }
   });
+
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`group coverage names a ${kind} member and its kind`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      dom.document.documentElement.lang = "en";
+      const view = await renderGroup(dom, (url) =>
+        url.searchParams.has("group_ids")
+          ? Response.json({
+              ...directoryGroup,
+              items: [{ kind: "group", group: { ...directoryGroup.items[0]!.group, provider: "local" } }],
+            })
+          : Response.json({
+              items: [{ kind: "service_account", serviceAccount: { id: "machine-member", name: "Research helper", kind } }],
+              pagination: { page: 1, per_page: 20, total: 1, total_pages: 1, has_next: false },
+            }),
+      );
+      try {
+        await waitFor(() => view.panel().querySelectorAll("li").length === 1, "machine member");
+        view.toggle().click();
+        expect(view.panel().textContent).toContain("Research helper");
+        expect(view.panel().textContent).toContain(kind === "agent" ? "Agent" : "Service account");
+        expect(view.panel().textContent).toContain("1 account receives access");
+        expect(view.panel().textContent).not.toContain("machine-member");
+        expect(view.panel().querySelector(kind === "agent" ? ".ti-robot" : ".ti-key")).not.toBeNull();
+      } finally {
+        view.done();
+        dom.cleanup();
+      }
+    });
+  }
 
   test("shows no member data when the directory withholds it", async () => {
     const dom = createDomTestHarness();
