@@ -52,6 +52,7 @@ let shares: { id: string; kind: string; title: string; state: string; password?:
 let favorites: Set<string>;
 let sessions: Map<string, { base: string; path: string; size: number; segments: Map<number, Uint8Array<ArrayBuffer>> }>;
 let requests: string[];
+let searches: Record<string, string>[] = [];
 let folderBatches: string[][];
 let transferHeaders: Headers[];
 const directories: string[] = [];
@@ -137,11 +138,14 @@ async function cloud(request: Request): Promise<Response> {
       return Response.json({ base: baseOf(base), path, items: items.slice(start, start + 2), next });
     }
     case "GET /search": {
+      searches.push(Object.fromEntries(query));
       const q = query.get("q")!;
+      const extensions = query.get("ext")?.split(",");
       const items = [...tree(base)]
         .filter(([item]) => (path === "" || item.startsWith(`${path}/`)) && item.split("/").at(-1)!.includes(q))
-        .map(([item, node]) => entryOf(item, node));
-      return Response.json({ base: baseOf(base), path, query: q, scope: query.get("scope"), items, next: null });
+        .filter(([item]) => !extensions || extensions.includes(item.split(".").at(-1)!))
+        .map(([item, node]) => ({ ...entryOf(item, node), highlight: [] }));
+      return Response.json({ base: baseOf(base), path, query: q, scope: query.get("scope"), items, next: null, total: items.length });
     }
     case "POST /directories/batch": {
       const parsed = FolderBatchInputSchema.safeParse(body);
@@ -368,6 +372,7 @@ beforeEach(() => {
   favorites = new Set();
   sessions = new Map();
   requests = [];
+  searches = [];
   folderBatches = [];
   transferHeaders = [];
   server = Bun.serve({
@@ -692,7 +697,36 @@ test("trash restore, versions and search round-trip", async () => {
 
   const found = await cli(["search", "me:/Documents", "old"], { scope: "folder" });
   expect(found.json.items.map((item: FileEntry) => item.path)).toEqual(["Documents/old.txt"]);
+  expect(found.json.total).toBe(1);
   expect(requests.at(-1)).toBe(`GET /bases/${home.id}/search`);
+  // Typos and folder names by default; the server picks relevance because no sort was asked for.
+  expect(searches.at(-1)).toMatchObject({ q: "old", scope: "folder", match: "fuzzy", in: "path" });
+  expect(searches.at(-1)).not.toHaveProperty("sort");
+
+  const filtered = await cli(["search", "me:/"], {
+    ext: "txt",
+    "min-size": "1",
+    "max-size": "4096",
+    "modified-after": "2026-01-01T00:00:00Z",
+    match: "exact",
+    in: "name",
+    sort: "modified",
+    order: "desc",
+  });
+  expect(filtered.json.items.map((item: FileEntry) => item.path).sort()).toEqual(
+    [...tree(home.id).keys()].filter((path) => path.endsWith(".txt")).sort(),
+  );
+  expect(searches.at(-1)).toMatchObject({
+    q: "",
+    ext: "txt",
+    minSize: "1",
+    maxSize: "4096",
+    modifiedAfter: "2026-01-01T00:00:00Z",
+    match: "exact",
+    in: "name",
+    sort: "modified",
+    order: "desc",
+  });
 });
 
 test("shares add, list and revoke keep passwords in a private file and require --yes to revoke", async () => {
