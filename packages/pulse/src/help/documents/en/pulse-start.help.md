@@ -8,6 +8,8 @@ order: 100
 ---
 Pulse collects metrics, events, and states in bases. Open a base to set up sources and check incoming data.
 
+Open **Pulse** from the app menu. It is hidden from the app bar by default. If you have chosen to show or pin Pulse there, your choice stays in place.
+
 ## Read the overview
 
 A base opens on **Overview**. It shows what needs attention, up to four important numbers, and recent changes. It refreshes every 60 seconds while visible. **View** opens an alert's SQL and parameter values without running the query.

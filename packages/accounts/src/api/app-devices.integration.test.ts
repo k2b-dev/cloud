@@ -28,7 +28,7 @@ const phone = new Hono<AuthContext>()
   .get("/api/probe", auth.requireRole("authenticated"), (c) => c.json({ userId: c.get("user").id }))
   .post("/renew", async (c) => c.json(await pwaDevices.renew(c, { deviceKey: c.req.header("x-device-key"), appSession: null })));
 
-suite("Accounts administration of mobile app phones", () => {
+suite("Accounts administration of Cloud app phones", () => {
   afterAll(async () => {
     for (const id of created) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });

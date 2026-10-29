@@ -1,6 +1,14 @@
 // Server-only exports (these transitively import bun:sql via services)
 // Do NOT import from this barrel in .island.tsx or .client.tsx files!
 
+export {
+  AdminArea,
+  type AdminAreaGroup,
+  type AdminAreaItem,
+  AdminAreaPane,
+  AdminAreaSaveStatusFoot,
+  AdminAreaSaveStatusHead,
+} from "./AdminArea";
 export { default as AdminLayout } from "./AdminLayout";
 export {
   hasDedicatedRuntimeRoute,

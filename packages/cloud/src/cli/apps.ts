@@ -67,7 +67,7 @@ const build = (locale?: string) => {
           for (const notification of result.notifications) {
             ctx.print(`${notification.id} · ${notification.label} · ${notification.recipientKind}`);
             ctx.print(
-              `  ${t("Required", "Erforderlich")}: ${notification.requiredChannels.join(", ") || "—"}; ${t("recommended", "empfohlen")}: ${notification.recommendedChannels.join(", ") || "—"}`,
+              `  ${t("Required", "Erforderlich")}: ${notification.requiredChannels.join(", ") || "—"}; ${t("recommended", "empfohlen")}: ${notification.recommendedChannels.join(", ") || "—"}; ${t("excluded", "ausgeschlossen")}: ${notification.excludedChannels.join(", ") || "—"}`,
             );
           }
           printOmitted(result.notifications.length, result.totals.notifications);

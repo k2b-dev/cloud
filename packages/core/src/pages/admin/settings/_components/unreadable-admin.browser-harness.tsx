@@ -1,8 +1,9 @@
+import SettingsSaveStatus from "@k2b/cloud/ssr/SettingsSaveStatus.island";
 import { Button, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { previewViews } from "../../../../../../../scripts/fixtures/unreadable-admin/views";
 import { DatabaseSettingsForm, StorageSettingsForm } from "../../../../../../assistant/src/artifacts/AdminSettings";
-import { LogRetentionDialog } from "../../../../../../gateway-ops/src/observability/logs/_components/LogFilterBar";
+import RetentionForm from "../../../../../../gateway-ops/src/observability/retention/RetentionForm.island";
 import { openMailContactDirectoryDialog } from "../../../../../../mail/src/frontend/_components/MailContactDirectoryDialog";
 import { RetentionDialog } from "../../outgoing-mail/SendLog";
 import LinuxIdentityPanel from "./LinuxIdentityPanel.island";
@@ -23,7 +24,13 @@ render(
         {surface === "linux" && <LinuxIdentityPanel initial={views.linux} />}
         {surface === "outgoing" && <RetentionDialog retention={views.outgoing} close={close} onSaved={() => {}} />}
         {surface === "logs" && (
-          <LogRetentionDialog retentionDays={views.logs.retentionDays} unreadable={views.logs.unreadable} close={close} />
+          <>
+            <SettingsSaveStatus />
+            <RetentionForm
+              values={{ logs: views.logs.retentionDays, events: 14, rollups: 90 }}
+              unreadable={{ logs: views.logs.unreadable }}
+            />
+          </>
         )}
         {surface === "directory" && (
           <Button onClick={() => void openMailContactDirectoryDialog(views.directory, locale)}>Contact directory</Button>

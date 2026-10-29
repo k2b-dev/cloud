@@ -571,6 +571,11 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
   const result = {
     data: {
       ...mapNote(note, resolved.data.notebook.shortId, await resolveParentShortId(note)),
+      container: {
+        ref: { type: "notebooks.notebook" as const, id: resolved.data.notebook.shortId },
+        name: resolved.data.notebook.name.slice(0, 200),
+        permission: resolved.data.permission,
+      },
       content: content.slice(input.contentOffset, end),
       contentOffset: input.contentOffset,
       contentLength: content.length,

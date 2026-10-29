@@ -2,7 +2,6 @@ import { createPagination } from "@k2b/cloud/contracts";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { type TraceListFilter, type TraceRunStats, type TraceSourceGroup, type TraceSpan, trace } from "@k2b/cloud/services";
 import { formatDurationMs as formatMs, formatNumber, formatPercent, formatDateTime as formatTimestamp } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
@@ -21,6 +20,7 @@ import {
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import { syncOpsCredentials } from "../sync/service";
 import JobsActionToast from "./_components/JobsActionToast.island";
 import JobsFilterBar from "./_components/JobsFilterBar.island";
@@ -532,30 +532,25 @@ export default ssr<AuthContext>(async (c) => {
     };
   });
 
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title={t.backgroundJobs}>
-      <JobsActionToast />
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-jobs-title">
-          <div class="flex items-center gap-2">
-            {filter.source ? (
-              <IconButtonLink
-                href={buildJobsFilterUrl(baseUrl, { source: null, run: null, page: 1 }, filter)}
-                size="sm"
-                label={t.backToJobSources}
-              >
-                <i class="ti ti-arrow-left" />
-              </IconButtonLink>
-            ) : null}
-            <div class="min-w-0">
-              <h1 class="truncate text-base font-semibold text-primary">{filter.source ?? t.backgroundJobs}</h1>
-              <p class="mt-1 text-xs text-dimmed">
-                {filter.source ? t.sourceRunsDescription({ window: windowLabel(filter, t) }) : t.jobsDescription}
-              </p>
-            </div>
-          </div>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="jobs" attention={attention}>
+      <ObservabilityPane
+        label={filter.source ?? areaText(locale).jobs}
+        description={filter.source ? t.sourceRunsDescription({ window: windowLabel(filter, t) }) : t.jobsDescription}
+        lead={
+          filter.source ? (
+            <IconButtonLink
+              href={buildJobsFilterUrl(baseUrl, { source: null, run: null, page: 1 }, filter)}
+              size="sm"
+              label={t.backToJobSources}
+            >
+              <i class="ti ti-arrow-left" />
+            </IconButtonLink>
+          ) : undefined
+        }
+      >
+        <JobsActionToast />
         {statsGrid(stats, filter)}
 
         <section class="paper p-3">
@@ -616,7 +611,7 @@ export default ssr<AuthContext>(async (c) => {
         ) : (
           <OverviewTable rows={overviewRows} filter={filter} dateConfig={dateConfig} />
         )}
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });
