@@ -74,7 +74,6 @@ packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | frontma
 packages/contacts/src/help/documents/en/contacts-hierarchy.help.md | frontmatter | kind
 packages/contacts/src/help/documents/en/contacts-start.help.md | frontmatter | kind
 packages/contacts/src/help/documents/en/contacts-work.help.md | frontmatter | kind
-packages/core/src/help/documents/de/core-admin.help.md | steps | Wähle unter App-Zugänge die Option Zugang erstellen.
 packages/core/src/help/documents/en/core-admin.help.md | frontmatter | kind
 packages/core/src/help/documents/en/core-admin.help.md | steps | In App credentials, choose Create credential.
 packages/core/src/help/documents/en/core-notifications.help.md | frontmatter | kind

@@ -530,7 +530,8 @@ describe("app credential administration", () => {
   };
   test("creation requires confirmation and returns only the new token in text mode", async () => {
     const blocked = createContext(["app-credentials", "create", "inventory"], { name: "Production" });
-    await expect(adminCli.run(blocked.ctx)).rejects.toThrow("--yes");
+    blocked.ctx.options.locale = "de-CH";
+    await expect(adminCli.run(blocked.ctx)).rejects.toThrow("App-Schlüssel erstellen erfordert --yes.");
     expect(blocked.calls).toHaveLength(0);
     const write = createContext(
       ["app-credentials", "create", "inventory"],
@@ -556,12 +557,15 @@ describe("app credential administration", () => {
   });
   test("revoke targets one UUID and requires confirmation", async () => {
     const blocked = createContext(["app-credentials", "revoke", "inventory", credential.id]);
-    await expect(adminCli.run(blocked.ctx)).rejects.toThrow("--yes");
+    blocked.ctx.options.locale = "de-CH";
+    await expect(adminCli.run(blocked.ctx)).rejects.toThrow("App-Schlüssel widerrufen erfordert --yes.");
     expect(blocked.calls).toHaveLength(0);
     const write = createContext(["app-credentials", "revoke", "inventory", credential.id], { yes: true }, [
       jsonResponse({ revoked: true }),
     ]);
+    write.ctx.options.locale = "de-CH";
     await adminCli.run(write.ctx);
+    expect(write.lines).toEqual(["Schlüssel widerrufen."]);
     expect(write.calls[0]?.path).toBe(`/api/admin/identity/workloads/inventory/credentials/${credential.id}`);
     expect(write.calls[0]?.init?.method).toBe("DELETE");
   });

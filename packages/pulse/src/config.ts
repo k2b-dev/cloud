@@ -27,7 +27,7 @@ export const app = defineApp({
   nav: {
     href: "/app/pulse",
     match: "/app/pulse",
-    section: "primary",
+    section: "more",
     requiresAuth: true,
     requiresRoles: ["user"],
   },
