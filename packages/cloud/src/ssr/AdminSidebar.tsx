@@ -52,7 +52,7 @@ export default function AdminSidebar({ currentPath, apps }: { currentPath: strin
           })),
         }))}
       />
-      <AppWorkspace.Sidebar resizable={false}>
+      <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="admin-sidebar">
             <AdminNavigation currentPath={currentPath} groups={groups()} />

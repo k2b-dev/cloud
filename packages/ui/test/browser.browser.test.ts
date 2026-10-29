@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser, errors } from "playwright";
-import { browserName, launchBrowser, pageErrors, settled, viewTransitionEnded } from "../test/browser";
+import { browserName, launchBrowser, pageErrors, recordTestServer, settled, viewTransitionEnded } from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
   await import("./browser-recovery.browser-suite");
@@ -337,6 +337,38 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       app.stop(true);
     }
   }, 30_000);
+
+  test("a navigation diagnosis says whether a recorded test server received the open request", async () => {
+    const recorder = recordTestServer();
+    const app = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: recorder.record((request: Request) =>
+        new URL(request.url).pathname === "/silent"
+          ? new Promise<Response>(() => {})
+          : new Response("<!doctype html><p>Start</p>", { headers: { "Content-Type": "text/html" } }),
+      ),
+    });
+    recorder.listen(app.url);
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      const silent = new URL("/silent", app.url).href;
+      const lost = new URL("/lost", app.url).href;
+      // The server holds this one: it arrived and was never answered.
+      const held = await page.goto(silent, { timeout: 1500 }).catch((error: unknown) => error);
+      expect(held instanceof Error && held.message).toContain(`GET ${silent}\n  test server: received it `);
+      expect(held instanceof Error && held.message).toContain("never answered");
+      // A route holds this one in the browser: it never reaches the server.
+      await page.route("**/lost", () => new Promise<void>(() => {}));
+      const missing = await page.goto(lost, { timeout: 1500 }).catch((error: unknown) => error);
+      expect(missing instanceof Error && missing.message).toContain(`GET ${lost}\n  test server: never received GET ${lost}`);
+    } finally {
+      await context.close();
+      recorder.stop();
+      app.stop(true);
+    }
+  }, 20_000);
 
   test("a navigation whose document never answers says it did not commit", async () => {
     const context = await browser.newContext();

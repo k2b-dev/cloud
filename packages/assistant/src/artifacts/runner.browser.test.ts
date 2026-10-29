@@ -90,7 +90,7 @@ function serve(files: Record<string, string>, state = { serverAccess: true, revo
       }
       if (path.startsWith("/api/")) return new Response("Unexpected protected request", { status: 403 });
       return new Response(
-        '<html class="light"><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/ui.css"><style>body{margin:0;overflow:hidden}#root{display:flex;height:100dvh;min-height:0}</style><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script></body></html>',
+        '<html class="light"><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/ui.css"><style>body{margin:0;overflow:hidden}#root{display:flex;height:100dvh;min-height:0}</style><body class="k2b-ui"><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>',
         { headers: { "content-type": "text/html" } },
       );
     },

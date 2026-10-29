@@ -76,7 +76,8 @@ beforeAll(async () => {
     entrypoints: [resolve(import.meta.dir, "reading-column.browser-harness.ts")],
     target: "browser",
     conditions: ["browser"],
-    format: "iife",
+    // Query previews include MapLibre's import.meta worker URLs, so the fixture must remain a module.
+    format: "esm",
     plugins: [
       {
         name: "solid-reading-column-test",
@@ -162,7 +163,7 @@ beforeAll(async () => {
       #main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
       #main.book { overflow-y:auto; display:block; }
       @media(max-width:600px) { #navigation { display:none; } }
-    </style></head><body class="k2b-ui" style="margin:0"><div id="layout" class="notebook-book-shell"><nav id="navigation">Notizbuch</nav><main id="main"${book ? ' class="book"' : ""}>${book ? `<article class="notebook-book-content">${html}</article>` : ""}</main></div><script id="note-source" type="text/plain">${note}</script><script src="/harness.js"></script></body></html>`,
+    </style></head><body class="k2b-ui" style="margin:0"><div id="layout" class="notebook-book-shell"><nav id="navigation">Notizbuch</nav><main id="main"${book ? ' class="book"' : ""}>${book ? `<article class="notebook-book-content">${html}</article>` : ""}</main></div><script id="note-source" type="text/plain">${note}</script><script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },

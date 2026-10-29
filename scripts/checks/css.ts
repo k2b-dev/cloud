@@ -245,8 +245,16 @@ export const rule: Rule = {
       }
     }
 
+    // Cloud imports the UI package stylesheet. Its defaults are valid owners,
+    // while Cloud and application styles may override those theme tokens.
+    const uiCustomProperties = new Set(
+      readCssFiles(uiStylesRoot).flatMap((file) =>
+        [...withoutCssComments(readFileSync(file, "utf8")).matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map((match) => match[1]!),
+      ),
+    );
+
     for (const [property, owners] of customPropertyOwners) {
-      if (owners.size < 2) continue;
+      if (owners.size < 2 || uiCustomProperties.has(property)) continue;
       report(
         [...owners][0]!,
         `${property} has multiple owner files: ${[...owners].map((file) => relative(workspaceRoot, file)).join(", ")}`,
@@ -271,13 +279,6 @@ export const rule: Rule = {
       "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar
       "--annotation-color", // Notebooks lib/editor/annotations.ts and NotePreview: the person color of a commented passage
     ]);
-    // Cloud imports the UI package stylesheet. Its defaults are valid owners,
-    // while Cloud and application styles may override those theme tokens.
-    const uiCustomProperties = new Set(
-      readCssFiles(uiStylesRoot).flatMap((file) =>
-        [...withoutCssComments(readFileSync(file, "utf8")).matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map((match) => match[1]!),
-      ),
-    );
     for (const [property, consumers] of customPropertyReferences) {
       if (customPropertyOwners.has(property) || uiCustomProperties.has(property)) continue;
       if (runtimePropertyPrefixes.some((prefix) => property.startsWith(prefix))) continue;

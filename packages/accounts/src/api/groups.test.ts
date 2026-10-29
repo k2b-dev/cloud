@@ -32,6 +32,7 @@ const get = spyOn(accountsAppService.group, "get");
 const prepare = spyOn(accountsAppService.group, "makePosix");
 const addMember = spyOn(accountsAppService.group.member, "add");
 const removeMember = spyOn(accountsAppService.group.member, "remove");
+const addManager = spyOn(accountsAppService.group.manager, "add");
 afterEach(() => {
   authenticate.mockReset();
   create.mockReset();
@@ -39,6 +40,7 @@ afterEach(() => {
   prepare.mockReset();
   addMember.mockReset();
   removeMember.mockReset();
+  addManager.mockReset();
 });
 afterAll(() => {
   token.mockRestore();
@@ -48,6 +50,7 @@ afterAll(() => {
   prepare.mockRestore();
   addMember.mockRestore();
   removeMember.mockRestore();
+  addManager.mockRestore();
 });
 const login = (roles: User["roles"]) =>
   authenticate.mockResolvedValue({
@@ -117,7 +120,6 @@ test("full group managers add and remove named machine recipients, without openi
       serviceAccountId: recipient,
     });
   }
-  login(["admin"]);
   expect(
     (
       await groups.request(`/${id}/managers`, {
@@ -126,5 +128,15 @@ test("full group managers add and remove named machine recipients, without openi
         body: JSON.stringify({ type: "service_account", id: recipient }),
       })
     ).status,
-  ).toBe(400);
+  ).toBe(403);
+  expect(addManager).not.toHaveBeenCalled();
+  login(["admin"]);
+  addManager.mockResolvedValue({ ok: true, data: undefined });
+  const granted = await groups.request(`/${id}/managers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "service_account", id: recipient }),
+  });
+  expect(granted.status).toBe(200);
+  expect(addManager.mock.calls[0]?.[0]).toMatchObject({ id, serviceAccountId: recipient, actor: { userId: id } });
 });

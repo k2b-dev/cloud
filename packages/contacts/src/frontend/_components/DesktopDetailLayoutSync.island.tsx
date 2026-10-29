@@ -1,5 +1,5 @@
 import { onCleanup, onMount } from "solid-js";
-import { CONTACT_DETAIL_EVENT, type ContactDetailPayload, getSelectedContactFromUrl } from "./context";
+import { CONTACT_DETAIL_EVENT, getSelectedContactFromUrl } from "./context";
 
 type Props = {
   detailPanelId: string;
@@ -17,15 +17,23 @@ export const setDesktopDetailVisibility = (panelId: string, open: boolean) => {
  * Keeps the responsive detail panel visibility in sync with URL/detail selection state.
  */
 export default function DesktopDetailLayoutSync(props: Props) {
+  let addressContactKey: string | null = null;
   const syncFromUrl = () => {
     const selected = getSelectedContactFromUrl();
     setDesktopDetailVisibility(props.detailPanelId, hasSelection(selected.contactId, selected.bookId));
+    const panel = document.getElementById(`k2b-workspace-detail-${props.detailPanelId}`);
+    const contactKey = hasSelection(selected.contactId, selected.bookId) ? `${selected.bookId}:${selected.contactId}` : null;
+    if (selected.addressId) addressContactKey = contactKey;
+    else if (contactKey !== addressContactKey) addressContactKey = null;
+    // Keep the destination visible when returning from a deep-linked editor at tablet widths.
+    panel?.toggleAttribute("data-contacts-address-context", addressContactKey !== null);
+    if (selected.addressId) panel?.setAttribute("data-workspace-detail-phone", "page");
+    else panel?.removeAttribute("data-workspace-detail-phone");
   };
 
   onMount(() => {
-    const handleDetailSelect = (event: Event) => {
-      const payload = (event as CustomEvent<ContactDetailPayload>).detail;
-      setDesktopDetailVisibility(props.detailPanelId, hasSelection(payload.itemKey, payload.bookId));
+    const handleDetailSelect = () => {
+      syncFromUrl();
     };
 
     const handlePopState = () => syncFromUrl();

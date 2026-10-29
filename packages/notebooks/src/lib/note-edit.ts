@@ -9,7 +9,7 @@ export type NoteEditBlockSelector = {
 
 export type NoteEditOperation =
   | { kind: "set-content"; content: string }
-  | { kind: "append"; content: string }
+  | { kind: "append"; content: string; separator?: "none" }
   | { kind: "prepend"; content: string }
   | { kind: "insert-before-line"; line: number; content: string }
   | { kind: "insert-after-line"; line: number; content: string }
@@ -169,7 +169,7 @@ const applyOne = (content: string, operation: NoteEditOperation): string => {
     case "set-content":
       return operation.content;
     case "append": {
-      const separator = content.length === 0 || content.endsWith("\n") ? "" : "\n\n";
+      const separator = operation.separator === "none" || content.length === 0 || content.endsWith("\n") ? "" : "\n\n";
       return `${content}${separator}${operation.content}`;
     }
     case "prepend": {

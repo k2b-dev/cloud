@@ -14,6 +14,7 @@ import type {
   UserProfile,
   UserProvider,
 } from "../../contracts/shared";
+import type { ServiceAccountRequestActor } from "../../server/middleware/auth";
 import {
   err,
   fail,
@@ -41,6 +42,7 @@ import type { AvatarChange, AvatarState } from "./avatar";
 import { listDuplicateEmails } from "./duplicate-emails";
 import * as entities from "./entities";
 import * as groups from "./groups";
+import { mutateMachineGroupMember } from "./machine-group-management";
 import type { AccountsNotificationSender } from "./notification-sender";
 import { PosixError } from "./posix";
 import { accountRequestsEnabled } from "./request-policy";
@@ -1018,13 +1020,15 @@ export const accountsAppService = {
         return paginateItems(filtered, config.pagination);
       },
       add: async (config: {
-        actor: AccountsActor;
+        actor: AccountsActor | ServiceAccountRequestActor;
+        requestId?: string;
         id: string;
         provider?: UserProvider;
         userId?: string;
         groupId?: string;
         serviceAccountId?: string;
       }) => {
+        if ("kind" in config.actor) return mutateMachineGroupMember({ ...config, actor: config.actor, operation: "add" });
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1055,13 +1059,15 @@ export const accountsAppService = {
         });
       },
       remove: async (config: {
-        actor: AccountsActor;
+        actor: AccountsActor | ServiceAccountRequestActor;
+        requestId?: string;
         id: string;
         provider?: UserProvider;
         userId?: string;
         groupId?: string;
         serviceAccountId?: string;
       }) => {
+        if ("kind" in config.actor) return mutateMachineGroupMember({ ...config, actor: config.actor, operation: "remove" });
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1110,7 +1116,14 @@ export const accountsAppService = {
         });
         return paginateItems(filtered, config.pagination);
       },
-      add: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      add: async (config: {
+        actor: AccountsActor;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1133,17 +1146,25 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.manager.add",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },
-      remove: async (config: { actor: AccountsActor; id: string; provider?: UserProvider; userId?: string; groupId?: string }) => {
+      remove: async (config: {
+        actor: AccountsActor;
+        id: string;
+        provider?: UserProvider;
+        userId?: string;
+        groupId?: string;
+        serviceAccountId?: string;
+      }) => {
         const group = await groups.get({ id: config.id });
         if (!group) {
           const result = fail(err.notFound("Group not found"));
@@ -1166,13 +1187,14 @@ export const accountsAppService = {
             provider: config.provider,
             user: config.userId,
             group: config.groupId,
+            serviceAccount: config.serviceAccountId,
           }),
         );
         return recordCompletedMutation({
           action: "accounts.group.manager.remove",
           actor: auditActor(config.actor),
           target: groupTarget(group),
-          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null },
+          metadata: { userId: config.userId ?? null, groupId: config.groupId ?? null, serviceAccountId: config.serviceAccountId ?? null },
           result,
         });
       },

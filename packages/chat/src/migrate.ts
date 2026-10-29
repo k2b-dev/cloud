@@ -213,6 +213,39 @@ export const migrate = async (): Promise<void> => {
     ON chat.threads(conversation_id, last_activity_at DESC, short_id)
     WHERE archived_at IS NULL AND resource_type IS NOT NULL AND resource_id IS NOT NULL`;
   await sql`
+    CREATE TABLE IF NOT EXISTS chat.notification_outbox (
+      seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      id uuid NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+      ordering_key text NOT NULL, due_at timestamptz,
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      attempts int NOT NULL DEFAULT 0, next_attempt_at timestamptz NOT NULL DEFAULT now(),
+      claimed_until timestamptz, last_error text
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_notification_outbox_message ON chat.notification_outbox(message_id) WHERE user_id IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_notification_outbox_push ON chat.notification_outbox(message_id, user_id) WHERE user_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_notification_outbox_busy ON chat.notification_outbox(ordering_key)
+      WHERE claimed_until IS NOT NULL OR attempts > 0;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS notification_cursor uuid;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS notification_added_users uuid[] NOT NULL DEFAULT '{}';
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS notification_done boolean NOT NULL DEFAULT true;
+    CREATE TABLE IF NOT EXISTS chat.notification_pending (
+      user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      personal_message_id uuid REFERENCES chat.messages(id) ON DELETE CASCADE,
+      reason text NOT NULL CHECK (reason IN ('mention', 'reply', 'follow', 'message', 'added')),
+      message_count int NOT NULL DEFAULT 1 CHECK (message_count > 0),
+      due_at timestamptz NOT NULL DEFAULT (clock_timestamp() + interval '3 seconds'),
+      PRIMARY KEY (user_id, conversation_id)
+    );
+    CREATE TABLE IF NOT EXISTS chat.notification_push_state (
+      user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      last_seq bigint NOT NULL DEFAULT 0, last_push_at timestamptz,
+      PRIMARY KEY (user_id, conversation_id)
+    );
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS content_rev bigint NOT NULL DEFAULT 0;
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS edited_at timestamptz;
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS deleted_at timestamptz;

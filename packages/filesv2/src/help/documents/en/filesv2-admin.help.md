@@ -6,7 +6,7 @@ description: Connect Filegate, inspect directories, and manage their archive and
 order: 200
 ---
 
-Open **File administration** to manage Files. Its views separate storage information, current directories, archived directories, public shares, and settings. Filters, folders, and pages remain in the address, including when you use Back or Forward.
+Open **File administration** to manage Files. Its views separate storage information, current directories, archived directories, public shares, file activity, and settings. Filters, folders, and pages remain in the address, including when you use Back or Forward.
 
 ## Connect storage in Settings {icon="plug"}
 
@@ -73,6 +73,18 @@ The archive view shows original paths and archive dates. Open an archived direct
 
 Inboxes default to 100 MiB per file and 1 GiB cumulative total, including links that existed before this upgrade. Confirmed uploads and pending reservations both count against the total. Deleting received files does not restore this budget. Reconciliation continues after a link expires or is revoked. An unresolved transfer keeps its reservation until there is a reliable outcome; inspect the listed path, error, and session before taking action. Do not treat a missing receipt as proof that no file was written.
 
+## Review and export file activity {icon="activity"}
+
+**Activity** lists recorded changes to files and folders across local Cloud storage, newest first, with time, person, change, item, storage and channel. On narrow screens it shows the same entries as the list in Files. It opens on the last 30 days. Filter by **Storage**, **Who**, **What** and **When**, or search a name or an old path. Filters and search stay in the address.
+
+- **Running:** the change has started and is not confirmed yet.
+- **Outcome unclear:** Files could not confirm the result. It keeps looking for proof in the storage.
+- **No Cloud entry:** Files noticed a change made outside Cloud, for example on a network drive. Such entries name no person and no cause.
+
+FreeIPA and other POSIX storage have no history or export. Their history view shows a notice because history cannot check their Unix permissions. An operation across storage areas shows only its local Cloud side.
+
+**Export** downloads the entries that match the filters as CSV or JSON Lines. Choose a period of at most one year and, optionally, one storage; the person, change and search filters of the list are kept. The button shows how many rows the export contains. An export holds at most 100,000 rows; for more, narrow the period, the storage or the filters. In CSV, a cell that starts like a spreadsheet formula gets a leading apostrophe. Every export is recorded in the audit log, also when you cancel the download. A download that fails saves nothing; start it again. Settings controls how long the history is kept, from 30 to 3,650 days.
+
 ## Inspect trash and versions {icon="history"}
 
 User trash and restore actions record progress before moving a file. An ambiguous result remains pending instead of being reported as completed. Items discovered directly in `trash` can have an unknown original path or deletion time; restoring them requires an explicit destination. Existing destinations are never replaced. Multi-entry operations can partly succeed; inspect each result before retrying failed items.
@@ -91,6 +103,6 @@ Directory and file commands address a directory as `<storage>/<users|groups>/<na
 
 The **Templates** tab stores reusable files independently of storage bases. Upload a file or choose an existing file you can read. Each template is a separate snapshot, up to 20 MiB. Name it, optionally describe it, and give **Use** access to users, groups, agents, standalone service accounts or everyone signed in. Without access, only administration lists it. These are Cloud permissions; no POSIX group or access to the original folder is required.
 
-Users choose **Add → Template** in a writable folder. The template access never bypasses the destination's write permissions. Replacing a template file or deleting the template does not affect files previously created from it. Imported originals can also be changed or removed independently. Template bytes and access entries are stored in PostgreSQL and must be included in database backups.
+Users choose **Add → Template** in a writable folder. Using a template still requires **Edit** on the destination folder. Replacing a template file or deleting the template does not affect files previously created from it. Imported originals can also be changed or removed independently. Template bytes and access entries are stored in PostgreSQL and must be included in database backups.
 
 The CLI offers `admin templates list|upload|import|update|replace|delete` and `admin templates access list|grant|revoke`. Delete requires `--yes`. Use `--help` for arguments and `--input-file` or `--stdin` for an access entry’s JSON principal.

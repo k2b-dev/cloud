@@ -1,7 +1,9 @@
 import { z } from "zod";
+import type { ActivityBasesPage, ActivityPage } from "../activity-contracts";
 import { type AdminBrowseResult, AdminQuerySchema, type AdminResult, type ArchivePage, type SharePage } from "../contracts";
+import type { AdminActivityBase, AdminActivityFilters } from "./admin-history";
 export const AdminLocationSchema = AdminQuerySchema.extend({
-  view: z.enum(["overview", "directories", "archive", "settings", "shares", "templates"]).default("overview"),
+  view: z.enum(["overview", "directories", "archive", "settings", "shares", "activity", "templates"]).default("overview"),
   name: z.string().max(255).optional(),
   archiveId: z.string().uuid().optional(),
   path: z.string().max(4096).default(""),
@@ -18,6 +20,14 @@ export type AdminSnapshot = {
     items: { id: string; shareId: string | null; path: string; size: number; state: string; error: string | null; updatedAt: string }[];
     next: string | null;
   };
+  /** Instant the history view was loaded; its dates and ranges count from it on server and client alike. */
+  now?: string;
+  /** First bounded metadata page, with the same shape on SSR and the client. */
+  activityBases?: ActivityBasesPage | null;
+  /** Exact metadata for the initial history page and selection, including bindings outside the first page. */
+  activityBaseLabels?: AdminActivityBase[];
+  /** Authorized first history page for these filters; without it the view loads its own. */
+  activity?: { filters: AdminActivityFilters; page: ActivityPage } | null;
 };
 export function adminHref(location: AdminLocation, patch: Partial<AdminLocation> = {}) {
   const next = { ...location, ...patch };

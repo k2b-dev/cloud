@@ -400,6 +400,139 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("a free-text Combobox keeps the typed text, waits for enough characters, and shows host states", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    const [text, setText] = createSignal("");
+    const [quota, setQuota] = createSignal(false);
+    const queries: string[] = [];
+    const picks: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Street",
+          freeText: true,
+          minQueryLength: 3,
+          autoHighlight: 0,
+          debounceMs: 0,
+          query: text,
+          onQueryChange: setText,
+          get status() {
+            return quota() ? "Quota used up" : undefined;
+          },
+          empty: "Nothing matched",
+          footer: "Source line",
+          fetchData: async (query) => {
+            queries.push(query);
+            return query === "zzz"
+              ? []
+              : [
+                  { id: "a", label: "Main Street 1" },
+                  { id: "b", label: "Main Street 2" },
+                ];
+          },
+          onSelect: (option) => {
+            picks.push(option.id);
+            setText(option.label);
+          },
+        }),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>('[role="combobox"]')!;
+      const key = (name: string) => {
+        const event = new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true });
+        input.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      const type = async (value: string) => {
+        input.value = value;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await Bun.sleep(0);
+      };
+      expect(input.getAttribute("autocomplete")).toBe("off");
+
+      await type("Ma");
+      expect(queries).toEqual([]);
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      input.click();
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+
+      await type("Mai");
+      expect(queries).toEqual(["Mai"]);
+      expect(input.getAttribute("aria-expanded")).toBe("true");
+      // The first result is active, the source line sits under the list.
+      expect(dom.document.getElementById(input.getAttribute("aria-activedescendant") ?? "")?.textContent).toContain("Main Street 1");
+      expect(dom.root.querySelector(".k2b-choice-footer")?.textContent).toBe("Source line");
+
+      // Escape closes and the own text stays.
+      expect(key("Escape")).toBe(true);
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      expect(input.value).toBe("Mai");
+      expect(text()).toBe("Mai");
+
+      // Enter takes the highlighted result; the host decides the text.
+      await type("Main");
+      expect(key("Enter")).toBe(true);
+      expect(picks).toEqual(["a"]);
+      expect(input.value).toBe("Main Street 1");
+
+      // Enter without an active option only closes; the own text stays.
+      await type("zzz");
+      expect(dom.root.querySelector(".k2b-choice-status")?.textContent).toBe("Nothing matched");
+      expect(key("Enter")).toBe(true);
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      expect(input.value).toBe("zzz");
+
+      // A host notice replaces the results and nothing loads.
+      setQuota(true);
+      const before = queries.length;
+      await type("Quota");
+      expect(queries.length).toBe(before);
+      expect(input.getAttribute("aria-expanded")).toBe("true");
+      expect(dom.root.querySelector(".k2b-choice-status")?.textContent).toBe("Quota used up");
+      expect(dom.root.querySelectorAll('[role="option"]')).toHaveLength(0);
+    } finally {
+      dispose();
+      popover.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("the first Combobox search waits in rows instead of claiming no results", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    let finish: (value: { id: string; label: string }[]) => void = () => {};
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Street",
+          debounceMs: 0,
+          fetchData: () => new Promise((resolve) => (finish = resolve)),
+          onSelect: () => {},
+        }),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>('[role="combobox"]')!;
+      input.value = "Main";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await Bun.sleep(0);
+      expect(dom.root.querySelectorAll(".k2b-choice-loading__row")).toHaveLength(3);
+      expect(dom.root.textContent).not.toContain("No results");
+      finish([{ id: "a", label: "Main Street 1" }]);
+      await Bun.sleep(0);
+      expect(dom.root.querySelector(".k2b-choice-loading")).toBeNull();
+      expect(dom.root.querySelectorAll('[role="option"]')).toHaveLength(1);
+    } finally {
+      dispose();
+      popover.restore();
+      dom.cleanup();
+    }
+  });
+
   test("hides a Select listbox before publishing the selected value", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);

@@ -249,5 +249,18 @@ export const appendMessage = async (
     );
   if (message.kind === "text" && (message.mentions?.length || message.replyToSeq !== undefined))
     await publishForYou(db, context, row.short_id, conversation.short_id);
+  if (message.kind === "text") {
+    await db`UPDATE chat.messages SET notification_done = false WHERE short_id = ${row.short_id}`;
+    await db`INSERT INTO chat.notification_outbox (message_id, conversation_id, ordering_key)
+      SELECT id, conversation_id, conversation_id::text FROM chat.messages WHERE short_id = ${row.short_id}`;
+  }
   return row;
+};
+
+/** Capture additions in the membership transaction; read position never proves someone was newly added. */
+export const queueAddedNotification = async (db: typeof sql, messageId: string, userIds: readonly string[]) => {
+  if (!userIds.length) return;
+  await db`UPDATE chat.messages SET notification_done = false, notification_added_users = ${toPgUuidArray([...new Set(userIds)])}::uuid[] WHERE short_id = ${messageId}`;
+  await db`INSERT INTO chat.notification_outbox (message_id, conversation_id, ordering_key)
+    SELECT id, conversation_id, conversation_id::text FROM chat.messages WHERE short_id = ${messageId} ON CONFLICT DO NOTHING`;
 };

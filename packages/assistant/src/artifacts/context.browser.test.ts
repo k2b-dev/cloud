@@ -75,7 +75,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
         });
       if (path.endsWith("/app-assets")) return Response.json({ message: "Fixture stops at execution boundary" }, { status: 500 });
       return new Response(
-        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root"></div><script src="/bundle.js"></script>',
+        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html" } },
       );
     },

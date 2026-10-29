@@ -178,6 +178,12 @@ const lockParticipant = (db: typeof sql, context: ChatContext, id: string) => {
 // Opening creates the row at the head; a first read creates it at the read seq (V5 rule 2).
 const createParticipant = async (db: typeof sql, context: ChatContext, id: string, seq?: number) => {
   const self = subjectPrincipal(context.accessSubject);
+  // Background notifications use this person's last interactive Chat locale, never an agent's locale.
+  if (context.actor.kind === "user" && self.type === "user" && context.locale) {
+    await db`INSERT INTO chat.account_prefs (principal_type, principal_id, locale) VALUES ('user', ${self.id}::uuid, ${context.locale})
+      ON CONFLICT (principal_type, principal_id) DO UPDATE SET locale = EXCLUDED.locale
+      WHERE chat.account_prefs.locale IS DISTINCT FROM EXCLUDED.locale`;
+  }
   const position = seq === undefined ? db`seq_head` : db`CASE WHEN kind = 'system' THEN seq_head ELSE LEAST(${seq}, seq_head) END`;
   const inserted = await db`INSERT INTO chat.participants (conversation_id, principal_type, principal_id, origin, joined_seq, last_read_seq)
     SELECT id, ${self.type}, ${self.id}::uuid, 'ondemand', ${position}, ${seq === undefined ? db`NULL` : position}
