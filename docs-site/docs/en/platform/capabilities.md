@@ -499,6 +499,24 @@ versioned resource clipboard format instead of embedding an ID in app-specific
 JSON or inferring it from text. See
 [Copy and paste Cloud resources](/en/docs/platform/resource-references).
 
+### Shared resource types and discussions
+
+A Type may declare a local `container` Type and an optional
+`access: { readable }` function. Its reader can add a standard `data.view`
+using `CloudResourceReaderViewSchema`, alongside its existing domain data.
+The top-level `discussions: { item, containers, activity? }` role selects the
+item Type and compatible Queries. See
+[Resource types and discussions](/en/docs/platform/resource-types-and-discussions)
+for schemas, semantics, startup checks, and provider tests.
+
+Cloud generates app-only reader checks from `access.readable`. Their Query
+entries carry `appOnly: true`; older readers omit them, and person catalogs
+hide them. New Type facts live in top-level `resourceTypes` metadata so older
+readers keep the Type and ordinary reader. Calling applications declare
+`platformPermissions: ["resources:readers"]`; admission, workload credentials,
+and limits are described in
+[App-to-app reader checks](/en/docs/platform/app-to-app-queries).
+
 ### Resource links
 
 The owning application returns a root-relative semantic link with `rel: "open"`

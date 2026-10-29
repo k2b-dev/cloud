@@ -99,6 +99,12 @@ class ManualConnection implements LiveConnection {
 const self = { accessId: "11111111-1111-4111-8111-111111111111", permission: "write" as const, active: true };
 const memberApi = {
   threads: async () => noThreads,
+  notifications: async () => {
+    throw new Error("Unused notification write");
+  },
+  follow: async () => {
+    throw new Error("Unused follow write");
+  },
   react: async () => {},
   reactions: async () => ({ items: [] }),
   shared: async () => ({ items: [], nextCursor: null }),
@@ -2489,6 +2495,33 @@ test("notification hints refresh the canonical list, open metadata and thread fo
   } finally {
     store.dispose();
   }
+});
+
+test("a new mention reloads the rows' @ counts, and reading a chat with mentions reads its count again", async () => {
+  let conversationReads = 0;
+  const { store, connection } = fixture({
+    conversations: async () => ({ items: [{ ...conversation, mentionsUnread: 2, unread: 3 }], nextCursor: null }),
+    conversation: async () => {
+      conversationReads++;
+      return { ...conversation, mentionsUnread: 0, unread: 0 };
+    },
+  });
+  await connection.get("me").apply({ type: "for-you" });
+  expect(store.sidebar[0]?.mentionsUnread).toBe(2);
+  const before = conversationReads;
+  await connection.get("me").apply({
+    type: "read",
+    threads: [],
+    conversationId: conversation.id,
+    lastReadSeq: 1,
+    unreadFromSeq: null,
+    joinedSeq: 0,
+    unread: 0,
+    asOfRev: conversation.rev,
+  });
+  expect(conversationReads - before).toBe(1);
+  expect(store.sidebar[0]?.mentionsUnread).toBe(0);
+  store.dispose();
 });
 
 for (const [kind, originalLoaded] of [

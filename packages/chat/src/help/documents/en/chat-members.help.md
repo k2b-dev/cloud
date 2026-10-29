@@ -20,7 +20,7 @@ The dialog shows how many people join. They can read the whole chat history.
 4. Choose **Add**.
 :::
 
-Above 20 members, the chat becomes quiet: by default, only people who are mentioned get a notification.
+Above 20 members, the chat becomes quiet: by default, people get a notification only when someone mentions them or replies to them. See [Choose which chats notify you](/help/apps/chat/chat-notifications).
 For 21 or more people joining through groups, the dialog suggests **Discoverable by**.
 A discoverable chat lets people find it and join when they want to.
 

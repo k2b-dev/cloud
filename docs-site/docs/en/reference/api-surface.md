@@ -218,6 +218,16 @@ the services barrel are Core-owned maintainer surfaces, not general application
 authentication. Use the
 [app approval HTTP contract](/en/docs/operations/app-approval) for external clients.
 
+For [resource discussions](/en/docs/platform/resource-types-and-discussions),
+`CloudResourceReaderViewSchema`, `ResourcePrincipalSchema`,
+`ResourceReadableInputSchema`, `ResourceReadableDataSchema`,
+`ResourceActivityEventSchema`, the `Discussion*Schema` values,
+`typeViewIssues`, and `discussionsIssues` come from `@k2b/cloud/contracts`.
+`discussionProviders` and `readResourcePrincipals` come from
+`@k2b/cloud/capabilities/server`; `assertResourceView` comes from
+`@k2b/cloud/capabilities/testing`. The generated Query's context is
+`CapabilityAppExecutionContext`.
+
 For [calendar sources](/en/docs/platform/calendar-sources), `calendarSource`,
 `calendarSourceIssues`, the `Calendar*Schema` values and matching types describe
 readable calendars, events, deadlines, busy periods, and reserved versioned writes.

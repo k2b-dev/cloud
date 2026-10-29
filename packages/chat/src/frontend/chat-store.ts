@@ -17,6 +17,7 @@ import {
   ConversationSchema,
   type CreateConversationSchema,
   CreateOutcomeSchema,
+  FollowingSchema,
   LeaveResultSchema,
   MemberPageSchema,
   MemberPreviewSchema,
@@ -24,6 +25,8 @@ import {
   MemberRemovalSchema,
   MessagePageSchema,
   MessageSchema,
+  NotificationsSchema,
+  type NotificationUpdateSchema,
   PeoplePageSchema,
   type PermissionSchema,
   type PersonalConversationSchema,
@@ -89,6 +92,8 @@ export type ChatStoreApi = {
     patch: { name?: string; description?: string | null; archived?: boolean },
   ): Promise<z.infer<typeof ThreadSchema>>;
   changes(id: string, afterRev: number): Promise<ChangesPage | "RESYNC_REQUIRED" | null>;
+  notifications(id: string, input: z.infer<typeof NotificationUpdateSchema>): Promise<z.infer<typeof NotificationsSchema>>;
+  follow(id: string, thread: string, on: boolean): Promise<z.infer<typeof FollowingSchema>>;
 };
 export type OpenChatSnapshot = { cursor: string; conversation: Conversation; page: MessagePage; threads: ThreadList };
 export type ChatStoreSnapshot = {
@@ -265,6 +270,16 @@ export const createChatStoreApi = (): ChatStoreApi => {
         await client.conversations[":conversation"].threads.$post({ param: { conversation: id }, json: input }),
         ThreadSchema,
       ),
+    notifications: async (id, input) =>
+      requiredResponse(
+        await client.conversations[":conversation"].notifications.$put({ param: { conversation: id }, json: input }),
+        NotificationsSchema,
+      ),
+    follow: async (id, thread, on) => {
+      const route = client.conversations[":conversation"].threads[":thread"].follow;
+      const request = { param: { conversation: id, thread } };
+      return requiredResponse(on ? await route.$put(request) : await route.$delete(request), FollowingSchema);
+    },
     updateThread: async (id, thread, patch) =>
       requiredResponse(
         await client.conversations[":conversation"].threads[":thread"].$patch({ param: { conversation: id, thread }, json: patch }),
@@ -880,6 +895,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       // General's own count is not part of the event; the thread list says it exactly.
       if (list && list.items.length > 0) void refreshThreads(chat);
     }
+    // Reading may have read mentions too; the row's "@" count comes from the server.
+    if (known.mentionsUnread > 0) return refetchRow(known.id);
     notify();
   };
   const applySummary = async (summary: Summary) => {
@@ -972,7 +989,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
-            if (events.some(({ data }) => data.type === "membership" || data.type === "personal")) await reloadSidebar();
+            // A new mention or reply changes a row's "@" count, which only the server knows.
+            if (events.some(({ data }) => data.type === "membership" || data.type === "personal" || data.type === "for-you"))
+              await reloadSidebar();
             // A chat joined or left changes what is for the reader, as a new mention does.
             if (events.some(({ data }) => data.type === "for-you" || data.type === "membership")) await refreshForYou();
             for (const { data } of events)
@@ -1296,6 +1315,18 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     updateThread: async (id: string, thread: string, patch: Parameters<ChatStoreApi["updateThread"]>[2]) => {
       const result = await api.updateThread(id, thread, patch);
       if (current?.view.id === id) await refreshThreads(current);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return result;
+    },
+    // The level shows in the list row, the head, and Info: the row and the open chat are read again after the change.
+    setNotifications: async (id: string, input: Parameters<ChatStoreApi["notifications"]>[1]) => {
+      const result = await api.notifications(id, input);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return result;
+    },
+    follow: async (id: string, thread: string, on: boolean) => {
+      const result = await api.follow(id, thread, on);
+      if (current?.view.id === id) await refreshThreads(current).catch(() => {});
       await sidebar(() => refetchRow(id)).catch(() => {});
       return result;
     },

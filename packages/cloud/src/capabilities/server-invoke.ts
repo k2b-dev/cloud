@@ -36,6 +36,8 @@ export type CapabilityCaller = {
   /** BCP 47 locale of the originating request, forwarded as invocation metadata. */
   locale?: string | null;
   signal?: AbortSignal;
+  /** App-only query authority. The workload credential goes only to Core. */
+  workload?: { appId: string };
   /** Durable background authority. `authorization` must be the owning app's workload credential. */
   mandate?: { id: string; revision: number; callingAppId: string };
 };
@@ -50,7 +52,7 @@ export const callerRequest = async (
 ): Promise<Request> => {
   const headers = new Headers();
   if (caller.authorization) headers.set("authorization", caller.authorization);
-  if (!caller.mandate) {
+  if (!caller.mandate && !caller.workload) {
     if (caller.cookie) headers.set("cookie", caller.cookie);
     if (caller.requestId) headers.set("x-request-id", caller.requestId);
     if (caller.traceparent) headers.set("traceparent", caller.traceparent);
@@ -58,10 +60,14 @@ export const callerRequest = async (
     if (caller.locale) headers.set(LOCALE_HEADER, caller.locale);
     if (idempotencyKey) headers.set("idempotency-key", idempotencyKey);
   } else {
-    headers.set("x-cloud-app-id", caller.mandate.callingAppId);
+    headers.set("x-cloud-app-id", caller.mandate?.callingAppId ?? caller.workload!.appId);
   }
   const signal = combineCapabilitySignals(caller.signal, invocationSignal);
-  return new Request(new URL(path, await coreOrigin(caller.mandate !== undefined)), { method: "POST", headers, signal });
+  return new Request(new URL(path, await coreOrigin(caller.mandate !== undefined || caller.workload !== undefined)), {
+    method: "POST",
+    headers,
+    signal,
+  });
 };
 
 export const unavailable = (
@@ -97,12 +103,15 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
   caller: CapabilityCaller,
 ): Promise<CapabilityClientResult<z.output<TDataSchema>>> => {
   try {
-    const path = caller.mandate
-      ? "/api/_internal/identity/v1/invoke"
-      : `/api/capabilities/v1/${invocation.kind === "query" ? "queries" : "actions"}/${encodeURIComponent(invocation.appId)}/${encodeURIComponent(invocation.capabilityId)}`;
+    if (caller.workload && (caller.mandate || caller.cookie || invocation.kind !== "query"))
+      throw new Error("Workload authority permits only queries without a mandate or cookie");
+    const path =
+      caller.mandate || caller.workload
+        ? "/api/_internal/identity/v1/invoke"
+        : `/api/capabilities/v1/${invocation.kind === "query" ? "queries" : "actions"}/${encodeURIComponent(invocation.appId)}/${encodeURIComponent(invocation.capabilityId)}`;
     const request = await callerRequest(caller, path, invocation.idempotencyKey, invocation.signal);
     if (caller.authority) {
-      if (caller.authorization || caller.cookie || caller.mandate || caller.transport)
+      if (caller.authorization || caller.cookie || caller.mandate || caller.workload || caller.transport)
         throw new Error("Use exactly one capability authority source");
       const outcome = await dispatchCapability({
         request,
@@ -118,14 +127,13 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
     }
     const brokerRequest = new Request(request, {
       body: JSON.stringify(
-        caller.mandate
+        caller.mandate || caller.workload
           ? {
               kind: invocation.kind,
               targetApp: invocation.appId,
               capabilityId: invocation.capabilityId,
               input: invocation.input,
-              mandateId: caller.mandate.id,
-              mandateRevision: caller.mandate.revision,
+              ...(caller.mandate ? { mandateId: caller.mandate.id, mandateRevision: caller.mandate.revision } : {}),
               ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
               ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
                 ? {
@@ -141,16 +149,17 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
           : { input: invocation.input },
       ),
     });
-    const send = caller.transport ?? fetch;
+    const send = caller.transport ?? ((request: Request) => fetch(request, caller.workload ? { redirect: "error" } : undefined));
     // Only Core's pre-dispatch workload rejection is safe to retry, including a non-idempotent action.
-    const retryRequest = caller.mandate ? brokerRequest.clone() : undefined;
+    const workloadAppId = caller.mandate?.callingAppId ?? caller.workload?.appId;
+    const retryRequest = workloadAppId ? brokerRequest.clone() : undefined;
     let response = await send(brokerRequest);
     const credentialRejected = (reply: Response) => reply.status === 401 && reply.headers.get("x-cloud-workload-auth") === "required";
-    if (caller.mandate && retryRequest && credentialRejected(response)) {
+    if (workloadAppId && retryRequest && credentialRejected(response)) {
       await response.body?.cancel();
       let token: string | undefined;
       try {
-        token = await refreshAppWorkloadCredential(caller.mandate.callingAppId);
+        token = await refreshAppWorkloadCredential(workloadAppId);
       } catch {
         // This rejection happened before dispatch; credential state is retryable unavailability.
       }
@@ -193,14 +202,14 @@ export const listCapabilityCatalog = async (
     if (options.caller) {
       const caller = options.caller;
       if (options.authority) throw new Error("Use one catalog authority source");
-      if (caller.authority && (caller.authorization || caller.cookie || caller.mandate || caller.transport))
+      if (caller.authority && (caller.authorization || caller.cookie || caller.mandate || caller.workload || caller.transport))
         throw new Error("Use exactly one capability authority source");
       if (caller.authority)
         return {
           ok: true,
           data: await loadCapabilityCatalogPage({ cursor: options.cursor, limit }, {}, caller.locale ?? options.locale, caller.authority),
         };
-      if (caller.mandate) throw new Error("Calendar discovery requires request credentials");
+      if (caller.mandate || caller.workload) throw new Error("Calendar discovery requires request credentials");
       const query = new URLSearchParams({ limit: String(limit) });
       if (options.cursor) query.set("cursor", options.cursor);
       const request = new Request(await callerRequest(caller, `/api/capabilities/v1/catalog?${query}`), { method: "GET" });

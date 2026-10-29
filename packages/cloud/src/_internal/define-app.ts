@@ -12,6 +12,7 @@ import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
 import { bindResourceAppAccess, RESOURCE_ACCESS_PATH } from "./app-access-resources";
+import { createAppQueryRoutes } from "./app-queries";
 import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
@@ -918,6 +919,7 @@ export const defineApp = <
         server.route("/api/_internal/events/v1", createAppEventDeliveryRoutes(compiledCapabilities));
 
       if (compiledCapabilities) {
+        server.route("/api/_internal/capabilities/v1/app-queries", createAppQueryRoutes(compiledCapabilities));
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>
           withCapabilityRequestTimeout(c, kind, async () => {
             // Framework-owned endpoints run before the app's settings middleware,

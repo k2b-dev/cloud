@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateAppRegistryEntry } from "./registry-validation";
+import { asAppRegistryEntry, validateAppRegistryEntry } from "./registry-validation";
 
 const valid = {
   id: "core",
@@ -93,7 +93,7 @@ describe("validateAppRegistryEntry", () => {
 test("validates optional outgoing mail permission declarations", () => {
   expect(validateAppRegistryEntry({ ...valid, platformPermissions: ["mail:send"] })).toBeNull();
   expect(validateAppRegistryEntry({ ...valid, platformPermissions: [] })).toBeNull();
-  for (const platformPermissions of ["mail:send", ["unknown"], [1]])
+  for (const platformPermissions of ["mail:send", [1], null])
     expect(validateAppRegistryEntry({ ...valid, platformPermissions })).toContain("platformPermissions");
 });
 
@@ -117,4 +117,12 @@ test("validates panel shape, owned href, presentation and role array", () => {
   expect(
     validateAppRegistryEntry({ ...entry, panel, presentation: { ...presentation, translations: { de: { panelLabel: 1 } } } }),
   ).toContain("panelLabel");
+});
+
+test("registry readers drop unknown permissions without dropping routes or granting them", () => {
+  const entry = { ...valid, platformPermissions: ["mail:send", "future:permission", "resources:readers"] };
+  expect(validateAppRegistryEntry(entry)).toBeNull();
+  expect(asAppRegistryEntry(entry)).toEqual({ ...entry, platformPermissions: ["mail:send", "resources:readers"] });
+  expect(asAppRegistryEntry({ ...valid, platformPermissions: ["future:permission"] })).toEqual({ ...valid, platformPermissions: [] });
+  expect(entry.platformPermissions).toContain("future:permission");
 });

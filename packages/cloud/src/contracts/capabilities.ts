@@ -13,6 +13,7 @@ import type { RequestAuthority } from "../server/middleware/auth";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "./app-events";
 import { CommandPathSchema } from "./commands";
 import type { AccessSubject, RequestActor, User } from "./shared";
+import { AuthenticatedPrincipalSchema } from "./shared";
 
 export const CAPABILITY_PROTOCOL_VERSION = 2 as const;
 export const CAPABILITY_MAX_REQUEST_BYTES = 256 * 1024;
@@ -120,6 +121,38 @@ export const CloudResourceReferenceSchema = CloudResourceRefSchema.extend({
 }).strict();
 
 export type CloudResourceReference = z.infer<typeof CloudResourceReferenceSchema>;
+
+/** Authorized presentation returned as `data.view` by a canonical resource reader. */
+export const CloudResourceReaderViewSchema = z
+  .object({
+    title: z.string().min(1).max(500),
+    context: CloudResourceReferenceSchema.shape.context,
+    status: CloudResourceReferenceSchema.shape.status,
+    done: z.boolean().optional(),
+    permission: z.enum(["read", "write", "admin"]),
+    container: z
+      .object({ ref: CloudResourceRefSchema, title: z.string().min(1).max(500) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type CloudResourceReaderView = z.infer<typeof CloudResourceReaderViewSchema>;
+
+/** Concrete accounts, reusing the grant principal identities; never a group or wildcard. */
+export const ResourcePrincipalSchema = z.discriminatedUnion("type", [
+  AuthenticatedPrincipalSchema.options[0].strict(),
+  AuthenticatedPrincipalSchema.options[2].strict(),
+]);
+export type ResourcePrincipal = z.infer<typeof ResourcePrincipalSchema>;
+export const ResourceReadableInputSchema = z
+  .object({
+    id: CloudResourceRefSchema.shape.id,
+    container: CloudResourceRefSchema.optional().describe("Expected current container; required for a contained type."),
+    principals: z.array(ResourcePrincipalSchema).max(500).describe("Concrete accounts whose current resource readability is checked."),
+  })
+  .strict();
+export type ResourceReadableInput = z.output<typeof ResourceReadableInputSchema>;
+export const ResourceReadableDataSchema = z.object({ readable: z.array(ResourcePrincipalSchema).max(500) }).strict();
 
 // Consumer permalinks may encode all 512 UTF-16 units of an id (up to 4,608 characters).
 export const CloudResourceHrefSchema = z.string().min(1).max(8192).regex(CLOUD_PATH_PATTERN);
@@ -832,6 +865,15 @@ export type CapabilityResourceTypeDefinition = {
   /** One colour per kind of resource, so a card or list shows at a glance what it stands for. */
   color?: CapabilityResourceColor;
   reader?: string;
+  /** Local type in the same application. Describes containment, never inherited authority. */
+  container?: string;
+  access?: {
+    /** Return only readable input principals, using current grants and account status, never credential scopes. */
+    readable?: (
+      input: ResourceReadableInput,
+      context: CapabilityAppExecutionContext,
+    ) => readonly ResourcePrincipal[] | Promise<readonly ResourcePrincipal[]>;
+  };
   /** Root-relative pages recognized when a person pastes a Cloud link. Requires a reader. */
   pages?: readonly string[];
 };
@@ -911,7 +953,23 @@ export type CapabilityPresentationCatalog = {
   translations: Readonly<Record<string, CapabilityPresentationTranslation>>;
 };
 
+/** App authority has no grant-bearing subject, user, nested exchange, or interactive credential. */
+export type CapabilityAppExecutionContext = {
+  actor: { kind: "app"; appId: string };
+  accessSubject: { type: "none" };
+  user: null;
+  authority?: never;
+  query?: never;
+  idempotencyKey?: never;
+  locale: string;
+  requestId: string;
+  origin: CapabilityOrigin;
+  via?: CapabilityVia;
+  signal: AbortSignal;
+};
+
 export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
+  appOnly?: never;
   title: string;
   description: string;
   input: Input;
@@ -929,6 +987,7 @@ export type CapabilityIdempotencyPolicy = "none" | "required";
 export type CapabilityActionApprovalPolicy = "rememberable" | "none";
 
 export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
+  appOnly?: never;
   title: string;
   description: string;
   input: Input;
@@ -980,6 +1039,8 @@ export type CapabilityFileProviderDeclaration = { list: string; read: string; sa
 
 export type CapabilityCalendarSourceDeclaration = { calendars: string; events: string; update?: string; move?: string; delete?: string };
 
+export type CapabilityDiscussionsDeclaration = { item: string; containers: string; activity?: string };
+
 export type CapabilityDefinitions = {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION;
   presentation?: CapabilityPresentationCatalog;
@@ -989,6 +1050,7 @@ export type CapabilityDefinitions = {
   commands?: CapabilityDefinitionCatalog<CapabilityCommandDefinition>;
   fileProvider?: CapabilityFileProviderDeclaration;
   calendarSource?: CapabilityCalendarSourceDeclaration;
+  discussions?: CapabilityDiscussionsDeclaration;
   events?: CapabilityDefinitionCatalog<AppEventDefinition>;
   subscribes?: CapabilityDefinitionCatalog<AppEventSubscriptionDefinition>;
 };
@@ -1044,6 +1106,7 @@ const CapabilityOperationManifestBaseSchema = z
   .strict();
 
 export const CapabilityQueryManifestSchema = CapabilityOperationManifestBaseSchema.extend({
+  appOnly: z.literal(true).optional(),
   openWorld: z.boolean(),
   universalSearch: z
     .object({ tags: z.array(CapabilitySearchTagManifestSchema).max(100), scopeTypes: z.array(CapabilityLocalIdSchema).max(100).optional() })
@@ -1116,6 +1179,24 @@ export const CapabilityResourcePageManifestSchema = z
   })
   .strict();
 
+export const CapabilityDiscussionsManifestSchema = z
+  .object({
+    item: CapabilityLocalIdSchema,
+    containers: CapabilityLocalIdSchema,
+    activity: CapabilityLocalIdSchema.optional(),
+  })
+  .strict();
+export const CapabilityResourceTypeModelSchema = z
+  .object({
+    type: CapabilityLocalIdSchema,
+    container: CapabilityLocalIdSchema.optional(),
+    view: z.literal(true).optional(),
+    /** Availability claim, retained in person catalogs even though the generated query is hidden. */
+    readable: z.literal(true).optional(),
+  })
+  .strict();
+export type CapabilityResourceTypeModel = z.infer<typeof CapabilityResourceTypeModelSchema>;
+
 /** Keeps the sent entries this release reads completely. */
 const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T>[] | null => {
   // Not a bounded list: leave the value to the manifest schema, which rejects it.
@@ -1146,7 +1227,7 @@ const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T
  * pages and pages without a readable Type/reader are omitted; live prefix ownership is checked separately.
  * Every other entry stays available.
  */
-const readableManifest = (value: unknown): unknown => {
+const readableManifest = (value: unknown, personCatalog = false): unknown => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const sent = value as Record<string, unknown>;
   const types = readEntries(sent.types, CapabilityResourceTypeManifestSchema);
@@ -1180,7 +1261,54 @@ const readableManifest = (value: unknown): unknown => {
     policies[action.localId] = policy;
     return true;
   });
-  const { calendarSource: sentCalendarSource, fileProvider: sentProvider, policies: _policies, resourcePages: sentPages, ...rest } = sent;
+  const {
+    calendarSource: sentCalendarSource,
+    fileProvider: sentProvider,
+    policies: _policies,
+    resourcePages: sentPages,
+    resourceTypes: sentModels,
+    discussions: sentDiscussions,
+    ...rest
+  } = sent;
+  const models = readEntries(sentModels ?? [], CapabilityResourceTypeModelSchema) ?? [];
+  const resourceTypes = models.flatMap((model) => {
+    const type = types.find((type) => type.localId === model.type);
+    if (!type || (model.container && !typeIds.has(model.container))) return [];
+    const seen = new Set([model.type]);
+    let parent = model.container;
+    while (parent) {
+      if (seen.has(parent)) return [];
+      seen.add(parent);
+      parent = models.find((candidate) => candidate.type === parent)?.container;
+    }
+    if (models.filter((candidate) => candidate.type === model.type).length !== 1) return [];
+    const { view, readable, ...rest } = model;
+    return [
+      {
+        ...rest,
+        ...(readable &&
+        (readableQueries.some((query) => query.localId === `${model.type}.readable` && query.appOnly === true) ||
+          // Core validates the full manifest before hiding app-only queries from person catalogs.
+          (personCatalog &&
+            Array.isArray(sent.queries) &&
+            !sent.queries.some(
+              (query: unknown) =>
+                typeof query === "object" && query !== null && "localId" in query && query.localId === `${model.type}.readable`,
+            )))
+          ? { readable }
+          : {}),
+        ...(view && type.reader && queryIds.has(type.reader) ? { view } : {}),
+      },
+    ];
+  });
+  const role = CapabilityDiscussionsManifestSchema.safeParse(sentDiscussions);
+  const discussions =
+    role.success &&
+    typeIds.has(role.data.item) &&
+    queryIds.has(role.data.containers) &&
+    (!role.data.activity || queryIds.has(role.data.activity))
+      ? role.data
+      : undefined;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
   const pageCounts = new Map<string, number>();
@@ -1198,6 +1326,8 @@ const readableManifest = (value: unknown): unknown => {
       : [];
   return {
     ...rest,
+    ...(sentModels !== undefined ? { resourceTypes } : {}),
+    ...(discussions ? { discussions } : {}),
     ...(sentPages !== undefined ? { resourcePages } : {}),
     ...(provider.success ? { fileProvider: provider.data } : {}),
     ...(calendar.success ? { calendarSource: calendar.data } : {}),
@@ -1228,7 +1358,7 @@ const readableManifest = (value: unknown): unknown => {
  * Producers stay strict: `app.start()` registers exactly the manifest its release defines.
  */
 export const CapabilityManifestSchema = z.preprocess(
-  readableManifest,
+  (value) => readableManifest(value),
   z.object({
     protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
     appId: CapabilityAppIdSchema,
@@ -1240,6 +1370,8 @@ export const CapabilityManifestSchema = z.preprocess(
     // Optional without a default: a manifest without a provider keeps the shape and hash of earlier releases.
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
     calendarSource: CapabilityCalendarSourceManifestSchema.optional(),
+    discussions: CapabilityDiscussionsManifestSchema.optional(),
+    resourceTypes: z.array(CapabilityResourceTypeModelSchema).max(MAX_MANIFEST_ENTRIES).optional(),
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),
     events: z.array(CapabilityEventManifestSchema).max(MAX_MANIFEST_ENTRIES).optional(),
     subscribes: z.array(CapabilitySubscriptionManifestSchema).max(MAX_MANIFEST_ENTRIES).optional(),
@@ -1297,7 +1429,8 @@ export const CapabilityCatalogAppSchema = z.object({
   appName: z.string().min(1).max(200),
   appIcon: z.string().min(1).max(120),
   appDescription: z.string().max(1000),
-  manifest: CapabilityManifestSchema,
+  // This is Core's person projection, whose app-only queries have already been hidden.
+  manifest: z.preprocess((value) => readableManifest(value, true), CapabilityManifestSchema.out),
   events: z.array(CapabilityEventCatalogEntrySchema).max(MAX_MANIFEST_ENTRIES).optional(),
 });
 

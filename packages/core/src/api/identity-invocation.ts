@@ -39,12 +39,15 @@ const InvocationRequestSchema = z
     targetApp: CapabilityAppIdSchema,
     capabilityId: CapabilityLocalIdSchema,
     input: z.unknown(),
-    mandateId: z.string().uuid(),
-    mandateRevision: z.number().int().positive(),
+    mandateId: z.string().uuid().optional(),
+    mandateRevision: z.number().int().positive().optional(),
     idempotencyKey: CapabilityIdempotencyKeySchema.optional(),
     metadata: InvocationMetadataSchema.optional(),
   })
   .strict()
+  .refine((request) => (request.mandateId === undefined) === (request.mandateRevision === undefined), {
+    message: "Mandate ID and revision must be supplied together",
+  })
   .refine((request) => Object.hasOwn(request, "input"), { path: ["input"], message: "Input is required" });
 
 type InvocationRequest = z.output<typeof InvocationRequestSchema>;
@@ -136,11 +139,15 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
         appId: input.targetApp,
         capabilityId: input.capabilityId,
         input: input.input,
-        mandate: {
-          mandateId: input.mandateId,
-          mandateRevision: input.mandateRevision,
-          ownerAppId: workload.appId,
-        },
+        workload: input.mandateId ? undefined : workload,
+        mandate:
+          input.mandateId && input.mandateRevision
+            ? {
+                mandateId: input.mandateId,
+                mandateRevision: input.mandateRevision,
+                ownerAppId: workload.appId,
+              }
+            : undefined,
         callingAppId: workload.appId,
         locale: input.metadata?.locale,
         dependencies: dependencies.dispatchDependencies,
