@@ -79,3 +79,31 @@ for (const outcome of ["recovered", "revoked", "transient", "target-401"] as con
     }
   });
 }
+
+test("app-only query callers refresh a rejected workload credential once like mandate callers", async () => {
+  let refreshes = 0;
+  runtime = createAppWorkloadCredential({
+    appId: "mail",
+    instanceId,
+    request: async () => {
+      refreshes++;
+      return refreshes === 1 ? issued : { ...issued, token: rotated };
+    },
+  });
+  await runtime.start();
+  const authorizations: (string | null)[] = [];
+  const result = await invokeCapability(
+    { appId: "spaces", capabilityId: "item.readable", kind: "query", input: { id: "one", principals: [] } },
+    {
+      authorization: `Bearer ${token}`,
+      workload: { appId: "mail" },
+      transport: async (request) => {
+        authorizations.push(request.headers.get("authorization"));
+        return authorizations.length === 1 ? rejection() : Response.json({ data: { readable: [] } });
+      },
+    },
+  );
+  expect(authorizations).toEqual([`Bearer ${token}`, `Bearer ${rotated}`]);
+  expect(refreshes).toBe(2);
+  expect(result).toMatchObject({ ok: true });
+});
