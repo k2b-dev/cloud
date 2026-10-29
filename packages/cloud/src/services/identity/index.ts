@@ -1,3 +1,4 @@
+export { getAppWorkloadCredential } from "../../_internal/workload-credential";
 export {
   CLOUD_INVOCATION_JWKS_PATH,
   CLOUD_INVOCATION_PROTOCOL_VERSION,
@@ -51,3 +52,4 @@ export {
   WORKLOAD_SCOPES,
   type WorkloadScope,
 } from "./workload-auth";
+export { startAppWorkloadBroker } from "./workload-runtime";

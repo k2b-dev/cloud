@@ -118,6 +118,7 @@ import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versioned
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
 import { WEB_VITALS_ASSET_HREF } from "./web-vitals-asset";
 import { compileWidgetDeclarations } from "./widget-declarations";
+import { createAppWorkloadCredential } from "./workload-credential";
 
 /** Only development links use this start stamp to pick up rebuilds. */
 const developmentStamp = Date.now();
@@ -1143,6 +1144,8 @@ export const defineApp = <
 
       let stopNotificationRegistration: (() => void) | undefined;
       cleanup.push(() => stopNotificationRegistration?.());
+      let workloadCredential: ReturnType<typeof createAppWorkloadCredential> | undefined;
+      cleanup.push(() => workloadCredential?.stop());
       const stopLifecycle = startOpts.lifecycle?.stop;
       if (stopLifecycle) cleanup.push(() => stopLifecycle(cloudCtx));
 
@@ -1179,6 +1182,18 @@ export const defineApp = <
       // Publish supporting entries first; the app entry makes them discoverable.
       await capabilityHeartbeat?.start();
       await heartbeat.start();
+      workloadCredential = createAppWorkloadCredential({
+        appId: meta.id,
+        instanceId: membership.instanceId,
+        onUnavailable: (reason) => {
+          if (reason === "release_unavailable") {
+            log.warn("Workload credential release was not confirmed; Core will reconcile after removal", { appId: meta.id });
+          } else {
+            log.error("App workload credential unavailable; background invocation is disabled", { appId: meta.id, reason });
+          }
+        },
+      });
+      await workloadCredential.start();
       log.info(`Registered "${meta.id}"`, { baseUrl });
 
       // Graceful shutdown

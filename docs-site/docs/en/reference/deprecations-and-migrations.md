@@ -10,6 +10,22 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## App workload credentials are delivered automatically
+
+Core now issues and rotates a credential for every registered app instance.
+Remove `CLOUD_MAIL_APP_CREDENTIAL` from Compose environment files and secret
+injection; no `CLOUD_CHAT_APP_CREDENTIAL` is needed. Update Core and app images
+together so both support automatic delivery. Keep `CLOUD_CORE_INTERNAL_ORIGIN`
+pointing at Core's private listener. After the upgrade, check the app's
+`/_cloud/ready` workload status and its background work, then revoke the old
+manually created Mail credential in **Administration → App credentials**.
+Removing its old Compose input does not itself revoke that credential.
+
+`CLOUD_APP_CREDENTIAL` remains an explicit host-run override and takes precedence
+over automatic delivery. Existing admin UI, API and CLI creation and revocation
+paths remain available. See [runtime configuration](/en/docs/operations/runtime-configuration)
+for credential lifetimes, recovery after revocation, and the shared-infrastructure trust limit.
+
 ## Personal Linux groups in exports
 
 Accounts group and entity exports and OAuth/OIDC group claims exclude personal

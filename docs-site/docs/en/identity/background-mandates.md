@@ -201,15 +201,21 @@ run server Code Mode tools under the same routine-scoped authority; see
 
 ## Invoke from a worker
 
-Provision a resource-bound service-account credential for the owning
-application with binding `{ appId, resourceType: "cloud.app", resourceId:
-appId }` and the `identity:invoke` scope. Store it as
-`CLOUD_APP_CREDENTIAL` in that application only.
-Also set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
-broker routes are not reachable through the public gateway, and the helper
-does not fall back to the public origin for mandate calls.
+Core automatically delivers an app-bound `identity:invoke` credential to each
+registered app instance. Use `getAppWorkloadCredential()` from
+`@k2b/cloud/services/identity` at call time so rotation takes effect. It returns
+`undefined` while issuance is unavailable; dependent work must fail closed
+with a visible reason. Never cache the returned token or pass it to a browser
+or target app.
 
-An administrator opens **Administration → App credentials** (`/admin/app-credentials`),
+Set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
+broker routes are not reachable through the public gateway, and the helper
+does not fall back to the public origin for mandate calls. For host-run apps,
+`CLOUD_APP_CREDENTIAL` is an optional explicit override; it wins over automatic
+delivery and remains operator-managed. See [runtime configuration](/en/docs/operations/runtime-configuration)
+for rotation, revocation, health diagnostics, and the shared-infrastructure trust limit.
+
+For an explicit host-run override, an administrator opens **Administration → App credentials** (`/admin/app-credentials`),
 chooses **Create credential**, then selects the owning app and enters a name and
 optional expiration time in the dialog.
 The token is shown once. Save it in the deployment's secret store and inject it
@@ -264,6 +270,10 @@ Use the server capability helper with the current mandate revision:
 
 ```ts
 import { invokeCapability } from "@k2b/cloud/capabilities/server";
+import { getAppWorkloadCredential } from "@k2b/cloud/services/identity";
+
+const credential = getAppWorkloadCredential();
+if (!credential) throw new Error("App workload authorization is unavailable");
 
 const result = await invokeCapability(
   {
@@ -274,7 +284,7 @@ const result = await invokeCapability(
     idempotencyKey: job.id,
   },
   {
-    authorization: `Bearer ${process.env.CLOUD_APP_CREDENTIAL}`,
+    authorization: `Bearer ${credential}`,
     mandate: {
       id: job.mandateId,
       revision: job.mandateRevision,

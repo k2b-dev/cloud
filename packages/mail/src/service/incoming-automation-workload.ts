@@ -1,5 +1,5 @@
-import { env } from "@k2b/cloud/config";
 import { mandates } from "@k2b/cloud/services";
+import { getAppWorkloadCredential } from "@k2b/cloud/services/identity";
 import { sql } from "bun";
 import { hasCurrentMailboxUserPermission } from "./collaborators";
 
@@ -10,11 +10,11 @@ export type IncomingAutomationMandateCaller = {
 
 export const incomingAutomationMandateCaller = (
   mandate: { id: string; revision: number },
-  credential = env.CLOUD_APP_CREDENTIAL,
+  credential = getAppWorkloadCredential(),
 ): IncomingAutomationMandateCaller => {
   const token = credential?.trim();
   if (!token) {
-    throw Object.assign(new Error("Mail workload authorization is unavailable"), { code: "WORKLOAD_AUTH_UNAVAILABLE" });
+    throw Object.assign(new Error("Mail workload authorization is unavailable"), { code: "WORKLOAD_AUTH_UNAVAILABLE", retryable: true });
   }
   if (!Number.isSafeInteger(mandate.revision) || mandate.revision < 1) {
     throw Object.assign(new Error("This automation has no active Spaces authorization"), { code: "FORBIDDEN" });

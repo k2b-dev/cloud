@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # Configuration reference
@@ -46,7 +46,7 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | string | secret | unset | no | Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed. |
 | `CLOUD_OAUTH_BROKER_SECRET` | string | secret | unset | no | Core and OAuth only: 64-hex secret that lets the OAuth app request token signatures from Core; generate independently with `openssl rand -hex 32`. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | string | runtime | unset | no | Direct Core listener origin for OAuth issuance, mandate-backed background work and internal callbacks; host-run callers use the Core port, not the gateway. |
-| `CLOUD_APP_CREDENTIAL` | string | secret | unset | no | App-bound workload credential provisioned through Core's admin workload API; background apps such as Mail need one with `identity:invoke`. |
+| `CLOUD_APP_CREDENTIAL` | string | secret | unset | no | Optional host-run app override for the automatically delivered app workload credential; provision through Core's admin workload API with `identity:invoke`. |
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the Core listener for session and invocation JWKS; unset fetches keys from the public issuer origin. |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the OAuth listener for OAuth JWKS; unset fetches keys from the public issuer origin. |
 | `APP_DIR` | string | development | unset | no | Application directory for standalone consumers running `@k2b/cloud/scripts/build.ts` or the SSR dev server outside the monorepo; defaults to the package directory. |

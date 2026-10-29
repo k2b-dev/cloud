@@ -79,7 +79,7 @@ environment variables. Applications using the shared HTTP transports supply
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | Optional private transport origin for loading Core's public identity JWKS; does not change the public issuer |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's public JWKS; does not change the public issuer |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for OAuth issuance and workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
-| `CLOUD_APP_CREDENTIAL` | Per-application resource-bound workload credential for background broker callers; not used by OAuth |
+| `CLOUD_APP_CREDENTIAL` | Optional host-run app override for the automatically delivered workload credential; not used by OAuth |
 | `NODE_ENV` | Set to `production` by built-in images; development tooling supplies its own mode |
 | `ADMIN_LOGIN_TOKEN` | Core-only temporary first-access or recovery token; no production default |
 
@@ -131,23 +131,52 @@ credential only to Core, where it is resolved once and exchanged for a
 target-bound invocation. The target application never receives the source
 cookie, OAuth token, or API key.
 
-`CLOUD_APP_CREDENTIAL` is not shared. Provision a separate resource-bound
-service-account credential for each background calling app with resource type
-`cloud.app`, resource ID equal to the app ID, and scope `identity:invoke`.
-OAuth uses its separate deployment broker secret, not a workload credential.
-Revoking one workload credential stops only that app's new broker
-requests. Never put a workload credential in a browser bundle or target-app
-request.
+Core automatically issues an app-bound `identity:invoke` workload credential to
+every registered app instance, including third-party apps. No admin creation or
+per-app Compose input is needed. Mail incoming automations use this credential.
+The runtime obtains the raw token through non-retained NATS request/reply and
+keeps it in process memory; Postgres stores its hash. Tokens expire after one
+hour and rotate after 30 minutes, with the preceding token valid until its
+expiry so in-flight calls can finish. Core retains at most two runtime token
+rows per instance; retired rows are removed and lifecycle events remain in
+the audit log. Admin-revoked metadata remains as the instance's stop record.
+The runtime checks with Core every minute,
+retries failed issuance after five seconds, and disables dependent calls while
+issuance is unavailable. `/_cloud/ready` reports `workloadCredential` status
+and a safe reason; application logs also report issuance failures. HTTP readiness
+remains available so an issuance outage does not remove unrelated app routes.
 
-For background callers running directly on the host, set `CLOUD_APP_CREDENTIAL` and
-`CLOUD_CORE_INTERNAL_ORIGIN` in each calling app's environment. Point the origin
-at Core's direct listener, not the gateway. Do not load a shared environment
-file containing Core's KEKs into every application.
+Credentials named `Runtime <instance>` appear in **Administration → App credentials**
+and `cld admin app-credentials list <app>`. Revoking either overlapping runtime token blocks both generations immediately,
+including a concurrent rotation. The runtime cannot replace that instance's
+revoked credential.
+Restart the owning app to establish a new instance after an intentional recovery.
+A graceful stop requests revocation after its workers drain. If delivery fails
+or the process crashes, a healthy Core revokes it within one registry TTL
+(three minutes) plus the one-minute reconciliation interval. Automatic removal
+allows a live instance to recover when its registry membership returns.
+Other replicas of the same app keep their own credentials.
+When the last Core replica stops, its own token expires or is removed when
+Core resumes; its shutdown log reports an unconfirmed release.
 
-The repository's development and production Compose files accept
-`CLOUD_MAIL_APP_CREDENTIAL` as an input. They pass it only to Mail as
-`CLOUD_APP_CREDENTIAL` and supply the private service origins. The input name
-is not a runtime variable read by Mail.
+For host-run apps, `CLOUD_APP_CREDENTIAL` remains an explicit override and wins
+over automatic delivery. Create a resource-bound credential with binding
+`{ appId, resourceType: "cloud.app", resourceId: appId }` and scope
+`identity:invoke` through the admin UI or CLI, and inject it only into its
+owning app. Overrides retain operator-managed expiry and rotation. Set
+`CLOUD_CORE_INTERNAL_ORIGIN` to Core's direct listener, not the gateway.
+OAuth uses its separate deployment broker secret. Never put a workload
+credential in a browser bundle or a target-app request, and never load Core's
+KEKs into other apps.
+
+### Shared infrastructure trust limit
+
+Workload credentials separate apps by contract and protect against mistakes
+and confused-deputy bugs. They do not isolate a compromised app while apps
+share a Postgres user, NATS access, and `APP_SECRET`. Real separation requires
+per-app database roles and NATS accounts. The workload delivery channel carries
+only newly issued app-bound workload credentials, never Core identity signing
+keys, key-encryption material, OAuth secrets, or person sessions.
 
 > Keep `APP_SECRET` stable and back it up. Cloud has no built-in key rotation;
 > changing it makes encrypted values unreadable. Settings then fall back to
@@ -189,12 +218,11 @@ and OAuth replicas, recreate those containers, and verify OAuth readiness before
 resuming traffic. There is no previous-secret overlap; mismatched replicas reject
 issuance. Rotation alone does not invalidate existing JWTs or refresh grants.
 
-
 Before upgrading mandate writers, follow the coordinated schema cutover in
 [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
-Mail incoming automations use mandates. Provision Mail's `identity:invoke`
-app credential and keep Core's broker available. For upgrades that change
+Mail incoming automations use mandates and the runtime's automatic
+`identity:invoke` credential. Keep Core's broker available. For upgrades that change
 stored credentials, follow [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
 For first access, temporarily provide `ADMIN_LOGIN_TOKEN` only to Core and open

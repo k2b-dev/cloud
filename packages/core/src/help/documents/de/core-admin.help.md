@@ -69,6 +69,11 @@ FreeIPA und die Gruppenzuordnung für die Administration richtest du in den Eins
 
 ## App-Schlüssel rotieren {icon="key"}
 
+Core stellt App-Zugangsdaten automatisch aus und rotiert sie. In der Tabelle
+heißen sie `Runtime <Instanz>`. Ein Widerruf stoppt neue Aufrufe sofort. Starte
+die zugehörige App erst zur Wiederaufnahme neu; sie erhält dann eine neue Instanz.
+Die folgenden Schritte dienen einem optionalen Override für eine App auf dem Host.
+
 Unter **App-Schlüssel** findest du die vorhandenen Schlüssel in einer Tabelle.
 
 :::steps

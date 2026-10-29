@@ -94,6 +94,7 @@ export const createRegistryMembership = (
   };
 
   return {
+    instanceId,
     join: async (sharedKey: string, sharedValue: unknown, entry: SharedEntry): Promise<void> => {
       left = false;
       await prepareShared(sharedKey);

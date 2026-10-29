@@ -301,7 +301,9 @@ cld admin app-credentials revoke mail <credential-id> --yes
 Creation prints the token once; structured output includes token and metadata.
 Transfer the token to the deployment secret store, then remove the temporary
 file. An optional `--expires-at` takes a future ISO 8601 timestamp. Lists show
-metadata only. Configure `CLOUD_APP_CREDENTIAL` only in its owning app and
+metadata only. Core issues and rotates `Runtime <instance>` credentials automatically.
+Revocation blocks that instance until the app is restarted. For an explicit
+host-run override, configure `CLOUD_APP_CREDENTIAL` only in its owning app and
 `CLOUD_CORE_INTERNAL_ORIGIN` with Core's private origin. Mandates still control
 the allowed background actions. For rotation, create and deploy a replacement,
 verify its calls, then revoke the old credential. The equivalent UI is

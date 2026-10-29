@@ -168,7 +168,7 @@ const registry = defineEnv({
   CLOUD_APP_CREDENTIAL: {
     schema: z.string(),
     scope: "secret",
-    doc: "App-bound workload credential provisioned through Core's admin workload API; background apps such as Mail need one with `identity:invoke`.",
+    doc: "Optional host-run app override for the automatically delivered app workload credential; provision through Core's admin workload API with `identity:invoke`.",
   },
   CLOUD_IDENTITY_JWKS_ORIGIN: {
     schema: z.string(),
