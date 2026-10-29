@@ -56,7 +56,7 @@ else {
         option.click();
         expect(selected()).toEqual([account]);
         expect(dom.root.textContent).toContain(account.displayName);
-        expect(dom.root.querySelector(`.k2b-avatar .${icon}`)).not.toBeNull();
+        expect(dom.root.querySelector('.k2b-avatar[data-shape="square"]')).not.toBeNull();
         expect(dom.root.querySelector(".ti-api")).toBeNull();
       } finally {
         dispose();
