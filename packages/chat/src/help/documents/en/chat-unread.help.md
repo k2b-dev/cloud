@@ -6,7 +6,7 @@ description: Find new messages, mark a chat unread, and mark chats read across y
 order: 120
 ---
 
-Unread messages are other people's messages after where you stopped reading. Your own messages and chat notices never count. Counts above 99 show **99+**. Your read position stays in sync across your devices.
+Unread messages are other people's messages after where you stopped reading. Your own messages and chat notices never count. Counts above 99 show **99+**. In the Cloud app, the Chat entry counts the unread messages in all your chats. Your read position stays in sync across your devices.
 
 ## Continue reading {icon="messages"}
 
