@@ -304,7 +304,9 @@ export const installPageTrailRuntime = (labels: PageUpLabels): (() => void) => {
   window.addEventListener("ssr:nav-swapped", restoreArrivingPage);
   const onCapture = () => rememberPage();
   const onNavigate = (event: NavigateEvent) => {
-    if (event.navigationType === "traverse") rememberPage();
+    // Same-address history (for example a closing sheet) stays on this page.
+    // Only a departure needs a new scroll snapshot; reading it can force layout.
+    if (event.navigationType === "traverse" && event.destination.url !== location.href) rememberPage();
   };
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter") rememberPage();

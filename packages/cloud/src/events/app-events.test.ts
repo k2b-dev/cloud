@@ -287,3 +287,38 @@ test("framework event binding reuses the one compiled capability object", () => 
   bindAppEvents("compiledonce", definitions, compiled);
   expect(appEventBinding(definitions).compiled).toBe(compiled);
 });
+
+test("an app-ID publisher resolves the framework binding lazily without importing handlers", async () => {
+  setSystemTime(new Date("2026-01-01T00:00:00Z"));
+  const definitions = capabilities();
+  const publisher = appEvents<typeof definitions>("lazy-publisher");
+  const client = new SQL("postgres://localhost/unused_test");
+  let writes = 0;
+  const tx = new Proxy(client, {
+    apply() {
+      writes++;
+      return Promise.resolve([]);
+    },
+  });
+  try {
+    publisher.wake(); // Declaring a publisher before startup does not require a binding.
+    await expect(publisher.publish(tx, "user.created", { subject: userId, data: { userId, provider: "password" } })).rejects.toThrow(
+      "Bind",
+    );
+    expect(writes).toBe(0);
+    bindAppEvents("lazy-publisher", definitions);
+    expect(appEventBinding("lazy-publisher")).toBe(appEventBinding(definitions));
+    const sent = await publisher.publish(tx, "user.created", { subject: userId, data: { userId, provider: "password" } });
+    expect(sent).toMatchObject({ source: "lazy-publisher", type: "lazy-publisher.user.created" });
+    expect(writes).toBe(1);
+    await expect(Reflect.apply(publisher.publish, undefined, [tx, "unknown", { subject: userId, data: {} }])).rejects.toThrow(
+      "Unknown app event",
+    );
+    await expect(
+      Reflect.apply(publisher.publish, undefined, [tx, "user.created", { subject: userId, data: { userId, provider: "unknown" } }]),
+    ).rejects.toThrow();
+    expect(writes).toBe(1);
+  } finally {
+    await client.close();
+  }
+});

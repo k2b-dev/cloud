@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-18
+updated: 2026-10-28
 ---
 
 # Layout and navigation
@@ -689,10 +689,52 @@ The default remains `scroll={true}` for ordinary admin pages. Set `contentClass`
 when the page owns its content insets; it replaces the default shell padding.
 
 App-owned admin groups come from `adminNav` in the application declaration.
-A group may declare `section: "ai"` to contribute its links to the shared AI
-section instead of creating a separate navigation group. This placement is
-available to any application and does not grant access; its routes and services
-still enforce their own permissions. Omit `section` for an independent group.
+A group may declare `section: "ai"` or `section: "observability"` to contribute
+its links to that shared area instead of creating a separate navigation group.
+This placement is available to any application and does not grant access; its
+routes and services still enforce their own permissions. Omit `section` for an
+independent group.
+
+## Build an administration area
+
+An administration area groups related admin pages: its sections form a first
+column, and the open section sits beside it as `AppWorkspace` levels.
+`AdminArea` from `@k2b/cloud/ssr` renders the admin layout, the first column and
+the levels; the owner builds every section's content by hand.
+
+```tsx
+<AdminArea
+  c={c}
+  label="Inventory"
+  sectionsLabel="Inventory sections"
+  href="/admin/inventory"
+  groups={[{ items: [{ id: "stock", label: "Stock", href: "/admin/inventory", icon: "ti ti-box" }] }]}
+  current="stock"
+  title="Stock"
+>
+  <AdminAreaPane label="Stock" saveStatus>
+    <StockSettingsForm />
+  </AdminAreaPane>
+</AdminArea>
+```
+
+Each section has its own address under the area, such as
+`/admin/inventory/stock`, and keeps its selection in the URL. An item's `mark`
+(`"warning"` or `"error"`) shows a dot that names `markLabel` to screen readers.
+`AdminAreaPane` fills the width beside the first column. A list with a detail
+level adds its own `AppWorkspace.MainPane` and a `minSize`, so a wide list pushes
+the first column aside instead of being squeezed.
+
+A settings form in an area saves with a button in the level head. Build its
+state with `createSettingsDraft` from `@k2b/cloud/ssr/settings-draft` in the form
+island and set `saveStatus` on `AdminAreaPane`: the head then shows
+`SettingsSaveStatus` with the state, Discard and Save, and a phone shows them at
+the bottom of the level. Put `SettingsSaveOutcome` from
+`@k2b/cloud/ssr/SettingsSaveOutcome` above the form. A save that writes several
+values reports each stored step with `commit`; throw `SaveRejected` when the
+server refused the write, and any other error when the outcome is unclear, so
+the person checks the current state instead of saving twice. One form per page
+registers with the head.
 
 ## Use anchors for navigation
 

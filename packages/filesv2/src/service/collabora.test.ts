@@ -9,24 +9,40 @@ const DISCOVERY = `<?xml version="1.0"?><wopi-discovery><net-zone name="external
 </net-zone></wopi-discovery>`;
 
 describe("editor tokens", () => {
+  const now = Date.parse("2026-10-23T12:00:00Z");
   const payload = {
     userId: "6f0f2a4e-6d0d-4b3e-9d0e-3f1a8c1f0a11",
     baseId: "cloud:users:u1",
     path: "Docs/report.odt",
-    expiresAt: Date.now() + 60_000,
+    expiresAt: now + 60_000,
   };
   test("round-trips and rejects tampering, foreign signatures and expiry", () => {
     const token = signEditorToken(payload);
-    expect(verifyEditorToken(token)).toEqual(payload);
+    expect(verifyEditorToken(token, now)).toEqual(payload);
     const [body, signature] = token.split(".");
-    expect(verifyEditorToken(`${body}.${signature!.slice(1)}x`)).toBeNull();
+    expect(verifyEditorToken(`${body}.${signature!.slice(1)}x`, now)).toBeNull();
     const forged = Buffer.from(
       JSON.stringify({ u: payload.userId, b: payload.baseId, p: "Docs/other.odt", e: payload.expiresAt }),
     ).toString("base64url");
-    expect(verifyEditorToken(`${forged}.${signature}`)).toBeNull();
+    expect(verifyEditorToken(`${forged}.${signature}`, now)).toBeNull();
     expect(verifyEditorToken(token, payload.expiresAt + 1)).toBeNull();
-    expect(verifyEditorToken("")).toBeNull();
-    expect(verifyEditorToken("a.b.c")).toBeNull();
+    expect(verifyEditorToken("", now)).toBeNull();
+    expect(verifyEditorToken("a.b.c", now)).toBeNull();
+  });
+  test("machine identity, credential and scope caps remain signed into the editor session", () => {
+    const machine = {
+      scopes: ["filesv2:read"],
+      credentialId: "7f0f2a4e-6d0d-4b3e-9d0e-3f1a8c1f0a11",
+      credentialExpiresAt: "2026-10-23T13:00:00Z",
+      oauthClientId: "editor-oauth-client",
+    };
+    const token = signEditorToken({ ...payload, machine });
+    expect(verifyEditorToken(token, now)).toEqual({ ...payload, machine });
+    const [body, signature] = token.split(".");
+    const forged = JSON.parse(Buffer.from(body!, "base64url").toString());
+    forged.m.scopes = ["admin"];
+    const encoded = Buffer.from(JSON.stringify(forged)).toString("base64url");
+    expect(verifyEditorToken(`${encoded}.${signature}`, now)).toBeNull();
   });
 });
 
