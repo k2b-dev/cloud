@@ -88,6 +88,18 @@ export const fixtureEntries = (state: BaseFixtureState): SettingFieldDef[] => [
   entry("gotenberg", "gotenberg.timeout_ms", "number", 30000, { label: "Timeout (ms)", min: 1000, max: 120000 }),
   entry("gotenberg", "gotenberg.max_html_bytes", "number", 5000000, { label: "Largest page (bytes)" }),
   entry("gotenberg", "gotenberg.max_pdf_bytes", "number", 20000000, { label: "Largest PDF (bytes)" }),
+  entry("user", "user.category.guest.enabled", "boolean", false, { label: "Guest accounts" }),
+  entry("user", "user.category.guest.visible", "boolean", true, { label: "Show guest sign-in" }),
+  entry("user", "user.category.login.enabled", "boolean", true, { label: "Login accounts" }),
+  entry("user", "user.category.login.label", "string", "Login", { label: "Name of the login option" }),
+  entry("user", "user.category.login.visible", "boolean", true, { label: "Show login sign-in" }),
+  entry("user", "user.category.freeipa.enabled", "boolean", true, { label: "FreeIPA accounts" }),
+  entry("user", "user.category.freeipa.visible", "boolean", true, { label: "Show FreeIPA sign-in" }),
+  entry("user", "user.session.expiry_hours", "number", 24, { label: "Session length (hours)" }),
+  entry("freeipa", "freeipa.enable", "boolean", true, { label: "Use FreeIPA" }),
+  entry("freeipa", "freeipa.url", "url", "https://ipa.example.org", { label: "FreeIPA address" }),
+  entry("freeipa", "freeipa.service_user", "string", "cloud-sync", { label: "Service user" }),
+  entry("freeipa", "freeipa.service_password", "secret", "", { label: "Service password" }),
 ];
 
 const ui = new URL("../../../../../ui/", import.meta.url).pathname;
@@ -99,6 +111,8 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
   const { BaseFormView } = await import("./view");
   const { generalSections, pdfSections } = await import("./sections");
+  const { SigninFormView } = await import("../signin/view");
+  const { freeipaSections, signinSections } = await import("../signin/sections");
 
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
@@ -174,6 +188,24 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
       `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
     );
   };
+  const renderSignin = (section: "signin" | "freeipa", group: string) => (c: Context<{ Variables: Variables }>) => {
+    const url = new URL(c.req.url);
+    const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
+    c.req.raw.headers.set("x-cloud-locale", locale);
+    c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("user", user);
+    c.set("settings", { app: { name: "Cloud", locale } });
+    c.set("page", { title: "Sign-in & security", theme: "light" });
+    const sections = section === "signin" ? signinSections(locale) : freeipaSections(locale);
+    const keys = new Set(sections.flatMap((item) => item.keys));
+    const entries = stored.filter((item) => item.group === group && keys.has(item.key));
+    const body = renderToString(() => createComponent(SigninFormView, { c, locale, section, groups: [group], sections, entries }));
+    return c.html(
+      `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+    );
+  };
+  pages.get("/admin/signin", renderSignin("signin", "user"));
+  pages.get("/admin/signin/freeipa", renderSignin("freeipa", "freeipa"));
   pages.get("/admin/base", render("general", ["app"]));
   pages.get("/admin/base/pdf", render("pdf", ["gotenberg"]));
 
@@ -234,6 +266,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
       return new Response(null, { status: 204 });
     }
     if (url.pathname === "/api/admin/core/settings/legacy") return Response.json([]);
+    if (url.pathname === "/api/admin/core/settings/test-freeipa") return Response.json({ ok: true });
     if (url.pathname === "/api/admin/core/settings/test-pdf") return Response.json({ bytes: 18234, contentType: "application/pdf" });
     return Response.json({ message: "Synthetic fixture: not available" }, { status: 503 });
   };
