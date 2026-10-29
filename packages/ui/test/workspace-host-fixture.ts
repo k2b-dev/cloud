@@ -186,7 +186,12 @@ export function workspaceTree(
                       ];
                     return levels
                       ? ["folders", "messages", "reader"].map((id) =>
-                          createComponent(AppWorkspace.MainPane, { id, label: id, href: "#" + id, children: props.rows ? rows(id) : el("h2", id) }),
+                          createComponent(AppWorkspace.MainPane, {
+                            id,
+                            label: id,
+                            href: "#" + id,
+                            children: props.rows ? rows(id) : el("h2", id),
+                          }),
                         )
                       : [
                           createComponent(AppWorkspace.MainPane, {
