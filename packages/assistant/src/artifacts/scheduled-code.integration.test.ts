@@ -178,7 +178,13 @@ databaseSuite()("Scheduled Code Mode", () => {
       capabilityTransport: async () => {
         throw new Error("Unexpected capability");
       },
-      host: Promise.resolve({ health: async () => {}, execute: async () => null, call: async () => null, close: async () => {} }),
+      host: Promise.resolve({
+        machine: async () => null,
+        health: async () => {},
+        execute: async () => null,
+        call: async () => null,
+        close: async () => {},
+      }),
     };
     try {
       const response = await hostFetch(context, session, "/api/assistant/artifacts/runtime/check/start", {
