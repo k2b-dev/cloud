@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Chat system conversations
@@ -169,6 +169,13 @@ continuation in `page.nextCursor`. Item reads and activity queries use the
 same owning application's grants and credential scope checks. A notebook edit
 bucket remains one row; the query does not create additional edit records.
 
+## Spaces inactivity
+
+Spaces marks an open task inactive after 30 days without changes to the task
+or its checklist. Comments and Chat discussion messages do not count as
+activity. Spaces does not query Chat for this filter; an active discussion can
+therefore accompany an inactive task.
+
 ## Follow pages
 
 Container discovery requests at most 100 Spaces and 100 notebooks. Pass the
@@ -316,3 +323,12 @@ base and the current list and thread selection. System-chat addresses use
 `listFilter=all|unread` for the personal list; `filter=open|done|unread` remains
 the independent system-thread directory filter.
 All is the default personal list mode and is omitted from generated system-chat URLs.
+
+## Item reader container context
+
+`spaces.item.read` and `notebooks.note.read` return a `container` object with
+the owning container's `ref`, `name`, and the caller's resolved `permission`
+(`read`, `write`, or `admin`). This context comes from the same authorized
+read as the item itself. A consuming capability must use a fresh nested
+reader under the incoming authority; this metadata never grants access to
+other items or replaces credential scope and resource binding checks.
