@@ -223,6 +223,8 @@ describe("Notebook on the shared text editor", () => {
       }));
       expect(Math.abs(menuWidth.actual - menuWidth.expected)).toBeLessThan(1);
       await page.keyboard.press("Escape");
+      // Closing restores focus after the menu's history step, not within the key press.
+      await page.waitForFunction(() => document.activeElement?.matches('.k2b-ste-cell[data-r="1"][data-c="0"]'));
       expect(await activeCell(page)).toBe("1,0");
       // Outside the table the old insert path is back.
       await page.evaluate(() => window.noteHarness.placeCaret("After the table.", 0));
