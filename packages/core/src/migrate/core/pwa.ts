@@ -53,6 +53,17 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
+  await db.begin(async (tx) => {
+    await tx`ALTER TABLE auth.pwa_pairings
+      ADD COLUMN IF NOT EXISTS initiator_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      ADD COLUMN IF NOT EXISTS device_confirmation_hash TEXT`.simple();
+    await tx`ALTER TABLE auth.pwa_pairings DROP CONSTRAINT IF EXISTS pwa_pairings_state_check`.simple();
+    await tx`ALTER TABLE auth.pwa_pairings ADD CONSTRAINT pwa_pairings_state_check
+      CHECK (state IN ('pending', 'claimed', 'awaiting_device', 'confirmed', 'completed', 'rejected', 'cancelled'))`.simple();
+    await tx`ALTER TABLE auth.pwa_devices
+      ADD COLUMN IF NOT EXISTS paired_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS paired_by_name TEXT`.simple();
+  });
   await db`CREATE INDEX IF NOT EXISTS pwa_pairings_user_open ON auth.pwa_pairings(user_id, expires_at)`.simple();
   await db`CREATE INDEX IF NOT EXISTS pwa_pairings_expiry ON auth.pwa_pairings(expires_at)`.simple();
 };

@@ -72,6 +72,7 @@ const portableSections = [
         "Dropdown picker whose rows explain each choice, with an optional preview of the consequences.",
       ),
       page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
+      page("choice-list", "ChoiceList", "ti ti-list", "A labeled single choice of a few rows that each explain their consequence."),
       page(
         "choice-tiles",
         "ChoiceTiles",

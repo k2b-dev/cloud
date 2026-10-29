@@ -938,6 +938,14 @@ upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
 schedule it. Check that the local copy shows the logo before provider sync,
 then send it and check that it arrives as an inline image without a remote image link.
 
+### Mail attachment checksums in message details
+
+Mail message details include `checksum` on every attachment in the API, CLI,
+and workspace responses. The value is the stored lowercase SHA-256 hex string,
+or `null` when unknown. Clients can compare known checksums to identify the
+same file; matching filenames alone do not establish equal content. This uses
+the existing nullable column and needs no migration or configuration change.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
@@ -1941,6 +1949,27 @@ apply, and each user holds at most 16 disposable check copies at a time. Disposa
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
 See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for data-copy and output limits. No new configuration is required.
+
+### Administrative Cloud app pairing
+
+Deploy Core and the `pwa` application from the same release before enabling
+administrators to pair the Cloud app from Accounts. Core startup adds the
+initiating administrator and device-confirmation hash to app pairings, extends
+the existing pairing state constraint, and stores the setup administrator on
+paired devices for notification retries. The migration is additive and retains
+existing self-pairings and devices. It needs no new configuration, service or
+secret. Allow Core's startup migration to finish before serving the new routes.
+
+Administrative pairing pauses after the web code match until the claiming
+device explicitly confirms its named account and setup administrator. Older
+clients that only poll completion remain waiting and receive no credentials;
+reload the installed app to use its current confirmation screen. Verify this
+boundary with an administrator web sign-in less than ten minutes old and an
+active test account: reject once and check that no device appears, then start
+again and confirm on the device. Check the account's device list, paired-device
+notice and audit identities. Self-pairing and Cloud Login keep their existing
+flows. See [administrative Cloud app pairing](/en/docs/reference/account-administration#pair-the-cloud-app-for-another-account)
+for endpoints and states.
 
 ## Capability content provenance after the upgrade
 
