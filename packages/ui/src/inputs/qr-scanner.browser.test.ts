@@ -363,10 +363,23 @@ describe("@k2b/ui QrScanner in a browser", () => {
         };
       });
     const offCentre = ({ x, y, side }: Awaited<ReturnType<typeof frame>>) => Math.abs(x) > 0.005 || Math.abs(y) > 0.005 || side < 1 / 3;
-    /** qr-scanner places the frame in an animation frame after the event, so the frame gets a second to settle. */
-    const expectCentred = async () => {
-      for (let tries = 0; tries < 20 && offCentre(await frame()); tries++) await page.waitForTimeout(50);
-      const { x, y, side } = await frame();
+    /**
+     * The video box takes the new picture's shape a layout after the picture turns; until then the old frame still looks
+     * centred on the old box. Once the box has its shape, qr-scanner places the frame in an animation frame after the
+     * event, so the frame gets a second to settle.
+     */
+    const expectCentred = async (pictureWidth: number) => {
+      await page.waitForFunction((width) => {
+        const video = document.querySelector("video")!;
+        const box = video.getBoundingClientRect();
+        return video.videoWidth === width && Math.abs(box.width / box.height - video.videoWidth / video.videoHeight) < 0.01;
+      }, pictureWidth);
+      let placed = await frame();
+      for (let tries = 0; tries < 20 && offCentre(placed); tries++) {
+        await page.waitForTimeout(50);
+        placed = await frame();
+      }
+      const { x, y, side } = placed;
       expect(x).toBeCloseTo(0, 2);
       expect(y).toBeCloseTo(0, 2);
       // qr-scanner scans the middle two thirds of the picture's smaller side; a frame of no size was placed too early.
@@ -374,15 +387,13 @@ describe("@k2b/ui QrScanner in a browser", () => {
     };
     try {
       await page.getByText("Point the camera at a QR code.").waitFor({ timeout: 15_000 });
-      await page.waitForFunction(() => document.querySelector("video")!.videoWidth === 640);
-      await expectCentred();
+      await expectCentred(640);
       // The device turns: the window turns to landscape and the camera films portrait.
       await page.evaluate(() => {
         (globalThis as unknown as Probe).turned = true;
       });
       await page.setViewportSize({ width: 844, height: 390 });
-      await page.waitForFunction(() => document.querySelector("video")!.videoWidth === 360);
-      await expectCentred();
+      await expectCentred(360);
       await page.evaluate(() => {
         (globalThis as unknown as Probe).codeVisible = true;
       });
