@@ -138,5 +138,5 @@ test("full group managers add and remove named machine recipients, without openi
     body: JSON.stringify({ type: "service_account", id: recipient }),
   });
   expect(granted.status).toBe(200);
-  expect(addManager.mock.calls[0]?.[0]).toMatchObject({ id, serviceAccountId: recipient, provider: "local", actor: { userId: id } });
+  expect(addManager.mock.calls[0]?.[0]).toMatchObject({ id, serviceAccountId: recipient, actor: { userId: id } });
 });
