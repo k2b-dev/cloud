@@ -285,6 +285,59 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  test("every page answers the shell's catalog read without a request, unless the file serves the catalog", async () => {
+    const served = { protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "fixture" } };
+    // The fixture serves a catalog but nothing else, as a test that serves only its own endpoints would.
+    const app = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) =>
+        new URL(request.url).pathname === "/"
+          ? new Response("<!doctype html><p>Start</p>", { headers: { "Content-Type": "text/html; charset=utf-8" } })
+          : new URL(request.url).pathname === "/api/capabilities/v1/catalog"
+            ? Response.json(served)
+            : new Response("Not found", { status: 404 }),
+    });
+    const read = async (target: Browser) => {
+      const context = await target.newContext();
+      try {
+        const page = await context.newPage();
+        const requested: string[] = [];
+        page.on("request", (request) => {
+          if (new URL(request.url()).pathname.startsWith("/api/")) requested.push(`${request.method()} ${new URL(request.url()).pathname}`);
+        });
+        await page.goto(app.url.href);
+        return {
+          catalog: await page.evaluate(() => fetch("/api/capabilities/v1/catalog?limit=25").then((response) => response.json())),
+          // Other reads and writes still reach the fixture.
+          other: await page.evaluate(async () => [
+            (await fetch("/api/capabilities/v1/catalog", { method: "POST" })).status,
+            (await fetch("/api/spaces")).status,
+          ]),
+          requested,
+        };
+      } finally {
+        await context.close();
+      }
+    };
+    const serving = await launchBrowser({ serveShellCatalog: true });
+    try {
+      expect(await read(browser)).toEqual({
+        catalog: { protocolVersion: 2, apps: [], page: { hasMore: false } },
+        other: [200, 404],
+        requested: ["POST /api/capabilities/v1/catalog", "GET /api/spaces"],
+      });
+      expect(await read(serving)).toEqual({
+        catalog: served,
+        other: [200, 404],
+        requested: ["GET /api/capabilities/v1/catalog", "POST /api/capabilities/v1/catalog", "GET /api/spaces"],
+      });
+    } finally {
+      await serving.close();
+      app.stop(true);
+    }
+  }, 30_000);
+
   test("a navigation whose document never answers says it did not commit", async () => {
     const context = await browser.newContext();
     try {
