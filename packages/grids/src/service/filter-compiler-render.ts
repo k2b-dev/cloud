@@ -254,6 +254,7 @@ const principalContains = (values: any, id: string): any =>
   sql`(
     ${values} @> ${[{ type: "user", id }]}::jsonb
     OR ${values} @> ${[{ type: "group", id }]}::jsonb
+    OR ${values} @> ${[{ type: "service_account", id }]}::jsonb
   )`;
 
 const renderPrincipalPredicate = (predicate: PredicateClause, projection: PredicateProjection): any => {

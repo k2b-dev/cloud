@@ -40,6 +40,15 @@ Existing memberships and grants are preserved. IPA groups, directory
 visibility, human group management, resource bindings, and credential scope
 limits keep their existing rules.
 
+### Update Grids principal fields and app sharing
+
+Rebuild and deploy Grids to use machine accounts in principal fields and
+published-app sharing. Grids App `@auth.subjects` includes local group memberships
+for active standalone and agent accounts; Core must have applied the membership
+migration described above. Existing field values and grants keep their meaning.
+Previous images do not accept the new `service_account` principal field
+values; use a compatible image once records contain those values.
+
 ## Build a standalone application
 
 ```bash
