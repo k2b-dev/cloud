@@ -18,6 +18,7 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 :::reference
 - Auf dem Smartphone sind die Liste und der offene Chat getrennte Ansichten. Mit dem Zurück-Pfeil oder der Zurück-Geste deines Smartphones kehrst du zur Liste zurück.
 - Ein Link zu einer Nachricht öffnet den Chat bei dieser Nachricht und hebt sie kurz hervor.
+- In der Cloud-App hat Chat einen eigenen Eintrag. Auf dem Smartphone füllt der offene Chat den Bildschirm, und der Zurück-Pfeil zeigt, wie viele Nachrichten in deinen anderen Chats warten. Auf einem breiten iPad oder Monitor bleibt die Liste neben dem Chat stehen.
 :::
 
 ## Nachricht schreiben und senden {icon="send"}
