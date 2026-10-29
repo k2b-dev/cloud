@@ -43,7 +43,7 @@ The creator of a record stays available as normal data. For example, GQL in a Gr
 
 ## Share a Grids App {icon="app-window"}
 
-A Grids App has its own access. Its only level is **Open** (`read`), and `none` denies access. You can give access to a user, a group, all signed-in accounts, or the public. Public access includes anonymous visitors. You cannot give a service account direct access to a Grids App. Delegated credentials use their user identity.
+A Grids App has its own access. Its only level is **Open** (`read`), and `none` denies access. You can give access to a user, a group, a standalone or agent account, all signed-in accounts, or the public. Public access includes anonymous visitors. Credential scopes cap account access. Resource-bound credentials cannot open Grids Apps. Delegated credentials use their user identity.
 
 People who use the app do not need access to the base. They receive only the data, forms, fields, documents, and actions that are compiled into the immutable published snapshot. Access to an app never gives the raw Grids workspace, direct table or record APIs, arbitrary GQL, or an editable source view.
 

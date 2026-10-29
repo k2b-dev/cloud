@@ -138,7 +138,7 @@ suiteFor("database", "valkey")("Core Skills broker mount order", () => {
         ["ungranted", ownApp],
       ] as const) {
         const skill = await aiSkills.create(
-          { subject, name: `mount-${label}-${suffix}`, description: "Fixture.", instructions: "Original instructions." },
+          { subject: owner, name: `mount-${label}-${suffix}`, description: "Fixture.", instructions: "Original instructions." },
           owner,
         );
         created.push(skill.id);
@@ -242,7 +242,7 @@ suiteFor("database", "valkey")("Core Skills broker mount order", () => {
         expect(create).toHaveBeenCalledTimes(1);
         const payload: { skill: { id: string } } = await response.json();
         const id = payload.skill.id;
-        const added = await aiSkills.getByShortId(id, subject, "admin", owner);
+        const added = await aiSkills.getByShortId(id, owner, "admin", owner);
         if (!added) throw new Error("Created Skill missing");
         created.push(added.id);
         expect(create.mock.calls.at(-1)?.[1]).toMatchObject({

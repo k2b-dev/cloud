@@ -1,4 +1,12 @@
-import { type AiConversation, type AiOpenQuestions, type AiProject, aiConversations, aiProjects, listAiOpenQuestions } from "@k2b/cloud/ai";
+import {
+  type AiConversation,
+  type AiOpenQuestions,
+  type AiProject,
+  type AiResourceContext,
+  aiConversations,
+  aiProjects,
+  listAiOpenQuestions,
+} from "@k2b/cloud/ai";
 
 export type AssistantSidebarSnapshot = {
   conversations: AiConversation[];
@@ -8,20 +16,21 @@ export type AssistantSidebarSnapshot = {
 };
 
 export const loadAssistantSidebarSnapshot = async (
-  userId: string,
+  identity: AiResourceContext,
   context: { locale: string; timeZone: string },
 ): Promise<AssistantSidebarSnapshot> => {
-  const subject = { type: "user" as const, userId };
+  if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
+  const userId = identity.accessSubject.userId;
   const [questions, projects, activeConversations, donePage] = await Promise.all([
     listAiOpenQuestions({ ownerUserId: userId, ...context }),
-    aiProjects.list(subject),
+    aiProjects.list(identity),
     aiConversations.listSidebarConversations({ ownerUserId: userId }),
     aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 15 }),
   ]);
   const conversations = [...activeConversations, ...donePage.items];
   const projectShortIds = await aiProjects.resolveShortIds(
     conversations.flatMap((conversation) => (conversation.projectId ? [conversation.projectId] : [])),
-    subject,
+    identity,
   );
   return {
     questions,

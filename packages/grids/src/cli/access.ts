@@ -17,7 +17,8 @@ import { jsonRequest, type MessageResponse, printCliStructured, printJsonOrMessa
 export const accessCommands = [
   command("access reference", {
     summary: "Show Grids resource access levels",
-    description: "Raw Grids access is granted on a base. Published Grids Apps have their own read access.",
+    description:
+      "Raw Grids access is granted on a base. Published Grids Apps have their own read access, including standalone and agent account grants.",
     examples: ["cld grids access reference", "cld grids access reference --json"],
     async run({ ctx }) {
       const reference = {
@@ -25,12 +26,14 @@ export const accessCommands = [
           type,
           permissions: accessPermissionsForResource(type),
           principals:
-            type === "base" ? ["user", "group", "service_account", "authenticated"] : ["user", "group", "authenticated", "public"],
+            type === "base"
+              ? ["user", "group", "service_account", "authenticated"]
+              : ["user", "group", "service_account", "authenticated", "public"],
         })),
         principalFlags: [
           "--user <id|uid|email|display name>",
           "--group <id|name>",
-          "--service-account <id|name> (base only)",
+          "--service-account <id|name>",
           "--authenticated",
           "--public (Grids App only)",
         ],
@@ -91,7 +94,7 @@ export const accessCommands = [
     flags: {
       user: flag.string({ description: "User id, uid, email, or exact display name" }),
       group: flag.string({ description: "Group id or exact name" }),
-      serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name; base grants only" }),
+      serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name" }),
       authenticated: flag.boolean({ description: "Signed-in users" }),
       public: flag.boolean({ description: "Anyone with the link, including anonymous users" }),
       permission: flag.enum(PERMISSION_LEVELS, { required: true, description: "Permission to grant" }),
@@ -129,7 +132,7 @@ export const accessCommands = [
     flags: {
       user: flag.string({ description: "User id, uid, email, or exact display name" }),
       group: flag.string({ description: "Group id or exact name" }),
-      serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name; base grants only" }),
+      serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name" }),
       authenticated: flag.boolean({ description: "Signed-in users" }),
       public: flag.boolean({ description: "Anyone with the link, including anonymous users" }),
       accessId: flag.string({ name: "access-id", description: "Direct access entry id from access list" }),

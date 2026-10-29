@@ -38,7 +38,7 @@ beforeAll(async () => {
 });
 
 describe("access resource registry integration", () => {
-  postgresTest("rejects new Grids App service-account grants without hiding stored rows", async () => {
+  postgresTest("rejects new resource-bound Grids App grants without hiding stored rows", async () => {
     const item = await insertFixture();
     const [serviceAccount] = await sql<{ id: string }[]>`
       INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
@@ -67,9 +67,7 @@ describe("access resource registry integration", () => {
 
       expect(rejected.ok).toBe(false);
       if (!rejected.ok) {
-        expect(rejected.error.message).toBe(
-          "Grids App access does not support service accounts. Grant access to the delegated user instead.",
-        );
+        expect(rejected.error.message).toBe("Grids App account grants require a standalone or agent account.");
       }
       expect(await listCustomAppAccess(item.customAppId)).toEqual([
         expect.objectContaining({
