@@ -3228,12 +3228,20 @@ html {
   gap: 0.25rem;
 }
 
+/* A level keeps 0.5rem inside both side edges, as the sidebar does: a row's
+   fill stops 0.5rem before either edge, and its text lines up with the
+   head's. An inset ScrollArea does the same inside an application's column. */
 .k2b-ui .k2b-app-workspace__level-body {
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
+  padding-inline: 0.5rem;
   scrollbar-gutter: stable;
+}
+
+.k2b-ui .k2b-scroll-area[data-inset="true"] {
+  padding-inline: 0.5rem;
 }
 
 .k2b-ui .k2b-app-workspace__level-body[data-scroll="false"] {
@@ -3241,6 +3249,26 @@ html {
   flex-direction: column;
   overflow: hidden;
   scrollbar-gutter: auto;
+}
+
+/* With a mouse, the end inset of a level body, navigation pane, or inset
+   ScrollArea is its fixed 0.5rem scroll track, so a classic scrollbar never makes one side wider. CSS cannot query the
+   scrollbar style, so the primary pointer stands in for it: a touch screen
+   draws overlay scrollbars that take no room and keeps both paddings. */
+@media (pointer: fine) {
+  .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"]),
+  .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level]),
+  .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"] {
+    padding-inline-end: 0;
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+
+  .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"])::-webkit-scrollbar,
+  .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level])::-webkit-scrollbar,
+  .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"]::-webkit-scrollbar {
+    width: 0.5rem;
+  }
 }
 
 /* The last shown level takes what is left. Its flex basis is 0, not its

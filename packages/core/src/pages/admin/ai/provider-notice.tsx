@@ -45,7 +45,7 @@ export function AiProviderNotice(props: {
   return (
     <>
       <Show when={props.state === "unreachable"}>
-        <div class="px-3 pb-2">
+        <div class="pb-2">
           <NoticeCard
             tone="danger"
             icon="ti ti-plug-x"
@@ -76,7 +76,7 @@ export function AiProviderNotice(props: {
         </div>
       </Show>
       <Show when={props.state === "badkey"}>
-        <div class="px-3 pb-2">
+        <div class="pb-2">
           <NoticeCard
             tone="danger"
             icon="ti ti-key"

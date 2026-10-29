@@ -123,7 +123,7 @@ export default function AiBudgetDetail(props: { config: Config; scope: string | 
     }));
 
   return (
-    <div class="grid gap-5 px-4 pb-10">
+    <div class="grid gap-5 px-2 pb-10">
       <Show when={conflict()}>
         {(current) => (
           <Show

@@ -84,7 +84,7 @@ export const AdminAreaSaveStatusHead = () => (
   </div>
 );
 export const AdminAreaSaveStatusFoot = () => (
-  <div class="sticky bottom-0 flex justify-end bg-(--k2b-surface) px-4 py-3 md:hidden">
+  <div class="sticky bottom-0 flex justify-end bg-(--k2b-surface) px-2 py-3 md:hidden">
     <SettingsSaveStatus />
   </div>
 );
@@ -124,7 +124,7 @@ export function AdminAreaPane(props: {
       minSize={props.minSize}
       defaultSize={props.minSize}
     >
-      <div class="app-rows px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">{props.children}</div>
+      <div class="app-rows pb-[var(--ui-space-shell)]">{props.children}</div>
       {props.saveStatus ? <AdminAreaSaveStatusFoot /> : null}
     </AppWorkspace.MainPane>
   );

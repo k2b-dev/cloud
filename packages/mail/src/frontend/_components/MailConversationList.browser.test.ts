@@ -1787,3 +1787,23 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
     await close(page);
   }
 });
+
+// The column shadow marks both edges of the list, so a row keeps the same space
+// from each, whether a classic scrollbar takes room at the end or not.
+test("rows keep the same space from both side edges of the list", async () => {
+  const page = await load({ selectedConversationId: "Cv0001" });
+  try {
+    const insets = await page.evaluate(() => {
+      const list = document.querySelector<HTMLElement>(".mail-list-entry")!.closest(".k2b-scroll-area")!;
+      const edges = list.getBoundingClientRect();
+      return [...list.querySelectorAll(".mail-list-entry")].slice(0, 3).map((entry) => {
+        const { left, right } = entry.getBoundingClientRect();
+        return { overflows: list.scrollHeight > list.clientHeight, start: Math.round(left - edges.left), end: Math.round(edges.right - right) };
+      });
+    });
+    for (const inset of insets) expect(inset).toEqual({ overflows: true, start: 8, end: 8 });
+    expect(page.errors).toEqual([]);
+  } finally {
+    await close(page);
+  }
+});

@@ -218,3 +218,57 @@ for (const options of [{}, { scenario: "levels" }] as FixtureOptions[])
       await page.close();
     }
   });
+
+/** For every shown column with rows: the space from its fill's side edges to its first row and group title. */
+const insets = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-workspace-main-region]")]
+      .filter((column) => column.getClientRects().length > 0 && column.querySelector(".k2b-app-workspace__sidebar-item"))
+      .map((column) => {
+        const box = column.getBoundingClientRect();
+        // A fill stops before the space at a pane's end, so its edge is the border's inner edge.
+        const end = box.right - parseFloat(getComputedStyle(column).borderRightWidth);
+        const row = column.querySelector(".k2b-app-workspace__sidebar-item")!.getBoundingClientRect();
+        const title = column.querySelector(".k2b-app-workspace__sidebar-section-header h2")!.getBoundingClientRect();
+        // A back step lines up its icon, not its target, so only a head without one counts.
+        const back = column.querySelector(".k2b-app-workspace__level-back");
+        const head = back?.getClientRects().length ? null : column.querySelector(".k2b-app-workspace__level-title");
+        return {
+          name: column.dataset.workspaceMainRegion,
+          start: Math.round((row.left - box.left) * 10) / 10,
+          end: Math.round((end - row.right) * 10) / 10,
+          title: Math.round((title.left - box.left) * 10) / 10,
+          head: head ? Math.round((head.getBoundingClientRect().left - box.left) * 10) / 10 : null,
+        };
+      }),
+  );
+
+// The shadow marks every column edge, so content that touches one edge reads as
+// stuck to it: rows and group titles keep the same space from both side edges,
+// whether a classic scrollbar takes room at the end or not.
+for (const [width, options] of [
+  [1440, { scenario: "levels", rows: true }],
+  [1440, { rows: true }],
+  [390, { scenario: "levels", rows: true }],
+] as [number, FixtureOptions][])
+  test(`${width}: rows in every ${options.scenario ?? "pane"} column keep the same space from both side edges`, async () => {
+    const page = await load(width, options, false);
+    try {
+      await page.addStyleTag({ content: "* { visibility: visible !important }" });
+      const columns = await insets(page);
+      expect(columns.length).toBeGreaterThan(0);
+      for (const column of columns) {
+        expect({ name: column.name, start: column.start, end: column.end }).toEqual({ name: column.name, start: 8, end: 8 });
+        // A group title lines up with a level's head, 1rem from the edge.
+        expect(column.title).toBe(16);
+        if (column.head !== null) expect(column.head).toBe(16);
+      }
+      // Hover and selection paint only: the rows keep their place.
+      const before = await insets(page);
+      await page.locator(".k2b-app-workspace__main .k2b-app-workspace__sidebar-item >> visible=true").nth(1).hover();
+      await settled(page);
+      expect(await insets(page)).toEqual(before);
+    } finally {
+      await page.close();
+    }
+  });
