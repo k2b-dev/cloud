@@ -5,7 +5,7 @@ section: Operations
 order: 1146
 description: Manage bundled and uploaded sign-in location databases, updates, proxy requirements, and privacy limits.
 tags: [operations, identity, privacy]
-updated: 2026-10-19
+updated: 2026-10-28
 ---
 
 # Sign-in locations
@@ -53,7 +53,7 @@ results must link to DB-IP.com.
 
 ## Use your own database
 
-Open **Admin → Settings → Sign-in → Sign-in locations** to inspect the source
+Open **Admin → Sign-in & security → Sign-in → Sign-in locations** to inspect the source
 and build date of each database, upload a replacement, or reset it to the
 bundled snapshot. The page shows a hint when active data is older than 183 days,
 about six months. The build date comes from the file, not the upload date.
