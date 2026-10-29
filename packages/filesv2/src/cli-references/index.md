@@ -80,7 +80,7 @@ as `root.stableIds` in `admin inventory`. An older Files CLI plugin reads
 | `mv <source>... <destination>` | Renames or moves inside one area | `{base, entries, results}` |
 | `cp <source>... <folder>` | Copies into a folder of any area | `{base, entries, results}` |
 | `rm <entry>... --yes` | Moves entries to the trash | `{entries, results}` |
-| `search <folder> <query>` | Searches names below a folder | `{base, path, query, scope, items, next}` |
+| `search <folder> [query]` | Searches names and folder names below a folder | `{base, path, query, scope, items, next, total}` |
 | `trash list <area>` | Lists the trash | `{entries, next}` |
 | `trash restore <area> <trash-id> [--to <path>]` | Restores an entry | `{base, entry}` |
 | `versions list <file>` | Lists versions | array of `{id, created, size, pinned, comment, author}` |
@@ -116,12 +116,32 @@ before files across pages. A `cursor_invalid` error means: restart without
 instead of truncating when the result exceeds 10,000 entries, the server's scan
 budget for one listing; choose a narrower folder or a lower depth.
 
-`search <folder> <query>` matches name fragments below the folder, recursively;
-`--scope folder` limits hits to its direct entries. Storage without an index is
-scanned and fails with `search_limited` when a folder holds too many entries, so
-narrow the folder. FreeIPA search uses Unix-scoped live filesystem scans. An
-unreadable subtree fails the entire search. Continuations return 403 for revoked
-access or 404 for externally removed results; restart without `--after`.
+`search <folder> [query]` searches below the folder, recursively; `--scope
+folder` limits hits to its direct entries. By default it matches names and
+folder names below the folder (`--in path`), tolerates typos and abbreviations
+(`--match fuzzy`), and returns the best matches first (`--sort relevance`,
+which ignores `--order` and folder grouping). Use `--match exact --in name` for
+exact name parts only. Filters, or `--type files|directories`, narrow before
+ranking and make the query optional: `--ext pdf,docx` (excludes folders), `--min-size` and `--max-size` in
+bytes, `--modified-after` (inclusive) and `--modified-before` (exclusive) as
+RFC 3339 times. A query has at most eight words.
+
+```bash
+cld filesv2 search me:/ rechnug --json
+cld filesv2 search me:/Projects --ext pdf --modified-after 2026-10-01T00:00:00Z --sort modified --order desc --json
+```
+
+JSON output adds `total`, the number of all hits or null when unknown,
+`truncated`, true when relevance kept only the best hits so the pages end
+before `total`, and per item `highlight`: `[start, end)` Unicode code point ranges into the item's path
+below the searched folder. Every search has a 10-second budget; `search_limited`
+means it ran out, so narrow the folder, query, or filters instead of retrying
+unchanged. Storage without an index can only be searched in smaller folders.
+`search_busy` means other searches occupied the root; retry shortly. FreeIPA
+search uses Unix-scoped live filesystem scans. An unreadable subtree fails the
+entire search. Continuations return `cursor_invalid` when the results changed,
+403 for revoked access, or 404 for externally removed results; restart without
+`--after`.
 
 Missing, conflicting, or unknown storage is an error, never an empty folder;
 unknown statistics remain null.
@@ -589,7 +609,7 @@ when following a cursor; `--search` matches display names, names, and paths.
 Entries include `uid`, `gid`, `displayName` (the account or group display name,
 `null` when no identity exists for the directory name), and the currently
 allowed `actions`. Statuses are `existing`, `missing`, `unassigned`,
-`conflict`, `unknown`, `orphaned`, and `retired`. File and directory counts and
+`conflict`, `unknown`, `orphaned`, `retired`, and `legacy`. Recorded personal-group directories are `legacy` and are preserved until an administrator deliberately archives or migrates them. File and directory counts and
 byte totals are known only for complete observed scans; `observation` exposes
 `complete`, `freshness`, `source`, `started`, `completed`, and `indexBuilt`.
 Root statistics cover the whole root, including when a prefix is configured.

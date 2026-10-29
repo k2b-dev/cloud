@@ -832,7 +832,7 @@ export const TableQueryResponseSchema = z.object({
   explode: z.boolean().optional(),
   /** UUID → presentable label for relation-typed bucket keys (group
    *  mode), relation-cell values (list mode), the related records a
-   *  relation filter names, and the users and groups that People-and-groups
+   *  relation filter names, and the users, groups and service accounts that Principal
    *  values name (list mode). Unreadable or deleted targets and identities
    *  outside the actor's directory scope have no entry, so the UI shows
    *  them as unavailable or private. */

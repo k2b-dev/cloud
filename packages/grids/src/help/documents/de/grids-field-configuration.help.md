@@ -35,14 +35,14 @@ Namen sind innerhalb der Tabelle eindeutig. Grids ignoriert beim Vergleich Groß
 | `boolean` | `{}`. Speichert true, false oder bei optionalen Feldern null. |
 | `date` | `includeTime` (false), `min`, `max`. Reine Daten verwenden `YYYY-MM-DD`. Zeitpunkte enthalten eine Zeitzone. |
 | `select` | Pflicht: `options: [{id, label, color?, description?}]`; `multiple` (false); `minSelected` ≥ 0; `maxSelected` ≥ 1. Werte sind Arrays von Options-IDs, auch bei Einfachauswahl. |
-| `principal` | `cardinality: "single" \| "multiple"` (multiple). Werte sind Arrays typisierter Referenzen auf Cloud-Nutzer oder -Gruppen mit UUIDs, höchstens 100. Die Auswahl zeigt nur Identitäten, die die Person sehen kann. |
+| `principal` | `cardinality: "single" \| "multiple"` (multiple). Werte sind Arrays typisierter Referenzen auf Cloud-Nutzer, -Gruppen oder -Dienstkonten mit UUIDs, höchstens 100. Die Auswahl zeigt nur Identitäten, die die Person sehen kann. |
 | `percent` | `range: "percent" \| "fraction"` (percent), `decimals` 0–8 (2). Fraction 0.19 und percent 19 zeigen beide 19 %. In Formeln zählt die gespeicherte Skala. |
 | `duration` | `unit: "seconds" \| "minutes" \| "hours"`. Werte sind nichtnegative Sekunden. Grids rundet numerische Eingaben auf ganze Sekunden. Akzeptiert auch `HH:MM:SS` und `MM:SS`. Die Anzeigeeinheit ändert die Speichereinheit nicht. |
 | `json` | `{}`. Beliebiger gültiger JSON-Wert. Seine Eigenschaften haben kein deklariertes Grids-Feldschema. Grids liest eine String-Eingabe als JSON-Text. |
 | `file` | `maxFiles` 1–100, wenn gesetzt; `accept` mit bis zu 100 MIME-Typen, MIME-Wildcards oder Dateiendungen. Hochladen und Entfernen nutzen die Dateivorgänge, keine JSON-Schreibvorgänge am Datensatz. |
 | `object_list` | Siehe den Spaltenvertrag weiter unten. |
 
-Ein Principal-Wert ist etwa `[{"type":"user","id":"<user-uuid>"}]` oder eine `group`-Referenz. Eine Identität in einem Feld ist ein Wert. Sie gibt keinen Zugriff. Um die aktuelle Person sicher einzutragen, nutze die konfigurierte Übermittlung einer veröffentlichten App, kein Eingabefeld, das die Person ändern kann.
+Ein Principal-Wert ist etwa `[{"type":"user","id":"<user-uuid>"}]` oder eine `group`- oder `service_account`-Referenz. Maschinelle Aufrufer können gespeicherte Referenzen lesen. Für nichtleere Principal-Werte ist ein benutzergebundener Verzeichniskontext nötig. Verborgene Identitäten behalten private Beschriftungen. Eine Identität in einem Feld ist ein Wert. Sie gibt keinen Zugriff. Um die aktuelle Person sicher einzutragen, nutze die konfigurierte Übermittlung einer veröffentlichten App, kein Eingabefeld, das die Person ändern kann.
 
 ## Relationen und berechnete Werte konfigurieren {icon="link"}
 

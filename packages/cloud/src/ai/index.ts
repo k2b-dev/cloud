@@ -290,6 +290,7 @@ export {
   type AiProjectReference,
   aiProjects,
 } from "./projects";
+export { type AiResourceContext, AiResourceCredentialError } from "./projects-authorization";
 export {
   type AiProjectsRoutes,
   aiProjectsRoutes,

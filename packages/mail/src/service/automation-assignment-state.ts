@@ -14,7 +14,7 @@ export const checkMailWorkflowAssignment = async (
   `;
   if (!conversation) throw Object.assign(new Error("Conversation is no longer available"), { code: "NOT_FOUND" });
   const assignees = await db<{ user_id: string }[]>`
-    SELECT user_id FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid
+    SELECT principal_id AS user_id FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid
   `;
   const [undone] = await db<{ present: boolean }[]>`
     SELECT EXISTS (

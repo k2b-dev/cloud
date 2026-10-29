@@ -193,6 +193,26 @@ describe("collapsed sidebar rail hints", () => {
     }
   }, 30_000);
 
+  test("an open hint lets the pointer through to what lies under it", async () => {
+    const page = await load("collapsed");
+    try {
+      await page.getByRole("link", { name: "Invoices", exact: true }).hover();
+      const [shown] = await openHints(page);
+      expect(shown?.text).toBe("Invoices");
+      // A hint over a neighbouring control must not take the pointer, or WebKit applies :hover to that control
+      // only after the hint has left the top layer (#2085).
+      const hit = await page.evaluate(() => {
+        const hint = document.querySelector<HTMLElement>(".k2b-tooltip:popover-open")!;
+        const rect = hint.getBoundingClientRect();
+        const element = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return { onHint: Boolean(element && hint.contains(element)), pointerEvents: getComputedStyle(hint).pointerEvents };
+      });
+      expect(hit).toEqual({ onHint: false, pointerEvents: "none" });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("a touch never opens a rail hint", async () => {
     const page = await load("collapsed");
     try {

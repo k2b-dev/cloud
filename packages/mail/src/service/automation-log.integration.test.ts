@@ -27,6 +27,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { checkMailWorkflowAssignment } from "./automation-assignment-state";
 import { changeAutomationLogEffects, getAutomationLogItem, getConversationAutomationTrace, listAutomationLog } from "./automation-log";
 import { recordMailWorkflowAudit } from "./automation-log-recording";
 import { loadMailAutomationLog } from "./automation-workspace";
@@ -57,6 +58,7 @@ suite("Mail conversation automation log and undo", () => {
     archiveFolderId = "",
     uid = 30000;
   const users: MailRequestContext[] = [];
+  const accountIds: string[] = [];
   const userId = (index = 0) => {
     const actor = users[index]?.actor;
     if (actor?.kind !== "user") throw new Error("User missing");
@@ -164,6 +166,7 @@ suite("Mail conversation automation log and undo", () => {
     }
     await sql`DELETE FROM audit.events WHERE request_id = ${`s4-audit-${suffix}`}`;
     for (let index = 0; index < users.length; index++) await sql`DELETE FROM auth.users WHERE id = ${userId(index)}::uuid`;
+    for (const id of accountIds) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
   });
   const message = async () => {
     const id = `<s4-audit-${++uid}-${suffix}@example.test>`;
@@ -256,9 +259,11 @@ suite("Mail conversation automation log and undo", () => {
     return emission.runIds[0]!;
   };
   const assignment = async (conversationId: string) =>
-    (await sql<{ user_id: string }[]>`SELECT user_id FROM mail.conversation_assignees WHERE conversation_id = ${conversationId}::uuid`).map(
-      (row) => row.user_id,
-    );
+    (
+      await sql<
+        { user_id: string }[]
+      >`SELECT principal_id AS user_id FROM mail.conversation_assignees WHERE conversation_id = ${conversationId}::uuid`
+    ).map((row) => row.user_id);
   const manual = async (conversationId: string, ids: string[], actorIndex = 0) => {
     const [row] = await sql<{ revision: number }[]>`SELECT revision FROM mail.conversations WHERE id = ${conversationId}::uuid`;
     return unwrap(
@@ -279,6 +284,76 @@ suite("Mail conversation automation log and undo", () => {
         await next();
       })
       .route("/", automationLogRoutes);
+
+  for (const kind of ["agent", "standalone"] as const) {
+    test(`${kind} assignments keep automation audit, skip, undo and manual-change provenance`, async () => {
+      const name = `Audit ${kind} ${suffix}`;
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+        VALUES (${name}, ${kind}) RETURNING id`;
+      if (!account) throw new Error("Service account fixture failed");
+      accountIds.push(account.id);
+      unwrap(
+        await grantMailboxAccess({
+          context: users[0]!,
+          mailboxId,
+          principal: { type: "service_account", serviceAccountId: account.id },
+          permission: "write",
+        }),
+      );
+      const definition = await rule(name),
+        input = await message();
+      expect(await runMailWorkflow(await run(definition, input))).toMatchObject({ result: { state: "succeeded" } });
+      expect(await assignment(input.conversationId)).toEqual([account.id]);
+      const item = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId)).items.find(
+        (entry) => entry.by.kind === "rule",
+      )!;
+      expect(item).toMatchObject({
+        outcome: "assigned",
+        undo: { state: "available" },
+        effects: [{ kind: "assign", target: { kind: "service_account", id: account.id, name } }],
+      });
+      expect(
+        await sql.begin((tx) =>
+          checkMailWorkflowAssignment(tx, {
+            mailboxId,
+            conversationId: input.conversationId,
+            workflowVersionId: definition.currentVersion.id,
+          }),
+        ),
+      ).toMatchObject({ assigneeUserIds: [account.id], skipped: "already_assigned" });
+      const second = await message();
+      await manual(second.conversationId, [account.id]);
+      expect(await runMailWorkflow(await run(definition, second))).toMatchObject({ result: { state: "succeeded" } });
+      expect(await assignment(second.conversationId)).toEqual([account.id]);
+      expect(unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, second.conversationId)).items).toContainEqual(
+        expect.objectContaining({ outcome: "skipped", reasons: [{ kind: "already_assigned" }] }),
+      );
+      expect(unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo")).item.undo.state).toBe("done");
+      expect(await assignment(input.conversationId)).toEqual([]);
+      unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "redo"));
+      expect(await assignment(input.conversationId)).toEqual([account.id]);
+      await manual(input.conversationId, [userId(2)]);
+      await manual(input.conversationId, [account.id]);
+      const trace = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId));
+      expect(trace.items).toContainEqual(
+        expect.objectContaining({
+          outcome: "manual_change",
+          reasons: [
+            expect.objectContaining({ kind: "manual", before: expect.objectContaining({ name }), after: { kind: "user", name: "Nora" } }),
+          ],
+        }),
+      );
+      expect(trace.items).toContainEqual(
+        expect.objectContaining({
+          outcome: "manual_change",
+          effects: [{ kind: "assign", target: { kind: "service_account", id: account.id, name } }],
+          reasons: [expect.objectContaining({ kind: "manual", after: expect.objectContaining({ name }) })],
+        }),
+      );
+      expect((await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo")).ok).toBe(false);
+      expect(await assignment(input.conversationId)).toEqual([account.id]);
+    });
+  }
 
   test("assignment is auditable, undo suppresses the rule across messages, redo restores it", async () => {
     const definition = await rule(),

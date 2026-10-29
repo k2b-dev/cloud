@@ -9,8 +9,10 @@ export type AccountIdentityReconciliation =
       state: "present";
       identity: { id: string | null; name: string; uidNumber: number | null; gidNumber: number | null };
       eligible: boolean;
+      /** Proven Cloud personal-group ownership, including retained directory bindings. */
+      personal?: boolean;
     }
-  | { state: "absent" }
+  | { state: "absent"; personal?: boolean }
   | { state: "unknown"; reason: "provider_disabled" | "provider_unavailable" | "invalid_response" | "identity_conflict" };
 export type IdentityLookup = { kind: "users" | "groups"; name: string; signal?: AbortSignal };
 

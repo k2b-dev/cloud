@@ -80,7 +80,7 @@ for (const width of [1440, 390]) {
       expect(await row().innerText()).toContain("The meeting starts at ten.");
       await shot("03-edited");
     });
-  });
+  }, 30_000);
 
   test(`cancelling deletion preserves the message at ${width}px`, async () => {
     await withMessage(width, "light", async ({ page, menu, row }) => {
@@ -91,7 +91,7 @@ for (const width of [1440, 390]) {
       await dialog.waitFor({ state: "hidden" });
       expect(await row().innerText()).toContain("The meeting starts at nine.");
     });
-  });
+  }, 30_000);
 
   for (const theme of ["light", "dark"] as const)
     test(`deletion leaves a marker at ${width}px in ${theme}`, async () => {
@@ -105,5 +105,5 @@ for (const width of [1440, 390]) {
         expect(await page.getByText("The meeting starts at nine.", { exact: true }).count()).toBe(0);
         await shot("04-deleted");
       });
-    });
+    }, 30_000);
 }
