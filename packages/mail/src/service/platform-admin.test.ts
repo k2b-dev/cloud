@@ -58,7 +58,7 @@ describe("Mail platform administration", () => {
     expect(await isCurrentPlatformAdmin(contextFor(authenticatedAdmin), async () => currentUser)).toBe(false);
   });
 
-  test("never adds the administrator role a request lacks, such as the mobile app's session", async () => {
+  test("never adds the administrator role a request lacks, such as the Cloud app's session", async () => {
     const appSessionUser = user(["ipa", "ipa/user", "user"]);
     const databaseUser = user(["ipa", "ipa/user", "user", "admin"]);
     const context: MailRequestContext = {

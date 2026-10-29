@@ -88,7 +88,7 @@ The authorization request accepts:
 | `code_challenge` | Public clients | PKCE challenge |
 | `code_challenge_method` | With challenge | Must be `S256` |
 
-The person approves in a web session. The mobile app's session never
+The person approves in a web session. The Cloud app's session never
 authorizes a client: `/oauth/authorize` treats it as no session and leads to
 sign-in, and consent decisions from it are refused.
 
@@ -258,7 +258,7 @@ confirmation that expired or was already answered ends on "Request no longer
 valid", which asks the person to start the sign-in on the device again and
 offers to enter another code. Code entry rejects a code that already expired
 with the same message as a mistyped one. The page requires a browser session on
-the web. API keys, OAuth access tokens and the mobile app's session cannot
+the web. API keys, OAuth access tokens and the Cloud app's session cannot
 approve a device. The client profile and access rules apply exactly as in the
 authorization-code flow. The approve or deny form carries a single-use
 confirmation token bound to that person, and cross-origin submissions are
