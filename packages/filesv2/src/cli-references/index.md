@@ -1,10 +1,12 @@
 # Files CLI
 
-Files (`cld filesv2`) works with the user's personal and group storage in
-Cloud and FreeIPA. Check `cld apps list --json` and `cld filesv2 help` before
+Files (`cld filesv2`) works with personal, group and explicitly granted machine
+storage in Cloud, and authorized FreeIPA storage. Check `cld apps list --json` and `cld filesv2 help` before
 using the commands.
 
 Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
+Agents and standalone service accounts need an explicit storage path grant; ownership and token scopes alone grant nothing. Use the full returned area ID, such as `cloud:users:<machine-account-uuid>:/reports`, for machine storage. Credential scopes cap the path grant. A narrow grant does not permit listing its parent.
 
 ## Address files
 
@@ -450,6 +452,8 @@ filesv2 get`. For code analysis, use `content.read` with the capability stream
 commands.
 
 Each new lease rechecks current access, including FreeIPA Unix permissions.
+Machine storage also rechecks account, credential and path grants on every
+transfer request and upload publication; already admitted streams may finish.
 403 is denied; 404 is missing or no longer visible; `not_file` (400) rejects
 folders. `identity_changed` (409) requires refreshing access or identity state.
 After expiry or a failed transfer, request a fresh lease. If access is denied,

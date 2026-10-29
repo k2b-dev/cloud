@@ -31,6 +31,7 @@ export function createExamplePwa(publicOrigin: string) {
       const [customer] = await tx`SELECT id FROM visit_demo.customers WHERE id = ${subject.data.customerId}::uuid FOR SHARE`;
       return Boolean(customer);
     },
+    coreQueries: ["address.autocomplete"],
     queries,
     commands,
   });

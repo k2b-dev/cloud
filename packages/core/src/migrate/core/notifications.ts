@@ -52,6 +52,12 @@ export const migrate = async (): Promise<void> => {
   `.simple();
 
   await sql`
+    ALTER TABLE notifications.definitions
+    ADD COLUMN IF NOT EXISTS excluded_channels TEXT[] NOT NULL DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS excluded_reason TEXT DEFAULT NULL
+  `.simple();
+
+  await sql`
     CREATE TABLE IF NOT EXISTS notifications.preferences (
       user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
       definition_id TEXT NOT NULL REFERENCES notifications.definitions(id) ON DELETE CASCADE,

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
-import { isServer } from "solid-js/web";
+import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 
 /** Invented demo attachments of one notebook. */
@@ -43,13 +43,40 @@ describe("Notebook attachment preview", () => {
     return;
   }
 
+  let dom: ReturnType<typeof createDomTestHarness>;
+  const loadModules = async () => {
+    const { dialogCore } = await import("@k2b/ui");
+    const { default: AttachmentsOverview } = await import("../[id]/_components/attachments-overview/AttachmentsOverview.island");
+    const { openAttachmentById, openAttachedImage } = await import("./attachment-preview");
+    return { dialogCore, AttachmentsOverview, openAttachmentById, openAttachedImage };
+  };
+  let modules: Awaited<ReturnType<typeof loadModules>>;
+  beforeAll(async () => {
+    // Delegated Solid handlers belong to the document used while modules load.
+    dom = createDomTestHarness();
+    modules = await loadModules();
+  });
+  afterAll(() => dom?.cleanup());
+
   const originalFetch = globalThis.fetch;
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
+  const closeAll = async () => {
+    while (modules.dialogCore.isOpen()) modules.dialogCore.close();
+    for (const button of dom.document.querySelectorAll<HTMLButtonElement>(
+      "dialog.k2b-content-lightbox button[aria-label='Close lightbox']",
+    ))
+      button.click();
+    await settle();
+  };
+  afterEach(async () => {
+    try {
+      await closeAll();
+    } finally {
+      globalThis.fetch = originalFetch;
+      dom.root.replaceChildren();
+    }
   });
 
   const mount = async () => {
-    const dom = createDomTestHarness();
     const requests: string[] = [];
     globalThis.fetch = Object.assign(
       (input: RequestInfo | URL) => {
@@ -67,19 +94,13 @@ describe("Notebook attachment preview", () => {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const { dialogCore } = await import("@k2b/ui");
     const dialog = () => dom.document.querySelector<HTMLElement>(".k2b-dialog[open]");
-    const closeAll = async () => {
-      while (dialogCore.isOpen()) dialogCore.close();
-      await settle();
-    };
     return { dom, requests, dialog, closeAll };
   };
 
   test("a tile opens a calm preview with the document title, the facts and the header actions", async () => {
     const { dom, requests, dialog, closeAll } = await mount();
-    const { default: AttachmentsOverview } = await import("../[id]/_components/attachments-overview/AttachmentsOverview.island");
-    const { render } = await import("solid-js/web");
+    const { AttachmentsOverview } = modules;
     const dispose = render(
       () => createComponent(AttachmentsOverview, { notebookId: "nb0001", initial: attachments, searchQuery: "" }),
       dom.root,
@@ -164,15 +185,17 @@ describe("Notebook attachment preview", () => {
       expect(dialog()?.textContent).toContain("Download “Photos.zip”?");
       await closeAll();
     } finally {
-      await closeAll();
-      dispose();
-      dom.cleanup();
+      try {
+        await closeAll();
+      } finally {
+        dispose();
+      }
     }
   });
 
   test("a reference reads the stored type first and falls back to the confirmed download", async () => {
-    const { dom, requests, dialog, closeAll } = await mount();
-    const { openAttachmentById } = await import("./attachment-preview");
+    const { requests, dialog, closeAll } = await mount();
+    const { openAttachmentById } = modules;
     try {
       await openAttachmentById("nb0001", "Att003", "Floor plan");
       await settle();
@@ -187,13 +210,12 @@ describe("Notebook attachment preview", () => {
       expect(dialog()?.textContent).toContain("Download “Old plan”?");
     } finally {
       await closeAll();
-      dom.cleanup();
     }
   });
 
   test("only the latest reference opens, even when an earlier lookup answers after it", async () => {
     const { dom, dialog, closeAll } = await mount();
-    const { openAttachmentById } = await import("./attachment-preview");
+    const { openAttachmentById } = modules;
     const serve = globalThis.fetch;
     // Holds each lookup until the test answers it.
     const held: Array<{ signal: AbortSignal | null | undefined; answer: () => void }> = [];
@@ -221,13 +243,12 @@ describe("Notebook attachment preview", () => {
     } finally {
       globalThis.fetch = serve;
       await closeAll();
-      dom.cleanup();
     }
   });
 
   test("an attached image opens in the lightbox once shown, and reads its stored type when it could not be shown", async () => {
     const { dom, requests, dialog, closeAll } = await mount();
-    const { openAttachedImage } = await import("./attachment-preview");
+    const { openAttachedImage } = modules;
     const image = (naturalWidth: number) => {
       const element = dom.document.createElement("img");
       Object.defineProperties(element, { complete: { value: true }, naturalWidth: { value: naturalWidth } });
@@ -250,7 +271,6 @@ describe("Notebook attachment preview", () => {
       expect(requests).toHaveLength(1);
     } finally {
       await closeAll();
-      dom.cleanup();
     }
   });
 });

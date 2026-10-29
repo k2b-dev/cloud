@@ -1,4 +1,5 @@
 import { type SQL, sql } from "bun";
+import type { AppPwaActor } from "../../app-pwa/contracts";
 import type { AccessSubject, CapabilityExecutionContext } from "../../contracts";
 import { audit } from "../audit";
 import { GeoError } from "./errors";
@@ -102,7 +103,7 @@ export const createGeoLedger = (db: SQL = sql) => ({
   async recordTransition(
     event: "provider_key_rejected" | "monthly_budget_exhausted" | "route_cost_overrun",
     timezone: string,
-    context: Pick<CapabilityExecutionContext, "actor"> & Partial<Pick<CapabilityExecutionContext, "requestId">>,
+    context: { actor: CapabilityExecutionContext["actor"] | AppPwaActor; requestId?: string },
     now: Date,
     metadata: Record<string, number> = {},
   ) {
@@ -114,21 +115,38 @@ export const createGeoLedger = (db: SQL = sql) => ({
           : await tx`INSERT INTO geo.audit_transitions(event,period) VALUES(${event},${period}) ON CONFLICT DO NOTHING RETURNING event`;
       if (!inserted.length) return;
       const actor =
-        context.actor.kind === "user"
-          ? {
-              userId: context.actor.user.id,
-              uid: context.actor.user.uid,
-              provider: context.actor.user.provider,
-              roles: context.actor.user.roles,
-            }
-          : { uid: `service-account:${context.actor.serviceAccount.id}`, provider: "service_account", roles: context.actor.scopes };
+        context.actor.kind === "device" || context.actor.kind === "visit"
+          ? null
+          : context.actor.kind === "user"
+            ? {
+                userId: context.actor.user.id,
+                uid: context.actor.user.uid,
+                provider: context.actor.user.provider,
+                roles: context.actor.user.roles,
+              }
+            : { uid: `service-account:${context.actor.serviceAccount.id}`, provider: "service_account", roles: context.actor.scopes };
       await audit.record(
         {
           action: `core.geo.${event}`,
           outcome: event === "monthly_budget_exhausted" ? "denied" : "failed",
           actor,
           requestId: context.requestId,
-          metadata: { period, ...metadata },
+          metadata: {
+            period,
+            ...metadata,
+            ...(context.actor.kind === "device" || context.actor.kind === "visit"
+              ? {
+                  appId: context.actor.appId,
+                  subject: { type: "user", userId: context.actor.ownerUserId },
+                  via: {
+                    kind: context.actor.kind,
+                    appId: context.actor.appId,
+                    deviceId: context.actor.deviceId,
+                    ...(context.actor.kind === "visit" ? { visitId: context.actor.visitId } : {}),
+                  },
+                }
+              : {}),
+          },
         },
         tx,
       );

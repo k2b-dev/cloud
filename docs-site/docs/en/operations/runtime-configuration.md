@@ -329,3 +329,24 @@ Do not print secrets while diagnosing configuration.
 Mail stores inbox views per person and mailbox, separately for phones and large screens. There is no administrator default. The next Mail start adds two nullable view columns to the existing personal mailbox preferences table; it creates no additional history or environment setting. Mailbox deletion removes the view, and access revocation removes it when no readable grant remains. Pins and hidden mailbox choices retain their existing behavior.
 
 Mail's daily completion counts use Core's `app.timezone`, falling back to `Europe/Berlin`, as reminders do. They read the existing activity history for one mailbox and one local calendar day. Each visible conversation counts once; its latest completion that day determines whether it was completed by automation. Reopened conversations remain in that day's count.
+
+## App-PWA address queries
+
+Applications can opt into `coreQueries: ["address.autocomplete"]` when creating
+their App-PWA. Upgrade Core first and use the `@k2b/cloud` runtime shipped with
+that Core release before enabling this declaration. The adapter uses Core's
+Geo ledger schema, cache protocol, admission scripts, and cost model; keep them
+on the same runtime version. Existing devices need no re-pairing or table migration.
+
+The platform adapter runs the shared Geo service in the owning application's
+process. That process needs the installation's existing `APP_SECRET` for encrypted
+settings, normal Cloud database access, Valkey, and outbound access to Geoapify's EU endpoint, as Core does. No new credentials,
+mandates, environment variables, or gateway routes are required. The Geoapify key
+stays inside Cloud's server processes and is never sent to the device.
+
+The owner's daily and Cloud monthly Geo budgets apply. The existing
+`security.rate_limit_per_second`, capped by the Geo plan's requests per second,
+also bounds each device and visit; a Valkey outage refuses the query. Usage
+appears in the Geo ledger and `app_pwa.core.query` audit entries, rather than
+Core's capability execution log. See [App-PWA sessions](/en/docs/identity/app-pwa-sessions#offer-address-suggestions)
+for the request and error contracts.

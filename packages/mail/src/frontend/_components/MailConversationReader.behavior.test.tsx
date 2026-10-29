@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
@@ -1018,5 +1018,124 @@ test.skipIf(isServer)("the reply box names whom Reply writes to, also when this 
   } finally {
     dispose();
     dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("an abandoned summary form cannot write into a new A session after A → B → A", async () => {
+  setSystemTime(new Date(now));
+  const dom = createDomTestHarness();
+  const { prompts } = await import("@k2b/ui");
+  let finish = (_values: { summary: string }) => {};
+  const values = new Promise<{ summary: string }>((resolve) => {
+    finish = resolve;
+  });
+  const form = spyOn(prompts, "form").mockReturnValue(values);
+  const originalFetch = globalThis.fetch;
+  let puts = 0;
+  let saved = 0;
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PUT") puts++;
+      return Response.json({ summary: "Old session text", summaryRevision: 2, conversationRevision: 1 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const [mailboxId, setMailboxId] = createSignal("Box001");
+  const conversationId = () => (mailboxId() === "Box001" ? "Conv01" : "Conv02");
+  const dispose = render(
+    () =>
+      createComponent(modules!.MailConversationReader, {
+        ...readerProps,
+        get mailboxId() {
+          return mailboxId();
+        },
+        get selectedConversationId() {
+          return conversationId();
+        },
+        get selectionKey() {
+          return conversationId();
+        },
+        get requestUrl() {
+          return `/app/mail/${mailboxId()}?conversation=${conversationId()}`;
+        },
+        conversationSummary: summaryState({ summary: "Numbers pending.", summaryRevision: 1, conversationRevision: 1 }),
+        onSummarySaved: async () => {
+          saved++;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
+    expect(form).toHaveBeenCalledTimes(1);
+    setMailboxId("Box002");
+    setMailboxId("Box001");
+    finish({ summary: "Old session text" });
+    await Bun.sleep(0);
+    expect(puts).toBe(0);
+    expect(saved).toBe(0);
+  } finally {
+    finish({ summary: "Old session text" });
+    dispose();
+    form.mockRestore();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+    setSystemTime();
+  }
+});
+
+test.skipIf(isServer)("summary generation cancels the earlier A session after A → B → A", async () => {
+  setSystemTime(new Date(now));
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const pending: { signal: AbortSignal | null | undefined; finish: (response: Response) => void }[] = [];
+  const saved: string[] = [];
+  const [mailboxId, setMailboxId] = createSignal("Box001");
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== "POST") return Response.json({ items: [] });
+      return new Promise<Response>((finish) => pending.push({ signal: init.signal, finish }));
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const dispose = render(
+    () =>
+      createComponent(modules!.MailConversationReader, {
+        ...readerProps,
+        get mailboxId() {
+          return mailboxId();
+        },
+        conversationSummary: summaryState({ summary: "Numbers pending.", canGenerate: true }),
+        get onSummarySaved() {
+          const id = mailboxId();
+          return async () => {
+            saved.push(id);
+          };
+        },
+      }),
+    dom.root,
+  );
+  const generate = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Write again"]')!.click();
+  try {
+    generate();
+    await waitFor(() => pending.length === 1);
+    setMailboxId("Box002");
+    setMailboxId("Box001");
+    expect(pending[0]!.signal?.aborted).toBe(true);
+    pending[0]!.finish(Response.json(summaryState({ status: "writing" })));
+    await Bun.sleep(0);
+    expect(saved).toEqual([]);
+    generate();
+    await waitFor(() => pending.length === 2);
+    expect(pending[1]!.signal?.aborted).toBe(false);
+    pending[1]!.finish(Response.json(summaryState({ status: "writing" })));
+    await waitFor(() => saved.length === 1);
+    expect(saved).toEqual(["Box001"]);
+  } finally {
+    dispose();
+    for (const request of pending) request.finish(Response.json(summaryState()));
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+    setSystemTime();
   }
 });

@@ -187,9 +187,9 @@ export type AppMeta = {
 
 /**
  * Response of an app's `nav.badge` route: how many items wait for the signed-in
- * person. A positive safe integer shows a count on the app's icon in the rail
- * and the app grid (above 99 as "99+"); `0`, a non-200 response, or anything
- * else shows none.
+ * person. A positive safe integer shows a count on the app's icon in the rail,
+ * the phone bar, and the app grid (above 99 as "99+"); `0`, a non-200
+ * response, or anything else shows none.
  */
 export type AppNavBadge = { count: number };
 
