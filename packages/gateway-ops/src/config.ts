@@ -28,8 +28,8 @@ export const app = defineApp({
         },
         adminGroups: { gateway: "Gateway", observability: "Systembeobachtung" },
         adminLinks: {
-          "/admin/gateway/apps": "Apps",
-          "/admin/gateway/routes": "Routen",
+          "/admin/observability/gateway": "Apps",
+          "/admin/observability/gateway/routes": "Routen",
           "/admin/observability": "Übersicht",
           "/admin/observability/logs": "Protokolle",
           "/admin/observability/jobs": "Jobs",
@@ -38,34 +38,35 @@ export const app = defineApp({
           "/admin/observability/telemetry": "Telemetrie",
           "/admin/observability/metrics": "Metriken",
           "/admin/observability/postgres": "Postgres",
-          "/admin/observability/redis": "Redis",
+          "/admin/observability/valkey": "Redis",
           "/admin/observability/nats": "NATS",
-          "/admin/observability/sync": "Sync",
+          "/admin/observability/nats/sync": "Sync",
           "/admin/observability/alerts": "Webhooks",
-          "/admin/observability/notifications": "Benachrichtigungen",
+          "/admin/observability/deliveries": "Benachrichtigungen",
         },
       },
     },
   },
-  // Petrol rather than red: the console uses red for failures and amber for
+  // Stone rather than red: the console uses red for failures and amber for
   // warnings throughout, so a red chrome carried the same hue as its own most
-  // urgent signal. Deep cyan stays clear of every status colour — the blue
-  // used for "running" is a much lighter tone — and reads as an instrument
-  // panel rather than an alarm.
-  appearance: { accent: "#155e75", background: { from: "#0e7490", to: "#155e75", angle: 135 } },
-  basePath: "/admin/gateway",
+  // urgent signal. Cyan belongs to the AI accent, so a neutral stone stays clear
+  // of both and reads as an instrument panel rather than an alarm.
+  appearance: { accent: "#57534e", background: { from: "#78716c", to: "#57534e", angle: 135 } },
+  basePath: "/admin/observability",
   baseUrl: `http://app-gateway-ops:${port}`,
-  adminHref: "/admin/gateway",
+  adminHref: "/admin/observability",
   adminNav: [
     {
+      section: "observability",
       id: "gateway",
       label: "Gateway",
       links: [
-        { href: "/admin/gateway/apps", icon: "ti-apps", label: "Apps" },
-        { href: "/admin/gateway/routes", icon: "ti-route", label: "Routes" },
+        { href: "/admin/observability/gateway", icon: "ti-apps", label: "Apps" },
+        { href: "/admin/observability/gateway/routes", icon: "ti-route", label: "Routes" },
       ],
     },
     {
+      section: "observability",
       id: "observability",
       label: "Observability",
       links: [
@@ -77,11 +78,11 @@ export const app = defineApp({
         { href: "/admin/observability/telemetry", icon: "ti-chart-line", label: "Telemetry" },
         { href: "/admin/observability/metrics", icon: "ti-plug", label: "Metrics" },
         { href: "/admin/observability/postgres", icon: "ti-database", label: "Postgres" },
-        { href: "/admin/observability/redis", icon: "ti-database", label: "Redis" },
+        { href: "/admin/observability/valkey", icon: "ti-database", label: "Redis" },
         { href: "/admin/observability/nats", icon: "ti-server", label: "NATS" },
-        { href: "/admin/observability/sync", icon: "ti-arrows-exchange", label: "Sync" },
+        { href: "/admin/observability/nats/sync", icon: "ti-arrows-exchange", label: "Sync" },
         { href: "/admin/observability/alerts", icon: "ti-webhook", label: "Webhooks" },
-        { href: "/admin/observability/notifications", icon: "ti-bell", label: "Notifications" },
+        { href: "/admin/observability/deliveries", icon: "ti-bell", label: "Notifications" },
       ],
     },
   ],
@@ -155,15 +156,7 @@ export const app = defineApp({
       presentation: { defaultZone: "context" },
     },
   ],
-  routes: [
-    "/metrics",
-    "/api/gateway",
-    "/api/logging",
-    "/api/notifications",
-    "/admin/gateway",
-    "/admin/observability",
-    "/public/gateway-ops",
-  ],
+  routes: ["/metrics", "/api/gateway", "/api/logging", "/api/notifications", "/admin/observability", "/public/gateway-ops"],
 });
 
 export const { ssr, plugin } = app;

@@ -30,9 +30,9 @@ export const accountsCapabilities = defineCapabilities({
         },
         queries: {
           search: {
-            title: "Konten durchsuchen",
-            description: "Konten und Gruppen finden, deren Kontenseiten du öffnen darfst.",
-            searchTags: { account: { title: "Konten", description: "Konten und Gruppen finden." } },
+            title: "Zugänge durchsuchen",
+            description: "Konten und Gruppen finden, deren Seiten du in der App Zugänge öffnen darfst.",
+            searchTags: { account: { title: "Zugänge", description: "Konten und Gruppen finden." } },
           },
         },
       },

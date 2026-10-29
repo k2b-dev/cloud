@@ -120,7 +120,7 @@ export const app = defineApp({
       },
     },
   },
-  appearance: { accent: "#0284c7", background: { from: "#38bdf8", to: "#60a5fa", angle: 135 } },
+  appearance: { accent: "#0284c7", background: { from: "#3b82f6", to: "#60a5fa", angle: 135 } },
   baseUrl: "http://app-core:3000",
   settings: CORE_SETTINGS,
   notifications: { ...NOTIFICATIONS, ...AI_NOTIFICATIONS },
@@ -136,7 +136,7 @@ export const app = defineApp({
   openapi: "/api/openapi.json",
   // Core owns the platform's top-level paths plus the catch-all "/" so
   // unmatched URLs fall through to its 404 page. Per-app admin pages
-  // (`/admin/spaces`, `/admin/gateway`, …) are owned by their respective
+  // (`/admin/spaces`, `/admin/observability`, …) are owned by their respective
   // apps and have their own longer-prefix entries in the trie.
   routes: [
     "/",

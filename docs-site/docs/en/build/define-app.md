@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-20
+updated: 2026-10-28
 ---
 
 # Define an application
@@ -109,7 +109,7 @@ nav: {
 | `match` | No | `href` without its query | Path used for active navigation |
 | `requiresAuth` | No | — | Hide the link from anonymous visitors |
 | `requiresRoles` | No | — | Show the link, the application's [Help](/en/docs/platform/help#who-can-read-help), and its [Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill) only for matching platform roles; `guest` matches guests |
-| `badge` | No | — | Route whose count the app bar and app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
+| `badge` | No | — | Route whose count the app bar, the phone bar, and the app grid show on the icon; see [Show a count on the app icon](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 
 Navigation visibility is not authorization. Protect the destination with
 [route policies](/en/docs/identity/route-policies).
@@ -144,8 +144,14 @@ Each group needs a `label` and `links`. Each link needs a `label`, `href`, and
 Tabler `icon`. Add a stable group `id` when its label is translated through
 `presentation`.
 
-An application contributing AI administration can set `section: "ai"` on its
-group. The layout adds those links to the existing AI administration section.
+Set `section` on a group to contribute to a platform administration area
+instead of adding a group of its own:
+
+| `section` | Area | What the sidebar shows |
+| --- | --- | --- |
+| `"ai"` | AI | The AI area lists the links among its own sections. |
+| `"observability"` | Observability | One entry, Observability, that stays active on every contributed link. The area lists other apps' links under **From apps** in its first column. |
+
 Route and resource authorization still belong to the application; this field
 only selects where authorized navigation is displayed.
 
@@ -238,6 +244,9 @@ link text stays body ink, and only its underline takes the app ink. See
 [Colors and selection](/en/ui/surfaces/color).
 The accent also reaches dialogs and sheets opened from the app's pages,
 with no application code.
+Cyan is reserved for AI surfaces, so keep the accent and background colors
+clearly apart from it; see
+[Colors and selection](/en/ui/surfaces/color#app-color-in-cloud).
 
 | Background field | Default | Accepted range |
 | --- | --- | --- |
