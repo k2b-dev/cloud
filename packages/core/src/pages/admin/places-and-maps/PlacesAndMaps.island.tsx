@@ -98,7 +98,12 @@ function Calm(props: { icon: string; children: JSX.Element }) {
   );
 }
 
-export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; documentationBase?: string }): JSX.Element {
+export default function PlacesAndMaps(props: {
+  initial: PlacesAndMapsInitial;
+  documentationBase?: string;
+  /** Inside a titled level of the Base settings area, which already shows the title. */
+  embedded?: boolean;
+}): JSX.Element {
   const locale = useLocale();
   const t = () => placesAndMapsMessages.resolve([locale()]).t;
   const [status, setStatus] = createSignal<GeoAdminStatus | null>(props.initial.status);
@@ -718,6 +723,7 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
   return (
     <SettingsPage
       class="places-maps-settings"
+      header={!props.embedded}
       title={t().title}
       subtitle={t().lead}
       icon="ti ti-map-2"

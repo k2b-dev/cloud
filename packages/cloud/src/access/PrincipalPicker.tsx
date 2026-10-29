@@ -1,5 +1,5 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
-import type { Principal, ServiceAccountKind } from "../contracts/shared";
+import type { Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { accessMessages } from "./messages";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
@@ -34,7 +34,11 @@ export default function PrincipalPicker(props: {
   existing?: Principal[];
   allowPublic?: boolean;
   allowAuthenticated?: boolean;
+  /** Defaults to true; disable only for a documented user-backed workflow. */
   allowServiceAccounts?: boolean;
+  /** Optional directory filters for the resource's accepted credential kinds. */
+  serviceAccountKinds?: ServiceAccountKind[];
+  serviceAccountStatus?: ServiceAccountStatus;
   /** Offers only the service accounts this returns `true` for, such as active accounts the resource can accept. */
   serviceAccountFilter?: (account: PrincipalPickerServiceAccount) => boolean;
   disabled?: boolean;
@@ -78,7 +82,13 @@ export default function PrincipalPicker(props: {
     if (search.length >= 2) {
       const url = new URL("/api/accounts/entities", window.location.origin);
       url.searchParams.set("search", search);
-      url.searchParams.set("kinds", props.allowServiceAccounts ? "user,group,service_account" : "user,group");
+      url.searchParams.set("kinds", props.allowServiceAccounts !== false ? "user,group,service_account" : "user,group");
+      if (props.allowServiceAccounts !== false && props.serviceAccountKinds?.length) {
+        url.searchParams.set("service_account_kinds", props.serviceAccountKinds.join(","));
+      }
+      if (props.allowServiceAccounts !== false && props.serviceAccountStatus) {
+        url.searchParams.set("service_account_status", props.serviceAccountStatus);
+      }
       url.searchParams.set("per_page", "10");
       const users = props.existing?.flatMap((p) => (p.type === "user" ? [p.userId] : [])) ?? [];
       const groups = props.existing?.flatMap((p) => (p.type === "group" ? [p.groupId] : [])) ?? [];
@@ -145,10 +155,10 @@ export default function PrincipalPicker(props: {
       placeholder={
         props.placeholder ??
         (props.allowAuthenticated !== false || props.allowPublic
-          ? props.allowServiceAccounts
+          ? props.allowServiceAccounts !== false
             ? t().addAll
             : t().addAudience
-          : props.allowServiceAccounts
+          : props.allowServiceAccounts !== false
             ? t().addService
             : t().addBasic)
       }

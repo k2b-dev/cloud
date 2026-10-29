@@ -32,7 +32,14 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { chatMessages } from "../messages";
-import { type AttachmentView, MAX_ATTACHMENT_BYTES, MAX_MESSAGE_ATTACHMENTS, MAX_MESSAGE_REFS, type Mention } from "../service/contracts";
+import {
+  type AttachmentView,
+  MAX_ATTACHMENT_BYTES,
+  MAX_MESSAGE_ATTACHMENTS,
+  MAX_MESSAGE_REFS,
+  type Mention,
+  withinMessageMutationWindow,
+} from "../service/contracts";
 import { isShownImage, rowAttachments } from "./attachment-views";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
@@ -57,6 +64,9 @@ export type ChatFeedItem = {
   body: string;
   at: string;
   own: boolean;
+  revision?: number;
+  edited?: boolean;
+  deleted?: boolean;
   status?: MessageRowStatus;
   /** Set on a failed send: sends it again with the same client ID. */
   retry?: () => void;
@@ -113,6 +123,8 @@ export type ChatConversationProps = {
    */
   reactions?: (messageId: string) => readonly { emoji: string; count: number; own: boolean }[];
   onReact?: (item: ChatFeedItem, emoji: string, on: boolean) => void;
+  onEdit?: (item: ChatFeedItem) => void;
+  onDelete?: (item: ChatFeedItem) => void;
   /** The sentence under "Reply" and "Mark unread from here", which names the message's thread. */
   replyHint?: (item: ChatFeedItem) => string;
   unreadHint?: (item: ChatFeedItem) => string;
@@ -571,6 +583,8 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             <MessageRow
               author={{ name: item.authorName }}
               text={item.body}
+              edited={item.edited}
+              deleted={item.deleted}
               time={messageTime(item.at, config())}
               dateTime={item.at}
               own={item.own}
@@ -595,8 +609,26 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               }
               onAddReaction={props.onReact && item.messageId ? (anchor) => setReactionTarget({ anchor, item }) : undefined}
               actions={
-                item.messageId
+                item.messageId && !item.deleted
                   ? [
+                      ...(item.own && withinMessageMutationWindow(item.at, props.now().getTime())
+                        ? [
+                            ...(props.onEdit
+                              ? [{ id: "edit", label: t().editMessage, icon: "ti ti-pencil", onSelect: () => props.onEdit?.(item) }]
+                              : []),
+                            ...(props.onDelete
+                              ? [
+                                  {
+                                    id: "delete",
+                                    label: t().deleteMessage,
+                                    icon: "ti ti-trash",
+                                    variant: "danger" as const,
+                                    onSelect: () => props.onDelete?.(item),
+                                  },
+                                ]
+                              : []),
+                          ]
+                        : []),
                       ...(props.onReply
                         ? [
                             {

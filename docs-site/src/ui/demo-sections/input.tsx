@@ -8,6 +8,7 @@ import {
   Checkbox,
   CheckboxCard,
   ChoiceChips,
+  ChoiceList,
   ChoiceSlider,
   ChoiceTiles,
   ColorChoices,
@@ -1631,6 +1632,57 @@ const ChoiceChipsDemo = () => {
   );
 };
 
+const ChoiceListDemo = () => {
+  const [level, setLevel] = createSignal<string | null>("off");
+  const [duration, setDuration] = createSignal<string | null>("8h");
+  return (
+    <DemoCard
+      id="choice-list"
+      chip={{ kind: "component", name: "ChoiceList", from: "@k2b/ui" }}
+      description="A labeled radio group of rows, each with one sentence on its consequence. A quiet marker names the default, details open under the chosen row, and a save in progress shows a spinner without moving anything."
+      code={`<ChoiceList
+  label="Notifications"
+  value={level}
+  onValueChange={setLevel}
+  options={[
+    { value: "all", label: "All messages", description: "Every new message notifies you.", marker: "Default" },
+    { value: "mentions", label: "Mentions only", description: "Only when someone mentions you or replies to you." },
+    { value: "off", label: "Off", description: "No notifications." },
+  ]}
+  details={level() === "off" ? <ChoiceChips ... /> : undefined}
+/>`}
+    >
+      <div class="max-w-sm">
+        <ChoiceList
+          label="Notifications"
+          value={level}
+          onValueChange={setLevel}
+          options={[
+            { value: "all", label: "All messages", description: "Every new message notifies you.", marker: "Default" },
+            { value: "mentions", label: "Mentions only", description: "Only when someone mentions you or replies to you." },
+            { value: "off", label: "Off", description: "No notifications. Mentions stay in For you." },
+          ]}
+          details={
+            level() === "off" ? (
+              <ChoiceChips
+                aria-label="For how long"
+                value={duration}
+                onValueChange={setDuration}
+                options={[
+                  { value: "1h", label: "1 hour" },
+                  { value: "8h", label: "8 hours" },
+                  { value: "1w", label: "1 week" },
+                  { value: "always", label: "Until I change it" },
+                ]}
+              />
+            ) : undefined
+          }
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
 const shapePreview = (radius: string, fill: string) => (
   <span style={{ display: "inline-block", width: "3rem", height: "3rem", "border-radius": radius, background: fill }} />
 );
@@ -1810,6 +1862,11 @@ const demos: DemoSection = {
   "choice-chips": () => (
     <DemoGrid columns="one">
       <ChoiceChipsDemo />
+    </DemoGrid>
+  ),
+  "choice-list": () => (
+    <DemoGrid columns="one">
+      <ChoiceListDemo />
     </DemoGrid>
   ),
   "choice-tiles": () => (
