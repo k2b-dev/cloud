@@ -644,6 +644,8 @@ remain visible after access checks even without a Cloud record; an unknown
 original location requires an explicit restore path. Restore never overwrites
 an existing destination. Pending or ambiguous moves remain visible for review.
 
+Restoring from the trash checks the recorded item again before starting a new restore. If another item has replaced it, Files leaves the trash untouched and asks you to refresh. A restore cancelled while waiting for the storage lock does not move the item.
+
 Multi-entry moves, copies, and trash actions report results per item. Selecting
 a folder and one of its children processes the folder once. Successful items
 remain completed when another item fails; retry only the failed items. A batch
@@ -1107,4 +1109,25 @@ a lease and saves the file without printing the private URL; the explicit
 `cld capabilities query filesv2 content.download` command returns the lease.
 See [App capabilities](/en/docs/platform/capabilities) for discovery and consent.
 
-Restoring from the trash checks the recorded item again before starting a new restore. If another item has replaced it, Files leaves the trash untouched and asks you to refresh. A restore cancelled while waiting for the storage lock does not move the item.
+## Understand changes without a Cloud entry
+
+In local Cloud storage, when Files notices that an item differs from its last
+confirmed Cloud change,
+the history shows what it found and when it noticed it. This can happen when
+you open an item, save a document, or when maintenance checks it. The cause,
+person and actual time of the change remain unknown.
+
+Files can recognize a move when storage provides a stable item ID. Otherwise,
+a move outside Cloud appears as a missing item at its last known path. It
+cannot compare an item without retained Cloud history, and same-size changes
+can go unnoticed on storage without revisions. An unfinished Cloud operation
+is resolved before Files records a separate observation.
+
+Administrators can export history as CSV or JSON Lines. Each export is limited
+to one calendar year and 100,000 entries, and is recorded in the security audit.
+For filters, cancellation and privacy considerations, see
+[Files history operations](/en/docs/operations/files-history#export-history-for-administration).
+
+Administrator history exports include local Cloud areas only. POSIX-only events
+are excluded from counts and downloads; cross-area operations include only
+their local side.

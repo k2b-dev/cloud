@@ -64,6 +64,7 @@ import { FilesError, filesService } from "../service";
 import { SEARCH_REQUEST_SECONDS } from "../service/search";
 import { activityApi } from "./activity";
 import { createActivityActionsApi } from "./activity-actions";
+import { createActivityExportApi } from "./activity-export";
 import { apiError, describeError } from "./api-error";
 import { inlinePdfApi } from "./inline-pdf";
 import { machineStorageApi } from "./machine-storage";
@@ -89,6 +90,7 @@ const api = new Hono<AuthContext>()
       log.error("Files request failed", { code, status, method: c.req.method, path: c.req.path, error: describeError(error) });
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
+  .route("/", createActivityExportApi({ export: filesService.exportActivity, preview: filesService.previewActivityExport }))
   .route("/", activityApi)
   .route("/admin/machine-storage", machineStorageApi)
   .route("/templates", templateApi)

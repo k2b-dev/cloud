@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { accountIdentities } from "@k2b/cloud/services";
 import { testActor, testCall } from "../../test/files-call";
+import * as observationData from "../data/activity-observations";
 import { type Binding, bindings } from "../data/bases";
 import * as operationModule from "../data/operations";
 import * as referencesModule from "../data/references";
@@ -216,6 +217,8 @@ beforeEach(() => {
     readerDeps = deps;
     return { ...createActivityReader(deps), activity: readerActivity };
   });
+  // This authorization-only fixture has no retained Cloud baseline. Real comparisons use the Filegate integration fixture.
+  spyOn(observationData, "knownIdentityActivity").mockResolvedValue(null);
   spyOn(operationModule.operations, "pending").mockResolvedValue(null);
   spyOn(operationModule.operations, "retiredPath").mockResolvedValue(false);
   spyOn(referencesModule, "resolveEntryRefId").mockImplementation(async (id) => storedRefs.get(id) ?? parseEntryRefId(id));

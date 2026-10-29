@@ -72,8 +72,10 @@ import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
 import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, type UserFilesCall, uploadAction } from "./activity";
 import { createActivityActions } from "./activity-actions";
+import { createActivityExportService } from "./activity-export";
+import { createActivityObservations } from "./activity-observations";
 import { type ActivityReadBudget, readStep, withActivityReadBudget } from "./activity-read-budget";
-import { type ActivityReadCall, createActivityReader } from "./activity-reader";
+import { type ActivityReadCall, createActivityReader, parseActivityInput } from "./activity-reader";
 import { recordAdminHistoryRead } from "./admin-history-read";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
@@ -197,6 +199,91 @@ export function createFilesService(
     provision: provisionCandidate,
     lock: (run) => withRootLock("filesv2:home-reconciliation", run),
   });
+  const observations = createActivityObservations(deps);
+  async function observeContact(
+    current: { state: { config: Config }; inspection: Inspection; root: FilesRoot },
+    path: string,
+    options: { underRootLock?: boolean; signal?: AbortSignal; stableId?: string } = {},
+  ) {
+    const binding = current.inspection.binding;
+    if (!binding || binding.area !== "cloud") return;
+    try {
+      await observations.check(
+        { serverUrl: current.state.config.url, root: current.root.name, baseId: binding.id, path, stableId: options.stableId },
+        options,
+      );
+    } catch (error) {
+      maintenanceLog.error("History contact observation failed", { baseId: binding.id, error });
+      options.signal?.throwIfAborted();
+      throw new FilesError("activity_cannot_record", 503, { cause: error });
+    }
+  }
+  const emptyActivityPage = (): ActivityPage => ({
+    items: [],
+    next: null,
+    visibleCount: 0,
+    batches: [],
+    exhausted: true,
+    scanLimitReached: false,
+    searchLimitReached: false,
+  });
+  /** One explicitly addressed contact, after read-only authority; never enumerate a folder or mint a reference. */
+  async function historyContact(
+    call: ActivityReadCall,
+    input: Pick<ActivityInput, "baseId" | "itemId" | "path">,
+    budget: ActivityReadBudget,
+    state: Awaited<ReturnType<typeof context>>,
+  ): Promise<boolean> {
+    if (input.baseId?.startsWith("freeipa:")) throw new FilesError("history_unavailable", 409);
+    if (!input.baseId || (input.itemId === undefined && input.path === undefined)) return true;
+    const base = await authorizedBase(call.actor, input.baseId, state, true, budget);
+    let path = input.path;
+    let resolved: Node | undefined;
+    const itemId = input.itemId;
+    if (itemId !== undefined) {
+      if (base.info.stableIds !== true) return false;
+      try {
+        resolved = await budget.run(() => base.service.resolve(itemId));
+      } catch (error) {
+        if (error instanceof FilegateError && [400, 404, 409].includes(error.status)) return false;
+        throw error;
+      }
+      if (resolved.id !== input.itemId || resolved.root !== base.item.root || !resolved.path.startsWith(`${base.item.path}/`)) return false;
+      const relative = userPath(resolved.path.slice(base.item.path.length + 1));
+      if (path !== undefined && userPath(path) !== relative) return false;
+      path = relative;
+    }
+    if (path === undefined) return false;
+    path = userPath(path);
+    const target = joinPath(base.item.path, path);
+    // The unscoped stat distinguishes absence from an existing unreadable leaf; it grants no authority.
+    const node = await budget
+      .run(() => base.service.stat(target))
+      .catch((error: unknown) => {
+        if (error instanceof FilegateError && error.status === 404) return null;
+        throw error;
+      });
+    if (node) {
+      const current = await authorizedPath(base, path, undefined, budget);
+      if (current.node.path !== target || (resolved && current.node.id !== resolved.id)) return false;
+      await budget.run(() =>
+        observeContact(current, target, {
+          stableId: current.info.stableIds ? current.node.id : undefined,
+          signal: budget.signal,
+        }),
+      );
+    } else {
+      if (resolved || !path) return false;
+      const parent = path.split("/").slice(0, -1).join("/");
+      const current = await authorizedPath(base, parent, undefined, budget);
+      if (!current.node.directory) return false;
+      await budget.run(() => observeContact(current, target, { signal: budget.signal }));
+    }
+    return true;
+  }
+  const deniedHistoryContact = (error: unknown) =>
+    (error instanceof FilesError || error instanceof FilegateError || error instanceof AccountIdentityError) &&
+    [403, 404].includes(error.status);
   async function allGroups(actor: RequestActor, budget?: ActivityReadBudget): Promise<Group[]> {
     const result: Group[] = [];
     const deadline = Date.now() + 10_000;
@@ -703,6 +790,7 @@ export function createFilesService(
     onConflict: "error" | "overwrite",
     templateId?: string,
   ): Promise<Node> {
+    if (onConflict === "overwrite") await observeContact(current, current.target, { underRootLock: true });
     if (current.info.managed && onConflict === "overwrite" && !current.node.revision) throw new FilesError("write_conflict", 409);
     if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
     const writeOptions = {
@@ -743,7 +831,15 @@ export function createFilesService(
           throw new FilesError("unavailable", 503);
         return { itemAfterId: current.info.stableIds ? node.id : null, revisionAfter: node.revision, size: node.size };
       },
-    );
+    ).catch(async (error: unknown) => {
+      // The write owner has finished its definite refusal before this comparison. Open upload journals still suppress observations.
+      if (error instanceof FilegateError && error.status === 412)
+        await observeContact(current, current.target, {
+          underRootLock: true,
+          stableId: current.info.stableIds ? current.node.id : undefined,
+        });
+      throw error;
+    });
   }
 
   function versionIntent(
@@ -864,9 +960,23 @@ export function createFilesService(
   };
   async function entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
     if (!input.path) throw new FilesError("invalid_path");
-    return entryResult(await authorized(actor, input.baseId, input.path));
+    const base = await authorizedBase(actor, input.baseId);
+    let current: Awaited<ReturnType<typeof authorizedPath>>;
+    try {
+      current = await authorizedPath(base, input.path);
+    } catch (error) {
+      if (error instanceof FilegateError && error.status === 404 && error.code === "not_found") {
+        // Preserve the authorized storage result. A successful detail read must still surface observer failure.
+        await observeContact(base, joinPath(base.item.path, userPath(input.path))).catch((failure: unknown) =>
+          maintenanceLog.error("Missing entry observation unavailable", { error: failure }),
+        );
+      }
+      throw error;
+    }
+    return entryResult(current);
   }
   async function entryResult(current: Awaited<ReturnType<typeof authorized>>): Promise<EntryResult> {
+    await observeContact(current, current.target, { stableId: current.info.stableIds ? current.node.id : undefined });
     const favorite = await favorites.has(current.state.self.user.id, current.inspection.binding!.id, current.relative);
     const result = fileEntry(current.inspection.summary, current.relative, current.node);
     return {
@@ -1194,6 +1304,10 @@ export function createFilesService(
           },
         )
       : 0;
+    await observations.maintain(input).catch((error: unknown) => {
+      input.signal?.throwIfAborted();
+      maintenanceLog.error("History observation maintenance failed", { error });
+    });
     const shareAccess = config
       ? await maintainShareAccess({ now: input.now, retentionDays: config.activityRetentionDays }).catch((error: unknown) => {
           maintenanceLog.error("Public link access retention failed", { error });
@@ -1202,6 +1316,7 @@ export function createFilesService(
       : { rolledUp: 0, purged: 0 };
     return { activityChecked, activityPurged, shareAccessRolledUp: shareAccess.rolledUp, shareAccessPurged: shareAccess.purged };
   }
+  const activityExport = createActivityExportService({ requireAdmin, displayNames: deps.displayNames });
   const activityReader = createActivityReader({
     recordAdminRead: recordAdminHistoryRead,
     requestContext: async (actor, budget) => {
@@ -1446,6 +1561,21 @@ export function createFilesService(
   });
   return {
     ...lifecycle,
+    /** Private history-reader hook: authorize the current item before comparing any stored endpoint. */
+    async observeActivityContact(call: ActivityReadCall, id: string, signal?: AbortSignal): Promise<void> {
+      const requestAbort = signal && call.requestAbort ? AbortSignal.any([signal, call.requestAbort]) : (signal ?? call.requestAbort);
+      await withActivityReadBudget(requestAbort, async (budget) => {
+        const state = await context(call.actor, budget);
+        if (state.config.unreadable) throw new FilesError("configuration_unreadable", 409);
+        const stable = parseStableEntryRefId(id);
+        const location = stable ?? (await budget.run(() => resolveEntryRefId(id)));
+        if (!location) throw new FilesError("not_found", 404);
+        const filter = stable ? { baseId: stable.baseId, itemId: stable.fileId } : location;
+        if (!(await historyContact(call, filter, budget, state))) throw new FilesError("not_found", 404);
+      });
+    },
+    exportActivity: activityExport.export,
+    previewActivityExport: activityExport.preview,
     ...sharing,
     ...trashLifecycle,
     activityRecovery: activityActions.recovery,
@@ -1453,7 +1583,24 @@ export function createFilesService(
     moveActivityBack: activityActions.moveBack,
     recheckActivity: activityActions.recheck,
     ...activityReader,
-    /** Authorize the ref's current item or missing path's parent before any history candidate scan. */
+    async activity(call: ActivityReadCall, rawInput: ActivityInput = {}): Promise<ActivityPage> {
+      const input = parseActivityInput(rawInput);
+      // Global history remains a read: only an explicitly scoped item is a contact.
+      if (!input.baseId || (input.itemId === undefined && input.path === undefined)) return activityReader.activity(call, input);
+      return withActivityReadBudget(call.requestAbort, async (budget) => {
+        const state = await context(call.actor, budget);
+        if (state.config.unreadable) throw new FilesError("configuration_unreadable", 409);
+        try {
+          await historyContact(call, input, budget, state);
+        } catch (error) {
+          // Contact authority controls observation, not the reader's independently
+          // authorized own snapshots and visible ancestor movements at an old path.
+          if (!deniedHistoryContact(error)) throw error;
+        }
+        return activityReader.activity({ ...call, requestAbort: budget.signal }, input);
+      });
+    },
+    /** Authorize the ref's current item or missing path's parent before observation and candidate SQL. */
     async activityForEntry(
       call: ActivityReadCall,
       id: string,
@@ -1462,66 +1609,19 @@ export function createFilesService(
       return withActivityReadBudget(call.requestAbort, async (budget) => {
         const state = await context(call.actor, budget);
         if (state.config.unreadable) throw new FilesError("configuration_unreadable", 409);
-        const empty: ActivityPage = {
-          items: [],
-          next: null,
-          visibleCount: 0,
-          batches: [],
-          exhausted: true,
-          scanLimitReached: false,
-          searchLimitReached: false,
-        };
         let filter: Pick<ActivityInput, "baseId" | "itemId" | "path">;
         try {
           const stable = parseStableEntryRefId(id);
           const location = stable ?? (await budget.run(() => resolveEntryRefId(id)));
-          if (!location) return empty;
-          if (location.baseId.startsWith("freeipa:")) throw new FilesError("history_unavailable", 409);
-          // Same read-only base/path checks as the reader: no claim, provisioning or reference writes.
-          const base = await authorizedBase(call.actor, location.baseId, state, true, budget);
-          if (stable) {
-            if (base.info.stableIds !== true) return empty;
-            let node: Node;
-            try {
-              node = await budget.run(() => base.service.resolve(stable.fileId));
-            } catch (error) {
-              if (error instanceof FilegateError && [400, 404, 409].includes(error.status)) return empty;
-              throw error;
-            }
-            if (node.id !== stable.fileId || node.root !== base.item.root || !node.path.startsWith(`${base.item.path}/`)) return empty;
-            const path = userPath(node.path.slice(base.item.path.length + 1));
-            const current = await authorizedPath(base, path, undefined, budget);
-            if (current.node.id !== stable.fileId || current.node.path !== node.path) return empty;
-            filter = { baseId: stable.baseId, itemId: stable.fileId };
-          } else {
-            // A path ref has no identity evidence: an unreadable existing leaf is never a disappearance.
-            if (!("path" in location)) return empty;
-            const path = userPath(location.path);
-            const target = joinPath(base.item.path, path);
-            const node = await budget
-              .run(() => base.service.stat(target))
-              .catch((error: unknown) => {
-                if (error instanceof FilegateError && error.status === 404) return null;
-                throw error;
-              });
-            if (node) {
-              const current = await authorizedPath(base, path, undefined, budget);
-              if (current.node.path !== target) return empty;
-            } else {
-              if (!path) return empty; // A base's parent is outside its authority.
-              const parent = path.split("/").slice(0, -1).join("/");
-              const current = await authorizedPath(base, parent, undefined, budget);
-              if (!current.node.directory) return empty;
-            }
-            filter = { baseId: location.baseId, path };
-          }
+          if (!location) return emptyActivityPage();
+          if (stable) filter = { baseId: stable.baseId, itemId: stable.fileId };
+          else if ("path" in location) filter = { baseId: location.baseId, path: userPath(location.path) };
+          else return emptyActivityPage();
+          parseActivityInput({ ...input, ...filter });
+          if (!(await historyContact(call, filter, budget, state))) return emptyActivityPage();
         } catch (error) {
-          // Unknown and forbidden anchors have the same terminal page, without candidate SQL.
-          if (
-            (error instanceof FilesError || error instanceof FilegateError || error instanceof AccountIdentityError) &&
-            [403, 404].includes(error.status)
-          )
-            return empty;
+          // Unknown and forbidden anchors keep the same terminal page, without candidate SQL.
+          if (deniedHistoryContact(error)) return emptyActivityPage();
           throw error;
         }
         return activityReader.activity({ ...call, requestAbort: budget.signal }, { ...input, ...filter });
@@ -1968,6 +2068,8 @@ export function createFilesService(
       if (!z.string().uuid().safeParse(input.idempotencyKey).success) throw new FilesError("upload_changed", 409);
       const current = await writableParent(actor, input.baseId, input.path);
       const target = joinPath(current.target, current.name);
+      // Compare external changes before the open upload journal suppresses contact observation.
+      await observeContact(current, target);
       const previous = await uploads.get(input.idempotencyKey, current.state.self.user.id);
       if (previous) {
         // A managed absent target is always create-only. Both conflict choices have the same effective intent.
@@ -2472,6 +2574,7 @@ export function createFilesService(
     ): Promise<{ modified: string } | { conflict: true }> {
       const current = await wopiFile(token, id, requestId);
       if (!current.canWrite) throw new FilesError("forbidden", 403);
+      // writeBytes observes under the publication lock after rechecking the WOPI target.
       // Collabora deliberately omits the timestamp when the user confirms
       // "Overwrite". A present timestamp must retain its microsecond precision.
       const timestamp = wopiTimestamp(current.node.modified);

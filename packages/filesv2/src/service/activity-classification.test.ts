@@ -18,6 +18,9 @@ const base = () => mixed();
 // This is the classification of Filegate user-data effects. Catalog/grant/configuration
 // writes stay in Postgres; "read" here means they do not change data in Filegate.
 const files: Record<string, Classification> = {
+  exportActivity: read,
+  previewActivityExport: read,
+  observeActivityContact: read,
   activityRecovery: read,
   restoreActivity: { kind: "mutation", coverage: "converted" },
   moveActivityBack: { kind: "mutation", coverage: "converted" },
