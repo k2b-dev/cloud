@@ -1,11 +1,13 @@
 import { type Context, Hono } from "hono";
 import { setCookie } from "hono/cookie";
 import { z } from "zod";
+import { resolveLocale } from "../server/locale";
 import type { AuthContext } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { pairingSecret } from "../services/pairing-secret";
 import { session } from "../services/session";
+import { get as getSetting } from "../services/settings";
 import {
   AppPwaAttempt,
   AppPwaClaim,
@@ -17,6 +19,7 @@ import {
   parseAppPwaInput as parse,
   pwaFail,
 } from "./contracts";
+import { AppPwaCoreQueryError } from "./core-query-error";
 import { type AppPwaService, createAppPwaService } from "./service";
 import { readAppPwaJson, untilAppPwaAbort } from "./transport-input";
 
@@ -57,6 +60,11 @@ export const createAppPwaRouter = (service: AppPwaService) => {
   const router = new Hono<AuthContext>();
   const limiter = rateLimit({ keyBy: "ip" });
   router.onError((error, c) => {
+    if (error instanceof AppPwaCoreQueryError)
+      return Response.json(
+        { code: error.code, ...(error.details ? { details: error.details } : {}) },
+        { status: error.status, headers: c.res.headers },
+      );
     const safe = error instanceof AppPwaError ? error : new AppPwaError("UNAVAILABLE", 503);
     return c.json({ code: safe.code }, safe.status);
   });
@@ -129,6 +137,20 @@ export const createAppPwaRouter = (service: AppPwaService) => {
     const key = credential(c);
     const input = parse(z.strictObject({ visitId: AppPwaId, attemptId: AppPwaId }), await body(c));
     return c.json(await service.attempt(key, input.visitId, input.attemptId, c.req.raw.signal));
+  });
+  router.post(`${guestBase}/core/query/:query`, async (c) => {
+    const key = credential(c);
+    const input = parse(z.strictObject({ visitId: AppPwaId.optional(), input: z.unknown() }), await body(c));
+    return c.json(
+      await service.coreQuery(
+        key,
+        input.visitId,
+        c.req.param("query"),
+        input.input,
+        c.req.raw.signal,
+        resolveLocale(c.req.raw.headers, await getSetting<string>("app.locale")),
+      ),
+    );
   });
   router.post(`${guestBase}/query/:route`, async (c) => {
     const key = credential(c);
