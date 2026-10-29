@@ -32,7 +32,7 @@ Du kannst eigene Kommentare 10 Minuten lang nach dem Veröffentlichen bearbeiten
 
 ## Persönliche Erinnerungen und Anwesenheit nutzen {icon="route"}
 
-Die **Persönliche Erinnerung** ist nur für dich. Löschst oder änderst du sie, bleiben die Erinnerungen anderer Personen unverändert. Ist die Erinnerung fällig, erstellt Mail eine Cloud-Benachrichtigung, sofern du noch Zugriff auf das Postfach hast.
+Die **Erinnerung** in den Unterhaltungsdetails ist nur für dich. Löschst oder änderst du sie, bleiben die Erinnerungen anderer Personen unverändert. Ist die Erinnerung fällig, erstellt Mail eine Cloud-Benachrichtigung, sofern du noch Zugriff auf das Postfach hast.
 
 Ist die Live-Anwesenheit verfügbar, zeigt **Aktive Mitwirkende** die Personen, die die Unterhaltung gerade ansehen oder darin schreiben. Anwesenheit ist nur ein Hinweis. Die gemeinsame Bearbeitungssperre des Entwurfs entscheidet, wer einen Entwurf bearbeiten kann. Solange jemand sie hält, lehnt Mail Änderungen am Entwurf von allen anderen ab, bis jemand die Bearbeitung übernimmt.
 

@@ -72,6 +72,7 @@ const portableSections = [
         "Dropdown picker whose rows explain each choice, with an optional preview of the consequences.",
       ),
       page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
+      page("choice-list", "ChoiceList", "ti ti-list", "A labeled single choice of a few rows that each explain their consequence."),
       page(
         "choice-tiles",
         "ChoiceTiles",
@@ -422,7 +423,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 164;
+export const portableUiComponentCount = 165;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

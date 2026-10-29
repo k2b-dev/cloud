@@ -14,6 +14,7 @@ const normalizeAdminHref = (href: string | undefined): string | undefined => {
 export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][], locale = "en"): AdminGroup[] => {
   const t = platformMessages.resolve([locale]).t;
   const settingsLinks: AdminLink[] = [
+    { href: "/admin/settings?tab=storage", icon: "ti-database", label: t.storage },
     { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
     { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
   ];

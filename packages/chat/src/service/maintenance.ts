@@ -16,6 +16,15 @@ export const cleanupAttachments = async (db: typeof sql = sql, now = new Date())
   ) RETURNING id`;
   return rows.length;
 };
+/** A retry key is replayable for 24 hours; expired receipts are pruned in bounded maintenance batches. */
+export const cleanupMessageMutations = async (db: typeof sql = sql, now = new Date()) => {
+  const before = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const rows = await db`DELETE FROM chat.message_mutations WHERE (conversation_id, principal_type, principal_id, client_id) IN (
+    SELECT conversation_id, principal_type, principal_id, client_id FROM chat.message_mutations WHERE created_at < ${before}
+    ORDER BY created_at LIMIT ${BATCH_SIZE} FOR UPDATE SKIP LOCKED
+  ) RETURNING client_id`;
+  return rows.length;
+};
 const log = logger("chat:maintenance");
 // Match repairMemberCount: membership includes existing accounts regardless of status or kind.
 const memberServices = (conversationId: string, db: typeof sql) => db`
@@ -149,6 +158,11 @@ export const reconcile = async (run: { signal: AbortSignal; heartbeat: () => unk
     }
     cursor = rows.at(-1)!.id;
     if (rows.length < BATCH_SIZE) break;
+  }
+  while (!run.signal.aborted) {
+    const removed = await cleanupMessageMutations();
+    if (removed > 0) await run.heartbeat();
+    if (removed < BATCH_SIZE) break;
   }
   return result;
 };

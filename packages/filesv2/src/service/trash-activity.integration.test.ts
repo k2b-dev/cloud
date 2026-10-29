@@ -817,22 +817,25 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
       // fixture does not need identity RPC to exercise archived admin deletion.
       const archiveId = Bun.randomUUIDv7();
       const target = `${prefix}/archive/${archiveId}/contents`;
-      const archive = await operations.insert({
-        id: archiveId,
-        area: "cloud",
-        kind: "users",
-        root: "cloud",
-        server_url: config.url,
-        name: "alice",
-        action: "archive",
-        source: home,
-        target,
-        base_id: bindingId,
-        archive_id: null,
-        actor_id: administrator.user.id,
-        actor_name: administrator.user.uid,
-        snapshot: await root().stat(home),
-      });
+      const archive = await operations.insert(
+        {
+          id: archiveId,
+          area: "cloud",
+          kind: "users",
+          root: "cloud",
+          server_url: config.url,
+          name: "alice",
+          action: "archive",
+          source: home,
+          target,
+          base_id: bindingId,
+          archive_id: null,
+          actor_id: administrator.user.id,
+          actor_name: administrator.user.uid,
+          snapshot: await root().stat(home),
+        },
+        callFor("purge"),
+      );
       try {
         await root().stat(`${prefix}/archive`);
       } catch (error) {
@@ -840,8 +843,10 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
         await root().mkdir(`${prefix}/archive`, { ownership: { dirMode: "0700" } });
       }
       await root().mkdir(`${prefix}/archive/${archiveId}`, { ownership: { dirMode: "0700" } });
-      await root().transfer(home, "cloud", target, { move: true, onConflict: "error" });
-      await operations.finish(archive, connectFilegate(config).root("cloud"));
+      const transferred = await root().transfer(home, "cloud", target, { move: true, onConflict: "error" });
+      if (transferred.state !== "completed" || !transferred.node) throw new Error("Expected completed archive transfer");
+      await operations.recordReceipt(archive.id, transferred.node);
+      await withRootLock("cloud", () => operations.finish(archive, connectFilegate(config).root("cloud")));
       const path = phase === "pending-survives" ? file.path : "";
       await service.adminDelete(callFor("purge"), { area: "cloud", archiveId, path, confirmPath: path ? `${target}/${path}` : target });
       expect(await trash.get(id, bindingId)).toMatchObject({ state: phase === "pending-survives" ? "pending" : "gone" });
@@ -900,6 +905,7 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
       const journal = await pendingTrash(file);
       const operation = await pendingPurge(file);
       await root().remove(file.target, true); // Confirmed effect, completion delayed.
+      await operations.recordReceipt(operation.id, { deleted: true });
       if (observation === "exists") {
         await root().mkdir(`${home}/trash`);
         await root().put(`${home}/${journal.trashed}`, new Blob([content]));
@@ -999,11 +1005,13 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
     await recover(tracked.transport);
     const entry = await onlyRow();
     expect(entry).toMatchObject({ state: "unclear", finished_at: null });
-    await expect(tracked.service.retry(testCall(administrator), entry.operation_id!)).rejects.toMatchObject({
-      code: "operation_unresolved",
-    });
+    // A durable successful deletion receipt survives the audit transaction
+    // rollback; retry completes the journal without repeating the deletion.
+    expect(await tracked.service.retry(testCall(administrator), entry.operation_id!)).toMatchObject({ state: "complete" });
     expect(tracked.deletes()).toBe(1);
-    expect(await operations.get(entry.operation_id!)).toMatchObject({ state: "pending" });
+    expect(await operations.get(entry.operation_id!)).toMatchObject({ state: "complete", receipt: { deleted: true } });
+    expect(await history(entry.id)).toMatchObject({ state: "done" });
+    expect(await sql`SELECT id FROM audit.events WHERE action='filesv2.delete'`).toHaveLength(1);
   });
 
   test("a lost purge response remains unclear; retry never repeats delete or deletes a replacement", async () => {

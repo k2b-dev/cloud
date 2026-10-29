@@ -11,6 +11,13 @@ import { buildEntries } from "./entries";
 const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) =>
   [
     {
+      id: "storage",
+      title: t.storageSettings,
+      description: t.storageSettingsDescription,
+      icon: "ti ti-database",
+      group: "storage" as const,
+    },
+    {
       id: "email-templates",
       title: t.emailTemplateSettings,
       description: t.emailTemplateSettingsDescription,
@@ -37,7 +44,8 @@ export default ssr<AuthContext>(async (c) => {
   const tabId: TabId = isTabId(rawTab, availableTabs) ? rawTab : "email-templates";
   const tab = availableTabs.find((item) => item.id === tabId)!;
   const documentationBase = await coreSettings.get<string>("app.documentation_url");
-  const entries = (await buildEntries(tab.group, locale)).filter((entry) => entry.kind === "template");
+  const allEntries = await buildEntries(tab.group, locale);
+  const entries = tab.id === "email-templates" ? allEntries.filter((entry) => entry.kind === "template") : allEntries;
 
   return () => (
     <AdminLayout c={c} title={tab.title} scroll={false}>
@@ -50,6 +58,7 @@ export default ssr<AuthContext>(async (c) => {
             subtitle={tab.description}
             icon={tab.icon}
             entries={entries}
+            showTestStorageAction={tab.id === "storage"}
           />
         ) : null}
       </div>

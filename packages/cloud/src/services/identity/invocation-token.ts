@@ -62,6 +62,8 @@ const InvocationPayloadBaseSchema = z
     /** Only for an app session of the mobile app, which never acts as an administrator. */
     session_kind: z.literal("app").optional(),
     credential_id: BoundedIdentifierSchema.optional(),
+    oauth_client_id: z.string().min(1).max(200).optional(),
+    credential_expires_at: z.iso.datetime().optional(),
     scopes: z
       .array(ScopeSchema)
       .max(100)
@@ -152,6 +154,8 @@ export type InvocationAuthority = Pick<
   | "credential_kind"
   | "session_kind"
   | "credential_id"
+  | "oauth_client_id"
+  | "credential_expires_at"
   | "scopes"
   | "mandate_id"
   | "mandate_revision"

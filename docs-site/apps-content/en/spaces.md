@@ -73,6 +73,8 @@ when the audience or lifecycle is different.
 When the installation runs the
 [Cloud app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
 page and, when there is room, in its tab bar for people with the `user` role. Guests do not see it.
+Start says how many tasks are for you and how many are for today, and the
+sidebar of a wide screen shows the number of tasks for you beside Spaces.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
 Tasks you claim also count as yours in **For me**.
@@ -123,8 +125,22 @@ anyone else the address does not exist.
   saved.
 - Without write access to the Space, the task says so, and the circle and the
   checklist are off.
+- **Comment** sends a comment to the task. What you type stays on the device
+  until it is sent, also when the app is closed in between. When it cannot be
+  sent, the text stays and **Retry** safely repeats the send, including after
+  restarting the app. A late answer cannot clear a newer draft. If device
+  storage is full or blocked, the app keeps the text on screen and asks you
+  to free space before sending. Without write access to
+  the Space, there is no comment field.
 - **Open in Spaces** opens the task in Spaces on the web, to edit everything
   else.
+
+The comment API, `POST /api/spaces/:id/items/:itemId/comments`, accepts an
+optional `requestId` UUID alongside `content`. Reuse it for retries of the same
+comment. While that comment exists unchanged, a retry returns it without
+another comment or activity entry; a different author, item, occurrence, or
+content with the same request ID returns 409. The response keeps its usual
+short comment ID.
 
 ## Understand the Spaces model
 
