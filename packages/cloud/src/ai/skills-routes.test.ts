@@ -292,7 +292,12 @@ describe("AI Skill routes", () => {
     const response = await routes.request("/project-links/proj12?q=finance&available=true&page=2");
     expect(response.status).toBe(200);
     expect(project).toHaveBeenCalledWith("proj12", authorization, "admin");
-    expect(list).toHaveBeenCalledWith(projectId, authorization, { query: "finance", available: true, page: 2, authority: sessionAuthority });
+    expect(list).toHaveBeenCalledWith(projectId, authorization, {
+      query: "finance",
+      available: true,
+      page: 2,
+      authority: sessionAuthority,
+    });
     expect(await response.json()).toMatchObject({ items: [{ id: skillShortId }], page: 2, hasNext: true });
     const request = () =>
       routes.request(`/${skillShortId}/projects/proj12`, {
