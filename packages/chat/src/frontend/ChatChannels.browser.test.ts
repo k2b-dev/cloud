@@ -12,7 +12,7 @@ let harness: Awaited<ReturnType<typeof startChatHarness>>;
 let browser: Browser;
 beforeAll(async () => {
   harness = await startChatHarness();
-  browser = await launchBrowser();
+  browser = await launchBrowser({ serveShellCatalog: true });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();

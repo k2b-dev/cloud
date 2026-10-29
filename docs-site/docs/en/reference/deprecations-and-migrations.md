@@ -10,6 +10,25 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## Sign-in and security are one administration area with new addresses
+
+**Administration → Sign-in & security** collects Sign-in, Registration,
+Security, Linux identities, FreeIPA, and Account operations. The old addresses
+open the e-mail templates and do not redirect:
+
+| Before | Now |
+| --- | --- |
+| `/admin/settings?tab=user` | `/admin/signin` |
+| `/admin/settings?tab=registration` | `/admin/signin/registration` |
+| `/admin/settings?tab=security` | `/admin/signin/security` |
+| `/admin/settings?tab=linux` | `/admin/signin/linux` |
+| `/admin/settings?tab=freeipa` | `/admin/signin/freeipa` |
+| `/admin/settings?tab=account-operations` | `/admin/signin/operations` |
+
+`/admin/sync` without the Accounts app now leads to `/admin/signin/freeipa`.
+Operators: no migration is needed. Update bookmarks and links in your own
+runbooks.
+
 ## Notebooks page discussion moved to the discussion commands
 
 `cld notebooks comments` now means comments on a passage of the text, with

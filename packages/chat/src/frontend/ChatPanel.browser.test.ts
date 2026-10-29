@@ -51,7 +51,7 @@ Bun.plugin(plugin());
 beforeAll(async () => {
   const { startConversationPanelFixture } = await import("./ChatPanel.browser-fixture");
   fixture = await startConversationPanelFixture();
-  browser = await launchBrowser();
+  browser = await launchBrowser({ serveShellCatalog: true });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
