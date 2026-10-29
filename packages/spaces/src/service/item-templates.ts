@@ -94,8 +94,17 @@ const loadRelations = async (rows: DbTemplate[]): Promise<SpaceItemTemplate[]> =
       WHERE tt.template_id = ANY(${ids}::uuid[])
       ORDER BY t.name
     `,
-    sql<{ template_id: string; kind: SpaceItemAssignee["kind"]; id: string; display_name: string; avatar_hash: string | null }[]>`
-      SELECT ta.template_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+    sql<
+      {
+        template_id: string;
+        kind: SpaceItemAssignee["kind"];
+        service_account_kind: SpaceItemAssignee["serviceAccountKind"] | null;
+        id: string;
+        display_name: string;
+        avatar_hash: string | null;
+      }[]
+    >`
+      SELECT ta.template_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, u.uid, sa.name) AS display_name, u.avatar_hash, sa.kind AS service_account_kind,
         CASE WHEN ta.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
       FROM spaces.item_template_assignees ta
       LEFT JOIN auth.users u ON u.id = ta.user_id
@@ -121,7 +130,13 @@ const loadRelations = async (rows: DbTemplate[]): Promise<SpaceItemTemplate[]> =
       (tags.get(row.id) ?? []).map((tag) => ({ id: tag.id, spaceId: tag.space_id, name: tag.name, color: tag.color })),
       (assignees.get(row.id) ?? [])
         .filter((user) => withAccess.get(row.space_id)?.has(`${user.kind}:${user.id}`))
-        .map((user) => ({ kind: user.kind, id: user.id, displayName: user.display_name, avatarHash: user.avatar_hash })),
+        .map((user) => ({
+          kind: user.kind,
+          serviceAccountKind: user.service_account_kind ?? undefined,
+          id: user.id,
+          displayName: user.display_name,
+          avatarHash: user.avatar_hash,
+        })),
     ),
   );
 };
