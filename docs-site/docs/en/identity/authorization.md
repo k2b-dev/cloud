@@ -82,6 +82,13 @@ client-provided filters never widen the caller's server-side visibility.
 Relationship filters are directory operations and remain limited to full user
 accounts.
 
+`GET /api/accounts/entities` accepts `service_account_kinds` (comma-separated
+`standalone`, `agent`, `resource_bound`, or `user_delegated`) and
+`service_account_status` (`active` or `disabled`). Omitting either filter
+leaves that field unrestricted; an empty kind list is also unrestricted. Invalid
+values return `400`. These filters apply only to service accounts, before totals and
+pagination; user and group results keep their existing visibility.
+
 ## Link access entries to the resource
 
 Cloud owns `auth.access`. The application owns a junction table:
@@ -481,11 +488,15 @@ Pass `existing` to exclude already selected principals. Users and groups are
 searched through Accounts after two characters; personal Linux groups are left
 out, so people are granted directly. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
-Public and service-account selection require `allowPublic` and
-`allowServiceAccounts` respectively. `serviceAccountFilter` narrows the offered
-service accounts to those the resource can accept, for example active
-standalone and agent accounts plus accounts bound to this resource; the service
-still checks every assignment. This picker grants no access itself.
+Service accounts and agents are included by default. Set
+`allowServiceAccounts={false}` only for a documented identity requirement.
+Public selection requires `allowPublic`. `PrincipalPicker` leaves service-account
+kinds and status unrestricted unless `serviceAccountKinds` or
+`serviceAccountStatus` is supplied. `PermissionEditor` forwards both options
+and defaults grant selection to active accounts; existing grant rows remain
+visible. Use the filters to match the resource's accepted recipients. `serviceAccountFilter` narrows the offered service accounts further on the
+client, for example to accounts bound to this resource. They never widen
+directory visibility; the service still checks every assignment. This picker grants no access itself.
 
 ### Keep the editor mounted across refetches
 
