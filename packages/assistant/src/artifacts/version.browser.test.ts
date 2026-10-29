@@ -45,7 +45,7 @@ document.querySelector("#amount").addEventListener("input", (event) => {
           source: source(revision),
         });
       return new Response(
-        '<!doctype html><meta charset="utf-8"><body class="k2b-ui"><div id="root" style="display:flex;flex-direction:column;height:90vh"></div><script src="/bundle.js"></script>',
+        '<!doctype html><meta charset="utf-8"><body class="k2b-ui"><div id="root" style="display:flex;flex-direction:column;height:90vh"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html" } },
       );
     },

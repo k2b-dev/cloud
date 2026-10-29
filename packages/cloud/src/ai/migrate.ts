@@ -2,6 +2,7 @@ import { sql } from "bun";
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
+import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiQuotas } from "./quotas-migrate";
@@ -80,6 +81,8 @@ export const migrateCloudAi = async (): Promise<void> => {
       END IF;
     END $$
   `.simple();
+
+  await migrateAiMaps();
 
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_conversations_short_id ON ai.conversations(short_id)`.simple();

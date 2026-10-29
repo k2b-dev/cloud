@@ -145,6 +145,15 @@ const arrivalActions = new Set<HistoryAction>([
   "place.provision",
 ]);
 
+/** Validate before a targeted contact can record an observation. */
+export function parseActivityInput(rawInput: ActivityInput) {
+  const input = ActivityInput.parse(rawInput);
+  if (input.path !== undefined) relativePath(input.path);
+  if ((input.path !== undefined && !input.baseId) || (input.from && input.to && compareActivityTime(input.from, input.to) > 0))
+    throw new FilesError("invalid_activity_filter");
+  return input;
+}
+
 /** One request-local projection context; caches never survive a request or a membership change. */
 export function createActivityReader(deps: ActivityReaderDependencies) {
   const data = deps.data ?? activityReaderData;
@@ -488,10 +497,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
     },
     async activity(call: ActivityReadCall, rawInput: ActivityInput = {}): Promise<ActivityPage> {
       return withActivityReadBudget(call.requestAbort, async (budget) => {
-        const input = ActivityInput.parse(rawInput);
-        if (input.path !== undefined) relativePath(input.path);
-        if ((input.path !== undefined && !input.baseId) || (input.from && input.to && compareActivityTime(input.from, input.to) > 0))
-          throw new FilesError("invalid_activity_filter");
+        const input = parseActivityInput(rawInput);
         // Bind to identity, not request-specific invocation IDs or live display names. Rights are rechecked on every page.
         const cursorActor =
           call.actor.kind === "user"

@@ -131,6 +131,57 @@ coordinates Cloud writes. Filegate does not provide a conditional restore, so
 it cannot prevent a filesystem writer from changing the file between the check
 and the restore.
 
+## Interpret changes discovered on contact
+
+In local Cloud areas, Files compares the current item with the last confirmed
+Cloud change when the item or its history is opened, before a document save,
+and during maintenance. POSIX areas do not produce these observations.
+Opening history for a specific item compares that item after checking current
+read access; a missing path requires a readable parent. The global history view
+does not trigger comparisons of all its entries. Files records a changed revision
+or size, a missing item, or a stable ID found at another path.
+The entry gives the time Files noticed the difference. It does not identify who
+changed the item, when the change happened, or what caused it.
+
+This comparison needs a retained, confirmed Cloud entry. It creates no baseline
+from a first read and makes no claim while a related Cloud operation is pending
+or uncertain. Repeated contact with the same difference produces one entry.
+Without stable IDs, an external move can only appear as a missing item. Without
+a revision, a same-size content change can go unnoticed. Files cannot reconstruct changes that it never saw.
+
+## Export history for administration
+
+Administrators can download CSV or JSON Lines through
+`GET /api/filesv2/admin/activity/export`. Pass `format=csv` or `format=jsonl`, and
+inclusive UTC dates as `from=YYYY-MM-DD&to=YYYY-MM-DD`. Optional `baseId`,
+`actor`, `action` and literal name/old-path search `q` filters narrow the export. Current administration rights
+are checked before reading and again before authorizing the download.
+
+The same parameters on `GET /api/filesv2/admin/activity/export/preview`
+return a row count for the export dialog without starting a download. The
+download recounts its own snapshot; concurrent changes can alter the estimate.
+
+An export covers at most one calendar year and 100,000 entries. A wider range
+or larger result returns `413` before any file bytes; narrow the dates or add a
+filter. Counting and streaming use the same database snapshot, so changes made
+during the download cannot shift its pages. CSV cells are quoted and protected
+against spreadsheet formulas.
+
+Each authorized export is recorded in the security audit before streaming
+starts. The audit records the filters and selected row count, not a claim that
+the download completed. Canceling a download stops the export and releases its
+database snapshot; its audit evidence remains. A failed or interrupted stream
+is incomplete and should be discarded before requesting a fresh export.
+
+Exports cover local Cloud areas only. Counts and search exclude POSIX-only
+events; a cross-area operation exports only its local side. Selecting a POSIX
+area returns `history_unavailable` (HTTP 409).
+
+Exports contain file names, paths and the names of accounts that still exist.
+Protect the downloaded file separately: Files retention cannot delete copies
+an administrator has downloaded. Operators should agree access and retention
+with the responsible privacy representatives, including a works council where
+applicable, before using history in a workplace.
 ## Read visible history
 
 The Files history API, `cld filesv2 history`, and the `activity.list`,
@@ -345,6 +396,13 @@ comment. History stores an options fingerprint instead of copying comment text
 or author names. Other version mutations need their successful response; a missing
 version is not a deletion receipt, since pruning can also remove versions.
 
+The file inspector and Activity send the revision they displayed when restoring a version in
+place. Files compares it again under its publication lock and returns
+`version_restore_changed` (409) if it changed; reload before retrying. This check
+coordinates Cloud writes. Filegate does not provide a conditional restore, so
+it cannot prevent a filesystem writer from changing the file between the check
+and the restore.
+
 Permanent deletion commits its intent with the operations journal. Success commits
 the journal, history, and `filesv2.delete` audit event together. Version deletion
 commits history with a `filesv2.version.delete` audit event. An audit failure leaves
@@ -392,3 +450,7 @@ keys; the migration does not rekey existing reservations. New incoming content
 carries its activity ID in Filegate metadata for later saved-version attribution.
 Direct-write scopes also bind ownership, ACLs, publication conditions, and this
 metadata marker to the persisted intent.
+
+Contact observation never waits for a busy root publication lock. It leaves the read usable and defers due comparison work for one minute without spending a failed retry. Editor saves observe under their existing publish lock; upload start compares before reserving the target, and skips the comparison if the root is busy. Repeated healthy detail reads do not update comparison schedules before they are due. Storage and history-write failures retain their explicit error behavior.
+
+The upload-start comparison describes the content at that contact. On a root without managed revision preconditions, an external change after the reservation and before commit may be overwritten without separate difference evidence; the open upload journal suppresses contact comparisons during that interval.

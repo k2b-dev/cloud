@@ -1,4 +1,13 @@
 const messages: Record<string, [string, string]> = {
+  activity_export_range: ["Choose a date range of at most one year.", "Wähle einen Zeitraum von höchstens einem Jahr."],
+  activity_export_limit: [
+    "This export contains more than 100,000 entries. Narrow the date range or filters.",
+    "Der Export enthält mehr als 100.000 Einträge. Grenze den Zeitraum oder die Filter ein.",
+  ],
+  activity_export_failed: [
+    "The export could not be completed. Try again.",
+    "Der Export konnte nicht abgeschlossen werden. Versuche es erneut.",
+  ],
   history_unavailable: [
     "History is available only for local Cloud storage. This area uses Unix permissions, which history cannot check.",
     "Der Verlauf ist nur für lokale Cloud-Ablagen verfügbar. Dieser Bereich verwendet Unix-Rechte, die der Verlauf nicht prüfen kann.",

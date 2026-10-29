@@ -56,7 +56,7 @@ for (const kind of ["apps", "skills"] as const)
           return Response.json({ linked });
         }
         return new Response(
-          '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>',
+          '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script type="module" src="/bundle.js"></script>',
           { headers: { "content-type": "text/html" } },
         );
       },

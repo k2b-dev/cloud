@@ -130,6 +130,7 @@ export default ssr<AuthContext>(async (c) => {
   let directMemberServiceAccountIds: string[] = [];
   let directManagerUserIds: string[] = [];
   let directManagerGroupIds: string[] = [];
+  let directManagerServiceAccountIds: string[] = [];
   let membersPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, 0);
   let managersPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, 0);
   let memberOfPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, 0);
@@ -173,6 +174,9 @@ export default ssr<AuthContext>(async (c) => {
 
     managerItems = managersPage.items;
     directManagerUserIds = directManagersPage.items.filter((manager) => manager.type === "user").map((manager) => manager.id);
+    directManagerServiceAccountIds = directManagersPage.items
+      .filter((manager) => manager.type === "service_account")
+      .map((manager) => manager.id);
     directManagerGroupIds = directManagersPage.items.filter((manager) => manager.type === "group").map((manager) => manager.id);
     managersPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, managersPage.total);
   } else if (tab === "member-of") {
@@ -349,6 +353,7 @@ export default ssr<AuthContext>(async (c) => {
               groupProvider={group.provider}
               allManagerIds={directManagerUserIds}
               allManagerGroupIds={directManagerGroupIds}
+              allManagerServiceAccountIds={directManagerServiceAccountIds}
               canManage={canManageMutations}
               isAdmin={isAdmin}
               groupHref={(targetGroupId) => buildDetailHref(targetGroupId)}

@@ -16,6 +16,7 @@ type ManagersTabProps = {
   groupProvider: "ipa" | "local";
   allManagerIds: string[];
   allManagerGroupIds: string[];
+  allManagerServiceAccountIds?: string[];
   canManage: boolean;
   isAdmin: boolean;
   groupHref: (groupId: string) => string;
@@ -78,10 +79,13 @@ export default function ManagersTab(props: ManagersTabProps) {
               searchGroups={props.isAdmin}
               excludeUserIds={props.allManagerIds}
               excludeGroups={props.allManagerGroupIds}
+              excludeServiceAccountIds={props.allManagerServiceAccountIds}
             />
           ) : undefined
         }
       />
+
+      {props.groupProvider === "local" && <p class="text-sm text-dimmed">{messages().machineManagementHint}</p>}
 
       {isEmpty ? (
         <Placeholder surface="paper" icon="ti ti-users-group" description={<>{messages().noManagers}</>} />
@@ -160,7 +164,8 @@ export default function ManagersTab(props: ManagersTabProps) {
                         ? messages().agent
                         : messages().resourceBound;
                 const href = props.isAdmin ? `/app/accounts/service-accounts?search=${encodeURIComponent(serviceAccount.name)}` : undefined;
-                if (col.id === "type") return <span class="text-dimmed">{messages().serviceAccount}</span>;
+                if (col.id === "type")
+                  return <span class="text-dimmed">{serviceAccount.kind === "agent" ? messages().agent : messages().serviceAccount}</span>;
                 if (col.id === "name") {
                   const content = (
                     <>
@@ -177,6 +182,7 @@ export default function ManagersTab(props: ManagersTabProps) {
                   );
                 }
                 if (col.id === "detail") {
+                  if (serviceAccount.kind === "agent" || serviceAccount.kind === "standalone") return <span class="text-dimmed">—</span>;
                   const content = (
                     <span class="block truncate" title={serviceAccount.appId || messages().noAppId}>
                       {serviceAccount.appId || <span class="italic">{messages().noAppId}</span>}
@@ -190,7 +196,24 @@ export default function ManagersTab(props: ManagersTabProps) {
                     <span class="text-dimmed">{content}</span>
                   );
                 }
-                if (col.id === "access") return <Tag>{kindLabel}</Tag>;
+                if (col.id === "access")
+                  return (
+                    <Tag>
+                      {serviceAccount.kind === "agent" || serviceAccount.kind === "standalone"
+                        ? messages().machineManagementAccess
+                        : kindLabel}
+                    </Tag>
+                  );
+                if (col.id === "actions")
+                  return props.canManage ? (
+                    <RemoveMember
+                      groupId={props.groupId}
+                      membershipRole="managers"
+                      type="service_account"
+                      id={serviceAccount.id}
+                      label={serviceAccount.name}
+                    />
+                  ) : null;
                 return null;
               }
 

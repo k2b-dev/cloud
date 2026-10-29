@@ -222,6 +222,13 @@ with its own base grant and an exact-workflow, revocable mandate. See
 
 For independently owned file storage and explicit path grants, see
 [Files machine storage](/en/docs/identity/files-machine-storage).
+
+## Local group management by machines
+
+Standalone and agent accounts can receive a direct, revocable local group
+management grant, separate from membership. A matching token scope is also
+required. See [Machine group management](./machine-group-management.md).
+
 ## Find names through a directory share
 
 An administrator can share exact people, groups, or accounts under **Accounts →

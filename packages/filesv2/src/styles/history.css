@@ -697,6 +697,16 @@
   }
 }
 
+/* One named container owns the admin table/list switch across the Cloud and application stylesheets. */
+.filesv2-admin-history-table { display: none; }
+@container filesv2-history (min-width: 56rem) {
+  .filesv2-admin-history-table { display: block; }
+  .filesv2-admin-history-list { display: none; }
+}
+
+/* The approved audit table reads at the same scale as the activity sentences. */
+.k2b-ui .k2b-data-table.filesv2-admin-history-data { font-size: 0.84375rem; }
+.k2b-ui .filesv2-admin-history-data .k2b-data-table__head-row > th { font-size: 0.78125rem; }
 /* History's approved empty/error presentation, using the shared Placeholder and feedback semantics. */
 .k2b-ui .k2b-placeholder.filesv2-history-placeholder { gap: 6px; padding: 72px 20px; }
 .k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); margin-bottom: 6px; }

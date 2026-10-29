@@ -1,6 +1,7 @@
 export const buildContactsSearchHref = (href: string, search: string): string => {
   const url = new URL(href, "http://contacts.local");
   url.searchParams.delete("contactOutcome");
+  url.searchParams.delete("address");
   const query = search.trim();
   if (query) url.searchParams.set("search", query);
   else url.searchParams.delete("search");
@@ -13,6 +14,7 @@ export const buildContactsSearchHref = (href: string, search: string): string =>
 export const contactsResultSignature = (href: string): string => {
   const url = new URL(href, "http://contacts.local");
   url.searchParams.delete("contactOutcome");
+  url.searchParams.delete("address");
   return [
     url.pathname,
     url.searchParams.get("search") ?? "",
@@ -28,6 +30,7 @@ export const contactsResultSignature = (href: string): string => {
 export const contactsResultHref = (href: string): string => {
   const url = new URL(href, "http://contacts.local");
   url.searchParams.delete("contactOutcome");
+  url.searchParams.delete("address");
   url.searchParams.delete("contact");
   url.searchParams.delete("contactBook");
   return `${url.pathname}${url.search}`;
@@ -36,6 +39,7 @@ export const contactsResultHref = (href: string): string => {
 export const buildContactsPaginationBaseHref = (href: string): string => {
   const url = new URL(href, "http://contacts.local");
   url.searchParams.delete("contactOutcome");
+  url.searchParams.delete("address");
   url.searchParams.delete("page");
   url.searchParams.delete("contact");
   url.searchParams.delete("contactBook");
@@ -46,6 +50,7 @@ export const buildContactsPaginationBaseHref = (href: string): string => {
 export const buildContactsPageHref = (href: string, page: number): string => {
   const url = new URL(href, "http://contacts.local");
   url.searchParams.delete("contactOutcome");
+  url.searchParams.delete("address");
   if (page <= 1) url.searchParams.delete("page");
   else url.searchParams.set("page", String(page));
   url.searchParams.delete("contact");
@@ -56,6 +61,7 @@ export const buildContactsPageHref = (href: string, page: number): string => {
 export const buildContactDetailHref = (href: string, contactId: string, bookId: string): string => {
   const url = new URL(href, "http://contacts.local");
   url.searchParams.delete("contactOutcome");
+  url.searchParams.delete("address");
   url.searchParams.set("contact", contactId);
   url.searchParams.set("contactBook", bookId);
   return `${url.pathname}${url.search}`;

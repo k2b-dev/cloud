@@ -246,6 +246,54 @@ type NavigationRecord = {
 const explainedPages = new WeakSet<Page>();
 /** Per page, the URL it showed when each of its running goto, reload, goBack, and goForward calls started. */
 const testNavigations = new WeakMap<Page, Set<{ from: string }>>();
+
+/** What a test server saw of each request: when it arrived, and the status it answered with, if any. */
+type ServerEntry = { method: string; url: string; received: number; answered?: number; status?: number };
+const testServers = new Map<string, ServerEntry[]>();
+
+/**
+ * Records what a test server receives and answers, so a navigation that times out says whether its open request
+ * reached the server. Wrap the server's `fetch` with `record`, call `listen` with the server's URL once it listens, and
+ * `stop` when it stops. The log keeps the last 100 requests.
+ */
+export const recordTestServer = () => {
+  const log: ServerEntry[] = [];
+  let origin: string | undefined;
+  return {
+    record:
+      <A extends unknown[], R>(fetch: (request: globalThis.Request, ...rest: A) => R | Promise<R>) =>
+      async (request: globalThis.Request, ...rest: A): Promise<R> => {
+        const entry: ServerEntry = { method: request.method, url: request.url, received: Date.now() };
+        log.push(entry);
+        if (log.length > 100) log.shift();
+        const response = await fetch(request, ...rest);
+        entry.answered = Date.now();
+        if (response instanceof Response) entry.status = response.status;
+        return response;
+      },
+    listen: (url: URL | string) => {
+      origin = new URL(url).origin;
+      testServers.set(origin, log);
+    },
+    stop: () => {
+      if (origin && testServers.get(origin) === log) testServers.delete(origin);
+    },
+  };
+};
+
+/** The recorded server's view of one open request, or nothing for a server that records nothing. */
+const serverView = (line: string, since: number): string | undefined => {
+  const [method, url] = line.split(" ");
+  if (!method || !url) return undefined;
+  const log = testServers.get(new URL(url).origin);
+  if (!log) return undefined;
+  const entry = log.findLast((candidate) => candidate.method === method && candidate.url === url && candidate.received >= since);
+  if (!entry) return `  test server: never received ${method} ${url}`;
+  const at = entry.received - since;
+  return entry.answered === undefined
+    ? `  test server: received it ${at} ms in, never answered`
+    : `  test server: received it ${at} ms in, answered ${entry.status ?? "without a Response"} after ${entry.answered - entry.received} ms`;
+};
 const explainNavigations = (page: Page): Page => {
   if (explainedPages.has(page)) return page;
   explainedPages.add(page);
@@ -324,7 +372,7 @@ const explainNavigations = (page: Page): Page => {
         responses.length === 0 ? "Responses: none" : "Responses:",
         ...responses,
         pending.length === 0 ? "Requests still open: none" : "Requests still open:",
-        ...pending.slice(0, 10),
+        ...pending.slice(0, 10).flatMap((line) => [line, serverView(line, started) ?? []].flat()),
         ...(pending.length > 10 ? [`and ${pending.length - 10} more`] : []),
         ...(failed.length > 0
           ? ["Requests failed:", ...failed.slice(0, 10), ...(failed.length > 10 ? [`and ${failed.length - 10} more`] : [])]

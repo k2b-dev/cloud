@@ -3,6 +3,40 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.52.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.51.0...cloud-v0.52.0) (2026-10-29)
+
+
+### Features
+
+* **access:** let machine managers administer shared resources ([#1841](https://github.com/k2b-dev/cloud/issues/1841)) ([5d92f21](https://github.com/k2b-dev/cloud/commit/5d92f21cc2dfbdd081650ad280992f0f75f7e143))
+* **accounts:** include agents in local group membership ([#1834](https://github.com/k2b-dev/cloud/issues/1834)) ([d7720d0](https://github.com/k2b-dev/cloud/commit/d7720d0fa61071c89e8c319c2d1fc1010d4f2d68)), closes [#1723](https://github.com/k2b-dev/cloud/issues/1723)
+* **accounts:** keep personal Linux groups out of exports ([#1949](https://github.com/k2b-dev/cloud/issues/1949)) ([36268f4](https://github.com/k2b-dev/cloud/commit/36268f4a0bde3bb46435c7114634b1c5f13e4436))
+* **ai:** preserve caller identity in Project and Skill access ([eb4fc71](https://github.com/k2b-dev/cloud/commit/eb4fc71e94e51c54a78f4bc1c995d541b0646e66))
+* **chat:** per-chat notification levels and following item discussions ([#2072](https://github.com/k2b-dev/cloud/issues/2072)) ([29b69f3](https://github.com/k2b-dev/cloud/commit/29b69f3bb071c3cbf18e8d7338a8f27b69860868))
+* **cloud:** give every agent a robot and a page to change its picture ([#1855](https://github.com/k2b-dev/cloud/issues/1855)) ([3612533](https://github.com/k2b-dev/cloud/commit/361253360abe327d645ce3afdffe36b36b9b7d4d))
+* **core:** show Administration › Sign-in & security as one area ([#2040](https://github.com/k2b-dev/cloud/issues/2040)) ([91ff763](https://github.com/k2b-dev/cloud/commit/91ff7634b8b4d26a205f224be891a043c3c69bd3))
+* **filesv2:** offer authorized history for local Cloud areas ([#1929](https://github.com/k2b-dev/cloud/issues/1929)) ([59cd0a0](https://github.com/k2b-dev/cloud/commit/59cd0a03d5bc54aabb5963fd78f24c43d4804e44))
+* **filesv2:** search with typos, folder names, relevance and filters ([#1984](https://github.com/k2b-dev/cloud/issues/1984)) ([628e024](https://github.com/k2b-dev/cloud/commit/628e024ce8fead105b9eeca5f1644d3d895d7de1))
+* **filesv2:** show item history and activity recovery ([#1930](https://github.com/k2b-dev/cloud/issues/1930)) ([1a33fc5](https://github.com/k2b-dev/cloud/commit/1a33fc535acf05f975f8ca066c74e0627bfcc628))
+* **grids:** include agents in app sharing and principal fields ([#1839](https://github.com/k2b-dev/cloud/issues/1839)) ([bc70415](https://github.com/k2b-dev/cloud/commit/bc70415af51edd4edafd04082085b6f18f1e4d7a)), closes [#1731](https://github.com/k2b-dev/cloud/issues/1731)
+* **grids:** run workflows under revocable machine mandates ([#1851](https://github.com/k2b-dev/cloud/issues/1851)) ([7878ff4](https://github.com/k2b-dev/cloud/commit/7878ff490703d63ba7ecfb0383fe455c1c2f976e))
+* **mail:** assign conversations to agents and service accounts ([#1838](https://github.com/k2b-dev/cloud/issues/1838)) ([0e75705](https://github.com/k2b-dev/cloud/commit/0e757054912e543d3a7f8e9239c5b5de6644ab66))
+* **notebooks:** edit tables directly with the shared text editor ([#1737](https://github.com/k2b-dev/cloud/issues/1737)) ([11ee4f6](https://github.com/k2b-dev/cloud/commit/11ee4f65f176cc2a3646c18a0846dca29e3b7d40)), closes [#1762](https://github.com/k2b-dev/cloud/issues/1762)
+
+
+### Bug Fixes
+
+* **chat:** message edit and delete tests get the budget of the other Chat browser suites ([#2091](https://github.com/k2b-dev/cloud/issues/2091)) ([1b06adc](https://github.com/k2b-dev/cloud/commit/1b06adc315cbc3d59bb1bce36945ff9ad811bc6e))
+* **chat:** the 5000-member channel test creates its bulk members as agents, so cleanup stays fast ([#2094](https://github.com/k2b-dev/cloud/issues/2094)) ([1ceba2d](https://github.com/k2b-dev/cloud/commit/1ceba2d0496409552e7707669fbd59013c68b10a))
+* **chat:** the Command Escape tests hold only the opening's own request and wait for the read-only field ([#2096](https://github.com/k2b-dev/cloud/issues/2096)) ([b0af66b](https://github.com/k2b-dev/cloud/commit/b0af66bffe85373ab62b40c9339b6121d8fd7a8b))
+* **chat:** the panel catalog recovery test waits for the file-provider discovery before it counts ([#2090](https://github.com/k2b-dev/cloud/issues/2090)) ([578046d](https://github.com/k2b-dev/cloud/commit/578046def4a6627456accafa5cad893b771400e7))
+* **ci:** correct Nightly browser setup and test expectations ([#1892](https://github.com/k2b-dev/cloud/issues/1892)) ([2de8a23](https://github.com/k2b-dev/cloud/commit/2de8a2321ca4b4b35d756035584069d685da20a3))
+* **mail:** the automation log recovery test reads the whole day before it looks for the restored entry ([#2100](https://github.com/k2b-dev/cloud/issues/2100)) ([4afdd78](https://github.com/k2b-dev/cloud/commit/4afdd7879f9a03a2c230da3ea820cb0c40f9d71a))
+* **pwa:** the pairing network-loss test advances the clock until a status check meets the lost network ([#2104](https://github.com/k2b-dev/cloud/issues/2104)) ([3830acd](https://github.com/k2b-dev/cloud/commit/3830acd483d5081c8571d91d4af7929b2299afa0))
+* **test:** every browser test page answers the shell's capability catalog read ([#2080](https://github.com/k2b-dev/cloud/issues/2080)) ([0fd10db](https://github.com/k2b-dev/cloud/commit/0fd10db4d1ddd0489b84061ae8a09d65151d814f))
+* **ui:** hints let the pointer through, so the row under one gets its hover at once ([#2089](https://github.com/k2b-dev/cloud/issues/2089)) ([6138dcb](https://github.com/k2b-dev/cloud/commit/6138dcb007c0b234528affe77c5cdcfc306a02c5))
+* **workflows:** keep expression matching linear on long input ([eb4fc71](https://github.com/k2b-dev/cloud/commit/eb4fc71e94e51c54a78f4bc1c995d541b0646e66))
+
 ## [0.51.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.50.0...cloud-v0.51.0) (2026-10-29)
 
 

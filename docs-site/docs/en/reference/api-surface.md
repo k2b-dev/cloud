@@ -162,6 +162,7 @@ Use the capability guide to choose the narrow API:
 
 - [Retained service-account authority](/en/docs/identity/authentication#retain-service-account-authority): `isServiceAccountOAuthAuthorityCurrent` from `@k2b/cloud/services` revalidates protected OAuth references before domain authorization.
 - [Settings](/en/docs/platform/settings): `SettingUnreadableError`, `SettingRead`, and `StoredSettingState` from `@k2b/cloud/services`; `app.settings.read()` reports stored state before a partial update.
+- [Saved maps](/en/docs/platform/saved-map-documents): `GeoDocumentSchema`, pin/link schemas and `serializeGeoDocument` from `@k2b/cloud/geo/document` save Geo results and complete routes as Notebook blocks.
 - [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, `geoRouteContract`, geo input/result schemas, route plans/updates, and provenance types come from `@k2b/cloud/contracts`.
 - [Object store](/en/docs/platform/object-store): `storage` from `@k2b/cloud/services` supplies app-bound private documents and permanent public image URLs.
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
@@ -375,6 +376,8 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap`, `CloudMapAttribution` and `CloudMapProps` for budgeted maps and browser snapshots; `AddressAutocomplete` for forms; `geoNavigationHref` and `geoNavigationPlatform` for navigation links | [Places and maps](/en/docs/platform/places-and-maps) |
+| `@k2b/cloud/geo/document` | Supported, browser and server | Validate and serialize saved maps, linked pins and complete routes | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
 | `@k2b/cloud/browser/shared-text` | Supported, browser | Shared provider, offline storage, action history and anchored table transport | [Shared text documents](/en/docs/data/shared-text-documents) |
 | `@k2b/cloud/browser/session` | Supported, browser | Sign out with cross-tab offline-document cleanup | [Offline documents](/en/docs/data/shared-text-documents#keep-unconfirmed-input-on-the-device) |
@@ -422,6 +425,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/workflows/testing` | Supported, tests | Workflow process fixtures | [Test workflows](/en/docs/automation/workflow-observability-and-testing) |
 | `@k2b/cloud/services/image-metadata` | Supported, server-only | Strip metadata from content image uploads without re-encoding | [Image upload privacy](/en/docs/platform/image-upload-privacy) |
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
+| `@k2b/cloud/services/pdf` | Supported, server-only | Prepare bounded map images for PDF and print exports | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
@@ -440,6 +444,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/cli/apps` | Platform-owned | Built-in application commands | — |
 | `@k2b/cloud/cli/admin` | Platform-owned | Built-in administration commands | — |
 | `@k2b/cloud/contracts/notifications` | Supported | Browser-safe notification contracts | [Notifications](/en/docs/platform/notifications) |
+| `@k2b/cloud/contracts/geo-snapshot` | Supported, browser and server | Validate map snapshot manifests and image bounds | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel | — |
 | `@k2b/cloud/config/*` | Advanced | Named configuration modules; prefer the barrel | — |
 
@@ -580,6 +585,20 @@ Application entry declarations use `appAccess` from `@k2b/cloud`, including
 existing resource rights; see
 [App access](/en/docs/identity/app-access). The batch resolver and registry
 filtering helpers are platform-owned.
+
+### Map snapshot uploads
+
+`@k2b/cloud/geo/ui` exports `CloudMap`, `CloudMapAttribution` and
+`CloudMapProps`. `CloudMap` forwards the browser `MapViewHandle` ref for capture.
+
+`@k2b/cloud/contracts/geo-snapshot` exports `GeoMapSnapshotManifestSchema`,
+`GeoMapSnapshotImageSchema`, `GeoMapSnapshotIdSchema`, `GeoMapSnapshotManifest`,
+`geoMapSnapshotPart`, `geoMapSnapshotFingerprint` and the `GEO_SNAPSHOT_MAX_*`
+bounds. `@k2b/cloud/services/pdf` exports `prepareGeoMapSnapshotAssets`,
+`GeoMapSnapshotAssetError`, `GeoMapSnapshotAsset` and
+`GeoMapSnapshotAssetErrorCode`. See
+[Map images](/en/docs/platform/places-and-maps#export-a-map-image-for-print-or-pdf)
+and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots).
 
 ### Model-class requests
 

@@ -20,7 +20,7 @@ test("sidebar dropdown icons are centered without changing regular triggers", as
       if (new URL(request.url).pathname === "/ui.css")
         return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
       return new Response(
-        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><div id="root"></div><script src="/bundle.js"></script>',
+        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><div id="root"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html" } },
       );
     },

@@ -61,7 +61,7 @@ describe("local group machine membership UI", () => {
   });
   for (const config of [
     { groupProvider: "ipa", membershipRole: "members" },
-    { groupProvider: "local", membershipRole: "managers" },
+    { groupProvider: "ipa", membershipRole: "managers" },
   ] as const) {
     test(`${config.groupProvider} ${config.membershipRole}: does not offer machine membership`, async () => {
       const dom = createDomTestHarness();

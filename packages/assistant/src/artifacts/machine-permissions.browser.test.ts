@@ -84,7 +84,7 @@ test("Studio machine rights recover from load/save failure and fit phone, tablet
       }
       const theme = /theme=dark/.test(request.headers.get("cookie") ?? "") ? "dark" : "light";
       return new Response(
-        `<!doctype html><html lang="en" class="${theme}" data-theme="${theme}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script></body></html>`,
+        `<!doctype html><html lang="en" class="${theme}" data-theme="${theme}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`,
         { headers: { "content-type": "text/html" } },
       );
     },
