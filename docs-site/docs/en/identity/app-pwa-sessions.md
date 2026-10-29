@@ -5,7 +5,7 @@ section: Identity and access
 order: 535
 description: Let an employee pair a shared device while the application authorizes each customer visit.
 tags: [pwa, devices, visits, sessions]
-updated: 2026-10-23
+updated: 2026-10-28
 ---
 
 # Pair devices and open customer visits
@@ -45,6 +45,7 @@ starts a new issuance.
 | --- | --- |
 | Issue a device, list it, or revoke it | Current authenticated web session, application staff authorization, and device ownership |
 | Open, read, or complete a customer's visit | Paired device and browser, current visit, and the application's visit and document rules |
+| Suggest addresses through an allowlisted Core query | Current pairing and visit, charged to the owner’s Geo budget |
 | Use a declared Cloud resource operation | Explicit device permission ceiling intersected with the owner's current resource grants |
 
 The owner can issue visits from another currently authorized web browser while
@@ -60,6 +61,67 @@ session cookie. `appPwaDeviceOperation()` provides a local service adapter
 with current Cloud resource-grant checks. It does not create cross-application
 invocation credentials or authorize arbitrary downstream services. The adapter
 must preserve device provenance when it calls its owning service.
+
+## Offer address suggestions
+
+Declare `coreQueries: ["address.autocomplete"]` in `createAppPwa()` to offer
+address suggestions on a paired device. The default is an empty allowlist.
+Unknown queries and actions fail at construction; autocomplete is the only
+supported query. The existing `queries` map still holds application-owned
+visit queries.
+
+The closed guest route `core/query/address.autocomplete` accepts
+`{ visitId, input }`, with the same cookie, CSRF, Origin, JSON, and byte budgets
+as other guest operations. With an explicit `visitId`, the visit must be live;
+an expired, ended, or revoked visit never falls back to device authority.
+Without `visitId`, a live visit still binds the call. After that visit ends,
+device mode resumes while the pairing remains valid. Queries never renew a visit.
+
+```ts
+const response = await fetch(`${guestApiPath}/core/query/address.autocomplete`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "X-App-Pwa-CSRF": csrf },
+  body: JSON.stringify({ visitId, input: { text: "Example Str", countryCode: "de" } }),
+  signal,
+});
+```
+
+A successful response is the [autocomplete data](/en/docs/platform/places-and-maps)
+(`suggestions` and `provenance`). Keep the linked Geoapify · OpenStreetMap
+attribution beside the suggestions. Address text is limited to 3–300 characters
+and results to five suggestions. Locale follows the request's normal Cloud
+locale preference.
+
+This is the narrow exception to the ownership rule above: the platform's
+App-PWA adapter may use the validated pairing owner as the autocomplete budget
+subject. It calls the same Geo service as the owner's Core query, preserving
+the device or visit actor rather than creating an employee request actor.
+It creates no bearer token, employee cookie, mandate, or arbitrary cross-app
+invocation. Application code must continue to use the closed route.
+
+Cloud checks pairing, browser, initiating web-session authority, and any visit
+in short transactions before and after the lookup. No database lock spans the
+provider request. A changed, expired, or revoked authority refuses the response;
+provider work already sent can still consume credits. An in-flight call cannot
+switch from one visit to another, or from a visit to device authority. If a visit
+opens during a device-mode lookup, `503 UNAVAILABLE` asks the client to refresh
+status and retry. A paid lookup can also consume credits before the application's
+response-byte budget refuses an oversized result.
+Revocation and expiry use the existing 401/410 errors. An undeclared query
+returns `403 FORBIDDEN`. Valkey separately limits the device and visit, including
+cache hits, to the smaller of `security.rate_limit_per_second` and the Geo plan's
+requests per second. `429 RATE_LIMITED` means that request budget was reached.
+A Valkey failure returns `503 UNAVAILABLE` and does not call the Geo service.
+
+Paid lookups count against the owner's existing daily budget and the Cloud
+monthly budget; cache hits remain free. Geo failures retain their own `code`.
+`429 GEO_BUDGET_EXHAUSTED` includes only `scope` and `resetsAt` in `details`;
+other Geo errors contain no details. Employee and operator balances and provider
+costs stay private. Show budget recovery separately from a request-rate refusal.
+The audit entry `app_pwa.core.query` records the owner in `metadata.subject` and
+the device or visit in `metadata.via`. It leaves the employee actor unset and
+stores no address input or results. Failed lookups and refusals after a lookup
+are recorded too. No content is created, so this read has no content-provenance stamp.
 
 ## Choose lifetimes
 
@@ -168,6 +230,7 @@ GET mutation. Rate limiting uses Cloud's existing request budget.
 | --- | --- |
 | `bootstrap`, `status` | `{}` |
 | `device/claim`, `visit/claim` | `{ qr }` |
+| `core/query/address.autocomplete` | `{ visitId?, input }` |
 | `query/<name>` | `{ visitId, input }` |
 | `command/<name>` | `{ visitId, attemptId, input }` |
 | `visit/attempt` | `{ visitId, attemptId }` |

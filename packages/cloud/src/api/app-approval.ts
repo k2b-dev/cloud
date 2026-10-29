@@ -27,9 +27,10 @@ import {
   type createAppApprovalService,
 } from "../services/app-approval";
 import { type NewBrowserSignInNotifier, readBrowserCookie } from "../services/known-browsers";
-import { SessionAppDeviceInactiveError, SessionEpochChangedError } from "../services/session";
+import { SessionAccountMismatchError, SessionAppDeviceInactiveError, SessionEpochChangedError } from "../services/session";
 import { appNameIn } from "../ssr/runtime";
 import { createDeviceActions } from "./app-approval-actions";
+import { accountMismatchResponse } from "./auth/account-mismatch";
 
 const PairingIdSchema = z.object({ pairingId: z.string().uuid() }).strict();
 const DevicePageSchema = z.object({ after: z.string().uuid().optional() }).strict();
@@ -56,6 +57,7 @@ export const createAppApprovalRoutes = (
     .use("/device", noTransform())
     .use("/device/*", noTransform())
     .onError((error, c) => {
+      if (error instanceof SessionAccountMismatchError) return accountMismatchResponse(c);
       if (error instanceof AppApprovalError) return c.json({ code: error.code, message: error.code }, error.status);
       if (error instanceof HTTPException && error.status < 500) return c.json({ code: "INVALID_REQUEST" }, error.status);
       // Never include SQL, pairing secrets, signature bodies or keys in errors.

@@ -19,6 +19,7 @@ Use **Comments** in the note details for questions, feedback, and decisions. Com
 - **Add:** With **Edit** access, you can post Markdown comments. Other people who have the detail panel open see new comments immediately.
 - **Correct:** You can edit or delete your own comment for ten minutes after you post it.
 - **Locked notes:** A lock freezes the note text, not its discussion. With **Edit** access, you can still comment on a locked note.
+- **Terminal:** `cld notebooks discussion` reads and writes this page discussion. `cld notebooks comments` works with comments on the text.
 :::
 
 Keep lasting handbook content in the note itself. Use comments to discuss that content before or after it changes.
@@ -101,7 +102,7 @@ The heading and list shortcuts use the physical digit keys on every keyboard lay
 
 :::reference
 - `/` at a line start or after whitespace opens the insert menu. Type a command name to filter it.
-- `[[` opens note suggestions. Choosing a note replaces the typed brackets with a Markdown link to it.
+- `[[` opens note suggestions. Type part of a title to find any note of the notebook; a note with exactly that title comes first. Choosing a note replaces the typed brackets with a Markdown link to it.
 - Pasting a link to something in this Cloud, for example from the address bar or **Copy Cloud ID**, turns it into a link with its title once it is recognized; a note becomes a note link. Links you may not open, links in code, and pastes with **Ctrl+Shift+V** (**⌘+Shift+V** on a Mac) stay as pasted. Undo brings back the plain link.
 - `![[` opens attachment suggestions. Choosing an image embeds it; choosing another file inserts a download link.
 - `==text==` highlights text. Highlight stays within one line.

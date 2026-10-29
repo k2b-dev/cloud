@@ -143,6 +143,8 @@ suite("Template administration security audit", () => {
     await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY,uid text,provider text,profile text,admin boolean,
       account_expires timestamptz,display_name text,avatar_hash text)`.simple();
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text,provider text,gid_number integer)`.simple();
+    // The grant path looks up a named service account; a missing one is refused before any write.
+    await sql`CREATE TABLE auth.service_accounts(id uuid PRIMARY KEY,name text,kind text,status text,delegated_user_id uuid,app_id text,resource_type text,resource_id text,created_by uuid,created_at timestamptz)`.simple();
     await migratePosix();
     await sql`CREATE TABLE auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id uuid REFERENCES auth.groups(id),child_group_id uuid REFERENCES auth.groups(id))`.simple();

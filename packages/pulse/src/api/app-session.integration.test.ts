@@ -10,7 +10,7 @@ import api from ".";
 const suite = suiteFor("database", "nats", "valkey");
 const users: string[] = [];
 
-suite("Pulse API keys and the mobile app", () => {
+suite("Pulse API keys and the Cloud app", () => {
   let settings: ReturnType<typeof settingsFixture>;
   beforeAll(() => {
     settings = settingsFixture();

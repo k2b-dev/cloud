@@ -35,6 +35,8 @@ type NotificationRow = {
   recipient_kind: "user" | "email";
   required_channels: string[];
   recommended_channels: string[];
+  excluded_channels: string[];
+  excluded_reason: string | null;
   total: number;
 };
 type Dependencies = {
@@ -92,7 +94,7 @@ export function createAppDetailsService(dependencies: Dependencies = {}) {
       `,
       db<NotificationRow[]>`
         SELECT id, kind, label, description, presentation, recipient_kind,
-          required_channels, recommended_channels, count(*) OVER()::int AS total
+          required_channels, recommended_channels, excluded_channels, excluded_reason, count(*) OVER()::int AS total
         FROM notifications.definitions
         WHERE app_id = ${appId} AND active = true
         ORDER BY id
@@ -194,14 +196,22 @@ export function createAppDetailsService(dependencies: Dependencies = {}) {
         };
       }),
       hears,
-      notifications: definitions.map((definition) => ({
-        id: definition.id,
-        kind: definition.kind,
-        ...resolveNotificationDefinitionPresentation(definition, locale),
-        recipientKind: definition.recipient_kind,
-        requiredChannels: definition.required_channels,
-        recommendedChannels: definition.recommended_channels,
-      })),
+      notifications: definitions.map((definition) => {
+        const presentation = resolveNotificationDefinitionPresentation(
+          { ...definition, excludedReason: definition.excluded_reason ?? undefined },
+          locale,
+        );
+        return {
+          id: definition.id,
+          kind: definition.kind,
+          ...presentation,
+          recipientKind: definition.recipient_kind,
+          requiredChannels: definition.required_channels,
+          recommendedChannels: definition.recommended_channels,
+          excludedChannels: definition.excluded_channels,
+          excludedReason: presentation.excludedReason ?? null,
+        };
+      }),
       totals: {
         sends: declarations[0]?.total ?? 0,
         hears: subscriptions[0]?.total ?? 0,

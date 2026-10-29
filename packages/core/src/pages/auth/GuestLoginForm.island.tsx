@@ -1,9 +1,12 @@
 import { apiClient } from "@k2b/cloud/clients/core";
+import { accountCategory } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, TextInput, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onMount, Show } from "solid-js";
-import { afterSignInHref } from "./login-redirect";
+import { LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
+import { signInAgainHref } from "../sign-out-others";
+import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
 export default function GuestLoginForm(props: {
@@ -20,9 +23,12 @@ export default function GuestLoginForm(props: {
 
   const emailMutation = mutations.create({
     mutation: async () => {
-      const res = await apiClient.auth["email-login"].$post({
-        json: { email: email(), redirectTo: props.redirectTo, category: props.category },
-      });
+      const res = await apiClient.auth["email-login"].$post(
+        {
+          json: { email: email(), redirectTo: props.redirectTo, category: props.category },
+        },
+        confirmationRequestOptions(props.redirectTo),
+      );
       const data = (await res.json()) as Record<string, unknown>;
       if (!res.ok) throw new Error((data.message as string) ?? t().requestFailed);
     },
@@ -31,16 +37,25 @@ export default function GuestLoginForm(props: {
 
   const tokenMutation = mutations.create({
     mutation: async () => {
-      const res = await apiClient.auth["verify-token"].$post({
-        json: { token: tokenInput() },
-      });
+      const res = await apiClient.auth["verify-token"].$post(
+        {
+          json: { token: tokenInput() },
+        },
+        confirmationRequestOptions(props.redirectTo),
+      );
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { message?: string } | null;
         throw new Error(data?.message ?? t().invalidToken);
       }
+      const data = await res.json();
+      if (!("user" in data)) throw new Error(t().invalidToken);
+      return data.user;
     },
-    onSuccess: () => {
-      cookies.writeCookie("login_method", props.category ?? "email");
+    onSuccess: (user) => {
+      // A clicked mail link has no category prop; remember the verified account's category.
+      const category = accountCategory(user);
+      cookies.writeCookie("login_method", category);
+      if (category === "login") cookies.writeCookie(LOGIN_EMAIL_SIGN_IN_COOKIE, "1");
       window.location.href = afterSignInHref(props.redirectTo);
     },
   });
@@ -78,6 +93,9 @@ export default function GuestLoginForm(props: {
           {error() && (
             <NoticeCard tone="danger">
               <span>{error()?.message}</span>
+              <ButtonLink href={signInAgainHref(props.redirectTo)} navigation="document" variant="text">
+                {t().backToSignIn}
+              </ButtonLink>
             </NoticeCard>
           )}
 

@@ -1,6 +1,7 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
+import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
@@ -10,6 +11,8 @@ import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
+import { bindResourceAppAccess, RESOURCE_ACCESS_PATH } from "./app-access-resources";
+import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -155,6 +158,8 @@ type ResolvedPageOptions = PageOptions & {
  */
 export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefinitionMap = {}, AppId extends string = string> = {
   id: AppId;
+  /** Shared object-store package. Defaults to the app ID. */
+  package?: string;
   access?: AppAccessDeclaration;
   name: string;
   icon: string;
@@ -187,7 +192,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
      * Same-origin path of a `GET` route this app serves below one of its
      * `routes`. After the page loads, the shell reads it with the person's
      * session and shows the returned `AppNavBadge` count on the app's icon in
-     * the rail and the app grid. Protect it like any other route.
+     * the rail, the phone bar, and the app grid. Protect it like any other route.
      */
     badge?: string;
   };
@@ -228,6 +233,17 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   pwa?: {
     /** Coarse visibility in the mobile app, like `nav.requiresRoles`. Routes and services still authorize. */
     requiresRoles?: Role[];
+    /**
+     * Same-origin path of a `GET` route this app serves that returns an `AppNavBadge`: the count beside the part in
+     * the app's sidebar, such as unread messages. Like `nav.badge`, it must be one of the app's own paths.
+     */
+    badge?: string;
+    /**
+     * Same-origin path of a `GET` route this app serves that returns a `PwaPartSummary`: one line under the part on
+     * Start, such as "5 tasks for you", in the reader's locale, and its count beside the part in the sidebar when the
+     * part has no `badge`. It may be the badge's route. It must be one of the app's own paths.
+     */
+    summary?: string;
   };
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
@@ -400,7 +416,21 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
   if (!isPwaPartId(opts.id)) {
     throw new Error(`App "${opts.id}" cannot declare pwa; a part needs a plain id other than pwa, settings and offline`);
   }
-  return { href: `/pwa/${opts.id}`, requiresRoles: opts.pwa.requiresRoles ? [...opts.pwa.requiresRoles] : undefined };
+  const { badge, summary } = opts.pwa;
+  for (const [field, path] of [
+    ["badge", badge],
+    ["summary", summary],
+  ] as const) {
+    if (path !== undefined && !isOwnAppPath(path, [...opts.routes, `/pwa/${opts.id}`])) {
+      throw new Error(`App "${opts.id}" declares pwa.${field} "${path}"; it must be a same-origin path below one of its routes`);
+    }
+  }
+  return {
+    href: `/pwa/${opts.id}`,
+    requiresRoles: opts.pwa.requiresRoles ? [...opts.pwa.requiresRoles] : undefined,
+    ...(badge ? { badge } : {}),
+    ...(summary ? { summary } : {}),
+  };
 };
 
 /** The badge route is read by the browser through the gateway, so it must be one of this app's own paths. */
@@ -452,6 +482,7 @@ export const defineApp = <
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
   const pwaPart = validateAppPwaPart(opts);
+  const packageName = resolveApplicationPackage(opts.id, opts.package);
   const installable = opts.installable === undefined ? undefined : validateInstallable(opts.id, opts.routes, opts.installable);
   if (installable === null)
     throw new Error(`App "${opts.id}" declares invalid installable; use a canonical own /app/<id>/<surface>/ path covered by routes`);
@@ -620,6 +651,7 @@ export const defineApp = <
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
   const baseMeta: AppMeta = {
+    package: packageName,
     id: opts.id,
     platformPermissions: opts.platformPermissions
       ? opts.platformPermissions.map((permission) => PlatformPermissionSchema.parse(permission))
@@ -689,7 +721,8 @@ export const defineApp = <
         }
       })());
     try {
-      bindProcessApplicationId(meta.id, meta.platformPermissions);
+      await registerApplicationPackage(meta.id, packageName);
+      bindProcessApplicationId(meta.id, meta.platformPermissions, packageName);
       cleanup.unshift(clearProcessApplicationId);
       const startedAt = Date.now();
 
@@ -709,6 +742,7 @@ export const defineApp = <
 
       // Registry entry
       const entry: AppRegistryEntry = {
+        package: packageName,
         id: meta.id,
         access: meta.access,
         name: meta.name,
@@ -749,7 +783,12 @@ export const defineApp = <
         legalLinks: meta.legalLinks ? meta.legalLinks.map((l) => ({ ...l })) : undefined,
         searchLinks: meta.searchLinks,
         pwa: meta.pwa
-          ? { href: meta.pwa.href, requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined }
+          ? {
+              href: meta.pwa.href,
+              requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined,
+              ...(meta.pwa.badge ? { badge: meta.pwa.badge } : {}),
+              ...(meta.pwa.summary ? { summary: meta.pwa.summary } : {}),
+            }
           : undefined,
         installable: meta.installable,
         panel: meta.panel
@@ -1038,6 +1077,8 @@ export const defineApp = <
         );
       }
 
+      cleanup.push(bindResourceAppAccess(meta.id, opts.access));
+      server.route(RESOURCE_ACCESS_PATH, createResourceAppAccessRoutes(meta));
       cleanup.push(() => stopAppAccessConnections());
       if (meta.access?.kind === "grants") {
         server.route(appAccessManagementPath(meta), createOwnedAppAccessRoutes(meta, opts.access?.canManage));

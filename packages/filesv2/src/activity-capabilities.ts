@@ -30,7 +30,8 @@ async function read<T>(context: CapabilityExecutionContext, run: () => Promise<T
   } catch (error) {
     const { code, status } = apiError(error);
     if (status === 500 || status === 503) throw error;
-    return fail({ code, status, message: errorMessage(code, context.locale) });
+    // An expired transfer (410) is gone like a missing item for a capability caller.
+    return fail({ code, status: status === 410 ? 404 : status, message: errorMessage(code, context.locale) });
   }
 }
 

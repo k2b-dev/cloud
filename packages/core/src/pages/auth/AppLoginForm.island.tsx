@@ -3,11 +3,11 @@ import { cookies } from "@k2b/stdlib/browser";
 import { Button, ButtonLink, NoticeCard, Placeholder, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
-import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
+import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
 import ApprovalFeedback from "../app-approval/Feedback";
 import { appApprovalMessages } from "../app-approval/messages";
-import { afterSignInHref } from "./login-redirect";
+import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 
 export default function AppLoginForm(props: {
   category: AccountCategory;
@@ -58,12 +58,18 @@ export default function AppLoginForm(props: {
         if (status.state === "approved") {
           setBusy(true);
           try {
-            await checked(await approvalApi.login.complete.$post({ json }, approvalRequestOptions()));
-          } catch {
+            await checked(
+              await approvalApi.login.complete.$post(
+                { json },
+                { ...approvalRequestOptions(), ...confirmationRequestOptions(props.redirectTo) },
+              ),
+            );
+          } catch (cause) {
             if (!disposed) {
               setBusy(false);
               setPending(undefined);
-              setMessage("uncertain");
+              if (cause instanceof ApprovalError && cause.code === "ACCOUNT_MISMATCH") setError(cause);
+              else setMessage("uncertain");
             }
             return false;
           }
@@ -72,6 +78,7 @@ export default function AppLoginForm(props: {
             // Reopen this account type next time; a FreeIPA browser also keeps the app ahead of the password.
             cookies.writeCookie("login_method", props.category === "freeipa" ? "ipa" : props.category);
             if (props.category === "freeipa") cookies.writeCookie(FREEIPA_APP_SIGN_IN_COOKIE, "1");
+            if (props.category === "login") cookies.deleteCookie(LOGIN_EMAIL_SIGN_IN_COOKIE);
             window.location.assign(afterSignInHref(props.redirectTo));
           }
         } else {

@@ -55,17 +55,17 @@ Do not reuse a platform prefix.
 address, not through the gateway. It responds only after `app.start()` has
 completed registration and all awaited lifecycle startup work.
 
-## Mobile app paths
+## Cloud app paths
 
-> **Preview:** the mobile app is not released yet. These paths may still
+> **Preview:** the Cloud app is not released yet. These paths may still
 > change until it is, without counting as a breaking change.
 
-`/pwa` is the installable mobile app's scope. Only three claims are valid:
+`/pwa` is the installable Cloud app's scope. Only three claims are valid:
 
 | Prefix | Owner |
 | --- | --- |
-| `/pwa` | The mobile app (the application `pwa`): Start, `/pwa/settings`, `/pwa/offline`, manifest, and service worker |
-| `/pwa/_auth` | Core: the phone's sign-in endpoints |
+| `/pwa` | The Cloud app (the application `pwa`): Start, `/pwa/settings`, `/pwa/offline`, manifest, and service worker |
+| `/pwa/_auth` | Core: the device's sign-in endpoints |
 | `/pwa/<app-id>` | That application's [part](/en/docs/frontend/mobile-app-pages), declared with `defineApp({ pwa })` |
 
 A part's application id consists of lowercase letters, digits, and hyphens and
@@ -75,12 +75,12 @@ starts with a letter; `pwa`, `settings`, and `offline` cannot have a part.
 `reserved_prefix` route warning, also from applications that do not use
 `defineApp()`.
 
-Only the mobile app may serve a service worker below `/pwa`. The gateway
+Only the Cloud app may serve a service worker below `/pwa`. The gateway
 answers `403` when a browser requests a worker script there from any other
 application. The shell's worker script is exactly `/pwa/sw.js`. Only Core's
 exact `/service-worker.js` may send `Service-Worker-Allowed`; the gateway removes
 the header from every other response. So the scope `/pwa/`
-keeps the mobile app's own service worker.
+keeps the Cloud app's own service worker.
 
 ## Standalone application paths
 
@@ -89,7 +89,7 @@ older registry records. Foreign ancestor and descendant claims are skipped;
 a root fallback cannot answer for a different application in this namespace.
 An app may declare one independent [App-PWA](/en/docs/frontend/app-pwa) here.
 Only its exact generated `sw.js` may load as a worker script, without a widened
-scope. Other workers are refused except the existing mobile-app worker and
+scope. Other workers are refused except the existing Cloud app worker and
 Core push worker.
 
 ## Match and normalize prefixes
@@ -107,7 +107,7 @@ The gateway uses the longest matching segment path. For example,
 Exact duplicate prefixes are skipped and reported as route warnings. The first
 application in the deterministic registry ordering keeps the prefix. Prefixes
 below `/pwa` that the application may not claim are skipped the same way; see
-[Mobile app paths](#mobile-app-paths).
+[Cloud app paths](#cloud-app-paths).
 
 ## Use public IDs in resource routes
 

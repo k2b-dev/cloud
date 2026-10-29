@@ -52,8 +52,8 @@ const Ref = z.object({ type: z.literal("filesv2.entry"), id: z.string() });
 const Item = Entry.extend({ ref: Ref, links: z.array(CapabilitySemanticLinkSchema).max(10) });
 const Result = z.object({ baseId: Base, entry: Item.optional(), uploadId: z.string().optional() });
 const readActor = (c: CapabilityExecutionContext) => {
-  if (c.actor.kind !== "user") throw err.forbidden("Files require a signed-in user.");
-  return c.actor;
+  capabilityCall(c);
+  return c.actor.kind === "user" ? c.actor.user.id : `service_account:${c.actor.serviceAccount.id}`;
 };
 /** Storage failures keep their stable Files code and carry the message Files shows, in the caller's locale. */
 async function domain<T>(c: { locale: string }, run: () => Promise<T>): Promise<T> {
@@ -441,7 +441,7 @@ export const fileActions = {
     approval: "rememberable" as const,
     review: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        await filesService.list(capabilityCall(c), { baseId: input.baseId, path: input.path.split("/").slice(0, -1).join("/") });
+        await filesService.uploadTarget(capabilityCall(c), input);
         const r = await reviewText(c);
         const name = r.name(input.path);
         return ok({
@@ -461,7 +461,7 @@ export const fileActions = {
           return fail(err.badInput(filesCapabilityMessages(c.locale).replaceNeedsRevision));
         const session = await filesService.upload(capabilityCall(c), {
           ...input,
-          idempotencyKey: uuidKey(JSON.stringify(["filesv2.content.create", readActor(c).user.id, c.idempotencyKey!])),
+          idempotencyKey: uuidKey(JSON.stringify(["filesv2.content.create", readActor(c), c.idempotencyKey!])),
         });
         return ok({
           data: { baseId: input.baseId, uploadId: session.id },
@@ -511,7 +511,7 @@ export const fileActions = {
           path: joinName(folder.path, input.name),
           size: input.size,
           onConflict: "error",
-          idempotencyKey: uuidKey(JSON.stringify(["filesv2.provider.save", actor.user.id, c.idempotencyKey!])),
+          idempotencyKey: uuidKey(JSON.stringify(["filesv2.provider.save", actor, c.idempotencyKey!])),
         });
         return ok({
           data: {},

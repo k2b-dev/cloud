@@ -115,7 +115,8 @@ describe("Filesv2 interactions", () => {
     const secret = dom.document.querySelector<HTMLInputElement>('input[name="filegate-token"]')!;
     expect(secret.value).toBe("");
     expect(dom.root.textContent).toContain("Leave this blank to keep it");
-    expect(dom.root.textContent).toContain("Cloud files require local Linux identities");
+    expect(dom.root.textContent).toContain("Personal storage and local POSIX group folders require local Linux identities");
+    expect(dom.root.textContent).toContain("Independent machine storage uses explicit path grants and needs no Unix identity provisioning");
     const form = dom.root.querySelector("form")!;
     const submit = () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     const url = dom.root.querySelector<HTMLInputElement>('input[name="filegate-url"]')!;

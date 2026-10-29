@@ -7,6 +7,7 @@ import { bindings } from "../data/bases";
 import { type ShareRow, shares } from "../data/shares";
 import { FilesError } from "./errors";
 import { createFilesService } from "./index";
+import * as machineAccessModule from "./machine-access";
 
 const call = testCall(testActor);
 const row = candidate(1, { actor_user_id: actorId });
@@ -42,6 +43,8 @@ const share: ShareRow = {
 };
 afterEach(() => mock.restore());
 function fixture() {
+  // Human callers own no machine storage here; the lookup would otherwise reach the database.
+  spyOn(machineAccessModule, "storageCandidates").mockResolvedValue([]);
   let profile: "user" | "guest" = "user";
   let admin = false;
   let creator = actorId;

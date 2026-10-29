@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
-import { AccountIdentityError, audit } from "@k2b/cloud/services";
+import { AccountIdentityError, audit, serviceAccounts } from "@k2b/cloud/services";
 import { type ExecutionIdentity, FilegateError, type Node, type Ownership, type Session, type SessionCreated } from "@k2b/filegate";
 import { sql, type TransactionSQL } from "bun";
 import type { z } from "zod";
@@ -25,6 +25,7 @@ import { type UserFilesCall, uploadAction, visitorCall } from "./activity";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import type { FilesFilegate, FilesRoot } from "./filegate-facade";
+import { filesAuditActor, filesScope, machineActor, machineOwner, principalMetadata } from "./machine-access";
 import { joinPath, relativePath, userPath } from "./paths";
 import type { UnixIdentity } from "./posix";
 import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
@@ -46,9 +47,17 @@ export type SharingDependencies<T extends SharingAccess> = {
   authorized(actor: RequestActor, baseId: string, path: string, directory?: boolean): Promise<T>;
   writableParent(actor: RequestActor, baseId: string, path: string): Promise<T>;
   executionFor(current: T): ExecutionIdentity | null;
+  shareAuthority(actor: RequestActor, current: T, path: string): Promise<void>;
+  guardShare(current: T, actor: RequestActor, shareId: string): T;
+  archiveTicket?(
+    actor: RequestActor,
+    current: T,
+    shareId: string,
+    lease: { url: string; expires: string; manifest: string },
+  ): Promise<string>;
   requireAdmin(actor: RequestActor): Promise<unknown>;
   actorUserId(actor: RequestActor): Promise<string>;
-  creatorActor(id: string): Promise<RequestActor>;
+  creatorActor(id: string, kind?: "user" | "service_account"): Promise<RequestActor>;
   validateUploadTarget(current: T, path: string): Promise<void>;
   bindings: typeof bindings;
   readConfiguration: typeof readConfiguration;
@@ -61,7 +70,7 @@ export const shareState = (row: ShareRow): ShareView["state"] =>
   row.revoked_at ? "revoked" : row.expires_at && row.expires_at.getTime() <= Date.now() ? "expired" : "active";
 const contains = (row: ShareRow, path: string) => row.items.some((item) => path === item || path.startsWith(`${item}/`));
 const baseId = (binding: Binding) => `${binding.area}:${binding.kind}:${binding.identity_id}`;
-const shareView = (row: ShareRow, binding: Binding | null, url: string | null = null): ShareView => ({
+const shareView = async (row: ShareRow, binding: Binding | null, url: string | null = null): Promise<ShareView> => ({
   id: row.id,
   passwordProtected: Boolean(row.password_hash),
   kind: row.kind,
@@ -69,10 +78,22 @@ const shareView = (row: ShareRow, binding: Binding | null, url: string | null = 
   title: row.title,
   note: row.note,
   publicNote: row.public_note,
-  base: { id: binding ? baseId(binding) : row.base_id, name: binding?.identity_name ?? row.base_path, kind: binding?.kind },
+  base: {
+    id: binding ? baseId(binding) : row.base_id,
+    name: binding?.identity_name ?? row.base_path,
+    kind: binding?.kind,
+    ...(binding && (await machineOwner(binding.id)) ? { owner: (await machineOwner(binding.id))! } : {}),
+  },
   scope: row.scope,
   items: row.items,
   createdBy: row.created_by_name,
+  ...(row.created_by_kind === "service_account"
+    ? {
+        createdByKind:
+          row.created_by_machine_kind ??
+          ((await serviceAccounts.get({ id: row.created_by }))?.kind === "agent" ? ("agent" as const) : ("standalone" as const)),
+      }
+    : {}),
   createdAt: row.created_at.toISOString(),
   expiresAt: row.expires_at?.toISOString() ?? null,
   state: shareState(row),
@@ -117,12 +138,16 @@ async function recordShareActivity(tx: TransactionSQL, call: UserFilesCall, row:
     );
     await finishActivity(tx, id, "done", async () => undefined);
   }
-  const actor = call.actor.kind === "user" ? call.actor.user : call.actor.delegatedUser;
+  // A machine credential keeps its own identity in the audit; a delegated one names its person.
+  const actor =
+    call.actor.kind === "service_account" && !call.actor.delegatedUser
+      ? filesAuditActor(call.actor)
+      : { userId: (call.actor.kind === "user" ? call.actor.user : call.actor.delegatedUser)?.id };
   await audit.record(
     {
       action: `filesv2.${action}`,
       outcome: "allowed",
-      actor: { userId: actor?.id },
+      actor,
       target: { type: "filesv2.share", id: row.id },
       requestId: call.requestId,
       metadata: {
@@ -155,18 +180,25 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
     if (!binding || binding.lifecycle !== "active" || binding.root !== row.root || binding.path !== row.base_path)
       throw new FilesError("not_found", 404);
     try {
-      const actor = await deps.creatorActor(row.created_by);
+      const actor = await deps.creatorActor(row.created_by, row.created_by_kind ?? "user");
+      const machine = await machineOwner(binding.id);
       const current =
         kind === "inbox"
           ? await deps.writableParent(actor, baseId(binding), joinPath(row.scope, "placeholder"))
-          : await deps.authorized(actor, baseId(binding), row.scope, true);
+          : machine
+            ? await deps.authorized(actor, baseId(binding), row.items[0] ?? row.scope)
+            : await deps.authorized(actor, baseId(binding), row.scope, true);
       if (
         current.inspection.binding?.id !== row.base_id ||
         current.inspection.candidate.path !== row.base_path ||
         current.inspection.candidate.root !== row.root
       )
         throw new FilesError("not_found", 404);
-      return { row, binding, actor, current, root: current.root };
+      if (kind === "download" && machine) {
+        for (const path of row.items) await deps.shareAuthority(actor, current, path);
+      } else await deps.shareAuthority(actor, current, row.scope);
+      const guarded = deps.guardShare(current, actor, row.id);
+      return { row, binding, actor, current: guarded, root: guarded.root };
     } catch (error) {
       if (error instanceof AccountIdentityError) throw new FilesError("not_found", 404);
       if (error instanceof FilesError && error.status !== 503) throw new FilesError("not_found", 404);
@@ -294,6 +326,21 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
     return { row, userId, binding: await deps.bindings.byId(row.base_id) };
   }
   return {
+    async authorizeTransfer(id: string, actor: RequestActor, path: string) {
+      const row = await shares.get(id);
+      if (
+        !row ||
+        (row.created_by_kind ?? "user") !== actor.kind ||
+        row.created_by !== (actor.kind === "service_account" ? actor.serviceAccount.id : actor.user.id)
+      )
+        throw new FilesError("not_found", 404);
+      await activeRow(row);
+      if (row.kind === "download" ? !contains(row, path) : parentPath(path) !== row.scope) throw new FilesError("forbidden", 403);
+      // Creator and storage resolution above can await remote inspection. Read the
+      // share again last, immediately before the guarded effect is admitted.
+      const live = await shares.get(id);
+      if (!live || shareState(live) !== "active") throw new FilesError("not_found", 404);
+    },
     async unlockShare(token: string, kind: "download" | "inbox", password: string, context?: ShareAccessContext) {
       if (password.length < 1 || password.length > 256) throw new FilesError("share_password_invalid", 403);
       const row = token.length >= 16 && token.length <= 256 ? await shares.byToken(token) : null;
@@ -336,12 +383,17 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         let depth = 0;
         while (depth < segments[0]!.length && segments.every((parts) => parts[depth] === segments[0]![depth])) depth++;
         scope = segments[0]!.slice(0, depth).join("/");
-        current = await deps.authorized(actor, input.baseId, scope, true);
+        // The first item is already authorized above; its owner decides whether the common folder needs its own read.
+        const first = selected.find((entry) => entry.relative === items[0])!;
+        current = first.inspection.summary.owner ? first : await deps.authorized(actor, input.baseId, scope, true);
         targets = items.map((path) => {
           const item = selected.find((entry) => entry.relative === path)!;
           return { path: item.target, directory: item.node.directory, itemId: item.node.id ?? null };
         });
       }
+      if (parsed.kind === "download" && current.inspection.summary.owner) {
+        for (const path of items) await deps.shareAuthority(actor, current, path);
+      } else await deps.shareAuthority(actor, current, scope);
       const token = randomBytes(24).toString("base64url");
       const { candidate, binding } = current.inspection;
       // Each authorization may read configuration/binding afresh. A grant must never combine snapshots
@@ -382,6 +434,11 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
             owner_uid: candidate.area === "freeipa" ? current.state.unix!.uid : null,
             owner_gid: candidate.area === "freeipa" ? current.node.gid : null,
             created_by: current.state.self.user.id,
+            created_by_kind: actor.kind === "service_account" && !actor.delegatedUser ? "service_account" : "user",
+            created_by_machine_kind:
+              actor.kind === "service_account" && (actor.serviceAccount.kind === "agent" || actor.serviceAccount.kind === "standalone")
+                ? actor.serviceAccount.kind
+                : null,
             created_by_name: current.state.self.user.username,
             expires_at: parsed.expiresIn === "unlimited" ? null : new Date(Date.now() + TTL[parsed.expiresIn]),
             max_file_size: parsed.maxFileSize,
@@ -394,7 +451,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         return created;
       });
       const url = `${origin}/share/filesv2/${row.kind === "inbox" ? "inbox" : "s"}/${token}`;
-      return { ...shareView(row, binding), url };
+      return { ...(await shareView(row, binding)), url };
     },
     async listShares(call: UserFilesCall, input: z.input<typeof SharePageQuerySchema> & { admin?: boolean } = {}): Promise<SharePage> {
       const actor = call.actor;
@@ -455,17 +512,22 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         names.flatMap((row) => (row.principal.type === "user" ? [[row.principal.userId, row.displayName ?? ""] as const] : [])),
       );
       return {
-        items: page.items.map((row) => ({
-          ...shareView(row, binding),
-          base: { id: current.inspection.summary.id, name: current.inspection.summary.name, kind: binding.kind },
-          createdBy: byId.get(row.created_by) ?? "",
-          managementMode: row.created_by === userId ? "creator" : "admin",
-        })),
+        items: await Promise.all(
+          page.items.map(async (row) => ({
+            ...(await shareView(row, binding)),
+            base: { id: current.inspection.summary.id, name: current.inspection.summary.name, kind: binding.kind },
+            createdBy: byId.get(row.created_by) ?? "",
+            managementMode: row.created_by === userId ? ("creator" as const) : ("admin" as const),
+          })),
+        ),
         next: page.next,
       };
     },
     async revokeShare(call: UserFilesCall, input: { id: string; admin?: boolean }): Promise<ShareView> {
       const actor = call.actor;
+      // Revocation is owner cleanup: it needs no remaining storage grant.
+      // Machine credentials still need the same administration scope as creation.
+      if (machineActor(actor) && filesScope(actor) !== "admin") throw new FilesError("forbidden", 403);
       const { row, userId, binding } = await management(actor, input.id, input.admin);
       const revoked = await sql.begin(async (tx) => {
         const changed = await shares.revoke(row.id, userId, tx);
@@ -554,7 +616,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const relative = userPath(path);
       if (!contains(row, relative)) throw new FilesError("not_found", 404);
       const current = await deps.authorized(actor, baseId(binding), relative, false);
-      const lease = await current.root.directDownload(current.target, { expiresIn: 60 });
+      const lease = await deps.guardShare(current, actor, row.id).root.directDownload(current.target, { expiresIn: 60 });
       await recordShareAccess(row.id, "download", context);
       await shares.touch(row.id);
       return { url: lease.url, method: "GET", expires: lease.expires };
@@ -568,9 +630,15 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         row.items.map((relative) => ({ root: row.root, path: joinPath(row.base_path, relative), archivePath: relative })),
         300,
       );
+      await activeShare(token, "download", access);
       await recordShareAccess(row.id, "download", context);
       await shares.touch(row.id);
-      return { url: lease.url, method: "POST", expires: lease.expires, manifest: lease.manifest };
+      return {
+        url: deps.archiveTicket ? await deps.archiveTicket(actor, current, row.id, lease) : lease.url,
+        method: "POST",
+        expires: lease.expires,
+        manifest: lease.manifest,
+      };
     },
     async publicInboxUpload(
       token: string,

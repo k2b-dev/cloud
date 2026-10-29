@@ -65,8 +65,8 @@ const mandate = await mandates.create(
 );
 ```
 
-A mandate keeps acting after the person's phone is removed, so the
-[mobile app's session](/en/docs/identity/authentication#app-sessions-preview)
+A mandate keeps acting after the person's device is removed, so the
+[Cloud app's session](/en/docs/identity/authentication#app-sessions-preview)
 never creates, widens, or resumes one. Before you create a mandate, change its
 policy, or resume it with an interactive authority, reject such requests:
 `auth.rejectAppSession` on the route, or `isAppSessionActor(actor)` in a service
