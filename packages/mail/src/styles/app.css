@@ -1725,15 +1725,172 @@
   }
 }
 
-/* Conversation details: people here sit in the header beside the status. */
-.k2b-ui .mail-details-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
+/* Conversation details in the shared outline: a quiet line for an empty
+   section, the summary right below the header, and a hint after a value. */
+.k2b-ui .mail-details-none {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
 }
 
-/* Activity rows follow the detail panel's rhythm: the icon in the section
-   icon column, text on the title edge, the time at the trailing edge. */
+.k2b-ui .mail-details-summary {
+  display: flex;
+  min-width: 0;
+  gap: 0.5rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+/* ✦ and the AI ink mark text the AI wrote; nothing else in the panel uses them. */
+.k2b-ui .mail-details-summary__origin {
+  flex: 0 0 auto;
+  color: var(--k2b-ai-solid);
+  font-weight: 600;
+}
+
+.k2b-ui .mail-details-summary__text {
+  min-width: 0;
+  flex: 1;
+  font-size: inherit;
+}
+
+.k2b-ui .mail-details-reminder {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.k2b-ui .mail-details-hint {
+  flex: 0 0 auto;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+}
+
+/* The full attachment list: its count on its own line, the arrangement
+   switch, and the bulk actions at the trailing edge. */
+.k2b-ui .mail-details-files-info {
+  flex-basis: 100%;
+}
+
+/* The arrangement switch keeps its own width beside the bulk actions. */
+.k2b-ui .mail-details-arrangement {
+  width: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Mark as done: the panel's one main action, a quiet tint of the app colour. */
+.k2b-ui .k2b-button.mail-details-done {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+
+.k2b-ui .k2b-button.mail-details-done:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}
+
+.k2b-ui .mail-details-files-bulk {
+  display: flex;
+  gap: 0.125rem;
+  margin-inline-start: auto;
+}
+
+/* Text actions such as "Create task in Spaces" read in the panel accent. */
+.k2b-ui .k2b-button.k2b-detail-panel__action.mail-details-add,
+.k2b-ui .k2b-button.k2b-detail-panel__action.mail-details-add:not(:disabled, [aria-disabled="true"]):hover,
+.k2b-ui .mail-details-add .k2b-detail-panel__action-leading {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+}
+
+/* Loading details: the outline's rows at their real heights. */
+.k2b-ui .mail-details-skeleton {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 0.875rem 1rem;
+}
+
+.k2b-ui .mail-details-skeleton .k2b-skeleton {
+  border-radius: var(--k2b-radius-control);
+}
+
+.k2b-ui .mail-details-skeleton__kind {
+  width: 8rem;
+  height: 0.75rem;
+  margin-block: 0.25rem 0.5rem;
+}
+
+.k2b-ui .mail-details-skeleton__title {
+  width: 70%;
+  height: 1rem;
+}
+
+.k2b-ui .mail-details-skeleton__subtitle {
+  width: 85%;
+  height: 0.625rem;
+  margin-top: 0.625rem;
+}
+
+.k2b-ui .mail-details-skeleton__section {
+  margin-top: 1.75rem;
+}
+
+.k2b-ui .mail-details-skeleton__property {
+  display: grid;
+  min-height: 2.25rem;
+  grid-template-columns: minmax(5.75rem, 7rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.k2b-ui .mail-details-skeleton__term {
+  width: 5rem;
+  height: 0.625rem;
+}
+
+.k2b-ui .mail-details-skeleton__value {
+  height: 0.625rem;
+}
+
+.k2b-ui .mail-details-skeleton__value--0 { width: 55%; }
+.k2b-ui .mail-details-skeleton__value--1 { width: 40%; }
+.k2b-ui .mail-details-skeleton__value--2 { width: 70%; }
+
+.k2b-ui .mail-details-skeleton__file {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.k2b-ui .mail-details-skeleton__thumb {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 2.25rem;
+}
+
+.k2b-ui .mail-details-skeleton__lines {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.4375rem;
+}
+
+.k2b-ui .mail-details-skeleton__name {
+  width: 62%;
+  height: 0.6875rem;
+}
+
+.k2b-ui .mail-details-skeleton__meta {
+  width: 34%;
+  height: 0.5625rem;
+}
+
+/* Activity rows: the icon, the text, the time at the trailing edge. */
 .k2b-ui .mail-activity-rows {
   display: flex;
   min-width: 0;
@@ -1746,7 +1903,6 @@
   min-height: 2rem;
   align-items: center;
   gap: 0.625rem;
-  margin-inline-start: -1.875rem;
   font-size: 0.75rem;
 }
 

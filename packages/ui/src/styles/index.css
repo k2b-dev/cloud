@@ -6615,6 +6615,126 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* ChoiceList: rows with a radio, a label and a sentence; choosing changes only paint, so no row moves. */
+.k2b-ui .k2b-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.k2b-ui .k2b-choice-list__option {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.5rem 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* Only real hover: a tap on a touch screen must not leave a row looking chosen. */
+@media (hover: hover) {
+  .k2b-ui .k2b-choice-list__option:hover:not(:disabled) {
+    background: var(--k2b-hover);
+  }
+}
+
+.k2b-ui .k2b-choice-list__option[aria-checked="true"] {
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-choice-list__option:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
+.k2b-ui .k2b-choice-list__option:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.k2b-ui .k2b-choice-list__radio {
+  display: grid;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  place-items: center;
+  margin-top: 0.125rem;
+  border: 1.5px solid var(--k2b-border-strong);
+  border-radius: 999px;
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-choice-list__option[aria-checked="true"] .k2b-choice-list__radio {
+  border-color: var(--k2b-action-solid);
+}
+
+.k2b-ui .k2b-choice-list__option[aria-checked="true"] .k2b-choice-list__radio::after {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--k2b-action-solid);
+  content: "";
+}
+
+.k2b-ui .k2b-choice-list__text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.k2b-ui .k2b-choice-list__label {
+  display: flex;
+  min-height: 1.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-choice-list__marker {
+  padding: 0 0.375rem;
+  border-radius: 0.3125rem;
+  color: var(--k2b-text-muted);
+  background: var(--k2b-surface-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-choice-list__busy {
+  display: inline-flex;
+  width: 0.875rem;
+  color: var(--k2b-action);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-choice-list__description {
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+  line-height: 1.35;
+}
+
+/* Follow-up controls of the chosen row, aligned with its text. */
+.k2b-ui .k2b-choice-list__details {
+  padding: 0.25rem 0.5rem 0.375rem 2.125rem;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-choice-list__option {
+    min-height: 2.75rem;
+  }
+}
+
 /* ChoiceTiles: a preview over its label; choosing changes only paint, so no tile moves. */
 .k2b-ui .k2b-choice-tiles__group {
   display: grid;

@@ -2910,9 +2910,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await row.getByRole("button", { name: /^Actions for/ }).click();
             await page.locator(dropdown).getByRole("menuitem", { name: "Copy conversation Cloud ID" }).click();
 
-            const detailsCopy = page.locator('[data-mail-copy-cloud-id="conversation"]');
-            if (!(await detailsCopy.isVisible())) await page.locator("[data-app-workspace-detail-toggle]").first().click();
-            await detailsCopy.click();
+            // In the details panel the conversation's Cloud ID sits in its "…" menu, after its main action.
+            const detailsMenu = page.locator("[data-mail-details-heading]").getByRole("button", { name: "More actions", exact: true });
+            if (!(await detailsMenu.isVisible())) await page.locator("[data-app-workspace-detail-toggle]").first().click();
+            await detailsMenu.click();
+            await page.locator(dropdown).getByRole("menuitem", { name: "Copy conversation Cloud ID" }).click();
 
             await page.waitForFunction(() => (window as unknown as { copied: unknown[] }).copied.length === 4);
             const copied = await copiedEntries(page);
@@ -2950,10 +2952,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const page = await open(`${boxPath}?conversation=Conv01&theme=light${width === 1920 ? "&details=1" : ""}`, width);
             try {
               if (width === 1920) {
-                const detailsCopy = page.locator("[data-mail-copy-cloud-id], .mail-details-meta").first();
-                if (!(await page.locator(".mail-details-meta").isVisible()))
-                  await page.locator("[data-app-workspace-detail-toggle]").first().click();
-                await detailsCopy.waitFor({ state: "visible" });
+                const detailsHeading = page.locator("[data-mail-details-heading]");
+                if (!(await detailsHeading.isVisible())) await page.locator("[data-app-workspace-detail-toggle]").first().click();
+                await detailsHeading.waitFor({ state: "visible" });
                 await shot(page, `${width}-details`);
                 await page.getByRole("button", { name: "More conversation actions" }).click();
                 await shot(page, `${width}-conversation-menu`);

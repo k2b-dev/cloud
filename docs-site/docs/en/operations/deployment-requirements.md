@@ -938,6 +938,14 @@ upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
 schedule it. Check that the local copy shows the logo before provider sync,
 then send it and check that it arrives as an inline image without a remote image link.
 
+### Mail attachment checksums in message details
+
+Mail message details include `checksum` on every attachment in the API, CLI,
+and workspace responses. The value is the stored lowercase SHA-256 hex string,
+or `null` when unknown. Clients can compare known checksums to identify the
+same file; matching filenames alone do not establish equal content. This uses
+the existing nullable column and needs no migration or configuration change.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
