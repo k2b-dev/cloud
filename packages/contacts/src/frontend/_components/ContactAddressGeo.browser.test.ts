@@ -261,9 +261,10 @@ test.each(["submission", "reload"] as const)("the focused address editor preserv
 });
 
 const expandAddresses = async (page: Page) => {
-  const summary = page.locator(".k2b-detail-panel__section-summary", { hasText: "Adressen" });
-  await summary.waitFor();
-  if ((await summary.getAttribute("aria-expanded")) === "false") await summary.click();
+  // The open section hides its summary and exposes a separate collapse button.
+  const toggle = page.getByRole("button", { name: /^Adressen\b/ });
+  await toggle.waitFor();
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
 };
 const editAddress = async (page: Page) => {
   await expandAddresses(page);
