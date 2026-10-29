@@ -1,0 +1,6 @@
+### A 5,000-member channel test spent its budget deleting the people it created
+
+- **What happened:** `a 5000-member channel resolves permission with the SQL principal condition` in `packages/chat/src/api/conversations.integration.test.ts` took 44–54 s in CI against its 30 s budget and ejected unrelated pull requests (#2093).
+- **Root cause:** The test created its 4,999 extra members as people. `auth.users` has 158 foreign keys pointing at it, most without an index, and a delete trigger. Deleting one person runs about 160 checks, so the cleanup took 12.4 s locally, while the test body took 1.5 s. Only one member's permission is resolved; the others need to be principals, not people.
+- **Error class:** A fixture creates many rows of a heavily referenced table, so cleanup, not the code under test, dominates the run time.
+- **Guard:** The test now creates the other 4,998 members as agents (16 references each) and removes them in one statement. It keeps 5,000 principals, 5,000 grants and every plan assertion. The file's run dropped from 16.5 s to 6.7 s locally. Before a test bulk-creates people, it checks whether another principal kind expresses the case; the member-limit test keeps people, because it counts them through groups.
