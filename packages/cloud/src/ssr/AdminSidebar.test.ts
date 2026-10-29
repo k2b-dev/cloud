@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { RuntimeAppMeta } from "../contracts/app";
-import { activeAdminHref } from "./admin-active-link";
+import { activeAdminHref, activeAdminLink } from "./admin-active-link";
 import { buildAdminGroups } from "./admin-navigation";
 
 const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
@@ -35,7 +35,7 @@ describe("buildAdminGroups", () => {
       ["en", "AI"],
       ["de", "KI"],
     ] as const) {
-      expect(buildAdminGroups([], locale).find((group) => group.label === label)?.links).toEqual([
+      expect(buildAdminGroups([], locale).find((group) => group.label === "Cloud")?.links).toEqual([
         { href: "/admin/ai", icon: "ti-sparkles", label },
       ]);
     }
@@ -53,7 +53,7 @@ describe("buildAdminGroups", () => {
         ],
       }),
     ]);
-    expect(groups.find((group) => group.label === "AI")?.links).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label: "AI" }]);
+    expect(groups.find((group) => group.label === "Cloud")?.links).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label: "AI" }]);
     expect(groups.some((group) => group.label === "Example tools")).toBe(false);
     expect(groups.flatMap((group) => group.links).filter((link) => link.href === "/admin/example")).toHaveLength(0);
   });
@@ -71,9 +71,55 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["General", "Operations", "Accounts & sign-in", "AI", "Settings"]);
-    expect(groups[1]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
-    expect(groups.find((group) => group.label === "AI")?.links).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label: "AI" }]);
+    expect(groups.map((group) => group.label)).toEqual(["General", "Cloud", "Operations", "Accounts & sign-in", "Settings"]);
+    expect(groups[2]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
+    expect(groups.find((group) => group.label === "Cloud")?.links).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label: "AI" }]);
+  });
+
+  it("shows contributed Observability pages as one area entry that stays active on all of them", () => {
+    const groups = buildAdminGroups([
+      app({
+        id: "gateway-ops",
+        adminHref: "/admin/observability",
+        adminNav: [
+          { section: "observability", label: "Gateway", links: [{ href: "/admin/observability/gateway", icon: "ti-apps", label: "Apps" }] },
+          {
+            section: "observability",
+            label: "Observability",
+            links: [
+              { href: "/admin/observability", icon: "ti-stethoscope", label: "Overview" },
+              { href: "/admin/observability/logs", icon: "ti-list-details", label: "Logs" },
+            ],
+          },
+        ],
+      }),
+    ]);
+    const area = groups.find((group) => group.label === "Cloud")!;
+    expect(area.links.map((link) => link.href)).toEqual(["/admin/ai", "/admin/observability"]);
+    expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
+    expect(groups.some((group) => group.label === "App administration")).toBe(false);
+    const links = groups.flatMap((group) => group.links);
+    for (const path of ["/admin/observability", "/admin/observability/logs?level=error", "/admin/observability/gateway"]) {
+      expect(activeAdminLink(path, links)?.href).toBe("/admin/observability");
+    }
+    expect(activeAdminLink("/admin/ai", links)?.href).toBe("/admin/ai");
+    expect(
+      buildAdminGroups([], "de")
+        .find((group) => group.label === "Cloud")
+        ?.links.map((link) => link.label),
+    ).toEqual(["KI"]);
+  });
+
+  it("opens the first contributed Observability page when no app owns the area start", () => {
+    const groups = buildAdminGroups([
+      app({
+        id: "inventory",
+        adminNav: [
+          { section: "observability", label: "Stock", links: [{ href: "/admin/inventory/health", icon: "ti-box", label: "Stock health" }] },
+        ],
+      }),
+    ]);
+    expect(groups.find((group) => group.label === "Cloud")?.links.at(-1)?.href).toBe("/admin/inventory/health");
   });
 
   it("keeps adminHref as the single-link fallback", () => {
@@ -101,7 +147,7 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["General", "Accounts & sign-in", "AI", "Settings"]);
+    expect(groups.map((group) => group.label)).toEqual(["General", "Cloud", "Accounts & sign-in", "Settings"]);
   });
   it("groups global account controls once and preserves existing links", () => {
     const groups = buildAdminGroups([]);

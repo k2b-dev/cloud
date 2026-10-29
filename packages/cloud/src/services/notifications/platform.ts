@@ -95,6 +95,9 @@ const validatePresentation = (presentation: NotificationPresentation, appId: str
   if (presentation.badge !== undefined && (!Number.isSafeInteger(presentation.badge) || presentation.badge < 0)) {
     throw new Error("Notification badge must be a non-negative safe integer");
   }
+  if (presentation.alert !== undefined && typeof presentation.alert !== "boolean") {
+    throw new Error("Notification alert must be a boolean");
+  }
   return {
     title,
     ...(body ? { body } : {}),
@@ -102,6 +105,7 @@ const validatePresentation = (presentation: NotificationPresentation, appId: str
     ...(targetHref ? { targetHref } : {}),
     ...(presentation.group !== undefined ? { group: presentation.group } : {}),
     ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
+    ...(presentation.alert === false ? { alert: false } : {}),
   };
 };
 

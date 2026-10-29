@@ -466,8 +466,8 @@ subscriptions remain blocked with `resource_events_unsupported`.
 `cld capabilities catalog --json` and `--jsonl` preserve the full manifests,
 including `events` and `subscribes`. The text table shows their counts per app.
 Use `cld events ls` for the event-focused catalog and `cld events subscriptions`
-for delivery readiness. Event-specific MCP discovery is not yet available;
-the current capability MCP projects tools and resources, not an event catalog.
+for delivery readiness. MCP clients can [discover declared events](/en/docs/platform/mcp#discover-declared-events)
+with `cloud__events__list` and `cloud__events__read`.
 
 A Type may name one canonical reader Query:
 
@@ -480,6 +480,12 @@ types: {
   },
 }
 ```
+
+A Type may also name a `color` for its icon from the palette `blue`, `emerald`,
+`violet`, `orange`, `red`, `amber`, `zinc`, `cyan` and `rose`. Consumers such as
+Chat's element cards show the icon in a chip of that colour, so a card says at a
+glance what it stands for. Choose one colour per kind of resource and keep it
+stable; omit it and consumers show a neutral chip.
 
 `reader` is the Query's local ID inside the same app. Its presence tells a
 consumer that a `CloudResourceRef` of this Type can be read programmatically.
@@ -1519,6 +1525,8 @@ type CapabilityResult<T> = {
     title?: string;
     preview?: string;
     icon?: string;
+    context?: string;
+    status?: string;
   }>;
   page?:
     | { hasMore: true; nextCursor: string }
@@ -1533,10 +1541,20 @@ type CapabilityResult<T> = {
 
 Every result reference contains the stable identity fields `type` and `id`.
 When the provider already knows a useful current label, it may add `title`, a
-short plain-text `preview`, and an `icon`. These presentation fields are an
-optional snapshot for generic clients; they do not participate in identity,
+short plain-text `preview`, an `icon`, `context`, and `status`. These
+presentation fields are an optional snapshot for generic clients; they do not participate in identity,
 authorization, deduplication, or canonical-reader resolution. A bare
 `{ type, id }` reference remains valid.
+
+The owning application's canonical reader fills `context` and `status` from
+current authorized state in the request locale. Both are optional final display
+strings, never message keys; consumers show them as given. `context` has 1–200
+characters: one line saying what and where the resource is, with its most useful
+fact, such as `Task in IT planning · due 30 Oct`. `status` has 1–60 characters:
+a short current-state label, such as `Open` or `Done`. Omit it when a state label
+does not apply. Linked references and `CloudResourceView` carry the same fields.
+Consumers ignore unfamiliar optional reference fields while retaining the
+resource identity.
 
 Prefer the name a person sees in the owning app: a mailbox name, note title,
 contact name, or mail subject. Use `preview` only for concise secondary context
@@ -1743,19 +1761,31 @@ interpret provider message codes. See
 contract and [Internationalize an application](/en/docs/build/internationalization)
 for the message and error boundary.
 
-Two more invocation-metadata fields reach every Query, Action, and review
+These invocation-metadata fields reach every Query, Action, review, and stream
 handler on the same `CapabilityExecutionContext`:
 
 | Field | Meaning |
 | --- | --- |
 | `context.requestId` | Correlation id of the originating Cloud request. The dispatcher reuses a valid incoming `x-request-id` and generates one otherwise, then forwards it unchanged to the app and stores it on the execution record |
 | `context.origin` | Cloud surface that invoked the capability: `assistant`, `mcp`, `http`, or `app` |
+| `context.via` | Content provenance derived by the framework: `assistant`, `mcp`, or `null` |
 
 Write `context.requestId` into the app's own audit rows. That is the join
 between an app's domain trail and the platform execution record, and it works
-without either side sharing payloads. Use `context.origin` for logging or
-diagnostics only — never for authorization, because permission decisions belong
-to the actor and access subject.
+without either side sharing payloads. The framework derives `context.via` as
+`"assistant"`, `"mcp"`, or `null` from this resolved origin. `CapabilityVia` and
+`CapabilityViaSchema` are exported from `@k2b/cloud/contracts`. Callers cannot
+supply `via` as execution metadata or through an Action's input.
+
+Actions that create or change visible content must persist `context.via` with
+that content and show its calling surface. This identifies the surface, not who
+composed the text. Each application owns how later edits update this mark.
+HTTP includes browser requests, scripts, and `cld`, so a `null` value does not
+establish human authorship. An agent service account remains visible under its
+own name.
+
+Use `context.origin` and `context.via` only for provenance and diagnostics,
+never for authorization. Permissions belong to the actor and access subject.
 
 Browser and client islands use the same-origin public client:
 
@@ -1924,6 +1954,8 @@ tools:
 
 ```text
 cloud__resource__read
+cloud__events__list
+cloud__events__read
 inventory__query__item.read
 inventory__action__item.rename
 ```
@@ -2174,7 +2206,8 @@ manifest publishes direction and maximum bytes and includes them in the schema
 hash. Expiry must be in the future and at most 24 hours away.
 
 Handlers receive the original descriptor and a freshly authenticated execution
-context. Check current resource permissions in **every** handler. Keep source
+context, including framework-derived `via` provenance. Check current resource
+permissions in **every** handler. Keep source
 identity/revision and destination/conflict policy in the reservation, not in
 caller-supplied transfer parameters. Serialize concurrent writes to the same
 reservation and reconcile retries from its durable receipt. A write response

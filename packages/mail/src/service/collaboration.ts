@@ -22,6 +22,8 @@ import {
 } from "./access";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { invalidateAutomationEffects } from "./automation-effect-state";
+import { recordAutomationAssignmentChange } from "./automation-log-recording";
 import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
 import { resolveMailExecution } from "./execution";
@@ -694,6 +696,8 @@ const applyConversationCollaborationInTransaction = async (params: {
       messageId: params.statusDecisionMessageId,
     });
   }
+  if (("workStatus" in params.input || "completion" in params.input) && !params.activityMetadata?.automationLogOperation)
+    await invalidateAutomationEffects(params.db, params.conversationId, "status");
   const unchanged = !assigneesChanged && !statusOrSnoozeChanged;
   if (unchanged) {
     const state = await loadCollaboration(params.mailboxId, params.conversationId, params.db);
@@ -741,6 +745,17 @@ const applyConversationCollaborationInTransaction = async (params: {
       },
     },
   });
+  if (assigneesChanged)
+    await recordAutomationAssignmentChange({
+      db: params.db,
+      mailboxId: params.mailboxId,
+      conversationId: params.conversationId,
+      context: params.context,
+      actorOverride: params.actorOverride,
+      activityMetadata: params.activityMetadata,
+      before: currentAssigneeIds,
+      after: nextAssigneeIds,
+    });
   return ok({
     value: state,
     event: {

@@ -353,6 +353,8 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
             ref: view.ref,
             title: view.title,
             href: open.href,
+            context: view.context,
+            status: view.status,
             preview: view.preview,
             icon: view.icon,
             priority: view.priority,
