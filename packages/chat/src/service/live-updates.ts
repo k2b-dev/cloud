@@ -1,6 +1,6 @@
 import type { sql } from "bun";
 import type { z } from "zod";
-import type { ConversationRow } from "./access";
+import { type ChatContext, type ConversationRow, personalChannelKey } from "./access";
 import type { ChatLiveEventSchema, MessageSchema } from "./contracts";
 import { chatLive } from "./live";
 
@@ -52,3 +52,7 @@ export const publishMembership = async (db: typeof sql, conversation: Conversati
   for (const id of affected)
     await chatLive.publish(db, { key: `p:${id}`, data: { type: "membership", conversationId: conversation.short_id } });
 };
+
+/** Personal settings carry no container or item metadata; receivers refetch under their own authority. */
+export const publishNotificationPreferences = (db: typeof sql, context: Pick<ChatContext, "accessSubject">) =>
+  chatLive.publish(db, { key: personalChannelKey(context.accessSubject), data: { type: "notifications" } });

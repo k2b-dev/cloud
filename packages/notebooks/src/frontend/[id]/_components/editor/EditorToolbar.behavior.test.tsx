@@ -10,7 +10,7 @@ describe("editor toolbar phone viewport and menus", () => {
     return;
   }
 
-  const mount = async (coarse = true, height = 508) => {
+  const mount = async (coarse = true, height = 508, doc = "word here") => {
     const dom = createDomTestHarness();
     const viewport = Object.assign(new dom.window.EventTarget(), { height, offsetTop: 0, scale: 1 });
     Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
@@ -26,6 +26,7 @@ describe("editor toolbar phone viewport and menus", () => {
     });
     const { EditorState } = await import("@codemirror/state");
     const { EditorView } = await import("@codemirror/view");
+    const { tableGrid } = await import("@k2b/ui/text-editor");
     const { markdownExtension } = await import("../../../lib/editor/markdown");
     const { caretFormat } = await import("./editor-actions");
     const { default: EditorToolbar } = await import("./EditorToolbar");
@@ -34,7 +35,7 @@ describe("editor toolbar phone viewport and menus", () => {
     dom.root.append(editorHost);
     const view = new EditorView({
       parent: editorHost,
-      state: EditorState.create({ doc: "word here", selection: { anchor: 1, head: 4 }, extensions: [markdownExtension()] }),
+      state: EditorState.create({ doc, selection: { anchor: 1, head: 4 }, extensions: [markdownExtension(), tableGrid()] }),
     });
     // Focus and keyboard precede the toolbar's listeners, as when switching notes while typing.
     view.focus();
@@ -99,6 +100,43 @@ describe("editor toolbar phone viewport and menus", () => {
     try {
       expect(app.view.hasFocus).toBe(true);
       expect(app.toolbar.style.marginBottom).toBe("336px");
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("an open phone keyboard keeps the lift from prose through a nested table cell and toolbar menu", async () => {
+    const app = await mount(true, 508, "Prose\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |");
+    try {
+      expect(app.view.hasFocus).toBe(true);
+      expect(app.toolbar.style.marginBottom).toBe("336px");
+      const cell = app.view.contentDOM.querySelector<HTMLElement>(".k2b-ste-cell");
+      if (!cell) throw new Error("Missing shared table cell");
+      cell.focus();
+      await Promise.resolve();
+      expect(app.dom.document.activeElement).toBe(cell);
+      expect(app.view.hasFocus).toBe(false);
+      expect(app.toolbar.style.marginBottom).toBe("336px");
+
+      const trigger = app.toolbar.querySelector<HTMLButtonElement>('button[aria-label="More"]')!;
+      trigger.focus();
+      await Promise.resolve();
+      expect(app.toolbar.style.marginBottom).toBe("336px");
+      trigger.click();
+      await Promise.resolve();
+      const menu = app.dom.document.getElementById(trigger.getAttribute("aria-controls")!);
+      const item = menu?.querySelector<HTMLButtonElement>("button");
+      if (!item) throw new Error("Missing toolbar menu item");
+      item.focus();
+      await Promise.resolve();
+      expect(app.dom.document.activeElement).toBe(item);
+      expect(app.toolbar.style.marginBottom).toBe("336px");
+
+      const outside = app.dom.document.createElement("button");
+      app.dom.root.append(outside);
+      outside.focus();
+      await Promise.resolve();
+      expect(app.toolbar.style.marginBottom).toBe("");
     } finally {
       app.cleanup();
     }

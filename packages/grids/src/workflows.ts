@@ -67,6 +67,7 @@ import {
   actorId,
   canAccessWorkflowRunTable,
   canExecuteRun,
+  canExecuteRunBeforeHttp,
   createWorkflowCaptureTableAccess,
   createWorkflowEffectAccess,
   documentActorForScope,
@@ -88,6 +89,7 @@ import {
   requireWorkflowTable,
   resolveWorkflowRecordValues,
 } from "./service/workflow-atomic-records";
+import { authorizeWorkflowBase } from "./service/workflow-authorization";
 import { loadWorkflowCatalog } from "./service/workflow-catalog";
 import {
   captureWorkflowDocumentSource,
@@ -846,6 +848,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               origin: "workflow",
               dateConfig: await dateContext(ctx),
               expectedPolicyRevision,
+              beforeWrite: async () => {
+                await requireExecution(scope, tx);
+                await requireTableAccess(scope, record.tableId, "write", tx);
+              },
             }),
           );
           await logAudit(
@@ -952,6 +958,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           await createRecordInTransaction(tx, original.tableId, { ...values, ...explicit }, actorId(scope), "workflow", {
             dateConfig: await dateContext(ctx),
             viewer: viewerForScope(scope, await createWorkflowCaptureTableAccess(scope, tx)),
+            beforeWrite: async () => {
+              await requireExecution(scope, tx);
+              await requireTableAccess(scope, original.tableId, "write", tx);
+            },
           }),
         );
         await logAudit(
@@ -1031,6 +1041,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             "workflow",
             auditAnswerPayload(ctx, config.audit),
             invocationLocale(ctx),
+            async () => {
+              await requireExecution(scope, tx);
+              await requireTableAccess(scope, record.tableId, "write", tx);
+            },
           ),
         );
         await logAudit(
@@ -1086,6 +1100,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             origin: "workflow",
             dateConfig: dates,
             locale: dates.locale,
+            beforeWrite: async () => {
+              await requireExecution(scope, tx);
+              await requireTableAccess(scope, record.tableId, "write", tx);
+            },
           }),
         );
         if (finalized.outboxId)
@@ -1141,6 +1159,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           await updateRecordInTransaction(tx, record.tableId, record.recordId, values, actorId(scope), "workflow", undefined, {
             dateConfig: await dateContext(ctx),
             viewer: viewerForScope(scope, await createWorkflowCaptureTableAccess(scope, tx)),
+            beforeWrite: async () => {
+              await requireExecution(scope, tx);
+              await requireTableAccess(scope, record.tableId, "write", tx);
+            },
             ...(audit ? { audit } : {}),
           }),
         );
@@ -1194,6 +1216,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
             dateConfig: await dateContext(ctx),
             viewer: viewerForScope(scope, await createWorkflowCaptureTableAccess(scope, tx)),
+            beforeWrite: async () => {
+              await requireExecution(scope, tx);
+              await requireTableAccess(scope, tableId, "write", tx);
+            },
           }),
         );
         await logAudit(
@@ -1299,6 +1325,16 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         // Lock waiting can outlive an App grant or publication. Authorize once
         // here; subsequent checks and postconditions share this exact effect.
         const effectAccess = await createWorkflowEffectAccess(scope, tx);
+        const beforeWrite = async () => {
+          // A later writer can still wait on history preparation. Recheck live
+          // base authority without treating our earlier writes as a change to
+          // the published App's launch availability (an effect precondition).
+          if (
+            (scope.authorization.kind === "workflow" || scope.principal.mandate) &&
+            !(await authorizeWorkflowBase(scope.principal, scope.baseId, "write", tx))
+          )
+            throw actionError("FORBIDDEN", "Workflow actor does not have permission for this action");
+        };
 
         for (let checkIndex = 0; checkIndex < config.checks.length; checkIndex += 1) {
           const check = config.checks[checkIndex]!;
@@ -1345,6 +1381,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
                 "workflow",
                 auditAnswerPayload(ctx, change.deleteRecord.audit),
                 invocationLocale(ctx),
+                beforeWrite,
               ),
             );
             await logAudit(
@@ -1371,6 +1408,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
                 origin: "workflow",
                 dateConfig: dates,
                 locale: dates.locale,
+                beforeWrite,
               }),
             );
             if (finalized.outboxId)
@@ -1401,6 +1439,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
                 dateConfig: dates,
                 viewer: viewerForScope(scope, effectAccess.canReadTable),
+                beforeWrite,
               }),
             );
             await logAudit(
@@ -1424,6 +1463,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
                   origin: "workflow",
                   dateConfig: dates,
                   locale: dates.locale,
+                  beforeWrite,
                 }),
               );
               if (finalized.outboxId)
@@ -1464,6 +1504,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               {
                 dateConfig: dates,
                 viewer: viewerForScope(scope, effectAccess.canReadTable),
+                beforeWrite,
                 ...(audit ? { audit } : {}),
               },
             ),
@@ -1860,6 +1901,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             input: { expiresIn, comment: typeof config.comment === "string" ? config.comment : null },
             actorId: actorId(scope),
             client: tx,
+            beforeWrite: async () => {
+              await requireExecution(scope, tx);
+              await requirePermission(scope, "write", tx);
+            },
           }),
         );
         await logAudit(
@@ -1964,7 +2009,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await ctx.heartbeat();
         const scope = await workflowRunScope(ctx);
         const request = httpInput(ctx, config);
-        const response = await requestWorkflowHttp({ ...request, idempotencyKey: ctx.effectKey, locale: invocationLocale(ctx) });
+        const response = await requestWorkflowHttp({
+          ...request,
+          idempotencyKey: ctx.effectKey,
+          locale: invocationLocale(ctx),
+          authorize: (signal) => canExecuteRunBeforeHttp(scope, signal),
+        });
         // The request left the process and no complete answer came back. It may
         // have been acted on; repeating it is how a webhook fires twice.
         if (!response.ok && response.error.code === "WORKFLOW_HTTP_OUTCOME_UNKNOWN") {

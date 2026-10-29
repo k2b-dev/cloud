@@ -32,7 +32,8 @@ import type {
 
 export const DEFAULT_MAX_LOOP_ITEMS = 100;
 
-const EXACT_EXPRESSION = /^\$\{\{\s*([^{}]+?)\s*\}\}$/;
+// Callers trim the captured text; no `\s*` around the group keeps matching linear.
+const EXACT_EXPRESSION = /^\$\{\{([^{}]+)\}\}$/;
 
 class RuntimeVariableScope implements WorkflowVariableScope {
   readonly #values = new Map<string, WorkflowJsonValue>();

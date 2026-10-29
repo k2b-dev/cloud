@@ -66,11 +66,24 @@ const renderCell = (alignCls: string, originalText: string, ctx: EvalContext, ht
   return `<td><span class="md-table-cell md-formula-error${alignCls}" title="${escapeHtml(tooltip)}">⚠ ${escapeHtml(originalText)}</span></td>`;
 };
 
-export function tablesExtension(): MarkedExtension {
+export function tablesExtension(plain = false): MarkedExtension {
   return {
     renderer: {
       table(token: Tokens.Table): string {
         const align = token.align ?? [];
+        // Email has no Cloud stylesheet or formula widgets. Keep alignment on the
+        // structural cells and escape formula source before Markdown can interpret it.
+        if (plain) {
+          const cellHtml = (cell: Tokens.TableCell, tag: "th" | "td", column: number): string => {
+            const alignment = align[column];
+            const attribute = alignment ? ` align="${alignment}"` : "";
+            const content = isFormula(cell.text) ? escapeHtml(cell.text) : this.parser.parseInline(cell.tokens);
+            return `<${tag}${attribute}>${content}</${tag}>`;
+          };
+          const header = token.header.map((cell, column) => cellHtml(cell, "th", column)).join("");
+          const rows = token.rows.map((row) => `<tr>${row.map((cell, column) => cellHtml(cell, "td", column)).join("")}</tr>`).join("");
+          return `<table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+        }
 
         // Build the EvalContext once per table — formulas reference
         // raw cell text, not other formulas' results, so a single pass

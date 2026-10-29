@@ -65,6 +65,8 @@ import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
 import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
+import type { HistoryActions, HistoryEnvironment } from "./history-actions";
+import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { openNewFolderDialog } from "./NewFolderDialog";
@@ -85,9 +87,15 @@ import { systemEntry, systemEntryLabel } from "./system-files";
 import { openTemplatePicker } from "./Templates";
 import { UploadConflict, uploadFile } from "./uploads";
 import { filesUrl } from "./urls";
-import type { DirectoryView } from "./workspace-state";
+import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 type Directory = DirectoryView;
+export type InspectorHistory = {
+  env: HistoryEnvironment;
+  initial?: WorkspaceSnapshot["history"];
+  actions: HistoryActions;
+  activityHref: (baseId: string, path: string, scope: "folder" | "item") => string;
+};
 /** Placeholder rows while a search runs; as many as fit a phone screen. */
 const SEARCH_SKELETON_ROWS = 8;
 type Branch = { items: FileEntry[]; next: string | null; loading: boolean; error: boolean; pages?: number };
@@ -123,6 +131,10 @@ export default function Browser(props: {
   onSearch?: (search: SearchState | null) => void;
   /** A search is loading: the results area waits for it instead of showing the previous page. */
   pendingSearch?: boolean;
+  /** Offered when an ordinary search finds nothing: the same words in the history, which knows old names and places. */
+  onSearchHistory?: (query: string) => void;
+  /** History in the detail: request context, SSR first page and existing actions; absent hides it. */
+  history?: InspectorHistory;
   onBrowseChange?: (options: BrowseOptions) => void;
   onChanged?: (selectPath?: string | null) => void | Promise<void>;
   onShare?: (paths: readonly string[]) => void;
@@ -136,6 +148,7 @@ export default function Browser(props: {
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
+  const h = useHistoryMessages();
   const locale = useLocale();
   const assets = useAssetMessages();
   const baseId = () => props.directory.base.id;
@@ -1743,24 +1756,59 @@ export default function Browser(props: {
                   }
                 >
                   {(current) => (
-                    <Placeholder
-                      class="flex-1"
-                      variant="panel"
-                      state="no-results"
-                      title={b().noResultsTitle}
-                      description={searchFiltered(current()) ? b().noResultsFiltered : b().noResultsDescription}
-                      action={
-                        <Show when={searchFiltered(current())}>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
-                          >
-                            {b().resetFilters}
-                          </Button>
-                        </Show>
+                    <Show
+                      when={current().q ? props.onSearchHistory : undefined}
+                      fallback={
+                        <Placeholder
+                          class="flex-1"
+                          variant="panel"
+                          state="no-results"
+                          title={b().noResultsTitle}
+                          description={searchFiltered(current()) ? b().noResultsFiltered : b().noResultsDescription}
+                          action={
+                            <Show when={searchFiltered(current())}>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
+                              >
+                                {b().resetFilters}
+                              </Button>
+                            </Show>
+                          }
+                        />
                       }
-                    />
+                    >
+                      {(searchHistory) => (
+                        <Placeholder
+                          class="filesv2-history-placeholder"
+                          state="no-results"
+                          icon="ti ti-search"
+                          title={h().emptySearchTitle.replace("{query}", current().q)}
+                          description={h().emptySearchText}
+                          action={
+                            <div class="flex flex-wrap justify-center gap-2">
+                              <Button variant="primary" onClick={() => searchHistory()(current().q)}>
+                                <i class="ti ti-history" aria-hidden="true" />
+                                {h().searchInHistory}
+                              </Button>
+                              <Show when={searchFiltered(current())}>
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
+                                >
+                                  {b().resetFilters}
+                                </Button>
+                              </Show>
+                              <Button variant="secondary" onClick={() => props.onSearch?.(null)}>
+                                <i class="ti ti-x" aria-hidden="true" />
+                                {h().clearSearch}
+                              </Button>
+                            </div>
+                          }
+                        />
+                      )}
+                    </Show>
                   )}
                 </Show>
               }
@@ -1783,6 +1831,7 @@ export default function Browser(props: {
                           pathBase={searching() ? folder() : null}
                           hereLabel={folderLabel(folder())}
                           showModified
+                          timeZone={props.history?.env.timeZone}
                           opening={opening()}
                           currentPath={view().view === "tree" ? folder() : null}
                           selecting={selecting()}
@@ -1908,7 +1957,7 @@ export default function Browser(props: {
           </nav>
         </div>
       </AppWorkspace.Main>
-      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md">
+      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md" phone="page">
         <Show when={detailOpen()}>
           <FileInspector
             base={props.directory.base}
@@ -1931,6 +1980,7 @@ export default function Browser(props: {
             onShareInbox={props.onShareInbox ? (item) => props.onShareInbox?.(item.path) : undefined}
             onChanged={refresh}
             onMarksChanged={props.onMarksChanged}
+            history={props.history}
           />
         </Show>
       </AppWorkspace.Detail>

@@ -248,6 +248,7 @@ export const SystemChatQuerySchema = z.strictObject({
   notebooksCursor: z.string().max(256).optional(),
 });
 export const ThreadSchema = z.strictObject({
+  following: z.boolean().optional(),
   resource: ThreadResourceSchema.nullable().optional(),
   id: ThreadIdSchema,
   name: z.string(),
@@ -327,7 +328,26 @@ export const ReadAllOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("confirm") }),
   z.object({ outcome: z.literal("done"), marked: z.number().int(), more: z.boolean(), nextCursor: z.string().nullable().optional() }),
 ]);
+export const NotificationUpdateSchema = z.discriminatedUnion("level", [
+  z.strictObject({ level: z.enum(["default", "all", "mentions"]).describe("Use default to reset or choose all or mentions explicitly.") }),
+  z.strictObject({
+    level: z.literal("none").describe("Mute this conversation."),
+    for: z.enum(["1h", "8h", "1w", "forever"]).describe("Server-timed mute duration; forever lasts until changed."),
+  }),
+]);
+export const NotificationsSchema = z.strictObject({
+  level: z.enum(["all", "mentions", "none"]),
+  choice: z.enum(["all", "mentions", "none"]).nullable(),
+  until: z.iso.datetime().nullable(),
+  defaultLevel: z.enum(["all", "mentions"]),
+  following: z
+    .strictObject({ count: z.number().int().nonnegative(), first: z.strictObject({ id: ThreadIdSchema, name: z.string() }).nullable() })
+    .nullable(),
+});
+export const FollowingSchema = z.strictObject({ following: z.boolean() });
 export const ConversationSchema = z.object({
+  notifications: NotificationsSchema.nullable(),
+  mentionsUnread: z.number().int().min(0).max(FOR_YOU_COUNT_CAP),
   archived: z.boolean(),
   pinnedRank: z.number().int().nonnegative().nullable(),
   summaryCursor: z.string().nullable().optional(),
@@ -680,6 +700,7 @@ export const ChatLiveEventSchema = z.discriminatedUnion("type", [
   ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
   z.object({ type: z.literal("personal") }),
+  z.strictObject({ type: z.literal("notifications") }),
   z.strictObject({ type: z.literal("message-changed"), conversationId: ShortIdSchema }),
   z.strictObject({ type: z.literal("for-you") }),
   SidebarPreferencesSchema.extend({ type: z.literal("preferences") }),

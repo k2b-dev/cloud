@@ -27,6 +27,25 @@ describe("markdown tables", () => {
     expect(html).toContain(">400</span>");
   });
 
+  test("keeps email rendering isolated from default formula, math and table presentation", () => {
+    const source = "| Item | Amount | Formula |\n| :--- | :---: | ---: |\n| Flour | 400 | =SUM(Amount) |";
+    const baseline = markdown.renderSync(source);
+    for (const render of [markdown.renderSync, markdown.render]) {
+      const email = render(source, { links: "plain", output: "email" });
+      expect(email).toContain('<th align="center">Amount</th>');
+      expect(email).toContain('<td align="right">=SUM(Amount)</td>');
+      expect(email).not.toMatch(/md-table|md-formula|ti-math-function/);
+      expect(markdown.renderSync(source)).toBe(baseline);
+      expect(render(source)).toBe(baseline);
+      expect(render("~~removed~~", { output: "email" })).toContain("<del>removed</del>");
+      expect(render("~~removed~~")).not.toContain("<del>");
+      expect(render("$x$", { output: "email" })).toBe("<p>$x$</p>\n");
+      expect(render("$x$")).toContain("katex");
+    }
+    expect(baseline).toContain("md-formula-ok");
+    expect(baseline).toContain(">400</span>");
+  });
+
   test("keeps the table frame content-height driven", () => {
     const styles = readFileSync(resolve(import.meta.dir, "../../styles/utilities-markdown-table.css"), "utf8");
     const wrapper = styles.slice(styles.indexOf(".md-table-wrap"), styles.indexOf(".md-table {"));

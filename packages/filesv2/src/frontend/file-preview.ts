@@ -38,9 +38,19 @@ function mimeType(name: string) {
   };
   return types[extension];
 }
+export class FilesApiError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "FilesApiError";
+  }
+}
 export async function apiFailure(response: { json: () => Promise<unknown> }, fallback: string): Promise<never> {
   const error = ErrorSchema.safeParse(await response.json().catch(() => null));
-  throw new Error(error.success ? error.data.message : fallback);
+  if (error.success) throw new FilesApiError(error.data.code, error.data.message);
+  throw new Error(fallback);
 }
 export async function contentLease(baseId: string, path: string, signal: AbortSignal, fallback: string) {
   const response = await apiClient.bases[":baseId"].download.$post({ param: { baseId }, json: { path } }, { init: { signal } });

@@ -17,6 +17,8 @@ const conv = (
   unread: number,
   last: { author: keyof typeof people; text: string; at: string } | null,
 ): ChatView["sidebar"]["items"][number] => ({
+  notifications: null,
+  mentionsUnread: 0,
   archived: false,
   pinnedRank: null,
   threads: 0,

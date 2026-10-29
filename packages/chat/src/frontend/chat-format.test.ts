@@ -50,6 +50,8 @@ for (const locale of ["en", "de"]) {
 
   test(`${locale}: last-message lines cover empty, own, direct, and group chats`, () => {
     const conversation = ConversationSchema.parse({
+      notifications: null,
+      mentionsUnread: 0,
       threads: 0,
       channel: false,
       member: true,

@@ -17,6 +17,16 @@ describe("workflow expressions", () => {
     expect(workflowValueExpression("inputs.item.Name")).toBe("${{ inputs.item.Name }}");
   });
 
+  test("parses long whitespace runs in linear time", () => {
+    const padding = "\t".repeat(200_000);
+    expect(parseWorkflowValueString(`\${{{{${padding}`)).toEqual({ kind: "invalid" });
+    expect(parseWorkflowValueString(`\${{${padding}inputs.item.Name${padding}}}`)).toEqual({
+      kind: "expression",
+      expression: { kind: "reference", reference: "inputs.item.Name" },
+    });
+    expect(workflowMessageExpressions(`\${{z${padding}`)).toEqual([]);
+  });
+
   test("reports malformed and embedded expressions", () => {
     expect(parseWorkflowValueString("before ${{ inputs.item }}")).toEqual({ kind: "invalid" });
     expect(workflowMessageExpressions("Returned ${{ inputs.item.Name }} at ${{ now() }}")).toHaveLength(2);

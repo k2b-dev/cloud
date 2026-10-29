@@ -3,6 +3,8 @@ import { type DraftEditableContent, draftEditableContentInputSchema } from "../.
 
 export type MailDraftJournal = { revision: number; content: DraftEditableContent };
 
+export const mailDraftJournalKey = (mailboxId: string, draftId: string): string => `cloud:mail:draft:${mailboxId}:${draftId}`;
+
 const mailDraftJournalSchema = z.object({
   revision: z.number().int().nonnegative(),
   content: draftEditableContentInputSchema,

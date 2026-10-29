@@ -39,6 +39,7 @@ if (!isServer)
     const dispose = render(
       () => (
         <MailComposeIntentPage
+          currentUserId="Usr001"
           mailboxes={[{ id: "mail01", name: "Mailbox", description: null, canManage: false }]}
           initialMailboxId=""
           autoStart={false}
@@ -135,6 +136,7 @@ if (!isServer)
       render(
         () => (
           <MailComposeIntentPage
+            currentUserId="Usr001"
             mailboxes={[{ id: "mail01", name: "Mailbox", description: null, canManage }]}
             initialMailboxId="mail01"
             autoStart={false}
@@ -203,6 +205,7 @@ if (!isServer)
     const dispose = render(
       () => (
         <MailComposeIntentPage
+          currentUserId="Usr001"
           mailboxes={[
             { id: "mail01", name: "First", description: null, canManage: true },
             { id: "mail02", name: "Second", description: null, canManage: true },

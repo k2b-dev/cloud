@@ -224,6 +224,7 @@ export const createInTransaction = async (
     dateConfig?: DateContext;
     viewer?: ExpansionViewer;
     locale?: string;
+    beforeWrite?: () => Promise<void>;
   } = {},
 ): Promise<Result<CreateRecordInTransactionResult>> => {
   const messages = getGridsCrudMessages(opts.locale);
@@ -276,6 +277,9 @@ export const createInTransaction = async (
       changedFieldIds,
       actorId,
     };
+    // Domain/history and relation preparation may have waited since the
+    // caller's initial authorization. Recheck immediately before the insert.
+    await opts.beforeWrite?.();
     if (hasRetryGeneratedId) await client`SAVEPOINT grids_generated_id_insert`;
     try {
       const rows = await insertWithShortIdForDb(
@@ -464,6 +468,7 @@ export const updateInTransaction = async (
     audit?: RecordMutationAudit;
     viewer?: ExpansionViewer;
     locale?: string;
+    beforeWrite?: () => Promise<void>;
   } = {},
 ): Promise<Result<UpdateRecordInTransactionResult>> => {
   const messages = getGridsCrudMessages(opts.locale);
@@ -519,6 +524,7 @@ export const updateInTransaction = async (
   };
 
   const localCalculations = await calculateLocalRecordValues(client, fields, merged);
+  await opts.beforeWrite?.();
   const [row] = await client<DbRow[]>`
       UPDATE grids.records
       SET data = ${merged}::jsonb,
@@ -612,6 +618,7 @@ export const softDeleteInTransaction = async (
   origin: MutationOrigin,
   audit?: RecordMutationAudit,
   locale?: string,
+  beforeWrite?: () => Promise<void>,
 ): Promise<Result<string>> => {
   const messages = getGridsCrudMessages(locale);
   const writable = await requireStoredTableWritable(tableId, tx, locale);
@@ -636,6 +643,7 @@ export const softDeleteInTransaction = async (
     await prepareRecordMutation(tx, tableId, recordId);
     const mutable = await assertRecordMutable(tx, tableId, recordId, locale);
     if (!mutable.ok) return mutable;
+    await beforeWrite?.();
     const [row] = await tx<Array<{ outbox_id: string }>>`
         UPDATE grids.records
         SET deleted_at = now(), updated_by = ${actorId}::uuid, updated_at = now()

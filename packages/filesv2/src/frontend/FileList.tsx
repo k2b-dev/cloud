@@ -53,6 +53,8 @@ export default function FileList(props: {
   /** The quiet text beside a hit directly in the searched folder, such as that folder's name. */
   hereLabel?: string;
   showModified: boolean;
+  /** The request timezone shared with the inspector and history. */
+  timeZone?: string;
   /** Folder currently being opened; its icon becomes a spinner instead of a separate loader. */
   opening?: string | null;
   /** In tree mode the folder whose contents actions target. */
@@ -288,7 +290,7 @@ export default function FileList(props: {
               </span>
               <Show when={props.showModified}>
                 <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--modified">
-                  <Format.DateTime value={row.modified} />
+                  <Format.DateTime value={row.modified} timeZone={props.timeZone} />
                 </span>
               </Show>
               <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--info">

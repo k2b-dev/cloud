@@ -52,6 +52,7 @@ export default ssr<AuthContext>(async (c) => {
         mailto={c.req.query("mailto") ?? null}
         returnHref={c.req.query("return") ?? null}
         contactDirectory={directory}
+        currentUserId={user?.id}
         currentUserEmail={user?.mail ?? null}
       />
     </Layout>

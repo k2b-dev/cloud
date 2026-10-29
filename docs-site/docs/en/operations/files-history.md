@@ -34,6 +34,34 @@ recovery records `unclear`. Finding the expected folder cannot prove who
 created it. `not_done` is reserved for checks that can prove no change; folder
 recovery never uses it.
 
+## Read an execution record
+
+The history action **View run** opens `/app/filesv2/execution/:activityId`,
+where `activityId` is the Files activity UUID. The page requires the `user`
+role and reads the entry again through `filesService.activityEntry` with the
+current access subject. Execution context must still be present on that
+authorized projection; a projection without it returns `404`. Service `403`
+and `404` responses reveal no record details. Server failures offer a link to
+retry the same read. Historical writer-controlled text is served with
+`Cache-Control: private, no-store, no-transform`.
+
+The page presents exactly one recorded Files action and its recorded result,
+with authorized before and after paths. Optional source context and correlation
+references appear in a closed disclosure. Request and invocation references
+are not run URLs or access grants. The page neither queries the administrator
+execution console nor reads a private source conversation, and it does not
+claim the outcome of the complete originating run. It starts no writes,
+automatic rechecks, or related-record discovery. The existing reader privacy
+boundary remains in force. See [Files](/en/apps/filesv2#read-an-execution-record)
+for the user-facing description.
+
+## Open Chat from history
+
+History's **Message …** action requires the Chat application to be running
+and advertising `chat.conversation.compose`. Files shows a retryable error if
+the command is missing or Chat is unavailable. The handoff opens Chat's normal
+form; it does not create a conversation, send a message, or widen guest access.
+
 ## Retain history
 
 Administrators set `activityRetentionDays` in the Files configuration. The
@@ -96,6 +124,13 @@ The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
 keys that have not been reviewed.
 
+The file inspector and Activity send the revision they displayed when restoring a version in
+place. Files compares it again under its publication lock and returns
+`version_restore_changed` (409) if it changed; reload before retrying. This check
+coordinates Cloud writes. Filegate does not provide a conditional restore, so
+it cannot prevent a filesystem writer from changing the file between the check
+and the restore.
+
 ## Read visible history
 
 The Files history API, `cld filesv2 history`, and the `activity.list`,
@@ -124,7 +159,9 @@ Fully visible `share.create` and `share.revoke` entries include
 `share.expiresAt` from the retained share. Null means no recorded expiry or a
 missing share row. Disappearance-only entries carry no share metadata.
 
-Search and counts use only the projected fields. A page returns at most 50
+Search and counts use only the projected fields. A search result's movement
+history names other members of a batch only from the loaded visible entries,
+never the stored batch size. A page returns at most 50
 visible entries after inspecting at most 500 candidates. An empty page may
 still have a next cursor. Search stops after 200 visible matches. Keep filters
 unchanged when following a cursor. Movement chains follow path segments for at
@@ -145,7 +182,7 @@ no claim about expired history or descendants inside a selected folder.
 `complete: false` makes `visibleCount` a lower bound, including when exactly
 500 candidates fill the bound. Clients must use an “at least” label. The read
 uses the existing history request deadline and cancellation, never creates
-storage or bindings, and records no new activity. This release adds a partial
+storage or bindings. Administrator reads of foreign history record one scoped read per request, as described below. This release adds a partial
 batch/effective-time index for this bounded lookup; no worker or configuration
 is required.
 
@@ -200,7 +237,15 @@ granularity. `knownNetworks` is null for daily rows and unclassified hourly
 accesses; otherwise it counts known networks, with `overflow` marking a lower
 bound. Daily rows retain no overflow evidence. Follow `timeline.next` with
 `timelineAfter` and the same dates to read older aggregates. Both cursors are
-independent. Reads create no activity or audit action.
+independent. Ordinary history reads create no activity or audit action. Administrator reads of bindings outside their current Cloud grants record one `admin.read` and one `filesv2.admin.read` security audit event in the same transaction before exposing a foreign snapshot. Each request or page records its endpoint, bounded input filters, and every distinct foreign binding represented in its returned results once. Existing page, scan, and chain limits bound that list. Rows rejected by filters do not create a read record. This includes item, batch, chain and link-count reads. Audit failure prevents the read; export keeps its separate export audit.
+
+The file inspector shows these aggregates to the link's creator or an
+administrator as rows in the item's history, ordered with recorded changes by
+bucket start. They stay aggregates, not activity entries, and the Activity API
+never returns them. One request per loaded link serves both the link facts and
+the history; older aggregates load only on request. A row appears once every
+source that could still hold a newer row has loaded past it. The history shows
+a count only after all its sources and link pages are loaded.
 
 Each row's required nullable `pageNetworks` counts distinct networks with
 page views in that bucket, independently of network pagination. Download-only
@@ -247,6 +292,8 @@ top-level item and a security event in the transaction that changes the link.
 Revoking a link still works when its creator has lost access to its original
 folder. The recorded paths describe the original selection; they do not grant
 access to the history reader. Repeating a revocation produces no second event.
+
+The overall activity overview persistently explains that POSIX areas have no history when the person has both Cloud and POSIX bases, including while searching, loading or showing an ordinary load error. A POSIX-only overview, or a history-unavailable response, shows the single unavailable notice instead.
 
 ## Public-link and administrative reads
 
