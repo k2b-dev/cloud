@@ -4,5 +4,13 @@ import type { Thread } from "./threads";
 
 /** The owning reader supplies localized display context. */
 export default function ThreadMetadata(props: { resource: Thread["resource"]; dateConfig: DateContext }) {
-  return <Show when={props.resource?.context}>{(context) => <span class="chat-item-metadata">{context()}</span>}</Show>;
+  return (
+    <Show when={props.resource?.context}>
+      {(context) => (
+        <span class="chat-item-metadata">
+          <span>{context()}</span>
+        </span>
+      )}
+    </Show>
+  );
 }

@@ -462,7 +462,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               <h1 class="chat-conversation__wide-name">{wide().title}</h1>
               <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
               <p class="chat-conversation__phone-subtitle">
-                {wide().chat} · {props.subtitle ?? t().members({ count: props.memberCount })}
+                {[...new Set([wide().chat, props.subtitle ?? t().members({ count: props.memberCount })])].join(" · ")}
               </p>
             </div>
           )}
@@ -514,7 +514,10 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       <Show when={props.resource}>
         {(resource) => (
           <div class="chat-resource-head__mobile">
-            <span>{resourceKind()}</span>
+            {/* The reader's context line already names the kind; show it only when the reader gives none. */}
+            <Show when={!resource().context}>
+              <span>{resourceKind()}</span>
+            </Show>
             <Show when={resourceStatus()}>
               {(status) => <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />}
             </Show>
