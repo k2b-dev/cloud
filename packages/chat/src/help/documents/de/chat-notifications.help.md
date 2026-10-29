@@ -6,7 +6,7 @@ description: Stelle Benachrichtigungen pro Chat ein, folge Diskussionen und scha
 order: 125
 ---
 
-Jeder Chat hat eine von 3 Stufen: **Alle Nachrichten**, **Nur Erwähnungen** oder **Aus**. Cloud zeigt auf einem Gerät höchstens 1 Mitteilung pro Chat. Eine neue Nachricht ersetzt die alte, zum Beispiel „Nora: Passt, danke! (+5 weitere)“.
+Jeder Chat hat eine von 3 Stufen: **Alle Nachrichten**, **Nur Erwähnungen** oder **Aus**. Cloud zeigt auf einem Gerät höchstens 1 Benachrichtigung pro Chat. Eine neue Nachricht ersetzt die alte, zum Beispiel „Nora: Passt, danke! (+5 weitere)“.
 
 ## Stufe wählen {icon="bell"}
 
@@ -48,11 +48,11 @@ Die **Chat-Info** zeigt, welchen Diskussionen du folgst.
 ## Ton und Zeitpunkt {icon="volume"}
 
 :::reference
-- Die erste ungelesene Nachricht eines Chats kommt mit Ton. Weitere Nachrichten ersetzen die Mitteilung ohne Ton, bis du den Chat liest.
+- Die erste ungelesene Nachricht eines Chats kommt mit Ton. Weitere Nachrichten ersetzen die Benachrichtigung ohne Ton, bis du den Chat liest.
 - Erwähnungen und Antworten kommen immer mit Ton.
 - Du bekommst höchstens 1 Ton alle 10 Sekunden.
 - Liest du eine Nachricht innerhalb von 3 Sekunden, kommt keine Benachrichtigung.
-- Liest du einen Chat auf einem Gerät, entfernen die anderen Geräte seine Mitteilung, sobald du dort Cloud öffnest.
+- Liest du einen Chat auf einem Gerät, entfernen die anderen Geräte seine Benachrichtigung, sobald du dort Cloud öffnest.
 :::
 
 ## Benachrichtigungen auf einem Gerät einschalten {icon="device-mobile"}

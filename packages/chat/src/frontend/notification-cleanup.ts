@@ -8,6 +8,18 @@ export const CHAT_BADGE_PATH = "/api/chat/badge";
 /** Several reads in a row settle before the badge is read again. */
 const BADGE_SETTLE_MS = 1_000;
 
+/** What the cleanup reaches outside Chat; tests pass their own. */
+export type NotificationCleanupDependencies = {
+  notifications: () => Promise<{ closeGroup(appId: string, group: string): Promise<void>; setBadge(count: number): Promise<void> }>;
+  refreshAppBadges: () => Promise<void>;
+  fetch: (input: string, init: RequestInit) => Promise<Response>;
+};
+const browserDependencies: NotificationCleanupDependencies = {
+  notifications: () => import("@k2b/cloud/browser/notifications").then((module) => module.browserNotificationClient),
+  refreshAppBadges: () => import("@k2b/cloud/browser/app-badges").then((module) => module.refreshAppBadges()),
+  fetch: (input, init) => fetch(input, init),
+};
+
 /**
  * Keeps this device in step with what the person read anywhere. A chat without unread messages closes its
  * notification here, at start for every listed chat and later for each chat that becomes read; then the app badge,
@@ -15,21 +27,20 @@ const BADGE_SETTLE_MS = 1_000;
  * every device cleans up when Chat opens on it. Returns a function that takes the current rows; call it whenever they
  * change, and `dispose` when the list goes away.
  */
-export const createNotificationCleanup = () => {
+export const createNotificationCleanup = (dependencies: NotificationCleanupDependencies = browserDependencies) => {
   const closed = new Set<string>();
   let signature: string | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
-  const client = () => import("@k2b/cloud/browser/notifications").then((module) => module.browserNotificationClient);
+  const client = dependencies.notifications;
 
   const refreshBadge = () => {
     clearTimeout(timer);
     timer = setTimeout(async () => {
       if (disposed) return;
-      const { refreshAppBadges } = await import("@k2b/cloud/browser/app-badges");
-      refreshAppBadges();
       try {
-        const response = await fetch(CHAT_BADGE_PATH, { credentials: "same-origin", headers: { accept: "application/json" } });
+        await dependencies.refreshAppBadges();
+        const response = await dependencies.fetch(CHAT_BADGE_PATH, { credentials: "same-origin", headers: { accept: "application/json" } });
         if (!response.ok) return void (await response.body?.cancel());
         const body: unknown = await response.json();
         const count = typeof body === "object" && body !== null && "count" in body ? body.count : null;

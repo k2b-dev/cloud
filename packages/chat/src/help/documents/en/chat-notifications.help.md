@@ -2,6 +2,7 @@
 id: chat-notifications
 title: Choose which chats notify you
 icon: ti ti-bell
+kind: task
 description: Set notifications per chat, follow discussions, and turn on notifications on a device.
 order: 125
 ---

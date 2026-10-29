@@ -1,16 +1,22 @@
-import { afterEach, expect, jest, mock, spyOn, test } from "bun:test";
+import { afterEach, expect, jest, test } from "bun:test";
+import { CHAT_BADGE_PATH, createNotificationCleanup, type NotificationCleanupDependencies } from "./notification-cleanup";
 
 const closed: Array<[string, string]> = [];
 const badges: number[] = [];
 let refreshed = 0;
-mock.module("@k2b/cloud/browser/notifications", () => ({
-  browserNotificationClient: {
-    closeGroup: async (appId: string, group: string) => void closed.push([appId, group]),
-    setBadge: async (count: number) => void badges.push(count),
+const requests: string[] = [];
+let answer: () => Response = () => Response.json({ count: 0 });
+const dependencies: NotificationCleanupDependencies = {
+  notifications: async () => ({
+    closeGroup: async (appId, group) => void closed.push([appId, group]),
+    setBadge: async (count) => void badges.push(count),
+  }),
+  refreshAppBadges: async () => void refreshed++,
+  fetch: async (input) => {
+    requests.push(input);
+    return answer();
   },
-}));
-mock.module("@k2b/cloud/browser/app-badges", () => ({ refreshAppBadges: () => void refreshed++ }));
-const { CHAT_BADGE_PATH, createNotificationCleanup } = await import("./notification-cleanup");
+};
 
 const flush = async () => {
   for (let turn = 0; turn < 20; turn++) await Promise.resolve();
@@ -19,22 +25,15 @@ afterEach(() => {
   jest.useRealTimers();
   closed.length = 0;
   badges.length = 0;
+  requests.length = 0;
   refreshed = 0;
 });
 
 test("read chats close their notification once, at start and when they become read; the badge follows the counts", async () => {
   jest.useFakeTimers();
   let count = 3;
-  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(
-      async (input: string | URL | Request) => {
-        expect(String(input)).toBe(CHAT_BADGE_PATH);
-        return Response.json({ count });
-      },
-      { preconnect: globalThis.fetch.preconnect },
-    ),
-  );
-  const cleanup = createNotificationCleanup();
+  answer = () => Response.json({ count });
+  const cleanup = createNotificationCleanup(dependencies);
   try {
     cleanup([
       { id: "ChatRead01", unread: 0, mentionsUnread: 0 },
@@ -77,7 +76,7 @@ test("read chats close their notification once, at start and when they become re
     jest.advanceTimersByTime(1_000);
     await flush();
     expect(badges).toEqual([3, 0]);
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(requests).toEqual([CHAT_BADGE_PATH, CHAT_BADGE_PATH]);
 
     // A chat that gets new messages and is read again closes again.
     cleanup([{ id: "ChatNew002", unread: 2, mentionsUnread: 0 }]);
@@ -86,16 +85,13 @@ test("read chats close their notification once, at start and when they become re
     expect(closed.map(([, id]) => id)).toEqual(["ChatRead01", "ChatNew002", "ChatAt0003", "ChatNew002"]);
   } finally {
     cleanup.dispose();
-    fetchSpy.mockRestore();
   }
 });
 
 test("a failing badge route leaves the badge alone, and nothing runs after dispose", async () => {
   jest.useFakeTimers();
-  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(async () => new Response("unavailable", { status: 503 }), { preconnect: globalThis.fetch.preconnect }),
-  );
-  const cleanup = createNotificationCleanup();
+  answer = () => new Response("unavailable", { status: 503 });
+  const cleanup = createNotificationCleanup(dependencies);
   try {
     cleanup([{ id: "ChatNew002", unread: 1, mentionsUnread: 0 }]);
     jest.advanceTimersByTime(1_000);
@@ -106,8 +102,8 @@ test("a failing badge route leaves the badge alone, and nothing runs after dispo
     jest.advanceTimersByTime(1_000);
     await flush();
     expect(closed).toEqual([]);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(1);
   } finally {
-    fetchSpy.mockRestore();
+    cleanup.dispose();
   }
 });
