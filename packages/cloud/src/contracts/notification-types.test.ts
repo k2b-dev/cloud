@@ -152,6 +152,70 @@ describe("notification definitions", () => {
     ).toThrow('cannot recommend and require the "browser" channel');
   });
 
+  test("validates excluded channels and requires a trimmed reason", () => {
+    const input = {
+      recipient: "user" as const,
+      label: "Updates",
+      description: "Status updates.",
+      data: z.object({}),
+      render: () => ({ title: "Update" }),
+    };
+    expect(() => notification({ ...input, delivery: { excluded: ["email"] } })).toThrow("excludedReason is required");
+    expect(() => notification({ ...input, excludedReason: "  " })).toThrow("excludedReason is required");
+    expect(() => notification({ ...input, excludedReason: "Too frequent", delivery: { excluded: ["email", "email"] } })).toThrow(
+      "duplicate",
+    );
+    for (const delivery of [
+      { recommended: ["email"], excluded: ["email"] },
+      { required: ["email"], excluded: ["email"] },
+    ] as const) {
+      expect(() => notification({ ...input, excludedReason: "Too frequent", delivery })).toThrow("cannot exclude");
+    }
+    const definition = notification({ ...input, excludedReason: "  Too frequent  ", delivery: { excluded: ["email"] } });
+    expect(definition.excludedReason).toBe("Too frequent");
+    expect(definition.delivery?.excluded).toEqual(["email"]);
+    expect(Object.isFrozen(definition.delivery?.excluded)).toBe(true);
+    // Kinds without exclusions keep the delivery shape they had before.
+    expect(notification(input).delivery).toEqual({ recommended: [], required: [] });
+  });
+
+  test("resolves excluded reasons through the same per-field locale fallback", () => {
+    const input = {
+      recipient: "user" as const,
+      label: "Updates",
+      description: "Status updates.",
+      excludedReason: "  Too frequent  ",
+      delivery: { excluded: ["email"] } as const,
+      data: z.object({}),
+      render: () => ({ title: "Update" }),
+    };
+    const definition = notification({
+      ...input,
+      presentation: {
+        baseLocale: "en",
+        translations: {
+          de: { excludedReason: "  Zu häufig  " },
+          "de-CH": { label: "Meldungen" },
+          "de-AT": { excludedReason: "Zu viele Meldungen" },
+        },
+      },
+    });
+    expect(resolveNotificationDefinitionPresentation(definition, "de-CH")).toEqual({
+      label: "Meldungen",
+      description: "Status updates.",
+      excludedReason: "Zu häufig",
+    });
+    expect(resolveNotificationDefinitionPresentation(definition, "de-AT").excludedReason).toBe("Zu viele Meldungen");
+    expect(resolveNotificationDefinitionPresentation(definition, "fr").excludedReason).toBe("Too frequent");
+    expect(resolveNotificationDefinitionPresentation(definition).excludedReason).toBe("Too frequent");
+    expect(() =>
+      notification({
+        ...input,
+        presentation: { baseLocale: "en", translations: { de: { excludedReason: " " } } },
+      }),
+    ).toThrow("de.excludedReason is required");
+  });
+
   test("accepts only canonical same-origin notification targets", () => {
     expect(isSafeNotificationTargetHref("/app/assistant?conversation=one")).toBe(true);
     expect(isSafeNotificationTargetHref("//evil.example")).toBe(false);

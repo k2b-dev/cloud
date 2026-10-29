@@ -14,6 +14,7 @@ import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/clo
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
+import { notebooksEvents } from "./app-events";
 import {
   ActivityDataSchema,
   ActivityInputSchema,
@@ -1096,6 +1097,7 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
 };
 
 export const notebooksCapabilities = defineCapabilities({
+  events: notebooksEvents,
   protocolVersion: 2,
   commands: {
     "note.compose": {

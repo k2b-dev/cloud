@@ -113,6 +113,20 @@ attempt before another signature can be submitted. An uncertain close remains
 unconfirmed until the server answers. Reload, hidden pages, Back and BFCache
 discard unsaved ink; customer content is fetched again only after validation.
 
+## Offer address suggestions
+
+`src/platform.ts` demonstrates `coreQueries: ["address.autocomplete"]`. The
+example has no address field; an application that adds one calls
+`<guestApiPath>/core/query/address.autocomplete` with the current `visitId`,
+`input: { text }`, and its existing CSRF header. Show the returned linked
+Geoapify · OpenStreetMap attribution beside the suggestions. The operator must
+configure Places and maps and allow the service's outbound Geoapify EU requests.
+The pairing owner's Geo budget pays for uncached suggestions.
+
+See [App-PWA sessions](https://cloud.k2b.dev/en/docs/identity/app-pwa-sessions#offer-address-suggestions)
+for the complete request and error contract. No employee identity or credential
+belongs in the guest request.
+
 ## Reuse the public seams
 
 - `src/platform.ts` configures the closed router and repeats real app access

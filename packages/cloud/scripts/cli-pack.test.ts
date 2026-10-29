@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,7 +32,7 @@ await mkdir(join(workspace, "references", "guides"), { recursive: true });
 await writeFile(join(workspace, "references", "index.md"), "# Start\n");
 await writeFile(join(workspace, "references", "guides", "setup.md"), "# Setup\n");
 
-test("packs the shared bundle contract, keeps nested references and removes stale output", async () => {
+test("packs the shared bundle contract and keeps nested references", async () => {
   const out = join(workspace, "packed");
   const result = await run(out);
   expect(result.exitCode, result.stderr).toBe(0);
@@ -50,9 +50,20 @@ test("packs the shared bundle contract, keeps nested references and removes stal
   expect(manifest).toMatchObject({ name: "packed", app: "pack-test", version: "1.2.3" });
   expect(manifest.files.map((file) => file.path)).toEqual(["cli.js", "references/guides/setup.md", "references/index.md"]);
   expect(await readFile(join(out, "references", "guides", "setup.md"), "utf8")).toBe("# Setup\n");
-  await writeFile(join(out, "references", "stale.md"), "stale");
-  expect((await run(out)).exitCode).toBe(0);
-  expect(await Bun.file(join(out, "references", "stale.md")).exists()).toBe(false);
+});
+
+describe("replacing a previously packed bundle", () => {
+  const out = join(workspace, "repacked");
+  beforeEach(async () => {
+    const result = await run(out);
+    expect(result.exitCode, result.stderr).toBe(0);
+    await writeFile(join(out, "references", "stale.md"), "stale");
+  });
+
+  test("removes stale output", async () => {
+    expect((await run(out)).exitCode).toBe(0);
+    expect(await Bun.file(join(out, "references", "stale.md")).exists()).toBe(false);
+  });
 });
 
 test("refuses foreign non-empty output untouched, with one clear error line", async () => {

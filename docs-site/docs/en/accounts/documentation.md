@@ -16,7 +16,7 @@ The documentation is currently English, including links from the German interfac
 
 ## Set the base address
 
-Open **Administration → General → Overview** and change **Documentation website**.
+Open **Administration → Base settings → General** (`/admin/base`) and change **Documentation website**.
 The default is `https://cloud.k2b.dev`.
 
 Use a complete HTTP(S) base URL without credentials, query or fragment.

@@ -278,10 +278,11 @@ export const sendTypedNotification = async <
   const candidateEventId = crypto.randomUUID();
   await ensureNotificationDefinition(definition);
 
-  const requiredChannels = unique([...(definition.delivery?.required ?? [])]);
+  const excluded = new Set<string>(definition.delivery?.excluded ?? []);
+  const requiredChannels = unique([...(definition.delivery?.required ?? [])]).filter((channel) => !excluded.has(channel));
   const requiredChannelSet = new Set<string>(requiredChannels);
   const preference = await preferredChannels(definition.id, resolved.recipient, definition.delivery?.recommended ?? []);
-  const preferred = preference.channels.filter((channel) => !requiredChannelSet.has(channel));
+  const preferred = preference.channels.filter((channel) => !requiredChannelSet.has(channel) && !excluded.has(channel));
 
   const identity = await sql.begin(async (tx) => {
     const eventRows = await tx<{ id: string }[]>`

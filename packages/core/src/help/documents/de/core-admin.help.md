@@ -8,7 +8,7 @@ order: 120
 
 Die Core-Administrationsseiten konfigurieren Plattformdienste. Sie verlinken außerdem die Administrationsseiten, die jede App registriert.
 
-Die Kontoeinstellungen verlinken mit **Dokumentation** die passende englische Anleitung. Sie öffnet sich in einem neuen Tab. Unter **Einstellungen → Allgemein** wählst du mit **Dokumentationsadresse** die öffentliche Dokumentation, einen eigenen Spiegel oder deinen lokalen Fibel-Server. Diese Einstellung ändert nur die Links zur Dokumentation. Sie richtet keine App-Anmeldung ein, und die integrierte Hilfe bleibt davon unabhängig.
+Die Kontoeinstellungen verlinken mit **Dokumentation** die passende englische Anleitung. Sie öffnet sich in einem neuen Tab. Unter **Grundeinstellungen → Allgemein** wählst du mit **Dokumentationsadresse** die öffentliche Dokumentation, einen eigenen Spiegel oder deinen lokalen Fibel-Server. Diese Einstellung ändert nur die Links zur Dokumentation. Sie richtet keine App-Anmeldung ein, und die integrierte Hilfe bleibt davon unabhängig.
 
 ## Administrationsseiten finden {icon="user-cog"}
 
@@ -41,15 +41,15 @@ Unter **Admin → Einstellungen → Anmeldung → Ortsangaben** siehst du Quelle
 ## Die weiteren Einstellungsgruppen finden {icon="settings"}
 
 :::reference
-- **Einstellungen → Allgemein:** Branding, öffentliche Links und globale Zeitpläne.
+- **Grundeinstellungen:** **Allgemein** enthält Branding, öffentliche Links und globale Zeitpläne. **Rechtliches** enthält Nutzungsbedingungen, Datenschutzerklärung und Impressum. **PDF-Erstellung** enthält die Gotenberg-Verbindung, ihre Zugangsdaten und Grenzen. Dazu kommen **Orte & Karten** und **CLI**.
 - **Accounts & Anmeldung → Registrierung & Anfragen:** Gast-Selbstregistrierung, FreeIPA-Zugangsanfragen, Kontovorgaben, Ablauf und Erinnerungen. Bei einer Neuinstallation sind Anfragen aus, bis du sie einschaltest. Ein Upgrade behält das bisherige Verhalten. Schaltest du neue Anfragen aus, bleiben offene Anfragen zur Bearbeitung verfügbar.
 - **Hinweise zur Nacharbeit:** Unter **Registrierung & Anfragen** hinterlegst du eine optionale Liquid-Markdown-Vorlage für Hinweise nach erfolgreichen Benutzer- und Gruppenänderungen. Wähle mit `action` die Anweisungen für jede Änderung und prüfe die Vorschau mit Beispieldaten. Leere Ausgabe zeigt keinen Hinweis. Der Hinweis richtet sich an die Person aus Administration oder Gruppenverwaltung, die die Änderung ausführt. Er ist keine Benachrichtigung an die betroffene Person. NFS-Anweisungen sind nicht fest eingebaut.
 - **Accounts & Anmeldung → Betrieb:** Öffne gefilterte Lebenszyklus- und FreeIPA-Sync-Protokolle oder geplante Aufträge. Die Nachpflege repariert Ablaufdaten von Konten, keine Linux-Identitäten, und kann den Zugang abgelaufener Konten wiederherstellen. Ein Toast bestätigt, dass der Auftrag eingereiht ist. Den Abschluss prüfst du in seinen Protokollen. Einzelne Datensätze und die Bearbeitung von Anfragen bleiben in der App Zugänge.
 - **Accounts & Anmeldung → Linux-Identitäten:** Reserviere einen ID-Bereich und lege Standardwerte für Home und Shell fest. Bei eingeschalteter Vergabe erhalten neue lokale Vollkonten und hochgestufte Gäste ihre Linux-Attribute automatisch. Das Einschalten ändert ältere Vollkonten nicht; nutze dafür **Backfill bestehender Accounts**. Schaltest du die Vergabe aus, verschwindet die Backfill-Tabelle, und bestehende Identitäten bleiben in der App Zugänge erhalten. Linux-Identitäten schalten weder die Anmeldung am Rechner noch sudo frei.
 - **Accounts & Anmeldung → FreeIPA:** FreeIPA-Verbindungseinstellungen, Synchronisierungsregeln und Gruppenzuordnung.
 - **KI:** Konfiguriere Modellprofile und Zugangsdaten der Anbieter und prüfe die Hintergrundarbeit. Mit **Skills** oder **Projekte** stellst du den Zugriff wieder her, wenn niemand mehr Zugriff **Verwalten** auf eine gemeinsam genutzte Ressource hat. Diese Wiederherstellungsseiten können Zugriff geben oder nicht mehr benötigte Ressourcen dauerhaft löschen. Einen gelöschten App-Skill installiert die App erst wieder, wenn du **Wiederherstellen** wählst.
-- **Einstellungen → Ausgehende Mail** und **Einstellungen → PDF-Erstellung:** SMTP-Zustellung, Absenderzugangsdaten, Gotenberg-Verbindung und ihre Zugangsdaten sowie Grenzen für die PDF-Erstellung. Für interne SMTP- und Bounce-IMAP-Hosts muss der Betreiber `OUTGOING_MAIL_ALLOWED_TARGETS` in Core setzen; standardmäßig sind nur öffentliche Ziele erlaubt.
-- **Einstellungen → E-Mail-Vorlagen**, **Einstellungen → Sicherheit** und **Einstellungen → Rechtliches:** Transaktionale E-Mail-Vorlagen, Ratenbegrenzungen, Standards für den Zugriffsschutz, Nutzungsbedingungen, Datenschutzerklärung und Impressum.
+- **Einstellungen → Ausgehende Mail:** SMTP-Zustellung und Absenderzugangsdaten. Für interne SMTP- und Bounce-IMAP-Hosts muss der Betreiber `OUTGOING_MAIL_ALLOWED_TARGETS` in Core setzen; standardmäßig sind nur öffentliche Ziele erlaubt.
+- **Einstellungen → E-Mail-Vorlagen** und **Einstellungen → Sicherheit:** Transaktionale E-Mail-Vorlagen, Ratenbegrenzungen und Standards für den Zugriffsschutz.
 :::
 
 ## Erste Anmeldung für die Administration {icon="key"}
