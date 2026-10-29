@@ -25,7 +25,7 @@ const protectedPages = [
   "/admin/ipa-hosts",
   "/admin/proxy-auth",
   "/admin/oauth",
-  "/admin/gateway/apps",
+  "/admin/observability/gateway",
   "/admin/observability",
   "/me",
   ...[

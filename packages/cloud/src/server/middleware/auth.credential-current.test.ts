@@ -10,7 +10,8 @@ import {
 import type { ServiceAccount } from "../../services/service-accounts";
 import { session } from "../../services/session";
 import { buildProjectedUser } from "../../services/session/user";
-import { type AuthContext, auth, isRequestCredentialCurrent } from "./auth";
+import { isRequestCredentialCurrent } from "../index";
+import { type AuthContext, auth } from "./auth";
 
 const ada = buildProjectedUser({ id: "7bd9706e-6c70-4dd5-946f-0caac02bfc2a", uid: "ada", provider: "local", profile: "user" });
 const bob = buildProjectedUser({ id: "0c4f9d1e-4f7e-4b8a-9d55-1f2a3b4c5d6e", uid: "bob", provider: "local", profile: "user" });

@@ -30,7 +30,7 @@ Ein bestehender Passkey funktioniert weiter, solange dein Kontotyp erlaubt ist. 
 
 ## Passwort ändern {icon="shield-lock"}
 
-Öffne für ein FreeIPA-Konto **Anmeldung** in deinem Konto, wähle **Passwort ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Mobile App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
+Öffne für ein FreeIPA-Konto **Anmeldung** in deinem Konto, wähle **Passwort ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Cloud-App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
 
 In diesem Browser bleibst du angemeldet. Deine gekoppelten Anmeldegeräte bleiben gekoppelt. API-Schlüssel und Passkeys funktionieren weiter.
 
@@ -66,9 +66,9 @@ Der Link gilt fünf Minuten. Teile ihn nicht außerhalb dieser Einrichtung.
 
 Wenn Cloud Browserdetails liefert, zeigt die App sie über dem Code:
 
-- Browser, System und Startzeit in der Zeitzone deines Telefons.
+- Browser, System und Startzeit in der Zeitzone deines Geräts.
 - **Ungefähr {Ort}** und **Netz: …**, nur wenn die Standortdatenbank von Cloud die Adresse kennt. Das Netz nennt den Betreiber.
-- **Gleiche Internetadresse wie dieses Telefon**, nur wenn das zutrifft. Fehlt die Zeile, sagt das nichts aus.
+- **Gleiche Internetadresse wie dieses Gerät**, nur wenn das zutrifft. Fehlt die Zeile, sagt das nichts aus.
 - **Bekannter Browser · seit …** oder **Cloud kennt diesen Browser noch nicht**. Beides fehlt in den ersten 14 Tagen nach dem Update. Bekannt heißt „hier schon angemeldet“, nicht „sicher“.
 - Ein bekannter Browser in einem neuen Land bekommt einen ruhigen Hinweis zur Länderhistorie. Bei einem neuen Browser kann **Hast du diese Anmeldung gestartet?** erscheinen. Die Warnung erscheint nur, wenn dein Konto schon Anmeldeländer hat, aber keine Anmeldung aus diesem Land in den letzten 90 Tagen. Bei kürzerer Historie gilt deren Startdatum. **Ablehnen** ist dann der Hauptknopf, **Trotzdem erlauben** bleibt verfügbar.
 
@@ -82,7 +82,7 @@ Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung zu
 
 ## Benachrichtigung zu neuen Anmeldungen {icon="bell"}
 
-Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue Anmeldung aus einem neuen Browser**. Das beginnt 14 Tage nach dem Upgrade. Die Benachrichtigung gilt nicht für die Mobile App.
+Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue Anmeldung aus einem neuen Browser**. Das beginnt 14 Tage nach dem Upgrade. Die Benachrichtigung gilt nicht für die Cloud-App.
 
 Sie zeigt Browser und Zeit. Die E-Mail zeigt zusätzlich den Anmeldeweg und den ungefähren Ort, wenn er bekannt ist.
 

@@ -8,7 +8,7 @@ order: 110
 
 Die Administrationsseiten sind serverseitig gerenderte Listen. Suche, Filter und Seitennavigation stehen in der URL, und Aktionsschaltflächen führen die Kontovorgänge aus.
 
-Globale Vorgaben und die Nachpflege des Lebenszyklus liegen in der Cloud-Administration unter **Accounts & Anmeldung**. Starte Lebenszyklus-Aufträge über **Betrieb**. Einzelne Datensätze, Anfragen und Verläufe bleiben hier in Konten.
+Globale Vorgaben und die Nachpflege des Lebenszyklus liegen in der Cloud-Administration unter **Accounts & Anmeldung**. Starte Lebenszyklus-Aufträge über **Betrieb**. Einzelne Datensätze, Anfragen und Verläufe bleiben hier in der App Zugänge.
 
 Unter **Registrierung & Anfragen** kannst du optionale Hinweise zur Nacharbeit festlegen, die von der Aktion abhängen. Sie erscheinen nach erfolgreichen Änderungen an Personen, Gruppen und Mitgliedschaften. Eine leere Vorlage zeigt nichts an. Ein Hinweis richtet sich an die Person, die die Änderung ausführt. Cloud versendet ihn nicht an die Betroffenen.
 

@@ -60,7 +60,7 @@ test("health and routing APIs stay eligible for compression", async () => {
   expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
 });
 
-for (const page of ["jobs", "sync", "logs", "workflows", "capabilities", "notifications"]) {
+for (const page of ["jobs", "nats/sync", "logs", "workflows", "capabilities", "deliveries"]) {
   test(`${page} payload page opts out`, async () => {
     for (const suffix of ["", "/__new_route__"]) {
       const response = await router.request(`/admin/observability/${page}${suffix}`);

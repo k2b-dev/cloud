@@ -1134,7 +1134,7 @@ suite("incoming automations", () => {
     ]);
   });
 
-  test("the mobile app's session never creates, widens or resumes an automation's mandate", async () => {
+  test("the Cloud app's session never creates, widens or resumes an automation's mandate", async () => {
     const appContext: MailRequestContext = {
       ...ownerContext,
       actor: ownerContext.actor.kind === "user" ? { ...ownerContext.actor, sessionKind: "app" } : ownerContext.actor,
@@ -1424,7 +1424,9 @@ suite("incoming automations", () => {
         },
       });
       if (!newer.ok) throw new Error(newer.error.message);
-      // The list is the run order.
+      // Frozen workflow priority decides placement, not the automations' creation age.
+      await sql`UPDATE mail.workflow_profile SET priority = CASE WHEN id = ${older.data.workflowId}::uuid THEN 40 ELSE 41 END
+        WHERE id IN (${older.data.workflowId}::uuid, ${newer.data.workflowId}::uuid)`;
       const listed = await listIncomingAutomations(ownerContext, mailboxId);
       const listedIds = listed.ok ? listed.data.map((item) => item.id) : [];
       expect(listedIds.indexOf(older.data.id)).toBeLessThan(listedIds.indexOf(newer.data.id));
@@ -1615,10 +1617,12 @@ suite("incoming automations", () => {
           });
           expect(await commandsFor(newerRunId)).toEqual([]);
           if (scenario === "move first") {
-            expect(await outputFor(newerRunId, "moveMessage")).toEqual({
+            expect(await outputFor(newerRunId, "moveMessage")).toMatchObject({
               action: "moveMessage",
               applied: false,
-              skipped: "earlier_automation",
+              skipped: "upper_rule",
+              workflowId: older.data.workflowId,
+              name: older.data.name,
             });
             expect(await executeMutationCommand(moveCommand.id)).toBe("confirmed");
             await runSucceeded(olderRunId);
@@ -1707,10 +1711,12 @@ suite("incoming automations", () => {
             await runSucceeded(newerRunId);
           }
           if (scenario === "read first") {
-            expect(await outputFor(newerRunId, "moveMessage")).toEqual({
+            expect(await outputFor(newerRunId, "moveMessage")).toMatchObject({
               action: "moveMessage",
               applied: false,
-              skipped: "earlier_automation",
+              skipped: "upper_rule",
+              workflowId: older.data.workflowId,
+              name: older.data.name,
             });
             expect(await executeMutationCommand(moveCommand.id)).toBe("confirmed");
             await runSucceeded(olderRunId);

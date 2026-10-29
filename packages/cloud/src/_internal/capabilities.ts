@@ -10,6 +10,7 @@ import { RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "../contracts/resourc
 import { hasOAuthScope } from "../server/oauth-scope";
 import { capabilityMessages } from "../shared/capability-messages";
 import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
+import { capabilityVia } from "./capability-origin";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
 
 export { capabilityHash } from "./capability-schemas";
@@ -1574,7 +1575,10 @@ export const invokeCompiledCapability = async (params: {
       },
     };
   }
-  let context = params.context;
+  let context: CapabilityExecutionContext = {
+    ...params.context,
+    via: capabilityVia(params.context.origin),
+  };
   if (params.kind === "action") {
     const action = operation as CompiledCapabilityAction;
     if (action.manifest.idempotency === "required" && !params.context.idempotencyKey) {
@@ -1620,7 +1624,7 @@ export const invokeCompiledCapability = async (params: {
         },
       };
     }
-    context = { ...params.context, idempotencyKey: idempotencyKey.data };
+    context = { ...context, idempotencyKey: idempotencyKey.data };
   }
   const input = operation.definition.input.safeParse(params.input);
   if (!input.success) {
@@ -1742,7 +1746,10 @@ export const reviewCompiledCapability = async (params: {
   }
   if (params.context.signal.aborted) return cancelledInvocation(params.context.locale);
   try {
-    const reviewed = await operation.definition.review(input.data, params.context);
+    const reviewed = await operation.definition.review(input.data, {
+      ...params.context,
+      via: capabilityVia(params.context.origin),
+    });
     if (!reviewed.ok) {
       return normalizeProviderError(reviewed.error, "Capability review returned an invalid error", params.onUnexpectedError);
     }

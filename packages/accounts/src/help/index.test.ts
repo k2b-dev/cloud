@@ -26,7 +26,7 @@ describe("accountsHelp", () => {
       expect(document.order).toBe(base!.order);
     }
     expect(accountsHelp.getMarkdown("accounts-start", "de-CH")).toBe(accountsHelp.getMarkdown("accounts-start", "de"));
-    expect(accountsHelp.getMarkdown("accounts-start", "de-CH")).toContain("Konten zeigt deinen eigenen Kontokontext");
+    expect(accountsHelp.getMarkdown("accounts-start", "de-CH")).toContain("Die App Zugänge zeigt deinen eigenen Kontokontext");
     expect(accountsHelp.getMarkdown("accounts-start", "fr")).toBe(accountsHelp.getMarkdown("accounts-start"));
   });
 });

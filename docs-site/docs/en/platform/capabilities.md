@@ -466,8 +466,8 @@ subscriptions remain blocked with `resource_events_unsupported`.
 `cld capabilities catalog --json` and `--jsonl` preserve the full manifests,
 including `events` and `subscribes`. The text table shows their counts per app.
 Use `cld events ls` for the event-focused catalog and `cld events subscriptions`
-for delivery readiness. Event-specific MCP discovery is not yet available;
-the current capability MCP projects tools and resources, not an event catalog.
+for delivery readiness. MCP clients can [discover declared events](/en/docs/platform/mcp#discover-declared-events)
+with `cloud__events__list` and `cloud__events__read`.
 
 A Type may name one canonical reader Query:
 
@@ -1761,19 +1761,31 @@ interpret provider message codes. See
 contract and [Internationalize an application](/en/docs/build/internationalization)
 for the message and error boundary.
 
-Two more invocation-metadata fields reach every Query, Action, and review
+These invocation-metadata fields reach every Query, Action, review, and stream
 handler on the same `CapabilityExecutionContext`:
 
 | Field | Meaning |
 | --- | --- |
 | `context.requestId` | Correlation id of the originating Cloud request. The dispatcher reuses a valid incoming `x-request-id` and generates one otherwise, then forwards it unchanged to the app and stores it on the execution record |
 | `context.origin` | Cloud surface that invoked the capability: `assistant`, `mcp`, `http`, or `app` |
+| `context.via` | Content provenance derived by the framework: `assistant`, `mcp`, or `null` |
 
 Write `context.requestId` into the app's own audit rows. That is the join
 between an app's domain trail and the platform execution record, and it works
-without either side sharing payloads. Use `context.origin` for logging or
-diagnostics only — never for authorization, because permission decisions belong
-to the actor and access subject.
+without either side sharing payloads. The framework derives `context.via` as
+`"assistant"`, `"mcp"`, or `null` from this resolved origin. `CapabilityVia` and
+`CapabilityViaSchema` are exported from `@k2b/cloud/contracts`. Callers cannot
+supply `via` as execution metadata or through an Action's input.
+
+Actions that create or change visible content must persist `context.via` with
+that content and show its calling surface. This identifies the surface, not who
+composed the text. Each application owns how later edits update this mark.
+HTTP includes browser requests, scripts, and `cld`, so a `null` value does not
+establish human authorship. An agent service account remains visible under its
+own name.
+
+Use `context.origin` and `context.via` only for provenance and diagnostics,
+never for authorization. Permissions belong to the actor and access subject.
 
 Browser and client islands use the same-origin public client:
 
@@ -1942,6 +1954,8 @@ tools:
 
 ```text
 cloud__resource__read
+cloud__events__list
+cloud__events__read
 inventory__query__item.read
 inventory__action__item.rename
 ```
@@ -2192,7 +2206,8 @@ manifest publishes direction and maximum bytes and includes them in the schema
 hash. Expiry must be in the future and at most 24 hours away.
 
 Handlers receive the original descriptor and a freshly authenticated execution
-context. Check current resource permissions in **every** handler. Keep source
+context, including framework-derived `via` provenance. Check current resource
+permissions in **every** handler. Keep source
 identity/revision and destination/conflict policy in the reservation, not in
 caller-supplied transfer parameters. Serialize concurrent writes to the same
 reservation and reconcile retries from its durable receipt. A write response
