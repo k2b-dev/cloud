@@ -1077,6 +1077,44 @@ test("unmanaged descendants remain probable, and invalid old paths fail before h
   }
 });
 
+test("folder history includes readable child uploads while exact file history excludes unrelated items", async () => {
+  const uploaded = candidate(1, {
+    action: "file.upload",
+    path_before: null,
+    path_after: `${home}/Docs/report.pdf`,
+    directory: false,
+    item_id: null,
+    item_after_id: null,
+  });
+  const unrelated = candidate(2, {
+    action: "file.upload",
+    path_before: null,
+    path_after: `${home}/Elsewhere/report.pdf`,
+    directory: false,
+    item_id: null,
+    item_after_id: null,
+  });
+  const sibling = candidate(3, {
+    action: "file.upload",
+    path_before: null,
+    path_after: `${home}/Docs/other.pdf`,
+    directory: false,
+    item_id: null,
+    item_after_id: null,
+  });
+  const f = historyFixture([uploaded, unrelated, sibling]);
+  for (const path of ["Docs", "Elsewhere", "Docs/report.pdf", "Elsewhere/report.pdf", "Docs/other.pdf"]) {
+    f.nodes.set(`${home}/${path}`, f.node(`${home}/${path}`, `id:${path}`, !path.endsWith(".pdf")));
+  }
+  expect((await f.reader.activity(call, { baseId: publicBaseId, path: "Docs", scope: "folder" })).items.map((item) => item.id)).toEqual([
+    sibling.id,
+    uploaded.id,
+  ]);
+  expect(
+    (await f.reader.activity(call, { baseId: publicBaseId, path: "Docs/report.pdf", scope: "item" })).items.map((item) => item.id),
+  ).toEqual([uploaded.id]);
+});
+
 test("administrators retain archive locations outside a local binding's former home", async () => {
   const f = historyFixture([candidate(1, { action: "place.archive", path_after: "archive/alice/file" })]);
   f.setAdmin(true);
@@ -1085,3 +1123,27 @@ test("administrators retain archive locations outside a local binding's former h
   expect(result.items).toHaveLength(1);
   expect(result.items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot", path: "archive/alice/file", relativePath: null });
 });
+
+for (const surface of ["page", "entry", "batch", "chain", "share"] as const) {
+  test(`admin ${surface} read records foreign scope once, while own history stays unaudited`, async () => {
+    const f = historyFixture();
+    if (surface === "share") f.deps.shares.get = async () => ({ created_by: actorId, base_id: baseId });
+    f.setAdmin(true);
+    const read = () =>
+      surface === "page"
+        ? f.reader.activity(call)
+        : surface === "entry"
+          ? f.reader.activityEntry(call, { activityId: candidate().id })
+          : surface === "batch"
+            ? f.reader.activityBatchContext(call, { activityId: candidate().id })
+            : surface === "chain"
+              ? f.reader.movementChain(call, { activityId: candidate().id })
+              : f.reader.shareAccess(call, { shareId: "50000000-0000-4000-8000-000000000001", from: "2030-05-01", to: "2030-05-15" });
+    await read();
+    expect(f.adminReads).toHaveLength(0);
+    f.setMember(false);
+    await read();
+    expect(f.adminReads).toHaveLength(1);
+    expect(f.adminReads[0]).toHaveProperty("endpoint");
+  });
+}

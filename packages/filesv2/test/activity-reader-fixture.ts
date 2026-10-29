@@ -140,7 +140,11 @@ export function historyFixture(rows: ActivityCandidate[] = [candidate()]) {
       info: { stableIds },
     };
   }
+  const adminReads: Record<string, unknown>[] = [];
   const deps: ActivityReaderDependencies = {
+    recordAdminRead: async (_call, bases, _config, scope) => {
+      adminReads.push({ bindingIds: bases.map((base) => base.id), ...scope });
+    },
     connect: (configuration, signal) => connectFilegate(configuration, transport, signal),
     requestContext: async () => ({
       userId: actorId,
@@ -253,6 +257,7 @@ export function historyFixture(rows: ActivityCandidate[] = [candidate()]) {
   };
   return {
     deps,
+    adminReads,
     reader: createActivityReader(deps),
     nodes,
     denied,
