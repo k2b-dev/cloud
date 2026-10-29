@@ -814,7 +814,16 @@ suite("Mail conversation automation log and undo", () => {
       const restored = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId)).items;
       expect(restored).toHaveLength(1);
       expect(restored[0]?.at).toBe(original.at);
-      expect(unwrap(await listAutomationLog(users[0]!, mailboxId, { day })).items.some((item) => item.id === restored[0]?.id)).toBe(true);
+      // The shared mailbox holds every earlier test's entries of that day, all at the frozen time, so the order among
+      // them, and which page the restored entry lands on, depends on their IDs. Read the whole day.
+      const listed: string[] = [];
+      for (let before: string | undefined; ; ) {
+        const page = unwrap(await listAutomationLog(users[0]!, mailboxId, { day, before }));
+        listed.push(...page.items.map((item) => item.id));
+        if (!page.nextCursor) break;
+        before = page.nextCursor;
+      }
+      expect(listed).toContain(restored[0]!.id);
     } finally {
       setSystemTime(fixed);
     }
