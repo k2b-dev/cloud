@@ -19,6 +19,11 @@ export async function machineFixtureSchema() {
   await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS mail text`;
   await sql`CREATE TABLE auth.service_accounts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,kind text,status text DEFAULT 'active',
     delegated_user_id uuid,app_id text,resource_type text,resource_id text,created_by uuid,created_at timestamptz DEFAULT now())`;
+  // Machine ACL checks resolve local groups even when the account has a direct grant.
+  await sql`CREATE TABLE auth.service_account_groups(
+    service_account_id uuid NOT NULL REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+    group_id uuid NOT NULL REFERENCES auth.groups(id) ON DELETE CASCADE,
+    PRIMARY KEY(service_account_id,group_id))`;
   await sql`CREATE TABLE auth.service_account_credentials(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),service_account_id uuid REFERENCES auth.service_accounts(id),
     name text,kind text DEFAULT 'api_token',status text DEFAULT 'active',token_prefix text UNIQUE,secret_hash text,scopes text[] DEFAULT '{}',
     expires_at timestamptz,last_used_at timestamptz,created_by uuid,created_at timestamptz DEFAULT now(),revoked_at timestamptz,revoked_by uuid)`;
