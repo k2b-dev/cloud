@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1085
 description: Pair a sign-in app with QR or a copy link, and remove a lost sign-in device or app device yourself or as an administrator.
 tags: [accounts, administration, authentication]
-updated: 2026-10-09
+updated: 2026-10-23
 ---
 
 # Pair and manage sign-in devices
@@ -17,6 +17,7 @@ Cloud lists two kinds of paired devices separately:
 - **App devices** are devices paired with the Cloud app (preview). Each one
   holds its own app session. You pair and remove your own devices under **App**
   in your profile menu (`/me/app`); for administrators, see
+  [Pair the Cloud app for someone](#pair-the-cloud-app-for-someone) and
   [Remove an app device for someone](#remove-an-app-device-for-someone).
 
 Removing one kind never affects the other.
@@ -114,7 +115,7 @@ Pair again after signing in.
 ## Revoke a device for someone
 
 When someone loses a device and cannot sign in, an administrator opens
-**Accounts → Users → the user**. **Sign-in devices** lists each active device
+**Accounts → Users → the user**. **Cloud Login** lists each active device
 with its name, when it was paired and when it was last used.
 
 1. Find the lost device by name and last use.
@@ -177,16 +178,56 @@ pairing link or code. While do not disturb or your quiet hours are on, a
 notice that would go as a browser notification is held back; it then appears
 only in your notification history.
 
+## Pair the Cloud app for someone
+
+The **Cloud app** is Cloud installed on a phone or tablet for tasks and chat.
+**Cloud Login** is the separate sign-in app; it confirms sign-ins and has no
+access to tasks or chat. User details show these in separate sections.
+
+An administrator can prepare the Cloud app for another person, for example on
+a shared iPad. Open **Accounts → Users → the person → Cloud app → Pair Cloud
+app**. This requires an administrator web sign-in from the last ten minutes.
+An app session or API key cannot start it. For a blocked or expired account,
+unblock or extend the account first; the disabled action explains why.
+
+1. Check the name in **Pair Cloud app for …**. The device will sign in as that
+   person. Open the Cloud app on the device and scan the QR code, or choose
+   **Copy link** in the dialog and paste it into the app. The dialog shows the
+   remaining validity; the link can be claimed once within five minutes.
+2. Enter the six-digit code shown on the device into the administrator dialog.
+   A wrong code shows the remaining attempts. The third wrong code ends the
+   pairing. The whole pairing expires after ten minutes.
+3. On the device, check **Sign in as …?** and **Set up by … (Administration)**.
+   Choose **Confirm** only if this is the intended device. The administrator
+   dialog waits for this decision and shows the same question under **What the
+   device shows**, so you can tell the person what to tap; only the person can
+   answer it. **Reject** ends the pairing and grants no access.
+4. Keep both screens open until the administrator dialog shows **Paired:** and
+   the device name. The device appears in the person's list. The person receives
+   the usual paired-device notice, including who set it up, through their
+   configured notification channels.
+
+**Cancel**, or closing the administrator dialog, ends an unfinished pairing. After a reload,
+the same tab resumes its pairing; if the device has not received the link,
+close the dialog and start again. Signing out the initiating administrator,
+ending their session, or removing their administrator role prevents completion.
+The same per-account limits apply to self-pairing and administrative pairing:
+five open pairings and twenty active devices. Your own pairing under **App**
+in the profile menu continues to finish after the web code confirmation.
+
+Cloud records administrative start, code confirmation, device acceptance or
+rejection, and successful enrollment with both accounts in the audit log. The
+administrator can remove the paired device from the person's **Cloud app** list
+at any time.
+
 ## Remove an app device for someone
 
-> **Preview:** the Cloud app is not released yet. Until it is, no account has
-> app devices and the section below does not appear.
+> **Preview:** the Cloud app is not released yet.
 
 When someone loses a device that is paired with the Cloud app, an
-administrator opens **Accounts → Users → the user**. **App devices** lists each
+administrator opens **Accounts → Users → the user**. **Cloud app** lists each
 paired device with its name, platform, when it was paired and when it was last
-used. The section appears only while the account has at least one paired device,
-or with an error when the devices could not be loaded.
+used. An empty section offers **Pair Cloud app**; a failed load shows an error.
 
 1. Find the device by name and last use.
 2. Choose the remove button in its row, then **Remove device** to confirm.
