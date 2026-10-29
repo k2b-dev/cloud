@@ -91,6 +91,34 @@ suiteFor(
     await sendPush(recipient.id, chat.id);
     expect(sent).toHaveLength(0);
   });
+  test("a message deleted during the delay never notifies; the push names the newest message still there", async () => {
+    const { author, recipient, chat } = await setup();
+    const remove = async (message: { id: string }) =>
+      expect(
+        (
+          await f.request(author.headers, `/${chat.shortId}/messages/${message.id}`, "DELETE", {
+            clientId: crypto.randomUUID(),
+            revision: 0,
+          })
+        ).status,
+      ).toBe(200);
+    const only = await post(author, chat.shortId, "Sent by mistake");
+    await deliverMessage(only.uuid);
+    await remove(only);
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(0);
+    const kept = await post(author, chat.shortId, "Kept");
+    const gone = await post(author, chat.shortId, "Withdrawn");
+    await deliverMessage(kept.uuid);
+    await deliverMessage(gone.uuid);
+    await remove(gone);
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.data.text).toContain("Kept");
+    expect(JSON.stringify(sent[0]!.data)).not.toContain("Withdrawn");
+  });
   test("revoked access between fan-out and push suppresses all content", async () => {
     const { author, recipient, chat } = await setup();
     const message = await post(author, chat.shortId);
