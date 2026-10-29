@@ -353,7 +353,7 @@ describe("PermissionEditor service accounts", () => {
             { principal: { type: "service_account", serviceAccountId: `found-${selectedKind}` }, kind: selectedKind },
           ]);
           const added = rowOf(`Found ${selectedKind}`)!;
-          expect(added.querySelector(`i.${icons[selectedKind]}`)).not.toBeNull();
+          expect(added.querySelector(`img[src="/api/accounts/users/found-${selectedKind}/avatar"]`)).not.toBeNull();
           expect(added.textContent).toContain(`(${labels[locale][selectedKind]})`);
 
           // The editor changes its own copy; the entry the caller returned stays as the caller made it.
