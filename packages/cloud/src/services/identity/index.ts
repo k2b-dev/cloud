@@ -37,6 +37,7 @@ export {
 } from "./key-ring";
 export { identityMetrics } from "./metrics";
 export { isNestedSourceCurrent, type NestedInvocationLease, nestedInvocationLeases } from "./nested-invocation";
+export { type ResourceReader, resolveResourceReaders } from "./resource-readers";
 export { createIdentityPublicRoutes } from "./routes";
 export {
   type CloudSessionClaims,
