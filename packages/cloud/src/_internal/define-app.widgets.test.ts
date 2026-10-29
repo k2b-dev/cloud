@@ -14,6 +14,7 @@ import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as settingsSnapshot from "../services/settings/snapshot";
 import { getRuntimeContext } from "../ssr/runtime";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId, getProcessApplicationId } from "./process-identity";
@@ -76,6 +77,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
   // The heartbeats are stubbed, so the registry handles declared on this fake are never used.
   const fakeSync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(fakeSync);
       return { sync: fakeSync, stop: async () => processSync.unbindProcessSync() };

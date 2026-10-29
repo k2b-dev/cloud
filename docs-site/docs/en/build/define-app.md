@@ -34,12 +34,22 @@ export const app = defineApp({
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `id` | Yes | Stable machine identity |
+| `id` | Yes | Stable machine identity: `^[a-z][a-z0-9-]{0,79}$` |
+| `package` | No | Shared object-store package; defaults to `id` |
 | `name` | Yes | Name shown by platform surfaces |
 | `icon` | Yes | Tabler icon class used across Cloud and as the favicon on rendered app pages |
 | `description` | Yes | Short application description |
 | `baseUrl` | Yes | Internal address used by the gateway |
 | `routes` | Yes | Public path prefixes routed to the service |
+
+App IDs and package names contain 1–80 lowercase letters, digits, or hyphens,
+beginning with a letter. `defineApp()` rejects invalid IDs for every app,
+including apps that do not use S3. Related apps can declare the same
+`package: "warenfluss"` to share storage. `storage` is reserved as an app ID and package name. A package name cannot be another
+app's ID or a built-in app's ID; `app.start()` rejects conflicting durable
+reservations. Choose the package before first startup. See
+[Object store](/en/docs/platform/object-store) for the area and key rules, and
+[Object store operations](/en/docs/operations/object-store) for database prerequisites.
 
 Use an address that resolves from the gateway container for `baseUrl`. Do not
 use the public browser URL.

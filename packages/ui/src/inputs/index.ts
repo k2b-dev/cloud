@@ -18,6 +18,8 @@ export type {
   SliderProps,
 } from "./ChoiceInputs";
 export { ColorInput, PinInput, Slider } from "./ChoiceInputs";
+export type { ChoiceListOption, ChoiceListProps } from "./ChoiceList";
+export { ChoiceList } from "./ChoiceList";
 export type { ChoiceSliderOption, ChoiceSliderProps } from "./ChoiceSlider";
 export { ChoiceSlider } from "./ChoiceSlider";
 export type { ChoiceTileOption, ChoiceTilesProps } from "./ChoiceTiles";
