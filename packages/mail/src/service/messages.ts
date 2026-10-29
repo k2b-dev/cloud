@@ -317,7 +317,112 @@ export const listConversations = async (params: {
   if (!cursor.ok) return cursor;
   const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
   const aggregatedScope = isAggregatedListing(folderId, view) ? await loadAggregatedViewScope([params.mailboxId]) : null;
+  // Bound all access, placement, view and cursor filters before enriching the selected page.
   const rows = await sql<(DbConversation & { cursor_at: string })[]>`
+    WITH candidates AS MATERIALIZED (
+      SELECT c.*, unread_state.folder_ids AS unread_folder_ids,
+        CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END AS sort_date
+      FROM mail.conversations c
+      LEFT JOIN LATERAL (
+        SELECT ARRAY(
+          SELECT DISTINCT unread_mp.folder_id::text
+          FROM mail.conversation_messages unread_cm
+          JOIN mail.message_placements unread_mp ON unread_mp.message_id = unread_cm.message_id
+          WHERE unread_cm.conversation_id = c.id
+            AND unread_mp.deleted_at IS NULL
+            AND ${includedPlacement(sql`unread_mp.folder_id`)}
+            AND NOT ('\\Seen' = ANY(unread_mp.flags))
+            AND (${folderId}::uuid IS NULL OR unread_mp.folder_id = ${folderId}::uuid)
+          ORDER BY unread_mp.folder_id::text
+        ) AS folder_ids
+      ) unread_state ON true
+      WHERE c.mailbox_id = ${params.mailboxId}::uuid
+        AND ${conversationVisibleTo(visibility, sql`c.id`)}
+        AND (${params.status ?? null}::text IS NULL OR c.work_status = ${params.status ?? null})
+        AND (
+          ${view}::text IS NULL
+          OR (${view} = 'needs_action' AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
+          OR (
+            ${view} = 'mine'
+            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${currentUserId}::uuid)
+            AND c.work_status <> 'done'
+            AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
+          )
+          OR (
+            ${view} = 'unassigned'
+            AND ${isUnassignedConversation(lapsedAssignees)}
+            AND c.work_status <> 'done'
+            AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
+          )
+          OR (${view} = 'waiting' AND c.work_status = 'waiting' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
+          OR (${view} = 'done' AND c.work_status = 'done')
+          OR (${view} = 'snoozed' AND c.snoozed_until > now())
+          OR (
+            ${view} = 'send_problems'
+            AND EXISTS (
+              SELECT 1
+              FROM mail.conversation_messages problem_cm
+              WHERE problem_cm.conversation_id = c.id
+                AND ${hasSendProblem(sql`problem_cm.message_id`)}
+            )
+          )
+          OR (${view} = 'kept' AND ${isKeptConversation(sql`c.id`)})
+          OR ${view} = 'recently_active'
+        )
+        AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
+        AND ${aggregatedScope ? staysInAggregatedViews(sql`c.id`, aggregatedScope) : sql`true`}
+        AND (
+          ${folderId}::uuid IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM mail.conversation_messages folder_cm
+            JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
+            WHERE folder_cm.conversation_id = c.id
+              AND folder_mp.folder_id = ${folderId}::uuid
+              AND folder_mp.deleted_at IS NULL
+          )
+        )
+        AND (
+          ${params.unread ?? null}::boolean IS NULL
+          OR (cardinality(unread_state.folder_ids) > 0) = ${params.unread ?? null}
+        )
+        AND ((${view} = 'kept' AND ${isKeptConversation(sql`c.id`)}) OR EXISTS (
+          SELECT 1
+          FROM mail.conversation_messages visible_cm
+          JOIN mail.conversations visible_conversation
+            ON visible_conversation.id = visible_cm.conversation_id
+           AND visible_conversation.mailbox_id = ${params.mailboxId}::uuid
+          LEFT JOIN mail.message_placements visible_mp
+            ON visible_mp.message_id = visible_cm.message_id
+           AND visible_mp.deleted_at IS NULL
+           AND ${includedPlacement(sql`visible_mp.folder_id`)}
+          LEFT JOIN mail.outbox_submissions visible_outbox
+            ON visible_outbox.message_id = visible_cm.message_id
+           AND visible_outbox.state <> 'cancelled'
+          WHERE visible_cm.conversation_id = c.id
+            AND (
+              visible_mp.message_id IS NOT NULL
+              OR (
+                visible_outbox.id IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM mail.message_placements any_visible_mp
+                  WHERE any_visible_mp.message_id = visible_cm.message_id
+                    AND any_visible_mp.deleted_at IS NULL
+                )
+              )
+            )
+        ))
+        AND (
+          ${cursor.data?.id ?? null}::uuid IS NULL
+          OR (
+            CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END,
+            c.id
+          ) < (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)
+        )
+      ORDER BY sort_date DESC, c.id DESC
+      LIMIT ${limit + 1}
+    )
     SELECT
       c.id,
       ${isKeptConversation(sql`c.id`)} AS kept,
@@ -334,25 +439,11 @@ export const listConversations = async (params: {
       CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END AS sort_date,
       to_char((CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END)
         AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
-      cardinality(unread_state.folder_ids) > 0 AS unread,
-      unread_state.folder_ids AS unread_folder_ids,
+      cardinality(c.unread_folder_ids) > 0 AS unread,
+      c.unread_folder_ids AS unread_folder_ids,
       active_state.folder_ids AS active_folder_ids,
-      EXISTS (
-        SELECT 1
-        FROM mail.conversation_messages flagged_cm
-        JOIN mail.message_placements flagged_mp ON flagged_mp.message_id = flagged_cm.message_id
-        WHERE flagged_cm.conversation_id = c.id
-          AND flagged_mp.deleted_at IS NULL
-          AND ${includedPlacement(sql`flagged_mp.folder_id`)}
-          AND '\\Flagged' = ANY(flagged_mp.flags)
-          AND (${folderId}::uuid IS NULL OR flagged_mp.folder_id = ${folderId}::uuid)
-      ) AS flagged,
-      EXISTS (
-        SELECT 1
-        FROM mail.conversation_messages attachment_cm
-        JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
-        WHERE attachment_cm.conversation_id = c.id
-      ) AS has_attachments,
+      COALESCE(flagged_state.present, false) AS flagged,
+      COALESCE(attachment_state.present, false) AS has_attachments,
       (
         SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = c.id
       ) AS message_count,
@@ -365,7 +456,7 @@ export const listConversations = async (params: {
         WHEN cardinality(active_state.folder_ids) = 1 THEN active_state.folder_ids[1]::uuid
         ELSE NULL
       END AS folder_id
-    FROM mail.conversations c
+    FROM candidates c
     LEFT JOIN LATERAL (
       SELECT reference.value
       FROM mail.conversation_references reference
@@ -373,19 +464,6 @@ export const listConversations = async (params: {
       ORDER BY reference.allocated_at, reference.id
       LIMIT 1
     ) primary_reference ON true
-    LEFT JOIN LATERAL (
-      SELECT ARRAY(
-        SELECT DISTINCT unread_mp.folder_id::text
-        FROM mail.conversation_messages unread_cm
-        JOIN mail.message_placements unread_mp ON unread_mp.message_id = unread_cm.message_id
-        WHERE unread_cm.conversation_id = c.id
-          AND unread_mp.deleted_at IS NULL
-          AND ${includedPlacement(sql`unread_mp.folder_id`)}
-          AND NOT ('\\Seen' = ANY(unread_mp.flags))
-          AND (${folderId}::uuid IS NULL OR unread_mp.folder_id = ${folderId}::uuid)
-        ORDER BY unread_mp.folder_id::text
-      ) AS folder_ids
-    ) unread_state ON true
     LEFT JOIN LATERAL (
       SELECT ARRAY(
         SELECT DISTINCT active_mp.folder_id::text
@@ -437,89 +515,25 @@ export const listConversations = async (params: {
         ORDER BY participant.role_order, participant.position, participant.normalized_email
       ) AS labels
     ) participant_state ON true
-    WHERE c.mailbox_id = ${params.mailboxId}::uuid
-      AND ${conversationVisibleTo(visibility, sql`c.id`)}
-      AND (${params.status ?? null}::text IS NULL OR c.work_status = ${params.status ?? null})
-      AND (
-        ${view}::text IS NULL
-        OR (${view} = 'needs_action' AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
-        OR (
-          ${view} = 'mine'
-          AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${currentUserId}::uuid)
-          AND c.work_status <> 'done'
-          AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
-        )
-        OR (
-          ${view} = 'unassigned'
-          AND ${isUnassignedConversation(lapsedAssignees)}
-          AND c.work_status <> 'done'
-          AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
-        )
-        OR (${view} = 'waiting' AND c.work_status = 'waiting' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
-        OR (${view} = 'done' AND c.work_status = 'done')
-        OR (${view} = 'snoozed' AND c.snoozed_until > now())
-        OR (
-          ${view} = 'send_problems'
-          AND EXISTS (
-            SELECT 1
-            FROM mail.conversation_messages problem_cm
-            WHERE problem_cm.conversation_id = c.id
-              AND ${hasSendProblem(sql`problem_cm.message_id`)}
-          )
-        )
-        OR (${view} = 'kept' AND ${isKeptConversation(sql`c.id`)})
-        OR ${view} = 'recently_active'
-      )
-      AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
-      AND ${aggregatedScope ? staysInAggregatedViews(sql`c.id`, aggregatedScope) : sql`true`}
-      AND (
-        ${folderId}::uuid IS NULL
-        OR EXISTS (
-          SELECT 1
-          FROM mail.conversation_messages folder_cm
-          JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
-          WHERE folder_cm.conversation_id = c.id
-            AND folder_mp.folder_id = ${folderId}::uuid
-            AND folder_mp.deleted_at IS NULL
-        )
-      )
-      AND (
-        ${params.unread ?? null}::boolean IS NULL
-        OR (cardinality(unread_state.folder_ids) > 0) = ${params.unread ?? null}
-      )
-      AND ((${view} = 'kept' AND ${isKeptConversation(sql`c.id`)}) OR EXISTS (
-        SELECT 1
-        FROM mail.conversation_messages visible_cm
-        LEFT JOIN mail.message_placements visible_mp
-          ON visible_mp.message_id = visible_cm.message_id
-         AND visible_mp.deleted_at IS NULL
-         AND ${includedPlacement(sql`visible_mp.folder_id`)}
-        LEFT JOIN mail.outbox_submissions visible_outbox
-          ON visible_outbox.message_id = visible_cm.message_id
-         AND visible_outbox.state <> 'cancelled'
-        WHERE visible_cm.conversation_id = c.id
-          AND (
-            visible_mp.message_id IS NOT NULL
-            OR (
-              visible_outbox.id IS NOT NULL
-              AND NOT EXISTS (
-                SELECT 1
-                FROM mail.message_placements any_visible_mp
-                WHERE any_visible_mp.message_id = visible_cm.message_id
-                  AND any_visible_mp.deleted_at IS NULL
-              )
-            )
-          )
-      ))
-      AND (
-        ${cursor.data?.id ?? null}::uuid IS NULL
-        OR (
-          CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END,
-          c.id
-        ) < (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)
-      )
-    ORDER BY sort_date DESC, c.id DESC
-    LIMIT ${limit + 1}
+    LEFT JOIN LATERAL (
+      SELECT true AS present
+      FROM mail.conversation_messages flagged_cm
+      JOIN mail.message_placements flagged_mp ON flagged_mp.message_id = flagged_cm.message_id
+      WHERE flagged_cm.conversation_id = c.id
+        AND flagged_mp.deleted_at IS NULL
+        AND ${includedPlacement(sql`flagged_mp.folder_id`)}
+        AND '\\Flagged' = ANY(flagged_mp.flags)
+        AND (${folderId}::uuid IS NULL OR flagged_mp.folder_id = ${folderId}::uuid)
+      LIMIT 1
+    ) flagged_state ON true
+    LEFT JOIN LATERAL (
+      SELECT true AS present
+      FROM mail.conversation_messages attachment_cm
+      JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
+      WHERE attachment_cm.conversation_id = c.id
+      LIMIT 1
+    ) attachment_state ON true
+    ORDER BY c.sort_date DESC, c.id DESC
   `;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;

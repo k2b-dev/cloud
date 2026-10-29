@@ -241,6 +241,9 @@ export default function AppDetails(props: {
                             notification.requiredChannels.length
                               ? t().required({ channels: notification.requiredChannels.join(", ") })
                               : null,
+                            notification.excludedChannels.length
+                              ? t().excluded({ channels: notification.excludedChannels.join(", ") })
+                              : null,
                             notification.recommendedChannels.length
                               ? t().recommended({ channels: notification.recommendedChannels.join(", ") })
                               : null,

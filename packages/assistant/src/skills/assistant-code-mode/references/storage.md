@@ -16,8 +16,14 @@ is server-side and isolated by app and signed-in viewer; callers cannot select
 another person. Anonymous visitors receive `denied`.
 
 Shared file reads return File or null; write accepts Blob or string, at most
-16 MiB. Paths are relative. File listings return sorted paths. Await every write
-and deletion before reporting success.
+16 MiB. The operator's per-file limit also applies. Each app has a separate
+shared-file budget, 250 MiB by default. It counts payload plus stored
+key/media-type metadata; empty files consume metadata space. Listed file sizes
+remain payload sizes. Replacements replace their previous charge and deletion
+releases it. Lowered limits allow replacements that do not increase the
+corresponding usage. See [Studio file budgets](https://cloud.k2b.dev/en/docs/ai/files-projects-and-personalization#store-studio-app-files).
+Paths are relative. File listings return sorted paths. Await every write and
+deletion before reporting success.
 
 The Personal view shows only the viewer’s JSON data across devices. Shared data
 administration requires Manage. Runtime data persists across source edits and

@@ -774,6 +774,19 @@ The sidebar compound members cover these jobs:
   `description` adds a passive second line, such as a date and tags;
 - `SidebarIconGrid` and `SidebarIconAction` provide compact icon-only actions.
 
+In the collapsed rail, every entry names itself in the hint the Cloud app rail
+uses: right beside its icon, at once, on hover and on visible keyboard focus,
+never on touch. This covers `SidebarItem` rows, `NavTree` items,
+`SidebarSwitcher`, and `SidebarIconAction`. The hint shows a row's `title`, or
+its plain text label. The rail hides labels from view but keeps them as the
+accessible names. With the sidebar expanded, a row shows the hint only when it
+says more than the visible label: a label cut off, or a `title` with details
+such as exact counts. It then opens above the row after the usual delay. A
+`title` stays in the server HTML for pages without browser code; the first
+hover or focus replaces it, so no name shows twice. `SidebarIconAction` shows
+its `label` as a hint in every state, beside the icon in the rail. Entries
+mount their hint only on the first hover or focus that needs it.
+
 Desktop sidebars are action-first: begin with primary actions or navigation,
 not a repeated application title. Put persistent secondary navigation in
 `SidebarFooter` as `SidebarItem` rows with an icon and visible label, like the
