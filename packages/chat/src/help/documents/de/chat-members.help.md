@@ -20,7 +20,7 @@ Der Dialog zeigt, wie viele Personen dazukommen. Sie können den ganzen bisherig
 4. Wähle **Hinzufügen**.
 :::
 
-Mit mehr als 20 Mitgliedern wird der Chat leise: Standardmäßig bekommen nur erwähnte Personen eine Benachrichtigung.
+Mit mehr als 20 Mitgliedern wird der Chat leise: Standardmäßig bekommt eine Person nur dann eine Benachrichtigung, wenn jemand sie erwähnt oder ihr antwortet. Siehe [Wählen, welche Chats sich melden](/help/apps/chat/chat-notifications).
 Wenn 21 oder mehr Personen über Gruppen dazukommen, schlägt der Dialog **Auffindbar für** vor.
 Einen auffindbaren Chat finden Personen selbst und treten bei, wenn sie möchten.
 

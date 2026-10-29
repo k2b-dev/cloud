@@ -29,7 +29,8 @@ export const app = defineApp({
     requiresAuth: true,
     requiresRoles: ["user", "guest"],
   },
-  pwa: { requiresRoles: ["user"], badge: UNREAD_COUNT_PATH, summary: UNREAD_COUNT_PATH },
+  // The badge is the notification count the rail, the phone bar and pushes show; the summary still says how many are unread.
+  pwa: { requiresRoles: ["user"], badge: "/api/chat/badge", summary: UNREAD_COUNT_PATH },
   panel: { href: "/app/chat/panel", label: "Chat", icon: "ti ti-messages", requiresRoles: ["user", "guest"] },
   settings: {
     "chat.push_preview": {

@@ -1,10 +1,12 @@
 import { type AuthContext, getDateConfig, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { PwaLayout } from "@k2b/cloud/ssr";
+import { getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
 import { chatRequestContext } from "../request-context";
 import { chatService, loadChatView } from "../service";
 import ChatWorkspace from "./ChatWorkspace.island";
+import { CHAT_DEVICE_NOTICE_COOKIE, parseDeviceNotice } from "./device-notice";
 
 /**
  * Chat in the Cloud app below `/pwa/chat`: the same addresses and authorized snapshot as the web's `/app/chat`, with a
@@ -12,6 +14,7 @@ import ChatWorkspace from "./ChatWorkspace.island";
  */
 export default ssr<AuthContext>(async (c) => {
   c.header("Cache-Control", "private, no-store");
+  const now = new Date();
   const locale = getLocale(c);
   const { t } = chatMessages.resolve([locale]);
   const accessSubject = c.get("accessSubject");
@@ -64,7 +67,8 @@ export default ssr<AuthContext>(async (c) => {
         panel={chatId && view.open && c.req.query("panel") === "info" ? "info" : null}
         viewerId={accessSubject.userId}
         dateConfig={getDateConfig(c)}
-        now={new Date().toISOString()}
+        now={now.toISOString()}
+        deviceNotice={parseDeviceNotice(getCookie(c, CHAT_DEVICE_NOTICE_COOKIE), now)}
       />
     </PwaLayout>
   );

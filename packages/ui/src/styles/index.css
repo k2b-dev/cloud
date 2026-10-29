@@ -1488,6 +1488,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: var(--k2b-sidebar-item-unread-weight);
 }
 
+/* A muted item is set aside: its label and count stay quiet, even with unread mentions. */
+.k2b-ui .k2b-app-workspace__sidebar-status[data-muted] .k2b-app-workspace__sidebar-status-count {
+  color: var(--k2b-text-muted);
+  background: color-mix(in srgb, var(--k2b-text) 7%, transparent);
+}
+
+.k2b-ui
+  :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main):has(
+    > .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status[data-muted]
+  )
+  > :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label)
+  .k2b-app-workspace__sidebar-item-label-text {
+  color: var(--k2b-text-muted);
+  font-weight: inherit;
+}
+
 @media (forced-colors: active) {
   .k2b-ui .k2b-app-workspace__sidebar-status-count {
     outline: 1px solid CanvasText;

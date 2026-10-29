@@ -103,11 +103,21 @@ const render = async (path: string) => {
 };
 
 describe("Chat in the Cloud app", () => {
+  test("draws the device line this device remembered, like Chat in the browser", async () => {
+    signIn("app");
+    const response = await server.request("https://cloud.example.test/pwa/chat", {
+      headers: { Cookie: "pwa_session=test-session; chat_device_notice=ask" },
+    });
+    const document = parser.parseFromString(await response.text(), "text/html") as unknown as Document;
+    expect(document.querySelector('.chat-device-notice[data-kind="ask"]')).not.toBeNull();
+    expect((await render("/pwa/chat")).document.querySelector(".chat-device-notice")).toBeNull();
+  });
+
   test("declares its part for people with the user role, with the unread count for the sidebar", () => {
     expect(app.meta.pwa).toEqual({
       href: "/pwa/chat",
       requiresRoles: ["user"],
-      badge: "/api/chat/conversations/unread-count",
+      badge: "/api/chat/badge",
       summary: "/api/chat/conversations/unread-count",
     });
     expect(app.meta.routes).toContain("/pwa/chat");

@@ -13,6 +13,12 @@ const unusedMemberRequest = async () => {
 };
 const memberApi = {
   threads: async () => noThreads,
+  notifications: async () => {
+    throw new Error("Unused notification write");
+  },
+  follow: async () => {
+    throw new Error("Unused follow write");
+  },
   react: async () => {},
   reactions: async () => ({ items: [] }),
   shared: async () => ({ items: [], nextCursor: null }),
