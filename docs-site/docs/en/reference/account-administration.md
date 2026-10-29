@@ -3,15 +3,15 @@ title: Account administration API
 navTitle: Account administration
 section: Reference
 order: 1276
-description: Display account categories, manage Linux identities and remove a person's mobile app phones through supported APIs.
+description: Display account categories, manage Linux identities, and pair or remove a person's Cloud app devices through supported APIs.
 tags: [accounts, api, linux]
-updated: 2026-10-06
+updated: 2026-10-23
 ---
 
 # Account administration API
 
 For application authors integrating account presentation or administrator-only
-Linux identity and phone operations. For configuration in Administration, start with
+Linux identity and device operations. For configuration in Administration, start with
 [Accounts & sign-in](/en/docs/accounts).
 
 ## Display account types in an application
@@ -169,27 +169,27 @@ remains available for assigning a GID to an existing local group.
 See [Assign Linux identities](/en/docs/operations/linux-identities) for setup,
 name requirements and CLI examples.
 
-## Remove phones from the mobile app
+## Remove devices from the Cloud app
 
-> **Preview:** the mobile app is not released yet. This contract may still
+> **Preview:** the Cloud app is not released yet. This contract may still
 > change until it is, without counting as a breaking change.
 
-Administrators list and remove another account's phones in the mobile app
+Administrators list and remove another account's devices in the Cloud app
 through the Accounts API. Both routes require the `admin` role. An
-administrator's own app session never carries that role, so the mobile app
-cannot call them. A web session in the phone's browser is independent of the
-app and keeps its role until it ends; removing the phone does not end it.
+administrator's own app session never carries that role, so the Cloud app
+cannot call them. A web session in the device's browser is independent of the
+app and keeps its role until it ends; removing the device does not end it.
 
 | Method and path below `/api/accounts/users` | Result |
 | --- | --- |
 | `GET /:id/app-devices` | `{ devices }` with `id`, `name`, `platform` (`ios`, `android` or `other`), `createdAt`, `lastUsedAt` and `current` (always `false` here) |
-| `DELETE /:id/app-devices/:deviceId` | `{ revoked }`: `true` for the call that removed the phone, `false` when it was already removed |
+| `DELETE /:id/app-devices/:deviceId` | `{ revoked }`: `true` for the call that removed the device, `false` when it was already removed |
 
-An unknown account or a phone of another account answers `404`. Cloud purges a
-removed phone 30 days after removal at the earliest; from then on, repeating
+An unknown account or a device of another account answers `404`. Cloud purges a
+removed device 30 days after removal at the earliest; from then on, repeating
 the removal also answers `404`. Removal ends
-the phone's app sessions in the same transaction, so every application's
-validator rejects them at once; the app then shows that the phone was signed
+the device's app sessions in the same transaction, so every application's
+validator rejects them at once; the app then shows that the device was signed
 out. Cloud audits the removal as `auth.pwa.device.revoke` with the
 administrator as actor and no notification is sent.
 
@@ -202,3 +202,57 @@ Both routes call `pwaDevices.listUserDevices(admin, userId)` and
 Pass the request actor's current roles; see
 [App sessions](/en/docs/identity/authentication#app-sessions-preview) for the
 session contract.
+
+## Pair the Cloud app for another account
+
+Core owns administrative Cloud app pairing below `/api/auth/pwa/v1`. The
+Accounts user detail calls it from its **Cloud app** section. Cloud Login uses
+its existing, separate sign-in device APIs.
+
+| Method and path below `/api/auth/pwa/v1` | Result |
+| --- | --- |
+| `POST /users/:userId/pairings` | `201` with `{ id, secret, claimUntil, expiresAt }`; the secret is returned once |
+| `GET /pairings/:id` | State, validity, device name and platform, remaining code attempts; never a code or decision token |
+| `POST /pairings/:id/confirm` | `{ code }`; `204` moves an administrative pairing to `awaiting_device` |
+| `POST /pairings/:id/cancel` | `204`; cancels an unfinished pairing |
+
+Only the initiating web session may read, confirm or cancel a pairing. Starting
+requires a current administrator with a web sign-in from the last ten minutes,
+an active target account and a registered `pwa` application. API keys,
+authorization headers and app sessions are refused. The service
+`pwaDevices.startUserPairing(actor, userId)` checks administrator authority and
+fresh web-session evidence too. The target's account limits remain
+`PWA_LIMITS.pendingPerAccount` and `PWA_LIMITS.devicesPerAccount`.
+
+On the device, `/pwa/_auth/pairings/claim` consumes the link and sets the
+HttpOnly, same-site completion cookie. `/pairings/complete` under the same
+prefix returns `202` with `state: "confirmation_required"`, target `account`,
+`administrator`, `confirmationToken` and `expiresAt` after code confirmation.
+Polling alone issues no credentials. Render the account and administrator,
+then send the person's explicit choice to `POST /pwa/_auth/pairings/decision`
+as `{ confirmationToken, decision: "confirm" | "reject" }`.
+
+The server binds this token's hash to the claimed pairing and checks it together
+with the completion cookie. It issues the token only in `awaiting_device`;
+a new confirmation response replaces the preceding token. The same decision
+can be repeated after a lost response. A conflicting decision returns `409`.
+Acceptance moves to `confirmed`, allowing `/pairings/complete` to enroll the
+device for the target account and issue its credentials. Rejection moves to
+`rejected`; completion returns `{ state: "rejected" }` with no credentials.
+
+Administrative states are `pending → claimed → awaiting_device → confirmed →
+completed`, or `awaiting_device → rejected`. Cancellation, three incorrect
+codes, expiry, account eligibility changes and invalidation of the initiating
+web session stop the flow. Self-pairing continues to use `pending → claimed →
+confirmed → completed`.
+
+Audit actions are `auth.pwa.pairing.start`, `auth.pwa.pairing.confirm`,
+`auth.pwa.pairing.device_confirm` or `auth.pwa.pairing.reject`, and
+`auth.pwa.device.enroll`. All carry `targetUserId` and `administratorUserId` in
+metadata. The administrator is the actor for start, code confirmation and
+enrollment; the target is the actor for the decision made with the device's
+completion credential. The paired-device notification includes the
+administrator's display name, retained for notification retries.
+
+See [Pair the Cloud app for someone](/en/docs/accounts/devices#pair-the-cloud-app-for-someone)
+for the administrator and device steps.

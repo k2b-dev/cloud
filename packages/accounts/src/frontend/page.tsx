@@ -128,11 +128,11 @@ export default ssr<AuthContext>(async (c) => {
                   <p class="mt-1 text-xs text-dimmed">{t.administrationDescription}</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-1">
-                  <ButtonLink href="/admin/settings?tab=account-operations" variant="subtle" size="sm">
+                  <ButtonLink href="/admin/signin/operations" variant="subtle" size="sm">
                     <i class="ti ti-tool" aria-hidden="true" />
                     {t.operations}
                   </ButtonLink>
-                  <ButtonLink href="/admin/settings?tab=user" variant="subtle" size="sm">
+                  <ButtonLink href="/admin/signin" variant="subtle" size="sm">
                     <i class="ti ti-settings" aria-hidden="true" />
                     {t.settings}
                   </ButtonLink>

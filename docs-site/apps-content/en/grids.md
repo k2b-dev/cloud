@@ -504,15 +504,23 @@ Cloud grants. Use a published Custom App when an authenticated or public
 audience needs only selected data, Forms, documents, and actions. App readers
 do not need base access, and an app grant never opens raw Grids APIs or GQL.
 Base grants support service accounts. Custom App grants support users, groups,
-all authenticated accounts, or the public, but not service accounts. Delegated
-credentials access a Custom App through their user identity.
+standalone and agent accounts, all authenticated accounts, or the public.
+Credential scopes cap account access. Resource-bound credentials stay confined
+to their base and cannot open Custom Apps. Delegated credentials access a Custom
+App through their user identity.
 
 Custom App pages, blocks, Forms, and actions can use server-enforced GQL
 availability rules with request context such as `@auth.id`, `@auth.subjects`,
-`@params.*`, and `@time.now`. A Principal field stores typed user and group
-references. `@auth.subjects` flattens the signed-in user plus effective groups
-to UUIDs, so `oneof(Participants, @auth.subjects)` supports individual and team
-participation without exposing group membership. Public apps receive
+`@params.*`, and `@time.now`. A Principal field stores typed user, group, and
+service-account references. Selecting an identity does not grant access. A user-backed author
+can select only identities visible in their account directory. Machine callers
+can read stored references, but cannot write nonempty Principal values or
+resolve private names without a supported user directory context.
+
+`@auth.subjects` contains the signed-in user plus effective groups, or the
+standalone/agent account’s own UUID, so `oneof(Participants, @auth.subjects)`
+supports individual and team participation without exposing group membership. Account callers have null
+user attributes (`@auth.id`, name, username, and email). Public apps receive
 `@auth.id = null` and `@auth.subjects = []`; Workflow actions still require an
 authenticated account.
 
@@ -759,6 +767,10 @@ Grids-owned shared data. Follow the [operator reset procedure](/en/docs/referenc
 before switching an existing installation. Start Core before Grids.
 
 Record events are committed in PostgreSQL before background publication.
+Automatic triggers require a workflow with a supported user owner. Workflows
+without one can be saved disabled or executed directly, but cannot enable
+scheduled or record-event triggers.
+
 Workflow dispatch failures retry up to 20 times. A stopped event remains in
 PostgreSQL for inspection and replay until 30 days after its change; Grids
 keeps the record state it replays at least that long. Delayed retries return

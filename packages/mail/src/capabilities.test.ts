@@ -266,6 +266,8 @@ beforeEach(() => {
     added: [],
     removed: [],
     addedTotal: 0,
+    granted: [],
+    grantedTotal: 0,
     removedTotal: 0,
   }));
   spyOn(reviewReaders, "loadSendReviewContent").mockImplementation(async ({ draft }) => ({
@@ -1159,6 +1161,8 @@ describe("mail capabilities", () => {
       added: [],
       removed: [],
       addedTotal: 0,
+      granted: [],
+      grantedTotal: 0,
       removedTotal: 0,
     });
     const review = await mailCapabilities.actions["conversation.assign"].review(
@@ -1180,6 +1184,50 @@ describe("mail capabilities", () => {
       },
     });
   });
+
+  for (const serviceAccountKind of ["agent", "standalone"] as const) {
+    test(`reviews a named ${serviceAccountKind} assignment as access, without promising a user notification`, async () => {
+      const name = `Mail ${serviceAccountKind}`;
+      spyOn(messages, "listConversationMessages").mockResolvedValue({
+        ok: true,
+        data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+      } as never);
+      spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+      spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([
+        {
+          id: userId,
+          uid: name,
+          displayName: name,
+          avatarHash: null,
+          type: "service_account",
+          serviceAccountKind,
+          permission: "write",
+          scope: "assigned",
+          source: { type: "direct" },
+        },
+      ]);
+      spyOn(reviewReaders, "loadAssignmentReviewChange").mockResolvedValue({
+        requested: [{ name }],
+        added: [],
+        removed: [],
+        addedTotal: 0,
+        removedTotal: 0,
+        granted: [{ name }],
+        grantedTotal: 1,
+      });
+      const review = await mailCapabilities.actions["conversation.assign"].review(
+        { mailboxId, conversationId, assigneeUserIds: [userId], mode: "add" },
+        context,
+      );
+      expect(review.ok).toBe(true);
+      if (!review.ok) return;
+      expect(review.data.ask).toBe("changes_access");
+      expect(review.data.slots.people).toMatchObject({ people: [{ name }] });
+      expect(review.data.consequences?.map((item) => item.text).join(" ")).toContain("gain access");
+      expect(JSON.stringify(review.data)).not.toContain("will be notified");
+      expect(JSON.stringify(review.data.slots.people)).not.toContain('"userId"');
+    });
+  }
 
   test("names the move destination by its full folder path", async () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
@@ -2803,6 +2851,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2849,6 +2898,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2891,6 +2941,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2931,7 +2982,9 @@ describe("mail capabilities", () => {
     spyOn(messages, "getMessage").mockResolvedValue({
       ok: true,
       data: {
-        attachments: [{ id: internalAttachmentId, filename: "emoji.txt", contentType: "text/plain", sizeBytes: 6, contentId: null }],
+        attachments: [
+          { id: internalAttachmentId, filename: "emoji.txt", contentType: "text/plain", sizeBytes: 6, contentId: null, checksum: null },
+        ],
       } as never,
     });
     spyOn(attachmentExtraction, "loadAttachmentExtraction").mockResolvedValue({
@@ -3084,7 +3137,9 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     mailingList: null,
     remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
     delivery: null,
-    attachments: [{ id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null }],
+    attachments: [
+      { id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null, checksum: null },
+    ],
   };
   spyOn(mailboxes, "getMailbox").mockResolvedValue({
     ok: true,

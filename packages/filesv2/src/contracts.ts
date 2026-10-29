@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DOCUMENT_FORMATS, DOCUMENT_KINDS, type DocumentFormat } from "./documents";
+import type { MachineOwner } from "./machine-contracts";
 
 /** Largest content one capability stream or `cld filesv2 cat` moves through Cloud or memory. */
 export const CONTENT_STREAM_LIMIT = 50 * 1024 * 1024;
@@ -39,6 +40,7 @@ export type Availability = { localLinuxEnabled: boolean; freeipaEnabled: boolean
 export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned", "conflict", "unknown", "orphaned", "retired"]);
 export type InventoryState = z.infer<typeof InventoryStateSchema>;
 export type BaseSummary = {
+  owner?: MachineOwner;
   id: string;
   /** Opaque identity of the current backend, root, path and durable binding. */
   locationKey?: string;
@@ -80,13 +82,27 @@ export type DirectoryResult = {
 export type DownloadLease = { url: string; method: "GET"; expires: string };
 export type EntryResult = { base: BaseSummary; entry: FileEntry; favorite?: boolean; resourceId?: string };
 /** A recent or favorite pointer the user may still reach; the base is resolved fresh on every read. */
-export type MarkedEntry = { base: { id: string; name: string; kind: BaseKind; area: Area }; entry: FileEntry; markedAt: string };
+export type MarkedEntry = {
+  base: { id: string; name: string; kind: BaseKind; area: Area; owner?: MachineOwner };
+  entry: FileEntry;
+  markedAt: string;
+};
 export const FavoriteInputSchema = z.object({ path: z.string().min(1).max(4096), favorite: z.boolean() });
 /** A file ID: a stable `n:<baseId>:<fileId>` ref, an inline `filesv2.entry` ref, or a persisted `p:<sha256>` one. */
 export const EntryIdSchema = z.object({ id: z.string().min(1).max(512) });
 export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
 export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
-export type SearchResult = DirectoryResult & { query: string; scope: "folder" | "tree" };
+/** `highlight` holds `[start, end)` Unicode code point ranges into the hit's path relative to the searched folder. */
+export type SearchHit = FileEntry & { highlight: [number, number][] };
+/** `total` counts every hit of the search; null when Files cannot know it exactly. */
+export type SearchResult = Omit<DirectoryResult, "items"> & {
+  items: SearchHit[];
+  query: string;
+  scope: "folder" | "tree";
+  total: number | null;
+  /** Relevance keeps only Filegate's best hits (1,000 by default); `total` counts more than the pages hold. */
+  truncated: boolean;
+};
 export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export const UploadInputSchema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -96,7 +112,7 @@ export const UploadInputSchema = z.object({
   onConflict: z.enum(["error", "overwrite"]).default("error"),
 });
 export const UploadIdSchema = z.object({ id: z.string().min(1).max(256) });
-/** Browser and CLI transfer segments straight to `url`; Cloud never sees the bytes. */
+/** Browser and CLI transfer segments to `url`; machine storage uses Cloud to reauthorize each request. */
 export type UploadSession = {
   id: string;
   path: string;
@@ -186,10 +202,11 @@ export type ShareView = {
   note: string | null;
   publicNote: string | null;
   /** `kind` is absent once the binding behind a share no longer exists. */
-  base: { id: string; name: string; kind?: BaseKind };
+  base: { id: string; name: string; kind?: BaseKind; owner?: MachineOwner };
   scope: string;
   items: string[];
   createdBy: string;
+  createdByKind?: "standalone" | "agent";
   createdAt: string;
   expiresAt: string | null;
   state: "active" | "expired" | "revoked";
@@ -285,11 +302,76 @@ export const BrowseQuerySchema = BrowseOptionsSchema.extend({
   after: z.string().max(16384).optional(),
 });
 export const DownloadInputSchema = z.object({ path: z.string().min(1).max(4096) });
+export const SEARCH_SORTS = ["relevance", "name", "modified", "size"] as const;
+export type SearchSort = (typeof SEARCH_SORTS)[number];
+/** Filegate rejects queries with more than eight words. */
+export const SEARCH_WORD_LIMIT = 8;
+const SEARCH_EXTENSION_LIMIT = 32;
+const Bytes = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const Timestamp = z.iso.datetime({ offset: true });
+/** Name and metadata filters of a search; they apply before ranking and paging. */
+export const SearchFiltersSchema = z.object({
+  /** Comma-separated extensions without dots, such as `pdf,docx`; any extension excludes folders. */
+  ext: z
+    .string()
+    .max(1024)
+    .transform((value) => [...new Set(value.split(",").map((item) => item.trim().toLowerCase()))].filter(Boolean))
+    .pipe(
+      z
+        .array(
+          z
+            .string()
+            .max(32)
+            .regex(/^[^./\\\s]+$/, "Extensions have no dots, slashes or spaces"),
+        )
+        .min(1)
+        .max(SEARCH_EXTENSION_LIMIT),
+    )
+    .transform((items) => items.join(","))
+    .optional(),
+  /** Inclusive byte bounds; any size bound excludes folders. */
+  minSize: Bytes.optional(),
+  maxSize: Bytes.optional(),
+  /** RFC 3339 times: modifiedAfter is inclusive, modifiedBefore exclusive. */
+  modifiedAfter: Timestamp.optional(),
+  modifiedBefore: Timestamp.optional(),
+});
+export type SearchFilters = z.infer<typeof SearchFiltersSchema>;
+export const SEARCH_FILTER_KEYS = ["ext", "minSize", "maxSize", "modifiedAfter", "modifiedBefore"] as const;
+export const hasSearchFilters = (filters: { [key in keyof SearchFilters]?: unknown }) =>
+  SEARCH_FILTER_KEYS.some((key) => filters[key] !== undefined && filters[key] !== "");
+type SearchRuleInput = SearchFilters & { q: string; sort?: SearchSort; type?: BrowseOptions["type"] };
+/** What a search needs before Filegate sees it; the API and the capability share these rules. */
+export function checkSearch(value: SearchRuleInput, ctx: z.RefinementCtx) {
+  // A query, a filter or one entry type; an unnarrowed search would list the whole subtree.
+  if (!value.q && !hasSearchFilters(value) && (value.type ?? "all") === "all")
+    ctx.addIssue({ code: "custom", message: "Search needs a query, a filter or a type", path: ["q"] });
+  if (!value.q && value.sort === "relevance") ctx.addIssue({ code: "custom", message: "Relevance needs a query", path: ["sort"] });
+  if (value.minSize !== undefined && value.maxSize !== undefined && value.minSize > value.maxSize)
+    ctx.addIssue({ code: "custom", message: "minSize must not exceed maxSize", path: ["minSize"] });
+  if (value.modifiedAfter && value.modifiedBefore && Date.parse(value.modifiedAfter) >= Date.parse(value.modifiedBefore))
+    ctx.addIssue({ code: "custom", message: "modifiedAfter must be before modifiedBefore", path: ["modifiedAfter"] });
+}
 export const SearchQuerySchema = BrowseQuerySchema.extend({
-  q: z.string().trim().min(1).max(256),
+  q: z
+    .string()
+    .trim()
+    .max(256)
+    .refine((value) => value.split(/\s+/).filter(Boolean).length <= SEARCH_WORD_LIMIT, `At most ${SEARCH_WORD_LIMIT} words`)
+    .default(""),
   /** Filegate always searches the subtree; "folder" keeps only direct children of the searched folder. */
   scope: z.enum(["folder", "tree"]).default("tree"),
-});
+  /** `fuzzy` also finds typos and abbreviations, after every exact hit when sorted by relevance. */
+  match: z.enum(["fuzzy", "exact"]).default("fuzzy"),
+  /** `path` also matches folder names below the searched folder; `name` only the entry's own name. */
+  in: z.enum(["path", "name"]).default("path"),
+  /** Defaults to relevance with a query and to name without one; relevance ignores order and folder grouping. */
+  sort: z.enum(SEARCH_SORTS).optional(),
+})
+  .extend(SearchFiltersSchema.shape)
+  .superRefine(checkSearch);
+export type SearchQuery = z.infer<typeof SearchQuerySchema>;
+export const searchSort = (input: { q?: string; sort?: SearchSort }): SearchSort => input.sort ?? (input.q ? "relevance" : "name");
 export const AdminQuerySchema = z.object({
   view: z.enum(["overview", "directories", "archive", "settings", "shares", "templates"]).optional(),
   area: AreaSchema.default("cloud"),
@@ -393,4 +475,9 @@ export type ArchiveEntry = {
 };
 export type ArchivePage = { items: ArchiveEntry[]; next: string | null };
 export type DirectoryMaintenanceResult = { processed: number; archived: number; pending: number };
-export type MaintenanceResult = DirectoryMaintenanceResult & { activityChecked: number; activityPurged: number };
+export type MaintenanceResult = DirectoryMaintenanceResult & {
+  activityChecked: number;
+  activityPurged: number;
+  shareAccessRolledUp: number;
+  shareAccessPurged: number;
+};

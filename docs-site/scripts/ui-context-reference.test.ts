@@ -70,9 +70,12 @@ test("standalone Markdown examples typecheck against the current UI contract", (
       : ts.createSourceFile(file, code, languageVersion, true, ts.ScriptKind.TSX);
   };
   const exampleProgram = ts.createProgram([...examples.keys()], options, host);
-  const failures = ts
-    .getPreEmitDiagnostics(exampleProgram)
-    .filter((diagnostic) => diagnostic.file && examples.has(diagnostic.file.fileName))
+  const failures = [...examples.keys()]
+    .flatMap((file) => {
+      const source = exampleProgram.getSourceFile(file);
+      if (!source) throw new Error(`Missing example source: ${file}`);
+      return [...exampleProgram.getSyntacticDiagnostics(source), ...exampleProgram.getSemanticDiagnostics(source)];
+    })
     .map((diagnostic) => `${diagnostic.file?.text.split("\n")[0]}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
   expect(failures).toEqual([]);
 }, 30_000);

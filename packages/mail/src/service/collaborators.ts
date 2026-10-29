@@ -1,4 +1,4 @@
-import { type AccessUser, listUsersWithAccess } from "@k2b/cloud/server";
+import { type AccessUser, listUsersWithAccess, recursiveServiceAccountGroupIdsSubquery } from "@k2b/cloud/server";
 import { sql } from "bun";
 
 type SqlClient = typeof sql;
@@ -102,7 +102,11 @@ export const hasCurrentMailboxUserPermission = async (params: {
   return users.has(params.userId);
 };
 
-export type EligibleAssignee = AccessUser & { scope: "mailbox" | "assigned" };
+export type EligibleAssignee = AccessUser & {
+  type?: "user" | "service_account";
+  serviceAccountKind?: "standalone" | "agent" | "resource_bound";
+  scope: "mailbox" | "assigned";
+};
 
 export const listEligibleAssignees = async (params: {
   mailboxId: string;
@@ -144,7 +148,50 @@ export const listEligibleAssignees = async (params: {
       for (const user of mailboxUsers) users.set(user.id, { ...user, scope: "mailbox" });
     }
   }
+  // Only named direct/local-group recipients qualify, never public/authenticated audiences.
+  const accounts = await db<EligibleAssignee[]>`
+    WITH eligible_account_grants AS (
+      SELECT account.id, account.name, account.kind, grants.scope, a.permission,
+        a.service_account_id IS NOT NULL AS direct, g.id AS group_id,
+        COALESCE(NULLIF(g.name, ''), g.cn) AS group_name
+      FROM auth.service_accounts account
+      JOIN auth.access a ON a.service_account_id = account.id
+        OR a.group_id IN (${recursiveServiceAccountGroupIdsSubquery(sql`account.id`)})
+      JOIN jsonb_to_recordset(${grants}::jsonb) AS grants(access_id uuid, scope text) ON grants.access_id = a.id
+      LEFT JOIN auth.groups g ON g.id = a.group_id
+      WHERE account.status = 'active'
+        AND (account.kind IN ('standalone', 'agent') OR (account.kind = 'resource_bound'
+          AND account.app_id = 'mail' AND account.resource_type = 'mailbox' AND account.resource_id = ${params.mailboxId}))
+        AND (grants.scope = 'mailbox' AND a.permission IN ('write', 'admin')
+          OR grants.scope = 'assigned' AND a.permission IN ('read', 'write'))
+        AND (${params.userIds === undefined} OR account.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${params.userIds ?? []}::jsonb)))
+    ), scoped_accounts AS (
+      SELECT *, bool_or(direct) OVER (PARTITION BY id, scope) AS has_direct
+      FROM eligible_account_grants
+    )
+    SELECT DISTINCT ON (account.id) account.id, account.name AS uid, account.name AS "displayName",
+      NULL::text AS "avatarHash", 'service_account' AS type, account.kind AS "serviceAccountKind",
+      account.scope, account.permission,
+      CASE WHEN account.has_direct THEN jsonb_build_object('type', 'direct')
+        ELSE jsonb_build_object('type', 'group', 'groupId', account.group_id, 'groupName', account.group_name)
+      END AS source
+    FROM scoped_accounts account
+    WHERE ${!params.search?.trim()} OR account.id IN (
+      SELECT id FROM eligible_account_grants
+      WHERE position(lower(${params.search?.trim() ?? ""}) in lower(name)) > 0
+        OR position(lower(${params.search?.trim() ?? ""}) in lower(group_name)) > 0
+    )
+    -- Search cannot lower mailbox-wide eligibility to assigned-only access.
+    ORDER BY account.id, (account.scope = 'mailbox') DESC,
+      CASE account.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 ELSE 1 END DESC,
+      account.direct DESC, account.group_name, account.group_id
+    LIMIT ${ACCESS_LOOKUP_LIMIT}
+  `;
   const active = new Set((await activeUsers(db, [...users.keys()])).map((user) => user.id));
+  for (const account of accounts) {
+    users.set(account.id, account);
+    active.add(account.id);
+  }
   const limit = Math.min(Math.max(params.limit ?? params.userIds?.length ?? 50, 1), ACCESS_LOOKUP_LIMIT);
   return [...users.values()]
     .filter((user) => active.has(user.id))
@@ -162,7 +209,7 @@ export const listLapsedAssignees = async (params: { mailboxIds: readonly string[
   const db = params.db ?? sql;
   if (params.mailboxIds.length === 0) return [];
   const assigned = await db<LapsedAssignee[]>`
-    SELECT DISTINCT c.mailbox_id, a.user_id
+    SELECT DISTINCT c.mailbox_id, a.principal_id AS user_id
     FROM mail.conversations c
     JOIN mail.conversation_assignees a ON a.conversation_id = c.id
     WHERE c.mailbox_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${[...new Set(params.mailboxIds)]}::jsonb))
@@ -185,7 +232,7 @@ export const listLapsedAssignees = async (params: { mailboxIds: readonly string[
 export const isUnassignedConversation = (lapsed: readonly LapsedAssignee[], c: Bun.SQL.Query<unknown> = sql`c`) => sql`NOT EXISTS (
   SELECT 1 FROM mail.conversation_assignees a
   WHERE a.conversation_id = ${c}.id
-    AND (${c}.mailbox_id, a.user_id) NOT IN (
+    AND (${c}.mailbox_id, a.principal_id) NOT IN (
       SELECT lapsed.mailbox_id, lapsed.user_id
       FROM jsonb_to_recordset(${lapsed}::jsonb) AS lapsed(mailbox_id uuid, user_id uuid)
     )

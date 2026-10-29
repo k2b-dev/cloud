@@ -192,7 +192,7 @@ const open = async (view: View, dark = false) => {
 };
 
 describe("/me/app in a browser", () => {
-  test("is absent without the mobile app and framed never", async () => {
+  test("is absent without the Cloud app and framed never", async () => {
     expect((await request([])).status).toBe(404);
     const response = await request([shell]);
     expect(response.headers.get("content-security-policy")).toBe("frame-ancestors 'none'");
@@ -236,9 +236,9 @@ describe("/me/app in a browser", () => {
             return {
               frames,
               current: main.querySelector('nav [aria-current="page"]')?.getAttribute("href"),
-              thisPhone: panel.textContent?.includes("This phone"),
+              thisPhone: panel.textContent?.includes("This device"),
               styles: styles.size,
-              pair: Array.from(panel.querySelectorAll("button")).filter((button) => button.textContent?.trim() === "Pair a phone").length,
+              pair: Array.from(panel.querySelectorAll("button")).filter((button) => button.textContent?.trim() === "Pair a device").length,
               overflow: document.documentElement.scrollWidth - window.innerWidth,
             };
           });

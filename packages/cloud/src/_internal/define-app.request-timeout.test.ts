@@ -9,6 +9,7 @@ import * as invocationMiddleware from "../server/middleware/invocation";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { compileCapabilities } from "./capabilities";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
@@ -109,6 +110,7 @@ test("forwards the Bun server and owns capability JSON timeouts until success or
       return next();
     }),
     spyOn(settingsService, "get").mockResolvedValue("en"),
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };

@@ -17,7 +17,7 @@ The Assistant discovers these Queries through the capability catalog; MCP and
 CLI clients use the same [capabilities](/en/docs/platform/capabilities).
 
 An operator must enter the Geoapify key under
-**Administration → Places and maps** (`/admin/places-and-maps`). The page also
+**Administration → Base settings → Places & maps** (`/admin/base/places`). The section also
 holds the provider plan, the credit budgets, and this month's usage; see
 [Administer places and maps](#administer-places-and-maps). All provider calls use
 `https://api-eu.geoapify.com`. The endpoint cannot be changed. No provider key
@@ -285,8 +285,8 @@ the caller's counters, and makes no provider call. Missing keys or unreadable
 
 ## Administer places and maps
 
-Only administrators open **Administration → Places and maps**. The old link
-`/admin/settings?tab=places` leads there. Every part of the page uses the same
+Only administrators open **Administration → Base settings → Places & maps**.
+Every part of the section uses the same
 admin API, `/api/admin/core/geo`; OAuth tokens need the `read` scope to view
 and `write` to change.
 
@@ -332,6 +332,11 @@ Route searches hash the full raw polyline6 route and include the window,
 buffer (with its default applied), sorted categories, limit, and request language.
 A cache failure skips the cache. A Valkey admission failure refuses paid calls
 with `GEO_BUSY`.
+
+Paired App-PWA devices can use the platform's closed
+[allowlisted autocomplete route](/en/docs/identity/app-pwa-sessions#offer-address-suggestions).
+It checks the live pairing and visit and charges the owner's budget without
+turning the device into an employee or exposing employee credentials.
 
 ## Call from a server
 

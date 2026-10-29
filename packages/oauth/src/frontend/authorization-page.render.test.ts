@@ -197,7 +197,7 @@ describe("OAuth authorization pages", () => {
     const blocked = await renderAuthorizationState("blocked", "en");
     expect(blocked).toContain('role="status"');
     expect(text(blocked)).toContain("Authorization failed");
-    expect(text(blocked)).toContain("The mobile app cannot grant access to other applications.");
+    expect(text(blocked)).toContain("The Cloud app cannot grant access to other applications.");
     expect(blocked).not.toContain("<form");
   });
 

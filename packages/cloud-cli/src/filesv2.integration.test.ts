@@ -249,11 +249,14 @@ describe("Filesv2 CLI integration", () => {
       expect(defaults.exitCode, defaults.stderr).toBe(0);
       expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({
         path: "",
-        sort: "name",
         order: "asc",
         type: "all",
         groupFolders: "true",
       });
+      // Search lets the service choose relevance for a query; browsing still defaults to name.
+      expect(requests.at(-1)!.searchParams.get("sort")).toBe(command === "search" ? null : "name");
+      if (command === "search")
+        expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({ q: "report", scope: "tree", match: "fuzzy", in: "path" });
       const filtered = await run(
         [
           "--json",

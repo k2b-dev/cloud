@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1086
 description: Assign local UID, GID, home and shell attributes and backfill existing accounts without changing authentication.
 tags: [linux, identity, administration, freeipa]
-updated: 2026-10-26
+updated: 2026-10-28
 ---
 
 # Assign Linux identities
@@ -20,7 +20,7 @@ becomes unreadable during editing, a rejected save refreshes the warning and
 replacement choice while preserving the entered configuration.
 
 Administrators configure local Linux identity assignment in **Administration →
-Accounts & sign-in → Linux identities**. Individual identities and group IDs appear in
+Sign-in & security → Linux identities**. Individual identities and group IDs appear in
 **Accounts**. FreeIPA remains the authority for its own identities.
 
 Linux identities contain a user's UID, primary GID, home path and login shell.

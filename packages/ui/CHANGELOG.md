@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.34.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.33.0...npm-ui-v0.34.0) (2026-10-29)
+
+
+### Features
+
+* **chat:** search chats, Spaces, notebooks and threads from the list ([#1908](https://github.com/k2b-dev/cloud/issues/1908)) ([e20f06c](https://github.com/k2b-dev/cloud/commit/e20f06c708fa2552cdc61a2a9c5d5c90041945e2))
+* **cloud:** change the profile picture in one dialog with a built avatar ([#1854](https://github.com/k2b-dev/cloud/issues/1854)) ([06bfe8b](https://github.com/k2b-dev/cloud/commit/06bfe8bf19cb66be0b90f29d2ff0b2c79c52c56d))
+* **cloud:** choose the model with a fixed chip and a card with the class slider ([#2020](https://github.com/k2b-dev/cloud/issues/2020)) ([1c2f932](https://github.com/k2b-dev/cloud/commit/1c2f932646090319d5618ba92e18e66e7d30a3b5))
+* **cloud:** Cloud element cards show kind, place and status ([#1901](https://github.com/k2b-dev/cloud/issues/1901)) ([9abf58c](https://github.com/k2b-dev/cloud/commit/9abf58c1bde328450b4dcae921946a1e101a99a1))
+* **cloud:** copy a resource's Cloud ID from every detail panel and row menu ([#1997](https://github.com/k2b-dev/cloud/issues/1997)) ([d5fba95](https://github.com/k2b-dev/cloud/commit/d5fba954e9d3eee7281505560f7fa2a817ced235))
+* **cloud:** show Administration › Observability as one area in columns ([#2034](https://github.com/k2b-dev/cloud/issues/2034)) ([e461047](https://github.com/k2b-dev/cloud/commit/e461047c332caaea94fdc319c2a6c88229736da0))
+* **cloud:** the phone bar shows app counts like the rail ([#2064](https://github.com/k2b-dev/cloud/issues/2064)) ([1a5fb00](https://github.com/k2b-dev/cloud/commit/1a5fb006f782586d6cf0bb7e702efaa1b337cf5a))
+* **core:** show Administration › AI as one area in columns ([#2012](https://github.com/k2b-dev/cloud/issues/2012)) ([e4a3d64](https://github.com/k2b-dev/cloud/commit/e4a3d646f89fd57f7c4aa938250f7582c4b7dbf2))
+* **mail:** copy a mail's Cloud ID from every menu and open the menu by right-click ([#1989](https://github.com/k2b-dev/cloud/issues/1989)) ([fbfabb9](https://github.com/k2b-dev/cloud/commit/fbfabb9be2004ba6836e63c394d50228cde20a39))
+* **mail:** dry run automations on the last mails without AI ([#1971](https://github.com/k2b-dev/cloud/issues/1971)) ([39fd929](https://github.com/k2b-dev/cloud/commit/39fd9298462ddc924ba2ec8a69c93c06490a9c15))
+* **mail:** mailboxes open in columns, each person chooses the view per mailbox, and the list shows what was done today ([#2027](https://github.com/k2b-dev/cloud/issues/2027)) ([202b45b](https://github.com/k2b-dev/cloud/commit/202b45b5527777876119dbc74c0dba69d84bc082))
+* **notebooks:** a new comment shows as a quiet row in the page's chat, linking to the passage ([#1970](https://github.com/k2b-dev/cloud/issues/1970)) ([7fa1184](https://github.com/k2b-dev/cloud/commit/7fa118438f7e8794f576df3ba84e9ebc2b799f3d))
+* **pwa:** Chat in the Cloud app, and Start, sidebar and tabs say what waits in each part ([#1882](https://github.com/k2b-dev/cloud/issues/1882)) ([e7d520a](https://github.com/k2b-dev/cloud/commit/e7d520af86e32e6662a926af1f4a4ecd982cc92b)), closes [#1104](https://github.com/k2b-dev/cloud/issues/1104)
+* **spaces:** details panels in every app follow one outline ([#2021](https://github.com/k2b-dev/cloud/issues/2021)) ([473bbfd](https://github.com/k2b-dev/cloud/commit/473bbfdf192c7135ad33fd0f1f7cfaf931f1acd4))
+* **ui:** ChoiceList for a few choices that each need a sentence ([#2066](https://github.com/k2b-dev/cloud/issues/2066)) ([c4a2217](https://github.com/k2b-dev/cloud/commit/c4a22179104d8d7bd0e516a309665deeabfadee2))
+* **ui:** choose between a few named stops with ChoiceSlider ([#2008](https://github.com/k2b-dev/cloud/issues/2008)) ([960664e](https://github.com/k2b-dev/cloud/commit/960664ebbc9f4ce8a38365c460bc735556360f58))
+* **ui:** details panel building blocks for one outline (file lists, kind line, section summaries) ([#2005](https://github.com/k2b-dev/cloud/issues/2005)) ([64e1102](https://github.com/k2b-dev/cloud/commit/64e110280023ae9ce6a6b9184a4b4d6a1fbe8ebb))
+* **ui:** float a toolbar at a text selection ([#1961](https://github.com/k2b-dev/cloud/issues/1961)) ([8a10ec0](https://github.com/k2b-dev/cloud/commit/8a10ec0ac322b2128aaa9c10921c09ac19b5c3cc))
+* **ui:** label every category and show values and axis titles in charts ([#1941](https://github.com/k2b-dev/cloud/issues/1941)) ([b1035d4](https://github.com/k2b-dev/cloud/commit/b1035d4fc22981baf1ee8b8c993e5a1782cba17b))
+* **ui:** let a wide workspace level push earlier levels aside ([#2025](https://github.com/k2b-dev/cloud/issues/2025)) ([1847482](https://github.com/k2b-dev/cloud/commit/18474829bd1be8b358e2827a34ff5ca6cdd6822a))
+* **ui:** name collapsed sidebar entries in the Cloud rail hint ([#2058](https://github.com/k2b-dev/cloud/issues/2058)) ([c43b356](https://github.com/k2b-dev/cloud/commit/c43b356f227eb42e9e5709c8cf2ee67c80604890))
+* **ui:** one color per person for avatars, cursors and comments ([#1960](https://github.com/k2b-dev/cloud/issues/1960)) ([82860d4](https://github.com/k2b-dev/cloud/commit/82860d4be9157b5723cdd60e9e6678216e0387b0))
+* **ui:** show the deepest workspace level as a flat column ([#1992](https://github.com/k2b-dev/cloud/issues/1992)) ([0ac72de](https://github.com/k2b-dev/cloud/commit/0ac72de368b6e5a949cdf60315f9ce45c90bb77f))
+
+
+### Bug Fixes
+
+* **dashboard:** widgets show their whole content without an inner scrollbar ([#2051](https://github.com/k2b-dev/cloud/issues/2051)) ([f4e8bfb](https://github.com/k2b-dev/cloud/commit/f4e8bfbe0ad97462e0c8200d06118b8c13ea902a))
+* **spaces:** settle the dayHours week on a whole pixel beside a tablet drawer ([#2018](https://github.com/k2b-dev/cloud/issues/2018)) ([562d401](https://github.com/k2b-dev/cloud/commit/562d40175135e1af43d360b300c3078fff54a92f)), closes [#1713](https://github.com/k2b-dev/cloud/issues/1713)
+* **test:** Chat browser tests wait for view transitions and collect page errors with pageErrors() ([#2053](https://github.com/k2b-dev/cloud/issues/2053)) ([fd222d9](https://github.com/k2b-dev/cloud/commit/fd222d933117e9647258e87e370ea0a846566973))
+* **ui:** let settled() await the view transition of a navigation ([#1976](https://github.com/k2b-dev/cloud/issues/1976)) ([4d1f14c](https://github.com/k2b-dev/cloud/commit/4d1f14c0e52767b7c4163cf27468a76d315e5e16))
+* **ui:** preserve workspace stepping and Escape under tooltips ([#2009](https://github.com/k2b-dev/cloud/issues/2009)) ([7999596](https://github.com/k2b-dev/cloud/commit/79995969281e29095d2ca8ca547d103f10518ebf))
+* **ui:** QR scanner offers to restart a camera picture that does not start and keeps its frame centred ([#2049](https://github.com/k2b-dev/cloud/issues/2049)) ([24c28f3](https://github.com/k2b-dev/cloud/commit/24c28f365e26e0e22432ab177c0f2494bef77968))
+* **ui:** show the quiet column shadow at every workspace boundary ([#2002](https://github.com/k2b-dev/cloud/issues/2002)) ([dc57d5d](https://github.com/k2b-dev/cloud/commit/dc57d5d0f6980bc600e8dcc244d4d54f8c51258c))
+* **ui:** sidebar rows keep long names readable next to hover actions ([#1925](https://github.com/k2b-dev/cloud/issues/1925)) ([3962a21](https://github.com/k2b-dev/cloud/commit/3962a2167c5fd850c7a28eb5a9bf454648159f78)), closes [#1972](https://github.com/k2b-dev/cloud/issues/1972)
+* **ui:** the Cloud app's sidebar is white with a tinted selection, like the web's ([#1879](https://github.com/k2b-dev/cloud/issues/1879)) ([28d96d7](https://github.com/k2b-dev/cloud/commit/28d96d7a51bfc6047a4a9f16adf3acbf5e5e3c63)), closes [#1104](https://github.com/k2b-dev/cloud/issues/1104)
+* **ui:** the sidebar label room test waits for the row's hover before it measures ([#2088](https://github.com/k2b-dev/cloud/issues/2088)) ([e52b1df](https://github.com/k2b-dev/cloud/commit/e52b1dfde1ab94f32c096d23b02ca2e9bdd39c74))
+
+
+### Performance Improvements
+
+* **notebooks:** load Book's navigation a level at a time in the reading order ([#1900](https://github.com/k2b-dev/cloud/issues/1900)) ([d9ee91b](https://github.com/k2b-dev/cloud/commit/d9ee91b3c08ae745e1dc857fb9838d77a5e99de2))
+
 ## [0.33.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.32.0...npm-ui-v0.33.0) (2026-10-27)
 
 

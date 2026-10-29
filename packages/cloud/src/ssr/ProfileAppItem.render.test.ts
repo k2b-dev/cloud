@@ -69,7 +69,7 @@ const page = (apps: RuntimeAppMeta[]) =>
     );
 
 describe("profile menu App item", () => {
-  test("appears in the rail menu and the mobile launcher data while the mobile app runs", async () => {
+  test("appears in the rail menu and the mobile launcher data while the Cloud app runs", async () => {
     const html = await (await page([shell]).request("/", { headers: { "Accept-Language": "de" } })).text();
     // The no-JS panel of the rail avatar links it; the header has no avatar.
     expect(html.match(/<a href="\/me\/app" class="menu-item">/g)).toHaveLength(1);
@@ -79,7 +79,7 @@ describe("profile menu App item", () => {
     expect(JSON.parse(data).profile).toMatchObject({ appHref: "/me/app" });
   });
 
-  test("is absent without the mobile app", async () => {
+  test("is absent without the Cloud app", async () => {
     const html = await (await page([]).request("/")).text();
     expect(html).not.toContain("/me/app");
   });

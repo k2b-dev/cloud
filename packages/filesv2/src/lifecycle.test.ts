@@ -2,7 +2,15 @@ import { expect, test } from "bun:test";
 import { runFilesMaintenance } from "./lifecycle";
 
 const input = { signal: new AbortController().signal, heartbeat: async () => {} };
-const maintenance = { processed: 2, archived: 1, pending: 0, activityChecked: 2, activityPurged: 0 };
+const maintenance = {
+  processed: 2,
+  archived: 1,
+  pending: 0,
+  activityChecked: 2,
+  activityPurged: 0,
+  shareAccessRolledUp: 0,
+  shareAccessPurged: 0,
+};
 const homes = { processed: 1, done: 1, pending: 0, failed: 0, nextCursor: null };
 test("maintenance still reconciles homes after a failure and preserves the first error", async () => {
   const original = new Error("maintenance failed");

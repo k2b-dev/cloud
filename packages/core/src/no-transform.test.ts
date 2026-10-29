@@ -25,6 +25,9 @@ describe("Core compression boundaries", () => {
     "/admin/ai",
     "/admin/ai?sec=providers&p=example",
     "/admin/settings/__new_route__",
+    "/admin/signin",
+    "/admin/signin/linux",
+    "/admin/signin/__new_route__",
   ]) {
     test(`${path} opts out before authentication`, async () => {
       const response = await pages.request(path);
@@ -51,7 +54,17 @@ test("profile, access and notification settings pages stay eligible for compress
 
 // A page that only a browser fixture mounts is unreachable in Cloud: the real router sends the sign-in redirect, not a 404.
 test("every admin page the sidebar links is mounted in the pages router", async () => {
-  for (const path of ["/admin", "/admin/ai", "/admin/settings", "/admin/outgoing-mail", "/admin/places-and-maps", "/admin/apps"]) {
+  for (const path of [
+    "/admin",
+    "/admin/ai",
+    "/admin/settings",
+    "/admin/outgoing-mail",
+    "/admin/base",
+    "/admin/base/places",
+    "/admin/signin",
+    "/admin/signin/linux",
+    "/admin/apps",
+  ]) {
     const response = await pages.request(path);
     expect({ path, status: response.status }).toEqual({ path, status: 302 });
   }

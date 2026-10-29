@@ -21,12 +21,15 @@ Every service account has one `kind`:
 | --- | --- | --- |
 | `user_delegated` | A credential acting for one user | The delegated user's live grants |
 | `resource_bound` | A machine identity bound to one app resource | Explicit grants, capped to that resource |
-| `standalone` | An integration with its own identity | Explicit grants on the account |
-| `agent` | A standalone account that surfaces as an agent | Explicit grants on the account |
+| `standalone` | An integration with its own identity | Direct and local group grants |
+| `agent` | A standalone account that surfaces as an agent | Direct and local group grants |
 
-`agent` changes presentation only: pickers, entity search, permission editor
-rows, and the Accounts app show a robot icon and the label "Agent" instead of a
-key. It carries no extra permission and no different token rules. Use it for
+`agent` changes presentation only: pickers and the Accounts app show the label
+"Agent" instead of a key. It carries no extra permission and no different token
+rules. Every service account shows a picture, never a bare icon: a robot drawn
+from its account ID, or a photo. Administrators change a standalone account's
+picture on its page under **Accounts → Agents** or with `cld admin agents
+avatar`; see [Profile pictures](/en/docs/identity/profile-pictures). Use it for
 coding agents and other automated workers that people should recognize in
 assignee lists, activity, and audit trails.
 
@@ -131,10 +134,20 @@ editor shows next to the name, and `cld spaces access list "Roadmap"` shows its
 grant with type `agent` or `service account`; see
 [Application CLI modules](/en/docs/platform/cli-modules#add-access-commands).
 
+A human group manager or installation administrator can also add an active
+standalone or agent account to a local Cloud group through Accounts, its API,
+or `cld accounts groups members add <group> --service-account <id-or-name> --yes`.
+The account inherits resource grants through the group and its local ancestors;
+removing membership or disabling the account ends that inherited access.
+This creates no Unix or FreeIPA identity. IPA groups keep their directory
+policy, and machine membership does not grant directory visibility, group
+management authority, or an installation role. See
+[Local group recipients](/en/docs/identity/authorization#local-group-recipients).
+
 Two limits apply to every request, and the lower one wins:
 
 - the account's grant on the resource, resolved through the same shared
-  resolver as for a user (direct grant, authenticated, and public grants);
+  resolver as for a user (direct grant, local group grants, authenticated, and public grants);
 - the scopes of the credential it presents. A token with only `read` cannot
   write, even with a `write` grant; a token without `read` reaches nothing.
 
@@ -200,6 +213,8 @@ the agent runs the same `cld` commands as a person, under its own identity, and
 only sees what it was granted. Read the CLI's `cld admin reference` for the
 complete command list.
 
+For independently owned file storage and explicit path grants, see
+[Files machine storage](/en/docs/identity/files-machine-storage).
 ## Find names through a directory share
 
 An administrator can share exact people, groups, or accounts under **Accounts →

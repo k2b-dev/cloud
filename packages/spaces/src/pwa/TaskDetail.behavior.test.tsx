@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -81,9 +81,14 @@ afterEach(() => {
 });
 
 const mount = (state: TaskDetailState) => {
-  const { ui, TaskDetail } = modules!;
   dom = createDomTestHarness();
   delegateEvents(["click", "input", "change"]);
+  return show(state);
+};
+/** Renders into the current document, as a page of an app that starts again on the same device. */
+const show = (state: TaskDetailState) => {
+  const { ui, TaskDetail } = modules!;
+  dom!.root.replaceChildren();
   dispose = render(
     () =>
       createComponent(ui.LocaleProvider, {
@@ -99,9 +104,9 @@ const mount = (state: TaskDetailState) => {
           });
         },
       }),
-    dom.root,
+    dom!.root,
   );
-  return dom.root;
+  return dom!.root;
 };
 
 const boxes = (root: HTMLElement) => [...root.querySelectorAll<HTMLInputElement>(".spaces-pwa-task__checklist input")];
@@ -163,6 +168,25 @@ test("a reader without write access sees why everything is off", () => {
   expect(root.querySelector<HTMLButtonElement>("button.spaces-pwa__check")!.disabled).toBe(true);
 });
 
+test("an agent among the assignees shows its robot in a square, a person their round picture", () => {
+  const agentId = "66666666-6666-4666-8666-666666666666";
+  const root = mount({
+    kind: "ready",
+    task: {
+      ...task,
+      people: [
+        { id: "22222222-2222-4222-8222-222222222222", kind: "user", displayName: "Lena Example", avatarHash: "lena-rev" },
+        { id: agentId, kind: "service_account", displayName: "Release agent", avatarHash: null },
+      ],
+    },
+  });
+  const [person, agent] = Array.from(root.querySelectorAll<HTMLImageElement>(".spaces-pwa-task__avatars img"));
+  expect(person?.getAttribute("src")).toContain("rev=lena-rev");
+  expect(person?.getAttribute("data-shape")).toBeNull();
+  expect(agent?.getAttribute("src")).toBe(`/api/accounts/users/${agentId}/avatar`);
+  expect(agent?.getAttribute("data-shape")).toBe("square");
+});
+
 test("opened from a row, the title, Space and date show at once and the rest keeps its place", () => {
   const root = mount({
     kind: "loading",
@@ -183,6 +207,139 @@ test("a task that could not be loaded offers Retry; one that is gone leads back 
   root = mount({ kind: "gone" });
   expect(root.textContent).toContain("This task is no longer available.");
   expect(root.querySelector('a[href="/pwa/spaces"]')?.textContent).toBe("Back to the list");
+});
+
+const DRAFT = `cloud.pwa.draft:0b8f2d4e-1c3a-4f5b-9d6e-7a8b9c0d1e2f:${encodeURIComponent("spaces.comment:Space1:Item01")}`;
+const COMMENTS = "/api/spaces/Space1/items/Item01/comments";
+const commentField = (root: HTMLElement) => root.querySelector<HTMLTextAreaElement>(".spaces-pwa-comment textarea");
+const sendButton = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.spaces-pwa-comment button[type="submit"]')!;
+const type = (field: HTMLTextAreaElement, text: string) => {
+  field.value = text;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+test("only a reader who may change the task can comment, and not while the task loads", () => {
+  let root = mount({ kind: "ready", task });
+  expect(commentField(root)?.getAttribute("aria-label")).toBe("Comment");
+  expect(commentField(root)?.placeholder).toBe("Write a comment");
+  expect(sendButton(root).disabled).toBe(true);
+  dispose();
+  dom?.cleanup();
+  root = mount({ kind: "ready", task: { ...task, canWrite: false } });
+  expect(commentField(root)).toBeNull();
+  dispose();
+  dom?.cleanup();
+  root = mount({ kind: "loading", item: { ...task, priority: null } });
+  expect(commentField(root)).toBeNull();
+});
+
+test("a typed comment is a draft on the device until it is sent, then the field is empty again", async () => {
+  let root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Tents are booked.");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBe("Tents are booked.");
+  // The app was ended: the next start on this device shows the draft again.
+  dispose();
+  root = show({ kind: "ready", task });
+  expect(commentField(root)!.value).toBe("Tents are booked.");
+  answers.push(Response.json({ id: "Cmt001" }));
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "sent");
+  expect(calls.at(-1)).toEqual({ method: "POST", path: COMMENTS, body: { requestId: expect.any(String), content: "Tents are booked." } });
+  expect(commentField(root)!.value).toBe("");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBeNull();
+});
+
+test("a comment that fails to send keeps its text and draft, and Retry sends it again", async () => {
+  const root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Deposit paid.");
+  answers.push("offline");
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment on “Order the tents” not sent.") ?? false, "failure");
+  expect(commentField(root)!.value).toBe("Deposit paid.");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBe("Deposit paid.");
+  answers.push(Response.json({ id: "Cmt002" }));
+  [...dom!.document.querySelectorAll<HTMLButtonElement>("[data-k2b-toast] button")]
+    .find((button) => button.textContent === "Retry")!
+    .click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "sent on retry");
+  const attempts = calls.filter((call) => call.path === COMMENTS);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]!.body).toEqual(attempts[0]!.body);
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBeNull();
+});
+
+test("a late send cannot remove a draft edited after reopening the task", async () => {
+  let root = mount({ kind: "ready", task });
+  type(commentField(root)!, "First version");
+  sendButton(root).click();
+  const finishOldSend = pending!;
+  dispose();
+  root = show({ kind: "ready", task });
+  type(commentField(root)!, "A newer draft");
+  finishOldSend(Response.json({ id: "Cmt003" }));
+  await Bun.sleep(0);
+  expect(commentField(root)!.value).toBe("A newer draft");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBe("A newer draft");
+});
+
+test("an ambiguous send retains its comment identity across an app restart", async () => {
+  let root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Already committed, response lost");
+  answers.push("offline");
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("not sent") ?? false, "failure");
+  const first = calls.at(-1)!.body;
+  dispose();
+  root = show({ kind: "ready", task });
+  answers.push(Response.json({ id: "Cmt004" }));
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "reconciled send");
+  expect(calls.at(-1)!.body).toEqual(first);
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBeNull();
+});
+
+test("a changed committed comment keeps the draft and directs the reader to Spaces instead of retrying", async () => {
+  const root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Keep this text");
+  answers.push(Response.json({ message: "Request ID belongs to a different comment" }, { status: 409 }));
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("already sent and has changed") ?? false, "conflict");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBe("Keep this text");
+  expect([...dom!.document.querySelectorAll("[data-k2b-toast] button")].some((button) => button.textContent === "Retry")).toBe(false);
+});
+
+test("a token-only storage failure sends nothing, so a fresh runtime cannot duplicate a committed comment", async () => {
+  let root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Ready to send");
+  const storage = dom!.window.localStorage;
+  const write = storage.setItem;
+  const requestKey = `${DRAFT}${encodeURIComponent(":request")}`;
+  const blocked = mock((key: string, value: string) => {
+    if (key === requestKey) throw new Error("Quota exceeded");
+    write(key, value);
+  });
+  // Happy DOM's Storage proxy ignores method assignment; define the fault explicitly.
+  Object.defineProperty(storage, "setItem", { configurable: true, value: blocked });
+  try {
+    sendButton(root).click();
+    expect(blocked).toHaveBeenCalledWith(requestKey, expect.any(String));
+    await waitFor(() => root.textContent?.includes("Device storage is full") ?? false, "storage failure");
+    expect(calls.filter((call) => call.path === COMMENTS)).toHaveLength(0);
+    expect(storage.getItem(DRAFT)).toBe("Ready to send");
+    expect(storage.getItem(requestKey)).toBeNull();
+  } finally {
+    Object.defineProperty(storage, "setItem", { configurable: true, value: write });
+  }
+  const persistedText = storage.getItem(DRAFT)!;
+  dispose();
+  // A fresh runtime loses the helper's memory map and keeps only the durable text.
+  (await import("@k2b/cloud/browser/pwa-drafts")).pwaDrafts.clearAll();
+  storage.setItem(DRAFT, persistedText);
+  root = show({ kind: "ready", task });
+  answers.push(Response.json({ id: "Cmt005" }));
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "safe send after restart");
+  expect(calls.filter((call) => call.path === COMMENTS)).toHaveLength(1);
 });
 
 process.once("exit", () => fetchSpy.mockRestore());

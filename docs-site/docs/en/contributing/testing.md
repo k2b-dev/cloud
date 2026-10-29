@@ -236,6 +236,12 @@ before it. After a navigation, a test awaits `viewTransitionEnded(page)` from
 `packages/ui/test/browser.ts` before its next click or Back. See the Info and
 thread tests in `packages/chat/src/frontend`.
 
+After a pointer move, a test waits until the target matches `:hover`, or for
+the control that the hover reveals, before it reads what the hover changes.
+WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
+changes `visibility` starts no animation for `settled()` to wait for. See
+`hover()` in `packages/ui/src/layout/sidebar-row-label-room.browser.test.ts`.
+
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
 condition. `settled()` waits for fonts, for the running finite animations on
@@ -425,6 +431,15 @@ check enforces this rule. Await promises directly and assert on their values;
 for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
+
+Every page from `launchBrowser()` answers Cloud's own capability catalog read
+(`GET /api/capabilities/v1/catalog`) with an empty catalog, in the page and
+without a request. Shared browser modules make this read by themselves, such as
+the file-provider discovery while a page is idle, so a fixture that serves only
+its own endpoints would see it at random. A test file that serves a catalog,
+counts its reads, or fails it on purpose launches with
+`launchBrowser({ serveShellCatalog: true })`; its pages then send the read to
+the fixture. Other methods and paths always reach the fixture.
 
 Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
 and assert `expect(errors).toEqual([])`; new tests do not register a
@@ -715,6 +730,23 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
 | `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
+| `CLOUD_TEST_S3_ENDPOINT` | `http://127.0.0.1:3900` |
+| `CLOUD_TEST_S3_BUCKET` | `cloud-test` (must end in `-test`) |
+| `CLOUD_TEST_S3_ACCESS_KEY_ID` | Test-only S3 access key |
+| `CLOUD_TEST_S3_SECRET_ACCESS_KEY` | Test-only S3 secret key |
+| `CLOUD_TEST_S3_REGION` | `garage` |
+
+The object-store suite uses a disposable Garage 2.3 instance. Start only that
+fixture with `docker compose -f compose.test-s3.yml up -d --wait`; its Compose
+file declares the test-only key, secret, bucket, and loopback port. Export those
+values as the five `CLOUD_TEST_S3_*` entries above, then run
+`bun run test --integration --filter object-store`. Stop it with
+`docker compose -f compose.test-s3.yml down --volumes`. CI and nightly do this
+automatically. Missing S3 configuration skips the suite; an endpoint with
+missing credentials, region, a bucket without the `-test` suffix, or unusable
+storage fails. The suite also needs the database and Valkey test targets. It
+writes these connection values directly to the encrypted Core settings and
+restores them afterward; production S3 environment variables do not exist.
 
 The ports are the development stack's defaults. If you moved them with
 `CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, `CLOUD_DEV_NATS_PORT`, or `CLOUD_DEV_CLICKHOUSE_PORT`
@@ -885,7 +917,15 @@ bun run test --integration
 the suites across parallel jobs, balanced by measured suite time, which is how
 the gate runs them. `--max-minutes <m>` fails a run that takes longer than m
 minutes. `--exclude <name>` leaves out suites whose name or path matches, and
-`--filter <name>` keeps only those.
+`--filter <name>` keeps only those. Repeat `--filter` to run suites matching
+any of the given names or workspace paths, each suite once:
+
+```bash
+bun run test --filter packages/core --filter packages/cloud
+```
+
+`--exclude` removes matches from that union before sharding. Run
+`bun run test --help` for all runner options.
 
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right

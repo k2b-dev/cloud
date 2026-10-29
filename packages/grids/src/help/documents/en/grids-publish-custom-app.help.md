@@ -22,7 +22,7 @@ A caller can use a resource only when every boundary that applies allows it:
 
 Wider access at one boundary never overrides a denial or a narrower boundary elsewhere. People who use the app do not need access to the base. Access to the base does not replace access to the app.
 
-You cannot give a service account direct access to a Grids App. Delegated credentials open the app through their user identity.
+You can give a standalone or agent account direct access to a Grids App, capped by its credential scopes. Resource-bound credentials cannot open Grids Apps. Delegated credentials open the app through their user identity.
 
 The app exposes only the resources that its published blocks and actions name. It does not expose the base workspace, the schema, sibling apps, or unrelated resources. Denied blocks and actions fail without revealing their labels, their configuration, or whether a referenced record exists.
 

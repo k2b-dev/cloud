@@ -15,7 +15,7 @@ import { migrate } from "./migrate";
 import oauthRoutes from "./oauth";
 import { oauth } from "./service/oauth";
 
-// The mobile app's session never grants access to other applications: OAuth needs the web.
+// The Cloud app's session never grants access to other applications: OAuth needs the web.
 const suite = suiteFor("database", "valkey", "nats");
 const ISSUER = "http://localhost:3000";
 const createdUsers: string[] = [];
@@ -46,7 +46,7 @@ const post = (path: string, cookie: string, values: Record<string, string>) =>
   });
 const blocked = encodeURIComponent(oauthMessages.resolve(["en"]).t.webSessionRequired);
 
-suite("OAuth refuses the mobile app's session", () => {
+suite("OAuth refuses the Cloud app's session", () => {
   beforeAll(async () => {
     await migrate();
   });

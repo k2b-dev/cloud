@@ -6,6 +6,7 @@ import {
   currentResourceBoundBaseId,
   gateAt,
   gateCredentialScope,
+  gateCredentialScopeFor,
   gridsAccessContext,
   resolveBaseWithGrantsForAccess,
   resolveCustomAppWithGrantsForAccess,
@@ -96,6 +97,34 @@ describe("Grids API permissions", () => {
     expect((await resolveCustomAppWithGrantsForAccess(gridsAccessContext(serviceAccountContext as never), customAppId)).level).toBe("none");
   });
 
+  test("full personal API credentials retain the user's grants with empty scopes", async () => {
+    const human = gridsAccessContext(userContext as never);
+    if (human.actor?.kind !== "user") throw new Error("Expected human fixture");
+    const access = {
+      accessSubject: human.accessSubject,
+      actor: {
+        kind: "service_account" as const,
+        delegatedUser: human.actor.user,
+        scopes: [],
+        serviceAccount: {
+          ...resourceServiceAccount,
+          kind: "user_delegated" as const,
+          status: "active" as const,
+          delegatedUserId: user.id,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+        },
+      },
+    };
+    expect((await gateCredentialScopeFor(access, "admin")).ok).toBe(true);
+    resolvedLevel = "admin";
+    expect((await resolveBaseWithGrantsForAccess(access, baseId)).level).toBe("admin");
+    resolvedLevel = "none";
+    expect((await resolveBaseWithGrantsForAccess(access, baseId)).level).toBe("none");
+    expect(workflowPrincipalFor(access).credential?.permissionCap).toBe("admin");
+  });
+
   test("preserves actor identity for audit and relation display", () => {
     expect(currentActorUserId(userContext as never)).toBe(user.id);
     expect(currentActorViewer(serviceAccountContext as never)).toEqual({
@@ -158,7 +187,7 @@ describe("Grids API permissions", () => {
       userId: user.id,
       serviceAccountId: null,
       actorServiceAccountId: resourceServiceAccount.id,
-      credential: { permissionCap: "read", resourceBinding: null, scopes: ["grids:read"] },
+      credential: { permissionCap: "admin", resourceBinding: null, scopes: ["grids:read"] },
     });
   });
 });

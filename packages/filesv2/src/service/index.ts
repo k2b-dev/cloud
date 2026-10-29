@@ -9,9 +9,11 @@ import {
   audit,
   coreSettings,
   logger,
+  serviceAccounts,
 } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { type ExecutionContext, type ExecutionIdentity, FilegateError, type Node, type RootInfo } from "@k2b/filegate";
+import { sql } from "bun";
 import { z } from "zod";
 import { filegateErrorCode } from "../api/filegate-error";
 import { readBoundedBody } from "../bounded-body";
@@ -37,20 +39,32 @@ import type {
   InventoryState,
   MaintenanceResult,
   MarkedEntry,
+  SearchHit,
+  SearchQuery,
   SearchResult,
   UploadLease,
   UploadSession,
 } from "../contracts";
-import { BATCH_LIMIT, HomeProvisioningOverviewSchema, HomeProvisioningQuerySchema, HomeProvisioningResultSchema } from "../contracts";
+import {
+  BATCH_LIMIT,
+  HomeProvisioningOverviewSchema,
+  HomeProvisioningQuerySchema,
+  HomeProvisioningResultSchema,
+  hasSearchFilters,
+  searchSort,
+} from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { homeProvisioning } from "../data/home-provisioning";
+import { machineStorage } from "../data/machine-storage";
 import { favorites, recent } from "../data/marks";
 import { operations, rootLockWait, withRootLock, withUploadLock } from "../data/operations";
 import { entryRef, persistedEntryRefId, resolveEntryRefId } from "../data/references";
+import { maintainShareAccess } from "../data/share-access";
 import { shares } from "../data/shares";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
+import type { MachineOwner } from "../machine-contracts";
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
 import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, type UserFilesCall, uploadAction } from "./activity";
@@ -64,9 +78,32 @@ import { fileEntry } from "./file-entry";
 import { connectFilegate, type FilesRoot } from "./filegate-facade";
 import { createHomeProvisioning } from "./home-provisioning";
 import { createDirectoryLifecycle } from "./lifecycle";
+import {
+  checkStorage,
+  currentCredential,
+  currentMachine,
+  filesAuditActor,
+  filesRequestActor,
+  filesScope,
+  filesSubject,
+  grantStorage,
+  listMachineStorage,
+  machineActor,
+  machineOwner,
+  principalMetadata,
+  readTransferTicket,
+  revokeStorage,
+  storageBaseId,
+  storageCandidates,
+  storageGrants,
+  storagePermission,
+  storageTrashPath,
+  transferTicket,
+} from "./machine-access";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
 import { permits, type UnixIdentity } from "./posix";
 import { rootSummary } from "./root-summary";
+import { highlight, searchPage, trashHits } from "./search";
 import { createSharingService } from "./sharing";
 import { uploadStreamChunks } from "./stream-chunks";
 import { createTrashLifecycle } from "./trash-lifecycle";
@@ -76,7 +113,7 @@ export { FilesError } from "./errors";
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
 type Group = Awaited<ReturnType<typeof accountIdentities.groups>>["items"][number];
 type Identity = { id: string; name: string; uid: number | null; gid: number | null };
-type Candidate = NewBinding & { name: string };
+type Candidate = NewBinding & { name: string; storage?: Binding; owner?: MachineOwner };
 type Inspection = { summary: BaseSummary; candidate: Candidate; binding: Binding | null };
 const PAGE_SIZE = 50;
 const maintenanceLog = logger("filesv2:maintenance");
@@ -180,12 +217,20 @@ export function createFilesService(
       gid_number: identity.gid,
     };
   }
-  async function inspect(root: FilesRoot, item: Candidate, info: RootInfo, serverUrl: string, adopt = false): Promise<Inspection> {
+  async function inspect(
+    root: FilesRoot,
+    item: Candidate,
+    info: RootInfo,
+    serverUrl: string,
+    actor: RequestActor,
+    adopt = false,
+    call?: UserFilesCall,
+  ): Promise<Inspection> {
     const summary: BaseSummary = {
       id: `${item.area}:${item.kind}:${item.identity_id}`,
       area: item.area,
       kind: item.kind,
-      name: item.name,
+      name: item.owner?.name ?? item.name,
       status: "unknown",
       reason: null,
       indexEnabled: info.index.enabled,
@@ -194,6 +239,7 @@ export function createFilesService(
       executionEnabled: info.execution,
       // A 6.1 daemon omits the field; only an explicit capability promises IDs that survive rename and move.
       stableIds: info.stableIds === true,
+      ...(item.owner ? { owner: item.owner } : {}),
     };
     const result = (status: BaseSummary["status"], reason: string | null, binding: Binding | null = null): Inspection => ({
       candidate: item,
@@ -227,12 +273,31 @@ export function createFilesService(
       if (node.gid !== item.gid_number || (item.kind === "users" && node.uid !== item.uid_number))
         return result("conflict", "ownership_mismatch");
     }
-    if (!existing.length && (item.area === "freeipa" || adopt)) existing = await deps.bindings.claim(item);
+    if (!existing.length && (item.area === "freeipa" || adopt))
+      existing = await deps.bindings.claim(item, { actor, requestId: call?.requestId, via: call?.via });
     if (!existing.length) return result("unassigned", "unassigned");
     if (existing.length !== 1 || !sameBinding(existing[0]!, item)) return result("conflict", "binding_conflict");
     return result("existing", null, existing[0]!);
   }
   async function context(actor: RequestActor) {
+    if (machineActor(actor)) {
+      const account = await currentMachine(actor);
+      if (filesScope(actor) === "none") throw new FilesError("forbidden", 403);
+      const config = await deps.readConfiguration();
+      const candidates = await grantedStorage(actor, config);
+      return {
+        actor,
+        machine: account,
+        config,
+        unix: null,
+        candidates,
+        personalGroupIds: new Set<string>(),
+        self: {
+          user: { id: account.id, username: account.name, profile: "user" as const, provider: "local" as const, posix: null },
+          availability: { localLinuxEnabled: true, freeipaEnabled: false },
+        },
+      };
+    }
     const self = await deps.identities.self(actor);
     if (self.user.profile !== "user") throw new FilesError("forbidden", 403);
     const config = await deps.readConfiguration();
@@ -270,7 +335,99 @@ export function createFilesService(
         );
     // Personal Linux groups are not offered as group areas; links that already name such a base keep working.
     const personalGroupIds = new Set(groups.filter((group) => group.personal).map((group) => group.id));
-    return { self, config, unix, candidates, personalGroupIds };
+    candidates.push(...(await grantedStorage(actor, config)));
+    return { actor, self, config, unix, candidates, personalGroupIds, machine: null };
+  }
+  async function grantedStorage(actor: RequestActor, config: Config): Promise<Candidate[]> {
+    if (config.unreadable || !config.cloud.enabled) return [];
+    const rows = await storageCandidates(actor);
+    const result: Candidate[] = [];
+    for (const row of rows) {
+      if ((await machineStorage.server(row.id)) !== config.url) continue;
+      if (
+        row.area !== "cloud" ||
+        row.root !== config.cloud.root ||
+        row.path !== joinPath(config.cloud.prefix, config.cloud.homes, row.identity_name)
+      )
+        continue;
+      result.push({ ...row, name: row.identity_name, storage: row, owner: (await machineOwner(row.id))! });
+    }
+    return result;
+  }
+  function guardedRoot(
+    root: FilesRoot,
+    actor: RequestActor,
+    item: Candidate,
+    config: Config,
+    shareId?: string,
+    trashAccess = false,
+    shareBinding?: Binding,
+  ): FilesRoot {
+    const binding = item.storage ?? shareBinding;
+    if (!binding) return root;
+    const relative = async (path: string, session = false) => {
+      if (session) {
+        const [upload] = await sql<
+          { path: string }[]
+        >`SELECT path FROM filesv2.uploads WHERE base_id=${binding.id}::uuid AND filegate_session_id=${path}`;
+        if (!upload) throw new FilesError("not_found", 404);
+        return userPath(upload.path);
+      }
+      if (path !== binding.path && !path.startsWith(`${binding.path}/`)) throw new FilesError("forbidden", 403);
+      const selected = relativePath(path === binding.path ? "" : path.slice(binding.path.length + 1));
+      if (trashAccess) return storageTrashPath(binding.id, selected);
+      return selected;
+    };
+    return root.guarded({
+      check: async (permission, path, session) => {
+        const live = await deps.bindings.byId(binding.id);
+        if (!live || !sameBinding(live, item) || live.lifecycle !== "active") throw new FilesError("forbidden", 403);
+        const selected = await relative(path, session);
+        if (trashAccess && permission === "read" && (selected === "" || selected === "trash")) {
+          const fresh = await context(actor);
+          if (!fresh.candidates.some((candidate) => candidate.storage?.id === binding.id)) throw new FilesError("forbidden", 403);
+          return;
+        }
+        if (item.storage) await checkStorage(actor, live, selected, permission);
+        if (shareId) await sharing.authorizeTransfer(shareId, actor, selected);
+      },
+      target: async (targetRoot, path) => {
+        const state = await context(actor);
+        const target = state.candidates.find(
+          (candidate) => candidate.root === targetRoot && (path === candidate.path || path.startsWith(`${candidate.path}/`)),
+        );
+        if (!target) throw new FilesError("forbidden", 403);
+        if (target.storage)
+          await checkStorage(
+            actor,
+            target.storage,
+            trashAccess && target.storage.id === binding.id
+              ? await relative(path)
+              : path === target.path
+                ? ""
+                : path.slice(target.path.length + 1),
+            "write",
+          );
+      },
+      lease: async (kind, path, lease, session) => {
+        if (shareId) await sharing.authorizeTransfer(shareId, actor, await relative(path, session));
+        if (!item.storage) return lease;
+        return {
+          ...lease,
+          url: `${await deps.publicOrigin()}${await transferTicket(
+            actor,
+            binding,
+            await relative(path, session),
+            {
+              kind,
+              url: deps.connect(config).leaseTransportUrl(lease.url),
+            },
+            lease.expires,
+            shareId,
+          )}`,
+        };
+      },
+    });
   }
   async function checkUnix(root: FilesRoot, path: string, unix: UnixIdentity | null, leafRights: number) {
     if (!unix) throw new FilesError("identity_incomplete", 403);
@@ -290,18 +447,29 @@ export function createFilesService(
     const state = snapshot ?? (await context(actor));
     const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === baseId);
     if (!item) throw new FilesError("not_found", 404);
-    const issue = issueFor(state.config, item.area, state.self.availability);
+    const issue = issueFor(
+      state.config,
+      item.area,
+      item.storage ? { ...state.self.availability, localLinuxEnabled: true } : state.self.availability,
+    );
     if (issue) throw new FilesError(issue, 403);
     const service = deps.connect(state.config).root(item.root);
     const info = await service.info();
-    let inspection = await inspect(service, item, info, state.config.url);
-    if (inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
+    let inspection = await inspect(service, item, info, state.config.url, actor);
+    if (!item.storage && inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
       await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
-      inspection = await inspect(service, item, info, state.config.url);
+      inspection = await inspect(service, item, info, state.config.url, actor);
     }
     if (inspection.summary.status !== "existing") throw new FilesError(inspection.summary.reason ?? "forbidden", 403);
     const execution = executionFor({ inspection, state });
-    return { state, item, info, inspection, service, root: execution ? service.as(execution) : service };
+    return {
+      state,
+      item,
+      info,
+      inspection,
+      service,
+      root: guardedRoot(execution ? service.as(execution) : service, actor, item, state.config),
+    };
   }
   /** An existing entry in that base, after the path checks the actor's execution identity must pass. */
   async function authorizedPath(base: Awaited<ReturnType<typeof authorizedBase>>, path: string, directory?: boolean) {
@@ -353,7 +521,18 @@ export function createFilesService(
     const relative = userPath(path);
     if (!relative) throw new FilesError("invalid_path");
     const parts = relative.split("/");
-    const current = await authorizedPath(base ?? (await authorizedBase(actor, baseId)), parts.slice(0, -1).join("/"), true);
+    const selected = base ?? (await authorizedBase(actor, baseId));
+    const parent = parts.slice(0, -1).join("/");
+    const current = selected.item.storage
+      ? await (async () => {
+          // A leaf write grant permits checking its parent, without granting a parent listing.
+          await checkStorage(actor, selected.item.storage!, relative, "write");
+          const target = joinPath(selected.item.path, parent);
+          const node = await selected.service.stat(target);
+          if (!node.directory) throw new FilesError("not_directory", 400);
+          return { ...selected, relative: parent, target, node };
+        })()
+      : await authorizedPath(selected, parent, true);
     if (current.inspection.candidate.area === "freeipa") {
       try {
         await checkUnix(current.root, current.target, current.state.unix, 3);
@@ -372,6 +551,10 @@ export function createFilesService(
       : { [directory ? "dirMode" : "mode"]: mode };
   };
   async function canWriteDirectory(current: Awaited<ReturnType<typeof authorized>>) {
+    if (current.inspection.candidate.storage)
+      return ["write", "admin"].includes(
+        await storagePermission(current.state.actor, current.inspection.candidate.storage, current.relative),
+      );
     if (current.inspection.candidate.area !== "freeipa") return true;
     return permits(current.node, await current.root.getACL(current.target, "access"), current.state.unix!, 3);
   }
@@ -415,6 +598,15 @@ export function createFilesService(
     target = current.target,
     parentWritable?: boolean,
   ): Promise<NonNullable<FileEntry["actions"]>> {
+    if (current.inspection.candidate.storage) {
+      const path = target === current.inspection.candidate.path ? "" : target.slice(current.inspection.candidate.path.length + 1);
+      const permission = await storagePermission(current.state.actor, current.inspection.candidate.storage, path);
+      return {
+        write: ["write", "admin"].includes(permission),
+        move: ["write", "admin"].includes(permission),
+        share: permission === "admin",
+      };
+    }
     if (current.inspection.candidate.area !== "freeipa") return { write: true, move: true, share: true };
     const acl = await current.root.getACL(target, "access");
     const readable = permits(node, acl, current.state.unix!, node.directory ? 5 : 4);
@@ -464,7 +656,7 @@ export function createFilesService(
     const current = await authorized(actor, baseId, path, false);
     const extension = editableExtension(current.relative.split("/").at(-1)!);
     if (!extension) throw new FilesError("editor_unsupported", 400);
-    let canWrite = true;
+    let canWrite = current.inspection.candidate.storage ? await canWriteDirectory(current) : true;
     if (current.inspection.candidate.area === "freeipa") {
       const parentTarget = joinPath(current.inspection.candidate.path, current.relative.split("/").slice(0, -1).join("/"));
       try {
@@ -596,6 +788,19 @@ export function createFilesService(
         batchId,
       },
       async () => {
+        if (source.inspection.candidate.storage)
+          await checkStorage(
+            call.actor,
+            source.inspection.candidate.storage,
+            source.relative,
+            options.move ? "write" : "read",
+            call.requestId,
+          );
+        if (destination.inspection.candidate.storage) {
+          // A conflict rename may publish any sibling, beyond an exact leaf grant.
+          const target = options.onConflict === "rename" ? destination.relative.split("/").slice(0, -1).join("/") : destination.relative;
+          await checkStorage(call.actor, destination.inspection.candidate.storage, target, "write", call.requestId);
+        }
         const result = await source.root.transfer(source.target, destination.root.name, path, options);
         if (result.state !== "completed") throw new FilesError("operation_pending", 409);
         const node = result.node;
@@ -688,15 +893,34 @@ export function createFilesService(
     const payload = verifyEditorToken(token);
     const ref = await resolveEntryRefId(id);
     if (!payload || !ref || ref.baseId !== payload.baseId || ref.path !== payload.path) throw new FilesError("forbidden", 403);
-    const user = await deps.userById(payload.userId);
-    if (!user) throw new FilesError("forbidden", 403);
-    const actor: RequestActor = { kind: "user", user };
+    let actor: RequestActor;
+    if (payload.machine) {
+      const account = await serviceAccounts.get({ id: payload.userId });
+      if (!account) throw new FilesError("forbidden", 403);
+      const { delegatedUserId, ...credential } = payload.machine;
+      const delegatedUser = delegatedUserId ? await deps.userById(delegatedUserId) : null;
+      if (delegatedUserId && (!delegatedUser || account.kind !== "user_delegated" || account.delegatedUserId !== delegatedUserId))
+        throw new FilesError("forbidden", 403);
+      const serviceActor: Extract<RequestActor, { kind: "service_account" }> = {
+        kind: "service_account",
+        serviceAccount: account,
+        delegatedUser,
+        ...credential,
+      };
+      await currentCredential(serviceActor);
+      actor = serviceActor;
+    } else {
+      const user = await deps.userById(payload.userId);
+      if (!user) throw new FilesError("forbidden", 403);
+      actor = { kind: "user", user };
+    }
+    actor = filesRequestActor(actor, requestId);
     const current = await editableFile(actor, payload.baseId, payload.path);
     editorConfig(current.state.config);
     const call: UserFilesCall = {
       kind: "user",
       actor,
-      accessSubject: { type: "user", userId: user.id },
+      accessSubject: filesSubject(actor),
       via: "office",
       requestId,
       origin: null,
@@ -721,7 +945,7 @@ export function createFilesService(
         const current = await authorized(actor, id, row.path, undefined, state);
         if (current.inspection.binding?.id !== row.base_id) continue;
         output.push({
-          base: { id, name: item.name, kind: item.kind, area: item.area },
+          base: { id, name: item.owner?.name ?? item.name, kind: item.kind, area: item.area, ...(item.owner ? { owner: item.owner } : {}) },
           entry: fileEntry(current.inspection.summary, current.relative, current.node),
           markedAt: row.marked_at.toISOString(),
         });
@@ -944,7 +1168,13 @@ export function createFilesService(
           },
         )
       : 0;
-    return { activityChecked, activityPurged };
+    const shareAccess = config
+      ? await maintainShareAccess({ now: input.now, retentionDays: config.activityRetentionDays }).catch((error: unknown) => {
+          maintenanceLog.error("Public link access retention failed", { error });
+          return { rolledUp: 0, purged: 0 };
+        })
+      : { rolledUp: 0, purged: 0 };
+    return { activityChecked, activityPurged, shareAccessRolledUp: shareAccess.rolledUp, shareAccessPurged: shareAccess.purged };
   }
   const sharing = createSharingService<Awaited<ReturnType<typeof authorized>>>({
     authorized,
@@ -953,8 +1183,50 @@ export function createFilesService(
     requireAdmin,
     ownershipFor,
     validateUploadTarget: (current, path) => checkUploadTarget({ ...current, relative: path, name: path.split("/").at(-1)! }),
-    actorUserId: async (actor) => (await deps.identities.self(actor)).user.id,
-    creatorActor: async (id) => {
+    actorUserId: async (actor) => (await context(actor)).self.user.id,
+    shareAuthority: async (actor, current, path) => {
+      if (current.inspection.candidate.storage) await checkStorage(actor, current.inspection.candidate.storage, path, "admin");
+    },
+    archiveTicket: async (actor, current, shareId, lease) => {
+      const binding = current.inspection.candidate.storage;
+      if (!binding) return lease.url;
+      const share = await shares.get(shareId);
+      if (!share) throw new FilesError("not_found", 404);
+      const ticket = await transferTicket(
+        actor,
+        binding,
+        share.items[0] ?? current.relative,
+        {
+          kind: "archive",
+          url: deps.connect(current.state.config).leaseTransportUrl(lease.url),
+          manifest: lease.manifest,
+          paths: share.items,
+        },
+        lease.expires,
+        shareId,
+      );
+      return `${await deps.publicOrigin()}${ticket}`;
+    },
+    guardShare: (current, actor, shareId) => ({
+      ...current,
+      root: guardedRoot(
+        current.root,
+        actor,
+        current.inspection.candidate,
+        current.state.config,
+        shareId,
+        false,
+        current.inspection.binding ?? undefined,
+      ),
+    }),
+    creatorActor: async (id, kind) => {
+      const account = kind === "service_account" ? await serviceAccounts.get({ id }) : null;
+      if (account) {
+        const actor: RequestActor = { kind: "service_account", serviceAccount: account, delegatedUser: null, scopes: ["admin"] };
+        await currentMachine(actor);
+        return actor;
+      }
+      if (kind === "service_account") throw new FilesError("not_found", 404);
       const user = await deps.userById(id);
       if (!user) throw new FilesError("not_found", 404);
       const actor: RequestActor = { kind: "user", user };
@@ -972,10 +1244,18 @@ export function createFilesService(
         ? await movable(actor, baseId, path)
         : access === "write-parent"
           ? await writableParent(actor, baseId, path)
-          : await authorized(actor, baseId, path);
+          : path === ""
+            ? await (async () => {
+                const base = await authorizedBase(actor, baseId);
+                if (!base.item.storage) return authorizedPath(base, path);
+                const node = await base.service.stat(base.item.path);
+                return { ...base, target: base.item.path, relative: "", node };
+              })()
+            : await authorized(actor, baseId, path);
     const { candidate, binding } = current.inspection;
+    const trashRoot = candidate.storage ? guardedRoot(current.root, actor, candidate, current.state.config, undefined, true) : current.root;
     return {
-      root: current.root,
+      root: trashRoot,
       rootName: candidate.root,
       serverUrl: current.state.config.url,
       basePath: candidate.path,
@@ -985,16 +1265,33 @@ export function createFilesService(
       relative: current.relative,
       node: current.node,
       check: async (target, rights) => {
+        if (candidate.storage) {
+          const relative = target === candidate.path ? "" : target.slice(candidate.path.length + 1);
+          if (!(rights & 2) && (relative === "" || relative === "trash")) {
+            const fresh = await context(actor);
+            if (!fresh.candidates.some((item) => item.storage?.id === candidate.storage!.id)) throw new FilesError("forbidden", 403);
+          } else {
+            const parentMetadata =
+              target === candidate.path ||
+              target === joinPath(candidate.path, "trash") ||
+              target === current.target ||
+              target === current.target.split("/").slice(0, -1).join("/");
+            const selected = rights & 2 && parentMetadata ? current.relative : await storageTrashPath(candidate.storage.id, relative);
+            await checkStorage(actor, candidate.storage, selected, rights & 2 ? "write" : "read");
+          }
+        }
         if (candidate.area === "freeipa") await checkUnix(current.root, target, current.state.unix, rights);
       },
       ensureTrash: async () => {
         const target = joinPath(candidate.path, "trash");
+        const root = candidate.storage ? deps.connect(current.state.config).root(candidate.root) : current.root;
+        if (candidate.storage) await checkStorage(actor, candidate.storage, current.relative, "write");
         try {
-          const node = await current.root.stat(candidate.path);
-          await current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) });
+          const node = await root.stat(candidate.path);
+          await root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) });
         } catch (error) {
           if (!(error instanceof FilegateError && error.status === 409)) throw error;
-          if (!(await current.root.stat(target)).directory) throw new FilesError("not_directory", 409);
+          if (!(await root.stat(target)).directory) throw new FilesError("not_directory", 409);
         }
         if (candidate.area === "freeipa") await checkUnix(current.root, target, current.state.unix, 3);
       },
@@ -1005,6 +1302,133 @@ export function createFilesService(
     ...lifecycle,
     ...sharing,
     ...trashLifecycle,
+    async machineStorage(call: UserFilesCall, after?: string) {
+      await requireAdmin(call.actor);
+      return listMachineStorage(after);
+    },
+    async createMachineStorage(call: UserFilesCall, input: { ownerId: string; area: Area }) {
+      await requireAdmin(call.actor);
+      const owner = await serviceAccounts.get({ id: input.ownerId });
+      if (!owner || owner.status !== "active" || (owner.kind !== "standalone" && owner.kind !== "agent"))
+        throw new FilesError("forbidden", 403);
+      if (input.area !== "cloud") throw new FilesError("identity_incomplete", 403);
+      const config = await deps.readConfiguration();
+      const issue = issueFor(config, "cloud", { localLinuxEnabled: true, freeipaEnabled: false });
+      if (issue) throw new FilesError(issue, 403);
+      const item = candidate(config, "cloud", "users", { id: owner.id, name: `machine-${owner.id}`, uid: null, gid: null });
+      const claimed = await deps.bindings.claim(item);
+      const binding = claimed.find((row) => sameBinding(row, item));
+      if (!binding || claimed.some((row) => !sameBinding(row, item))) throw new FilesError("binding_conflict", 409);
+      await sql`INSERT INTO filesv2.machine_storage(base_id,owner_id,owner_kind,owner_name,server_url) VALUES(${binding.id}::uuid,${owner.id}::uuid,${owner.kind},${owner.name},${config.url}) ON CONFLICT DO NOTHING`;
+      if ((await machineStorage.owner(binding.id)) !== owner.id) throw new FilesError("binding_conflict", 409);
+      if ((await machineStorage.server(binding.id)) !== config.url) throw new FilesError("configuration_changed", 409);
+      await provisionCandidate(config, item, (await context(call.actor)).self.user.id, owner.name);
+      await audit.record({
+        actor: filesAuditActor(call.actor),
+        action: "files.storage.create",
+        outcome: "allowed",
+        requestId: call.requestId,
+        target: { type: "filesv2.storage", id: binding.id },
+        metadata: { ...principalMetadata(call.actor), ownerId: owner.id, ownerKind: owner.kind },
+      });
+      return {
+        id: binding.id,
+        baseId: storageBaseId(binding),
+        owner: { id: owner.id, name: owner.name, kind: owner.kind },
+        area: "cloud" as const,
+        state: "active",
+      };
+    },
+    async storageGrants(call: UserFilesCall, baseId: string, after?: string) {
+      await requireAdmin(call.actor);
+      return storageGrants(baseId, after);
+    },
+    async grantStorage(
+      call: UserFilesCall,
+      baseId: string,
+      input: { path: string; principal: Principal; permission: "read" | "write" | "admin" },
+    ) {
+      await requireAdmin(call.actor);
+      const result = await grantStorage(baseId, userPath(input.path), input.principal, input.permission);
+      await audit.record({
+        actor: filesAuditActor(call.actor),
+        action: "files.storage.grant",
+        outcome: "allowed",
+        requestId: call.requestId,
+        target: { type: "filesv2.storage", id: baseId },
+        metadata: { ...principalMetadata(call.actor), accessId: result.id, permission: input.permission },
+      });
+      return result;
+    },
+    async revokeStorage(call: UserFilesCall, baseId: string, accessId: string) {
+      await requireAdmin(call.actor);
+      await revokeStorage(baseId, accessId);
+      await audit.record({
+        actor: filesAuditActor(call.actor),
+        action: "files.storage.revoke",
+        outcome: "allowed",
+        requestId: call.requestId,
+        target: { type: "filesv2.storage", id: baseId },
+        metadata: { ...principalMetadata(call.actor), accessId },
+      });
+      return { deleted: true };
+    },
+    async transfer(token: string, request: Request): Promise<Response> {
+      const { ticket, actor, payload } = await readTransferTicket(token);
+      const binding = await deps.bindings.byId(ticket.base_id);
+      if (!binding || !(await machineStorage.owner(binding.id))) throw new FilesError("forbidden", 403);
+      await checkStorage(actor, binding, ticket.path, ticket.permission, request.headers.get("x-request-id")?.slice(0, 64));
+      const current =
+        payload.kind === "upload"
+          ? await writableParent(actor, storageBaseId(binding), ticket.path)
+          : await authorized(actor, storageBaseId(binding), ticket.path);
+      if (ticket.share_id) await sharing.authorizeTransfer(ticket.share_id, actor, ticket.path);
+      for (const path of payload.paths ?? []) {
+        await authorized(actor, storageBaseId(binding), path);
+        if (ticket.share_id) await sharing.authorizeTransfer(ticket.share_id, actor, path);
+      }
+      const config = await deps.readConfiguration();
+      if (new URL(payload.url).origin !== new URL(config.url).origin) throw new FilesError("configuration_changed", 409);
+      const url = new URL(payload.url);
+      const input = new URL(request.url);
+      const allowedMethods = payload.kind === "upload" ? ["GET", "PUT", "DELETE"] : payload.kind === "archive" ? ["POST"] : ["GET", "HEAD"];
+      if (!allowedMethods.includes(request.method)) throw new FilesError("forbidden", 403);
+      if (payload.kind === "upload") {
+        for (const [key, value] of input.searchParams) {
+          if (!["segments", "after", "limit", "segment"].includes(key) || !/^-?\d+$/.test(value)) throw new FilesError("invalid_path", 400);
+          url.searchParams.set(key, value);
+        }
+      }
+      const headers = new Headers();
+      for (const key of ["range", "if-range", "content-type", "content-length"]) {
+        const value = request.headers.get(key);
+        if (value) headers.set(key, value);
+      }
+      let body: BodyInit | null = request.method === "PUT" ? request.body : null;
+      if (payload.kind === "archive") {
+        body = new URLSearchParams({ manifest: payload.manifest! });
+        headers.delete("content-length");
+        headers.set("content-type", "application/x-www-form-urlencoded");
+      }
+      void current;
+      const response = await deps.transfer(url, { method: request.method, headers, body, signal: request.signal, redirect: "error" });
+      const safeHeaders = new Headers();
+      for (const key of [
+        "content-type",
+        "content-length",
+        "content-range",
+        "content-disposition",
+        "etag",
+        "retry-after",
+        "accept-ranges",
+      ]) {
+        const value = response.headers.get(key);
+        if (value) safeHeaders.set(key, value);
+      }
+      safeHeaders.set("cache-control", "no-store");
+      safeHeaders.set("referrer-policy", "no-referrer");
+      return new Response(response.body, { status: response.status, headers: safeHeaders });
+    },
     provisionUserHome: homes.ensure,
     reconcileUserHomes: homes.reconcile,
     async adminHomeProvisioning(call: UserFilesCall, input: z.infer<typeof HomeProvisioningQuerySchema>) {
@@ -1037,16 +1461,17 @@ export function createFilesService(
         const issue = issueFor(state.config, area, state.self.availability);
         if (issue) {
           output.issues.push({ area, code: issue });
-          continue;
+          if (issue !== "local_linux_disabled") continue;
         }
         try {
           const root = deps.connect(state.config).root(state.config[area].root);
           const info = await root.info();
           for (const item of items) {
-            let entry = await inspect(root, item, info, state.config.url);
-            if (entry.summary.status === "missing" && area === "cloud" && state.config.cloud.autoCreate) {
+            if (issue === "local_linux_disabled" && !item.storage) continue;
+            let entry = await inspect(root, item, info, state.config.url, actor, false, call);
+            if (!item.storage && entry.summary.status === "missing" && area === "cloud" && state.config.cloud.autoCreate) {
               await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
-              entry = await inspect(root, item, info, state.config.url);
+              entry = await inspect(root, item, info, state.config.url, actor, false, call);
             }
             if (entry.summary.status === "existing" && area === "freeipa") {
               try {
@@ -1070,10 +1495,15 @@ export function createFilesService(
      * Name and kind of every base the actor may address, for labels such as approval reviews. Unlike `bases`, this
      * never asks storage and never provisions a base; access is still decided where the base is used.
      */
-    async baseNames(call: UserFilesCall): Promise<{ id: string; name: string; kind: BaseKind }[]> {
+    async baseNames(call: UserFilesCall): Promise<Pick<BaseSummary, "id" | "name" | "kind" | "owner">[]> {
       const actor = call.actor;
       const state = await context(actor);
-      return state.candidates.map((item) => ({ id: `${item.area}:${item.kind}:${item.identity_id}`, name: item.name, kind: item.kind }));
+      return state.candidates.map((item) => ({
+        id: `${item.area}:${item.kind}:${item.identity_id}`,
+        name: item.owner?.name ?? item.name,
+        kind: item.kind,
+        ...(item.owner ? { owner: item.owner } : {}),
+      }));
     },
     async list(call: UserFilesCall, input: { baseId: string; path?: string } & BrowseInput): Promise<DirectoryResult> {
       const actor = call.actor;
@@ -1104,43 +1534,69 @@ export function createFilesService(
     },
     async search(
       call: UserFilesCall,
-      input: { baseId: string; path?: string; q: string; scope?: "folder" | "tree" } & BrowseInput,
+      input: { baseId: string; path?: string; after?: string; signal?: AbortSignal } & Partial<SearchQuery>,
     ): Promise<SearchResult> {
       const actor = call.actor;
       const current = await authorized(actor, input.baseId, input.path ?? "", true);
-      let page: { items: Node[]; next: string | null };
-      try {
-        page = await browsePage(
-          input,
-          JSON.stringify([current.inspection.summary.locationKey, current.target, input.q, input.scope ?? "tree"]),
-          (options) =>
-            current.root.search(input.q, {
+      const q = input.q?.trim() ?? "";
+      const scope = input.scope ?? "tree";
+      const within = input.in ?? "path";
+      const sort = searchSort({ q, sort: input.sort });
+      const options = {
+        match: input.match ?? "fuzzy",
+        in: within,
+        ext: input.ext,
+        minSize: input.minSize,
+        maxSize: input.maxSize,
+        modifiedAfter: input.modifiedAfter,
+        modifiedBefore: input.modifiedBefore,
+        path: current.target,
+        maxEntries: SEARCH_SCAN_LIMIT,
+      };
+      if (!q && !hasSearchFilters(options) && (input.type ?? "all") === "all") throw new FilesError("invalid_input");
+      const basePath = current.inspection.candidate.path;
+      // Files hides the base's trash, unreadable FreeIPA entries and, for one folder, deeper hits: only a plain subtree total stays exact.
+      const countable = scope === "tree" && current.inspection.candidate.area === "cloud";
+      const trashInside = current.target === basePath;
+      const page = await browsePage(
+        { ...input, sort },
+        JSON.stringify([current.inspection.summary.locationKey, current.target, q, scope, options]),
+        async (paging) => {
+          const found = await searchPage(current.root, q, { ...options, ...paging, signal: input.signal });
+          let total = countable ? (found.total ?? null) : null;
+          if (total !== null && trashInside && !paging.after) {
+            const hidden = await trashHits(current.root, q, {
               ...options,
-              path: current.target,
-              maxEntries: SEARCH_SCAN_LIMIT,
-            }),
-        );
-      } catch (error) {
-        if (error instanceof FilegateError && error.status === 413) throw new FilesError("search_limited");
-        throw error;
-      }
-      const items: FileEntry[] = [];
-      for (const node of page.items) {
+              ...paging,
+              path: joinPath(basePath, "trash"),
+              signal: input.signal,
+            });
+            total = hidden === null ? null : Math.max(0, total - hidden);
+          }
+          const items = found.items.map((node, index) => ({ node, ranges: found.matches?.[index] }));
+          return { items, next: found.next, total, truncated: !!found.truncated };
+        },
+      );
+      const items: SearchHit[] = [];
+      for (const { node, ranges } of page.items) {
         if (!node.path.startsWith(`${current.target}/`)) continue;
-        const relative = node.path.slice(current.inspection.candidate.path.length + 1);
+        const relative = node.path.slice(basePath.length + 1);
         if (relative.split("/")[0] === "trash") continue;
-        if (input.scope === "folder" && node.path.slice(current.target.length + 1).includes("/")) continue;
+        const below = node.path.slice(current.target.length + 1);
+        if (scope === "folder" && below.includes("/")) continue;
         const actions = await entryActions(current, node, node.path);
         if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
-        items.push({ ...fileEntry(current.inspection.summary, relative, node), actions });
+        items.push({ ...fileEntry(current.inspection.summary, relative, node), actions, highlight: highlight(below, ranges, within) });
       }
       return {
         base: current.inspection.summary,
         path: current.relative,
-        query: input.q,
-        scope: input.scope ?? "tree",
+        query: q,
+        scope,
         items,
         next: page.next ?? null,
+        total: page.total,
+        truncated: page.truncated,
         readme: await folderReadme(current),
       };
     },
@@ -1182,9 +1638,11 @@ export function createFilesService(
      */
     async publiclyShared(call: UserFilesCall, baseId: string, path: string): Promise<boolean> {
       const actor = call.actor;
-      const binding = (await authorizedBase(actor, baseId)).inspection.binding;
+      const current = await authorizedBase(actor, baseId);
+      const binding = current.inspection.binding;
       if (!binding) return false;
       const relative = userPath(path);
+      if (current.item.storage) await checkStorage(actor, current.item.storage, relative, "read", call.requestId);
       const within = (inner: string, outer: string) => outer === "" || inner === outer || inner.startsWith(`${outer}/`);
       return (await shares.activeDownloadItems(binding.id)).some((items) =>
         items.some((item) => within(relative, item) || within(item, relative)),
@@ -1262,6 +1720,12 @@ export function createFilesService(
         }
       }
       return { base, results };
+    },
+    /** Read-only validation for an upload approval; opening a session remains a separate effect. */
+    async uploadTarget(call: UserFilesCall, input: { baseId: string; path: string }) {
+      const current = await writableParent(call.actor, input.baseId, input.path);
+      await checkUploadTarget(current);
+      return current.inspection.summary;
     },
     async upload(
       call: UserFilesCall,
@@ -1491,7 +1955,11 @@ export function createFilesService(
         items.push({ root: current.inspection.candidate.root, path: current.target, archivePath: current.relative });
       }
       const lease = await client.archiveLease(items, 300);
-      return { url: lease.url, method: "POST", expires: lease.expires, manifest: lease.manifest };
+      const machineBase = state.candidates.find((item) => item.storage && storageBaseId(item.storage) === input.baseId)?.storage;
+      const url = machineBase
+        ? `${await deps.publicOrigin()}${await transferTicket(actor, machineBase, input.paths[0]!, { kind: "archive", url: client.leaseTransportUrl(lease.url), manifest: lease.manifest, paths: normalizeSelection(input.paths) }, lease.expires)}`
+        : lease.url;
+      return { url, method: "POST", expires: lease.expires, manifest: lease.manifest };
     },
     async versions(call: UserFilesCall, input: { baseId: string; path: string }): Promise<FileVersion[]> {
       const actor = call.actor;
@@ -1669,7 +2137,23 @@ export function createFilesService(
         base: current.inspection.summary,
         entry: fileEntry(current.inspection.summary, current.relative, current.node),
         action: withWopiSrc(action, wopiSrc),
-        token: signEditorToken({ userId: current.state.self.user.id, baseId: input.baseId, path: current.relative, expiresAt }),
+        token: signEditorToken({
+          userId: actor.kind === "service_account" ? actor.serviceAccount.id : current.state.self.user.id,
+          baseId: input.baseId,
+          path: current.relative,
+          expiresAt,
+          ...(actor.kind === "service_account"
+            ? {
+                machine: {
+                  scopes: actor.scopes,
+                  credentialId: actor.credentialId ?? null,
+                  oauthClientId: actor.oauthClientId ?? null,
+                  credentialExpiresAt: actor.credentialExpiresAt ?? null,
+                  delegatedUserId: actor.delegatedUser?.id ?? null,
+                },
+              }
+            : {}),
+        }),
         tokenTtl: expiresAt,
         canWrite: current.canWrite,
         managed: current.info.managed,
@@ -1715,15 +2199,20 @@ export function createFilesService(
     },
     async editorFileInfo(token: string, id: string, requestId: string | null = null) {
       const current = await wopiFile(token, id, requestId);
-      const user = current.actor.user;
+      const identity =
+        current.actor.kind === "user"
+          ? { id: current.actor.user.id, name: current.actor.user.displayName || current.actor.user.uid }
+          : current.actor.delegatedUser
+            ? { id: current.actor.delegatedUser.id, name: current.actor.delegatedUser.displayName || current.actor.delegatedUser.uid }
+            : { id: current.actor.serviceAccount.id, name: current.actor.serviceAccount.name };
       const modified = wopiTimestamp(current.node.modified);
       if (!modified) throw new FilesError("unavailable", 503);
       return {
         BaseFileName: current.relative.split("/").at(-1)!,
         Size: current.node.size,
         OwnerId: current.inspection.summary.id,
-        UserId: user.id,
-        UserFriendlyName: user.displayName || user.uid,
+        UserId: identity.id,
+        UserFriendlyName: identity.name,
         UserCanWrite: current.canWrite,
         UserCanNotWriteRelative: true,
         LastModifiedTime: modified,
@@ -1823,17 +2312,17 @@ export function createFilesService(
     },
     async recent(call: UserFilesCall): Promise<MarkedEntry[]> {
       const actor = call.actor;
-      const self = await deps.identities.self(actor);
+      const { self } = await context(actor);
       return markedEntries(actor, await recent.list(self.user.id));
     },
     async favorites(call: UserFilesCall): Promise<MarkedEntry[]> {
       const actor = call.actor;
-      const self = await deps.identities.self(actor);
+      const { self } = await context(actor);
       return markedEntries(actor, await favorites.list(self.user.id));
     },
     async setFavorite(call: UserFilesCall, input: { baseId: string; path: string; favorite: boolean }): Promise<{ favorite: boolean }> {
       const actor = call.actor;
-      const self = await deps.identities.self(actor);
+      const { self } = await context(actor);
       const path = userPath(input.path);
       if (!path) throw new FilesError("invalid_path");
       if (!input.favorite) {
@@ -1865,6 +2354,7 @@ export function createFilesService(
       const actor = call.actor;
       const current = await located(actor, input.id, false);
       if (markdownRevision(current.node) !== input.revision) throw new FilesError("write_conflict", 409);
+      if (current.inspection.candidate.storage) return current.root.contentRaw(current.target, signal);
       const lease = await current.root.directDownload(current.target, { expiresIn: 60 });
       return deps.connect(current.state.config).downloadRaw(lease, signal);
     },
@@ -1906,10 +2396,17 @@ export function createFilesService(
           return { base: current.inspection.summary, entry: uploadResult(current, row, committed) };
         }
         if (!session.url) throw new FilesError("receipt_unknown", 409);
+        const transportUrl = current.inspection.candidate.storage
+          ? (await readTransferTicket(new URL(session.url).pathname.split("/").at(-1)!)).payload.url
+          : session.url;
         const direct = deps
           .connect(current.state.config)
-          .directSession({ url: session.url, expires: session.expires, operations: ["write"] });
-        await uploadStreamChunks(body, row.size, session.chunkSize, (index, chunk) => direct.put(index, new Blob([chunk]), signal));
+          .directSession({ url: transportUrl, expires: session.expires, operations: ["write"] });
+        await uploadStreamChunks(body, row.size, session.chunkSize, async (index, chunk) => {
+          if (current.inspection.candidate.storage)
+            await checkStorage(actor, current.inspection.candidate.storage, row.path, "write", call.requestId);
+          return direct.put(index, new Blob([chunk]), signal);
+        });
         signal.throwIfAborted();
         // A disconnected client stops waiting at once and frees its upload slot.
         return publish(
@@ -1946,15 +2443,17 @@ export function createFilesService(
       const current = await authorized(actor, input.baseId, input.path, false);
       const name = current.relative.split("/").at(-1)!;
       if (!isPdfName(name)) throw new FilesError("not_pdf");
-      const lease = await current.root.directDownload(current.target, { expiresIn: 60 });
-      const response = await deps.connect(current.state.config).downloadRaw(lease, signal);
+      const response = current.inspection.candidate.storage
+        ? await current.root.contentRaw(current.target, signal)
+        : await deps
+            .connect(current.state.config)
+            .downloadRaw(await current.root.directDownload(current.target, { expiresIn: 60 }), signal);
       return { name, length: response.headers.get("content-length"), body: await pdfBody(response) };
     },
     async saveConfiguration(call: UserFilesCall, input: ConfigurationInput) {
       const actor = call.actor;
       const self = await requireAdmin(actor);
       validateConfiguration(input);
-      if (input.cloud.enabled && !self.availability.localLinuxEnabled) throw new FilesError("local_linux_disabled");
       if (input.freeipa.enabled && !self.availability.freeipaEnabled) throw new FilesError("freeipa_disabled");
       const current = await deps.readConfiguration();
       if (current.unreadable && !input.token) throw new FilesError("configuration_unreadable", 409);
@@ -1976,12 +2475,12 @@ export function createFilesService(
             if (!node.directory) throw new FilesError("not_directory");
           }
       }
-      await deps.writeConfiguration(input);
+      await deps.writeConfiguration(input, call);
     },
     async resetConfiguration(call: UserFilesCall): Promise<void> {
       const actor = call.actor;
       await requireAdmin(actor);
-      await deps.resetConfiguration();
+      await deps.resetConfiguration(call);
     },
     async admin(
       call: UserFilesCall,
@@ -2083,7 +2582,7 @@ export function createFilesService(
           status = "conflict";
           reason = "ownership_mismatch";
         } else if (knownCandidate) {
-          const checked = await inspect(root, knownCandidate, info, config.url);
+          const checked = await inspect(root, knownCandidate, info, config.url, actor, false, call);
           status = checked.summary.status;
           reason = checked.summary.reason;
         } else if (node && proof.state === "present") {
@@ -2199,6 +2698,11 @@ export function createFilesService(
                   ? writeFilesystemCursor(page.next)
                   : null
                 : writeFilesystemCursor(after, index + 1);
+            const bound = await deps.bindings.path(root.name, node.path);
+            if (bound && (await machineStorage.owner(bound.id))) {
+              cursor = nextCursor;
+              continue;
+            }
             if (!matchesSearch(name, node.path, null)) {
               cursor = nextCursor;
               continue;
@@ -2261,7 +2765,7 @@ export function createFilesService(
           : { id: identity.id, name: identity.name, uid: null, gid: identity.gidNumber },
       );
       const root = deps.connect(config).root(item.root);
-      const result = await inspect(root, item, await root.info(), config.url, true);
+      const result = await inspect(root, item, await root.info(), config.url, actor, true, call);
       if (result.summary.status !== "existing") throw new FilesError(result.summary.reason ?? "binding_conflict", 409);
       return result.summary;
     },

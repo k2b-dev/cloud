@@ -43,7 +43,7 @@ describe("PrincipalInput", () => {
     );
 
     expect(html).toContain("k2b-choice-trigger");
-    expect(html).toContain("Select a user or group");
+    expect(html).toContain("Select a user, group, or service account");
     expect(html).toContain(">Users</button>");
     expect(html).toContain(">Groups</button>");
     expect(html).not.toContain("k2b-multi-select-trigger");
@@ -62,7 +62,7 @@ describe("PrincipalInput", () => {
 
     expect(html).toContain("Approver group");
     expect(html).toContain("Select a group");
-    expect(html).not.toContain("Select a user or group");
+    expect(html).not.toContain("Select a user, group, or service account");
     expect(html).not.toContain('role="radiogroup"');
   });
 
@@ -81,9 +81,9 @@ describe("PrincipalInput", () => {
       }),
     );
 
-    expect(html).toContain("Person oder Gruppe auswählen");
+    expect(html).toContain("Person, Gruppe oder Dienstkonto auswählen");
     expect(html).toContain(">Personen</button>");
     expect(html).toContain(">Gruppen</button>");
-    expect(html).toContain('aria-label="Personen und Gruppen filtern"');
+    expect(html).toContain('aria-label="Personen, Gruppen und Dienstkonten filtern"');
   });
 });

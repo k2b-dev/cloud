@@ -106,7 +106,7 @@ Um mehrere Unterhaltungen zu bearbeiten, wähle ihre Kontrollkästchen aus. Halt
 - **Teilergebnis:** Kann Mail nur einige Befehle einreihen, bleiben die fehlgeschlagenen Unterhaltungen ausgewählt, und Mail meldet jeden Fehler.
 :::
 
-Wähle **Zuweisen**, um die zugewiesenen Personen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, die zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
+Wähle **Zuweisen**, um die Zuständigen der ausgewählten Unterhaltungen zu ändern. Wähle **Mir zuweisen**, **Mich entfernen** oder **Alle Zuweisungen entfernen**, oder suche eine Person, einen Agenten oder ein eigenständiges Dienstkonto, das zugewiesen werden kann. Eine Person, die du hinzufügst, kommt zu den anderen zugewiesenen Personen dazu und erhält eine einzige Benachrichtigung für die ganze Auswahl. Mail bestätigt, wie viele Unterhaltungen sich geändert haben, und bietet **Rückgängig** an. **Rückgängig** macht die Änderung nur in den Unterhaltungen rückgängig, die sie geändert hat. **Alle Zuweisungen entfernen** bietet kein **Rückgängig**. Gehört eine Unterhaltung nicht mehr zum Postfach, nennt Mail, wie viele Unterhaltungen sich nicht geändert haben.
 
 ### Von Handlungsbedarf aus arbeiten
 
@@ -194,7 +194,7 @@ Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachric
 - In einer Unterhaltung öffnest du **Weitere Unterhaltungsaktionen** oder mit einem Rechtsklick das Menü der Unterhaltung. Wähle **Cloud-ID der Unterhaltung kopieren**.
 - Bei einer Nachricht öffnest du **Nachrichtenaktionen** oder mit einem Rechtsklick das Menü der Nachricht. Wähle **Cloud-ID der Nachricht kopieren**. Dasselbe Menü hat auch **Cloud-ID der Unterhaltung kopieren**.
 - In der Liste haben die Aktionen einer Zeile **Cloud-ID der Unterhaltung kopieren**.
-- In den **Unterhaltungsdetails** nutzt du den ID-Knopf im Kopf für die Unterhaltung oder **Cloud-ID der Nachricht kopieren** unter **E-Mail-Details** für die neueste Nachricht.
+- In den **Unterhaltungsdetails** wählst du im Kopf **…** und dann **Cloud-ID der Unterhaltung kopieren**. Für die neueste Nachricht wählst du unter **Mehr zu dieser Unterhaltung** › **Technische Details** den Eintrag **Cloud-ID der Nachricht kopieren**.
 
 Mail bestätigt das Kopieren. Füge die Cloud-ID in der anderen App ein. Sie ist ein Link wie `https://cloud.example.com/open/mail.message/~Ab12Cd` und öffnet die Mail. Die Cloud-ID gibt keinen Zugriff: Die andere App zeigt die Mail nur Personen, die sie auch in Mail öffnen dürfen.
 
@@ -216,7 +216,7 @@ Nur Cloud-Admins können den Schutz aufheben. Das gilt auch für Personen, die d
 
 ## Eine einzelne Nachricht untersuchen {icon="file-search"}
 
-Wenn du technische Angaben zu einer Nachricht brauchst, öffne die **Unterhaltungsdetails**. Klappe **E-Mail-Details** auf und wähle **Header** oder **Quelltext**. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
+Wenn du technische Angaben zu einer Nachricht brauchst, öffne die **Unterhaltungsdetails**. Klappe unter **Mehr zu dieser Unterhaltung** die **Technischen Details** auf und wähle **Header** oder **Quelltext**. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
 
 - **Übersicht** zeigt Nachrichten-IDs, Ablage beim Anbieter, Standardmarkierungen, Anbieter-Schlüsselwörter, MIME-Teile, Anhänge, Synchronisierungsstatus und Warnungen beim Auswerten.
 - **Spamdiagnose** zeigt die Spam-Header des Anbieters, falls vorhanden. Cloud berechnet oder erschließt keinen eigenen Spamwert.
@@ -323,12 +323,12 @@ Wähle die Aktion:
 
 Zum Zusammenführen wählst du das Ziel aus demselben Postfach nach Absender oder Betreff. Prüfe Quelle und Ziel in der Bestätigung und führe dann zusammen.
 
-- Das Ziel behält seinen Arbeitsstatus. Die zugewiesenen Personen beider Unterhaltungen bleiben zugewiesen. Mail führt keine Unterhaltungen zusammen, die zusammen mehr als 20 zugewiesene Personen haben.
+- Das Ziel behält seinen Arbeitsstatus. Die Zuständigen beider Unterhaltungen bleiben zugewiesen. Mail führt keine Unterhaltungen zusammen, die zusammen mehr als 20 Zuständige haben.
 - Nachrichten, Kommentare, Entwürfe, lokale Tags und Referenzen der Quelle wandern zum Ziel.
 - Persönliche Erinnerungen wandern ebenfalls. Hat jemand eine Erinnerung an beiden Unterhaltungen, behält Mail die Erinnerung am Ziel.
 - Mail entfernt die Quellunterhaltung.
 
-Das Aufteilen in der Weboberfläche wählt eine Nachricht aus. Diese Nachricht und ihre verknüpften Kommentare wandern in eine neue Unterhaltung mit denselben zugewiesenen Personen. Entwürfe, Tags, Referenzen, Erinnerungen und andere Kommentare bleiben bei der Quelle. Die Quelle behält ihre zugewiesenen Personen und ihren Arbeitsstatus. Mindestens eine Nachricht muss in der Quelle bleiben.
+Das Aufteilen in der Weboberfläche wählt eine Nachricht aus. Diese Nachricht und ihre verknüpften Kommentare wandern in eine neue Unterhaltung mit denselben Zuständigen. Entwürfe, Tags, Referenzen, Erinnerungen und andere Kommentare bleiben bei der Quelle. Die Quelle behält ihre Zuständigen und ihren Arbeitsstatus. Mindestens eine Nachricht muss in der Quelle bleiben.
 
 Mail hält Änderungen in der Aktivität der Unterhaltung fest. Ändert eine andere Person eine der beiden Unterhaltungen, bevor du bestätigst, lehnt Mail deine veraltete Änderung ab. Lade neu und prüfe sie erneut.
 

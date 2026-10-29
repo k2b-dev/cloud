@@ -151,6 +151,17 @@ describe("FieldValue helpers", () => {
       kind: "principal",
       text: "Privater Benutzer",
     });
+    expect(
+      resolveFieldDisplay({
+        field: participants,
+        value: [{ type: "service_account", id: "bot" }],
+        relationLabels: { bot: "Catalog assistant" },
+      }),
+    ).toEqual({ kind: "principal", text: "Catalog assistant" });
+    expect(resolveFieldDisplay({ field: participants, value: [{ type: "service_account", id: "hidden" }] })).toEqual({
+      kind: "principal",
+      text: "Private service account",
+    });
     expect(resolveFieldDisplay({ field: participants, value: ["Ada", "Design team"] })).toEqual({
       kind: "principal",
       text: "Ada, Design team",

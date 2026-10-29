@@ -25,6 +25,7 @@ import contentLabelChip from "./content/label-chip.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
 import contentMapView from "./content/map-view.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
+import contentMatchText from "./content/match-text.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
@@ -47,6 +48,7 @@ import inputAutocomplete from "./input/autocomplete.md" with { type: "text" };
 import inputAutocompleteSelect from "./input/autocomplete-select.md" with { type: "text" };
 import inputBoolean from "./input/boolean.md" with { type: "text" };
 import inputChoiceChips from "./input/choice-chips.md" with { type: "text" };
+import inputChoiceList from "./input/choice-list.md" with { type: "text" };
 import inputChoiceSlider from "./input/choice-slider.md" with { type: "text" };
 import inputChoiceTiles from "./input/choice-tiles.md" with { type: "text" };
 import inputColor from "./input/color.md" with { type: "text" };
@@ -117,6 +119,7 @@ const catalogContextSources = {
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
+  "input/choice-list": { file: "input/choice-list.md", content: inputChoiceList },
   "input/choice-tiles": { file: "input/choice-tiles.md", content: inputChoiceTiles },
   "input/combobox": { file: "input/combobox.md", content: inputCombobox },
   "input/color": { file: "input/color.md", content: inputColor },
@@ -186,6 +189,7 @@ const catalogContextSources = {
   "content/map-view": { file: "content/map-view.md", content: contentMapView },
   "content/kbd": { file: "content/kbd.md", content: contentKbd },
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
+  "content/match-text": { file: "content/match-text.md", content: contentMatchText },
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },

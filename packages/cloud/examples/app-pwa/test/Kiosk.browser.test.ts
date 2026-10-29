@@ -89,6 +89,32 @@ const seedPage = async (page: Page) =>
     let sequence = 1;
     Object.defineProperty(crypto, "randomUUID", { value: () => `20000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}` });
   });
+/** A camera that films a picture, as a real one does: its stream has a video track that delivers frames. */
+const filmingCamera = (page: Page) =>
+  page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 480;
+    const context = canvas.getContext("2d")!;
+    const draw = () => {
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    };
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          const stream = canvas.captureStream(20);
+          // A canvas stream sends a frame after each paint.
+          draw();
+          setInterval(draw, 50);
+          // WebKit's player can stall on a stream without a frame yet; hand it over after the paint is captured.
+          await new Promise((painted) => requestAnimationFrame(() => requestAnimationFrame(painted)));
+          return stream;
+        },
+      },
+    });
+  });
 const setup = async (width: number, query = "") => {
   const page = await browser.newPage({ viewport: { width, height: 1024 }, hasTouch: true, reducedMotion: "reduce" });
   await page.clock.install({ time: new Date("2026-10-23T10:00:00Z") });
@@ -303,9 +329,7 @@ for (const width of [390, 768])
     test("shared scanner rejects foreign QR then accepts the target app through its decode callback", async () => {
       const { page, state } = await setup(width, "unpaired=1");
       try {
-        await page.evaluate(() =>
-          Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => new MediaStream() } }),
-        );
+        await filmingCamera(page);
         await page.getByRole("button", { name: "QR scannen", exact: true }).click();
         await page.getByText("Scannen Sie den QR vom Mitarbeiterbildschirm.", { exact: true }).waitFor();
         await page.evaluate(() => window.dispatchEvent(new CustomEvent("fixture:decoded-qr", { detail: "https://evil.example/#token" })));
@@ -332,12 +356,7 @@ for (const width of [390, 768])
       const entered = Promise.withResolvers<void>();
       const delivered = Promise.withResolvers<void>();
       try {
-        await page.evaluate(() =>
-          Object.defineProperty(navigator, "mediaDevices", {
-            configurable: true,
-            value: { getUserMedia: async () => new MediaStream() },
-          }),
-        );
+        await filmingCamera(page);
         await page.route("**/fixture/snapshot", async (route) => {
           entered.resolve();
           await held.promise;

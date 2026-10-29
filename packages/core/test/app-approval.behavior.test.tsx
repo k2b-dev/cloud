@@ -124,7 +124,7 @@ describe("Cloud app approval UI", () => {
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("Enabled — setup required");
-    expect(dom.root.querySelector('a[href="/admin/settings?tab=user"]')).not.toBeNull();
+    expect(dom.root.querySelector('a[href="/admin/signin"]')).not.toBeNull();
     expect(dom.root.querySelector('a[href="/me/security/pair"]')).toBeNull();
     expect(pairStart).not.toHaveBeenCalled();
   });
@@ -144,7 +144,7 @@ describe("Cloud app approval UI", () => {
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("Your administrator still needs");
-    expect(dom.root.querySelector('a[href="/admin/settings?tab=user"]')).toBeNull();
+    expect(dom.root.querySelector('a[href="/admin/signin"]')).toBeNull();
     expect(dom.root.querySelector('a[href="/me/security/pair"]')).toBeNull();
   });
   test("installation uses the configured origin for desktop QR/copy and mobile new tabs", async () => {
@@ -216,7 +216,7 @@ describe("Cloud app approval UI", () => {
       dom.root,
     );
     expect(dom.root.textContent).toContain("App sign-in disabled");
-    expect(dom.root.querySelector('a[href="/admin/settings?tab=user"]')).not.toBeNull();
+    expect(dom.root.querySelector('a[href="/admin/signin"]')).not.toBeNull();
     expect(dom.root.querySelector('a[href="/me/security/pair"]')).toBeNull();
   });
   test("returning from identity confirmation resumes only the intended account pairing", async () => {

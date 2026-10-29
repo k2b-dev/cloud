@@ -1,4 +1,12 @@
 const messages: Record<string, [string, string]> = {
+  transfer_expired: [
+    "This transfer expired. Request a new transfer from Files.",
+    "Diese Übertragung ist abgelaufen. Fordere in Dateien eine neue Übertragung an.",
+  ],
+  machine_storage_owned: [
+    "This directory belongs to a machine account. Manage its access under Machine storage.",
+    "Dieses Verzeichnis gehört einem Maschinenkonto. Verwalte den Zugriff unter Maschinenablagen.",
+  ],
   configuration_unreadable: [
     "Files cannot read its saved configuration. Enter the Filegate token again to replace it, or reset the configuration.",
     "Dateien kann die gespeicherte Konfiguration nicht lesen. Gib den Filegate-Token erneut ein, um sie zu ersetzen, oder setze die Konfiguration zurück.",
@@ -82,8 +90,8 @@ const messages: Record<string, [string, string]> = {
   ],
 
   local_linux_disabled: [
-    "Enable local Linux identities before enabling Cloud files.",
-    "Aktiviere lokale Linux-Identitäten, bevor du Cloud-Dateien aktivierst.",
+    "Enable local Linux identities to use personal and group Cloud storage.",
+    "Aktiviere lokale Linux-Identitäten für persönliche Cloud-Ablagen und Gruppenablagen.",
   ],
   freeipa_disabled: ["Enable FreeIPA before enabling FreeIPA files.", "Aktiviere FreeIPA, bevor du FreeIPA-Dateien aktivierst."],
   invalid_configuration: ["Check the Filegate URL and storage configuration.", "Prüfe Filegate-URL und Ablagenkonfiguration."],
@@ -211,8 +219,12 @@ const messages: Record<string, [string, string]> = {
   ],
   versioning_disabled: ["Versions are not enabled for this storage.", "Für diese Ablage sind Versionen nicht aktiviert."],
   search_limited: [
-    "This folder holds too many entries to search without an index. Search within a smaller folder.",
-    "Dieser Ordner enthält zu viele Einträge für eine Suche ohne Index. Suche in einem kleineren Ordner.",
+    "This search takes too long. Search in a smaller folder, add a filter, or search exact names.",
+    "Diese Suche dauert zu lange. Suche in einem kleineren Ordner, setze einen Filter oder suche nach genauen Namen.",
+  ],
+  search_busy: [
+    "Storage is busy with other searches. Try again in a moment.",
+    "Die Ablage ist mit anderen Suchen beschäftigt. Versuche es gleich noch einmal.",
   ],
 };
 export function errorMessage(code: string, locale: string): string {

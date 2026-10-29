@@ -8,7 +8,7 @@ Use `cld notebooks` to read and write notes by ID or path, keep a notebook as a 
 
 ## Contents
 
-- [Passage comments](annotations.md)
+- [Comments on the text](comments.md)
 - [Core model](#core-model)
 - [Markdown knowledge conventions](#markdown-knowledge-conventions)
 - [Declarative summaries](#declarative-summaries)
@@ -430,7 +430,8 @@ All commands support the global options `--json`, `--profile`, `--server`, and `
 | `tags`, `backlinks`, `graph` | Tags, incoming links, link graph. |
 | `create <name>` | Empty notebook, or `--template <id>`. |
 | `templates`, `update`, `delete`, `export` | Notebook templates, settings, deletion, ZIP export. |
-| `comments list\|add\|update\|delete` | Note discussion. |
+| `comments list\|show\|add\|reply\|accept\|reject\|resolve\|…` | Comments on the text; see [comments.md](comments.md). |
+| `discussion list\|add\|update\|delete` | Page discussion of a note. |
 | `versions list\|cat\|restore` | Note history. |
 | `attachments list\|download\|delete` | Notebook files. |
 | `favorites list\|add\|remove` | Your favorite notes. |

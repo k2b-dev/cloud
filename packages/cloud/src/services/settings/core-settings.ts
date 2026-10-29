@@ -30,6 +30,76 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 ] as const;
 
 export const CORE_SETTINGS = {
+  "storage.endpoint": {
+    kind: "url",
+    label: "Garage S3 endpoint",
+    description: "Garage S3 API origin, such as https://s3.example.org.",
+    default: "",
+    presentation: {
+      translations: { de: { label: "Garage-S3-Endpunkt", description: "Origin der Garage-S3-API, etwa https://s3.example.org." } },
+    },
+  },
+  "storage.region": {
+    kind: "string",
+    label: "Signing region",
+    description: "Must match the Garage S3 region.",
+    default: "garage",
+    presentation: { translations: { de: { label: "Signaturregion", description: "Muss der S3-Region von Garage entsprechen." } } },
+  },
+  "storage.bucket": {
+    kind: "string",
+    label: "Bucket",
+    description: "One private Garage bucket for application objects; keep website mode disabled.",
+    default: "",
+    presentation: {
+      translations: {
+        de: { label: "Bucket", description: "Ein privater Garage-Bucket für App-Dateien; Website-Modus ausgeschaltet lassen." },
+      },
+    },
+  },
+  "storage.access_key_id": {
+    kind: "secret",
+    label: "Access key ID",
+    description: "Installation-wide key with read and write access to the configured bucket.",
+    default: "",
+    presentation: {
+      translations: {
+        de: {
+          label: "Access-Key-ID",
+          description: "Installationsweiter Schlüssel mit Lese- und Schreibzugriff auf den eingetragenen Bucket.",
+        },
+      },
+    },
+  },
+  "storage.secret_access_key": {
+    kind: "secret",
+    label: "Secret access key",
+    description: "Secret belonging to the installation-wide Garage key.",
+    default: "",
+    presentation: {
+      translations: {
+        de: { label: "Geheimer Zugriffsschlüssel", description: "Geheimer Teil des installationsweiten Garage-Schlüssels." },
+      },
+    },
+  },
+  "storage.max_object_bytes": {
+    kind: "number",
+    label: "Maximum object size (bytes)",
+    description: "Default 32 MiB covers 25 MB documents and 1–5 MB images. Budget memory for concurrent operations.",
+    default: 32 * 1024 ** 2,
+    min: 1,
+    max: 5 * 1024 ** 3,
+    integer: true,
+    presentation: {
+      translations: {
+        de: {
+          label: "Maximale Objektgröße (Bytes)",
+          description: "32 MiB reichen für Dokumente bis 25 MB und Bilder von 1–5 MB. Speicher für gleichzeitige Vorgänge einplanen.",
+        },
+      },
+    },
+  },
+
   "outgoing_mail.content_retention_days": {
     kind: "number",
     label: "Mail content retention (days)",
@@ -786,7 +856,7 @@ export const CORE_SETTINGS = {
     label: "Requests Per Second",
     default: 60,
     min: 1,
-    description: "Maximum API requests per second per IP address",
+    description: "Maximum API and public storage requests per second per IP address, with separate budgets",
   },
 
   // ── Command line ────────────────────────────────────────────────────────
