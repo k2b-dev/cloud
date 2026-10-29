@@ -1,3 +1,4 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { Avatar, type AvatarSize } from "@k2b/ui";
 import type { SpaceItemClaim } from "@/contracts";
 import { useSpaceMessages } from "../../../messages";
@@ -28,15 +29,12 @@ export default function ClaimAvatar(props: Props) {
       class={`inline-flex min-w-0 shrink-0 items-center gap-2 ${props.class ?? ""}`}
       title={label()}
     >
-      <Avatar
-        name={props.claim.displayName}
+      <CloudAvatar
+        username={props.claim.displayName}
         alt={label()}
-        src={
-          user() && props.claim.avatarHash
-            ? `/api/accounts/users/${encodeURIComponent(props.claim.actor.id)}/avatar?rev=${encodeURIComponent(props.claim.avatarHash)}`
-            : undefined
-        }
-        icon={user() ? undefined : "ti ti-api"}
+        userId={props.claim.actor.id}
+        avatarHash={props.claim.avatarHash}
+        kind={user() ? "user" : "service_account"}
         size={props.size ?? "xs"}
         ring="success"
       />

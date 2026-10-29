@@ -74,7 +74,9 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "bun-plugin-tailwind": "catalog:",
         "jose": "catalog:",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },
