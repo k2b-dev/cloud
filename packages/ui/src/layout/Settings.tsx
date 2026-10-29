@@ -276,3 +276,83 @@ export function SettingsPanelFooter(props: SettingsPanelFooterProps): JSX.Elemen
     </>
   );
 }
+
+export type SaveStatusState = "saved" | "draft" | "saving" | "failed" | "invalid" | "unknown" | "readonly";
+
+export type SaveStatusProps = {
+  /** What the person's values are now: saved, a draft with changes, being saved, or a problem that kept them unsaved. */
+  state: MaybeAccessor<SaveStatusState>;
+  /** Formatted time of the last save, shown with `saved`. */
+  savedAt?: MaybeAccessor<string | undefined>;
+  /** Fields to check, shown with `invalid`. Default 1. */
+  invalidCount?: MaybeAccessor<number>;
+  /** With both handlers, Discard and Save follow the status while there is something to save. */
+  onDiscard?: () => void;
+  onSave?: () => void;
+  saveLabel?: string;
+  saveDisabled?: MaybeAccessor<boolean>;
+  class?: string;
+};
+
+const SAVE_STATUS_ICON: Record<SaveStatusState, string> = {
+  saved: "ti ti-check",
+  draft: "ti ti-pencil",
+  saving: "ti ti-loader-2",
+  failed: "ti ti-alert-triangle",
+  invalid: "ti ti-alert-triangle",
+  unknown: "ti ti-help-circle",
+  readonly: "ti ti-lock",
+};
+
+/**
+ * The save status of a settings form at one fixed place, usually the head of its column. It reserves its width, so
+ * a change of state never moves the title or the buttons beside it. Problems with one field stay at that field.
+ */
+export function SaveStatus(props: SaveStatusProps): JSX.Element {
+  const settingsMessages = useSettingsMessages();
+  const state = () => read(props.state);
+  const text = () => {
+    const t = settingsMessages();
+    switch (state()) {
+      case "saved": {
+        const at = props.savedAt === undefined ? undefined : read(props.savedAt);
+        return at ? t.statusSavedAt({ time: at }) : t.statusSaved;
+      }
+      case "draft":
+        return t.statusDraft;
+      case "saving":
+        return t.saving;
+      case "failed":
+        return t.statusFailed;
+      case "invalid":
+        return t.statusInvalid({ count: props.invalidCount === undefined ? 1 : read(props.invalidCount) });
+      case "unknown":
+        return t.statusUnknown;
+      case "readonly":
+        return t.statusReadOnly;
+    }
+  };
+  const hasActions = () => Boolean(props.onSave && props.onDiscard) && state() !== "readonly";
+  const pending = () => state() === "draft" || state() === "failed" || state() === "invalid" || state() === "saving";
+  return (
+    <div class={`k2b-save-status ${props.class ?? ""}`}>
+      <span class="k2b-save-status__slot">
+        <span class="k2b-save-status__state" data-state={state()} role="status" aria-live="polite">
+          <i class={`${SAVE_STATUS_ICON[state()]}${state() === "saving" ? " k2b-spin" : ""}`} aria-hidden="true" />
+          {text()}
+        </span>
+      </span>
+      <Show when={hasActions()}>
+        <SettingsActions
+          changeCount={() => (pending() ? 1 : 0)}
+          loading={() => state() === "saving"}
+          saveDisabled={() => state() === "invalid" || Boolean(props.saveDisabled !== undefined && read(props.saveDisabled))}
+          onDiscard={props.onDiscard!}
+          onSave={props.onSave!}
+          saveLabel={props.saveLabel ?? settingsMessages().save}
+          disableWithoutChanges
+        />
+      </Show>
+    </div>
+  );
+}

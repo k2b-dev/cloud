@@ -117,6 +117,10 @@ for bounded machine-recipient queries; it accepts an ID or Bun SQL fragment.
 See [Resource authorization](/en/docs/identity/authorization#resolve-the-callers-group-ids)
 and [named recipients](/en/docs/identity/authorization#create-and-change-grants)
 for the permission, directory, binding, and audience boundaries.
+`isRequestCredentialCurrent(c, { oauthAudience })` rechecks the credential that
+admitted a continuing request. It does not replace resource authorization.
+See [Studio machine execution](/en/docs/identity/studio-machine-execution#call-the-api)
+for its use alongside effect checks.
 
 See [Server APIs](/en/docs/server) for the request path.
 

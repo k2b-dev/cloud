@@ -276,7 +276,7 @@ describe("Approvals", () => {
   test("shows the empty state, and loads without a server page", async () => {
     const view = await mount({}, () => Response.json(page([], { elsewhere: 2 })));
     try {
-      await waitFor(() => view.dom.root.textContent?.includes("Nothing is waiting for you.") === true, "the empty state");
+      await waitFor(() => view.dom.root.textContent?.includes("You're all set.") === true, "the empty state");
       expect(view.requests[0]?.url).toBe("/api/approvals?app=assistant");
       expect(view.dom.root.textContent).toContain("More approvals in other apps (2)");
       expect(view.dom.root.querySelector('a[href="/me/approvals"]')).not.toBeNull();

@@ -5,10 +5,36 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Deprecations and migrations
+
+## Observability is one administration area with new addresses
+
+**Administration → Observability** is now one area: the sidebar shows one
+entry, and the area lists its sections in a first column. Gateway apps and
+routes, NATS and Sync, alerts, the health check and retention are sections of
+it. Several addresses changed; the old ones return `404` and do not redirect:
+
+| Before | Now |
+| --- | --- |
+| `/admin/gateway`, `/admin/gateway/apps` | `/admin/observability/gateway` |
+| `/admin/gateway/routes` | `/admin/observability/gateway/routes` |
+| `/admin/observability/redis` | `/admin/observability/valkey` |
+| `/admin/observability/notifications` | `/admin/observability/deliveries` |
+| `/admin/observability/sync` | `/admin/observability/nats/sync` |
+| `/admin/observability/data` | `/admin/observability/postgres` |
+
+The health check schedule and the retention of logs and request data moved out
+of dialogs into **Health check** (`/admin/observability/health-check`) and
+**Retention** (`/admin/observability/retention`). A log entry opens beside the
+list at `/admin/observability/logs?entry=<id>`.
+
+Operators: no migration is needed. Update bookmarks and links in your own
+runbooks. Applications can contribute links to the area with
+`adminNav[].section: "observability"`; see
+[Add administration pages](/en/docs/build/define-app#add-administration-pages).
 
 ## Only Cloud administrators stop keeping Mail conversations
 
@@ -1641,7 +1667,7 @@ removes them after verifying Files:
   choose **Clean up**. The cleanup removes every stored key that no running
   application registers, not only `files.*`, so first check that the list holds
   nothing you still need.
-- the offline `files` registration: in `/admin/gateway/apps`, choose
+- the offline `files` registration: in `/admin/observability/gateway`, choose
   **Remove offline app** for Files (legacy).
 
 Once Files serves every directory you still need, stop the Filegate v2 daemon
