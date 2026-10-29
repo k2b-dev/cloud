@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.35.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.34.0...npm-ui-v0.35.0) (2026-10-29)
+
+
+### Features
+
+* **filesv2:** search with typos, folder names, relevance and filters ([#1984](https://github.com/k2b-dev/cloud/issues/1984)) ([628e024](https://github.com/k2b-dev/cloud/commit/628e024ce8fead105b9eeca5f1644d3d895d7de1))
+* **notebooks:** edit tables directly with the shared text editor ([#1737](https://github.com/k2b-dev/cloud/issues/1737)) ([11ee4f6](https://github.com/k2b-dev/cloud/commit/11ee4f65f176cc2a3646c18a0846dca29e3b7d40)), closes [#1762](https://github.com/k2b-dev/cloud/issues/1762)
+
+
+### Bug Fixes
+
+* **test:** every browser test page answers the shell's capability catalog read ([#2080](https://github.com/k2b-dev/cloud/issues/2080)) ([0fd10db](https://github.com/k2b-dev/cloud/commit/0fd10db4d1ddd0489b84061ae8a09d65151d814f))
+* **ui:** hints let the pointer through, so the row under one gets its hover at once ([#2089](https://github.com/k2b-dev/cloud/issues/2089)) ([6138dcb](https://github.com/k2b-dev/cloud/commit/6138dcb007c0b234528affe77c5cdcfc306a02c5))
+
 ## [0.34.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.33.0...npm-ui-v0.34.0) (2026-10-29)
 
 
