@@ -50,9 +50,16 @@ export type AppAdminNavigationLink = {
   icon: string;
 };
 
+/** Platform admin areas an app can contribute to with `adminNav[].section`. */
+export const APP_ADMIN_AREAS = ["ai", "observability"] as const;
+export type AppAdminArea = (typeof APP_ADMIN_AREAS)[number];
+
 export type AppAdminNavigationGroup = {
-  /** Contribute links to the platform AI section instead of a separate group. */
-  section?: "ai";
+  /**
+   * Contribute links to a platform admin area instead of a separate group. The admin sidebar shows the area as one
+   * entry; the owner renders the area's columns itself. `"ai"` is the AI area, `"observability"` the Observability area.
+   */
+  section?: AppAdminArea;
   /** Stable key used only to localize this presentation group. */
   id?: string;
   label: string;
@@ -182,9 +189,9 @@ export type AppMeta = {
 
 /**
  * Response of an app's `nav.badge` route: how many items wait for the signed-in
- * person. A positive safe integer shows a count on the app's icon in the rail
- * and the app grid (above 99 as "99+"); `0`, a non-200 response, or anything
- * else shows none.
+ * person. A positive safe integer shows a count on the app's icon in the rail,
+ * the phone bar, and the app grid (above 99 as "99+"); `0`, a non-200
+ * response, or anything else shows none.
  */
 export type AppNavBadge = { count: number };
 

@@ -229,6 +229,13 @@ subtree calls in tests, browser suites, and browser harnesses, or a leading
 `// animation-settle: all timelines` comment (optionally followed by a reason)
 for deliberate inspection of all timelines.
 
+Every enhanced link starts a document view transition. While one is active,
+WebKit sends pointer input to `<html>`, so a click is lost, and the transition
+can stay active after its own animations ended, so `settled()` may return
+before it. After a navigation, a test awaits `viewTransitionEnded(page)` from
+`packages/ui/test/browser.ts` before its next click or Back. See the Info and
+thread tests in `packages/chat/src/frontend`.
+
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
 condition. `settled()` waits for fonts, for the running finite animations on
@@ -421,7 +428,8 @@ See the tray Undo test in
 
 Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
 and assert `expect(errors).toEqual([])`; new tests do not register a
-`pageerror` listener of their own. While a page waits for its next document,
+`pageerror` listener of their own. The `page-errors` check enforces this rule;
+its baseline lists older suites that still have their own listener. While a page waits for its next document,
 WebKit refuses every load that the page starts, such as a stream that opens
 again after the navigation cancelled it. It logs the refusal as
 `Fetch API cannot load <url> due to access control checks.`, also for a

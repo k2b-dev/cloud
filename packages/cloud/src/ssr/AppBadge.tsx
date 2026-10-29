@@ -18,6 +18,20 @@ export const useAppBadgeDescription = (input: () => { endpoint?: string; appId?:
  * takes layout space, so appearing, growing to "99+", or clearing moves
  * nothing. Decorative: the link carries the description.
  */
+/**
+ * The count on a phone bar item: the rail's count, laid over the tab icon's corner, and its description for screen
+ * readers after the item's label.
+ */
+export function TabBarAppBadge(props: { endpoint?: string; appId?: string }) {
+  const description = useAppBadgeDescription(() => props);
+  return (
+    <Show when={description()}>
+      <AppBadge endpoint={props.endpoint} appId={props.appId} />
+      <span class="sr-only">, {description()}</span>
+    </Show>
+  );
+}
+
 export function AppBadge(props: { endpoint?: string; appId?: string }) {
   const count = () => appBadgeCount(props);
   return (

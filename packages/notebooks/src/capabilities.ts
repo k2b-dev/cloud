@@ -571,6 +571,11 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
   const result = {
     data: {
       ...mapNote(note, resolved.data.notebook.shortId, await resolveParentShortId(note)),
+      container: {
+        ref: { type: "notebooks.notebook" as const, id: resolved.data.notebook.shortId },
+        name: resolved.data.notebook.name.slice(0, 200),
+        permission: resolved.data.permission,
+      },
       content: content.slice(input.contentOffset, end),
       contentOffset: input.contentOffset,
       contentLength: content.length,
@@ -584,7 +589,13 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
       blocksTruncated: blocks.length > 500,
     },
     summary: t.readNote({ title: note.title }),
-    refs: [noteRef(note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
+    refs: [
+      {
+        ...noteRef(note, resolved.data.notebook.name),
+        context: t.noteInNotebook({ notebook: resolved.data.notebook.name }).replace(/\s+/g, " ").trim().slice(0, 200),
+      },
+      notebookRef(resolved.data.notebook),
+    ],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, note) }],
   };
   while (notebookEnvelopeBytes(result) > ENVELOPE_DATA_BUDGET) {
@@ -1114,6 +1125,7 @@ export const notebooksCapabilities = defineCapabilities({
       title: "Note",
       description: "A Markdown note in an accessible notebook.",
       icon: "ti ti-file-text",
+      color: "violet",
       reader: "note.read",
       pages: ["/app/notebooks/:notebook/notes/:id"],
     },

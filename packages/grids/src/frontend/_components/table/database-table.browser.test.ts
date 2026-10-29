@@ -7,7 +7,7 @@ import { browserName } from "../../../../../ui/test/browser";
 if (process.env.GRIDS_TABLE_BROWSER_CHILD === "1") {
   await import("./database-table.browser-suite");
 } else {
-  test(`the Grids table fits beside Detail in ${browserName}`, async () => {
+  test(`the Grids table and card views pass in ${browserName}`, async () => {
     const child = Bun.spawn([process.execPath, "test", import.meta.path], {
       cwd: resolve(import.meta.dir, "../../../../../.."),
       env: { ...process.env, GRIDS_TABLE_BROWSER_CHILD: "1" },

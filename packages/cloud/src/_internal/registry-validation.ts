@@ -1,4 +1,5 @@
 import { CLOUD_CLI_MODULE_NAME } from "../cli/plugin";
+import { APP_ADMIN_AREAS } from "../contracts/app";
 import { AppAccessRuleSchema } from "../contracts/app-access";
 import { validateInstallable } from "../contracts/installable";
 import { PlatformPermissionSchema } from "../contracts/outgoing-mail";
@@ -103,7 +104,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
         (group) =>
           !isRecord(group) ||
           (group.id !== undefined && !isString(group.id)) ||
-          (group.section !== undefined && group.section !== "ai") ||
+          (group.section !== undefined && !(APP_ADMIN_AREAS as readonly unknown[]).includes(group.section)) ||
           !isString(group.label) ||
           !Array.isArray(group.links) ||
           group.links.some((link) => !isRecord(link) || !isString(link.label) || !isString(link.href) || !isString(link.icon)),

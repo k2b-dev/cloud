@@ -21,7 +21,6 @@ import {
   EventCreateInputSchema,
   EventListDataSchema,
   EventUpdateInputSchema,
-  ItemDataSchema,
   SpaceBrowseDataSchema,
   SpaceDetailDataSchema,
   SpaceListInputSchema,
@@ -442,7 +441,7 @@ test("item.read and reaction actions bound reactor names within the result budge
 });
 
 test("item.read of a fully populated task keeps reaction counts within the result budget", async () => {
-  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space, "get").mockResolvedValue({ ...space, name: "\u0001".repeat(100) });
   spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
   const escaped = (length: number) => "\u0001".repeat(length);
   const people = Array.from({ length: 3 }, () => ({ kind: "user" as const, id: userId, displayName: escaped(200) }));
@@ -712,6 +711,14 @@ const publicIds: Record<ResourceTable, Map<string, string>> = {
 
 beforeEach(() => {
   spyOn(settings, "get").mockResolvedValue("UTC");
+  spyOn(spacesService.column, "get").mockResolvedValue({
+    id: columnUuid,
+    spaceId: spaceUuid,
+    name: "In progress",
+    color: null,
+    rank: "1024",
+    isDone: false,
+  });
   const requiredPublicId = (table: ResourceTable, internalId: string): string => {
     const value = publicIds[table].get(internalId);
     if (!value) throw new Error(`Missing ${table} public ID for ${internalId}`);
@@ -1239,7 +1246,7 @@ describe("spaces capabilities", () => {
         summary: `Read task “${task.title}”.`,
       },
     });
-    expect(result.ok && capabilityResultSchema(ItemDataSchema).safeParse(result.data).success).toBeTrue();
+    expect(result.ok && capabilityResultSchema(spacesCapabilities.queries["item.read"].data).safeParse(result.data).success).toBeTrue();
   });
 
   test("reviews a calendar response with the public Space item link", async () => {
@@ -2347,6 +2354,11 @@ test("agent service accounts claim, progress and comment through their direct gr
   createComment.mockClear();
   // Scopes cap the grant, and without a grant nothing is reachable.
   const readOnly = { ...agent, actor: { ...agent.actor, scopes: ["read"] } };
+  permission.mockResolvedValue("admin");
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  spyOn(spacesService.column, "get").mockResolvedValue(null);
+  const read = await spacesCapabilities.queries["item.read"].run({ id: itemId }, readOnly);
+  expect(read.ok && read.data.data.container.permission).toBe("read");
   expect((await spacesCapabilities.actions["task.claim"].run({ itemId, claimId }, readOnly)).ok).toBe(false);
   expect((await spacesCapabilities.actions["comment.create"].run({ itemId, content: "No." }, readOnly)).ok).toBe(false);
   permission.mockResolvedValue("none");
@@ -2488,6 +2500,63 @@ test("panel place refs select the owning app's public resource reader", () => {
   expect(reader?.localId).toBe("space.read");
   expect(spacesCapabilities.queries["space.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
 });
+
+for (const [locale, taskContext, eventContext, due, done] of [
+  ["en", "Task in Product", "Event in Product", "due Oct 30, 2026", "Done"],
+  ["de", "Aufgabe in Product", "Termin in Product", "fällig 30. Okt. 2026", "Erledigt"],
+] as const) {
+  test(`item reader returns current card facts in ${locale}`, async () => {
+    setSystemTime(new Date("2026-10-24T12:00:00Z"));
+    spyOn(settings, "get").mockResolvedValue("America/Los_Angeles");
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+    const get = spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+    const column = spyOn(spacesService.column, "get").mockResolvedValue({
+      id: columnUuid,
+      spaceId: spaceUuid,
+      name: "Offen",
+      color: null,
+      rank: "1024",
+      isDone: false,
+    });
+    const read = async (containerName = space.name) => {
+      const result = await spacesCapabilities.queries["item.read"].run({ id: itemId }, { ...userContext, locale });
+      if (!result.ok) throw new Error("Expected item read");
+      expect(capabilityResultSchema(spacesCapabilities.queries["item.read"].data).safeParse(result.data).success).toBeTrue();
+      expect(result.data.data.container).toMatchObject({
+        ref: { type: "spaces.space", id: spaceId },
+        name: containerName,
+        permission: "read",
+      });
+      return result.data.refs![0]!;
+    };
+    expect(await read()).toMatchObject({ context: taskContext, status: "Offen" });
+    expect(column).toHaveBeenCalledWith({ id: columnUuid });
+    get.mockResolvedValue({ ...task, deadline: "2026-10-30", deadlineAllDay: true });
+    expect(await read()).toMatchObject({ context: `${taskContext} · ${due}`, status: "Offen" });
+    // An instant uses the app zone, while the all-day deadline above stays on October 30.
+    get.mockResolvedValue({ ...task, deadline: "2026-10-31T02:00:00Z", deadlineAllDay: false });
+    expect(await read()).toMatchObject({ context: `${taskContext} · ${due}` });
+    get.mockResolvedValue({ ...task, deadline: "2026-10-30", deadlineAllDay: true, completedAt: createdAt });
+    expect(await read()).toMatchObject({ context: taskContext, status: done });
+    get.mockResolvedValue({ ...event, startsAt: "2026-10-31T02:00:00Z", endsAt: "2026-10-31T03:00:00Z" });
+    const eventRef = await read();
+    expect(eventRef.context).toBe(`${eventContext} · ${locale === "en" ? "Oct 30, 2026" : "30. Okt. 2026"}, 19:00`);
+    expect(eventRef).not.toHaveProperty("status");
+    get.mockResolvedValue({ ...event, allDay: true, startsAt: "2026-10-31T07:00:00Z", endsAt: "2026-11-01T07:00:00Z" });
+    expect((await read()).context).toBe(`${eventContext} · ${locale === "en" ? "Oct 31, 2026" : "31. Okt. 2026"}`);
+    spyOn(spacesService.space, "get").mockResolvedValue({ ...space, name: "x".repeat(200) });
+    get.mockResolvedValue({ ...task, deadline: "2026-10-30", deadlineAllDay: true });
+    const long = await read("x".repeat(200));
+    expect(long.context).toHaveLength(200);
+    expect(long.context).toEndWith(due);
+    column.mockResolvedValue({ id: columnUuid, spaceId: spaceUuid, name: "x".repeat(100), color: null, rank: "1024", isDone: false });
+    expect((await read("x".repeat(200))).status).toHaveLength(60);
+    spyOn(spacesService.space, "get").mockResolvedValue({ ...space, name: "IT\n  planning" });
+    expect((await read("IT\n  planning")).context).not.toContain("\n");
+  });
+}
 
 test("space.activity bounds escaped actor labels and resumes without dropping bucket positions", async () => {
   spyOn(spacesService.space, "get").mockResolvedValue(space);

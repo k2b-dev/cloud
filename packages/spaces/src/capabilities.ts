@@ -58,6 +58,7 @@ import {
   ItemDeleteDataSchema,
   ItemDeleteInputSchema,
   ItemLinkCandidateSearchInputSchema,
+  ItemReadDataSchema,
   ItemReadInputSchema,
   ItemResourceReferenceAddInputSchema,
   ItemResourceReferenceDataSchema,
@@ -337,7 +338,14 @@ const requireItemUuid = async (
   if (!access.ok) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const [publicItem] = await spacesPublicResources.projectItems([item]);
   return publicItem
-    ? ok({ item: publicItem, internalId, internalSpaceId: item.spaceId, permission: access.data.permission })
+    ? ok({
+        item: publicItem,
+        internalId,
+        internalSpaceId: item.spaceId,
+        internalColumnId: item.columnId,
+        space: access.data.space,
+        permission: access.data.permission,
+      })
     : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
@@ -1035,21 +1043,53 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
           mapAttachment(resolved.data.item, attachment),
         ),
       };
+  const t = spacesMessages(context.locale);
+  const dateConfig = await capabilityDateConfig(context);
+  const place = (
+    data.kind === "event" ? t.eventInSpace({ space: resolved.data.space.name }) : t.taskInSpace({ space: resolved.data.space.name })
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  const fact =
+    data.kind === "event"
+      ? data.allDay
+        ? dates.formatDate(data.startsAt, dateConfig)
+        : dates.formatDateTime(data.startsAt, dateConfig)
+      : data.deadline && !data.completedAt
+        ? t.dueDate({
+            date: dates.formatDate(data.deadline, { ...dateConfig, ...(isDateOnlyDeadline(data.deadline) ? { timeZone: "UTC" } : {}) }),
+          })
+        : null;
+  const column = data.kind === "task" && !data.completedAt ? await spacesService.column.get({ id: resolved.data.internalColumnId }) : null;
+  const status = data.kind === "task" ? (data.completedAt ? t.done : column?.name)?.replace(/\s+/g, " ").trim() : undefined;
   const result = {
-    data,
+    data: {
+      ...data,
+      container: {
+        ref: { type: "spaces.space" as const, id: data.spaceId },
+        name: resolved.data.space.name.slice(0, 200),
+        permission: resolved.data.permission,
+      },
+    },
     summary: boundedCapabilitySummary(
       spacesMessages(context.locale).readItem({
         kind: data.kind === "event" ? spacesMessages(context.locale).eventSummaryKind : spacesMessages(context.locale).taskSummaryKind,
         title: data.title,
       }),
     ),
-    refs: [itemRef(data, data.kind)],
+    refs: [
+      {
+        ...itemRef(data, data.kind),
+        context: `${place.slice(0, 200 - (fact ? fact.length + 3 : 0))}${fact ? ` · ${fact}` : ""}`,
+        ...(status ? { status: status.slice(0, 60) } : {}),
+      },
+    ],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
   };
   // Reactor names are the one relation added after the other bounds were sized; a full item drops them, keeping the counts.
   if (data.reactions && Buffer.byteLength(JSON.stringify(result), "utf8") > CAPABILITY_MAX_RESULT_BYTES) {
-    data.reactions = data.reactions.map((reaction) => ({ ...reaction, people: [] }));
-    data.relationsTruncated = true;
+    result.data.reactions = data.reactions.map((reaction) => ({ ...reaction, people: [] }));
+    result.data.relationsTruncated = true;
   }
   return ok(result);
 };
@@ -2257,6 +2297,7 @@ export const spacesCapabilities = defineCapabilities({
       title: "Space item",
       description: "A task or event inside a space.",
       icon: "ti ti-checkbox",
+      color: "emerald",
       reader: "item.read",
       pages: ["/app/spaces/:space?item=:id"],
     },
@@ -2487,7 +2528,7 @@ export const spacesCapabilities = defineCapabilities({
       description:
         "Read one spaces.item ref returned by item.search, task.list, event.list, or a reference query. The kind field distinguishes tasks from events for subsequent Actions.",
       input: ItemReadInputSchema,
-      data: ItemDataSchema,
+      data: ItemReadDataSchema,
       openWorld: false,
       run: runItemRead,
     },

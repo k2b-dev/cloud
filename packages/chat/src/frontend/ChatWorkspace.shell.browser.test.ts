@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { nora, pinPageClock, startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
 import { chatShellPage } from "./ChatWorkspace.shell-fixture";
 
@@ -34,8 +34,7 @@ const load = async (chat: string, theme: "light" | "dark", options: BrowserConte
     await context.addCookies([{ url: harness.url, name: "theme", value: theme }]);
     const page = await context.newPage();
     page.setDefaultTimeout(5_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     await page.goto(new URL(`/app/chat/c/${chat}`, harness.url).href);
     await settled(page);
     const server = await page.evaluate(geometry);

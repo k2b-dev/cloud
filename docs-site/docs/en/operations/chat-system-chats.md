@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Chat system conversations
@@ -27,6 +27,12 @@ All paths below start with `/api/chat`.
 | `POST /system-chats/:resourceType/:resourceId/open` | Create or return the container's conversation. Types are `spaces.space` and `notebooks.notebook`. |
 | `POST /conversations/:conversation/threads/for-resource` with `{ "ref": { "type": "spaces.item", "id": "…" } }` | Create or return an item thread. `notebooks.note` is also supported. |
 | `GET /conversations/:conversation/threads` | Authorized threads, with optional `filter=open\|done\|unread`, `q`, and `cursor`. |
+
+Message uploads and downloads use the same routes and limits as ordinary chats:
+see [Chat message attachments](/en/docs/operations/build-and-deploy#chat-message-attachments-after-the-upgrade).
+An upload's optional `thread` is checked with the item reader. A sent
+attachment's download and shared-list entry require the current container and
+item visibility of its message.
 
 System conversations have `kind: "system"` and a container `resource` ref.
 Their message views include the same viewer-specific `reactions` as ordinary
@@ -162,6 +168,13 @@ falling back to the installation zone. Each query returns a data array of
 continuation in `page.nextCursor`. Item reads and activity queries use the
 same owning application's grants and credential scope checks. A notebook edit
 bucket remains one row; the query does not create additional edit records.
+
+## Spaces inactivity
+
+Spaces marks an open task inactive after 30 days without changes to the task
+or its checklist. Comments and Chat discussion messages do not count as
+activity. Spaces does not query Chat for this filter; an active discussion can
+therefore accompany an inactive task.
 
 ## Follow pages
 
@@ -310,3 +323,12 @@ base and the current list and thread selection. System-chat addresses use
 `listFilter=all|unread` for the personal list; `filter=open|done|unread` remains
 the independent system-thread directory filter.
 All is the default personal list mode and is omitted from generated system-chat URLs.
+
+## Item reader container context
+
+`spaces.item.read` and `notebooks.note.read` return a `container` object with
+the owning container's `ref`, `name`, and the caller's resolved `permission`
+(`read`, `write`, or `admin`). This context comes from the same authorized
+read as the item itself. A consuming capability must use a fresh nested
+reader under the incoming authority; this metadata never grants access to
+other items or replaces credential scope and resource binding checks.

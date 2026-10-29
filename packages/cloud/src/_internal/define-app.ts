@@ -32,6 +32,7 @@ import { generateSpecs } from "hono-openapi";
 import { CLOUD_CLI_PLUGIN_ROUTE } from "../cli/plugin";
 import { env } from "../config/env";
 import type {
+  AppAdminArea,
   AppAdminNavigationGroup,
   AppAppearance,
   AppCliModules,
@@ -173,7 +174,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   adminHref?: string;
   /** Multi-link admin navigation contributed by this app. */
   adminNav?: ReadonlyArray<{
-    section?: "ai";
+    section?: AppAdminArea;
     id?: string;
     label: string;
     links: ReadonlyArray<{ label: string; href: string; icon: string }>;
@@ -189,7 +190,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
      * Same-origin path of a `GET` route this app serves below one of its
      * `routes`. After the page loads, the shell reads it with the person's
      * session and shows the returned `AppNavBadge` count on the app's icon in
-     * the rail and the app grid. Protect it like any other route.
+     * the rail, the phone bar, and the app grid. Protect it like any other route.
      */
     badge?: string;
   };

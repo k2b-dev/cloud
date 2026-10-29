@@ -284,6 +284,15 @@ export const EventDataSchema = z
   .strict();
 
 export const ItemDataSchema = z.discriminatedUnion("kind", [TaskDataSchema, EventDataSchema]);
+const ItemContainerSchema = z.strictObject({
+  ref: resourceRef("spaces.space"),
+  name: z.string().min(1).max(200),
+  permission: z.enum(["read", "write", "admin"]),
+});
+export const ItemReadDataSchema = z.discriminatedUnion("kind", [
+  TaskDataSchema.extend({ container: ItemContainerSchema }),
+  EventDataSchema.extend({ container: ItemContainerSchema }),
+]);
 const ItemListBaseDataShape = {
   id: ResourceShortIdSchema,
   ref: resourceRef("spaces.item"),

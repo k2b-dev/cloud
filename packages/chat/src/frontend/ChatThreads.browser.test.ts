@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled, viewTransitionEnded } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -30,8 +30,7 @@ const load = async (options: BrowserContextOptions, address: { chat?: string; th
   const context = await browser.newContext(options);
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   const path = address.chat
     ? `/app/chat/c/${address.chat}${address.threadsPage ? "/threads" : address.thread ? `/t/${address.thread}` : ""}`
     : "/app/chat";
@@ -91,6 +90,8 @@ describe("Chat threads on a desktop", () => {
       expect(await sidebar(page).locator(`a[href="/app/chat/c/${chat}"]`).first().textContent()).toContain("3 members");
       await threadRow(page, problems).click();
       await page.waitForURL(`**/c/${chat}/t/${problems}`);
+      // Each thread link starts a view transition; WebKit sends input during one to <html>, so Back and the next click wait.
+      await viewTransitionEnded(page);
       await page.locator(".chat-thread-picker", { hasText: "Problems" }).waitFor();
       // The picker stands right beside the chat's title text, not at the far end of the head.
       const titleEnd = await page.locator(".chat-conversation__header > .k2b-page-title").evaluate((title) => {
@@ -118,6 +119,7 @@ describe("Chat threads on a desktop", () => {
       await page.goBack();
       await page.waitForURL(`**/c/${chat}`);
       await threadRow(page, "all").and(page.locator('[aria-current="page"]')).waitFor();
+      await viewTransitionEnded(page);
       await threadRow(page, updates).click();
       await page.waitForURL(`**/t/${updates}`);
       expect(errors).toEqual([]);
@@ -484,8 +486,7 @@ for (const system of [false, true])
       const context = await browser.newContext({ ...desktop, reducedMotion: "reduce" });
       const page = await context.newPage();
       page.setDefaultTimeout(5_000);
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       const view = selected === "all" ? "all" : thread;
       const path = `/app/chat/panel/c/${chat}${view === "all" ? "" : `/t/${view}`}`;
       const suffix = system ? "?listFilter=unread&filter=done" : "?list=archive&filter=unread";

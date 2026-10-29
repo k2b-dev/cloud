@@ -43,6 +43,7 @@ import { chooseFiles } from "@k2b/cloud/browser/files";
 import { closePanel, type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
@@ -125,6 +126,7 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
+import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
   assistantCommandScopes,
@@ -140,6 +142,7 @@ import {
 } from "./composer-commands";
 import { releaseWhenPageReturns } from "./composer-file-choice";
 import {
+  type ComposerSession,
   confirmComposerSave,
   editComposerSession,
   newComposerSession,
@@ -578,12 +581,15 @@ export default function AssistantWorkspace(props: Props) {
     setComposerAttachments((current) => ({ ...current, [key]: attachments }));
   };
 
+  /** Pending pasted links per composer session; a restored draft replaces the text without any input in the field. */
+  const pastedLinkRestores = new WeakMap<ComposerSession, Set<() => void>>();
   const hydrateComposer = (key: string, draft: AiConversation["draft"]) => {
     const restored = aiComposerDraft(draft.content);
     setComposerDrafts((current) => ({ ...current, [key]: restored.text }));
     setComposerAttachments((current) => ({ ...current, [key]: restored.attachments }));
     setComposerMentions((current) => ({ ...current, [key]: restored.mentions }));
     const local = session(key);
+    for (const restored of pastedLinkRestores.get(local) ?? []) restored();
     local.editGeneration++;
     local.baseRevision = draft.revision;
     local.dirty = false;
@@ -1621,7 +1627,13 @@ export default function AssistantWorkspace(props: Props) {
     return false;
   };
 
-  const addResolvedComposerResource = async (sessionKey: string, ref: { type: string; id: string }, isCurrent = () => true) => {
+  const addResolvedComposerResource = async (
+    sessionKey: string,
+    ref: { type: string; id: string },
+    isCurrent = () => true,
+    /** The resource as a pasted link resolved it, with its own title. */
+    known?: Pick<ResolvedCloudResourceUrl, "title" | "icon" | "href">,
+  ) => {
     const target = followComposerSession(sessionKey);
     const release = holdComposerSave();
     try {
@@ -1635,7 +1647,7 @@ export default function AssistantWorkspace(props: Props) {
         chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
         return;
       }
-      const resource = await resolveAssistantCloudResource(ref);
+      const resource = known ? { ref, ...known, icon: known.icon ?? "ti ti-link" } : await resolveAssistantCloudResource(ref);
       if (!isCurrent()) return;
       const key = target();
       const latest = composerAttachmentsFor(key);
@@ -1735,6 +1747,51 @@ export default function AssistantWorkspace(props: Props) {
       void addResolvedComposerResource(sessionKey, ref).catch((error) =>
         chat.setError(error instanceof Error ? error.message : t().attachResourceFailed),
       );
+      return;
+    }
+    const link = pastedCloudLink(event);
+    if (link && event.target instanceof HTMLTextAreaElement) {
+      // The link lands as text at once. Once its resource is recognized, a reference with its title takes its place;
+      // an unreadable or unknown link stays text. Ctrl+Shift+V keeps the link as text.
+      // The draft right after this paste: the link is recognized only while it is still this paste's link.
+      const place = pastedLinkPlace(
+        composerDraft(sessionKey),
+        { start: event.target.selectionStart, end: event.target.selectionEnd },
+        event.clipboardData?.getData("text/plain") ?? "",
+        link,
+      );
+      const target = followComposerSession(sessionKey);
+      const watch = watchPastedLink(event.target);
+      // A restored draft, such as "Use saved draft", also ends this paste.
+      const restores = pastedLinkRestores.get(session(sessionKey)) ?? new Set<() => void>();
+      pastedLinkRestores.set(session(sessionKey), restores);
+      let restored = false;
+      const onRestore = () => {
+        restored = true;
+      };
+      restores.add(onRestore);
+      const inPlace = (key: string) => pastedLinkCurrent({ edited: watch.edited() || restored, draft: composerDraft(key) }, place);
+      void resolveCloudUrl(link)
+        .then(async (resolved) => {
+          if (!resolved) return;
+          const key = target();
+          const attached = composerAttachmentsFor(key).some(
+            (item) => item.kind === "resource" && item.ref.type === resolved.ref.type && item.ref.id === resolved.ref.id,
+          );
+          // An edited or removed link, a reference already attached, a full draft, or attachments waiting for a
+          // response all leave the text as it is.
+          if (!inPlace(key) || attached || composerAttachmentsBlocked(key) || composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS)
+            return;
+          const count = composerAttachmentsFor(key).length;
+          await addResolvedComposerResource(key, resolved.ref, () => inPlace(target()), resolved).catch(() => undefined);
+          const current = target();
+          if (composerAttachmentsFor(current).length === count || !inPlace(current)) return;
+          setComposerDraft(current, withoutPastedLink(composerDraft(current), place, link));
+        })
+        .finally(() => {
+          watch.stop();
+          restores.delete(onRestore);
+        });
       return;
     }
     const text = event.clipboardData?.getData("text/plain") ?? "";

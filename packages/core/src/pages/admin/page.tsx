@@ -66,8 +66,9 @@ export default ssr<AuthContext>(async (c) => {
   const adminApps = getDisplayRuntimeContext(c)
     .apps.filter((app) => !!app.adminHref && app.id !== "gateway-ops")
     .sort((a, b) => a.name.localeCompare(b.name));
-  const gatewayAdminAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/gateway", "core");
+  // Apps and routes are a section of the Observability area.
   const observabilityAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/observability", "core");
+  const gatewayAdminAvailable = observabilityAvailable;
   const primaryDestination = observabilityAvailable
     ? {
         href: "/admin/observability",
@@ -134,7 +135,7 @@ export default ssr<AuthContext>(async (c) => {
             <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
               {gatewayAdminAvailable ? (
                 <LinkCard
-                  href="/admin/gateway/apps"
+                  href="/admin/observability/gateway"
                   title={t.appsAndRoutes}
                   description={t.appsAndRoutesDescription}
                   icon="ti ti-route-scan"

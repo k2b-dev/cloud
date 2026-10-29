@@ -10,6 +10,7 @@ import { RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "../contracts/resourc
 import { hasOAuthScope } from "../server/oauth-scope";
 import { capabilityMessages } from "../shared/capability-messages";
 import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
+import { capabilityVia } from "./capability-origin";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
 
 export { capabilityHash } from "./capability-schemas";
@@ -23,6 +24,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
+  CAPABILITY_RESOURCE_COLORS,
   type CapabilityActionDefinition,
   type CapabilityActionManifest,
   CapabilityActionPolicySchema,
@@ -52,6 +54,7 @@ import {
   type CapabilitySearchTagDefinition,
   type CapabilityStreamDefinition,
   type CapabilityUniversalSearchDefinition,
+  CloudResourceViewSchema,
   capabilityActionPolicy,
   capabilityResultSchema,
   UniversalSearchDataSchema,
@@ -108,6 +111,7 @@ const TYPE_FIELDS = {
   title: true,
   description: true,
   icon: true,
+  color: true,
   reader: true,
   pages: true,
 } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
@@ -712,6 +716,7 @@ export const compileCapabilities = (
         title: definition.title.trim(),
         description: definition.description.trim(),
         ...(definition.icon ? { icon: definition.icon } : {}),
+        ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
       };
     });
@@ -1160,15 +1165,25 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
   if (operation.schemaHash !== expectedSchemaHash) throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
   if ("universalSearch" in operation && operation.universalSearch) {
     const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
-    const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
     if (
       capabilityHash(operation.inputSchema) !== capabilityHash(expectedInput) ||
-      capabilityHash(operation.dataSchema) !== capabilityHash(expectedData)
+      !universalSearchDataHashes().includes(capabilityHash(operation.dataSchema))
     ) {
       throw new Error(`Operation ${operation.localId} advertises Universal Search with non-canonical schemas`);
     }
   }
 };
+
+/**
+ * The Universal Search data schemas a live manifest may declare: the current one, and the one before results gained
+ * `context` and `status`, so an app built by the previous release keeps its search while Core is already newer. Its
+ * results still parse, because both fields are optional.
+ */
+let searchDataHashes: string[] | undefined;
+const universalSearchDataHashes = () =>
+  (searchDataHashes ??= [UniversalSearchDataSchema, z.array(CloudResourceViewSchema.omit({ context: true, status: true })).max(100)].map(
+    (schema) => capabilityHash(projectSchema(schema, "Universal Search data", "output")),
+  ));
 
 const assertUsableCommand = (command: CapabilityCommandManifest): void => {
   z.fromJSONSchema(structuredClone(command.inputSchema));
@@ -1560,7 +1575,10 @@ export const invokeCompiledCapability = async (params: {
       },
     };
   }
-  let context = params.context;
+  let context: CapabilityExecutionContext = {
+    ...params.context,
+    via: capabilityVia(params.context.origin),
+  };
   if (params.kind === "action") {
     const action = operation as CompiledCapabilityAction;
     if (action.manifest.idempotency === "required" && !params.context.idempotencyKey) {
@@ -1606,7 +1624,7 @@ export const invokeCompiledCapability = async (params: {
         },
       };
     }
-    context = { ...params.context, idempotencyKey: idempotencyKey.data };
+    context = { ...context, idempotencyKey: idempotencyKey.data };
   }
   const input = operation.definition.input.safeParse(params.input);
   if (!input.success) {
@@ -1728,7 +1746,10 @@ export const reviewCompiledCapability = async (params: {
   }
   if (params.context.signal.aborted) return cancelledInvocation(params.context.locale);
   try {
-    const reviewed = await operation.definition.review(input.data, params.context);
+    const reviewed = await operation.definition.review(input.data, {
+      ...params.context,
+      via: capabilityVia(params.context.origin),
+    });
     if (!reviewed.ok) {
       return normalizeProviderError(reviewed.error, "Capability review returned an invalid error", params.onUnexpectedError);
     }
