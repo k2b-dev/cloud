@@ -1139,8 +1139,15 @@ for (const width of [1440, 390]) {
         opened++;
         await route.fulfill({ status: 503, json: { message: "Unexpected command navigation" } });
       });
+      // Only a create or save that starts with the command is held. The draft's own autosave of "Plan /" can start
+      // just before the command is chosen; held too, the opening would wait behind it and never begin.
+      let chosen = false;
+      const openingRequest = (request: import("playwright").Request) =>
+        chosen &&
+        request.url().endsWith(pending === "create" ? "/conversations" : "/draft") &&
+        request.method() === (pending === "create" ? "POST" : "PUT");
       await page.route(pending === "create" ? "**/api/ai/conversations" : "**/api/ai/conversations/*/draft", async (route) => {
-        if (route.request().method() === (pending === "create" ? "POST" : "PUT")) await gate;
+        if (openingRequest(route.request())) await gate;
         await route.continue();
       });
       try {
@@ -1159,13 +1166,14 @@ for (const width of [1440, 390]) {
         await composer.click();
         const command = page.getByRole("option").filter({ hasText: "Create task" });
         await command.waitFor();
-        const request = page.waitForRequest(
-          (request) =>
-            request.url().endsWith(pending === "create" ? "/conversations" : "/draft") &&
-            request.method() === (pending === "create" ? "POST" : "PUT"),
-        );
+        const request = page.waitForRequest(openingRequest);
+        chosen = true;
         await command.click();
         await request;
+        // The field becomes read-only for the opening, which its held request does not order against: wait for that state.
+        await page.waitForFunction(
+          () => document.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')?.readOnly === true,
+        );
         expect(await composer.evaluate((element: HTMLTextAreaElement) => element.readOnly)).toBe(true);
         await composer.press("Escape");
         expect(await composer.isDisabled()).toBe(false);
@@ -1208,8 +1216,10 @@ for (const width of [1440, 390]) {
         expect(content).toContainEqual({ type: "text", text: "Later edits after Escape" });
         expect(content.some((part) => part.type === "file" && part.path === "/uploads/command-image.png")).toBe(attachmentDuringCreate);
       } finally {
-        release();
+        // Closing first cancels the held request; released first, it could reach the shared fixture after the next
+        // test has reset it.
         await context.close();
+        release();
       }
     }, 30_000);
   }
