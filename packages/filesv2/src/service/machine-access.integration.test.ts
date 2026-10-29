@@ -749,7 +749,7 @@ suite("Files machine storage through actual API tokens", () => {
       await denied(await request(readBearer, `${base}/directories`, "POST", { path: "scope-denied" }));
       await denied(await request(await sign("admin", Math.floor(Date.now() / 1000) - 1), `${base}/entries`));
       const originalTime = Date.now();
-      const shortBearer = await sign("write", Math.floor(originalTime / 1000) + 1);
+      const shortBearer = await sign("read write", Math.floor(originalTime / 1000) + 1);
       const shortTransfer = await data<{ url: string }>(await request(shortBearer, `${base}/download`, "POST", { path: "oauth.odt" }));
       const shortEditor = await data<OfficeEditorLaunch>(await request(shortBearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
       try {
