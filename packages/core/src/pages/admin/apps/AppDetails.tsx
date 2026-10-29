@@ -95,7 +95,11 @@ export default function AppDetails(props: {
               {details().access.platformPermissions.length
                 ? details()
                     .access.platformPermissions.map((permission) =>
-                      permission === "mail:send" ? t().permissionMailSend : t().permissionMailRead,
+                      permission === "mail:send"
+                        ? t().permissionMailSend
+                        : permission === "mail:read"
+                          ? t().permissionMailRead
+                          : t().permissionResourceReaders,
                     )
                     .join(", ")
                 : t().noPlatformServices}

@@ -59,6 +59,9 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
   await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS parent_invocation_id UUID`.simple();
   await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS via_app_id TEXT`.simple();
 
+  await sql`ALTER TABLE capabilities.executions DROP CONSTRAINT IF EXISTS capabilities_executions_actor_kind_check`.simple();
+  await sql`ALTER TABLE capabilities.executions ADD CONSTRAINT capabilities_executions_actor_kind_check CHECK (actor_kind IS NULL OR actor_kind IN ('user', 'service_account', 'app'))`.simple();
+
   // Platform-owned idempotency claims. One row per
   // (app, capability, principal, key); the dispatcher claims before it
   // forwards and resolves the row once the outcome is known. Response bodies

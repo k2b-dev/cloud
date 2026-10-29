@@ -543,6 +543,15 @@ describe("AI capability catalog", () => {
     expect(longName).toHaveLength(64);
   });
 
+  test("omits every query marked app-only from the AI catalog", () => {
+    const app = capabilityApp("spaces");
+    app.manifest.queries.push(
+      { ...app.manifest.queries[0]!, localId: "readable", appOnly: true as const },
+      { ...app.manifest.queries[0]!, localId: "disabled", appOnly: true as const },
+    );
+    expect(buildAiCapabilityCatalog([app]).map((entry) => entry.name)).toEqual(["spaces.create", "spaces.list"]);
+  });
+
   test("searches deterministic compact entries with an optional app filter", () => {
     const first = capabilityApp("contacts", "Contacts");
     const second = capabilityApp("spaces", "Spaces");

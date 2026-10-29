@@ -3,6 +3,7 @@ import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
 import { calendarSourceIssues } from "../contracts/calendar-source";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
+import { discussionsIssues } from "../contracts/discussions";
 import { fileProviderIssues } from "../contracts/file-provider";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { resourcePageIssue } from "../contracts/resource-pages";
@@ -237,6 +238,7 @@ const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void
   });
   if (groups.calendarSource !== undefined && !manifest.calendarSource) leftOut.push("calendarSource");
   if (groups.fileProvider !== undefined && !manifest.fileProvider) leftOut.push("fileProvider");
+  if (groups.discussions !== undefined && !manifest.discussions) leftOut.push("discussions");
   if (leftOut.length === 0) return;
   console.warn(
     JSON.stringify({
@@ -320,6 +322,32 @@ const withValidCalendarSource = (manifest: CapabilityManifest): CapabilityManife
   return rest;
 };
 
+const checkedDiscussions = new Map<string, { manifestHash: string; valid: boolean }>();
+const withValidDiscussions = (manifest: CapabilityManifest): CapabilityManifest => {
+  if (!manifest.discussions) return manifest;
+  const checked = checkedDiscussions.get(manifest.appId);
+  let valid = checked?.manifestHash === manifest.manifestHash ? checked.valid : undefined;
+  if (valid === undefined) {
+    const issues = discussionsIssues(manifest);
+    valid = issues.length === 0;
+    checkedDiscussions.set(manifest.appId, { manifestHash: manifest.manifestHash, valid });
+    if (!valid)
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "capability-registry",
+          message: "Ignored an incompatible discussions provider",
+          appId: manifest.appId,
+          manifestHash: manifest.manifestHash,
+          issues,
+        }),
+      );
+  }
+  if (valid) return manifest;
+  const { discussions: _ignored, ...rest } = manifest;
+  return rest;
+};
+
 /** Ignores record fields from a newer release; the endpoint always comes from the live app registry. */
 export const resolveLiveCapabilityRegistryEntry = (
   key: string,
@@ -334,7 +362,7 @@ export const resolveLiveCapabilityRegistryEntry = (
   if (!endpoint) return null;
   try {
     const read = parseCapabilityManifest(record.manifest, app.id);
-    const supported = withValidCalendarSource(withValidFileProvider(read));
+    const supported = withValidDiscussions(withValidCalendarSource(withValidFileProvider(read)));
     const manifest = supported.resourcePages
       ? {
           ...supported,

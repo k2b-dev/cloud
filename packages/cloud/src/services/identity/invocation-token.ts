@@ -485,3 +485,113 @@ export const verifyAppAccessProbe = async (
     return null;
   }
 };
+
+// A separate payload prevents app authority from ever entering the person/mandate resolver.
+const AppQueryClaimsSchema = z
+  .object({
+    iss: z.string().url(),
+    aud: z.string().regex(/^app:[a-z][a-z0-9-]{0,79}$/),
+    token_use: z.literal("app_query"),
+    sub: AppIdSchema,
+    credential_id: z.uuid(),
+    service_account_id: z.uuid(),
+    op: OperationSchema.refine((value) => value.startsWith("capability.query:")),
+    schema_hash: z.string().regex(/^[a-f0-9]{64}$/),
+    input_hash: z.string().regex(/^[a-f0-9]{64}$/),
+    request_id: BoundedIdentifierSchema,
+    jti: z.uuid(),
+    iat: z.number().int(),
+    nbf: z.number().int(),
+    exp: z.number().int(),
+  })
+  .strict()
+  .refine((claims) => claims.nbf === claims.iat && claims.exp - claims.iat === CLOUD_INVOCATION_TOKEN_TTL_SECONDS);
+
+export const signAppQueryInvocation = async (input: {
+  workload: import("./workload-auth").AuthenticatedWorkload;
+  targetAppId: string;
+  capabilityId: string;
+  schemaHash: string;
+  input: unknown;
+  requestId: string;
+  signer: PreparedIdentitySigner & { issuer: string };
+}) => {
+  const now = Math.floor(Date.now() / 1000);
+  if (input.signer.signUntil.getTime() < (now + CLOUD_INVOCATION_TOKEN_TTL_SECONDS) * 1000)
+    throw new Error("Signing key expires before the app query");
+  const claims = AppQueryClaimsSchema.parse({
+    iss: input.signer.issuer,
+    aud: `app:${input.targetAppId}`,
+    token_use: "app_query",
+    sub: input.workload.appId,
+    credential_id: input.workload.credentialId,
+    service_account_id: input.workload.serviceAccountId,
+    op: `capability.query:${input.capabilityId}`,
+    schema_hash: input.schemaHash,
+    input_hash: appEventPayloadHash(input.input),
+    request_id: input.requestId,
+    jti: crypto.randomUUID(),
+    iat: now,
+    nbf: now,
+    exp: now + CLOUD_INVOCATION_TOKEN_TTL_SECONDS,
+  });
+  const token = await new SignJWT(claims)
+    .setProtectedHeader({ alg: CLOUD_IDENTITY_ALGORITHM, typ: CLOUD_INVOCATION_TOKEN_TYPE, kid: input.signer.kid })
+    .sign(input.signer.key);
+  if (Buffer.byteLength(token) > IDENTITY_MAX_COMPACT_TOKEN_BYTES) throw new Error("App query token exceeds its byte budget");
+  return { token, claims };
+};
+
+export const verifyAppQueryInvocation = async (
+  token: string,
+  expected: { appId: string; capabilityId: string; schemaHash: string; input: unknown },
+  options: { issuer?: string; key?: JWTVerifyGetKey; now?: Date } = {},
+) => {
+  if (Buffer.byteLength(token) > IDENTITY_MAX_COMPACT_TOKEN_BYTES) return null;
+  try {
+    assertProtectedHeader(decodeProtectedHeader(token));
+  } catch {
+    return null;
+  }
+  // Configuration and key-fetch failures must remain retryable, rather than look like invalid tokens.
+  const runtime = options.issuer && options.key ? null : await getIdentityRuntimeConfig();
+  try {
+    const issuer = options.issuer ?? runtime!.issuer;
+    const state = options.key ? null : remoteSet(runtime!.invocationJwksUrl);
+    const key = options.key ?? state!.key;
+    const verified = await verifyWithKeyRefresh(
+      (candidate) =>
+        jwtVerify(token, candidate, {
+          algorithms: [CLOUD_IDENTITY_ALGORITHM],
+          issuer,
+          audience: `app:${expected.appId}`,
+          typ: CLOUD_INVOCATION_TOKEN_TYPE,
+          clockTolerance: INVOCATION_CLOCK_TOLERANCE_SECONDS,
+          currentDate: options.now,
+        }),
+      key,
+      state ? { url: runtime!.invocationJwksUrl, state } : null,
+    );
+    const claims = AppQueryClaimsSchema.parse(verified.payload);
+    if (
+      claims.op !== `capability.query:${expected.capabilityId}` ||
+      claims.schema_hash !== expected.schemaHash ||
+      claims.input_hash !== appEventPayloadHash(expected.input)
+    )
+      return null;
+    return claims;
+  } catch (error) {
+    if (
+      error instanceof z.ZodError ||
+      error instanceof errors.JWTExpired ||
+      error instanceof errors.JWTClaimValidationFailed ||
+      error instanceof errors.JWTInvalid ||
+      error instanceof errors.JWSInvalid ||
+      error instanceof errors.JWSSignatureVerificationFailed ||
+      error instanceof errors.JWKSNoMatchingKey ||
+      error instanceof errors.JOSENotSupported
+    )
+      return null;
+    throw error;
+  }
+};

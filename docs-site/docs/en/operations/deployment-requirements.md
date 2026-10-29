@@ -27,6 +27,35 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Resource reader checks and discussions
+
+Upgrade Core before deploying applications that declare resource containment,
+standard reader views, or a `discussions` role. This additive runtime contract
+keeps ordinary Types and readers available on older Core, but older releases
+ignore the new role and omit generated app-only reader Queries.
+
+Before any application declares `resources:readers`, upgrade Core, the gateway,
+and all applications to this release or newer. Older registry readers reject an
+application with an unknown platform permission, which removes its routes and
+catalog entry from those processes.
+
+Applications that perform reader checks declare `resources:readers` in their
+platform permissions and need `CLOUD_APP_CREDENTIAL` plus
+`CLOUD_CORE_INTERNAL_ORIGIN`. Provision the existing app-bound workload
+credential with `identity:invoke`; this change adds no automatic provisioning.
+There is no separate operator approval toggle. Core checks the live registry
+permission and uses Valkey for the shared 1,501-request/minute app budget.
+An unavailable registry or limiter fails closed. Providers need the existing
+Core invocation keys and shared credential database. Core setup extends the
+capability execution history to record app callers.
+
+Verify startup registration and a generated reader check through Core;
+process health alone does not prove admission. Missing setup is reported
+separately from an empty readability subset; transient failures throw for
+consumer retries. This slice supplies the platform contract; applications
+must adopt the role and views before they become discussion providers.
+See [App-to-app reader checks](/en/docs/platform/app-to-app-queries).
+
 ## Upgrade pasted resource link recognition
 
 Core now serves authenticated, read-only `POST /api/resources/resolve`.

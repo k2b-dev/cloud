@@ -188,6 +188,35 @@ describe("server capability client", () => {
     });
   });
 
+  test("app queries use only Core and reject mixed authority, Actions and reviews before transport", async () => {
+    process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
+    const requests: Request[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        requests.push(input instanceof Request ? input : new Request(input, init));
+        expect(init?.redirect).toBe("error");
+        return Response.json({ data: { readable: [] } });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const caller = { authorization: "Bearer cld_chat-workload", workload: { appId: "chat" } };
+    const query = { appId: "spaces", capabilityId: "item.readable", kind: "query" as const, input: { id: "Abc123", principals: [] } };
+    expect((await invokeCapability(query, caller)).ok).toBe(true);
+    expect(requests[0]!.url).toBe("http://core.internal:3000/api/_internal/identity/v1/invoke");
+    expect(requests[0]!.headers.get("cookie")).toBeNull();
+    expect(requests[0]!.headers.get("x-cloud-app-id")).toBe("chat");
+    expect(await requests[0]!.json()).toEqual({ kind: "query", targetApp: "spaces", capabilityId: "item.readable", input: query.input });
+    expect((await invokeCapability({ ...query, kind: "action" }, caller)).ok).toBe(false);
+    expect((await invokeCapability(query, { ...caller, cookie: "session=unexpected" })).ok).toBe(false);
+    expect((await invokeCapability(query, { ...caller, mandate: { id: crypto.randomUUID(), revision: 1, callingAppId: "chat" } })).ok).toBe(
+      false,
+    );
+    expect((await reviewCapabilityAction(query, caller)).ok).toBe(false);
+    delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    expect((await invokeCapability(query, caller)).ok).toBe(false);
+    expect(requests).toHaveLength(1);
+  });
+
   test("distinguishes network failure, cancellation, and an unknown non-idempotent Action outcome", async () => {
     process.env.CLOUD_CORE_INTERNAL_ORIGIN = "https://core.internal";
     globalThis.fetch = (async () => {
