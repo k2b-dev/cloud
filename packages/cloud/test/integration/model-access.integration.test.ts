@@ -27,6 +27,9 @@ suite("Assistant model grants using normal Cloud access", () => {
   beforeAll(async () => {
     fresh = await useFreshDatabase("model_access");
     await migrateAuth();
+    expect((await sql<{ present: boolean }[]>`SELECT to_regclass('auth.service_account_groups') IS NOT NULL AS present`)[0]?.present).toBe(
+      true,
+    );
     await migrateSettings();
     await sql`CREATE SCHEMA IF NOT EXISTS ai`;
     for (const label of ["member", "outsider"]) {

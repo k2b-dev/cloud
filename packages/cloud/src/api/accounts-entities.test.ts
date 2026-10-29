@@ -30,19 +30,20 @@ describe("accounts entity routes", () => {
       authenticate: authenticateAs("guest"),
       listEntities: async (input) => {
         actor = input.actor;
-        exactIds = { userIds: input.userIds, groupIds: input.groupIds };
+        exactIds = { userIds: input.userIds, groupIds: input.groupIds, serviceAccountIds: input.serviceAccountIds };
         return { items: [], page: 1, perPage: 10, total: 0, hasNext: false };
       },
     });
 
     const response = await routes.request(
-      "/entities?per_page=10&user_ids=11111111-1111-4111-8111-111111111111&group_ids=33333333-3333-4333-8333-333333333333",
+      "/entities?per_page=10&user_ids=11111111-1111-4111-8111-111111111111&group_ids=33333333-3333-4333-8333-333333333333&service_account_ids=44444444-4444-4444-8444-444444444444",
     );
     expect(response.status).toBe(200);
     expect(actor).toMatchObject({ userId: USER_ID, roles: ["guest", "local", "local/guest"] });
     expect(exactIds).toEqual({
       userIds: ["11111111-1111-4111-8111-111111111111"],
       groupIds: ["33333333-3333-4333-8333-333333333333"],
+      serviceAccountIds: ["44444444-4444-4444-8444-444444444444"],
     });
   });
 
@@ -80,20 +81,17 @@ describe("accounts entity routes", () => {
     expect(seen).toHaveLength(4);
   });
 
-  test("leaves personal Linux groups out unless include_personal=true", async () => {
+  test("does not forward the removed personal-group export switch", async () => {
     const seen: unknown[] = [];
     const routes = createAccountsEntitiesRoutes({
       authenticate: authenticateAs("user"),
       listEntities: async (input) => {
-        seen.push(input.includePersonal);
+        seen.push(input);
         return { items: [], page: 1, perPage: 10, total: 0, hasNext: false };
       },
     });
-
-    expect((await routes.request("/entities?kinds=group&search=qd")).status).toBe(200);
-    expect((await routes.request("/entities?kinds=group&search=qd&include_personal=true")).status).toBe(200);
-    expect((await routes.request("/entities?include_personal=yes")).status).toBe(400);
-    expect(seen).toEqual([false, true]);
+    expect((await routes.request("/entities?kinds=group&include_personal=true")).status).toBe(200);
+    expect(seen[0]).not.toHaveProperty("includePersonal");
   });
 
   test("rejects relation filters for guest actors before querying entities", async () => {

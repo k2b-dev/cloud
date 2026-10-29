@@ -37,7 +37,7 @@ export type Configuration = z.infer<typeof ConfigurationSchema>;
 export type ConfigurationInput = z.infer<typeof ConfigurationInputSchema>;
 export type PublicConfiguration = Configuration & { tokenConfigured: boolean; unreadable: boolean };
 export type Availability = { localLinuxEnabled: boolean; freeipaEnabled: boolean };
-export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned", "conflict", "unknown", "orphaned", "retired"]);
+export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned", "conflict", "unknown", "orphaned", "retired", "legacy"]);
 export type InventoryState = z.infer<typeof InventoryStateSchema>;
 export type BaseSummary = {
   owner?: MachineOwner;
@@ -193,6 +193,8 @@ export const CreateShareInputSchema = z.object({
 });
 export const ShareIdSchema = z.object({ id: z.string().uuid() });
 export type ShareView = {
+  /** Present on an authorized item management page; never inferred from browser roles. */
+  managementMode?: "creator" | "admin";
   passwordProtected: boolean;
   id: string;
   kind: "download" | "inbox";
@@ -217,7 +219,13 @@ export type ShareView = {
   showUploadNames: boolean;
 };
 export type SharePage = { items: ShareView[]; next: string | null };
-export const SharePageQuerySchema = z.object({ after: z.string().uuid().optional() });
+export const SharePageQuerySchema = z
+  .object({
+    after: z.string().uuid().optional(),
+    baseId: z.string().max(256).optional(),
+    path: z.string().max(4096).optional(),
+  })
+  .refine((input) => (input.baseId === undefined) === (input.path === undefined), "Expected both baseId and path");
 export const PublicBrowseQuerySchema = z.object({ path: z.string().max(4096).default(""), after: z.string().max(8192).optional() });
 export const PublicUploadInputSchema = z.object({
   idempotencyKey: z.string().uuid(),

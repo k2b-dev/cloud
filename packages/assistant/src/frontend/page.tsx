@@ -30,14 +30,16 @@ export default ssr<AuthContext>(async (c) => {
   const initialLiveCursor = await aiLive.cursor();
   const [status, sidebar, appUrl, initialQuotas, approvals] = await Promise.all([
     assistantAiSettingsState(subject),
-    loadAssistantSidebarSnapshot(user.id, { locale, timeZone }),
+    loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
     coreSettings.get<string>("app.url"),
     getAiChatQuotas(subject).catch(() => null),
     // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
     loadPendingApprovals(c, { app: "assistant" }),
   ]);
   const { conversations } = sidebar;
-  const activeProjectRecord = requestedProjectId ? await aiProjects.getByShortId(requestedProjectId, subject) : null;
+  const activeProjectRecord = requestedProjectId
+    ? await aiProjects.getByShortId(requestedProjectId, { actor: c.get("actor"), accessSubject: c.get("accessSubject") })
+    : null;
   if (requestedProjectId && !activeProjectRecord) return ssr.error(c, 404);
   const activeProject = activeProjectRecord ? { ...activeProjectRecord, id: activeProjectRecord.shortId } : null;
   const projects = activeProject
@@ -83,7 +85,9 @@ export default ssr<AuthContext>(async (c) => {
     ? await Promise.all([
         loadAiStreamState(activeConversation),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
-        loadAssistantChatContextSnapshot(user.id, activeConversation.shortId, { timeZone }),
+        loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
+          timeZone,
+        }),
       ])
     : [null, [], null];
 

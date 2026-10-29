@@ -276,6 +276,16 @@ pass siblings as separate arguments or use shell expansion.
 
 ## History
 
+History is available for local Cloud storage, where Cloud grants govern the
+whole area. FreeIPA and other POSIX areas show a notice instead: their Unix
+permissions cannot be checked for historical activity. File versions remain
+available according to the storage root's existing version settings.
+
+You see activity only in local areas you can currently access. A move or copy
+shows each location only when you can access that area. Losing access also
+hides your earlier actions there. Hidden activity does not change the counts
+or the pages you receive.
+
 Files records folder creation, renames, moves, copies, uploads, document creation,
 template use, Office saves, trash and restores, version changes, and permanent
 deletion through the web, Cloud app, API and CLI, other apps, and agents. It also
@@ -284,6 +294,18 @@ revocation, template administration, and administrative reads. Each selected ite
 has its own entry; items changed in one batch share a batch ID. Moving a folder
 records one entry for the whole tree. Planning folder creation or finding an
 existing folder creates no entry.
+
+`GET /api/filesv2/activity/:activityId/batch` returns the visible count for an
+event's batch, independently of the current search text or history page.
+The response is `{visibleCount, complete}`. The count includes the selected
+event and counts each visible event once, even when only one side is readable.
+Own recorded snapshots follow the same visibility rules as other history reads.
+When `complete` is false, show the count as “at least”: the reader reached its
+500-event bound. Exactly 500 candidates also produce a lower bound. A complete
+count covers retained, currently visible events; it does not count descendants
+inside a selected folder or events removed by retention. An unknown, inaccessible,
+or unbatched event returns the same 404. This read returns no peer details and
+does not grant access to files.
 
 Transfer entries retain the old and confirmed new paths. Copies also record
 the source and destination storage areas; a copy in the same folder records

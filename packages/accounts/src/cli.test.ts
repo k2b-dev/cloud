@@ -123,24 +123,33 @@ describe("accounts CLI", () => {
     }
   });
 
-  test("lists personal Linux groups only with --include-personal and names their owner", async () => {
-    const personal = {
-      ...group({ id: "g2", name: "qdt" }),
-      gidnumber: 200001,
-      personalOwner: { id: "u1", uid: "qdt", displayName: "Quinn" },
-    };
-    const hidden = createContext(["groups", "list"], {}, [jsonResponse({ groups: [{ ...group({}), personalOwner: null }], pagination })]);
-    await accountsCli.run(hidden.ctx);
-    expect(hidden.calls[0]?.path).toBe("/api/accounts/groups?page=1&per_page=50&scope=member");
-
-    const shown = createContext(["groups", "list"], { "include-personal": true, scope: "all" }, [
-      jsonResponse({ groups: [personal], pagination }),
+  test("has no personal-group export switch and exports the canonical group list", async () => {
+    const removed = createContext(["groups", "list"], { "include-personal": true });
+    await expect(accountsCli.run(removed.ctx)).rejects.toThrow();
+    expect(removed.calls).toHaveLength(0);
+    const listed = createContext(["groups", "list"], { scope: "all" }, [
+      jsonResponse({ groups: [{ ...group({}), personalOwner: null }], pagination }),
     ]);
-    await accountsCli.run(shown.ctx);
-    expect(shown.calls[0]?.path).toBe("/api/accounts/groups?page=1&per_page=50&scope=all&include_personal=true");
-    expect(shown.tables[0]).toEqual([expect.objectContaining({ name: "qdt", personal: "qdt" })]);
+    await accountsCli.run(listed.ctx);
+    expect(listed.calls[0]?.path).toBe("/api/accounts/groups?page=1&per_page=50&scope=all");
+    expect(listed.tables[0]).toEqual([expect.objectContaining({ name: "team" })]);
+    expect(listed.tables[0]?.[0]).not.toHaveProperty("personal");
   });
 
+  test("removes relationships by exact UUID without exporting the group", async () => {
+    const targetId = "10000000-0000-4000-8000-000000000001";
+    const personalId = "10000000-0000-4000-8000-000000000002";
+    for (const relation of ["members", "managers"]) {
+      const { ctx, calls } = createContext(["groups", relation, "remove", targetId], { group: personalId, yes: true }, [
+        jsonResponse({ message: "Removed" }),
+      ]);
+      await accountsCli.run(ctx);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.path).toBe(`/api/accounts/groups/${targetId}/${relation}`);
+      expect(calls[0]?.init?.method).toBe("DELETE");
+      expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ type: "group", id: personalId });
+    }
+  });
   test("creates a local POSIX group in one request", async () => {
     const { ctx, calls } = createContext(["groups", "create", "staff"], { provider: "local", posix: true }, [
       jsonResponse({ ...group({ name: "staff" }), provider: "local", gidnumber: 200000 }),
@@ -356,7 +365,7 @@ describe("accounts CLI", () => {
     await accountsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all&include_personal=true",
+      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all",
       "/api/accounts/entities?page=1&per_page=100&search=alice&kinds=user",
       "/api/accounts/groups/g1/members",
     ]);
@@ -429,7 +438,7 @@ describe("accounts CLI", () => {
 
     await expect(accountsCli.run(ctx)).rejects.toThrow('User "Sam Example" is ambiguous');
     expect(calls.map((call) => call.path)).toEqual([
-      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all&include_personal=true",
+      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all",
       "/api/accounts/entities?page=1&per_page=100&search=Sam+Example&kinds=user",
       "/api/accounts/entities?page=2&per_page=100&search=Sam+Example&kinds=user",
     ]);
@@ -449,8 +458,8 @@ describe("accounts CLI", () => {
 
     await expect(accountsCli.run(ctx)).rejects.toThrow('Group "team" is ambiguous');
     expect(calls.map((call) => call.path)).toEqual([
-      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all&include_personal=true",
-      "/api/accounts/groups?page=2&per_page=100&search=team&scope=all&include_personal=true",
+      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all",
+      "/api/accounts/groups?page=2&per_page=100&search=team&scope=all",
     ]);
   });
 
@@ -489,4 +498,68 @@ describe("accounts CLI", () => {
     await expect(accountsCli.run(ctx)).rejects.toThrow("Missing avatar input");
     expect(calls).toHaveLength(0);
   });
+});
+
+describe("local group machine recipients", () => {
+  for (const kind of ["standalone", "agent"] as const) {
+    for (const action of ["add", "remove"] as const) {
+      test(`${action} resolves a named ${kind} and sends its identity to the member API`, async () => {
+        const recipient = { id: "11111111-1111-4111-8111-111111111111", name: "Named worker", kind, status: "active" };
+        const { ctx, calls } = createContext(["groups", "members", action, "team"], { "service-account": recipient.name, yes: true }, [
+          jsonResponse({ groups: [group({})], pagination }),
+          jsonResponse({ items: [{ kind: "service_account", serviceAccount: recipient }], pagination }),
+          jsonResponse({ message: "Changed" }),
+        ]);
+        await accountsCli.run(ctx);
+        expect(calls[1]?.path).toContain("search=Named+worker&kinds=service_account");
+        expect(calls[2]?.path).toBe("/api/accounts/groups/g1/members");
+        expect(calls[2]?.init?.method).toBe(action === "add" ? "POST" : "DELETE");
+        expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ type: "service_account", id: recipient.id });
+      });
+    }
+  }
+  test("ambiguous names across pages cannot mutate group membership", async () => {
+    const machine = (id: string) => ({ kind: "service_account", serviceAccount: { id, name: "Worker", kind: "agent", status: "active" } });
+    const { ctx, calls } = createContext(["groups", "members", "add", "team"], { "service-account": "Worker", yes: true }, [
+      jsonResponse({ groups: [group({})], pagination }),
+      jsonResponse({ items: [machine("one")], pagination: { ...pagination, has_next: true } }),
+      jsonResponse({ items: [machine("two")], pagination: { ...pagination, page: 2 } }),
+    ]);
+    await expect(accountsCli.run(ctx)).rejects.toThrow("ambiguous");
+    expect(calls).toHaveLength(3);
+  });
+  test("a UUID reference uses exact machine filtering", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const { ctx, calls } = createContext(["groups", "members", "remove", "team"], { "service-account": id, yes: true }, [
+      jsonResponse({ groups: [group({})], pagination }),
+      jsonResponse({
+        items: [{ kind: "service_account", serviceAccount: { id, name: "Worker", kind: "agent", status: "disabled" } }],
+        pagination,
+      }),
+      jsonResponse({ message: "Removed" }),
+    ]);
+    await accountsCli.run(ctx);
+    expect(calls[1]?.path).toContain(`service_account_ids=${id}`);
+  });
+});
+
+test("group member tables preserve named machine account kinds and directness", async () => {
+  for (const kind of ["standalone", "agent"] as const) {
+    const { ctx, calls, tables } = createContext(["groups", "members", "list", "team"], { type: "service_account", recursive: true }, [
+      jsonResponse({ groups: [group({})], pagination }),
+      jsonResponse({
+        items: [
+          {
+            kind: "service_account",
+            serviceAccount: { id: "machine", name: "Named worker", kind, status: "active" },
+            relation: { direct: false },
+          },
+        ],
+        pagination,
+      }),
+    ]);
+    await accountsCli.run(ctx);
+    expect(calls[1]?.path).toContain("kinds=service_account&member_of_group_id=g1&recursive=true");
+    expect(tables[0]).toEqual([{ kind, name: "Named worker", provider: "", profile: "active", direct: "no", id: "machine" }]);
+  }
 });

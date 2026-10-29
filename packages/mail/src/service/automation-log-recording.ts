@@ -96,9 +96,11 @@ export const recordAutomationAssignmentChange = async (params: {
   if (!snapshot) return;
   const names = async (ids: string[]) => {
     if (!ids.length) return null;
-    const rows = await params.db<
-      { display_name: string }[]
-    >`SELECT display_name FROM auth.users WHERE id = ANY(${`{${ids.join(",")}}`}::uuid[]) ORDER BY display_name, id`;
+    const rows = await params.db<{ display_name: string }[]>`SELECT display_name FROM (
+      SELECT id, display_name FROM auth.users WHERE id = ANY(${`{${ids.join(",")}}`}::uuid[])
+      UNION ALL
+      SELECT id, name AS display_name FROM auth.service_accounts WHERE id = ANY(${`{${ids.join(",")}}`}::uuid[])
+    ) principals ORDER BY display_name, id`;
     return rows.map((row) => row.display_name).join(", ");
   };
   const before = await names(params.before),
@@ -128,9 +130,12 @@ export const recordAutomationAssignmentChange = async (params: {
 const assignmentEffects = async (db: SqlClient, ids: string[]): Promise<Effect[]> => {
   if (!ids.length) return [];
   const rows = await db<
-    { id: string; display_name: string }[]
-  >`SELECT id, display_name FROM auth.users WHERE id = ANY(${`{${ids.join(",")}}`}::uuid[]) ORDER BY id`;
-  return rows.map((row) => ({ kind: "assign", target: { kind: "user", id: row.id, name: row.display_name } }));
+    { id: string; display_name: string; kind: "user" | "service_account" }[]
+  >`SELECT id, display_name, 'user' AS kind FROM auth.users WHERE id = ANY(${`{${ids.join(",")}}`}::uuid[])
+    UNION ALL
+    SELECT id, name AS display_name, 'service_account' AS kind FROM auth.service_accounts
+    WHERE id = ANY(${`{${ids.join(",")}}`}::uuid[]) AND kind IN ('standalone', 'agent', 'resource_bound') ORDER BY id`;
+  return rows.map((row) => ({ kind: "assign", target: { kind: row.kind, id: row.id, name: row.display_name } }));
 };
 
 type OutcomeRow = {

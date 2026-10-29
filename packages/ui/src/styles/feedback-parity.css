@@ -633,7 +633,9 @@
     opacity 120ms,
     overlay 120ms allow-discrete,
     display 120ms allow-discrete;
-  pointer-events: auto;
+  /* A hint is not interactive. Over a neighbouring control, also while it fades out, it must not take the pointer:
+     WebKit then applies :hover to that control only after the hint left the top layer (#2085). */
+  pointer-events: none;
 }
 
 /* Zero-delay hints must also leave the top layer without an exit animation. */

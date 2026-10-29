@@ -1052,6 +1052,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
           });
           if (
             evidence.localLinuxEnabled &&
+            !(evidence.identity.state !== "unknown" && evidence.identity.personal) &&
             (evidence.identity.state === "absent" ||
               (base.kind === "groups" &&
                 evidence.identity.state === "present" &&
@@ -1071,6 +1072,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
               });
               if (
                 !fresh.localLinuxEnabled ||
+                (fresh.identity.state !== "unknown" && fresh.identity.personal) ||
                 !(
                   fresh.identity.state === "absent" ||
                   (base.kind === "groups" &&

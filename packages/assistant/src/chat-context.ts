@@ -4,6 +4,7 @@ import {
   type AiConversationSourceKind,
   type AiConversationWorkingGroup,
   type AiFileStat,
+  type AiResourceContext,
   type AiChatTaskView as AssistantChatTask,
   aiChatTasks,
   aiConversations,
@@ -92,10 +93,12 @@ const appIdsOf = (sources: readonly AiConversationSource[]) =>
  * `null` when the chat does not exist for the viewer.
  */
 export const loadAssistantChatSources = async (
-  userId: string,
+  identity: AiResourceContext,
   chatId: string,
   query: { q?: string; cursor?: string; limit?: number; kinds?: AiConversationSourceKind[]; observed?: boolean },
 ): Promise<{ sources: AiConversationSource[]; nextCursor?: string; total: number } | null> => {
+  if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
+  const userId = identity.accessSubject.userId;
   const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
   if (!conversation) return null;
   const page = await aiConversations.listConversationSources({
@@ -107,7 +110,7 @@ export const loadAssistantChatSources = async (
     observed: query.observed,
   });
   const ids = [...new Set(appIdsOf(page.sources))];
-  const apps = new Map((ids.length ? await artifacts.describe(ids, userId, conversation.id) : []).map((app) => [app.id, app]));
+  const apps = new Map((ids.length ? await artifacts.describe(ids, identity, conversation.id) : []).map((app) => [app.id, app]));
   return { ...page, sources: readableSources(page.sources, apps) };
 };
 
@@ -136,10 +139,12 @@ const resultSources = async (conversationId: string) => {
 };
 
 export const loadAssistantChatContextSnapshot = async (
-  userId: string,
+  identity: AiResourceContext,
   chatId: string,
   options: { timeZone: string },
 ): Promise<AssistantChatContextSnapshot | null> => {
+  if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
+  const userId = identity.accessSubject.userId;
   const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
   if (!conversation) return null;
   const now = new Date().toISOString();
@@ -161,8 +166,8 @@ export const loadAssistantChatContextSnapshot = async (
     aiMemories.listFromConversation(userId, conversation.id),
     chatAppIds(conversation.id),
   ]);
-  const project = conversation.projectId ? await aiProjects.get(conversation.projectId, { type: "user", userId }, "read") : null;
-  const projectRefs = project ? await aiProjects.listReferences(project.id, { type: "user", userId }) : [];
+  const project = conversation.projectId ? await aiProjects.get(conversation.projectId, identity, "read") : null;
+  const projectRefs = project ? await aiProjects.listReferences(project.id, identity) : [];
   const resultAppIds = appIdsOf(delivered.sources);
   const appIds = [
     ...new Set([
@@ -172,7 +177,7 @@ export const loadAssistantChatContextSnapshot = async (
       ...projectRefs.flatMap((reference) => (reference.ref.type === "assistant.artifact" ? [reference.ref.id] : [])),
     ]),
   ];
-  const apps = new Map((await artifacts.describe(appIds, userId, conversation.id)).map((app) => [app.id, app]));
+  const apps = new Map((await artifacts.describe(appIds, identity, conversation.id)).map((app) => [app.id, app]));
   const lastRuns = resultAppIds.length
     ? await sql<{ id: string; revision: number; status: string }[]>`SELECT DISTINCT ON(result->>'id') result->>'id' AS id,
     (result->>'revision')::int AS revision,CASE WHEN result->>'busy'='true' OR result->'work'->>'status'='running' THEN 'running' ELSE result->>'status' END AS status FROM assistant.artifact_agent_calls
