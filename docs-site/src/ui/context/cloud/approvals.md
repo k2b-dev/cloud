@@ -71,7 +71,7 @@ The band shows each request as one tinted row with its title, the chat, and
 **Details**, **Reject**, and **Approve**. **Details** opens the same question
 card in a panel. The band renders nothing when the loaded page has no requests.
 
-The empty list says "Nothing is waiting for you." When `app` or `link` is set
+The empty list says "You're all set." When `app` or `link` is set
 and other apps have open requests, a line links to the Core page.
 
 ## Navigation count

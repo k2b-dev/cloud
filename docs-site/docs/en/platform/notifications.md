@@ -750,7 +750,7 @@ failures retry, while profile and input policy errors fail immediately.
 Delivery observability includes `outgoingMailId` and `outgoingMailStatus`, so
 operators can follow the email in the send log, including a later `bounced`
 status. The ID remains after mail record retention; its status then becomes null.
-**Observability → Notifications** (`/admin/observability/notifications`) shows
+**Observability → Deliveries** (`/admin/observability/deliveries`) shows
 the mail status under the email channel, and the Accounts batch detail shows it
 under each recipient's status, whenever it adds information, such as `queued`,
 `failed`, or `bounced`. The mail ID appears as the line's tooltip.

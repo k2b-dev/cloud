@@ -119,7 +119,7 @@ test("rejects a non-monotonic catalog cursor", async () => {
 });
 
 test("leaves out the tags of apps without a resource reader, whose pickers could show nothing", async () => {
-  stubFetch(async () => Response.json(page([app("library"), app("accounts", [{ ...note, tag: "account", title: "Konten" }], false)])));
+  stubFetch(async () => Response.json(page([app("library"), app("accounts", [{ ...note, tag: "account", title: "Zugänge" }], false)])));
   expect((await loadCloudComposerCatalog("nl-BE")).tags.map((tag) => tag.appId)).toEqual(["library"]);
 });
 
