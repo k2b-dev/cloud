@@ -20,6 +20,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   for (const field of ["id", "name", "icon", "description", "baseUrl"] as const) {
     if (!isString(value[field]) || value[field].length === 0) return invalid(field, "a non-empty string");
   }
+  if (value.package !== undefined && (typeof value.package !== "string" || !/^[a-z][a-z0-9-]{0,79}$/.test(value.package))) {
+    return invalid("package", "a lowercase package name of 1–80 characters");
+  }
   try {
     const baseUrl = new URL(value.baseUrl as string);
     if (!(["http:", "https:"] as const).includes(baseUrl.protocol as "http:" | "https:") || baseUrl.username || baseUrl.password) {
@@ -141,6 +144,12 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     if (!isRecord(value.pwa) || value.pwa.href !== `/pwa/${value.id as string}`) return invalid("pwa", "a mobile app part at /pwa/<id>");
     if (value.pwa.requiresRoles !== undefined && !isStringArray(value.pwa.requiresRoles)) {
       return invalid("pwa.requiresRoles", "an array of strings");
+    }
+    for (const field of ["badge", "summary"] as const) {
+      const path = value.pwa[field];
+      if (path !== undefined && (!isString(path) || !isOwnAppPath(path, value.routes))) {
+        return invalid(`pwa.${field}`, "a same-origin path below one of the app's routes");
+      }
     }
   }
   if (value.widgets !== undefined) {

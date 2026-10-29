@@ -178,20 +178,34 @@ export function observeMobileShell(root: HTMLElement): () => void {
   // Content with its own scroll areas keeps its own fades; the room a toast takes applies to the whole main area.
   const stopScrollFades = body ? installScrollFades(body) : () => {};
   let frame = 0;
+  let owner: HTMLElement | null = null;
+  let resize: ResizeObserver | undefined;
+  const watchOwner = () => {
+    const next = root.querySelector<HTMLElement>("[data-k2b-shell-bottom]");
+    if (next === owner) return;
+    if (owner) resize?.unobserve(owner);
+    owner = next;
+    if (owner) resize?.observe(owner);
+  };
   const measure = () => {
     frame = 0;
-    const footer = Math.max(0, root.getBoundingClientRect().bottom - main.getBoundingClientRect().bottom);
+    watchOwner();
+    const rootBottom = root.getBoundingClientRect().bottom;
+    // Content that owns the bottom edge, such as a chat's composer, counts as the footer, so toasts stay above it.
+    const owned = owner?.getClientRects().length ? rootBottom - owner.getBoundingClientRect().top : 0;
+    const footer = Math.max(0, rootBottom - main.getBoundingClientRect().bottom, owned);
     document.body.style.setProperty(FOOTER_HEIGHT, `${footer}px`);
     root.style.setProperty(TOAST_INSET, `${persistentToastInset(body ?? main)}px`);
   };
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(measure);
   };
-  measure();
-  // The footer can appear, disappear, or change height; the main area takes whatever it leaves.
-  const resize = new ResizeObserver(schedule);
+  // The footer can appear, disappear, or change height; the main area takes whatever it leaves. Content that owns the
+  // bottom edge, such as a composer, grows and shrinks on its own.
+  resize = new ResizeObserver(schedule);
   resize.observe(root);
   resize.observe(main);
+  measure();
   // Toasts arrive and leave anywhere in the document, and their slots grow and collapse in a transition.
   const mutations = new MutationObserver(schedule);
   mutations.observe(document.body, {
@@ -283,8 +297,11 @@ function MobileShellHeader(props: MobileShellHeaderProps): JSX.Element {
 }
 
 export type MobileShellSidebarItem = TabBarItem & {
-  /** A count after the label, such as unread messages; 0 shows nothing. */
-  count?: number;
+  /**
+   * A quiet count after the label, such as open tasks: a number (0 shows nothing) or an element that renders one. The
+   * item's `badge`, which calls for attention, takes its place.
+   */
+  count?: number | JSX.Element;
 };
 
 export type MobileShellSidebarProps = {
@@ -312,7 +329,7 @@ function SidebarLink(props: { item: MobileShellSidebarItem }): JSX.Element {
     >
       <i class={props.item.icon} aria-hidden="true" />
       <span class="k2b-truncate-fade">{props.item.label}</span>
-      <Show when={props.item.count}>{(count) => <span class="k2b-mobile-shell__sidebar-count">{count()}</span>}</Show>
+      <Show when={props.item.badge ?? props.item.count}>{(mark) => <span class="k2b-mobile-shell__sidebar-count">{mark()}</span>}</Show>
     </a>
   );
 }

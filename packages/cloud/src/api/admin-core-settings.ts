@@ -10,6 +10,7 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { ObjectStoreConfigurationError, ObjectStoreConnectionError, testObjectStoreConnection } from "../_internal/object-store-config";
 import { listApps } from "../_internal/registry";
 import { enrichDirtyAiConversations } from "../ai/enrich";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
@@ -206,6 +207,33 @@ const app = new Hono<AuthContext>()
       return c.json({ message: "Failed to test Gotenberg PDF rendering" }, 500);
     }
   })
+  .post(
+    "/test-storage",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Test the saved Garage storage connection",
+      ...requiresAdmin,
+      responses: { 200: jsonResponse(z.object({ ok: z.literal(true) }), "Object written, read and deleted") },
+    }),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      try {
+        await testObjectStoreConnection();
+        return c.json({ ok: true as const });
+      } catch (error) {
+        return c.json(
+          {
+            message:
+              error instanceof ObjectStoreConfigurationError || error instanceof ObjectStoreConnectionError
+                ? error.message
+                : "Storage test failed. Check the saved settings, Garage availability and bucket permissions, then retry.",
+          },
+          502,
+        );
+      }
+    },
+  )
   .post("/test-freeipa", auth.requireRole("admin"), async (c) => {
     const result = await testFreeIpaConnection();
     if (result.ok) return c.json({ ok: true });

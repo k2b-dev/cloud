@@ -22,11 +22,12 @@ export const quoteTestDatabase = (name: string): string => {
   return `"${name.replaceAll('"', '""')}"`;
 };
 
-export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql" | "clickhouse";
+export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql" | "clickhouse" | "s3";
 
 export type InfraMapping = { test: string; runtime: string[]; unset?: string };
 
 export const infraMappings: Record<InfraKind, InfraMapping> = {
+  s3: { test: "CLOUD_TEST_S3_ENDPOINT", runtime: [] },
   database: {
     test: "CLOUD_TEST_DATABASE_URL",
     runtime: ["DATABASE_URL", "POSTGRES_URL", "PGURL"],

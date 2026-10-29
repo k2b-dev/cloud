@@ -270,6 +270,29 @@ describe("PwaLayout", () => {
     expect(document.querySelectorAll(".k2b-tab-bar a > span.k2b-truncate-fade").length).toBe(4);
   });
 
+  test("a part's badge calls for attention in the sidebar and on its tab; a summary's count stays quiet in the sidebar", async () => {
+    signIn("app");
+    apps = [
+      shell,
+      part("alpha", "Alpha", { pwa: { href: "/pwa/alpha", badge: "/pwa/alpha/unread", summary: "/pwa/alpha/unread" } }),
+      part("beta", "Beta", { pwa: { href: "/pwa/beta", summary: "/pwa/beta/summary" } }),
+      part("inventory", "Inventory"),
+    ];
+    const { document } = await render("/pwa/inventory");
+    const island = (scope: Element | null) => scope?.querySelector('solid-island[data-file="PwaPartCount.island.tsx"]');
+    const props = (scope: Element | null) => island(scope)?.getAttribute("data-props") ?? "";
+    const sidebar = (id: string) => document.querySelector(`.k2b-mobile-shell__sidebar a[data-tab="${id}"]`);
+    const tab = (id: string) => document.querySelector(`.k2b-tab-bar a[data-tab="${id}"]`);
+    expect(props(sidebar("alpha"))).toContain("/pwa/alpha/unread");
+    expect(props(sidebar("alpha"))).toContain("attention");
+    expect(props(tab("alpha")?.querySelector(".k2b-tab-bar__badge") ?? null)).toContain("attention");
+    expect(props(sidebar("beta"))).toContain("/pwa/beta/summary");
+    expect(props(sidebar("beta"))).not.toContain("attention");
+    expect(tab("beta")?.querySelector(".k2b-tab-bar__badge")).toBeNull();
+    expect(island(sidebar("inventory"))).toBeNull();
+    expect(tab("inventory")?.querySelector(".k2b-tab-bar__badge")).toBeNull();
+  });
+
   test("marks Start, which lists every part, for a part without its own tab", async () => {
     signIn("app");
     apps = [shell, part("alpha", "Alpha"), part("beta", "Beta"), part("gamma", "Gamma"), part("inventory", "Inventory")];
