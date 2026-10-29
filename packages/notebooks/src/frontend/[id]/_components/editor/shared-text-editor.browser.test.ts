@@ -498,15 +498,25 @@ describe("Notebook on the shared text editor", () => {
           await page.evaluate((rich) => window.noteHarness.setRich(rich), rich);
           await page.evaluate(() => window.noteHarness.settle());
           await settled(page);
-          const after = await paragraph.evaluate((line) => ({
-            top: line.getBoundingClientRect().top,
-            selection: document.getSelection()?.toString(),
-          }));
+          const after = await paragraph.evaluate((line) => {
+            const port = line.closest(".k2b-scroll-area")!;
+            const edge = port.getBoundingClientRect().top;
+            const at = document.elementFromPoint(line.getBoundingClientRect().left + 2, edge + 1);
+            return {
+              top: line.getBoundingClientRect().top,
+              height: line.getBoundingClientRect().height,
+              selection: document.getSelection()?.toString(),
+              scroll: port.scrollTop,
+              edge,
+              atEdge: `${at?.className ?? ""}: ${(at?.textContent ?? "").slice(0, 40)}`,
+            };
+          });
           expect(await text(page)).toBe(doc);
           expect(after.selection).toBe(before.selection);
           // Font metrics differ between presentations; the same text must stay
           // at the viewport edge, within one line rather than a screen away.
-          expect(Math.abs(after.top - before.top)).toBeLessThan(before.height);
+          // The record names the pass and layout when it does not.
+          expect({ rich, shift: Math.abs(after.top - before.top) < before.height, before, after }).toMatchObject({ rich, shift: true });
         }
       } finally {
         await close();
