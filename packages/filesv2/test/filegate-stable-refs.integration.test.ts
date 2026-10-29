@@ -10,6 +10,7 @@ import { type AccountIdentityGroup, accountIdentities, secrets } from "@k2b/clou
 import { Filegate, type RootClient } from "@k2b/filegate";
 import { sql } from "bun";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import { migratePosix } from "../../core/src/migrate/core/posix";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
@@ -232,6 +233,7 @@ roots:
       await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
       await sql`CREATE TABLE IF NOT EXISTS settings.entries(key text PRIMARY KEY,value text)`.simple();
       await migrate();
+      await migrateAudit();
       await sql`TRUNCATE filesv2.operations,filesv2.bases,auth.user_posix,auth.users,settings.entries CASCADE`.simple();
       const linux = JSON.stringify({
         enabled: true,
