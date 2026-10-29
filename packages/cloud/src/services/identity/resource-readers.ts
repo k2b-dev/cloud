@@ -1,9 +1,8 @@
 import { sql } from "bun";
 import { z } from "zod";
-import { accountCategory } from "../../contracts/account-categories";
 import { type ResourcePrincipal, ResourcePrincipalSchema } from "../../contracts/capabilities";
-import type { AccessSubject, User } from "../../contracts/shared";
-import { readAccountCategoryPolicy } from "../account-category-policy";
+import type { AccessSubject } from "../../contracts/shared";
+import { decodeAccountCategoryEnabled } from "../account-category-policy";
 import { toPgUuidArray } from "../postgres";
 import type { ServiceAccount } from "../service-accounts";
 
@@ -14,7 +13,7 @@ export type ResourceReader = {
   binding: Pick<ServiceAccount, "appId" | "resourceType" | "resourceId"> | null;
 };
 
-type UserRow = Pick<User, "id" | "provider" | "profile">;
+type UserRow = { id: string; category_enabled: string | null };
 type AccountRow = {
   id: string;
   kind: ServiceAccount["kind"];
@@ -37,17 +36,25 @@ export const resolveResourceReaders = async (principals: readonly ResourcePrinci
     FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(accountIds)}::uuid[]) AND status = 'active'
   `;
   const users = await sql<UserRow[]>`
-    SELECT id, provider, profile FROM auth.users
-    WHERE id = ANY(${toPgUuidArray([...userIds, ...accounts.flatMap((account) => (account.delegated_user_id ? [account.delegated_user_id] : []))])}::uuid[])
-      AND (account_expires IS NULL OR account_expires > now())
+    SELECT u.id, category.value AS category_enabled FROM auth.users u
+    LEFT JOIN settings.entries category ON category.key = 'user.category.' ||
+      CASE WHEN u.provider = 'ipa' THEN 'freeipa' WHEN u.profile = 'guest' THEN 'guest' ELSE 'login' END || '.enabled'
+    WHERE u.id = ANY(${toPgUuidArray([...userIds, ...accounts.flatMap((account) => (account.delegated_user_id ? [account.delegated_user_id] : []))])}::uuid[])
+      AND (u.account_expires IS NULL OR u.account_expires > clock_timestamp())
   `;
-  const policy = await readAccountCategoryPolicy();
-  const allowedUsers = new Set(users.filter((user) => policy[accountCategory(user)].enabled).map((user) => user.id));
+  const enabled = new Map<string | null, boolean>();
+  const allowedUsers = new Set<string>();
+  for (const user of users) {
+    if (!enabled.has(user.category_enabled)) enabled.set(user.category_enabled, await decodeAccountCategoryEnabled(user.category_enabled));
+    if (enabled.get(user.category_enabled)) allowedUsers.add(user.id);
+  }
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   return input.flatMap((principal): ResourceReader[] => {
-    if (principal.type === "user")
-      return allowedUsers.has(principal.userId) ? [{ principal, subject: { type: "user", userId: principal.userId }, binding: null }] : [];
-    const account = accountsById.get(principal.serviceAccountId);
+    if (principal.type === "user") {
+      const userId = principal.userId.toLowerCase();
+      return allowedUsers.has(userId) ? [{ principal, subject: { type: "user", userId }, binding: null }] : [];
+    }
+    const account = accountsById.get(principal.serviceAccountId.toLowerCase());
     if (!account) return [];
     if (account.kind === "user_delegated")
       return account.delegated_user_id && allowedUsers.has(account.delegated_user_id)

@@ -7,6 +7,7 @@ const database = testInfra.database ? await useMigratedDatabase("spaces_readers"
 const { serviceAccountCredentials, toPgUuidArray } = await import("@k2b/cloud/services");
 const { encryptValue } = await import("@k2b/cloud/services/settings/crypto");
 const { spacesCapabilities } = await import("./capabilities");
+const { spacesService } = await import("./service");
 afterAll(async () => {
   await database?.drop();
 });
@@ -77,6 +78,33 @@ suite("spaces current resource readers", () => {
         SELECT ${containerId}::uuid, id FROM unnest(${toPgUuidArray(grants)}::uuid[]) id`;
       expect(await check()).toEqual([user, account, bound, delegated]);
       expect(await checkContainer()).toEqual([user, account, bound, delegated]);
+      const uppercase = [
+        { type: "user", userId: userId.toUpperCase() },
+        { type: "service_account", serviceAccountId: accountId.toUpperCase() },
+        { type: "service_account", serviceAccountId: delegatedId.toUpperCase() },
+      ] satisfies ResourcePrincipal[];
+      expect(await check(uppercase)).toEqual(uppercase);
+      // Presentation settings do not participate in account authority.
+      await sql`INSERT INTO settings.entries (key, value) VALUES
+        ('user.category.login.visible', ${await encryptValue("invalid boolean")}),
+        ('user.category.login.label', ${await encryptValue(false)})`;
+      expect(await check()).toEqual([user, account, bound, delegated]);
+      await sql`DELETE FROM settings.entries WHERE key IN ('user.category.login.visible', 'user.category.login.label')`;
+      const userGrant = direct[0];
+      if (!userGrant) throw new Error("Expected user grant");
+      await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${otherId}::uuid, ${userGrant.id}::uuid)`;
+      const firstPage = await spacesService.space.listWithPermission({ subject: user, pagination: { perPage: 1, offset: 0 } });
+      expect(firstPage.items.map((space) => space.id)).toEqual([otherId]);
+      const lastPage = await spacesService.space.listWithPermission({
+        subject: user,
+        pagination: { perPage: 2, offset: firstPage.items.length },
+      });
+      expect(lastPage.items.map((space) => space.id)).toEqual([containerId]);
+      expect(lastPage.hasNext).toBeFalse();
+      // Published page-number pagination remains unchanged.
+      const legacyPage = await spacesService.space.listWithPermission({ subject: user, pagination: { page: 2, perPage: 1 } });
+      expect(legacyPage.items.map((space) => space.id)).toEqual([containerId]);
+      await sql`DELETE FROM spaces.space_access WHERE space_id = ${otherId}::uuid AND access_id = ${userGrant.id}::uuid`;
       // Category policy and expiry also constrain a delegated account's current user.
       await sql`INSERT INTO settings.entries (key, value) VALUES ('user.category.login.enabled', ${await encryptValue(false)})
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
@@ -136,6 +164,7 @@ suite("spaces current resource readers", () => {
       await sql`DELETE FROM spaces.spaces WHERE id = ${containerId}::uuid`;
       expect(await checkContainer()).toEqual([]);
     } finally {
+      await sql`DELETE FROM settings.entries WHERE key IN ('user.category.login.enabled', 'user.category.login.visible', 'user.category.login.label')`;
       await sql`DELETE FROM spaces.spaces WHERE id = ANY(${toPgUuidArray([containerId, otherId])}::uuid[])`;
       await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(grants)}::uuid[])`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray([accountId, disabledId, boundId, delegatedId])}::uuid[])`;

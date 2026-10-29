@@ -101,6 +101,7 @@ containers the current caller can read. Reuse these contracts from
   1–100 and defaults to 50.
 - `DiscussionContainersDataSchema`: `{ items, next }`. Each item has
   `{ ref, title }`; `next` is an opaque cursor or `null` on the last page.
+  Changing `limit` between pages continues after the last returned item.
 - Optional `DiscussionActivityInputSchema`: `{ container, item?, timeZone?,
   before?, after?, cursor?, limit? }`. `container` and `item` are opaque
   resource IDs of the role's declared Types. Limit is 1–100, default 50;
@@ -150,7 +151,7 @@ The platform generates `<typeLocalId>.readable`, with fixed
 generated input requires `container`, fixes its Type to the declared local
 container Type, and leaves its ID opaque. Do not declare this Query yourself;
 a name collision fails startup. Before calling application code, the platform
-filters candidates in one database query: users must exist, be unexpired,
+filters candidates through the shared current-account resolver: users must exist, be unexpired,
 and belong to an enabled account category; service accounts must exist and
 have active status. A `user_delegated` service account's user must also pass
 these user checks. Disabled, expired, and deleted accounts never reach the
@@ -177,7 +178,10 @@ Providers can use `resolveResourceReaders(principals)` from
 and nullable resource `binding` (`appId`, `resourceType`, `resourceId`).
 Delegated service accounts resolve to their current user's subject. Expired
 users, disabled account categories, disabled service accounts, and missing
-accounts are omitted. Use the subjects with `getEffectivePermissions()` from
+accounts are omitted. UUID matching ignores letter case while the returned
+principal preserves the input spelling. Only category `enabled` settings affect
+this check; presentation settings such as `visible` and `login.label` do not.
+Use the subjects with `getEffectivePermissions()` from
 `@k2b/cloud/server`, then enforce each non-null binding against the resource.
 The helper creates no session and supplies no credential scope ceiling.
 

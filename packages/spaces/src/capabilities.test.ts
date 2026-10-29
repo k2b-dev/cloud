@@ -698,6 +698,7 @@ const publicIds: Record<ResourceTable, Map<string, string>> = {
   spaces: new Map([
     [spaceUuid, spaceId],
     [otherSpaceUuid, otherSpaceId],
+    ["00000000-0000-4000-8000-000000000003", "third1"],
   ]),
   columns: new Map([[columnUuid, columnId]]),
   items: new Map([
@@ -2718,19 +2719,35 @@ test("activity accepts the shared container and published space alias and reject
   expect(operation.input.safeParse({ container: spaceId, timeZone: "Mars/Base" }).success).toBeFalse();
 });
 
-test("discussion containers preserve authorized list pagination", async () => {
-  spyOn(spacesService.space, "listWithPermission").mockImplementation(async (input) => ({
-    items: [{ ...space, permission: "read" }],
-    total: 2,
-    page: input.pagination?.page ?? 1,
-    perPage: 1,
-    hasNext: input.pagination?.page === 1,
-  }));
+test("discussion containers continue from the same offset when the limit changes", async () => {
+  const spaces = [space, { ...space, id: otherSpaceUuid }, { ...space, id: "00000000-0000-4000-8000-000000000003" }];
+  const list = spyOn(spacesService.space, "listWithPermission").mockImplementation(async (input) => {
+    const offset = input.pagination?.offset ?? 0;
+    const perPage = input.pagination?.perPage ?? 50;
+    return {
+      items: spaces.slice(offset, offset + perPage).map((value) => ({ ...value, permission: "read" })),
+      total: spaces.length,
+      page: 1,
+      perPage,
+      hasNext: offset + perPage < spaces.length,
+    };
+  });
   const operation = spacesCapabilities.queries["space.containers"];
   const first = await operation.run(operation.input.parse({ query: "Product", limit: 1 }), userContext);
   if (!first.ok) throw new Error("Expected containers");
   expect(operation.data.safeParse(first.data.data).success).toBeTrue();
   expect(first.data.data).toEqual({ items: [{ ref: { type: "spaces.space", id: spaceId }, title: space.name }], next: expect.any(String) });
-  const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
-  expect(last.ok && last.data.data.next).toBeNull();
+  const last = await operation.run(operation.input.parse({ query: "Product", limit: 2, cursor: first.data.data.next }), userContext);
+  if (!last.ok) throw new Error("Expected containers");
+  expect(last.data.data).toEqual({
+    items: [
+      { ref: { type: "spaces.space", id: otherSpaceId }, title: space.name },
+      { ref: { type: "spaces.space", id: "third1" }, title: space.name },
+    ],
+    next: null,
+  });
+  expect(list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ query: "Product", requiredLevel: "read", pagination: { perPage: 2, offset: 1 } }),
+  );
+  expect((await operation.run(operation.input.parse({ cursor: "invalid" }), userContext)).ok).toBeFalse();
 });

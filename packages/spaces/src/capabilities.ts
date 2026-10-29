@@ -26,7 +26,7 @@ import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import { sql } from "bun";
-import type { z } from "zod";
+import { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { spacesEvents } from "./app-events";
 import {
@@ -2373,12 +2373,34 @@ export const spacesCapabilities = defineCapabilities({
       data: DiscussionContainersDataSchema,
       openWorld: false,
       run: async (input, context) => {
-        const result = await runSpaceList({ ...input, minimumPermission: "read" }, context);
-        if (!result.ok) return result;
+        let offset = 0;
+        if (input.cursor) {
+          try {
+            offset = z
+              .object({ v: z.literal(1), offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) })
+              .parse(JSON.parse(Buffer.from(input.cursor, "base64url").toString("utf8"))).offset;
+          } catch {
+            return fail(localizeSpacesError(err.badInput("Invalid cursor"), context.locale));
+          }
+        }
+        const scope = scopedSpaceId(context, "read");
+        if (!scope.ok) return scope;
+        const page = await spacesService.space.listWithPermission({
+          subject: context.accessSubject,
+          boundSpaceId: scope.data,
+          requiredLevel: "read",
+          query: input.query,
+          pagination: { perPage: input.limit, offset },
+        });
+        const containers = await spacesPublicResources.projectSpaces(page.items);
+        const nextOffset = offset + containers.length;
         return ok({
           data: {
-            items: result.data.data.map((container) => ({ ref: container.ref, title: container.name.slice(0, 500) })),
-            next: result.data.page?.hasMore ? result.data.page.nextCursor : null,
+            items: containers.map((container) => ({
+              ref: { type: "spaces.space", id: container.id },
+              title: container.name.slice(0, 500),
+            })),
+            next: nextOffset < page.total ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url") : null,
           },
         });
       },

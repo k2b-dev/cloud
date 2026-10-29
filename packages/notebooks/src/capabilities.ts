@@ -15,6 +15,7 @@ import {
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { sql } from "bun";
 import type { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
 import { notebooksEvents } from "./app-events";
@@ -1121,11 +1122,11 @@ const readableNotebook = async (input: ResourceReadableInput) => {
 };
 const readableNote = async (input: ResourceReadableInput) => {
   if (input.container?.type !== "notebooks.notebook") return [];
-  const [note, notebook] = await Promise.all([
-    noteStore.getByShortId({ shortId: input.id }),
+  const [[note], notebook] = await Promise.all([
+    sql<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE short_id = ${input.id}`,
     notebookStore.getByShortId({ shortId: input.container.id }),
   ]);
-  return note && notebook && note.notebookId === notebook.id ? readableNotebookPrincipals(notebook.id, input.principals) : [];
+  return note && notebook && note.notebook_id === notebook.id ? readableNotebookPrincipals(notebook.id, input.principals) : [];
 };
 
 export const notebooksCapabilities = defineCapabilities({
