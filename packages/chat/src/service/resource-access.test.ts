@@ -108,6 +108,31 @@ test("Valkey is the only decision cache; expiration revokes HTTP and live access
   expect(calls).toBe(2);
 });
 
+test("nested capability reads always use invocation authority instead of cached HTTP decisions", async () => {
+  const envelope = {
+    data: { id: ref.id, name: "Project", permission: "read" },
+    links: [{ rel: "open" as const, href: "/app/spaces/abcdef" }],
+  };
+  const dependencies: ResourceReaderDependencies = { invoke: async () => envelope };
+  expect((await readResource(context, ref, dependencies))?.permission).toBe("read");
+  let allowed = false;
+  let calls = 0;
+  const capabilityQuery: NonNullable<ChatContext["capabilityQuery"]> = async (request, schema) => {
+    calls++;
+    expect(request).toMatchObject({ appId: "spaces", capabilityId: "space.read", input: { id: ref.id } });
+    return allowed
+      ? { ok: true, data: { ...envelope, data: schema.parse(envelope.data) } }
+      : { ok: false, error: { code: "FORBIDDEN", status: 403, message: "Denied" } };
+  };
+  const invocation = { ...context, capabilityQuery };
+  expect(await readResource(invocation, ref, dependencies)).toBeNull();
+  allowed = true;
+  expect((await readResource(invocation, ref, dependencies))?.permission).toBe("read");
+  allowed = false;
+  expect(await readResource(invocation, ref, dependencies)).toBeNull();
+  expect(calls).toBe(3);
+});
+
 test("app failure, cache failure, missing credentials and canceled reads fail closed", async () => {
   const failure: ResourceReaderDependencies = {
     invoke: async () => {

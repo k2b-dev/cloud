@@ -15,7 +15,6 @@ const loading = createDomTestHarness();
 const { toggleInlineMark, caretFormat, setHeadingLevel, toggleHeadingLevel, insertTable, insertNoteLink } = await import(
   "./editor-actions"
 );
-const { prompts } = await import("@k2b/ui");
 const noteSearch = await import("../search/openNoteSearchPrompt");
 const { formattingKeymap } = await import("./EditorToolbar");
 const { renderNotebookBook } = await import("../../../../lib/book-renderer");
@@ -532,20 +531,23 @@ describe("insert dialogs after the note became read-only", () => {
     return;
   }
 
-  // Sync can end while a dialog is open; its answer must not change the read-only note.
-  test.each(["table", "note link"])("a %s answered after the note became read-only inserts nothing", async (kind) => {
+  test("a table picker answered after the note became read-only inserts nothing", async () => {
     using editor = mount("Keep", 4);
-    const form = spyOn(prompts, "form").mockResolvedValue({ rows: 2, cols: 2 });
+    editor.view.dispatch({ effects: StateEffect.appendConfig.of(EditorState.readOnly.of(true)) });
+    await insertTable(editor.view, { rows: 2, cols: 2 }, "en");
+    expect(editor.text()).toBe("Keep");
+  });
+
+  test("a note link answered after the note became read-only inserts nothing", async () => {
+    using editor = mount("Keep", 4);
     const picker = spyOn(noteSearch, "openNoteLinkPrompt").mockResolvedValue({ id: "Other1", title: "Other" });
     try {
-      // The dialog opens synchronously; the note becomes read-only before its answer arrives.
-      const inserting = kind === "table" ? insertTable(editor.view, undefined, "en") : insertNoteLink(editor.view, "Book01", "en");
+      const inserting = insertNoteLink(editor.view, "Book01", "en");
       editor.view.dispatch({ effects: StateEffect.appendConfig.of(EditorState.readOnly.of(true)) });
       await inserting;
-      expect(kind === "table" ? form : picker).toHaveBeenCalledTimes(1);
+      expect(picker).toHaveBeenCalledTimes(1);
       expect(editor.text()).toBe("Keep");
     } finally {
-      form.mockRestore();
       picker.mockRestore();
     }
   });

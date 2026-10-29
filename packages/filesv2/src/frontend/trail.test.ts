@@ -68,6 +68,16 @@ describe("Files reports its current page to the shell", () => {
     });
   });
 
+  test("an authorized moved-folder notice keeps the opened folder as the current title", () => {
+    expect(
+      trailOf({
+        ...folder("Projects/Offers"),
+        directory: null,
+        moved: { baseId: base.id, path: "Projects/Offers" },
+      }),
+    ).toEqual({ title: "Offers", ancestors: [] });
+  });
+
   test("the app's own views and a missing listing show the app name alone", () => {
     expect(trailOf({ ...folder("Projects"), source: "/app/filesv2?view=shares" })).toEqual({ title: "Files", ancestors: [] });
     expect(trailOf({ source: "/app/filesv2", bases, directory: null, editor: null })).toEqual({ title: "Files", ancestors: [] });

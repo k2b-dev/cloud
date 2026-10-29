@@ -42,6 +42,22 @@ if (!hasPermission(permission, "write")) {
 Applications decide what each level means for their resources. `admin` also
 makes an entry a manager; see [Keep at least one manager](#keep-at-least-one-manager).
 
+## Installation administration in a transaction
+
+For a mutation that requires installation administration, use
+`accounts.users.hasInstallationAdminInTransaction(actor, tx)` from
+`@k2b/cloud/services` inside the mutation's database transaction. It returns a
+boolean and keeps the current user, provider authority, and relevant settings
+stable until commit. It respects the request actor's role ceiling, account expiry,
+and account-category policy. Resource permissions remain a separate check.
+
+Call it before acquiring resource, grant, or mandate locks. If account locks
+must come first, only the first account lock may wait. Acquire subsequent account
+locks and the remaining user and membership locks with `NOWAIT` before calling
+the helper. Roll back and return a conflict on PostgreSQL
+`lock_not_available`; the caller can submit a fresh request. This keeps account
+and user deletion compatible with the mutation.
+
 ## Principals
 
 An access entry grants one permission to one principal:
@@ -772,6 +788,11 @@ local Cloud group or a direct grant. Cloud rejects these recipients in
 directory groups. Change eligible membership in the directory, or grant the
 local recipient separately.
 
+## Automatic machine workflows
+
+Grids can run scheduled and record-event workflows under a named machine account
+with its own base grant and an exact-workflow, revocable mandate. See
+[Machine workflow mandates](./machine-workflow-mandates.md).
 For independently owned file storage and explicit path grants, see
 [Files machine storage](/en/docs/identity/files-machine-storage).
 

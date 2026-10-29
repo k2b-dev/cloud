@@ -449,6 +449,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                   allowPublic={allowPublic()}
                   allowAuthenticated={allowAuthenticated()}
                   allowServiceAccounts={props.allowServiceAccounts}
+                  serviceAccountKinds={props.serviceAccountKinds}
+                  serviceAccountStatus={props.serviceAccountStatus ?? "active"}
                   placeholder={props.placeholder}
                   signedIn={props.signedIn}
                   disabled={saving()}

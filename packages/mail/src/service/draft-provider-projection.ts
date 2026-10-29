@@ -241,6 +241,24 @@ export const queueDraftProjectionInTransaction = async (params: { db: SqlClient;
     ON CONFLICT (draft_id, cloud_revision) WHERE direction = 'export' DO NOTHING
     RETURNING id
   `;
+  // Shared edits can persist at typing speed. Superseded exports which never
+  // reached the provider carry no recovery boundary: the latest snapshot
+  // replaces them. Keep every possible remote effect for reconciliation.
+  // SKIP LOCKED lets an exporter finish claiming a row without reversing the
+  // draft/snapshot lock order. Its later prepared->appending CAS fences a
+  // worker that already read a snapshot removed here.
+  await params.db`
+    DELETE FROM mail.draft_provider_snapshots
+    WHERE id IN (
+      SELECT snapshot.id FROM mail.draft_provider_snapshots snapshot
+      JOIN mail.drafts draft ON draft.id = snapshot.draft_id
+      WHERE draft.id = ${params.draftId}::uuid AND draft.edit_mode = 'shared'
+        AND snapshot.direction = 'export' AND snapshot.cloud_revision < ${draft.revision}
+        AND snapshot.state IN ('prepared', 'retired', 'needs_attention')
+        AND snapshot.provider_effect_started_at IS NULL AND snapshot.uid IS NULL
+      FOR UPDATE OF snapshot SKIP LOCKED
+    )
+  `;
   if (created) return created.id;
   const [existing] = await params.db<{ id: string }[]>`
     SELECT id
@@ -1112,8 +1130,8 @@ const applyImportedDraft = async (params: {
     const body = removeOrphanComposeSegmentMarks(params.parsed.body);
     let draftId = params.draftId;
     const [found] = draftId
-      ? await tx<{ id: string; revision: string | number; state: string; conversation_id: string | null }[]>`
-          SELECT id, revision, state, conversation_id
+      ? await tx<{ id: string; revision: string | number; state: string; edit_mode: "lock" | "shared"; conversation_id: string | null }[]>`
+          SELECT id, revision, state, edit_mode, conversation_id
           FROM mail.drafts
           WHERE id = ${draftId}::uuid
             AND mailbox_id = ${params.snapshot.mailbox_id}::uuid
@@ -1132,7 +1150,10 @@ const applyImportedDraft = async (params: {
       });
       // A provider draft carries no segment markers, so template text returning from another client can no
       // longer be rendered. Keep the Cloud draft and surface the external edit as a recovery copy instead.
-      const concurrentEdit = existing.state !== "draft" || currentRevision !== baseRevision || params.cloudCopyKept;
+      // IMAP cannot prove a Yjs generation or an exact header/attachment base.
+      // Preserve the full external input as recovery instead of overwriting shared identities.
+      const concurrentEdit =
+        existing.edit_mode === "shared" || existing.state !== "draft" || currentRevision !== baseRevision || params.cloudCopyKept;
       const externalTemplateEdit = !concurrentEdit && hasUnrenderedTemplateSyntax(body);
       if (concurrentEdit || externalTemplateEdit) {
         await storeProviderRecovery({

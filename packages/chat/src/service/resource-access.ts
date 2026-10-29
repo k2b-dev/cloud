@@ -121,7 +121,8 @@ export const readResource = async (
   const key = accessKey(contextPrincipal(context), ref);
   try {
     context.caller?.signal?.throwIfAborted();
-    const cached = await redis.get(key);
+    // A nested query carries invocation-specific authority; an HTTP cache entry cannot authorize it.
+    const cached = context.capabilityQuery ? null : await redis.get(key);
     if (cached !== null) return ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
     // Live delivery has no interactive credential and may only consume an existing decision.
     if (!context.caller) return null;
@@ -130,7 +131,18 @@ export const readResource = async (
     const item = ItemRefSchema.safeParse(ref);
     if (!container.success && !item.success) return null;
     const [appId, type] = ref.type.split(".");
-    const result = await dependencies.invoke(appId!, `${type}.read`, { id: ref.id }, context.caller);
+    const capabilityQuery = context.capabilityQuery;
+    const result = capabilityQuery
+      ? await (async () => {
+          const response = await capabilityQuery(
+            { appId: appId!, capabilityId: `${type}.read`, input: { id: ref.id }, signal: context.caller?.signal },
+            z.unknown(),
+          );
+          if (response.ok) return EnvelopeSchema.parse(response.data);
+          if (response.error.status === 403 || response.error.status === 404) return null;
+          throw new Error("Resource provider unavailable");
+        })()
+      : await dependencies.invoke(appId!, `${type}.read`, { id: ref.id }, context.caller);
     const href = result?.links?.find((link) => link.rel === "open")?.href;
     let decision: ResourceDecision | null = null;
     if (result && href && container.success) {
@@ -181,7 +193,7 @@ export const readResource = async (
       onUnavailable?.();
       return null;
     }
-    await redis.set(key, JSON.stringify(decision), "EX", ACCESS_TTL_SECONDS);
+    if (!context.capabilityQuery) await redis.set(key, JSON.stringify(decision), "EX", ACCESS_TTL_SECONDS);
     return decision;
   } catch {
     onUnavailable?.();

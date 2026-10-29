@@ -97,6 +97,8 @@ test("thread hits carry a minimal parent and optional item kind and completion",
 
 test("chat hits reuse the complete list summary and keep system conversation summaries nullable", () => {
   const conversation = ConversationSchema.parse({
+    notifications: null,
+    mentionsUnread: 0,
     id: "Chat01",
     title: "IT",
     name: "IT",

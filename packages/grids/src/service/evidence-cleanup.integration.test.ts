@@ -39,7 +39,8 @@ if (!databaseName) {
       await sql`CREATE SCHEMA auth`.simple();
       await sql`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
       await sql`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
-      await sql`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
+      await sql`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY, name TEXT, kind TEXT, status TEXT)`.simple();
+      await sql`CREATE TABLE auth.mandates (id UUID PRIMARY KEY)`.simple();
       const { migrate: migrateWorkflows } = await import("../../../core/src/migrate/core/workflows");
       const { migrate } = await import("../migrate");
       await migrateWorkflows();

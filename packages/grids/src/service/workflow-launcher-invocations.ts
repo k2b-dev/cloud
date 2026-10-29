@@ -23,6 +23,7 @@ import { loadWorkflowCatalog, resolveWorkflowFieldRef } from "./workflow-catalog
 import { getWorkflow } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
 import { getLauncher } from "./workflow-launchers";
+import { resolveWorkflowInvocationPrincipal } from "./workflow-machine-authority";
 import { invokeGridsWorkflow } from "./workflow-runtime";
 import { workflowServiceText } from "./workflow-service-messages";
 
@@ -223,6 +224,9 @@ const authorize: WorkflowLauncherInvocationDeps["authorize"] = async ({
   locale,
 }) => {
   const t = workflowServiceText(locale);
+  const admitted = await resolveWorkflowInvocationPrincipal(workflow.id, principal);
+  if (!admitted.ok) return admitted;
+  principal = admitted.data;
   const principalState = await revalidateWorkflowPrincipal(principal, workflow.baseId);
   if (!principalState.ok || !hasAtLeast(principalState.permissionCap, "write")) {
     return fail(err.forbidden(t.actorCannotRun));

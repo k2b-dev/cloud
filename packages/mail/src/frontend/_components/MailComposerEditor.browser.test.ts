@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { ComposeFormattingWarning } from "../../contracts";
 import { renderComposeContent } from "../../service/compose-renderer";
 import type { MailComposerEditorHarnessOptions, MailComposerHarnessOptions } from "./MailComposerEditor.browser-harness";
@@ -88,8 +88,7 @@ const phone: BrowserContextOptions = { viewport: { width: 375, height: 740 }, is
 const load = async (options: { context: BrowserContextOptions; theme: "light" | "dark"; locale: "en" | "de" }) => {
   const page = await (await browser.newContext(options.context)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((harnessOptions: MailComposerEditorHarnessOptions) => window.mountComposerEditor(harnessOptions), {
@@ -101,8 +100,7 @@ const load = async (options: { context: BrowserContextOptions; theme: "light" | 
 const loadComposer = async (context: BrowserContextOptions, locale: "en" | "de") => {
   const page = await (await browser.newContext(context)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   await page.evaluate((options: MailComposerHarnessOptions) => window.mountComposer(options), {
     locale,
@@ -149,24 +147,24 @@ describe("Mail composer recovery", () => {
         await page.goto(server.url.href);
         if (label === "tablet dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
         await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
-        const editor = page.locator("textarea").first();
+        const editor = page.getByRole("textbox", { name: "Message body", exact: true });
         await editor.fill("First autosave text");
-        await editor.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(6, 6));
+        await page.evaluate(() => window.setComposerCaret(6));
         await page.clock.fastForward(800);
         await page.waitForURL(/Draft1/);
         await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("button.mail-composer-signature")?.disabled);
         expect(
-          await editor.evaluate((element: HTMLTextAreaElement) => ({
-            focused: document.activeElement === element,
-            caret: element.selectionStart,
-          })),
+          await page.evaluate(() => {
+            const { focused, caret } = window.composerEditorState();
+            return { focused, caret };
+          }),
         ).toEqual({ focused: true, caret: 6 });
         await page.evaluate(() => window.expireComposerSession());
         await editor.fill("Preserved after sign-in expires");
         await page.clock.fastForward(800);
         const signIn = page.getByRole("button", { name: "Sign in again", exact: true });
         await signIn.waitFor();
-        expect(await editor.inputValue()).toBe("Preserved after sign-in expires");
+        expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved after sign-in expires");
         const returnUrl = page.url();
         await Promise.all([page.waitForEvent("load"), signIn.click()]);
         expect(page.url()).toBe(returnUrl);
@@ -174,7 +172,8 @@ describe("Mail composer recovery", () => {
         await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null }));
         await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("button.mail-composer-signature")?.disabled);
         await page.getByRole("tab", { name: "Write", exact: true }).click();
-        expect(await page.locator("textarea").first().inputValue()).toBe("Preserved after sign-in expires");
+        await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+        expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved after sign-in expires");
       } finally {
         await page.context().close();
       }
@@ -187,16 +186,18 @@ describe("Mail composer recovery", () => {
       await page.goto(server.url.href);
       await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
       await page.evaluate(() => window.expireComposerSession());
-      await page.locator("textarea").first().fill("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).fill("Preserved before first save");
       await page.clock.fastForward(800);
       const signIn = page.getByRole("button", { name: "Sign in again", exact: true });
       await signIn.waitFor();
       await Promise.all([page.waitForEvent("load"), signIn.click()]);
       await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
-      expect(await page.locator("textarea").first().inputValue()).toBe("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+      expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved before first save");
       await page.clock.fastForward(800);
       await page.waitForURL(/Draft1/);
-      expect(await page.locator("textarea").first().inputValue()).toBe("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+      expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved before first save");
     } finally {
       await page.context().close();
     }
@@ -621,5 +622,67 @@ describe("Mail composer preview with a table", () => {
         await page.context().close();
       }
     }, 30_000);
+  }
+});
+
+describe("shared Mail text editor", () => {
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`loads one labeled standalone plain editor and reports its edits on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate(() => window.mountComposerEditor({ locale: "en", body: "Plain body", format: "plain" }));
+        const editor = page.getByRole("textbox", { name: "Message body", exact: true });
+        await editor.waitFor();
+        expect(await editor.count()).toBe(1);
+        expect(await editor.getAttribute("contenteditable")).toBe("true");
+        expect(await page.evaluate(() => window.editorSource())).toBe("Plain body");
+        expect(await page.locator('.k2b-placeholder[data-state="loading"]').count()).toBe(0);
+        expect(await page.getByRole("tablist").count()).toBe(0);
+        await editor.fill("Edited plain body");
+        expect(await page.evaluate(() => window.editorSource())).toBe("Edited plain body");
+        expect(await page.evaluate(() => window.editorBody())).toBe("Edited plain body");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test(`edits table cells and preserves the same text across source and plain views on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      const initial = "Before\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n\nAfter";
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate((body) => window.mountComposerEditor({ locale: "en", body, editorActive: true }), initial);
+        const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
+        await cell.fill("Ink");
+        const expected = initial.replace("Paper", "Ink");
+        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
+        await page.getByRole("radio", { name: "Markdown", exact: true }).click();
+        expect(await page.evaluate(() => window.editorSource())).toBe(expected);
+        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
+        // innerText adds layout-dependent separators around empty CodeMirror lines.
+        expect(await page.locator(".cm-content > .cm-line").allTextContents()).toEqual(expected.split("\n"));
+        await page.evaluate(() => window.setEditorFormat("plain"));
+        await page.waitForSelector('.k2b-text-editor[data-mode="plain"]');
+        expect(await page.evaluate(() => window.editorSource())).toBe(expected);
+        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
+        // innerText adds layout-dependent separators around empty CodeMirror lines.
+        expect(await page.locator(".cm-content > .cm-line").allTextContents()).toEqual(expected.split("\n"));
+        expect(await page.locator(".k2b-ste-table").count()).toBe(0);
+        await page.evaluate(() => window.setEditorEditable(false));
+        await page.waitForSelector('.cm-content[contenteditable="false"]');
+        await page.evaluate(() => window.replaceEditorBody("Restored body"));
+        expect(await page.locator(".cm-content").innerText()).toBe("Restored body");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
   }
 });
