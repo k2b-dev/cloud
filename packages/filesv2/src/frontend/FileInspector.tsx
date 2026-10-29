@@ -36,8 +36,8 @@ import { loadItemHistory, loadItemShares, loadShareAccess, restoreVersion, revok
 import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-requests";
 import ItemHistory from "./ItemHistory";
-import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
 import { useFilesMessages } from "./messages";
+import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
 
 /** One entry in the shared details outline: header, preview, properties, versions or contents, then technical details; a summary for several. */
 export default function FileInspector(props: {

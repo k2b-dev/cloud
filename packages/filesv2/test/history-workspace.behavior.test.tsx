@@ -127,10 +127,7 @@ describe("Files history in the workspace", () => {
   const mount = (initial: WorkspaceSnapshot) => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
-    const dispose = render(
-      () => createComponent(modules!.Workspace, { initial, timeZone: "Europe/Berlin", retentionDays: 365 }),
-      dom.root,
-    );
+    const dispose = render(() => createComponent(modules!.Workspace, { initial, timeZone: "Europe/Berlin", retentionDays: 365 }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
