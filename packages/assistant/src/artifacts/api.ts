@@ -93,6 +93,7 @@ const Grant = z
     principal: z.discriminatedUnion("type", [
       z.object({ type: z.literal("user"), userId: z.uuid() }),
       z.object({ type: z.literal("group"), groupId: z.uuid() }),
+      z.object({ type: z.literal("service_account"), serviceAccountId: z.uuid() }),
       z.object({ type: z.literal("authenticated") }),
       z.object({ type: z.literal("public") }),
     ]),

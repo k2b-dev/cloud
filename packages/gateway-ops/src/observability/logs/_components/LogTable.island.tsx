@@ -1,41 +1,24 @@
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import type { DateContext } from "@k2b/stdlib";
-import {
-  Button,
-  CopyButton,
-  DataTable,
-  type DataTableColumn,
-  type LogTableEntry,
-  Pagination,
-  Placeholder,
-  prompts,
-  StatusBadge,
-  type StatusTone,
-  useLocale,
-} from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { DataTable, type DataTableColumn, type LogTableEntry, Pagination, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
+import { Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import LogFilterBar from "./LogFilterBar";
+import { entryHref, LEVEL } from "./log-levels";
 import type { LogFilterState } from "./types";
 
 type Props = {
   entries: LogTableEntry[];
+  /** The entry open in the detail column. */
+  selectedId: string | null;
+  /** Address that opens one entry in the detail column, with the current filters. */
+  entryHrefBase: string;
   total: number;
   filter: LogFilterState;
   sources: string[];
-  retentionDays: number;
-  retentionUnreadable?: boolean;
   timeZone: string;
   totalPages: number;
   baseUrl: string;
   loadError: string | null;
-};
-
-const LEVEL: Record<string, { icon: string; tone: StatusTone; label: string }> = {
-  debug: { icon: "ti ti-bug", tone: "neutral", label: "debug" },
-  info: { icon: "ti ti-info-circle", tone: "info", label: "info" },
-  warn: { icon: "ti ti-alert-triangle", tone: "warning", label: "warn" },
-  error: { icon: "ti ti-alert-circle", tone: "error", label: "error" },
 };
 
 /** key=value, key2=value2 for the inline detail column */
@@ -48,92 +31,6 @@ function formatMetaInline(metadata: Record<string, unknown> | null): string {
       return `${k}=${JSON.stringify(v)}`;
     })
     .join(", ");
-}
-
-/** Structured metadata view for the detail dialog */
-function MetadataDetail(props: { metadata: Record<string, unknown> | null }) {
-  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  if (!props.metadata) return null;
-
-  const entries = Object.entries(props.metadata);
-  const jsonRaw = JSON.stringify(props.metadata, null, 2);
-  const [showRaw, setShowRaw] = createSignal(false);
-
-  return (
-    <div class="flex flex-col gap-2">
-      <Show
-        when={!showRaw()}
-        fallback={
-          <div class="relative bg-zinc-100 dark:bg-zinc-800 rounded-md px-3 py-2">
-            <pre class="text-[11px] text-secondary whitespace-pre-wrap break-all max-h-64 overflow-y-auto pr-16">{jsonRaw}</pre>
-            <div class="absolute top-2 right-2">
-              <CopyButton text={jsonRaw} label={t.copy} />
-            </div>
-          </div>
-        }
-      >
-        <div class="bg-zinc-100 dark:bg-zinc-800 rounded-md px-3 py-2">
-          <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
-            {entries.map(([key, value]) => {
-              const isComplex = typeof value === "object" && value !== null;
-              const display = isComplex ? JSON.stringify(value) : String(value ?? "null");
-              return (
-                <>
-                  <span class="text-dimmed font-medium shrink-0">{key}</span>
-                  <span class={`text-secondary break-all ${isComplex ? "font-mono text-[11px]" : ""}`}>{display}</span>
-                </>
-              );
-            })}
-          </div>
-        </div>
-      </Show>
-      <Button type="button" variant="ghost" size="xs" class="self-start" onClick={() => setShowRaw(!showRaw())}>
-        {showRaw() ? t.viewFormatted : t.viewRaw}
-      </Button>
-    </div>
-  );
-}
-
-function showDetail(entry: LogTableEntry, dateConfig: DateContext) {
-  const locale = dateConfig.locale;
-  const { t } = gatewayOpsMessages.resolve([locale ?? "en"]);
-  const level = LEVEL[entry.level];
-  void prompts.dialog(
-    (close) => (
-      <div class="flex flex-col gap-4">
-        <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
-          <span class="text-dimmed">{t.level}</span>
-          <StatusBadge tone={level?.tone ?? "neutral"} label={level?.label ?? entry.level} icon={level?.icon} />
-          <span class="text-dimmed">{t.source}</span>
-          <span class="text-primary">{entry.source}</span>
-          <span class="text-dimmed">{t.time}</span>
-          <span class="text-primary">{formatDateTime(entry.createdAt, dateConfig)}</span>
-        </div>
-        <div class="flex flex-col gap-1">
-          <span class="text-xs text-dimmed">{t.message}</span>
-          <p class="text-xs text-primary whitespace-pre-wrap break-all bg-zinc-100 dark:bg-zinc-800 rounded-md px-3 py-2">
-            {entry.message}
-          </p>
-        </div>
-        <Show when={entry.metadata}>
-          <div class="flex flex-col gap-1">
-            <span class="text-xs text-dimmed">{t.metadata}</span>
-            <MetadataDetail metadata={entry.metadata} />
-          </div>
-        </Show>
-        <div class="flex justify-end">
-          <Button type="button" variant="secondary" size="sm" onClick={() => close()}>
-            {t.close}
-          </Button>
-        </div>
-      </div>
-    ),
-    {
-      title: `${level?.label ?? entry.level}: ${entry.source}`,
-      icon: level?.icon ?? "ti ti-file-text",
-      size: "large",
-    },
-  );
 }
 
 export default function LogTable(props: Props) {
@@ -161,12 +58,7 @@ export default function LogTable(props: Props) {
         }
       />
       <DataTable.Controls>
-        <LogFilterBar
-          filter={props.filter}
-          sources={props.sources}
-          retentionDays={props.retentionDays}
-          retentionUnreadable={props.retentionUnreadable}
-        />
+        <LogFilterBar filter={props.filter} sources={props.sources} />
       </DataTable.Controls>
       <Show
         when={!props.loadError}
@@ -176,7 +68,8 @@ export default function LogTable(props: Props) {
           rows={props.entries}
           columns={columns}
           getRowId={(entry) => String(entry.id)}
-          onRowClick={(entry) => showDetail(entry, { locale: locale(), timeZone: props.timeZone })}
+          selectedRowId={props.selectedId}
+          onRowClick={(entry) => window.location.assign(entryHref(props.entryHrefBase, String(entry.id)))}
           surface="plain"
           empty={t.noLogEntries}
           renderCell={({ row, col }) => {
