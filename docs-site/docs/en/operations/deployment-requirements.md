@@ -1981,6 +1981,27 @@ Existing category-only callers continue to work. There is no new configuration,
 migration, or service requirement; searches use the existing Geoapify key and
 credit budget. See [Places and maps](/en/docs/platform/places-and-maps).
 
+### Administrative Cloud app pairing
+
+Deploy Core and the `pwa` application from the same release before enabling
+administrators to pair the Cloud app from Accounts. Core startup adds the
+initiating administrator and device-confirmation hash to app pairings, extends
+the existing pairing state constraint, and stores the setup administrator on
+paired devices for notification retries. The migration is additive and retains
+existing self-pairings and devices. It needs no new configuration, service or
+secret. Allow Core's startup migration to finish before serving the new routes.
+
+Administrative pairing pauses after the web code match until the claiming
+device explicitly confirms its named account and setup administrator. Older
+clients that only poll completion remain waiting and receive no credentials;
+reload the installed app to use its current confirmation screen. Verify this
+boundary with an administrator web sign-in less than ten minutes old and an
+active test account: reject once and check that no device appears, then start
+again and confirm on the device. Check the account's device list, paired-device
+notice and audit identities. Self-pairing and Cloud Login keep their existing
+flows. See [administrative Cloud app pairing](/en/docs/reference/account-administration#pair-the-cloud-app-for-another-account)
+for endpoints and states.
+
 ## Capability content provenance after the upgrade
 
 Capability Query, Action, review, and stream handlers receive the framework-derived `via`

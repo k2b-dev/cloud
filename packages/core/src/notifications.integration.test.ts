@@ -44,6 +44,18 @@ suite("Core notice for a newly paired phone", () => {
     expect(de.content).toContain(`(${timeZone})`);
   });
 
+  test("administrative pairing names who set it up in both delivery formats and locales", async () => {
+    const data = { name: "Shared iPad", platform: "ios" as const, pairedAt: "2026-10-23T12:00:00.000Z", pairedByName: "Admin Example" };
+    for (const locale of ["en", "de"]) {
+      const notice = app.notifications.appDevicePaired;
+      const rendered = await notice.render(data, { locale });
+      const email = await notice.email!(data, { locale });
+      const expected = locale === "de" ? "Eingerichtet von Admin Example (Administration)." : "Set up by Admin Example (Administration).";
+      expect(rendered.body).toContain(expected);
+      expect(email.content).toContain(expected);
+    }
+  });
+
   test("is sent once per phone, in the locale of the pairing", async () => {
     const definition = app.notifications.appDevicePaired;
     const suffix = crypto.randomUUID();
