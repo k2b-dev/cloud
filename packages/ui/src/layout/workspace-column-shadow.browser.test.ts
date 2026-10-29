@@ -274,6 +274,17 @@ for (const [width, options] of [
       await row.focus();
       await settled(page);
       expect(await insets(page)).toEqual(columns);
+      // A column that starts to scroll keeps the same space: the end track is
+      // there before anything overflows, also where no gutter is reserved.
+      await page.evaluate(() => {
+        for (const section of document.querySelectorAll(".k2b-app-workspace__main .k2b-app-workspace__sidebar-section"))
+          for (let copy = 0; copy < 30; copy++) section.after(section.cloneNode(true));
+      });
+      await settled(page);
+      const grown = await insets(page);
+      expect(grown.map((column) => column.rows.length)).toEqual(columns.map((column) => column.rows.length * 31));
+      for (const column of grown)
+        for (const row of column.rows) expect({ name: column.name, ...row }).toEqual({ name: column.name, start: 8, end: 8 });
     } finally {
       await page.close();
     }

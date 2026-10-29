@@ -3257,22 +3257,29 @@ html {
 }
 
 /* With a mouse, the end inset of a level body, navigation pane, or inset
-   ScrollArea is its fixed 0.5rem scroll track, so a classic scrollbar never makes one side wider. CSS cannot query the
-   scrollbar style, so the primary pointer stands in for it: a touch screen
-   draws overlay scrollbars that take no room and keeps both paddings. */
+   ScrollArea is its fixed 0.5rem scroll track, so a classic scrollbar never
+   makes one side wider. The track is always there, empty while nothing
+   overflows: WebKit reserves no gutter without overflow, so the end would
+   otherwise touch the edge until the content grows and then jump. A MobileShell
+   pads its levels itself. CSS cannot query the scrollbar style, so the primary
+   pointer stands in for it: a touch screen draws overlay scrollbars that take
+   no room and keeps both paddings, as does Firefox, which has no fixed track. */
 @media (pointer: fine) {
-  .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"]),
-  .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level]),
-  .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"] {
-    padding-inline-end: 0;
-    scrollbar-width: auto;
-    scrollbar-color: auto;
-  }
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *),
+    .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level]),
+    .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"] {
+      overflow-y: scroll;
+      padding-inline-end: 0;
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
 
-  .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"])::-webkit-scrollbar,
-  .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level])::-webkit-scrollbar,
-  .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"]::-webkit-scrollbar {
-    width: 0.5rem;
+    .k2b-ui .k2b-app-workspace__level-body:not([data-scroll="false"], .k2b-mobile-shell__main *)::-webkit-scrollbar,
+    .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"]:not([data-scroll="false"], [data-workspace-level])::-webkit-scrollbar,
+    .k2b-ui .k2b-scroll-area[data-inset="true"][data-orientation="vertical"]::-webkit-scrollbar {
+      width: 0.5rem;
+    }
   }
 }
 

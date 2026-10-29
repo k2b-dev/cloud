@@ -41,7 +41,8 @@ the same setting as `preview.viewportSize`. Omit it for layout-owned sizing.
 Set `inset` when the scroll area fills a workspace column with rows, such as a
 message list in a `MainPane`. It then keeps 0.5 rem inside both side edges,
 like a level body: with a mouse, the end space is a fixed 0.5 rem scroll
-track, so a classic scrollbar never makes one side wider than the other. Do not
+track that is there before anything overflows, so a classic scrollbar never
+makes one side wider than the other and nothing moves when the list grows. Do not
 add your own horizontal padding next to it.
 
 Pass `scrollPreserveKey` when enhanced navigation should restore this
