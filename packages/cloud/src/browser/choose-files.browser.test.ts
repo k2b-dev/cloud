@@ -222,7 +222,7 @@ beforeAll(async () => {
       );
     },
   });
-  browser = await launchBrowser();
+  browser = await launchBrowser({ serveShellCatalog: true });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();

@@ -129,6 +129,10 @@ machine to edit groups, search the directory, or acquire an installation role.
 Changing membership as a machine requires a separate direct
 [local group management grant](./machine-group-management.md). A resource grant or
 credential scope cannot grant an installation role either. Applications still enforce scopes and resource
+(or the corresponding `remove` command). Group management remains a user-backed directory operation: membership alone does
+not authorize a machine to edit groups, search the directory, or acquire an
+installation role. A resource grant or credential scope cannot grant an
+installation role either. Applications still enforce scopes and resource
 bindings when a group grant matches.
 
 This membership exists only in Cloud. It creates no Unix identity or FreeIPA
