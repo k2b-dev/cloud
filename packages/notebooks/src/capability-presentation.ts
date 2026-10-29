@@ -61,6 +61,15 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
   translations: {
     de: {
       commands: { "note.compose": { title: "Neue Notiz", description: "Notizbuch auswählen und eine Notiz schreiben." } },
+      events: {
+        "notebook.created": { title: "Notizbuch erstellt", description: "Ein Notizbuch wurde erstellt." },
+        "notebook.updated": { title: "Notizbuch geändert", description: "Metadaten oder Einstellungen eines Notizbuchs wurden geändert." },
+        "note.created": { title: "Notiz erstellt", description: "Eine Notiz wurde erstellt." },
+        "note.updated": {
+          title: "Notiz geändert",
+          description: "Gespeicherte Notizänderungen werden nach einer Ruhephase in begrenzten Durchläufen zusammengefasst.",
+        },
+      },
       types: {
         annotation: {
           title: "Textstellenkommentar",

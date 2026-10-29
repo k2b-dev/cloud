@@ -14,6 +14,7 @@ import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/clo
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
+import { notebooksEvents } from "./app-events";
 import {
   ActivityDataSchema,
   ActivityInputSchema,
@@ -571,6 +572,11 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
   const result = {
     data: {
       ...mapNote(note, resolved.data.notebook.shortId, await resolveParentShortId(note)),
+      container: {
+        ref: { type: "notebooks.notebook" as const, id: resolved.data.notebook.shortId },
+        name: resolved.data.notebook.name.slice(0, 200),
+        permission: resolved.data.permission,
+      },
       content: content.slice(input.contentOffset, end),
       contentOffset: input.contentOffset,
       contentLength: content.length,
@@ -1091,6 +1097,7 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
 };
 
 export const notebooksCapabilities = defineCapabilities({
+  events: notebooksEvents,
   protocolVersion: 2,
   commands: {
     "note.compose": {

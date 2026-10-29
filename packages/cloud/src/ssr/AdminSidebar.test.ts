@@ -13,20 +13,32 @@ const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
 });
 
 describe("buildAdminGroups", () => {
-  it("makes the places and maps page reachable and active in both locales", () => {
-    const href = "/admin/places-and-maps";
+  it("makes storage settings reachable and preserves their URL selection", () => {
     for (const [locale, label] of [
-      ["en", "Places and maps"],
-      ["de", "Orte und Karten"],
+      ["en", "Storage"],
+      ["de", "Speicher"],
     ] as const) {
       const links = buildAdminGroups([], locale).flatMap((group) => group.links);
-      expect(links).toContainEqual({ href, icon: "ti-map-2", label });
+      const href = "/admin/settings?tab=storage";
+      expect(links).toContainEqual({ href, icon: "ti-database", label });
       expect(
         activeAdminHref(
           href,
           links.map((link) => link.href),
         ),
       ).toBe(href);
+    }
+  });
+  it("makes the Base settings area reachable and active on its sections in both locales", () => {
+    for (const [locale, label] of [
+      ["en", "Base settings"],
+      ["de", "Grundeinstellungen"],
+    ] as const) {
+      const links = buildAdminGroups([], locale).flatMap((group) => group.links);
+      expect(links).toContainEqual({ href: "/admin/base", icon: "ti-adjustments", label });
+      for (const path of ["/admin/base", "/admin/base/places", "/admin/base/legal"])
+        expect(activeAdminLink(path, links)?.href).toBe("/admin/base");
+      expect(links.some((link) => link.href.includes("places-and-maps") || link.href.includes("tab=general"))).toBe(false);
     }
   });
 
@@ -36,6 +48,7 @@ describe("buildAdminGroups", () => {
       ["de", "KI"],
     ] as const) {
       expect(buildAdminGroups([], locale).find((group) => group.label === "Cloud")?.links).toEqual([
+        { href: "/admin/base", icon: "ti-adjustments", label: locale === "de" ? "Grundeinstellungen" : "Base settings" },
         { href: "/admin/ai", icon: "ti-sparkles", label },
       ]);
     }
@@ -53,7 +66,10 @@ describe("buildAdminGroups", () => {
         ],
       }),
     ]);
-    expect(groups.find((group) => group.label === "Cloud")?.links).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label: "AI" }]);
+    expect(groups.find((group) => group.label === "Cloud")?.links).toEqual([
+      { href: "/admin/base", icon: "ti-adjustments", label: "Base settings" },
+      { href: "/admin/ai", icon: "ti-sparkles", label: "AI" },
+    ]);
     expect(groups.some((group) => group.label === "Example tools")).toBe(false);
     expect(groups.flatMap((group) => group.links).filter((link) => link.href === "/admin/example")).toHaveLength(0);
   });
@@ -73,7 +89,10 @@ describe("buildAdminGroups", () => {
 
     expect(groups.map((group) => group.label)).toEqual(["General", "Cloud", "Operations", "Accounts & sign-in", "Settings"]);
     expect(groups[2]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
-    expect(groups.find((group) => group.label === "Cloud")?.links).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label: "AI" }]);
+    expect(groups.find((group) => group.label === "Cloud")?.links).toEqual([
+      { href: "/admin/base", icon: "ti-adjustments", label: "Base settings" },
+      { href: "/admin/ai", icon: "ti-sparkles", label: "AI" },
+    ]);
   });
 
   it("shows contributed Observability pages as one area entry that stays active on all of them", () => {
@@ -95,7 +114,7 @@ describe("buildAdminGroups", () => {
       }),
     ]);
     const area = groups.find((group) => group.label === "Cloud")!;
-    expect(area.links.map((link) => link.href)).toEqual(["/admin/ai", "/admin/observability"]);
+    expect(area.links.map((link) => link.href)).toEqual(["/admin/base", "/admin/ai", "/admin/observability"]);
     expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
     expect(groups.some((group) => group.label === "App administration")).toBe(false);
     const links = groups.flatMap((group) => group.links);
@@ -107,7 +126,7 @@ describe("buildAdminGroups", () => {
       buildAdminGroups([], "de")
         .find((group) => group.label === "Cloud")
         ?.links.map((link) => link.label),
-    ).toEqual(["KI"]);
+    ).toEqual(["Grundeinstellungen", "KI"]);
   });
 
   it("opens the first contributed Observability page when no app owns the area start", () => {

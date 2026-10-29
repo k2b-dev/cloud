@@ -51,7 +51,7 @@ const detail = (message: MessageSummary, dangerous: boolean): MessageDetail => (
       }
     : undefined,
   delivery: null,
-  attachments: [{ id: "Att001", filename: "invoice.pdf", contentType: "application/pdf", sizeBytes: 512, contentId: null }],
+  attachments: [{ id: "Att001", filename: "invoice.pdf", contentType: "application/pdf", sizeBytes: 512, contentId: null, checksum: null }],
 });
 
 const settle = async () => {

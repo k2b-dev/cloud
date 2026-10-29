@@ -20,6 +20,18 @@ const subject = { type: "user" as const, userId };
 const user = { id: userId, roles: ["user"] } as AuthContext["Variables"]["user"];
 const authority: RequestAuthority = { actor: { kind: "user", user }, accessSubject: subject, credentialKind: "session", scopes: [] };
 const authorization = { actor: authority.actor, accessSubject: subject };
+// Management reauthenticates through requireUser; its full authority retains the
+// resolved session proof for resource-derived discovery and invocation issuance.
+const sessionAuthority: RequestAuthority = {
+  ...authority,
+  credentialProof: {
+    kind: "session",
+    userId,
+    sid: "skill-user-session",
+    authEpoch: 0,
+    expiresAt: "2099-01-01T00:00:00Z",
+  },
+};
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
   spyOn(session, "getToken").mockReturnValue("skill-user-session");
   c.set("actor", { kind: "user", user });
@@ -280,7 +292,7 @@ describe("AI Skill routes", () => {
     const response = await routes.request("/project-links/proj12?q=finance&available=true&page=2");
     expect(response.status).toBe(200);
     expect(project).toHaveBeenCalledWith("proj12", authorization, "admin");
-    expect(list).toHaveBeenCalledWith(projectId, authorization, { query: "finance", available: true, page: 2, authority });
+    expect(list).toHaveBeenCalledWith(projectId, authorization, { query: "finance", available: true, page: 2, authority: sessionAuthority });
     expect(await response.json()).toMatchObject({ items: [{ id: skillShortId }], page: 2, hasNext: true });
     const request = () =>
       routes.request(`/${skillShortId}/projects/proj12`, {
@@ -289,7 +301,7 @@ describe("AI Skill routes", () => {
         body: JSON.stringify({ linked: true }),
       });
     expect((await request()).status).toBe(200);
-    expect(link).toHaveBeenCalledWith(skillId, projectId, true, authorization, authority);
+    expect(link).toHaveBeenCalledWith(skillId, projectId, true, authorization, sessionAuthority);
     project.mockResolvedValue(null);
     link.mockClear();
     expect((await request()).status).toBe(404);
@@ -359,7 +371,7 @@ describe("AI Skill routes", () => {
       });
     expect((await request()).status).toBe(200);
     const content = proposal;
-    expect(update).toHaveBeenCalledWith(skillId, authorization, content, authority);
+    expect(update).toHaveBeenCalledWith(skillId, authorization, content, sessionAuthority);
     expect(access).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
     expect(enabled).not.toHaveBeenCalled();
@@ -391,7 +403,7 @@ describe("AI Skill routes", () => {
         extraFrontmatter: {},
         references: [{ path: "references/style.md", content: "Be concise." }],
       },
-      authority,
+      sessionAuthority,
     );
     expect((await response.json()).skill).toMatchObject({ id: skillShortId, shortId: skillShortId, permission: "admin" });
   });
@@ -415,8 +427,8 @@ describe("AI Skill routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, authorization, "write", authority);
-    expect(aiSkills.update).toHaveBeenCalledWith(skillId, authorization, update, authority);
+    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, authorization, "write", sessionAuthority);
+    expect(aiSkills.update).toHaveBeenCalledWith(skillId, authorization, update, sessionAuthority);
   });
 
   test("keeps access management and deletion behind admin permission", async () => {
@@ -424,7 +436,7 @@ describe("AI Skill routes", () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     expect((await routes.request(`/${skillShortId}/access`)).status).toBe(404);
     expect((await routes.request(`/${skillShortId}`, { method: "DELETE" })).status).toBe(404);
-    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, authorization, "admin", authority);
+    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, authorization, "admin", sessionAuthority);
   });
 
   test("passes request authority through grant changes and deletion", async () => {
@@ -451,7 +463,7 @@ describe("AI Skill routes", () => {
         })
       ).status,
     ).toBe(201);
-    expect(add).toHaveBeenCalledWith(skillId, authorization, input, undefined, authority);
+    expect(add).toHaveBeenCalledWith(skillId, authorization, input, undefined, sessionAuthority);
     expect(
       (
         await routes.request(`/${skillShortId}/access/${grant.shortId}`, {
@@ -461,11 +473,11 @@ describe("AI Skill routes", () => {
         })
       ).status,
     ).toBe(200);
-    expect(update).toHaveBeenCalledWith(skillId, grant.shortId, authorization, "write", undefined, authority);
+    expect(update).toHaveBeenCalledWith(skillId, grant.shortId, authorization, "write", undefined, sessionAuthority);
     expect((await routes.request(`/${skillShortId}/access/${grant.shortId}`, { method: "DELETE" })).status).toBe(200);
-    expect(revoke).toHaveBeenCalledWith(skillId, grant.shortId, authorization, undefined, authority);
+    expect(revoke).toHaveBeenCalledWith(skillId, grant.shortId, authorization, undefined, sessionAuthority);
     expect((await routes.request(`/${skillShortId}`, { method: "DELETE" })).status).toBe(200);
-    expect(remove).toHaveBeenCalledWith(skillId, authorization, authority);
+    expect(remove).toHaveBeenCalledWith(skillId, authorization, sessionAuthority);
   });
 
   test("updates only the current user's Skill preference", async () => {
@@ -480,7 +492,7 @@ describe("AI Skill routes", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ enabled: false });
-    expect(aiSkills.setEnabled).toHaveBeenCalledWith(skillId, authorization, false, authority);
+    expect(aiSkills.setEnabled).toHaveBeenCalledWith(skillId, authorization, false, sessionAuthority);
   });
 
   test("rejects anonymous Skill reads and creation before invoking the service", async () => {

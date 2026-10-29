@@ -56,6 +56,8 @@ export default ssr<AuthContext>(async (c) => {
   const rule = (access: { kind: string | null; roles?: readonly string[] } | undefined) => {
     if (!access?.kind && header && !header.online) return appDetailsMessages.resolve([getLocale(c)]).t.accessUnknown;
     switch (access?.kind) {
+      case "resources":
+        return t.resourcesLabel;
       case "grants":
         return t.configurable;
       case "signedIn":

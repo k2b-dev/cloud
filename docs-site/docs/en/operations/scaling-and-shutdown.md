@@ -82,7 +82,7 @@ grow with the replica count.
 | OAuth (`oauth`) | Yes | Valkey consent state; Postgres consumes codes and refresh tokens atomically | None |
 | Proxy Auth (`proxy-auth`) | Yes | Postgres reads per verification; Valkey return state | None |
 | Pulse (`pulse`) | Yes | NATS scheduler and keyed scrape jobs; Postgres lock per source | Scrape, rollup and retention workers |
-| Mobile app (`pwa`) | Yes | Core's Postgres pairing locks | None |
+| Cloud app (`pwa`) | Yes | Core's Postgres pairing locks | None |
 | Quotes (`quotes`) | Yes | Valkey cache | None |
 | Spaces (`spaces`) | Yes | Postgres locks and outbox; Valkey link previews | None |
 | Tools (`tools`) | Yes | Postgres rows for webhook endpoints | 2 PDF conversions |

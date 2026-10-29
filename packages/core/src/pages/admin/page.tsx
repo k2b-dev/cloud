@@ -10,10 +10,17 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
     { href: "/admin/rail", title: t.rail, description: t.railDescription, icon: "ti ti-layout-sidebar", color: "blue" },
     { href: "/admin/app-credentials", title: t.appCredentials, description: t.appCredentialsDescription, icon: "ti ti-key", color: "blue" },
     {
-      href: "/admin/settings?tab=general",
+      href: "/admin/base",
       title: t.generalSettings,
       description: t.generalSettingsDescription,
       icon: "ti ti-app-window",
+      color: "blue",
+    },
+    {
+      href: "/admin/settings?tab=storage",
+      title: t.storageSettings,
+      description: t.storageSettingsDescription,
+      icon: "ti ti-database",
       color: "blue",
     },
     {
@@ -45,7 +52,7 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       color: "amber",
     },
     {
-      href: "/admin/settings?tab=legal",
+      href: "/admin/base/legal",
       title: t.legal,
       description: t.legalDescription,
       icon: "ti ti-file-text",
@@ -72,7 +79,7 @@ export default ssr<AuthContext>(async (c) => {
         icon: "ti ti-stethoscope",
       }
     : {
-        href: "/admin/settings?tab=general",
+        href: "/admin/base",
         eyebrow: t.configuration,
         title: t.configureInstance,
         description: t.configureDescription,

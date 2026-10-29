@@ -58,6 +58,11 @@ const cameraMessages: Record<QrScannerError, string> = {
   after it unmounts.
 - A frame that cannot be decoded never ends the session or reaches `onError`:
   the camera keeps running until a code is accepted or the host unmounts it.
+- When the camera runs but its picture does not start within three seconds,
+  or the browser refuses to play it, the scanner says so and offers "Try
+  again" in place. This happens most often in Safari or an installed web app
+  on iPhone and iPad. The button attaches the camera again and plays it from
+  the click; the camera stays on meanwhile, and `onError` is not called.
 - `instructions` replaces the generic hint shown while the camera runs.
 
 Each mount owns one camera session. Unmounting stops the camera at once, even
@@ -69,7 +74,8 @@ so the permission prompt appears at most once.
 ## Accessibility
 
 The live preview is a labelled video without audio. A status line announces
-"Starting camera…" and then the instructions. Scanning cannot be the only way
+"Starting camera…" and then the instructions, or that the camera picture did
+not start, with a "Try again" button below. Scanning cannot be the only way
 to continue: keep a text field or a link next to it, and move focus there after
 `onError`. The scan frame does not animate under `prefers-reduced-motion`.
 

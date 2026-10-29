@@ -9,6 +9,7 @@ import { saveCompletion } from "./completion";
 import type { WorkItem } from "./MyTasks";
 import { myTasksMessages } from "./messages";
 import { workSchedule } from "./schedule";
+import TaskComment from "./TaskComment";
 import type { PwaTask } from "./task";
 
 /** What the detail knows: the row it was opened from, then the whole task, or why it has none. */
@@ -324,6 +325,12 @@ export default function TaskDetail(props: Props) {
                     </ul>,
                     unsaved() ? "danger" : undefined,
                   )}
+                </Show>
+                {/* A reader who may change the task may comment on it; one field per task, so a draft never moves. */}
+                <Show when={loaded().canWrite}>
+                  <Show when={`${loaded().spaceShortId}/${loaded().shortId}`} keyed>
+                    {section(t().comment, undefined, <TaskComment task={loaded()} userId={props.userId} />)}
+                  </Show>
                 </Show>
                 <div class="spaces-pwa-task__foot">
                   <ButtonLink variant="secondary" href={buildSpaceItemHref(loaded().spaceShortId, loaded().shortId)}>

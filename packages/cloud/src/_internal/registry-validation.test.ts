@@ -13,6 +13,12 @@ const valid = {
 
 describe("validateAppRegistryEntry", () => {
   test("accepts a valid entry", () => expect(validateAppRegistryEntry(valid)).toBeNull());
+  test("accepts a package declaration and rejects unsafe package metadata", () => {
+    expect(validateAppRegistryEntry({ ...valid, package: "warenfluss" })).toBeNull();
+    for (const packageName of ["../mail", "a/b", "", "Mail", 42, "a".repeat(81)]) {
+      expect(validateAppRegistryEntry({ ...valid, package: packageName })).toContain("package");
+    }
+  });
   test("rejects a scalar entry", () => expect(validateAppRegistryEntry("broken")).toBe("entry must be an object"));
   test("rejects invalid routes", () => expect(validateAppRegistryEntry({ ...valid, routes: ["auth"] })).toContain("routes"));
   test("rejects a non-HTTP or credential-bearing base URL", () => {
@@ -38,7 +44,7 @@ describe("validateAppRegistryEntry", () => {
         },
       }),
     ).toBeNull());
-  test("accepts a mobile app part only at /pwa/<id>", () => {
+  test("accepts a Cloud app part only at /pwa/<id>", () => {
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core" } })).toBeNull();
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: ["user"] } })).toBeNull();
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/spaces" } })).toContain("pwa");

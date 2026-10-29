@@ -26,6 +26,7 @@ export const TemplateGrantSchema = z.object({
     z.object({ type: z.literal("user"), userId: z.string().uuid() }),
     z.object({ type: z.literal("group"), groupId: z.string().uuid() }),
     z.object({ type: z.literal("authenticated") }),
+    z.object({ type: z.literal("service_account"), serviceAccountId: z.string().uuid() }),
   ]),
 });
 export const TemplateQuerySchema = z.object({ q: z.string().max(160).default(""), after: z.string().uuid().optional() });

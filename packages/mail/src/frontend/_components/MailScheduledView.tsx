@@ -74,6 +74,7 @@ export default function MailScheduledView(props: {
       );
       if (!response.ok) throw new Error(await readApiError(response, t().cancelScheduledFailed));
       const result: CancelScheduledSendResult = await response.json();
+      abortSignal.throwIfAborted();
       let refreshError: Error | null = null;
       if (result.disposition !== "draft") {
         try {
