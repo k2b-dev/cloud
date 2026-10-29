@@ -384,7 +384,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
             row = { ...row, state: "restoring", restore_path: path, snapshot: node, server_url: current.serverUrl };
           }
           call.requestAbort?.throwIfAborted();
-          const restored = await reconcile(current, row, true, call.requestAbort);
+          const restored = await reconcile(destination, row, true, call.requestAbort);
           if (!restored) throw new FilesError("operation_unresolved", 409);
           return { base: destination.base, entry: fileEntry(destination.base, path, restored) };
         },

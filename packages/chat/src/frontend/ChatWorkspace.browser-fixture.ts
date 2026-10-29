@@ -205,6 +205,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
   let nextPerson = 0;
   let failing = 0;
   let failingReactions = 0;
+  let failingMutations = 0;
   const reactionRequests: { method: string; messageId: string; emoji?: string }[] = [];
   let failingUnread = 0;
   let failingThreads = 0;
@@ -362,7 +363,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         );
   };
   const lastIn = (chat: Chat, thread: string | null) => {
-    const message = chat.messages.findLast((entry) => entry.thread === thread && entry.kind === "text");
+    const message = chat.messages.findLast((entry) => entry.thread === thread && entry.kind === "text" && !entry.deletedAt);
     return message ? { id: message.id, author: message.author, preview: message.body ?? "", createdAt: message.createdAt } : null;
   };
   const threadList = (chat: Chat): z.infer<typeof ThreadListSchema> => ({
@@ -1160,6 +1161,54 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         for (const chat of batch) read(chat.conversation.id, chat.messages.length, "all");
         return Response.json({ outcome: "done", marked: batch.length, more: candidates().length > 0 });
       }
+      const mutation = /^\/api\/chat\/conversations\/([^/]+)\/messages\/([^/]+)$/.exec(url.pathname);
+      if (mutation && (request.method === "PATCH" || request.method === "DELETE")) {
+        if (failingMutations > 0) {
+          failingMutations--;
+          return Response.json({ message: "Unavailable" }, { status: 503 });
+        }
+        const entry = chats.get(mutation[1]!);
+        const message = entry?.messages.find((item) => item.id === mutation[2]);
+        if (!entry || !message) return Response.json({ code: "NOT_FOUND", message: "Unavailable" }, { status: 404 });
+        const body = z.object({ revision: z.number(), body: z.string().optional() }).parse(await request.json());
+        if (body.revision !== (message.contentRevision ?? 0))
+          return Response.json({ code: "MESSAGE_CHANGED", message: "Message changed" }, { status: 409 });
+        message.rev = ++entry.conversation.rev;
+        message.contentRevision = (message.contentRevision ?? 0) + 1;
+        if (request.method === "PATCH") {
+          message.body = body.body!;
+          message.editedAt = now().toISOString();
+        } else {
+          message.body = null;
+          message.deletedAt = now().toISOString();
+          message.attachments = [];
+          message.refs = [];
+          message.reactions = [];
+        }
+        for (const reply of entry.messages)
+          if (reply.replyTo && "id" in reply.replyTo && reply.replyTo.id === message.id)
+            reply.replyTo = message.deletedAt ? { deleted: true } : { ...reply.replyTo, preview: message.body ?? "" };
+        if (entry.conversation.lastMessage?.id === message.id) {
+          if (!message.deletedAt) entry.conversation.lastMessage.preview = message.body ?? "";
+          else {
+            const latest = entry.messages.findLast((row) => row.kind === "text" && !row.deletedAt);
+            entry.conversation.lastMessage = latest
+              ? {
+                  id: latest.id,
+                  author: latest.author,
+                  preview: latest.body ?? "",
+                  createdAt: latest.createdAt,
+                  thread: latest.thread
+                    ? { id: latest.thread, name: entry.threads.find((thread) => thread.id === latest.thread)!.name }
+                    : null,
+                }
+              : null;
+          }
+        }
+        deliver("conversation", mutation[1]!, { type: "message-changed", conversationId: mutation[1]! });
+        deliver("list", mutation[1]!, { type: "message-changed", conversationId: mutation[1]! });
+        return Response.json(message);
+      }
       const reaction = /^\/api\/chat\/conversations\/([^/]+)\/messages\/([^/]+)\/reactions(?:\/([^/]+))?$/.exec(url.pathname);
       if (reaction) {
         const [, chat, messageId, emoji] = reaction;
@@ -1822,6 +1871,9 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
     reactionRequests,
+    failMutations: (count = 1) => {
+      failingMutations = count;
+    },
     /** Someone else reacts, as the server would tell the open chat. */
     react: (chat: string, messageId: string, personId: string, emoji: string, on = true) =>
       setReaction(chat, messageId, personId, emoji, on),

@@ -36,11 +36,13 @@ import {
   CreateConversationSchema,
   CreateOutcomeSchema,
   CreateThreadSchema,
+  DeleteMessageSchema,
   DiscoveryEntriesSchema,
   DiscoveryOptionsSchema,
   DiscoveryPreviewSchema,
   DiscoveryStateSchema,
   DiscoveryUpdateSchema,
+  EditMessageSchema,
   FollowingSchema,
   ForResourceSchema,
   ForYouPageSchema,
@@ -813,6 +815,38 @@ const app = new Hono<AuthContext>()
       respond(
         c,
         chatService.messages.list({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
+      ),
+  )
+  .patch(
+    "/conversations/:conversation/messages/:message",
+    description("Edit your own message within ten minutes", MessageViewSchema),
+    validator("param", MessageParamSchema, invalidInput),
+    validator("json", EditMessageSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.messages.edit({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          messageId: c.req.valid("param").message,
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
+  .delete(
+    "/conversations/:conversation/messages/:message",
+    description("Delete your own message within ten minutes", MessageViewSchema),
+    validator("param", MessageParamSchema, invalidInput),
+    validator("json", DeleteMessageSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.messages.delete({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          messageId: c.req.valid("param").message,
+          input: c.req.valid("json"),
+        }),
       ),
   )
   .get(

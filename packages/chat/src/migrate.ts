@@ -212,5 +212,20 @@ export const migrate = async (): Promise<void> => {
   await sql`CREATE INDEX IF NOT EXISTS idx_chat_threads_search_conversation_activity
     ON chat.threads(conversation_id, last_activity_at DESC, short_id)
     WHERE archived_at IS NULL AND resource_type IS NOT NULL AND resource_id IS NOT NULL`;
+  await sql`
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS content_rev bigint NOT NULL DEFAULT 0;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS edited_at timestamptz;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+    CREATE TABLE IF NOT EXISTS chat.message_mutations (
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      principal_type text NOT NULL, principal_id uuid NOT NULL, client_id text NOT NULL,
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      operation text NOT NULL CHECK (operation IN ('edit', 'delete')),
+      revision bigint NOT NULL, body_hash text, created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (conversation_id, principal_type, principal_id, client_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_message_mutations_message ON chat.message_mutations(message_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_message_mutations_created ON chat.message_mutations(created_at);
+  `.simple();
   console.log("  ✓ chat schema");
 };

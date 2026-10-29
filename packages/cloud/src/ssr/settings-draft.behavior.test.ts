@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import { createDraftForm, oneStepFailure, SaveRejected, saveFailure } from "./draft-form";
-import { areaSaveControls } from "./save-controls";
+import { createSettingsDraft, oneStepFailure, SaveRejected, saveFailure, settingsSaveControls } from "./settings-draft";
 
 type Values = { a: number; b: number };
 
@@ -16,9 +15,9 @@ const deferred = <T>() => {
 };
 
 const form = (save: (value: Values, commit: (stored: Values) => void) => Promise<Values>) =>
-  createRoot((dispose) => ({ form: createDraftForm<Values>({ initial: { a: 1, b: 1 }, locale: () => "en", save }), dispose }));
+  createRoot((dispose) => ({ form: createSettingsDraft<Values>({ initial: { a: 1, b: 1 }, locale: () => "en", save }), dispose }));
 
-describe("createDraftForm", () => {
+describe("createSettingsDraft", () => {
   test("a partial save keeps what reached the server as saved and the rest as draft", async () => {
     const { form: draft, dispose } = form(async (value, commit) => {
       commit({ ...value, b: 1 });
@@ -27,11 +26,11 @@ describe("createDraftForm", () => {
     draft.update({ a: 2, b: 2 });
     await draft.save();
     expect(draft.draft()).toEqual({ a: 2, b: 2 });
-    expect(areaSaveControls()?.state).toBe("failed");
+    expect(settingsSaveControls()?.state).toBe("failed");
     draft.discard();
     // Discard returns to the stored state, which already has the saved a.
     expect(draft.draft()).toEqual({ a: 2, b: 1 });
-    expect(areaSaveControls()?.state).toBe("saved");
+    expect(settingsSaveControls()?.state).toBe("saved");
     dispose();
   });
 
@@ -40,12 +39,12 @@ describe("createDraftForm", () => {
     const { form: draft, dispose } = form(() => pending.promise);
     draft.update({ a: 2 });
     const saving = draft.save();
-    expect(areaSaveControls()?.state).toBe("saving");
+    expect(settingsSaveControls()?.state).toBe("saving");
     draft.update({ b: 5 });
     pending.resolve({ a: 2, b: 1 });
     await saving;
     expect(draft.draft()).toEqual({ a: 2, b: 5 });
-    expect(areaSaveControls()?.state).toBe("draft");
+    expect(settingsSaveControls()?.state).toBe("draft");
     dispose();
   });
 
@@ -60,11 +59,22 @@ describe("createDraftForm", () => {
     });
     draft.update({ a: 3 });
     await draft.save();
-    expect(areaSaveControls()?.state).toBe("unknown");
+    expect(settingsSaveControls()?.state).toBe("unknown");
     // An unclear outcome is checked, never saved again blindly.
     await draft.save();
     expect(draft.outcome()?.kind).toBe("unknown");
     dispose();
-    expect(areaSaveControls()).toBeNull();
+    expect(settingsSaveControls()).toBeNull();
+  });
+
+  test("rebase moves untouched fields to newer stored values and keeps edits", () => {
+    const { form: draft, dispose } = form(async (value) => value);
+    draft.update({ a: 5 });
+    draft.rebase({ a: 9, b: 7 });
+    expect(draft.draft()).toEqual({ a: 5, b: 7 });
+    draft.rebase({ a: 9, b: 7 }, ["a"]);
+    expect(draft.draft()).toEqual({ a: 9, b: 7 });
+    expect(settingsSaveControls()?.state).toBe("saved");
+    dispose();
   });
 });
