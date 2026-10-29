@@ -15,6 +15,9 @@ The service that reads or changes a resource checks its permission.
 Every API route, SSR page, background action, and CLI command should reach the
 same permission-aware service.
 
+For Studio execution and its separate effect rights, see
+[Run Studio apps with a machine identity](/en/docs/identity/studio-machine-execution).
+
 For machine inference, [models-only API keys](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
 use the service account's explicit model grants and shared account allowance.
 
@@ -78,6 +81,13 @@ search. Applications may narrow results to accepted principal kinds, but
 client-provided filters never widen the caller's server-side visibility.
 Relationship filters are directory operations and remain limited to full user
 accounts.
+
+`GET /api/accounts/entities` accepts `service_account_kinds` (comma-separated
+`standalone`, `agent`, `resource_bound`, or `user_delegated`) and
+`service_account_status` (`active` or `disabled`). Omitting either filter
+leaves that field unrestricted; an empty kind list is also unrestricted. Invalid
+values return `400`. These filters apply only to service accounts, before totals and
+pagination; user and group results keep their existing visibility.
 
 ## Link access entries to the resource
 
@@ -478,11 +488,15 @@ Pass `existing` to exclude already selected principals. Users and groups are
 searched through Accounts after two characters; personal Linux groups are left
 out, so people are granted directly. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
-Public and service-account selection require `allowPublic` and
-`allowServiceAccounts` respectively. `serviceAccountFilter` narrows the offered
-service accounts to those the resource can accept, for example active
-standalone and agent accounts plus accounts bound to this resource; the service
-still checks every assignment. This picker grants no access itself.
+Service accounts and agents are included by default. Set
+`allowServiceAccounts={false}` only for a documented identity requirement.
+Public selection requires `allowPublic`. `PrincipalPicker` leaves service-account
+kinds and status unrestricted unless `serviceAccountKinds` or
+`serviceAccountStatus` is supplied. `PermissionEditor` forwards both options
+and defaults grant selection to active accounts; existing grant rows remain
+visible. Use the filters to match the resource's accepted recipients. `serviceAccountFilter` narrows the offered service accounts further on the
+client, for example to accounts bound to this resource. They never widen
+directory visibility; the service still checks every assignment. This picker grants no access itself.
 
 ### Keep the editor mounted across refetches
 
@@ -659,3 +673,6 @@ accounts, such as guests, cannot be members and need a direct grant. Cloud
 rejects local users in directory groups, so a person missing from the list
 is not covered by the group grant. Change the membership in the directory or
 grant the person directly.
+
+For independently owned file storage and explicit path grants, see
+[Files machine storage](/en/docs/identity/files-machine-storage).

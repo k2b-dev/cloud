@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Collect telemetry and query each base with read-only SQL.
 tags: [pulse, telemetry, metrics]
-updated: 2026-10-22
+updated: 2026-10-24
 ---
 
 # Pulse
@@ -13,6 +13,9 @@ updated: 2026-10-22
 Pulse collects metrics, events, and states in bases. Add sources, send batches
 through HTTP ingest, or let Pulse scrape Prometheus endpoints. Measurements go
 to one ClickHouse database per base; Postgres keeps control data.
+
+Open **Pulse** from the app menu. Pulse is hidden from the app bar by default;
+your saved choice to show or pin it there stays in place.
 
 Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a

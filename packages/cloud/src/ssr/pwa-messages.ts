@@ -13,7 +13,7 @@ export const pwaMessages = i18n.define({
       newVersion: ({ cloud }: { cloud: string }) => `New version of ${cloud}`,
       reload: "Reload",
       otherAccount: ({ cloud, name }: { cloud: string; name: string }) =>
-        `Chrome on this phone is signed in to ${cloud} as ${name}. Changes in the app may be saved to that account. Sign out of ${cloud} in Chrome.`,
+        `Chrome on this device is signed in to ${cloud} as ${name}. Changes in the app may be saved to that account. Sign out of ${cloud} in Chrome.`,
       errorAction: "Back to Start",
     },
     de: {
@@ -25,7 +25,7 @@ export const pwaMessages = i18n.define({
       newVersion: ({ cloud }: { cloud: string }) => `Neue Version von ${cloud}`,
       reload: "Neu laden",
       otherAccount: ({ cloud, name }: { cloud: string; name: string }) =>
-        `Chrome auf diesem Telefon ist bei ${cloud} als ${name} angemeldet. Änderungen in der App werden womöglich in diesem Konto gespeichert. Melde dich in Chrome von ${cloud} ab.`,
+        `Chrome auf diesem Gerät ist bei ${cloud} als ${name} angemeldet. Änderungen in der App werden womöglich in diesem Konto gespeichert. Melde dich in Chrome von ${cloud} ab.`,
       errorAction: "Zurück zum Start",
     },
   },

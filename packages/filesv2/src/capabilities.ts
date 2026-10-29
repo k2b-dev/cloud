@@ -1,6 +1,5 @@
 import {
   CAPABILITY_MAX_RESULT_BYTES,
-  type CapabilityExecutionContext,
   defineCapabilities,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
@@ -40,7 +39,6 @@ const EntryDataSchema = z.object({
 const SEARCH_BASE_LIMIT = 10;
 /** Filegate admits two searches per root at once. */
 const SEARCH_CONCURRENCY = 2;
-const userActor = (context: CapabilityExecutionContext) => (context.actor.kind === "user" ? context.actor : null);
 const parent = (path: string) => path.split("/").slice(0, -1).join("/");
 const entryHref = (baseId: string, path: string, directory: boolean) =>
   directory ? filesUrl(baseId, path) : filesUrl(baseId, parent(path), null, path);
@@ -77,8 +75,6 @@ export const filesCapabilities = defineCapabilities({
       data: EntryDataSchema,
       openWorld: false,
       run: async (input, context) => {
-        const actor = userActor(context);
-        if (!actor) return fail(err.forbidden("File entries are read on behalf of a signed-in user."));
         try {
           const result = await filesService.entryById(capabilityCall(context), input.id);
           const folder = parent(result.entry.path).split("/").at(-1) || result.base.name;
@@ -124,8 +120,6 @@ export const filesCapabilities = defineCapabilities({
         tags: [{ tag: "file", title: "Files", description: "Search file and folder names.", aliases: ["files", "folder", "folders"] }],
       },
       run: async ({ query, limit }, context) => {
-        const actor = userActor(context);
-        if (!actor) return fail(err.forbidden("File search runs on behalf of a signed-in user."));
         // Filegate takes at most eight words; the first eight still find what the rest would narrow.
         const q = query.trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_WORD_LIMIT).join(" ");
         const available = (await filesService.bases(capabilityCall(context))).items;
