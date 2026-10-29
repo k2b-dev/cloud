@@ -242,6 +242,11 @@ WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
 changes `visibility` starts no animation for `settled()` to wait for. See
 `hover()` in `packages/ui/src/layout/sidebar-row-label-room.browser.test.ts`.
 
+A browser test that opens its own context or page gives itself a budget, as
+the Chat suites do (`test(name, run, 30_000)`), and keeps the page's shorter
+limit for each step (`page.setDefaultTimeout(5_000)`). Bun's default of 5 s
+is meant for one step, not for a page load, a mount, and a flow.
+
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
 condition. `settled()` waits for fonts, for the running finite animations on
