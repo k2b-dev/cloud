@@ -507,6 +507,14 @@ as Help. Guests no longer see the Skills of apps that require a full account,
 such as Grids, Mail, Contacts, Spaces, and Weather. See
 [Ship Assistant Skills](/en/docs/platform/assistant-skills#who-can-use-an-app-skill).
 
+### Update Project and Skill service callers
+
+Rebuild Core, Assistant, and custom applications that call Project or Skill
+services against the same Cloud package before deploying their images. Service
+calls now pass `AiResourceContext` with both `actor` and `accessSubject`; HTTP
+request shapes stay the same. This change requires no database migration.
+See the [service migration](/en/docs/reference/deprecations-and-migrations#project-and-skill-service-authorization-context).
+
 ## Enable panel providers
 
 Core now declares Help as a panel provider. Every signed-in reader has the

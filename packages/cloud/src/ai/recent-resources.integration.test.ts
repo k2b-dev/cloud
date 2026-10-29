@@ -224,7 +224,7 @@ suite("recent sent resources: real store and current reader authorization", () =
         skills: {
           list: async (subject) => {
             calls++;
-            expect(subject).toEqual(f.authority.accessSubject);
+            expect(subject).toBe(f.authority);
             return [recentTestSkill("enabled"), recentTestSkill("disabled", false)];
           },
         },
