@@ -58,6 +58,7 @@ import {
   ItemDeleteDataSchema,
   ItemDeleteInputSchema,
   ItemLinkCandidateSearchInputSchema,
+  ItemReadDataSchema,
   ItemReadInputSchema,
   ItemResourceReferenceAddInputSchema,
   ItemResourceReferenceDataSchema,
@@ -1062,7 +1063,14 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
   const column = data.kind === "task" && !data.completedAt ? await spacesService.column.get({ id: resolved.data.internalColumnId }) : null;
   const status = data.kind === "task" ? (data.completedAt ? t.done : column?.name)?.replace(/\s+/g, " ").trim() : undefined;
   const result = {
-    data,
+    data: {
+      ...data,
+      container: {
+        ref: { type: "spaces.space" as const, id: data.spaceId },
+        name: resolved.data.space.name.slice(0, 200),
+        permission: resolved.data.permission,
+      },
+    },
     summary: boundedCapabilitySummary(
       spacesMessages(context.locale).readItem({
         kind: data.kind === "event" ? spacesMessages(context.locale).eventSummaryKind : spacesMessages(context.locale).taskSummaryKind,
@@ -1080,8 +1088,8 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
   };
   // Reactor names are the one relation added after the other bounds were sized; a full item drops them, keeping the counts.
   if (data.reactions && Buffer.byteLength(JSON.stringify(result), "utf8") > CAPABILITY_MAX_RESULT_BYTES) {
-    data.reactions = data.reactions.map((reaction) => ({ ...reaction, people: [] }));
-    data.relationsTruncated = true;
+    result.data.reactions = data.reactions.map((reaction) => ({ ...reaction, people: [] }));
+    result.data.relationsTruncated = true;
   }
   return ok(result);
 };
@@ -2520,7 +2528,7 @@ export const spacesCapabilities = defineCapabilities({
       description:
         "Read one spaces.item ref returned by item.search, task.list, event.list, or a reference query. The kind field distinguishes tasks from events for subsequent Actions.",
       input: ItemReadInputSchema,
-      data: ItemDataSchema,
+      data: ItemReadDataSchema,
       openWorld: false,
       run: runItemRead,
     },

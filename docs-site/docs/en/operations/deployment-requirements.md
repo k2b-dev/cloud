@@ -40,6 +40,18 @@ Browser recognition compares absolute links with the canonical origin from
 pasted links; root-relative links work without it. No additional service or
 secret is required. See [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
 
+## Upgrade notification channel exclusions
+
+Core's startup migration adds `excluded_channels` (default `[]`) and
+`excluded_reason` (default `null`) to the notification catalog. Apply it before
+starting updated applications. Catalog registration retries while the new
+columns are missing. No new service or configuration is required.
+
+An application's excluded channels override older saved preferences for new
+sends; existing queued deliveries are unchanged. See
+[User preferences](/en/docs/platform/notifications#user-preferences) for the
+application contract.
+
 ## Upgrade personal Linux group retirement
 
 This security fix changes account deletion: the account and its personal Linux
@@ -1256,6 +1268,12 @@ after a change. Each tab keeps at most one such request per route in flight
 and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
+
+### Show app badges in the phone bar
+
+On phones, the floating bar shows the same count on an application's icon as
+the rail. It reads no extra route: the counts come from the rail's reads. No
+migration or configuration change is required.
 
 ### Let widgets declare settings
 

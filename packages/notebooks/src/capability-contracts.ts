@@ -119,6 +119,7 @@ export const NamedBlockSummaryDataSchema = z
   .strict();
 
 export const NoteDetailDataSchema = NoteSummaryDataSchema.extend({
+  container: z.strictObject({ ref: resourceRef("notebooks.notebook"), name: z.string().min(1).max(200), permission: PermissionSchema }),
   content: z.string().max(50_000),
   contentOffset: z.number().int().nonnegative(),
   contentLength: z.number().int().nonnegative(),

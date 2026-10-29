@@ -785,6 +785,12 @@
   pointer-events: none;
 }
 
+/* On a phone bar tab, the tab's badge slot places the count at the icon's corner. */
+.k2b-tab-bar__badge > .cloud-app-badge {
+  position: static;
+  display: block;
+}
+
 /* On the corner of the rail icon, not of its 44 px target. */
 .rail-item > .cloud-app-badge {
   top: 0.25rem;
