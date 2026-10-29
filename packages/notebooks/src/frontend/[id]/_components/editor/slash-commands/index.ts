@@ -12,7 +12,7 @@ import { fuzzy } from "@k2b/stdlib";
 import { buildAttachmentCompletionSource } from "../../../../lib/editor/attachment-autocomplete";
 import { codeFenceCompletionSource } from "../../../../lib/editor/code-fence-snippets";
 import { infoBlockCompletionSource } from "../../../../lib/editor/info-block-snippets";
-import { buildNoteLinkCompletionSource } from "../../../../lib/editor/note-link-autocomplete";
+import { buildNoteLinkCompletionSource, noteLinkSuggestionsAfterDelete } from "../../../../lib/editor/note-link-autocomplete";
 import { tableColumnCompletionSource } from "../../../../lib/editor/table-columns";
 import { tableFormulaCompletionSource } from "../../../../lib/editor/table-formulas";
 import { buildTagCompletionSource } from "../../../../lib/editor/tag-autocomplete";
@@ -407,4 +407,5 @@ export const slashCommandsExtension = (ctx: SlashCommandContext): Extension => [
     icons: false, // we render our own icon via addToOptions
     addToOptions: [iconRenderer, descRenderer],
   }),
+  noteLinkSuggestionsAfterDelete,
 ];
