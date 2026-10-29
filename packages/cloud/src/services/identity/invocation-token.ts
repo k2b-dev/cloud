@@ -47,7 +47,7 @@ export const normalizeInvocationRequestId = (value: unknown): string | undefined
   return parsed.success ? parsed.data : undefined;
 };
 
-const InvocationPayloadSchema = z
+const InvocationPayloadBaseSchema = z
   .object({
     iss: z.string().url(),
     aud: z.string().regex(/^app:[a-z][a-z0-9-]{0,79}$/),
@@ -80,52 +80,66 @@ const InvocationPayloadSchema = z
     nbf: z.number().int().nonnegative(),
     exp: z.number().int().positive(),
   })
-  .strict()
-  .superRefine((claims, context) => {
-    if (
-      (claims.parent_invocation_id
-        ? claims.exp <= claims.iat ||
-          claims.exp - claims.iat > CLOUD_INVOCATION_TOKEN_TTL_SECONDS ||
-          !claims.op.startsWith("capability.query:")
-        : claims.exp - claims.iat !== CLOUD_INVOCATION_TOKEN_TTL_SECONDS) ||
-      claims.nbf !== claims.iat
-    ) {
-      context.addIssue({ code: "custom", message: "Invocation lifetime is invalid" });
-    }
+  .strict();
 
-    if (claims.principal_type === "user") {
-      if (claims.access_subject_type !== "user" || claims.access_subject_id !== claims.sub || claims.delegated_user_id !== undefined) {
-        context.addIssue({ code: "custom", message: "User invocation authority is inconsistent" });
-      }
-      if (claims.credential_kind === "api_key") {
-        context.addIssue({ code: "custom", message: "An API key must act through a service account" });
-      }
-    } else if (claims.delegated_user_id) {
-      if (claims.access_subject_type !== "user" || claims.access_subject_id !== claims.delegated_user_id) {
-        context.addIssue({ code: "custom", message: "Delegated invocation authority is inconsistent" });
-      }
-    } else if (claims.access_subject_type !== "service_account" || claims.access_subject_id !== claims.sub) {
-      context.addIssue({ code: "custom", message: "Service-account invocation authority is inconsistent" });
-    }
-    if (claims.credential_kind === "session" && claims.principal_type !== "user") {
-      context.addIssue({ code: "custom", message: "A session invocation must use a user principal" });
-    }
-    if (claims.session_kind && claims.credential_kind !== "session") {
-      context.addIssue({ code: "custom", message: "Only a session invocation has a session kind" });
-    }
-    if (claims.credential_kind === "session" && claims.scopes.length > 0) {
-      context.addIssue({ code: "custom", message: "A session invocation cannot carry credential scopes" });
-    }
-    if (claims.credential_kind === "api_key" && !claims.credential_id) {
-      context.addIssue({ code: "custom", message: "An API-key invocation requires credential provenance" });
-    }
+const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSchema>, context: z.RefinementCtx, subjectProbe = false) => {
+  if (
+    (claims.parent_invocation_id
+      ? claims.exp <= claims.iat ||
+        claims.exp - claims.iat > CLOUD_INVOCATION_TOKEN_TTL_SECONDS ||
+        !claims.op.startsWith("capability.query:")
+      : claims.exp - claims.iat !== CLOUD_INVOCATION_TOKEN_TTL_SECONDS) ||
+    claims.nbf !== claims.iat
+  ) {
+    context.addIssue({ code: "custom", message: "Invocation lifetime is invalid" });
+  }
 
-    const mandateFields = [claims.mandate_id, claims.mandate_revision, claims.workload_type, claims.workload_id];
-    const mandateFieldCount = mandateFields.filter((value) => value !== undefined).length;
-    if (claims.credential_kind === "mandate" ? mandateFieldCount !== mandateFields.length : mandateFieldCount !== 0) {
-      context.addIssue({ code: "custom", message: "Mandate provenance is incomplete or unexpected" });
+  if (claims.principal_type === "user") {
+    if (claims.access_subject_type !== "user" || claims.access_subject_id !== claims.sub || claims.delegated_user_id !== undefined) {
+      context.addIssue({ code: "custom", message: "User invocation authority is inconsistent" });
     }
-  });
+    if (claims.credential_kind === "api_key") {
+      context.addIssue({ code: "custom", message: "An API key must act through a service account" });
+    }
+  } else if (claims.delegated_user_id) {
+    if (claims.access_subject_type !== "user" || claims.access_subject_id !== claims.delegated_user_id) {
+      context.addIssue({ code: "custom", message: "Delegated invocation authority is inconsistent" });
+    }
+  } else if (claims.access_subject_type !== "service_account" || claims.access_subject_id !== claims.sub) {
+    context.addIssue({ code: "custom", message: "Service-account invocation authority is inconsistent" });
+  }
+  if (claims.credential_kind === "session" && claims.principal_type !== "user") {
+    context.addIssue({ code: "custom", message: "A session invocation must use a user principal" });
+  }
+  if (claims.session_kind && claims.credential_kind !== "session") {
+    context.addIssue({ code: "custom", message: "Only a session invocation has a session kind" });
+  }
+  if (claims.credential_kind === "session" && claims.scopes.length > 0) {
+    context.addIssue({ code: "custom", message: "A session invocation cannot carry credential scopes" });
+  }
+  if (claims.credential_kind === "api_key" && !claims.credential_id) {
+    context.addIssue({ code: "custom", message: "An API-key invocation requires credential provenance" });
+  }
+
+  const mandateFields = [claims.mandate_id, claims.mandate_revision, claims.workload_type, claims.workload_id];
+  const mandateFieldCount = mandateFields.filter((value) => value !== undefined).length;
+  if (
+    claims.credential_kind === "mandate"
+      ? mandateFieldCount !== mandateFields.length && !(subjectProbe && mandateFieldCount === 0)
+      : mandateFieldCount !== 0
+  ) {
+    context.addIssue({ code: "custom", message: "Mandate provenance is incomplete or unexpected" });
+  }
+};
+
+const InvocationPayloadSchema = InvocationPayloadBaseSchema.superRefine((claims, context) => validateInvocationClaims(claims, context));
+const AppAccessProbeSchema = InvocationPayloadBaseSchema.extend({
+  token_use: z.literal("app_access_probe"),
+  act: z.object({ sub: z.literal("app:core") }).strict(),
+  op: z.literal("app-access.check"),
+  schema_hash: z.null(),
+  parent_invocation_id: z.never().optional(),
+}).superRefine((claims, context) => validateInvocationClaims({ ...claims, token_use: "invocation" }, context, true));
 
 export type CloudInvocationClaims = z.infer<typeof InvocationPayloadSchema>;
 export type InvocationAuthority = Pick<
@@ -401,5 +415,69 @@ export const verifyAppEventInvocation = async (
     );
   } catch {
     return false;
+  }
+};
+
+/** Core-only, target-bound existence proof. It cannot authorize an application operation. */
+export const signAppAccessProbe = async (input: {
+  appId: string;
+  authority: InvocationAuthority;
+  issuer?: string;
+  signer?: PreparedIdentitySigner;
+  now?: Date;
+}) => {
+  const issuer = input.issuer ?? (await getIdentityRuntimeConfig()).issuer;
+  const signer = input.signer ?? (await prepareIdentitySigner("invocation"));
+  const now = Math.floor((input.now?.getTime() ?? Date.now()) / 1_000);
+  if (signer.signUntil.getTime() < (now + CLOUD_INVOCATION_TOKEN_TTL_SECONDS) * 1000)
+    throw new Error("Invocation signing key expires before the app-access probe");
+  const claims = AppAccessProbeSchema.parse({
+    ...input.authority,
+    iss: issuer,
+    aud: `app:${AppIdSchema.parse(input.appId)}`,
+    token_use: "app_access_probe",
+    act: { sub: "app:core" },
+    op: "app-access.check",
+    schema_hash: null,
+    ver: CLOUD_INVOCATION_PROTOCOL_VERSION,
+    iat: now,
+    nbf: now,
+    exp: now + CLOUD_INVOCATION_TOKEN_TTL_SECONDS,
+    jti: crypto.randomUUID(),
+  });
+  const token = await new SignJWT(claims)
+    .setProtectedHeader({ alg: CLOUD_IDENTITY_ALGORITHM, typ: CLOUD_INVOCATION_TOKEN_TYPE, kid: signer.kid })
+    .sign(signer.key);
+  if (new TextEncoder().encode(token).byteLength > IDENTITY_MAX_COMPACT_TOKEN_BYTES) throw new Error("App-access probe exceeds 4 KiB");
+  return token;
+};
+
+export const verifyAppAccessProbe = async (
+  token: string,
+  appId: string,
+  options: { issuer?: string; key?: JWTVerifyGetKey; jwksUrl?: URL; now?: Date } = {},
+): Promise<z.infer<typeof AppAccessProbeSchema> | null> => {
+  if (new TextEncoder().encode(token).byteLength > IDENTITY_MAX_COMPACT_TOKEN_BYTES) return null;
+  try {
+    assertProtectedHeader(decodeProtectedHeader(token));
+    const runtime = options.issuer && (options.key || options.jwksUrl) ? null : await getIdentityRuntimeConfig();
+    const issuer = options.issuer ?? runtime!.issuer;
+    const url = options.jwksUrl ?? runtime?.invocationJwksUrl;
+    const state = options.key || !url ? null : remoteSet(url);
+    const key = options.key ?? state?.key;
+    if (!key) return null;
+    const verify = (key: JWTVerifyGetKey) =>
+      jwtVerify(token, key, {
+        algorithms: [CLOUD_IDENTITY_ALGORITHM],
+        audience: `app:${AppIdSchema.parse(appId)}`,
+        issuer,
+        typ: CLOUD_INVOCATION_TOKEN_TYPE,
+        clockTolerance: INVOCATION_CLOCK_TOLERANCE_SECONDS,
+        currentDate: options.now,
+      });
+    const result = await verifyWithKeyRefresh(verify, key, state && url ? { url, state } : null);
+    return AppAccessProbeSchema.parse(result.payload);
+  } catch {
+    return null;
   }
 };
