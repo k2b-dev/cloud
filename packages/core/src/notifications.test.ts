@@ -22,11 +22,13 @@ describe("Core notification definitions", () => {
     expect(notice.id).toBe("core.appDevicePaired");
     expect(notice.recipient).toBe("user");
     expect(notice.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
-    // The payload names the phone only; pairing codes, secrets and keys have no field to travel in.
-    expect(Object.keys(notice.data.shape).sort()).toEqual(["name", "pairedAt", "platform"]);
+    // The payload names the device and optional administrator; pairing codes, secrets and keys have no field to travel in.
+    expect(Object.keys(notice.data.shape).sort()).toEqual(["name", "pairedAt", "pairedByName", "platform"]);
     const setting = spyOn(settings, "get").mockResolvedValue("UTC");
     try {
       const data = { name: "Office iPad", platform: "ios" as const, pairedAt: "2026-10-06T12:03:00.000Z" };
+      expect(notice.data.safeParse(data).success).toBe(true);
+      const assistedData = notice.data.parse({ ...data, pairedByName: "Admin Example" });
       for (const [locale, title, device] of [
         ["en", "New device paired", "The device"],
         ["de", "Neues Gerät gekoppelt", "Das Gerät"],
@@ -38,6 +40,13 @@ describe("Core notification definitions", () => {
         const email = await notice.email!(data, { locale });
         expect(email.subject).toBe(title);
         expect(email.content).toStartWith(device);
+
+        const attribution = locale === "de" ? "Eingerichtet von Admin Example (Administration)." : "Set up by Admin Example (Administration).";
+        expect(rendered.body).not.toContain("(Administration)");
+        expect(email.content).not.toContain("(Administration)");
+        expect((await notice.render(assistedData, { locale })).body).toBe(`${rendered.body} ${attribution}`);
+        setting.mockResolvedValueOnce("https://cloud.example.test/");
+        expect((await notice.email!(assistedData, { locale })).content).toBe(`${email.content} ${attribution}`);
       }
     } finally {
       setting.mockRestore();
