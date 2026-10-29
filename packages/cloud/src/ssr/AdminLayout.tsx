@@ -47,7 +47,7 @@ export default function AdminLayout(props: Props) {
   const breadcrumbs: Breadcrumb[] = [{ title: t.start, href: "/" }, { title: overview ? t.admin : title }];
   return (
     <Layout c={c} fullWidth fullPage title={breadcrumbs}>
-      <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false}>
+      <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
         <AdminSidebar currentPath={currentPath} apps={runtime.apps} />
         <AppWorkspace.Content>
           {props.ownMain ? (

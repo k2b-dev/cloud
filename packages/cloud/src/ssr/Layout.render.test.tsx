@@ -23,6 +23,8 @@ const { default: Layout } = await import("./Layout");
 const { default: MinimalLayout } = await import("./MinimalLayout");
 const { useLocale } = await import("@k2b/ui");
 const { default: AdminLayout } = await import("./AdminLayout");
+const { AdminArea } = await import("./AdminArea");
+const { AppWorkspace } = await import("@k2b/ui");
 
 const app = defineApp({
   id: "layout-render-probe",
@@ -183,7 +185,25 @@ const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
     ),
   )
   .get("/help/apps/accent-probe", ...app.ssr((c) => () => createComponent(Layout, { c, title: "App Help", children: "Help content" })))
-  .get("/admin/accent", ...app.ssr((c) => () => createComponent(AdminLayout, { c, title: "App admin", children: "Admin content" })));
+  .get("/admin/accent", ...app.ssr((c) => () => createComponent(AdminLayout, { c, title: "App admin", children: "Admin content" })))
+  .get(
+    "/admin/area",
+    ...app.ssr(
+      (c) => () =>
+        createComponent(AdminArea, {
+          c,
+          label: "AI",
+          sectionsLabel: "AI sections",
+          href: "/admin/area",
+          groups: [{ items: [{ id: "general", label: "General", href: "/admin/area?sec=general", icon: "ti ti-adjustments" }] }],
+          current: "general",
+          title: "General",
+          get children() {
+            return createComponent(AppWorkspace.MainPane, { id: "section", label: "General", children: "Section content" });
+          },
+        }),
+    ),
+  );
 
 describe("Cloud layouts SSR", () => {
   test("the page shell gives portalled dialogs the current app's accent without its canvas background", async () => {
@@ -236,6 +256,14 @@ describe("Cloud layouts SSR", () => {
       for (const spy of spies) spy.mockRestore();
     }
   });
+  test("an admin area resizes its sidebar and columns like any app workspace", async () => {
+    const html = await (await accentServer.request("/admin/area")).text();
+    expect(html).toContain('data-app-workspace-resize="sidebar"');
+    expect(html).toContain(
+      'data-workspace-main-region="area" data-workspace-mobile-active="false" data-workspace-panel-id="area" data-workspace-resizable="true"',
+    );
+  });
+
   test("full-page workspaces contain outer viewport overscroll", async () => {
     const html = await (await server.request("/layout")).text();
     expect(html).toContain('data-layout-full-page="true"');
