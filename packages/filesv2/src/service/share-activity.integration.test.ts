@@ -91,7 +91,7 @@ suite("share create/revoke atomic history and security audit", () => {
       autoCreate: false,
       autoArchive: true,
     },
-    freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "home", groups: "groups", archive: "archive" },
+    freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix: "", homes: "home", groups: "groups", archive: "archive" },
     collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
   };
   const summary: BaseSummary = {

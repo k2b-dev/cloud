@@ -128,7 +128,7 @@ describe("Files history in the workspace", () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
     const dispose = render(
-      () => createComponent(modules!.Workspace, { initial, cloudUrl: "https://cloud.test", timeZone: "Europe/Berlin", retentionDays: 365 }),
+      () => createComponent(modules!.Workspace, { initial, timeZone: "Europe/Berlin", retentionDays: 365 }),
       dom.root,
     );
     cleanup = () => {

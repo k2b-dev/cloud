@@ -81,7 +81,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     title: "Welcome",
     notebookName: "Handbook",
     selectedNoteId: "note01",
-    tree: [],
+    hasNotes: false,
     tags: [],
     canWrite: false,
     locked: false,

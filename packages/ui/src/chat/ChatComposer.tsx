@@ -46,7 +46,7 @@ import {
 } from "./chat-behavior";
 import { useChatMessages } from "./chat-messages";
 import { chatCommandListModel, parseChatCommandQuery } from "./command-search";
-import { chatCommandQuery, chatMentionSegments, reconcileChatMentions } from "./composer-document";
+import { chatCommandQuery, chatMentionSegments, chatPeopleQuery, reconcileChatMentions } from "./composer-document";
 import type {
   ChatAction,
   ChatAttachment,
@@ -189,6 +189,15 @@ export type ChatFileSelection = {
   label?: string;
 };
 
+/** A person `@` can mention: a member of the conversation, a person or an agent. */
+export type ChatPersonSuggestion = { id: string; name: string; agent?: boolean };
+
+/** Suggests people for `@`; the composer inserts the chosen one as a mention named "@Name". */
+export type ChatComposerPeople = {
+  /** At most 8 matches are shown; a rejection only means no suggestions. */
+  search: (query: string, signal: AbortSignal) => Promise<readonly ChatPersonSuggestion[]>;
+};
+
 export type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaElement; target: Element }) => void;
 
 export type ChatComposerReply = {
@@ -240,6 +249,8 @@ export type ChatComposerProps = {
   commandFallback?: (search: { query: string; scope?: string }) => ChatCommand | undefined;
   mentions?: readonly ChatMention[];
   onMentionsChange?: (mentions: readonly ChatMention[]) => void;
+  /** Suggests people after `@`; needs `mentions` and `onMentionsChange`. */
+  people?: ChatComposerPeople;
   /** Shared surface above the editor; suggestions temporarily replace this content. */
   accessory?: JSX.Element;
   contextUsage?: ChatContextUsageData;
@@ -256,6 +267,8 @@ export type ChatComposerProps = {
   label?: string;
   inputLabel?: string;
   disabled?: boolean;
+  /** Keeps the draft editable but holds it back, such as while the chosen model cannot answer. */
+  submitDisabled?: boolean;
   error?: string;
   focusToken?: unknown;
   draftKey?: unknown;
@@ -491,6 +504,40 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     return token && index ? suggestEmoji(index, token.query, emojiSuggestionLimit) : [];
   });
   const emojiOpen = () => emojiMatches().length > 0;
+  // People for `@name`: each change of the query asks again and gives up the previous question.
+  const peopleQuery = createMemo(() =>
+    !props.people || dismissed() || composing() ? null : chatPeopleQuery(props.value, caret(), selectionEnd(), mentions()),
+  );
+  // Results belong to the query they answer; while a newer query is asked, the older results show nothing to pick.
+  const [peopleResults, setPeopleResults] = createSignal<{ query: string; people: readonly ChatPersonSuggestion[] }>();
+  const peopleMatches = () => {
+    const results = peopleResults();
+    return results && results.query === peopleQuery()?.query ? results.people : [];
+  };
+  const setPeopleMatches = (people: readonly ChatPersonSuggestion[], query = peopleQuery()?.query ?? "") =>
+    setPeopleResults({ query, people });
+  createEffect(
+    on(
+      () => [peopleQuery()?.start, peopleQuery()?.query] as const,
+      ([start, query]) => {
+        if (start === undefined || query === undefined || !props.people) {
+          setPeopleMatches([]);
+          return;
+        }
+        const abort = new AbortController();
+        onCleanup(() => abort.abort());
+        props.people.search(query, abort.signal).then(
+          (found) => {
+            if (!abort.signal.aborted) setPeopleMatches(found.slice(0, 8), query);
+          },
+          () => {
+            if (!abort.signal.aborted) setPeopleMatches([], query);
+          },
+        );
+      },
+    ),
+  );
+  const peopleOpen = () => !emojiOpen() && Boolean(peopleQuery()) && peopleMatches().length > 0;
   // From "+", the search field's text is the query of an empty token at the field's stored caret.
   const caretCommandToken = createMemo(() => {
     const search = addSearch();
@@ -583,7 +630,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setCommandMoved(false);
   });
   const commandsOpen = () =>
-    Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands || commandFallbackRow()));
+    Boolean(!emojiOpen() && !peopleOpen() && commandQuery() && (localCommands().length || props.searchCommands || commandFallbackRow()));
   // Rows that arrive for a pending section never move a visible row of the overview: until the person types, the list
   // keeps the height it had with its placeholders and scrolls what does not fit. A list below its maximum height grows
   // upward from the field, so a change of height alone would move its first row. While searching, the rows arrive
@@ -660,7 +707,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (!commandSheetHeld()) return;
     onCleanup(holdDialogHistory(() => closeCommandList()));
   });
-  const suggestionsOpen = () => commandsOpen() || emojiOpen();
+  const suggestionsOpen = () => commandsOpen() || emojiOpen() || peopleOpen();
   const fieldOwnsList = () => suggestionsOpen() && !addSearch();
   // From "+", the panel keeps the height it opened with while the person types or rows arrive, so neither the search
   // field nor the first row moves; what does not fit scrolls. The space above the field still bounds it.
@@ -959,7 +1006,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const editBlocked = () => (conversation() ? busy() : blocked());
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
   /** The draft may go out now, apart from a submission that is already on its way. */
-  const submittable = () => !busy() && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
+  const submittable = () =>
+    !busy() && !props.submitDisabled && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
   const canSubmit = () => !submitting() && submittable();
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
@@ -992,7 +1040,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         label: action.label,
         variant: action.variant,
         disabled: action.disabled,
-        action: () => reportChatFailure(() => executeChatAction(action), props.onError),
+        action: () =>
+          reportChatFailure(async () => {
+            await executeChatAction(action);
+            // Like attaching files, an add action returns to the field when the focus is still on this composer's add
+            // button or nowhere; focus the action moved somewhere on purpose stays there.
+            queueMicrotask(() => {
+              const active = textareaRef?.ownerDocument.activeElement;
+              const root = textareaRef?.closest(".k2b-chat-composer");
+              if (!active || active === active.ownerDocument.body || (root?.contains(active) && active.matches("[data-chat-composer-add]")))
+                focus();
+            });
+          }, props.onError),
       });
     }
     return items;
@@ -1027,12 +1086,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   createEffect(() => {
     emojiMatches();
+    peopleMatches();
     setSelectedCommandIndex(0);
   });
 
   createEffect(() => {
     const command = selectedCommand();
-    const id = emojiOpen() ? `${commandListId}-${selectedCommandIndex()}` : command ? commandOptionId(command) : undefined;
+    const id = emojiOpen() || peopleOpen() ? `${commandListId}-${selectedCommandIndex()}` : command ? commandOptionId(command) : undefined;
     queueMicrotask(() => {
       const list = commandListRef;
       const item = id ? list?.querySelector<HTMLElement>(`[id="${id}"]`) : undefined;
@@ -1461,6 +1521,27 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     syncCaret();
     reportChatFailure(() => props.emoji?.onPick?.(emoji), props.onError);
   };
+  /** Replaces `@query` with "@Name" as a mention and a space, as one edit the person can undo. */
+  const pickPersonSuggestion = (position: number) => {
+    const token = peopleQuery();
+    const person = peopleMatches()[position];
+    if (!token || !person || !textareaRef || editBlocked()) return;
+    const text = `@${person.name}`;
+    const nextValue = `${props.value.slice(0, token.start)}${text} ${props.value.slice(token.end)}`;
+    const nextMentions = reconcileChatMentions(props.value, nextValue, mentions());
+    nextMentions.push({
+      start: token.start,
+      end: token.start + text.length,
+      attachment: { id: person.id, name: text, kind: "resource", icon: person.agent ? "ti ti-robot" : "ti ti-user" },
+    });
+    edit(nextValue, nextMentions);
+    setPeopleMatches([]);
+    const after = token.start + text.length + 1;
+    queueMicrotask(() => {
+      textareaRef?.setSelectionRange(after, after);
+      syncCaret();
+    });
+  };
   const pickEmojiSuggestion = (position: number) => {
     const token = emojiQuery();
     const entry = emojiMatches()[position];
@@ -1562,17 +1643,19 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       restoreHistory(event.shiftKey ? 1 : -1);
       return;
     }
-    if (emojiOpen()) {
+    if (emojiOpen() || peopleOpen()) {
+      const count = emojiOpen() ? emojiMatches().length : peopleMatches().length;
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
         event.preventDefault();
-        setSelectedCommandIndex((index) => nextChatCommandIndex(index, emojiMatches().length, event.key === "ArrowUp" ? -1 : 1));
+        setSelectedCommandIndex((index) => nextChatCommandIndex(index, count, event.key === "ArrowUp" ? -1 : 1));
         return;
       }
       // Only a plain Enter or Tab picks: Shift+Enter still breaks the line, Shift+Tab still moves the focus back.
       const plain = !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
       if (plain && (event.key === "Enter" || event.key === "Tab")) {
         event.preventDefault();
-        pickEmojiSuggestion(selectedCommandIndex());
+        if (emojiOpen()) pickEmojiSuggestion(selectedCommandIndex());
+        else pickPersonSuggestion(selectedCommandIndex());
         return;
       }
       if (event.key === "Escape") {
@@ -1678,6 +1761,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       <Dropdown.Trigger
         appearance="plain"
         class={`k2b-chat-composer__icon-action${extraClass}`}
+        data-chat-composer-add=""
         label={chatMessages().addToChat}
         tooltip={chatMessages().addToChat}
       >
@@ -1976,7 +2060,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         aria-activedescendant={
           !fieldOwnsList()
             ? undefined
-            : emojiOpen()
+            : emojiOpen() || peopleOpen()
               ? `${commandListId}-${selectedCommandIndex()}`
               : selectedCommand()
                 ? commandOptionId(selectedCommand()!)
@@ -2149,6 +2233,38 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                       </span>
                       <strong>{emojiName(entry, locale())}</strong>
                       <Show when={entry.shortcodes[0]}>{(code) => <small>:{code()}:</small>}</Show>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+          <Show when={peopleOpen()}>
+            <div class="k2b-chat-composer-accessory">
+              <div
+                ref={commandListRef}
+                id={commandListId}
+                class="k2b-chat-composer__commands"
+                role="listbox"
+                aria-label={chatMessages().peopleSuggestions}
+              >
+                <For each={peopleMatches()}>
+                  {(person, index) => (
+                    <button
+                      id={`${commandListId}-${index()}`}
+                      type="button"
+                      role="option"
+                      tabIndex={-1}
+                      aria-selected={index() === selectedCommandIndex()}
+                      data-active={index() === selectedCommandIndex() ? "true" : undefined}
+                      onMouseDown={keepFieldFocus}
+                      onClick={() => pickPersonSuggestion(index())}
+                    >
+                      <i class={person.agent ? "ti ti-robot" : "ti ti-user"} aria-hidden="true" />
+                      <strong>{person.name}</strong>
+                      <Show when={person.agent}>
+                        <small>{chatMessages().agentLabel}</small>
+                      </Show>
                     </button>
                   )}
                 </For>

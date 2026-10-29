@@ -6,6 +6,7 @@ import { Filegate, FilegateError, type Node } from "@k2b/filegate";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
+import { migratePosix } from "../../../core/src/migrate/core/posix";
 import { activityFilegate } from "../../test/activity-filegate";
 import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
@@ -218,7 +219,7 @@ suite("administrative read history with real Filegate", () => {
         autoCreate: false,
         autoArchive: false,
       },
-      freeipa: { enabled: false, root: "freeipa", prefix, homes: "users", groups: "groups", archive: "archive" },
+      freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix, homes: "users", groups: "groups", archive: "archive" },
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
     };
     client = new Filegate({ baseUrl: config.url, transferBaseUrl: config.url, token });
@@ -227,8 +228,8 @@ suite("administrative read history with real Filegate", () => {
     await sql`CREATE SCHEMA settings`.simple();
     await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY,uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await sql`CREATE TABLE auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
-    await sql`CREATE TABLE auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id),managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid)`.simple();
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text,provider text,gid_number integer)`.simple();
+    await migratePosix();
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text)`.simple();
     await migrate();
     await migrateAudit();

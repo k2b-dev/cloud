@@ -41,6 +41,7 @@ import {
   ErrorSchema,
   FavoriteInputSchema,
   FolderBatchInputSchema,
+  HomeProvisioningQuerySchema,
   MoveInputSchema,
   PathsInputSchema,
   RenameInputSchema,
@@ -390,6 +391,13 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Read configuration and filesystem inventory", ...requiresAdmin }),
     v("query", AdminQuerySchema),
     async (c) => respond(c, ok(await filesService.admin(requestCall(c), c.req.valid("query")))),
+  )
+  .get(
+    "/admin/provisioning",
+    auth.requireRole("admin"),
+    middleware.openapi({ summary: "Read per-user automatic home provisioning status", ...requiresAdmin }),
+    v("query", HomeProvisioningQuerySchema),
+    async (c) => respond(c, ok(await filesService.adminHomeProvisioning(requestCall(c), c.req.valid("query")))),
   )
   .delete("/admin/configuration", middleware.openapi({ summary: "Reset Files configuration to defaults", ...requiresAdmin }), async (c) => {
     await filesService.resetConfiguration(requestCall(c));

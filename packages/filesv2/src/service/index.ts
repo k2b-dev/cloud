@@ -43,9 +43,10 @@ import type {
   UploadLease,
   UploadSession,
 } from "../contracts";
-import { BATCH_LIMIT } from "../contracts";
+import { BATCH_LIMIT, HomeProvisioningOverviewSchema, HomeProvisioningQuerySchema, HomeProvisioningResultSchema } from "../contracts";
 import { activityRecoveryRecord } from "../data/activity-recovery";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
+import { homeProvisioning } from "../data/home-provisioning";
 import { favorites, recent } from "../data/marks";
 import { operations, rootLockWait, withRootLock, withUploadLock } from "../data/operations";
 import { entryRef, persistedEntryRefId, resolveEntryRefId } from "../data/references";
@@ -69,6 +70,7 @@ import { documentTemplate } from "./document-template";
 import { FilesError } from "./errors";
 import { fileEntry } from "./file-entry";
 import { connectFilegate, type FilesRoot } from "./filegate-facade";
+import { createHomeProvisioning } from "./home-provisioning";
 import { createDirectoryLifecycle } from "./lifecycle";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
 import { permits, type UnixIdentity } from "./posix";
@@ -152,6 +154,13 @@ export function createFilesService(
   },
 ) {
   const { provisionCandidate, ...lifecycle } = createDirectoryLifecycle(deps);
+  const homes = createHomeProvisioning({
+    identities: deps.identities,
+    store: homeProvisioning,
+    readConfiguration: deps.readConfiguration,
+    provision: provisionCandidate,
+    lock: (run) => withRootLock("filesv2:home-reconciliation", run),
+  });
   async function allGroups(actor: RequestActor, budget?: ActivityReadBudget): Promise<Group[]> {
     const result: Group[] = [];
     const deadline = Date.now() + 10_000;
@@ -1237,6 +1246,12 @@ export function createFilesService(
         return activityReader.activity({ ...call, requestAbort: budget.signal }, { ...input, ...filter });
       });
     },
+    provisionUserHome: homes.ensure,
+    reconcileUserHomes: homes.reconcile,
+    async adminHomeProvisioning(call: UserFilesCall, input: z.infer<typeof HomeProvisioningQuerySchema>) {
+      await requireAdmin(call.actor);
+      return HomeProvisioningResultSchema.parse(await homeProvisioning.page(HomeProvisioningQuerySchema.parse(input)));
+    },
     async maintain(input: Parameters<typeof lifecycle.maintain>[0] & { now?: Date } = {}): Promise<MaintenanceResult> {
       // The history goes first and alone: its failure never stops directory work, and theirs never stops it.
       const activity = await maintainActivity(input);
@@ -2216,13 +2231,25 @@ export function createFilesService(
     },
     async admin(
       call: UserFilesCall,
-      input: { area: Area; kind: BaseKind; after?: string; q?: string; status?: InventoryState; includeEntries?: "true" | "false" },
+      input: {
+        area: Area;
+        kind: BaseKind;
+        after?: string;
+        q?: string;
+        status?: InventoryState;
+        includeEntries?: "true" | "false";
+        view?: "overview" | "directories" | "archive" | "settings" | "shares" | "templates";
+      },
     ): Promise<AdminResult> {
       const actor = call.actor;
       const self = await requireAdmin(actor);
       const config = await deps.readConfiguration();
       const { token: _token, ...configuration } = config;
       const output: AdminResult = { configuration, availability: self.availability, root: null, items: [], next: null, issue: null };
+      if (input.view === "overview") {
+        const progress = await homeProvisioning.page({ area: input.area, pendingOnly: true });
+        output.provisioning = HomeProvisioningOverviewSchema.parse({ ...progress, area: input.area, counts: progress.counts[input.area] });
+      }
       const issue = issueFor(config, input.area, self.availability);
       if (issue) {
         output.issue = issue;

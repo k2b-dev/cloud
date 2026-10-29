@@ -8,6 +8,7 @@ import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import { app } from "../config";
+import * as maintenance from "../maintenance-schedule";
 import type { UserFilesCall } from "./activity";
 import { readConfiguration, resetConfiguration, writeConfiguration } from "./configuration";
 
@@ -21,7 +22,7 @@ const input = {
   url: "https://private-filegate.test",
   token: "private-filegate-credential",
   cloud: { ...area, autoCreate: false, autoArchive: true },
-  freeipa: { ...area, root: "freeipa" },
+  freeipa: { ...area, root: "freeipa", autoCreate: false },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 const previous = { ...input, token: "previous-private-credential", activityRetentionDays: 365 };
@@ -124,6 +125,7 @@ suite("Files configuration security audit", () => {
       BEGIN RAISE EXCEPTION 'configuration settings unavailable'; END; $$`.simple();
   });
   beforeEach(async () => {
+    spyOn(maintenance, "requestHomeReconciliation").mockResolvedValue();
     await sql`TRUNCATE settings.entries,audit.events,settings.configuration_test_deletions`.simple();
     await invalidate([key]);
   });

@@ -1,9 +1,10 @@
-import { audit, SettingUnreadableError, settings } from "@k2b/cloud/services";
+import { audit, logger, SettingUnreadableError, settings } from "@k2b/cloud/services";
 import { invalidateSettingsCache } from "@k2b/cloud/services/settings";
 import { sql, type TransactionSQL } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import { type ConfigurationInput, ConfigurationSchema, type PublicConfiguration } from "../contracts";
+import { requestHomeReconciliation } from "../maintenance-schedule";
 import type { UserFilesCall } from "./activity";
 import { FilesError } from "./errors";
 import { validateConfiguration } from "./paths";
@@ -43,7 +44,7 @@ const defaults = {
     groups: "groups",
     archive: "archive",
   },
-  freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+  freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 export async function readConfiguration(): Promise<PublicConfiguration & { token: string }> {
@@ -76,6 +77,9 @@ export async function writeConfiguration(input: ConfigurationInput, call: UserFi
     throw error;
   }
   await invalidateSettingsCache([key]);
+  await requestHomeReconciliation().catch((error) => {
+    logger("filesv2:maintenance").warn("Home reconciliation request failed; periodic reconciliation will retry", { error });
+  });
 }
 export async function resetConfiguration(call: UserFilesCall): Promise<void> {
   await sql.begin(async (tx) => {
@@ -83,4 +87,7 @@ export async function resetConfiguration(call: UserFilesCall): Promise<void> {
     await recordAudit(tx, call, "reset");
   });
   await invalidateSettingsCache([key]);
+  await requestHomeReconciliation().catch((error) => {
+    logger("filesv2:maintenance").warn("Home reconciliation request failed; periodic reconciliation will retry", { error });
+  });
 }

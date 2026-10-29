@@ -7,6 +7,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
+import { migratePosix } from "../../../core/src/migrate/core/posix";
 import { activityFilegate } from "../../test/activity-filegate";
 import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
@@ -185,7 +186,7 @@ suite("lifecycle committed history with real Filegate and Core audit", () => {
         autoCreate: false,
         autoArchive: false,
       },
-      freeipa: { enabled: false, root: "freeipa", prefix: ownedPrefix, homes: "users", groups: "groups", archive: "archive" },
+      freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix: ownedPrefix, homes: "users", groups: "groups", archive: "archive" },
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
     };
     client = new Filegate({ baseUrl: config.url, transferBaseUrl: config.url, token });
@@ -193,8 +194,8 @@ suite("lifecycle committed history with real Filegate and Core audit", () => {
     await sql`CREATE SCHEMA settings`.simple();
     await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY,uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await sql`CREATE TABLE auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
-    await sql`CREATE TABLE auth.user_posix(user_id uuid PRIMARY KEY,managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid,home_directory text,login_shell text)`.simple();
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text,provider text,gid_number integer)`.simple();
+    await migratePosix();
     await sql`CREATE TABLE auth.user_groups_v2(user_id uuid,group_id uuid)`.simple();
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
     await sql`CREATE TABLE auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();

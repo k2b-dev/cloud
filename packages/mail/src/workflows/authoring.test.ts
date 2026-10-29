@@ -50,3 +50,22 @@ describe("Mail workflow authoring completions", () => {
     expect(buildMailWorkflowCompletions(source, source.length, catalog).map((item) => item.label)).toEqual(["Ada", "Grace"]);
   });
 });
+
+test("completes Mail input metrics from their shared descriptors", () => {
+  for (const [name, kind, fields] of [
+    ["message", "mailMessage", ["textLength", "attachmentCount", "isBulk"]],
+    ["conversation", "mailConversation", ["messageCount"]],
+  ] as const) {
+    const source = `inputs:\n  ${name}: { type: ${kind} }\nsteps:\n  - if: { greaterThan: ["\${{ inputs.${name}.`;
+    const completions = buildMailWorkflowCompletions(source, source.length, catalog);
+    expect(completions.map((item) => item.label)).toEqual(expect.arrayContaining([...fields]));
+    const completion = completions.find((item) => item.label === fields[0])!;
+    expect(completion.textEdit.start).toBe(source.length);
+    expect(completion.detail).toBe("core.number");
+  }
+});
+
+test("does not suggest scalar trigger fields that cannot bind to Mail inputs", () => {
+  const source = 'steps:\n  - if: { greaterThan: ["${{ trigger.message.';
+  expect(buildMailWorkflowCompletions(source, source.length, catalog).some((item) => item.label === "textLength")).toBe(false);
+});

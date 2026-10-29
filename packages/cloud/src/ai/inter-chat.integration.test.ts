@@ -41,7 +41,7 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
       });
       await aiConversations.submitChatTurn({
         conversationId: first.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: "The migration timeline is Friday.", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "The migration timeline is Friday." }] },
       });
@@ -96,7 +96,7 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
       expect(await aiConversations.archiveConversation({ conversationId: archived.id, ownerUserId: userId })).toBe(true);
       const sourceTurn = await aiConversations.createCompactionTurn({
         conversationId: source.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "compact" },
       });
       await aiToolAudit.noteCapabilityDispatch({
@@ -171,7 +171,7 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
       const text = `Assistant message from chat ${source.shortId} (${source.title}):\n\nPlease verify the release date.`;
       const delivered = await aiConversations.deliverInterChatMessage({
         messageId: created.message.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: text, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text }] },
         sourceHref: `/app/assistant?conversation=${source.shortId}`,
@@ -206,7 +206,7 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
         expect(
           await aiConversations.deliverInterChatMessage({
             messageId: queued.message.id,
-            modelProfileId: "test-model",
+            modelId: "test-model",
             runConfig: { kind: "chat", input: queued.message.text, toolSource: { kind: "none" } },
             userMessage: { role: "user", content: [{ type: "text", text: queued.message.text }] },
           }),

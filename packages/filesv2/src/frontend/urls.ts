@@ -1,6 +1,5 @@
 import { HistoryAction } from "../activity-contracts";
 import type { BrowseOptions } from "../contracts";
-import { parseStableEntryRefId } from "../resource-ref";
 import type { ActivityFilters, ActivityWhen } from "./history-requests";
 export function filesUrl(
   baseId?: string,
@@ -25,14 +24,6 @@ export function filesUrl(
 /** The editor view: the folder stays in the URL so leaving the editor returns to the file's row. */
 export const editorUrl = (baseId: string, path: string) =>
   `${filesUrl(baseId, path.split("/").slice(0, -1).join("/"), null, path)}&view=edit`;
-
-/** The plain-text link of a copied reference: a stable ref opens through the deep link, which follows renames and moves. */
-export const referenceHref = (baseId: string, entry: { path: string; directory: boolean }, id: string) =>
-  parseStableEntryRefId(id)
-    ? `/app/filesv2/ref/${encodeURIComponent(id)}`
-    : entry.directory
-      ? filesUrl(baseId, entry.path)
-      : filesUrl(baseId, entry.path.split("/").slice(0, -1).join("/"), null, entry.path);
 
 export function pathCrumbs(path: string) {
   const parts = path.split("/").filter(Boolean);

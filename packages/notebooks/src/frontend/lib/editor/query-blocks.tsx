@@ -5,7 +5,7 @@ import { query, timed } from "@k2b/stdlib/solid";
 import { Button } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
-import { chartBlockFrame, notebookChartFrameHtml } from "../../../lib/chart-blocks";
+import { chartBlockFrame, notebookChartFrameHtml, notebookChartHeight, parseNotebookChartBlocks } from "../../../lib/chart-blocks";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../../[id]/_components/sidebar/workspace-events";
 import { enhanceNotebookCharts } from "../notebook-charts";
@@ -52,7 +52,7 @@ class QueryBlockWidget extends WidgetType {
     private html: string | undefined,
     private diagnostic?: string,
     private staleReadOnly = false,
-    /** A chart's title and kind from its source: the frame stands while its drawing loads or fails. */
+    /** A chart's title, kind and drawn height from its source: the frame stands while its drawing loads or fails. */
     private chart: ChartFrame | null = null,
   ) {
     super();
@@ -70,6 +70,7 @@ class QueryBlockWidget extends WidgetType {
       other.chart?.area === this.chart?.area &&
       other.chart?.title === this.chart?.title &&
       other.chart?.subtitle === this.chart?.subtitle &&
+      other.chart?.height === this.chart?.height &&
       other.snapshot.failed === this.snapshot.failed &&
       other.snapshot.locale === this.snapshot.locale &&
       other.snapshot.result?.headings === this.snapshot.result?.headings
@@ -295,11 +296,22 @@ export function createQueryBlockPreviews(options: {
           return html === undefined ? [] : [[document.slice(block.from, block.to), html] as const];
         }),
       );
+    // A placeholder reserves the height its drawing will take; the note's charts are read once, and only for one.
+    let heights: Map<number, number | undefined> | undefined;
+    const heightAt = (line: number) => {
+      heights ??= new Map(
+        parseNotebookChartBlocks(document).blocks.map((entry) => [entry.line, notebookChartHeight(entry.input, next.locale)]),
+      );
+      return heights.get(line);
+    };
     for (const block of blocks) {
       if (selectionIntersectsRange(state.selection.main, block.from, block.to)) continue;
       const source = block.type === "chart" ? document.slice(block.from, block.to) : "";
       const html = result?.blocks.find((entry) => entry.line === block.line)?.html ?? (source ? drawnCharts.get(source) : undefined);
-      const chart = block.type === "chart" ? chartBlockFrame(source.split("\n").slice(1, block.closed ? -1 : undefined)) : null;
+      const frame = block.type === "chart" ? chartBlockFrame(source.split("\n").slice(1, block.closed ? -1 : undefined)) : null;
+      // A failed refresh shows the placeholder in place of a kept drawing: it keeps that drawing's height too.
+      const height = frame && (html === undefined || next.failed) ? heightAt(block.line) : undefined;
+      const chart = frame && height ? { ...frame, height } : frame;
       const diagnostic = result?.diagnostics
         .filter((entry) => entry.line >= block.line && entry.line <= state.doc.lineAt(block.to).number)
         .map((entry) => entry.message)

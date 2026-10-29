@@ -125,7 +125,7 @@ export default function BookController(props: Props) {
         );
     // This string is produced only by the permission-aware server renderer.
     if (html !== null) article.innerHTML = html;
-    else article.textContent = metadata.tree.length ? t().selectNote : t().empty;
+    else article.textContent = metadata.hasNotes ? t().selectNote : t().empty;
     for (const block of article.querySelectorAll<HTMLElement>(".notebook-book-query[data-query-line]")) {
       const height = listHeights.get(block.dataset.queryLine!);
       if (height && block.querySelector(".notebook-query-pager") && block.getBoundingClientRect().height < height)
@@ -343,7 +343,10 @@ export default function BookController(props: Props) {
     const onWorkspaceEvent = (raw: Event) => {
       const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
       if (detail.event.notebookId !== props.notebookId) return;
-      if (detail.event.type === "note.comments.changed" || detail.event.type === "note.favorite.changed") {
+      // A comment on the open note changes Book's comments entry; other comments and favorites change nothing here.
+      if (detail.event.type === "note.comments.changed" && detail.event.noteId === workspace.data()?.snapshot.selectedNoteId) {
+        detail.cover(workspace.invalidate());
+      } else if (detail.event.type === "note.comments.changed" || detail.event.type === "note.favorite.changed") {
         detail.cover(Promise.resolve());
       } else {
         detail.cover(workspace.invalidate());

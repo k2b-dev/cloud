@@ -3,6 +3,7 @@ import type { Principal, RequestActor } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
+import { migratePosix } from "../../../core/src/migrate/core/posix";
 import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import type { EntryResult } from "../contracts";
@@ -142,8 +143,7 @@ suite("Template administration security audit", () => {
     await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY,uid text,provider text,profile text,admin boolean,
       account_expires timestamptz,display_name text,avatar_hash text)`.simple();
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text,provider text,gid_number integer)`.simple();
-    await sql`CREATE TABLE auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id),managed_by text,
-      uid_number integer,primary_gid_number integer,primary_group_id uuid)`.simple();
+    await migratePosix();
     await sql`CREATE TABLE auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id uuid REFERENCES auth.groups(id),child_group_id uuid REFERENCES auth.groups(id))`.simple();
     await sql`CREATE TABLE auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid REFERENCES auth.users(id),

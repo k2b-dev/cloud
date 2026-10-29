@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ChartDatum, charts } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
+import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { z } from "zod";
 import {
   chartDateTime,
@@ -302,8 +303,20 @@ describe("chart table", () => {
 
 describe("chart render options", () => {
   test("make room for long tick labels and show a legend for several series", () => {
-    const small = cloudAiChartRenderOptions(parse({ kind: "bar", title: "Small", data: [{ label: "A", value: 5 }] }), "en");
-    const large = cloudAiChartRenderOptions(parse({ kind: "bar", title: "Large", data: [{ label: "A", value: 1_250_000 }] }), "de");
+    const values = (y: number) => ({
+      kind: "line",
+      title: "Y",
+      series: [
+        {
+          data: [
+            { x: 1, y: 0 },
+            { x: 2, y },
+          ],
+        },
+      ],
+    });
+    const small = cloudAiChartRenderOptions(parse(values(5)), "en");
+    const large = cloudAiChartRenderOptions(parse(values(1_250_000)), "de");
     const left = (options: typeof small) => ("padding" in options && typeof options.padding === "object" ? (options.padding.left ?? 0) : 0);
     expect(left(large)).toBeGreaterThan(left(small));
     const two = (locale: string) =>
@@ -337,7 +350,7 @@ describe("chart render options", () => {
     expect(pie.kind === "pie" && pie.legend).toBe(true);
   });
 
-  test("show every n-th long category label on the axis while the table keeps them all", () => {
+  test("label every long category in a bar row and print its value, like the table", () => {
     const months = [
       "January",
       "February",
@@ -354,9 +367,15 @@ describe("chart render options", () => {
     ];
     const input = parse({ kind: "bar", title: "Months", data: months.map((label, value) => ({ label: `${label} 2026`, value })) });
     const options = cloudAiChartRenderOptions(input, "en");
-    const shown = options.kind === "bar" ? options.data.map((item) => item.label).filter(Boolean) : [];
-    expect(shown.length).toBeGreaterThan(1);
-    expect(shown.length).toBeLessThan(months.length);
+    if (options.kind !== "bar") throw new Error("Expected bar");
+    const layout = barChartLayout(options);
+    expect(layout.layout).toBe("rows");
+    const svg = renderBarChartSvg({ ...options, width: 480, height: layout.height });
+    const labels = [...svg.matchAll(/stdlib-chart-category-label"[^>]*>([^<]*)</g)].map((match) => match[1]);
+    expect(labels).toEqual(months.map((label) => `${label} 2026`));
+    expect([...svg.matchAll(/stdlib-chart-bar-value"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(
+      months.map((_, value) => `${value}`),
+    );
     expect(cloudAiChartTable(input, "en").rows.map((row) => row.cells.label)).toEqual(months.map((label) => `${label} 2026`));
   });
 });
@@ -410,6 +429,46 @@ describe("richer chart contracts", () => {
     expect(cloudAiNumberFormatters(undefined, "en").tick(1250000)).toBe("1.25M");
   });
 
+  test("a currency without decimals writes cents only when a value has them", () => {
+    const euro = { style: "currency", currency: "EUR" } as const;
+    const space = (text: string) => text.replace(/[\u00a0\u202f]/g, " ");
+    expect(space(cloudAiNumberFormatters(euro, "de", [418000, 12]).value(418000))).toBe("418.000 €");
+    expect(space(cloudAiNumberFormatters(euro, "de", [418000, 12.5]).value(418000))).toBe("418.000,00 €");
+    expect(space(cloudAiNumberFormatters(euro, "de").value(418000))).toBe("418.000,00 €");
+    expect(space(cloudAiNumberFormatters({ ...euro, decimals: 2 }, "de", [418000]).value(418000))).toBe("418.000,00 €");
+    // Compact notation keeps its fraction, so neighbors stay distinct.
+    expect(space(cloudAiNumberFormatters({ ...euro, compact: true }, "de", [1200, 1400]).value(1200))).not.toBe(
+      space(cloudAiNumberFormatters({ ...euro, compact: true }, "de", [1200, 1400]).value(1400)),
+    );
+    // Computed or bounding values count too: quartiles of whole observations, gauge bounds and sparklines.
+    const cells = (input: unknown) =>
+      cloudAiChartTable(parse(input), "de")
+        .rows.flatMap((row) => Object.values(row.cells))
+        .map(space);
+    expect(cells({ kind: "boxplot", title: "B", data: [{ label: "A", values: [1, 2, 3, 4] }], yAxis: { format: euro } })).toContain(
+      "1,75 €",
+    );
+    expect(cells({ kind: "gauge", title: "G", value: 1, min: 0.5, max: 2.5, format: euro })).toContain("0,50 €");
+    expect(cells({ kind: "sparkline", title: "S", data: [1, 2, 3], tooltip: { format: euro } })).toContain("2 €");
+    // The chart's printed values and its tooltip rows read the same values.
+    const input = parse({
+      kind: "bar",
+      title: "Umsatz",
+      data: [
+        { label: "Nord", value: 418000 },
+        { label: "Süd", value: 97000 },
+      ],
+      yAxis: { format: euro },
+      tooltip: { format: euro },
+    });
+    const options = cloudAiChartRenderOptions(input, "de");
+    if (options.kind !== "bar") throw new Error("Expected bar options.");
+    expect(space(options.valueFormat!(418000))).toBe("418.000 €");
+    const svg = space(renderBarChartSvg({ ...options, width: 480, height: barChartLayout(options).height }));
+    expect(svg).toContain("418.000 €");
+    expect(svg).not.toContain(",00 €");
+  });
+
   test("bar showValues prints values with the value precision, which the y ticks then share", () => {
     const input = parse({
       kind: "bar",
@@ -421,7 +480,7 @@ describe("richer chart contracts", () => {
     expect(cloudAiChartTable(input, "en").rows[0]?.cells.value).toBe("21%");
     const options = cloudAiChartRenderOptions(input, "en");
     if (options.kind !== "bar") throw new Error("Expected bar");
-    const svg = charts.bar({ ...options, width: 480, height: 280 });
+    const svg = renderBarChartSvg({ ...options, width: 480, height: barChartLayout(options).height });
     expect(/class="stdlib-chart-bar-value"[^>]*>([^<]*)</.exec(svg)?.[1]).toBe("21%");
     expect(options.yAxis?.format?.(0.05)).toBe("5%");
   });
@@ -463,7 +522,7 @@ describe("richer chart contracts", () => {
       expect(parseCloudAiChartInput({ kind: "gauge", title: "G", value: 1, format })).toBeUndefined();
   });
 
-  test("references extend domains, keep zero and include their labels in the padding", () => {
+  test("references extend domains and keep zero", () => {
     const plain = parse({ kind: "bar", title: "B", data: [{ label: "A", value: 2 }] });
     const input = parse({ ...plain, references: [{ value: 100000000 }] });
     const options = cloudAiChartRenderOptions(input, "en");
@@ -471,10 +530,8 @@ describe("richer chart contracts", () => {
     if (options.kind !== "bar" || before.kind !== "bar") throw new Error("Expected bar");
     expect(options.yAxis?.domain?.[0]).toBeLessThanOrEqual(0);
     expect(options.yAxis?.domain?.[1]).toBeGreaterThanOrEqual(100000000);
-    expect(typeof options.padding === "object" && options.padding.left).toBeGreaterThan(
-      typeof before.padding === "object" ? before.padding.left! : 0,
-    );
-    expect(charts.bar({ ...options, inspect: true })).toContain("stdlib-chart-reference");
+    expect(before.yAxis?.domain).toBeUndefined();
+    expect(renderBarChartSvg({ ...options, width: 480, height: 280, inspect: true })).toContain("stdlib-chart-reference");
     for (const kind of ["line", "scatter"] as const) {
       const dateInput = parse({
         kind,
@@ -663,18 +720,26 @@ describe("richer chart contracts", () => {
       expect(cloudAiChartMarks(parse(input))).toBe(input.kind === "gauge" ? 1 : 3);
   });
 
+  test("a host's y format also writes the values printed at bars", () => {
+    const input = parse({ kind: "bar", title: "B", data: [{ label: "A", value: 12 }] });
+    const options = cloudAiChartRenderOptions(input, "en", { width: 480, formats: { y: (value) => `${value} USD` } });
+    if (options.kind !== "bar") throw new Error("Expected bar");
+    const svg = renderBarChartSvg({ ...options, width: 480, height: barChartLayout(options).height });
+    expect(/class="stdlib-chart-bar-value"[^>]*>([^<]*)</.exec(svg)?.[1]).toBe("12 USD");
+  });
+
   test("pixel-exact width uses full label room instead of narrow-column scaling", () => {
     const input = parse({
       kind: "bar",
       title: "B",
-      data: Array.from({ length: 12 }, (_, value) => ({ label: `Month ${value}`, value: 1250000 })),
+      data: Array.from({ length: 6 }, (_, value) => ({ label: `Month ${value}`, value: 1250000 })),
     });
     const narrow = cloudAiChartRenderOptions(input, "en"),
       wide = cloudAiChartRenderOptions(input, "en", { width: 480 });
-    if (narrow.kind !== "bar" || wide.kind !== "bar" || typeof narrow.padding !== "object" || typeof wide.padding !== "object")
-      throw new Error("Expected padding");
-    expect(wide.padding.left!).toBeLessThan(narrow.padding.left!);
-    expect(wide.data.filter((item) => item.label).length).toBeGreaterThan(narrow.data.filter((item) => item.label).length);
+    if (narrow.kind !== "bar" || wide.kind !== "bar") throw new Error("Expected bar");
+    // Six labels fit below columns at 480 measured pixels, not in a phone-wide column.
+    expect(barChartLayout(narrow).layout).toBe("rows");
+    expect(barChartLayout(wide).layout).toBe("columns");
     const heat = cloudAiChartRenderOptions(parse({ kind: "heatmap", title: "H", data: [{ x: "A", y: "Long row label", value: 1 }] }), "en");
     if (heat.kind !== "heatmap") throw new Error("Expected heatmap");
     expect(typeof heat.padding === "object" && heat.padding.left).toBeGreaterThan(100);
@@ -803,7 +868,7 @@ describe("shared chart tooltip", () => {
       expect(values.length).toBeGreaterThan(0);
       for (const column of values) {
         expect(column.label).toBe("Umsatz");
-        expect(table.rows.find((row) => row.values[column.id] === 1200)?.cells[column.id]).toBe("1.200,00\u00a0€");
+        expect(table.rows.find((row) => row.values[column.id] === 1200)?.cells[column.id]).toBe("1.200\u00a0€");
       }
     }
   });
@@ -985,7 +1050,7 @@ describe("function formats in chart rows", () => {
     const rows = cloudAiChartRows({ ...input, tooltip: { format: { style: "currency", currency: "EUR" } } }, "de", {
       formats: { x, y, value },
     });
-    expect(rows.add(datum).cells).toEqual({ x: "day 1", y: "1.200,00\u00a0€" });
+    expect(rows.add(datum).cells).toEqual({ x: "day 1", y: "1.200\u00a0€" });
   });
 
   test("histogram bounds use x functions and counts follow the count axis", () => {

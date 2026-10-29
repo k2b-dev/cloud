@@ -219,11 +219,19 @@ export function RecordHistoryList(props: HistoryProps) {
 export default function RecordHistorySection(props: HistoryProps) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
+  const latest = () => props.entries[0];
   return (
-    <DetailPanel.Group label={t().recordHistory}>
-      <DetailPanel.Section title={t().history} icon="ti ti-history" collapsible>
-        <RecordHistoryList {...props} />
-      </DetailPanel.Section>
-    </DetailPanel.Group>
+    <DetailPanel.Section
+      title={t().history}
+      count={props.entries.length || undefined}
+      collapsible
+      summary={
+        latest()
+          ? [formatRecordHistoryAction(latest()!.action, locale()), latest()!.userDisplayName].filter(Boolean).join(" · ")
+          : t().noHistory
+      }
+    >
+      <RecordHistoryList {...props} />
+    </DetailPanel.Section>
   );
 }
