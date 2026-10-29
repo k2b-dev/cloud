@@ -51,7 +51,7 @@ export const appCredentialCommands = [
     },
     async run({ ctx, args, flags }) {
       if (!flags.yes)
-        throw new Error(cliText(ctx, { en: "Creating an app credential requires --yes.", de: "App-Zugang erstellen erfordert --yes." }));
+        throw new Error(cliText(ctx, { en: "Creating an app credential requires --yes.", de: "App-Schlüssel erstellen erfordert --yes." }));
       const result = z.object({ credential: metadata, token: z.string() }).parse(
         await apiJson(ctx, "POST", path(args.app), {
           name: flags.name,
@@ -68,10 +68,12 @@ export const appCredentialCommands = [
     flags: { yes: confirmFlag("Revoke this app credential") },
     async run({ ctx, args, flags }) {
       if (!flags.yes)
-        throw new Error(cliText(ctx, { en: "Revoking an app credential requires --yes.", de: "App-Zugang widerrufen erfordert --yes." }));
+        throw new Error(
+          cliText(ctx, { en: "Revoking an app credential requires --yes.", de: "App-Schlüssel widerrufen erfordert --yes." }),
+        );
       const credentialId = z.uuid().parse(args.credential);
       const result = await apiJson(ctx, "DELETE", `${path(args.app)}/${credentialId}`);
-      if (!printStructured(ctx, result)) ctx.print(cliText(ctx, { en: "Credential revoked.", de: "Zugang widerrufen." }));
+      if (!printStructured(ctx, result)) ctx.print(cliText(ctx, { en: "Credential revoked.", de: "Schlüssel widerrufen." }));
     },
   }),
 ];

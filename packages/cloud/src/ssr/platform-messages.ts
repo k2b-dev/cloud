@@ -144,7 +144,7 @@ export const platformMessages = i18n.define({
       general: "Allgemein",
       rail: "App-Leiste",
       announcements: "Ankündigungen",
-      appCredentials: "App-Zugänge",
+      appCredentials: "App-Schlüssel",
       ai: "KI",
       observability: "Observability",
       cloudAreas: "Cloud",

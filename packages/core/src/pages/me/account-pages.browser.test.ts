@@ -30,7 +30,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 // the rail and header, which have tests of their own, and measure what the pages put into it.
 const CORE_CANVAS = appAppearanceStyle({
   accent: "#0284c7",
-  background: { from: "#38bdf8", via: "#ffffff", to: "#60a5fa", angle: 135, strength: 20 },
+  background: { from: "#3b82f6", via: "#ffffff", to: "#60a5fa", angle: 135, strength: 20 },
 });
 
 const pages = {

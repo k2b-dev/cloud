@@ -501,7 +501,8 @@ other Cloud application.
 ## Show a count on the app icon
 
 An application can show how many items wait for the signed-in person, such as
-unread mentions, as a count on its icon in the app bar and the app grid.
+unread mentions, as a count on its icon in the app bar, the phone bar, and
+the app grid.
 Declare a route the application serves:
 
 ```ts

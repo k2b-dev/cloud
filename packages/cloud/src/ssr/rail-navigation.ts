@@ -79,6 +79,9 @@ export const phoneBarLinks = (navigation: { shortcuts: RailLink[]; apps: RailLin
   return [...links.slice(0, limit - 1), links[current]!];
 };
 
+/** A phone bar item, and where its app's count comes from, like the rail icon's. */
+export type PhoneBarItem = TabBarItem & { counted?: { endpoint?: string; appId?: string } };
+
 /** Start and four apps fill the phone bar's five places. */
 const PHONE_BAR_APPS = 4;
 
@@ -93,7 +96,7 @@ export const phoneBarItems = (
   navigation: { shortcuts: RailLink[]; apps: RailLink[] },
   currentPath: string,
   home: { label: string; path: string },
-): TabBarItem[] => {
+): PhoneBarItem[] => {
   const links = phoneBarLinks(navigation, currentPath, PHONE_BAR_APPS);
   const items = links.map((link) => ({
     id: link.id,
@@ -101,6 +104,7 @@ export const phoneBarItems = (
     icon: link.iconClass,
     href: link.href,
     current: railLinkActive(link, currentPath),
+    ...(link.badge || link.appId ? { counted: { endpoint: link.badge, appId: link.appId } } : {}),
   }));
   const pathname = new URL(currentPath, "https://cloud.invalid").pathname;
   const start = new URL(home.path, "https://cloud.invalid").pathname;
