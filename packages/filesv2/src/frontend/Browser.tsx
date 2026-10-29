@@ -1756,23 +1756,16 @@ export default function Browser(props: {
                   }
                 >
                   {(current) => (
-                    <Placeholder
-                      class="flex-1"
-                      variant="panel"
-                      state="no-results"
-                      title={b().noResultsTitle}
-                      description={searchFiltered(current()) ? b().noResultsFiltered : b().noResultsDescription}
-                      action={
-                        <Show when={searchFiltered(current()) || (current().q && props.onSearchHistory)}>
-                          <div class="flex flex-wrap justify-center gap-2">
-                            <Show when={current().q ? props.onSearchHistory : undefined}>
-                              {(searchHistory) => (
-                                <Button size="sm" variant="primary" onClick={() => searchHistory()(current().q)}>
-                                  <i class="ti ti-history" aria-hidden="true" />
-                                  {h().searchInHistory}
-                                </Button>
-                              )}
-                            </Show>
+                    <Show
+                      when={current().q ? props.onSearchHistory : undefined}
+                      fallback={
+                        <Placeholder
+                          class="flex-1"
+                          variant="panel"
+                          state="no-results"
+                          title={b().noResultsTitle}
+                          description={searchFiltered(current()) ? b().noResultsFiltered : b().noResultsDescription}
+                          action={
                             <Show when={searchFiltered(current())}>
                               <Button
                                 size="sm"
@@ -1782,10 +1775,40 @@ export default function Browser(props: {
                                 {b().resetFilters}
                               </Button>
                             </Show>
-                          </div>
-                        </Show>
+                          }
+                        />
                       }
-                    />
+                    >
+                      {(searchHistory) => (
+                        <Placeholder
+                          class="filesv2-history-placeholder"
+                          state="no-results"
+                          icon="ti ti-search"
+                          title={h().emptySearchTitle.replace("{query}", current().q)}
+                          description={h().emptySearchText}
+                          action={
+                            <div class="flex flex-wrap justify-center gap-2">
+                              <Button variant="primary" onClick={() => searchHistory()(current().q)}>
+                                <i class="ti ti-history" aria-hidden="true" />
+                                {h().searchInHistory}
+                              </Button>
+                              <Show when={searchFiltered(current())}>
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
+                                >
+                                  {b().resetFilters}
+                                </Button>
+                              </Show>
+                              <Button variant="secondary" onClick={() => props.onSearch?.(null)}>
+                                <i class="ti ti-x" aria-hidden="true" />
+                                {h().clearSearch}
+                              </Button>
+                            </div>
+                          }
+                        />
+                      )}
+                    </Show>
                   )}
                 </Show>
               }
