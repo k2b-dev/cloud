@@ -17,7 +17,30 @@ test.skipIf(isServer)(
         const users = [
           { id: "me-0000", uid: "valentin", displayName: "Valentin", avatarHash: null, permission: "admin", description: "valentin" },
           { id: "maria-01", uid: "maria", displayName: "Maria Muster", avatarHash: "abc", permission: "write", description: "maria" },
-        ].filter((user) => !url.searchParams.get("search") || user.displayName.toLowerCase().includes(url.searchParams.get("search")!));
+          {
+            id: "agent-01",
+            uid: "Mail Agent",
+            displayName: "Mail Agent",
+            avatarHash: null,
+            permission: "write",
+            description: "Mail Agent",
+            type: "service_account",
+            serviceAccountKind: "agent",
+          },
+          {
+            id: "service-01",
+            uid: "Mail Service",
+            displayName: "Mail Service",
+            avatarHash: null,
+            permission: "write",
+            description: "Mail Service",
+            type: "service_account",
+            serviceAccountKind: "standalone",
+          },
+        ].filter(
+          (user) =>
+            !url.searchParams.get("search") || user.displayName.toLowerCase().includes(url.searchParams.get("search")!.toLowerCase()),
+        );
         return Response.json(users);
       },
       { preconnect: originalFetch.preconnect },
@@ -36,7 +59,14 @@ test.skipIf(isServer)(
       const first = chooseMailAssignee({ mailboxId: "Box001", currentUserId: "me-0000" });
       await Bun.sleep(400);
       expect(requests[0]).toBe("/api/mail/mailboxes/Box001/assignable-users?limit=50");
-      expect(optionTexts()).toEqual(["Assign to me", "Remove me", "Remove all assignees", "Maria Muster maria"]);
+      expect(optionTexts()).toEqual([
+        "Assign to me",
+        "Remove me",
+        "Remove all assignees",
+        "Maria Muster maria",
+        "Mail Agent Mail Agent",
+        "Mail Service Mail Service",
+      ]);
       expect(options()[3]!.querySelector("img")?.getAttribute("src")).toBe("/api/accounts/users/maria-01/avatar?rev=abc");
       const input = dom.document.querySelector<HTMLInputElement>("[role='combobox']")!;
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -64,10 +94,28 @@ test.skipIf(isServer)(
       expect(await third).toEqual({ mode: "replace", userId: null, name: null });
       await closed();
 
+      for (const [name, id] of [
+        ["Mail Agent", "agent-01"],
+        ["Mail Service", "service-01"],
+      ] as const) {
+        const selected = chooseMailAssignee({ mailboxId: "Box001", currentUserId: "me-0000" });
+        await Bun.sleep(400);
+        const search = dom.document.querySelector<HTMLInputElement>("[role='combobox']")!;
+        search.value = name!;
+        search.dispatchEvent(new Event("input", { bubbles: true }));
+        await Bun.sleep(400);
+        expect(optionTexts()).toEqual([`${name} ${name}`]);
+        expect(options()[0]!.querySelector("img")).toBeNull();
+        expect(options()[0]!.querySelector(id === "agent-01" ? ".ti-robot" : ".ti-key")).not.toBeNull();
+        search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        expect(await selected).toEqual({ mode: "add", userId: id, name });
+        await closed();
+      }
+
       dom.document.documentElement.lang = "de";
       const german = chooseMailAssignee({ mailboxId: "Box001", currentUserId: "me-0000" });
       await Bun.sleep(400);
-      expect(dom.document.querySelector("[role='combobox']")?.getAttribute("placeholder")).toBe("Personen suchen...");
+      expect(dom.document.querySelector("[role='combobox']")?.getAttribute("placeholder")).toBe("Personen und Konten suchen...");
       expect(optionTexts().slice(0, 3)).toEqual(["Mir zuweisen", "Mich entfernen", "Alle Zuweisungen entfernen"]);
       dom.document
         .querySelector<HTMLInputElement>("[role='combobox']")!

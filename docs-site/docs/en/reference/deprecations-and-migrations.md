@@ -622,8 +622,9 @@ bound version, but the field no longer exists in its runs: a step that reads it
 fails with an unavailable reference, and `exists` on it is false. Saving or
 validating the workflow again reports a diagnostic for the unknown field. Replace it with `inputs.conversation.assigneeUserIds`,
 for example `${{ inputs.conversation.assigneeUserIds.0 }}` for the first
-assignee. The workflow action `assignConversation` keeps its `user` input: it
-replaces all assignees with that person, and `null` removes them all.
+assignee. The workflow action `assignConversation` keeps its `user` input and
+accepts an eligible person or service account by exact name or UUID. It assigns
+only when nobody is assigned; `null` leaves existing assignees in place.
 
 Platform administrators without a mailbox grant no longer count as mailbox
 users in Mail's background checks either: reminders and other conversation
@@ -1513,6 +1514,14 @@ wait in `events.outbox` until Grids is updated again.
 
 ## Mail writes live updates through the platform outbox
 
+This section describes the historical outbox transition. Its rolling-upgrade
+and rollback behavior applies only before the later `principal_assignees`
+schema boundary. For a current Mail upgrade, follow the
+[Mail assignment cutover](/en/docs/operations/mail-assignee-cutover): stop
+every old Mail process before migration. An older image refuses startup
+afterward; recovery requires a fix-forward or coordinated restoration of the
+pre-upgrade backup, not a binary-only rollback.
+
 Mail writes its live updates through the platform outbox that Core's migration
 creates, from the trigger on its activity log, so they are part of the
 transaction that records a change. Update Core before Mail: Mail does not start
@@ -1527,7 +1536,7 @@ receives what it missed instead of loading the view again. The socket accepts
 every credential the Mail API accepts, so pages in the device app receive live
 updates too.
 
-The first Mail start after the update replaces `mail.enqueue_live_invalidation()`
+During that historical outbox transition, the first Mail start replaces `mail.enqueue_live_invalidation()`
 and drops `mail.live_invalidation_outbox`. The function keeps its signature, so
 replicas of the previous version that still run during a rolling update write
 their changes to the platform outbox as well, and the new replicas publish them.
@@ -1543,7 +1552,7 @@ expire after 24 hours, but its stream keeps its 1 GiB reservation until the
 next release removes it together with `/api/mail/ws`; see
 [Deployment requirements](/en/docs/operations/deployment-requirements).
 
-If you roll Mail back to the previous version, its pages receive no live
+Before the assignment cutover, rolling back that outbox release leaves its pages without live
 updates until Mail is updated again, because the database keeps the new
 function. Reloading a page shows the current state. The updates written
 meanwhile wait in `events.outbox` and are published by the next Mail start.
