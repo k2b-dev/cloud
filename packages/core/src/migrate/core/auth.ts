@@ -828,6 +828,8 @@ export const migrate = async (): Promise<void> => {
     )
   `.simple();
 
+  await sql`ALTER TABLE auth.app_workload_instances ADD COLUMN IF NOT EXISTS last_refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()`.simple();
+
   await sql`
     CREATE TABLE IF NOT EXISTS auth.webauthn_credentials (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -780,6 +780,18 @@ export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL 
         // Same lock order as Core rotation. Resolve the latest generation *after* waiting,
         // so an admin revoking the displayed token also revokes an overlapping rotation.
         await db`SELECT id FROM auth.service_accounts WHERE id = ${instance.service_account_id}::uuid FOR UPDATE`;
+        // The account is the durable app-wide off switch, including future process instances.
+        await db`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${instance.service_account_id}::uuid`;
+        await audit.record(
+          {
+            action: "service_account.disable",
+            outcome: "allowed",
+            actor: actorForUser(params.actor),
+            target: { type: "service_account", id: instance.service_account_id },
+            metadata: { appId: instance.app_id, serviceAccountId: instance.service_account_id, status: "disabled" },
+          },
+          db,
+        );
         const [current] = await db<{ credential_id: string; previous_credential_id: string | null }[]>`
           SELECT credential_id, previous_credential_id FROM auth.app_workload_instances
           WHERE app_id = ${instance.app_id} AND instance_id = ${instance.instance_id}

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { APP_REGISTRY_CONFIG, appRegistry, bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts/shared";
+import { serviceAccounts } from "@k2b/cloud/services";
 import { authenticateWorkloadCredential } from "@k2b/cloud/services/identity";
 import {
   issueAppWorkloadCredential,
@@ -159,10 +160,27 @@ suite("Core automatic app workload credentials", () => {
     const nextInstance = "fedcba9876543210";
     const nextKey = instanceKey.replace(instanceId, nextInstance);
     await instances.upsert({ key: nextKey, value: { appId, instanceId: nextInstance } });
+    expect(await issueAppWorkloadCredential({ ...request, instanceId: nextInstance })).toEqual({ status: "revoked" });
+    const account = await serviceAccounts.getByResource({ appId, resourceType: "cloud.app", resourceId: appId });
+    expect(account?.status).toBe("disabled");
+    if (!account) throw new Error("workload account missing");
+    expect((await serviceAccounts.setStatus({ id: account.id, status: "active" })).ok).toBe(true);
+    // The same live process and a new process both recover only after an administrator enables the app.
+    expect((await issueAppWorkloadCredential(request)).status).toBe("issued");
     const next = await issueAppWorkloadCredential({ ...request, instanceId: nextInstance });
     if (next.status !== "issued") throw new Error("new instance issuance failed");
-    // Removing one replica must revoke it even while the shared app entry remains live.
+    await sql`UPDATE auth.app_workload_instances SET last_refreshed_at = ${new Date(0)} WHERE app_id = ${appId} AND instance_id = ${nextInstance}`;
+    expect(await issueAppWorkloadCredential({ ...request, instanceId: nextInstance, credentialId: next.credentialId })).toEqual({
+      status: "current",
+      credentialId: next.credentialId,
+    });
+    // A successful refresh protects against brief membership loss; prolonged absence revokes only this replica.
     await instances.delete({ key: nextKey });
+    await revokeRemovedAppWorkloads();
+    expect((await authenticateWorkloadCredential({ token: next.token, appId, scope: "identity:invoke" }))?.credentialId).toBe(
+      next.credentialId,
+    );
+    await sql`UPDATE auth.app_workload_instances SET last_refreshed_at = ${new Date(0)} WHERE app_id = ${appId} AND instance_id = ${nextInstance}`;
     await revokeRemovedAppWorkloads();
     expect(await authenticateWorkloadCredential({ token: next.token, appId, scope: "identity:invoke" })).toBeNull();
 
@@ -170,7 +188,7 @@ suite("Core automatic app workload credentials", () => {
     await instances.upsert({ key: nextKey, value: { appId, instanceId: nextInstance } });
     const recovered = await issueAppWorkloadCredential({ ...request, instanceId: nextInstance });
     expect(recovered.status).toBe("issued");
-    expect(await issueAppWorkloadCredential(request)).toEqual({ status: "revoked" });
+    expect((await issueAppWorkloadCredential(request)).status).toBe("issued");
 
     const lastInstance = "abcdef0123456789";
     const lastKey = instanceKey.replace(instanceId, lastInstance);
@@ -182,6 +200,7 @@ suite("Core automatic app workload credentials", () => {
     ).toEqual({ status: "revoked" });
     expect(await authenticateWorkloadCredential({ token: last.token, appId, scope: "identity:invoke" })).toBeNull();
     await appRegistry().delete({ key: `apps/${appId}` });
+    await instances.delete({ key: lastKey });
     expect(await issueAppWorkloadCredential({ ...request, instanceId: lastInstance })).toEqual({ status: "unregistered" });
   }, 30_000);
 });

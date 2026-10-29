@@ -28,7 +28,7 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `DATABASE_URL` | string | runtime | unset | no | Postgres connection read by Bun SQL and by application-owned pools. |
 | `REDIS_URL` | string | runtime | unset | no | Valkey connection used by Bun Redis for caches and rate limits. Aliases: `VALKEY_URL`. |
 | `NATS_SERVERS` | list | runtime | empty list | no | Comma-separated NATS JetStream bootstrap servers; the client dials all of them. |
-| `SYNC_NAMESPACE` | string | runtime | empty | no | Sync namespace shared by every app of one installation; isolates its NATS resources from other installations on the same cluster. |
+| `SYNC_NAMESPACE` | string | runtime | empty | no | Sync namespace shared by every app of one installation; separates NATS resource names, not access. Use one NATS account per installation. |
 | `SYNC_REPLICAS` | 1 \| 3 \| 5 | runtime | `3` | no | Persistent JetStream replica count (1, 3 or 5); keep it consistent across the installation and migrate existing resources before changing it. |
 | `NATS_CREDS_FILE` | string | runtime | unset | no | Path to a mounted NATS `.creds` file (JWT and NKey); unset means server-side no-auth. |
 | `NATS_TLS_CA_FILE` | string | runtime | unset | no | Path to a mounted CA certificate that enables TLS to NATS; unset means plain TCP. |

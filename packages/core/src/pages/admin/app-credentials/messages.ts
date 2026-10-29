@@ -11,7 +11,10 @@ export const credentialMessages = i18n.define({
       expires: "Expires at (ISO 8601, optional)",
       create: "Create credential",
       revoke: "Revoke",
-      confirm: "Revoke this credential? Background work using it will stop.",
+      enable: "Enable app workload access",
+      disabled: "App workload access disabled",
+      confirm:
+        "Revoke this credential? For an automatic runtime credential, this disables workload access for all instances of the app until you enable it again here.",
       hint: "Core manages runtime credentials automatically. This token is an optional host-run override for the selected app as CLOUD_APP_CREDENTIAL. Set CLOUD_CORE_INTERNAL_ORIGIN to Core's private address. User mandates still control which actions are allowed.",
       once: "Copy this token now. It is shown only once.",
       dismiss: "I have saved the token",
@@ -41,7 +44,10 @@ export const credentialMessages = i18n.define({
       expires: "Ablaufzeit (ISO 8601, optional)",
       create: "Schlüssel erstellen",
       revoke: "Widerrufen",
-      confirm: "Diesen Schlüssel widerrufen? Hintergrundarbeit mit diesem Schlüssel wird gestoppt.",
+      enable: "App-Hintergrundzugriff aktivieren",
+      disabled: "App-Hintergrundzugriff deaktiviert",
+      confirm:
+        "Diesen Schlüssel widerrufen? Bei einem automatischen Runtime-Schlüssel wird der Hintergrundzugriff aller Instanzen dieser App deaktiviert, bis du ihn hier wieder aktivierst.",
       hint: "Core verwaltet Laufzeit-Zugangsdaten automatisch. Dieser Token ist ein optionaler Host-Override für die ausgewählte App als CLOUD_APP_CREDENTIAL. Setze CLOUD_CORE_INTERNAL_ORIGIN auf die interne Core-Adresse. Nutzermandate begrenzen weiterhin die erlaubten Aktionen.",
       once: "Kopiere diesen Token jetzt. Er wird nur einmal angezeigt.",
       dismiss: "Token gespeichert",

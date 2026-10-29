@@ -139,23 +139,44 @@ keeps it in process memory; Postgres stores its hash. Tokens expire after one
 hour and rotate after 30 minutes, with the preceding token valid until its
 expiry so in-flight calls can finish. Core retains at most two runtime token
 rows per instance; retired rows are removed and lifecycle events remain in
-the audit log. Admin-revoked metadata remains as the instance's stop record.
-The runtime checks with Core every minute,
-retries failed issuance after five seconds, and disables dependent calls while
-issuance is unavailable. `/_cloud/ready` reports `workloadCredential` status
-and a safe reason; application logs also report issuance failures. HTTP readiness
-remains available so an issuance outage does not remove unrelated app routes.
+the audit log. Admin revocation remains effective through the app's disabled
+workload service account.
+
+The runtime checks with Core every minute and retries failed refreshes after five
+seconds. A transient refresh failure keeps a still-valid token available.
+Dependent calls fail closed when no valid token remains; logs report that
+state and report recovery once. Public HTTP readiness contains no credential
+status or reason, so an issuance outage does not remove unrelated app routes.
+Operators inspect credential metadata and the workload account state under
+**Administration → App credentials**, and application logs for refresh failures.
+Before starting lifecycle workers, the runtime registers its instance and
+requests a credential with a five-second timeout. If none is available, startup
+continues with dependent background calls unavailable. Routes are advertised
+only after lifecycle startup and declared resources are ready.
 
 Credentials named `Runtime <instance>` appear in **Administration → App credentials**
-and `cld admin app-credentials list <app>`. Revoking either overlapping runtime token blocks both generations immediately,
-including a concurrent rotation. The runtime cannot replace that instance's
-revoked credential.
-Restart the owning app to establish a new instance after an intentional recovery.
+and `cld admin app-credentials list <app>`. Revoking either overlapping runtime
+token disables the app's workload service account: calls and automatic issuance
+stop for every instance, including after a restart or concurrent rotation.
+In the same table, choose **Enable app workload access** to allow issuance again,
+or run `cld admin app-credentials enable <app> --yes`. Restarting alone does not
+restore access. The admin API also supports
+`PATCH /api/admin/identity/workloads/<app>` with `{"status":"active"}` or
+`{"status":"disabled"}`; `cld admin app-credentials disable <app> --yes` applies
+the same lasting off switch. Re-enabling never restores a revoked token; live
+instances obtain a replacement on refresh.
+
+When Core rejects a cached workload token before dispatch, the shared capability
+client refreshes it and retries the broker call once. If credential authorization
+still fails, it returns retryable unavailability (HTTP 503). A target or subject
+authorization failure keeps its original status and is not retried this way.
+
 A graceful stop requests revocation after its workers drain. If delivery fails
-or the process crashes, a healthy Core revokes it within one registry TTL
-(three minutes) plus the one-minute reconciliation interval. Automatic removal
-allows a live instance to recover when its registry membership returns.
-Other replicas of the same app keep their own credentials.
+or the process crashes, Core revokes an unregistered instance only after more
+than one registry TTL (three minutes) without a credential refresh, checked on
+the one-minute reconciliation interval. A brief registry reset therefore does
+not revoke a recently refreshed token. Automatically removed instances can
+recover when membership returns. Other replicas retain their own credentials.
 When the last Core replica stops, its own token expires or is removed when
 Core resumes; its shutdown log reports an unconfirmed release.
 
@@ -174,7 +195,10 @@ KEKs into other apps.
 Workload credentials separate apps by contract and protect against mistakes
 and confused-deputy bugs. They do not isolate a compromised app while apps
 share a Postgres user, NATS access, and `APP_SECRET`. Real separation requires
-per-app database roles and NATS accounts. The workload delivery channel carries
+per-app database roles and NATS accounts. Any client in the same NATS account
+can request workload tokens for this installation's registered instances.
+Use one NATS account per installation. `SYNC_NAMESPACE` separates resource and
+subject names; it does not restrict access. The workload delivery channel carries
 only newly issued app-bound workload credentials, never Core identity signing
 keys, key-encryption material, OAuth secrets, or person sessions.
 

@@ -12,13 +12,20 @@ import {
 export type WorkloadCredentialHealth = { status: "ready"; source: "runtime" | "override" } | { status: "unavailable"; reason: string };
 let active: { appId: string; token: string; expiresAt: number } | undefined;
 let health: WorkloadCredentialHealth | undefined;
+let refreshRuntime: { appId: string; refresh: () => Promise<void> } | undefined;
+
+/** Refresh only this process's app authority; concurrent broker rejections share one request. */
+export const refreshAppWorkloadCredential = async (appId: string): Promise<string | undefined> => {
+  if (appId !== getProcessApplicationId()) return undefined;
+  if (refreshRuntime?.appId === appId) await refreshRuntime.refresh();
+  return getAppWorkloadCredential();
+};
 
 /** One server-side accessor for workers and app-authority invocation clients. Never send to a target app. */
 export const getAppWorkloadCredential = (): string | undefined => {
   const override = env.CLOUD_APP_CREDENTIAL?.trim();
   if (override) return override;
-  if (health?.status === "ready" && active && active.appId === getProcessApplicationId() && active.expiresAt > Date.now())
-    return active.token;
+  if (active && active.appId === getProcessApplicationId() && active.expiresAt > Date.now()) return active.token;
   return undefined;
 };
 
@@ -33,9 +40,11 @@ export const createAppWorkloadCredential = (options: {
   instanceId: string;
   request?: (request: WorkloadRequest) => Promise<unknown>;
   onUnavailable?: (reason: string) => void;
+  onRecovered?: () => void;
 }) => {
   let credentialId: string | null = null;
   let running = false;
+  let refreshFailed = false;
   let timer: Timer | undefined;
   let inFlight: Promise<void> | undefined;
   const request =
@@ -47,6 +56,8 @@ export const createAppWorkloadCredential = (options: {
       return response.json<unknown>();
     });
   const unavailable = (reason: string, preserve = false) => {
+    refreshFailed = true;
+    if (preserve && active && active.expiresAt > Date.now()) return;
     if (!preserve) {
       active = undefined;
       credentialId = null;
@@ -54,6 +65,11 @@ export const createAppWorkloadCredential = (options: {
     const changed = health?.status !== "unavailable" || health.reason !== reason;
     health = { status: "unavailable", reason };
     if (changed) options.onUnavailable?.(reason);
+  };
+  const recovered = () => {
+    health = { status: "ready", source: "runtime" };
+    if (refreshFailed) options.onRecovered?.();
+    refreshFailed = false;
   };
   const refresh = async (): Promise<void> => {
     if (env.CLOUD_APP_CREDENTIAL?.trim()) {
@@ -77,9 +93,9 @@ export const createAppWorkloadCredential = (options: {
         }
         credentialId = response.credentialId;
         active = { appId: options.appId, token: response.token, expiresAt: Date.parse(response.expiresAt) };
-        health = { status: "ready", source: "runtime" };
+        recovered();
       } else if (response.status === "current" && response.credentialId === credentialId && active && active.expiresAt > Date.now()) {
-        health = { status: "ready", source: "runtime" };
+        recovered();
       } else {
         unavailable(response.status === "current" ? "invalid_response" : response.status, response.status === "unavailable");
       }
@@ -103,7 +119,7 @@ export const createAppWorkloadCredential = (options: {
       () => {
         void refreshOnce().finally(schedule);
       },
-      health?.status === "unavailable" ? 5_000 : WORKLOAD_CHECK_INTERVAL_MS,
+      refreshFailed || health?.status === "unavailable" ? 5_000 : WORKLOAD_CHECK_INTERVAL_MS,
     );
   };
   return {
@@ -113,6 +129,7 @@ export const createAppWorkloadCredential = (options: {
         return;
       }
       running = true;
+      refreshRuntime = { appId: options.appId, refresh: refreshOnce };
       health = { status: "unavailable", reason: "starting" };
       await refreshOnce();
       schedule();
@@ -120,6 +137,7 @@ export const createAppWorkloadCredential = (options: {
     refresh: refreshOnce,
     stop: async () => {
       running = false;
+      if (refreshRuntime?.refresh === refreshOnce) refreshRuntime = undefined;
       clearTimeout(timer);
       await inFlight;
       if (!env.CLOUD_APP_CREDENTIAL?.trim()) {

@@ -128,7 +128,7 @@ describe("identity invocation broker", () => {
         },
         fetch: async (input, init) => {
           targetRequests.push(input instanceof Request ? input : new Request(input, init));
-          return Response.json({ data: { id: "one" } });
+          return Response.json({ data: { id: "one" } }, { headers: { "x-cloud-workload-auth": "required" } });
         },
       },
     });
@@ -137,6 +137,7 @@ describe("identity invocation broker", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-cloud-workload-auth")).toBeNull();
     const body = await response.json();
     expect(body).toEqual({ data: { id: "one" } });
     expect(JSON.stringify(body)).not.toContain("target-only-invocation");
@@ -256,7 +257,9 @@ describe("identity invocation broker", () => {
 
   test("rejects an unauthenticated workload without an issuance switch", async () => {
     const routes = createIdentityInvocationRoutes({ authenticateWorkload: async () => null });
-    expect((await routes.request(request(invocation()))).status).toBe(401);
+    const rejected = await routes.request(request(invocation()));
+    expect(rejected.status).toBe(401);
+    expect(rejected.headers.get("x-cloud-workload-auth")).toBe("required");
   });
 });
 

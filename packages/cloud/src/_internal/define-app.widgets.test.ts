@@ -82,6 +82,15 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
       processSync.bindProcessSync(fakeSync);
       return { sync: fakeSync, stop: async () => processSync.unbindProcessSync() };
     }),
+    spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+      instanceId: "0123456789abcdef",
+      register: async () => {},
+      leave: async () => {},
+      join: async () => {},
+      publish: async () => {},
+      adopt: async () => {},
+      renew: async () => {},
+    }),
     spyOn(heartbeat, "createHeartbeat").mockReturnValue({ start: async () => {}, stop: async () => {} }),
     spyOn(watcher, "ensureRuntimeWatcher").mockResolvedValue(),
     spyOn(watcher, "getCurrentRuntime").mockReturnValue({ apps: [] }),

@@ -54,6 +54,17 @@ describe("automatic application workload credential", () => {
     runtime = undefined;
   });
 
+  test("startup completes fail-closed when Core is unavailable and recovers on the next refresh", async () => {
+    let reply: unknown = { status: "unavailable" };
+    runtime = createAppWorkloadCredential({ appId: "inventory", instanceId, request: async () => reply });
+    await runtime.start();
+    expect(getAppWorkloadCredential()).toBeUndefined();
+    expect(getAppWorkloadCredentialHealth()).toEqual({ status: "unavailable", reason: "unavailable" });
+    reply = issued;
+    await runtime.refresh();
+    expect(getAppWorkloadCredential()).toBe(token);
+  });
+
   test("an explicit env override wins without issuing or releasing runtime credentials", async () => {
     Object.defineProperty(env, "CLOUD_APP_CREDENTIAL", { value: " explicit-host-token ", configurable: true });
     let requests = 0;
@@ -73,14 +84,16 @@ describe("automatic application workload credential", () => {
     runtime = undefined;
   });
 
-  test("issuance failures and revocation clear authority with a visible reason and recover on retry", async () => {
+  test("transient refresh failure serves the valid token, degrades at expiry, and recovers once", async () => {
     const reasons: string[] = [];
     let fail = false;
+    let recoveries = 0;
     let reply: unknown = issued;
     runtime = createAppWorkloadCredential({
       appId: "inventory",
       instanceId,
       onUnavailable: (reason) => reasons.push(reason),
+      onRecovered: () => recoveries++,
       request: async () => {
         if (fail) throw new Error("private server detail");
         return reply;
@@ -89,14 +102,24 @@ describe("automatic application workload credential", () => {
     await runtime.start();
     fail = true;
     await runtime.refresh();
+    expect(getAppWorkloadCredential()).toBe(token);
+    expect(getAppWorkloadCredentialHealth()).toEqual({ status: "ready", source: "runtime" });
+    expect(reasons).toEqual([]);
+    reply = { status: "unavailable" };
+    fail = false;
+    await runtime.refresh();
+    expect(getAppWorkloadCredential()).toBe(token);
+    setSystemTime(new Date("2026-10-29T13:00:01Z"));
+    await runtime.refresh();
     expect(getAppWorkloadCredential()).toBeUndefined();
-    expect(reasons).toEqual(["issuance_unavailable"]);
+    expect(reasons).toEqual(["unavailable"]);
     const readiness = appReadinessResponse("inventory");
     expect(readiness.status).toBe(200);
-    expect(await readiness.json()).toMatchObject({ workloadCredential: { status: "unavailable", reason: "issuance_unavailable" } });
-    fail = false;
-    reply = { status: "current", credentialId };
+    expect(await readiness.json()).not.toHaveProperty("workloadCredential");
+    reply = { ...issued, expiresAt: "2026-10-29T14:00:00Z" };
     await runtime.refresh();
+    await runtime.refresh();
+    expect(recoveries).toBe(1);
     expect(getAppWorkloadCredential()).toBe(token);
     reply = { status: "revoked" };
     await runtime.refresh();

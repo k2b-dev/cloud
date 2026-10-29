@@ -57,6 +57,15 @@ describe("application startup readiness", () => {
             },
           };
         }),
+        spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+          instanceId: "0123456789abcdef",
+          register: () => step("register-instance"),
+          leave: () => step("leave-instance"),
+          join: async () => {},
+          publish: async () => {},
+          adopt: async () => {},
+          renew: async () => {},
+        }),
         spyOn(heartbeat, "createHeartbeat").mockReturnValue({
           start: () => step("advertise"),
           stop: async () => {
@@ -131,7 +140,8 @@ describe("application startup readiness", () => {
           }
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("start"));
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("ready"));
-          expect(events.indexOf("workload")).toBeGreaterThan(events.indexOf("advertise"));
+          expect(events.indexOf("workload")).toBeLessThan(events.indexOf("start"));
+          expect(events.indexOf("register-instance")).toBeLessThan(events.indexOf("workload"));
           expect(await (await server.fetch(new Request("http://startup-test/_cloud/ready"))).json()).toEqual({
             status: "ready",
             appId: "startup-test",

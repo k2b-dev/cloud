@@ -1,5 +1,4 @@
 import { buildMetadata } from "./build-metadata";
-import { getAppWorkloadCredentialHealth } from "./workload-credential";
 
 export const APP_READINESS_PATH = "/_cloud/ready";
 
@@ -9,5 +8,4 @@ export const appReadinessResponse = (appId: string): Response =>
     appId,
     version: buildMetadata.version,
     release: buildMetadata.release,
-    workloadCredential: getAppWorkloadCredentialHealth(),
   });

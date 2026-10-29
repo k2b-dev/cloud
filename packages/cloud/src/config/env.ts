@@ -54,7 +54,7 @@ const registry = defineEnv({
     schema: z.string(),
     default: "",
     example: "dev",
-    doc: "Sync namespace shared by every app of one installation; isolates its NATS resources from other installations on the same cluster.",
+    doc: "Sync namespace shared by every app of one installation; separates NATS resource names, not access. Use one NATS account per installation.",
   },
   SYNC_REPLICAS: {
     schema: syncReplicas,

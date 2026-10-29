@@ -95,6 +95,24 @@ export const createRegistryMembership = (
 
   return {
     instanceId,
+    // Establish process identity before lifecycle workers start, without advertising routes yet.
+    register: async () => {
+      let timer: Timer | undefined;
+      // This runs before the ordinary heartbeat supplies its write deadline.
+      const write = upsert().finally(async () => {
+        if (left) await options.registry().delete({ key });
+      });
+      try {
+        await Promise.race([
+          write,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`Instance registration timed out after ${writeTimeoutMs}ms`)), writeTimeoutMs);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     join: async (sharedKey: string, sharedValue: unknown, entry: SharedEntry): Promise<void> => {
       left = false;
       await prepareShared(sharedKey);

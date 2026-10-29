@@ -2,7 +2,7 @@
 import type { NatsConnection } from "@nats-io/transport-node";
 import { sql } from "bun";
 import { getProcessNats } from "../../_internal/process-sync";
-import { appInstancePrefix, appInstanceRegistry, getApp } from "../../_internal/registry";
+import { APP_REGISTRY_TTL_MS, appInstancePrefix, appInstanceRegistry } from "../../_internal/registry";
 import {
   WORKLOAD_CHECK_INTERVAL_MS,
   WORKLOAD_LIFETIME_MS,
@@ -19,7 +19,6 @@ import { serviceAccountCredentials } from "../service-account-credentials";
 import { serviceAccounts } from "../service-accounts";
 
 const isRegistered = async (appId: string, instanceId: string): Promise<boolean> => {
-  if (!(await getApp(appId))) return false;
   const key = `${appInstancePrefix(appId)}${instanceId}`;
   const snapshot = await appInstanceRegistry().snapshot({ prefix: key });
   return snapshot.entries.some((entry) => entry.key === key && entry.value.appId === appId && entry.value.instanceId === instanceId);
@@ -63,9 +62,14 @@ export const issueAppWorkloadCredential = async (
       }
       return { status: "revoked" };
     }
-    if (current?.status === "revoked") return { status: "revoked" };
     if (!(await registered(request.appId, request.instanceId))) return { status: "unregistered" };
-    if (current && current.id === request.credentialId && current.expires_at.getTime() - Date.now() > WORKLOAD_ROTATE_BEFORE_MS) {
+    await db`UPDATE auth.app_workload_instances SET last_refreshed_at = now()
+      WHERE app_id = ${request.appId} AND instance_id = ${request.instanceId}`;
+    if (
+      current?.status === "active" &&
+      current.id === request.credentialId &&
+      current.expires_at.getTime() - Date.now() > WORKLOAD_ROTATE_BEFORE_MS
+    ) {
       return { status: "current", credentialId: current.id };
     }
     const expiresAt = new Date(Date.now() + WORKLOAD_LIFETIME_MS).toISOString();
@@ -100,7 +104,7 @@ export const issueAppWorkloadCredential = async (
       INSERT INTO auth.app_workload_instances (app_id, instance_id, credential_id, previous_credential_id)
       VALUES (${request.appId}, ${request.instanceId}, ${issued.data.credential.id}::uuid, ${retainedId}::uuid)
       ON CONFLICT (app_id, instance_id) DO UPDATE
-      SET credential_id = EXCLUDED.credential_id, previous_credential_id = EXCLUDED.previous_credential_id
+      SET credential_id = EXCLUDED.credential_id, previous_credential_id = EXCLUDED.previous_credential_id, last_refreshed_at = now()
     `;
     for (const retiredId of [current?.id, current?.previous_credential_id]) {
       if (retiredId && retiredId !== retainedId) await db`DELETE FROM auth.service_account_credentials WHERE id = ${retiredId}::uuid`;
@@ -143,7 +147,7 @@ export const revokeRemovedAppWorkloads = async (
     const rows = await sql<{ app_id: string; instance_id: string; credential_id: string; service_account_id: string }[]>`
       SELECT i.app_id, i.instance_id, i.credential_id, c.service_account_id
       FROM auth.app_workload_instances i JOIN auth.service_account_credentials c ON c.id = i.credential_id
-      WHERE c.status = 'active' AND (i.app_id, i.instance_id) > (${afterApp}, ${afterInstance})
+      WHERE c.status = 'active' AND i.last_refreshed_at < ${new Date(Date.now() - APP_REGISTRY_TTL_MS)} AND (i.app_id, i.instance_id) > (${afterApp}, ${afterInstance})
       ORDER BY i.app_id, i.instance_id LIMIT 100
     `;
     if (!rows.length) return;
@@ -155,13 +159,15 @@ export const revokeRemovedAppWorkloads = async (
         await db`SELECT id FROM auth.service_accounts WHERE id = ${row.service_account_id}::uuid FOR UPDATE`;
         if (await registered(row.app_id, row.instance_id)) return;
         // Read again under the account lock, in case another Core replica rotated it meanwhile.
-        const [current] = await db<{ credential_id: string; previous_credential_id: string | null; status: string }[]>`
-          SELECT i.credential_id, i.previous_credential_id, c.status FROM auth.app_workload_instances i
+        const [current] = await db<
+          { credential_id: string; previous_credential_id: string | null; status: string; last_refreshed_at: Date }[]
+        >`
+          SELECT i.credential_id, i.previous_credential_id, c.status, i.last_refreshed_at FROM auth.app_workload_instances i
           JOIN auth.service_account_credentials c ON c.id = i.credential_id
           WHERE i.app_id = ${row.app_id} AND i.instance_id = ${row.instance_id}
           FOR UPDATE OF c
         `;
-        if (current?.status === "active") {
+        if (current?.status === "active" && current.last_refreshed_at.getTime() < Date.now() - APP_REGISTRY_TTL_MS) {
           for (const credentialId of [current.credential_id, current.previous_credential_id]) {
             if (!credentialId) continue;
             const revoked = await serviceAccountCredentials.revoke(
@@ -171,7 +177,7 @@ export const revokeRemovedAppWorkloads = async (
             if (!revoked.ok) throw new Error("Removed workload credential could not be revoked");
           }
           // An automatically retired instance may register again after a registry reset. An
-          // admin-revoked credential keeps its mapping, so refresh cannot bypass that decision.
+          // admin-revoked credential keeps its mapping and disabled account until explicit recovery.
           await db`DELETE FROM auth.app_workload_instances WHERE app_id = ${row.app_id} AND instance_id = ${row.instance_id}`;
           await db`DELETE FROM auth.service_account_credentials WHERE id = ${current.credential_id}::uuid OR id = ${current.previous_credential_id}::uuid`;
         }

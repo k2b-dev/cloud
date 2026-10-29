@@ -864,6 +864,7 @@ export const defineApp = <
         await capabilityHeartbeat?.stop();
       });
       cleanup.push(() => heartbeat.stop());
+      cleanup.push(() => membership.leave());
 
       // Runtime context — start the registry watcher so middleware.runtime() and
       // the lifecycle context below see populated cluster state. Idempotent: the
@@ -1170,6 +1171,23 @@ export const defineApp = <
 
       await loadSettingsCache();
 
+      // The instance can obtain its credential before workers run; routes remain undiscoverable.
+      await membership.register();
+      workloadCredential = createAppWorkloadCredential({
+        appId: meta.id,
+        instanceId: membership.instanceId,
+        onRecovered: () => log.info("App workload credential refresh recovered", { appId: meta.id }),
+        onUnavailable: (reason) => {
+          if (reason === "release_unavailable") {
+            log.warn("Workload credential release was not confirmed; Core will reconcile after removal", { appId: meta.id });
+          } else {
+            log.error("App workload credential unavailable; background invocation is disabled", { appId: meta.id, reason });
+          }
+        },
+      });
+      // The NATS request has a five-second timeout; an outage leaves workers fail-closed.
+      await workloadCredential.start();
+
       if (startOpts.lifecycle?.start) {
         log.info(`Start: ${meta.id}`);
         await startOpts.lifecycle.start(cloudCtx);
@@ -1182,18 +1200,6 @@ export const defineApp = <
       // Publish supporting entries first; the app entry makes them discoverable.
       await capabilityHeartbeat?.start();
       await heartbeat.start();
-      workloadCredential = createAppWorkloadCredential({
-        appId: meta.id,
-        instanceId: membership.instanceId,
-        onUnavailable: (reason) => {
-          if (reason === "release_unavailable") {
-            log.warn("Workload credential release was not confirmed; Core will reconcile after removal", { appId: meta.id });
-          } else {
-            log.error("App workload credential unavailable; background invocation is disabled", { appId: meta.id, reason });
-          }
-        },
-      });
-      await workloadCredential.start();
       log.info(`Registered "${meta.id}"`, { baseUrl });
 
       // Graceful shutdown

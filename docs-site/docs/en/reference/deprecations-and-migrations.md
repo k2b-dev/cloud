@@ -14,11 +14,11 @@ updated: 2026-10-28
 
 Core now issues and rotates a credential for every registered app instance.
 Remove `CLOUD_MAIL_APP_CREDENTIAL` from Compose environment files and secret
-injection; no `CLOUD_CHAT_APP_CREDENTIAL` is needed. Update Core and app images
-together so both support automatic delivery. Keep `CLOUD_CORE_INTERNAL_ORIGIN`
-pointing at Core's private listener. After the upgrade, check the app's
-`/_cloud/ready` workload status and its background work, then revoke the old
-manually created Mail credential in **Administration → App credentials**.
+injection. Update Core and app images together so both support automatic
+delivery. Keep `CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core's private listener.
+After the upgrade, check the credential state under **Administration → App
+credentials** and verify the app's background work. Then revoke the old manually
+created Mail credential there.
 Removing its old Compose input does not itself revoke that credential.
 
 `CLOUD_APP_CREDENTIAL` remains an explicit host-run override and takes precedence

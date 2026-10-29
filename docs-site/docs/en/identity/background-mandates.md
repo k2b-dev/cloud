@@ -204,8 +204,9 @@ run server Code Mode tools under the same routine-scoped authority; see
 Core automatically delivers an app-bound `identity:invoke` credential to each
 registered app instance. Use `getAppWorkloadCredential()` from
 `@k2b/cloud/services/identity` at call time so rotation takes effect. It returns
-`undefined` while issuance is unavailable; dependent work must fail closed
-with a visible reason. Never cache the returned token or pass it to a browser
+`undefined` when no valid credential is available; dependent work must fail
+closed with a visible reason. A transient refresh failure keeps the current
+token available until it expires. Never cache the returned token or pass it to a browser
 or target app.
 
 Set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
@@ -250,7 +251,15 @@ credential metadata across apps with `GET /api/admin/identity/workloads/credenti
 or for one app with `GET /api/admin/identity/workloads/inventory/credentials`, and
 revoke one exact credential with
 `DELETE /api/admin/identity/workloads/inventory/credentials/<credentialId>`.
-Rotate by creating a new credential, deploying it to the owning app, verifying
+Revoking an automatic runtime credential disables the app's workload access
+across all instances and restarts. Restore it in **App credentials** with
+**Enable app workload access**, with `cld admin app-credentials enable <app> --yes`,
+or with `PATCH /api/admin/identity/workloads/<app>` and `{"status":"active"}`.
+The shared capability client refreshes a broker-rejected workload credential
+and retries once; persistent credential rejection returns HTTP 503 so workers
+can retry later. Subject and target authorization failures remain permanent.
+
+For a host-run override, rotate by creating a new credential, deploying it to the owning app, verifying
 broker calls, and then revoking the old credential. Do not reuse the OAuth
 broker secret; it is shared only by Core and OAuth for OAuth issuance.
 
