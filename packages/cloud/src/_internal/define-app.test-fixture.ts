@@ -68,7 +68,11 @@ export const publishedEntry = async (options: AppOptions, inspect?: (server: Sta
       adopt: async () => {},
       renew: async () => {},
     }),
-    spyOn(workload, "createAppWorkloadCredential").mockReturnValue({ start: async () => {}, refresh: async () => {}, stop: async () => {} }),
+    spyOn(workload, "createAppWorkloadCredential").mockReturnValue({
+      start: async () => {},
+      refresh: async () => {},
+      stop: async () => {},
+    }),
     spyOn(heartbeat, "createHeartbeat").mockImplementation((_id, entry) => {
       entries.push(entry);
       return { start: async () => {}, stop: async () => {} };
