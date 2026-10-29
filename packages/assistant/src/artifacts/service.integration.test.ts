@@ -46,6 +46,7 @@ import { CHECK_LIMITS, type CheckReport, checkHash } from "./html/check-contract
 import { appChecks } from "./html/check-service";
 import { HttpPrepare } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
+import { machineFixtureSchema, machineIntegrationCases } from "./machine.integration-cases";
 import { migrateArtifacts } from "./migrate";
 import { artifacts } from "./service";
 import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
@@ -96,6 +97,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   const editor = testIdentity("00000000-0000-4000-8000-000000000003");
   const stranger = testIdentity("00000000-0000-4000-8000-000000000004");
   const source = { entry: "main.js", files: [{ path: "main.js", content: "export default () => 1" }] };
+  machineIntegrationCases(owner);
   let id = "";
   afterAll(async () => {
     await sql.close();
@@ -137,6 +139,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE audit.events(id bigserial PRIMARY KEY,created_at timestamptz DEFAULT now(),action text,outcome text,
       actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,
       target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`;
+    await machineFixtureSchema();
     await migrateArtifacts();
     await migrateArtifacts();
     id = (await artifacts.create({ title: "Analysis", source }, owner)).id;
@@ -2144,6 +2147,74 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       code: "ACCESS_DENIED",
     });
     await expect(artifacts.storage(resource.id, { ...request, userId: owner.user.id }, reader)).rejects.toBeInstanceOf(Error);
+  });
+
+  test("file quota accounts for stored keys and metadata, replacement and deletion while payload sizes stay truthful", async () => {
+    const resource = await artifacts.create({ title: "File quota accounting", source }, owner);
+    await artifacts.publish(resource.id, 1, owner, "Initial release");
+    const mediaType = "application/octet-stream";
+    const [metadata] = await sql<{ bytes: number }[]>`SELECT pg_column_size(ROW('é-1'::text,${mediaType}::text)) AS bytes`;
+    const metadataBytes = Number(metadata!.bytes);
+    let totalBytes = 2 * metadataBytes;
+    const settings = spyOn(app.settings, "get").mockImplementation(
+      async (key) =>
+        ({
+          "assistant.storage_total_mib": totalBytes / (1024 * 1024),
+          "assistant.storage_file_mib": 50,
+          "assistant.rsql_url": requireInfraUrl("rsql"),
+          "assistant.rsql_api_token": "artifact-test-only",
+        })[key],
+    );
+    const write = (key: string, data = new Uint8Array(), type = mediaType) =>
+      artifacts.storage(resource.id, { area: "files", operation: "write", key, mediaType: type }, owner, false, data);
+    const remove = (key: string) => artifacts.storage(resource.id, { area: "files", operation: "delete", key }, owner);
+    const usage = async () => {
+      const [row] = await sql<{ charge: number; payload: number }[]>`SELECT
+        coalesce(sum(bytes + pg_column_size(ROW(key,media_type))),0)::int AS charge,
+        coalesce(sum(bytes),0)::int AS payload FROM assistant.artifact_storage
+        WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}) AND area='files' AND user_id IS NULL`;
+      return row!;
+    };
+    try {
+      await write("é-1");
+      expect(await usage()).toEqual({ charge: metadataBytes, payload: 0 });
+      await write("é-2");
+      expect(await usage()).toEqual({ charge: 2 * metadataBytes, payload: 0 });
+      await expect(write("é-3")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      await write("é-1");
+      const atLimit = await artifacts.storageState(resource.id, owner);
+      await expect(write("é-1", new Uint8Array([1]))).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      await expect(write("é-1", new Uint8Array(), mediaType + ";charset=utf-8")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      expect((await artifacts.storageState(resource.id, owner)).storageRevision).toBe(atLimit.storageRevision);
+      const listed = await artifacts.storage(resource.id, { area: "files", operation: "list" }, owner);
+      expect(listed).toMatchObject({
+        items: [
+          { key: "é-1", bytes: 0 },
+          { key: "é-2", bytes: 0 },
+        ],
+      });
+      const empty = await artifacts.storage(resource.id, { area: "files", operation: "read", key: "é-1" }, owner);
+      expect(empty.item?.data).toHaveLength(0);
+      await remove("é-2");
+      expect(await usage()).toEqual({ charge: metadataBytes, payload: 0 });
+      await expect(write("é-3-longer-key")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      await write("é-3", new Uint8Array([1]), "");
+      const [shorter] = await sql<{ bytes: number }[]>`SELECT pg_column_size(ROW('é-3'::text,''::text)) AS bytes`;
+      expect(await usage()).toEqual({ charge: metadataBytes + Number(shorter!.bytes) + 1, payload: 1 });
+      totalBytes = 1;
+      await write("é-1");
+      await write("é-3", new Uint8Array(), "");
+      await write("é-1", new Uint8Array(), "");
+      expect(await usage()).toEqual({ charge: 2 * Number(shorter!.bytes), payload: 0 });
+      await expect(write("é-4")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      await remove("é-1");
+      expect(await usage()).toEqual({ charge: Number(shorter!.bytes), payload: 0 });
+      await remove("é-3");
+      expect(await usage()).toEqual({ charge: 0, payload: 0 });
+    } finally {
+      settings.mockRestore();
+      await artifacts.remove(resource.id, owner);
+    }
   });
 
   test("KV scopes retain independent 16 MiB budgets and 1 MiB values", async () => {

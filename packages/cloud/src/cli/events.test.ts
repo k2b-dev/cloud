@@ -47,6 +47,7 @@ const context = (
 ) => {
   const requests: { path: string; init?: RequestInit }[] = [];
   const printed: unknown[] = [];
+  const tables: Record<string, unknown>[][] = [];
   const ctx: CloudCliContext = {
     args,
     flags,
@@ -79,11 +80,14 @@ const context = (
     jsonLine: (value) => {
       printed.push(value);
     },
-    table: (value) => {
+    table: (value, columns) => {
       printed.push(value);
+      tables.push(
+        value.map((row) => Object.fromEntries(columns.map((column) => [column.key, column.value ? column.value(row) : row[column.key]]))),
+      );
     },
   };
-  return { ctx, requests, printed };
+  return { ctx, requests, printed, tables };
 };
 
 test.each(["text", "json", "jsonl"] as const)("catalog and paginated deliveries preserve %s output", async (output) => {
@@ -258,4 +262,40 @@ test.each(["text", "json", "jsonl"] as const)("status preserves rejected count a
   const result = context(["status"], {}, output, () => Response.json(status));
   await events.run(result.ctx);
   expect(result.printed).toEqual([output === "text" ? JSON.stringify(status, null, 2) : status]);
+});
+
+test.each(["text", "json", "jsonl"] as const)("event catalog filters retain canonical fields in %s", async (output) => {
+  const placed = { ...catalog.events[0]!, type: "demo.item.changed", subject: "demo.item", place: "demo.folder", automation: false };
+  const response = { events: [...catalog.events, placed] };
+  for (const [flags, expected] of [
+    [{ app: "demo" }, [placed]],
+    [{ automation: "false" }, [placed]],
+    [{ app: "core", automation: "true" }, catalog.events],
+    [{ app: "core", automation: "false" }, []],
+  ] as const) {
+    const list = context(["ls"], flags, output, () => Response.json(response));
+    await events.run(list.ctx);
+    expect(list.printed).toEqual([output === "text" ? expected : { events: expected }]);
+  }
+  const list = context(["ls"], {}, output, () => Response.json(response));
+  await events.run(list.ctx);
+  if (output === "text") {
+    expect(list.tables[0]![0]).toMatchObject({ place: "—", automation: "yes" });
+    expect(list.tables[0]![1]).toMatchObject({ place: "demo.folder", automation: "no" });
+  } else expect(list.printed).toEqual([response]);
+});
+
+test("event catalog rejects invalid automation filters before fetching", async () => {
+  const invalid = context(["ls"], { automation: "maybe" });
+  await expect(events.run(invalid.ctx)).rejects.toThrow();
+  expect(invalid.requests).toEqual([]);
+});
+
+test("event catalog text output localizes automation labels", async () => {
+  const disabled = { ...catalog.events[0]!, type: "core.user.disabled", automation: false };
+  const list = context(["ls"], {}, "text", () => Response.json({ events: [...catalog.events, disabled] }));
+  list.ctx.options.locale = "de";
+  await events.run(list.ctx);
+  expect(list.tables[0]![0]).toMatchObject({ automation: "ja" });
+  expect(list.tables[0]![1]).toMatchObject({ automation: "nein" });
 });

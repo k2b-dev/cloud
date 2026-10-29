@@ -1,7 +1,12 @@
 # Events
 
-Use `cld events ls` to read declared event types and subscribers. Inspect
-`cld events subscriptions`, `cld events status`, and `cld events deliveries`
+Use `cld events ls` to read declared event types and subscribers. The table
+shows the place type (`—` for service events) and automation (localized yes/no).
+Use `--app <publisher-app>` and `--automation true|false` to filter declarations.
+`--json` and `--jsonl` retain the full filtered `{ events: [...] }`
+response, including schemas and subscribers.
+
+Inspect `cld events subscriptions`, `cld events status`, and `cld events deliveries`
 for blocked subscriptions, gaps, and failed delivery attempts. `status` includes
 `rejectedCount` and the latest ten `rejections` with type, source, code, and receipt
 time; no event payload is returned.

@@ -26,6 +26,7 @@ export type {
 export {
   auth,
   imageResponse,
+  isRequestCredentialCurrent,
   jsonResponse,
   middleware,
   openApiMeta,

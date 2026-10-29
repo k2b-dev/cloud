@@ -173,6 +173,8 @@ export { attachResizeSeparator, type ResizeSeparatorOptions } from "./resize-sep
 export type { ScrollAreaProps } from "./ScrollArea";
 export { default as ScrollArea } from "./ScrollArea";
 export type {
+  SaveStatusProps,
+  SaveStatusState,
   SettingsFieldControlProps,
   SettingsFieldProps,
   SettingsGroupActionProps,
@@ -184,6 +186,7 @@ export type {
 } from "./Settings";
 export {
   readSettingsError,
+  SaveStatus,
   SettingsField,
   SettingsGroup,
   SettingsPage,
