@@ -4,7 +4,7 @@
  *   bun run test                    every suite (integration files skip without CLOUD_TEST_*)
  *   bun run test --integration      bootstrap the CLOUD_TEST_ database, then only files that import scripts/fixtures/test-infra
  *   bun run test --browser          only non-integration files that start a browser through packages/ui/test/browser
- *   bun run test --filter gateway   suites whose name or path contains "gateway"
+ *   bun run test --filter gateway   suites whose name or path contains "gateway" (repeat for a union)
  *   bun run test --exclude grids    everything except suites matching "grids"
  *   bun run test --shard 2/4        slice balanced by measured suite time in scripts/test-weights.json
  *   bun run test --list             print the selected suite names without running or connecting
@@ -66,7 +66,7 @@ export type Options = {
   integration: boolean;
   browser?: boolean;
   list?: boolean;
-  filter?: string;
+  filters?: string[];
   exclude?: string;
   shard?: { index: number; total: number };
   maxMinutes?: number;
@@ -210,9 +210,9 @@ export const selectSuites = (
   let selected = suites;
   const matches = (suite: TestSuite, needle: string): boolean =>
     suite.name.includes(needle) || relative(workspaceRoot, suite.cwd).includes(needle);
-  if (options.filter) {
-    const needle = options.filter;
-    selected = selected.filter((suite) => matches(suite, needle));
+  const filters = options.filters;
+  if (filters?.length) {
+    selected = selected.filter((suite) => filters.some((needle) => matches(suite, needle)));
   }
   if (options.exclude) {
     const needle = options.exclude;
@@ -234,8 +234,12 @@ export const parseArgs = (argv: string[]): Options => {
     if (arg === "--integration") options.integration = true;
     else if (arg === "--browser") options.browser = true;
     else if (arg === "--list") options.list = true;
-    else if (arg === "--filter") options.filter = argv[++i];
-    else if (arg === "--exclude") options.exclude = argv[++i];
+    else if (arg === "--filter") {
+      const value = argv[++i];
+      if (value === undefined || value.startsWith("--")) throw new Error("--filter expects a workspace substring");
+      options.filters ??= [];
+      options.filters.push(value);
+    } else if (arg === "--exclude") options.exclude = argv[++i];
     else if (arg === "--shard") {
       const match = /^(\d+)\/(\d+)$/.exec(argv[++i] ?? "");
       const index = Number(match?.[1]);
@@ -251,7 +255,6 @@ export const parseArgs = (argv: string[]): Options => {
       options.maxMinutes = minutes;
     } else throw new Error(`unknown argument "${arg}"`);
   }
-  if (options.filter === undefined && argv.includes("--filter")) throw new Error("--filter expects a workspace substring");
   return options;
 };
 
@@ -344,6 +347,22 @@ export const runTestCommand = async (suite: TestSuite, env: Record<string, strin
 };
 
 const run = async (): Promise<void> => {
+  if (Bun.argv.slice(2).includes("--help")) {
+    console.log(`Usage: bun run test [options]
+
+  --filter <substring>  Keep suites whose name or workspace path contains the substring.
+                        Repeat to run the union of all matches, each suite once.
+  --exclude <substring> Remove matching suites after applying filters.
+  --integration         Run only integration suites (requires CLOUD_TEST_*).
+  --browser             Run only non-integration browser files.
+  --shard <i/n>         Run shard i of n after filtering and excluding.
+  --list                Print the selected suite names without running or connecting.
+  --max-minutes <n>     Fail when the run exceeds n minutes.
+  --help                Show this help without running tests.
+
+Example: bun run test --filter packages/core --filter packages/cloud`);
+    return;
+  }
   const options = parseArgs(Bun.argv.slice(2));
   if (!options.list) runUnderHeavyLock();
   const started = performance.now();

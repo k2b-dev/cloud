@@ -1049,6 +1049,8 @@ describe("ChatWorkspace browser read state", () => {
         // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         const ownMenu = await openMessageMenu(page, name, own);
         expect(await ownMenu.getByRole("menuitem").allInnerTexts()).toEqual([
+          expect.stringContaining("Edit message"),
+          expect.stringContaining("Delete message"),
           expect.stringContaining("Reply"),
           expect.stringContaining("Add reaction"),
           expect.stringContaining("Copy text"),

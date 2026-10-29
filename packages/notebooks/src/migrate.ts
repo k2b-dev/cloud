@@ -528,6 +528,15 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ notebooks.note_attachments table");
 
+  await sql`ALTER TABLE notebooks.notes ADD COLUMN IF NOT EXISTS app_event_pending_since TIMESTAMPTZ`.simple();
+  await sql`ALTER TABLE notebooks.notes ADD COLUMN IF NOT EXISTS app_event_changed_at TIMESTAMPTZ`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_notes_app_event_pending
+    ON notebooks.notes(app_event_pending_since, id) WHERE app_event_pending_since IS NOT NULL`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS notebooks.app_event_sweep (
+    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton), last_swept_at TIMESTAMPTZ
+  )`.simple();
+  await sql`INSERT INTO notebooks.app_event_sweep(singleton) VALUES (true) ON CONFLICT DO NOTHING`;
+
   // Short-id backfill — fills `short_id` for any rows created before
   // the column existed (or before the new code path was deployed).
   // Idempotent: each call is just a `WHERE short_id IS NULL` SELECT.

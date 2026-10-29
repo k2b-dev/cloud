@@ -411,6 +411,22 @@ cookie or token.
 
 This API stores preferences and follows. It does not send notifications yet.
 
+## Edit or delete a message
+
+`PATCH /conversations/:conversation/messages/:message` accepts `clientId`,
+`revision` (the current message `contentRevision`, initially zero), and `body`. `DELETE` on that path accepts
+`clientId` and `revision`. Both require the author's current Write or Manage
+access and a write-capable credential, within ten minutes of sending. Archived
+threads cannot be changed. They apply to ordinary chats and item threads.
+
+Use a fresh `clientId` per edit or deletion and retain it with the same input
+when retrying a lost response. Receipts remain replayable for 24 hours, then bounded maintenance batches remove them. Reactions never change the content revision. A stale revision returns `MESSAGE_CHANGED`;
+an expired window returns `MESSAGE_MUTATION_EXPIRED`. Both are HTTP 409.
+Successful message views include `editedAt` and `deletedAt`. Deletion clears
+text and attachments while preserving the message's position and a deleted-message marker
+for replies. The revision stream and live invalidation refresh other tabs
+without counting the edit as a new message.
+
 ## Item reader container context
 
 `spaces.item.read` and `notebooks.note.read` return a `container` object with

@@ -230,7 +230,7 @@ export async function placesAndMapsBrowserFixture() {
       page: { title?: string; theme: "light" | "dark" };
     };
   }>();
-  pages.get("/admin/places-and-maps", (c) => {
+  pages.get("/admin/base/places", (c) => {
     const locale = c.req.query("locale") === "en" ? "en" : "de";
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     const scenario = Object.entries(PLACES_AND_MAPS_SCENARIOS).find(([name]) => name === c.req.query("state"));
@@ -279,7 +279,7 @@ export async function placesAndMapsBrowserFixture() {
     },
   });
   return {
-    url: `http://127.0.0.1:${server.port}/admin/places-and-maps`,
+    url: `http://127.0.0.1:${server.port}/admin/base/places`,
     control,
     close() {
       server.stop(true);

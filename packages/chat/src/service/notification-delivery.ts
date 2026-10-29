@@ -258,7 +258,14 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
         await db`DELETE FROM chat.notification_pending WHERE user_id = ${userId}::uuid AND conversation_id = ${conversationId}::uuid`;
     };
     const [conversation] = await db<ConversationRow[]>`SELECT * FROM chat.conversations WHERE id = ${conversationId}::uuid`;
-    const [latest] = await db<DeliveryMessage[]>`SELECT * FROM chat.messages WHERE id = ${pending.message_id}::uuid`;
+    // A message deleted during the wait never notifies: the push names the newest message still there, or none.
+    const [latest] = await db<DeliveryMessage[]>`SELECT * FROM chat.messages
+      WHERE conversation_id = ${conversationId}::uuid AND deleted_at IS NULL
+        AND seq <= (SELECT seq FROM chat.messages WHERE id = ${pending.message_id}::uuid)
+        AND (${addedMessageId !== undefined} OR seq > ${state.last_seq})
+        AND (${addedMessageId !== undefined} OR kind = 'text')
+        AND (${addedMessageId === undefined} OR id = ${pending.message_id}::uuid)
+      ORDER BY seq DESC LIMIT 1`;
     const [person] = await db<
       { id: string; profile: string }[]
     >`SELECT id, profile FROM auth.users WHERE id = ${userId}::uuid AND (account_expires IS NULL OR account_expires > now())`;
@@ -297,7 +304,7 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
       ? await db<DeliveryMessage[]>`SELECT m.* FROM chat.messages m
           LEFT JOIN chat.participants p ON p.conversation_id = m.conversation_id AND p.principal_type = 'user' AND p.principal_id = ${userId}::uuid
           LEFT JOIN chat.thread_reads tr ON tr.thread_id = m.thread_id AND tr.principal_type = 'user' AND tr.principal_id = ${userId}::uuid
-          WHERE m.id = ${pending.personal_message_id}::uuid AND m.seq > LEAST(GREATEST(COALESCE(
+          WHERE m.id = ${pending.personal_message_id}::uuid AND m.deleted_at IS NULL AND m.seq > LEAST(GREATEST(COALESCE(
             CASE WHEN m.thread_id IS NULL THEN p.last_read_seq ELSE tr.last_read_seq END, 0), COALESCE(p.joined_seq, 0)),
             COALESCE((CASE WHEN m.thread_id IS NULL THEN p.unread_from_seq ELSE tr.unread_from_seq END) - 1, 9223372036854775807))`
       : [];

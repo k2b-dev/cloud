@@ -42,6 +42,7 @@ import {
   ThreadSchema,
   UNREAD_CAP,
 } from "../service/contracts";
+import { messagePreview } from "../system-messages";
 import { chatHasThreads, inView, type ThreadList, type ThreadView } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -423,8 +424,35 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const applyMessage = (chat: Current, message: Message) => {
     if (!active(chat) || message.conversationId !== chat.view.id) return;
     const known = chat.messages.get(message.id);
-    if ((chat.from === null || message.seq >= chat.from) && (known ? message.rev > known.rev : message.rev > chat.snapshotRev))
-      chat.messages.set(message.id, pendingReactions(chat, message));
+    const contentNewer = (message.contentRevision ?? 0) > (known?.contentRevision ?? 0);
+    if (known && message.rev <= known.rev && !contentNewer) return;
+    // Reply quotes are a projection of the original, including originals outside the loaded window.
+    for (const [id, reply] of chat.messages) {
+      if (reply.replyTo && "id" in reply.replyTo && reply.replyTo.id === message.id) {
+        chat.messages.set(id, {
+          ...reply,
+          replyTo: message.deletedAt
+            ? { deleted: true }
+            : {
+                id: message.id,
+                author: message.author,
+                attachments: message.attachments,
+                preview: messagePreview(
+                  message.body ?? "",
+                  message.attachments,
+                  typeof document === "undefined" ? undefined : document.documentElement.lang,
+                ),
+              },
+        });
+      }
+    }
+    if (
+      (chat.from === null || message.seq >= chat.from) &&
+      (known ? message.rev > known.rev || contentNewer : message.rev > chat.snapshotRev)
+    ) {
+      const incoming = known && known.rev > message.rev ? { ...message, rev: known.rev, reactions: known.reactions } : message;
+      chat.messages.set(message.id, pendingReactions(chat, incoming));
+    }
     chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, message.rev), seqHead: Math.max(chat.view.seqHead, message.seq) };
     extendWindow(chat);
   };
@@ -532,9 +560,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       .catch(() => {});
     return work;
   };
-  const resyncConversation = async (chat: Current) => {
+  const resyncConversation = async (chat: Current, contentOnly = false) => {
     // A filtered delta cannot describe removals from the authorized window.
-    if (chat.view.conversation?.kind === "system") {
+    if (!contentOnly && chat.view.conversation?.kind === "system") {
       await replaceMessages(chat, true);
       if (active(chat)) {
         chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
@@ -636,6 +664,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
             highestRev = 0;
           let threadsChanged = false;
           const reactionHints = new Map<string, number>();
+          if (events.some(({ data }) => data.type === "message-changed" && data.conversationId === chat.view.id)) {
+            await resyncConversation(chat, true);
+            if (!active(chat)) return;
+          }
           for (const { data } of events) {
             if (!active(chat)) return;
             if (data.type === "reactions" && data.conversationId === chat.view.id) {
@@ -921,7 +953,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
             const warmed = new Set<string>();
             for (const { data, cursor } of events) {
               if (data.type === "summary") await applySummary(data);
-              else if ((data.type === "membership" || data.type === "threads") && rows.some((row) => row.id === data.conversationId)) {
+              else if (
+                (data.type === "membership" || data.type === "threads" || data.type === "message-changed") &&
+                rows.some((row) => row.id === data.conversationId)
+              ) {
                 await refetchRow(data.conversationId);
                 if (data.type === "threads" && rows.some((row) => row.id === data.conversationId && row.kind === "system")) {
                   discoveryCursor ??= cursor;
@@ -1042,6 +1077,13 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       const result = await api.updateDetails(id, patch);
       await sidebar(() => refetchRow(id)).catch(() => {});
       return result;
+    },
+    refreshMessages: async (id: string) => {
+      const chat = current;
+      if (chat?.view.id === id && active(chat)) {
+        await resyncConversation(chat, true);
+      }
+      await sidebar(() => refetchRow(id));
     },
     react: (id: string, messageId: string, emoji: string, on: boolean): Promise<void> => {
       const chat = current;

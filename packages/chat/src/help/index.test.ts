@@ -17,7 +17,7 @@ describe("chatHelp", () => {
     expect(german.map((document) => document.id)).toEqual(english.map((document) => document.id));
     expect(chatHelp.getMarkdown("chat-start")).toContain("conversations with other people");
     expect(chatHelp.getMarkdown("chat-start", "de-AT")).toContain("Gespräche mit anderen Personen");
-    expect(chatHelp.getMarkdown("chat-send")).toContain("**Retry**");
-    expect(chatHelp.getMarkdown("chat-send", "de-AT")).toContain("**Erneut senden**");
+    expect(chatHelp.getMarkdown("chat-send")).toContain("**Try again**");
+    expect(chatHelp.getMarkdown("chat-send", "de-AT")).toContain("**Erneut versuchen**");
   });
 });
