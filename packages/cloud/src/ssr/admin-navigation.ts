@@ -17,7 +17,6 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     { href: "/admin/settings?tab=storage", icon: "ti-database", label: t.storage },
     { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
     { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
-    { href: "/admin/settings?tab=security", icon: "ti-shield-lock", label: t.security },
   ];
   // Areas show as one entry each. The AI area belongs to Core; Observability exists when an app contributes it.
   const contributedApps = apps
@@ -50,6 +49,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
   );
   const areaLinks: AdminLink[] = [
     { href: "/admin/base", icon: "ti-adjustments", label: t.baseSettings },
+    { href: "/admin/signin", icon: "ti-shield-lock", label: t.signinSecurity },
     { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
     ...(observabilityPaths.length > 0
       ? [
@@ -79,16 +79,6 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     ...contributedApps.flatMap(({ groups }) =>
       groups.filter((group) => group.section === undefined).map(({ label, links }) => ({ label, links })),
     ),
-    {
-      label: t.userManagement,
-      links: [
-        { href: "/admin/settings?tab=user", icon: "ti-login", label: t.accountSignIn },
-        { href: "/admin/settings?tab=registration", icon: "ti-user-plus", label: t.accountRegistration },
-        { href: "/admin/settings?tab=linux", icon: "ti-terminal-2", label: t.linuxAccess },
-        { href: "/admin/settings?tab=account-operations", icon: "ti-tool", label: t.accountOperations },
-        { href: "/admin/settings?tab=freeipa", icon: "ti-building-fortress", label: "FreeIPA" },
-      ],
-    },
     { label: t.settings, links: settingsLinks },
     ...(appLinks.length > 0 ? [{ label: t.appAdmin, links: appLinks }] : []),
   ];

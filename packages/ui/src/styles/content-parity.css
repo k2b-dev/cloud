@@ -6231,6 +6231,15 @@
   margin-left: 0.1875rem;
 }
 
+/* Search matches: a soft selection fill without padding, so marked and plain text keep one width. */
+.k2b-ui .k2b-match-text__hit {
+  border-radius: 0.125rem;
+  background: var(--k2b-selected);
+  color: var(--k2b-text);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
 .k2b-ui .k2b-label-chip {
   display: inline-block;
   padding: 0 0.4375em;

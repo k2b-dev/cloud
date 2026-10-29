@@ -104,3 +104,26 @@ export const buildManagedGroupScopeCondition = (params: { userId: SqlValue; grou
     })}
   )
 `;
+
+/** Local recipient membership only; never supplies user roles or directory identity. */
+export const recursiveServiceAccountGroupIdsSubquery = (serviceAccountId: SqlValue) => sql`
+  WITH RECURSIVE account_subject AS (
+    -- Resolve a correlated column before introducing aliases used by directory callers (for example sa.id).
+    SELECT ${serviceAccountId}::uuid AS id
+  ), account_groups AS (
+    SELECT sg.group_id
+    FROM auth.service_account_groups sg
+    JOIN auth.service_accounts sa ON sa.id = sg.service_account_id
+    JOIN account_subject subject ON subject.id = sa.id
+    JOIN auth.groups g ON g.id = sg.group_id
+    WHERE sa.status = 'active' AND sa.kind IN ('standalone', 'agent')
+      AND g.provider = 'local'
+    UNION
+    SELECT gg.parent_group_id
+    FROM auth.group_groups_v2 gg
+    JOIN auth.groups parent ON parent.id = gg.parent_group_id
+    JOIN account_groups ag ON ag.group_id = gg.child_group_id
+    WHERE parent.provider = 'local'
+  )
+  SELECT group_id FROM account_groups
+`;

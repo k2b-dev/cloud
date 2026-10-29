@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1083
 description: Connect a Cloud deployment to FreeIPA identity infrastructure.
 tags: [freeipa, identity, directory]
-updated: 2026-10-19
+updated: 2026-10-28
 ---
 
 # FreeIPA setup
@@ -16,7 +16,7 @@ leave this integration disabled.
 
 ## Configure the connection
 
-Open **Administration → Accounts & sign-in → FreeIPA**.
+Open **Administration → Sign-in & security → FreeIPA**.
 Enable the connection and set the `freeipa.*` values there. Account access and
 login-page visibility are separate [Sign-in settings](/en/docs/operations/account-categories).
 
@@ -177,7 +177,7 @@ Do not raise only one limit: the other continues to protect the directory.
 
 ## Backfill account expiry dates
 
-Open **Administration → Accounts & sign-in → Operations**.
+Open **Administration → Sign-in & security → Account operations**.
 Read [Repair expiry dates](/en/docs/accounts/lifecycle#repair-expiry-dates)
 before starting: maintenance can restore access for expired accounts.
 It does not assign Linux identities.
