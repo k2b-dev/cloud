@@ -1,8 +1,9 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
-import type { ServerWebSocket } from "bun";
+import type { Server, ServerWebSocket } from "bun";
 import { z } from "zod";
+import { recordTestServer } from "../../../ui/test/browser";
 import {
   AddMembersSchema,
   type AttachmentView,
@@ -794,10 +795,12 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     };
   };
 
+  // A page request that times out then says whether it reached this server (#2109).
+  const recorder = recordTestServer();
   const server = Bun.serve<unknown, never>({
     port: 0,
     hostname: "127.0.0.1",
-    async fetch(request, bun) {
+    fetch: recorder.record(async (request: Request, bun: Server<unknown>) => {
       const url = new URL(request.url);
       if (url.pathname === "/api/chat/live")
         return bun.upgrade(request, { data: undefined }) ? undefined : new Response("upgrade failed", { status: 400 });
@@ -1739,7 +1742,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           "</body></html>",
         { headers: { "Content-Type": "text/html" } },
       );
-    },
+    }),
     websocket: {
       message(socket, raw) {
         const frame = z
@@ -1778,6 +1781,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     },
   });
 
+  recorder.listen(server.url);
   return {
     url: server.url.href,
     // Exercise request-body races directly, without relying on browser/network timing.
@@ -2077,6 +2081,9 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     messageId,
     /** The island's props for an address, as the server renders them. */
     props: viewProps,
-    stop: () => server.stop(true),
+    stop: () => {
+      recorder.stop();
+      server.stop(true);
+    },
   };
 };
