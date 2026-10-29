@@ -5,12 +5,12 @@ section: Accounts & sign-in
 order: 1082
 description: Choose whether people can create Guest accounts or request FreeIPA access.
 tags: [accounts, administration, authentication]
-updated: 2026-09-27
+updated: 2026-10-28
 ---
 
 # Configure registration and account requests
 
-Open **Administration → Accounts & sign-in → Registration & requests**.
+Open **Administration → Sign-in & security → Registration**.
 Creating a Guest account and requesting FreeIPA access are separate choices.
 
 ## Allow Guest self-registration

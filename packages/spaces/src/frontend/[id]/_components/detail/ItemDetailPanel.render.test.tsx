@@ -701,16 +701,15 @@ describe("Spaces item detail groups", () => {
       expect(html.match(/data-spaces-claim-badge/g)).toHaveLength(1);
     });
 
-    for (const serviceAccountKind of [undefined, "standalone", "agent"] as const) {
-      const kind = serviceAccountKind ? "service_account" : "user";
-      test(`${locale}: keeps a ${serviceAccountKind ?? kind} holder outside the assignees first, without a remove action`, () => {
+    for (const kind of ["user", "service_account"] as const) {
+      test(`${locale}: keeps a ${kind} holder outside the assignees first, without a remove action`, () => {
         const people = peopleList(
           renderPanel(
             {
               item: {
                 ...task,
                 assignees: [valentin],
-                claim: { ...miraClaim, actor: { kind, id: holderId }, displayName: "Release agent", serviceAccountKind },
+                claim: { ...miraClaim, actor: { kind, id: holderId }, displayName: "Release agent" },
               },
             },
             locale,
@@ -722,7 +721,7 @@ describe("Spaces item detail groups", () => {
         expect(list[0]).toContain(">Release agent</span>");
         workingRow(list[0]!, locale);
         expect(list[0]).not.toContain("<button");
-        if (serviceAccountKind) expect(list[0]).toContain(`class="ti ti-${serviceAccountKind === "agent" ? "robot" : "key"}"`);
+        if (kind === "service_account") expect(list[0]).toContain(`src="/api/accounts/users/${holderId}/avatar"`);
         expect(list[1]).toContain(">Valentin Kolb</span>");
         expect(people).not.toContain("not assigned");
         expect(people).not.toContain("nicht zugewiesen");

@@ -1,0 +1,6 @@
+### A sidebar label test measured a row before WebKit applied its hover
+
+- **What happened:** In WebKit, `sidebar-row-label-room.browser.test.ts` › "right-to-left: a long label fades out right before the count or the revealed hover action, at rest, hovered and active" failed at random with `swap hovered with a wider group: label reaches 134, first control at 178` (#2085), and blocked the 0.51 release gate.
+- **Root cause:** WebKit can apply `:hover` only after `page.mouse.move()` has resolved. The test then read the row's controls while the hover actions were still `visibility: hidden`, so only the count counted as the first control (178). By the time of the screenshot, the hover applied and the label faded before the revealed wider group (134). `settled()` did not wait, because showing the actions changes only `visibility`, which starts no animation. The row's cover measurement was correct (50 px); the product was not at fault.
+- **Error class:** A test samples the state that a hover reveals before the engine has applied `:hover`.
+- **Guard:** The test's `hover()` helper waits until the row matches `:hover` before it measures. With that wait, the WebKit case passed 20 of 20 runs; it failed 3 of 12 before. The testing guide asks tests to wait for `:hover` (or for the revealed control) after a pointer move.

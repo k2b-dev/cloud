@@ -135,7 +135,7 @@ export default function LinuxIdentity(props: { initial: Snapshot }) {
                   {t().edit}
                 </Button>
               </Show>
-              <ButtonLink href="/admin/settings?tab=linux" size="sm" variant="secondary">
+              <ButtonLink href="/admin/signin/linux" size="sm" variant="secondary">
                 {t().settings}
               </ButtonLink>
             </div>

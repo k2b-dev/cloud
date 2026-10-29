@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
+import { robotAvatarFromSeed } from "@k2b/cloud/contracts/avatar";
+import { renderAvatarSvg } from "@k2b/cloud/shared";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
@@ -189,6 +191,9 @@ beforeAll(async () => {
         });
       }
       // No Cloud app offers files here, so Add image or video opens the device's file dialog directly.
+      // An agent's picture is its robot, served under the same image address as a person's picture.
+      const robot = /^\/api\/accounts\/users\/([\w-]+)\/avatar$/.exec(url.pathname);
+      if (robot) return new Response(renderAvatarSvg(robotAvatarFromSeed(robot[1]!)), { headers: { "content-type": "image/svg+xml" } });
       if (url.pathname === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
       if (url.pathname.startsWith("/api/")) {
         if (request.method === "GET") return Response.json([]);
@@ -547,16 +552,10 @@ describe("Spaces item detail in a browser", () => {
       const agent = {
         id: "66666666-6666-4666-8666-666666666666",
         kind: "service_account" as const,
-        serviceAccountKind: "agent" as const,
         displayName: "Release agent",
         avatarHash: null,
       };
-      const claim = {
-        ...task.claim!,
-        actor: { kind: "service_account" as const, id: agent.id },
-        displayName: agent.displayName,
-        serviceAccountKind: agent.serviceAccountKind,
-      };
+      const claim = { ...task.claim!, actor: { kind: "service_account" as const, id: agent.id }, displayName: agent.displayName };
       for (const [state, item] of [
         ["working", { ...task, assignees: [tom, agent], claim }],
         ["idle", { ...task, assignees: [tom, agent], claim: null }],
@@ -566,8 +565,10 @@ describe("Spaces item detail in a browser", () => {
           const rows = peopleRows(page);
           expect(await rows.count()).toBe(2);
           const agentRow = rows.filter({ hasText: agent.displayName });
-          // The agent shows its robot icon, never a picture or a person's initials.
-          expect(await agentRow.locator(".k2b-avatar i.ti-robot").count()).toBe(1);
+          // The agent shows its robot in a square frame, never a bare icon or a person's initials.
+          const robot = agentRow.locator(`img.k2b-avatar[data-shape="square"][src*="/api/accounts/users/${agent.id}/avatar"]`);
+          await robot.evaluate((image: HTMLImageElement) => image.decode());
+          expect(await robot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
           // As an assignee, the agent can be removed like a person, also while it works on the task.
           expect(await agentRow.getByRole("button", { name: `${agent.displayName} entfernen` }).count()).toBe(1);
           if (state === "working") {
