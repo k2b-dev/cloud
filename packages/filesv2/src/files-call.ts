@@ -3,6 +3,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { err } from "@k2b/stdlib";
 import type { Context } from "hono";
 import type { UserFilesCall, Via } from "./service/activity";
+import { filesRequestActor } from "./service/machine-access";
 
 export function requestCall(c: Pick<Context<AuthContext>, "get" | "req">): UserFilesCall {
   const actor = c.get("actor");
@@ -15,7 +16,7 @@ export function requestCall(c: Pick<Context<AuthContext>, "get" | "req">): UserF
   else via = "api";
   return {
     kind: "user",
-    actor,
+    actor: filesRequestActor(actor, c.req.header("x-request-id")?.slice(0, 64) ?? delegation?.requestId ?? null),
     accessSubject: c.get("accessSubject"),
     via,
     requestId: c.req.header("x-request-id")?.slice(0, 64) ?? delegation?.requestId ?? null,
@@ -26,11 +27,12 @@ export function requestCall(c: Pick<Context<AuthContext>, "get" | "req">): UserF
 }
 
 export function capabilityCall(c: CapabilityExecutionContext): UserFilesCall {
-  if (c.actor.kind !== "user") throw err.forbidden("Files require a signed-in user.");
+  if (c.actor.kind === "service_account" && c.actor.serviceAccount.kind === "resource_bound")
+    throw err.forbidden("No Files storage binding.");
   const delegation = c.actor.delegation;
   return {
     kind: "user",
-    actor: c.actor,
+    actor: filesRequestActor(c.actor, c.requestId),
     accessSubject: c.accessSubject,
     via:
       c.origin === "assistant" || delegation?.mandateId || delegation?.workloadType

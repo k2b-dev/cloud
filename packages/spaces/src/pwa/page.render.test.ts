@@ -156,7 +156,7 @@ const rows = (document: Document) =>
     when: row.querySelector("time")?.textContent ?? null,
   }));
 
-describe("Spaces in the mobile app", () => {
+describe("Spaces in the Cloud app", () => {
   test("declares its part for people with the user role, at the route the gateway sends to Spaces", () => {
     expect(app.meta.pwa).toEqual({ href: "/pwa/spaces", requiresRoles: ["user"] });
     expect(app.meta.routes).toContain("/pwa/spaces");

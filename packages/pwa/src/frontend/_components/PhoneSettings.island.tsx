@@ -101,6 +101,7 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
         >
           <TextInput
             label={t().phoneName}
+            placeholder={t().phoneNamePlaceholder}
             value={name}
             ref={nameInput}
             disabled={!ready()}

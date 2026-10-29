@@ -1,6 +1,7 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
+import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
@@ -10,6 +11,8 @@ import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
+import { bindResourceAppAccess, RESOURCE_ACCESS_PATH } from "./app-access-resources";
+import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -155,6 +158,8 @@ type ResolvedPageOptions = PageOptions & {
  */
 export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefinitionMap = {}, AppId extends string = string> = {
   id: AppId;
+  /** Shared object-store package. Defaults to the app ID. */
+  package?: string;
   access?: AppAccessDeclaration;
   name: string;
   icon: string;
@@ -187,7 +192,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
      * Same-origin path of a `GET` route this app serves below one of its
      * `routes`. After the page loads, the shell reads it with the person's
      * session and shows the returned `AppNavBadge` count on the app's icon in
-     * the rail and the app grid. Protect it like any other route.
+     * the rail, the phone bar, and the app grid. Protect it like any other route.
      */
     badge?: string;
   };
@@ -452,6 +457,7 @@ export const defineApp = <
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
   const pwaPart = validateAppPwaPart(opts);
+  const packageName = resolveApplicationPackage(opts.id, opts.package);
   const installable = opts.installable === undefined ? undefined : validateInstallable(opts.id, opts.routes, opts.installable);
   if (installable === null)
     throw new Error(`App "${opts.id}" declares invalid installable; use a canonical own /app/<id>/<surface>/ path covered by routes`);
@@ -620,6 +626,7 @@ export const defineApp = <
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
   const baseMeta: AppMeta = {
+    package: packageName,
     id: opts.id,
     platformPermissions: opts.platformPermissions
       ? opts.platformPermissions.map((permission) => PlatformPermissionSchema.parse(permission))
@@ -689,7 +696,8 @@ export const defineApp = <
         }
       })());
     try {
-      bindProcessApplicationId(meta.id, meta.platformPermissions);
+      await registerApplicationPackage(meta.id, packageName);
+      bindProcessApplicationId(meta.id, meta.platformPermissions, packageName);
       cleanup.unshift(clearProcessApplicationId);
       const startedAt = Date.now();
 
@@ -709,6 +717,7 @@ export const defineApp = <
 
       // Registry entry
       const entry: AppRegistryEntry = {
+        package: packageName,
         id: meta.id,
         access: meta.access,
         name: meta.name,
@@ -1038,6 +1047,8 @@ export const defineApp = <
         );
       }
 
+      cleanup.push(bindResourceAppAccess(meta.id, opts.access));
+      server.route(RESOURCE_ACCESS_PATH, createResourceAppAccessRoutes(meta));
       cleanup.push(() => stopAppAccessConnections());
       if (meta.access?.kind === "grants") {
         server.route(appAccessManagementPath(meta), createOwnedAppAccessRoutes(meta, opts.access?.canManage));

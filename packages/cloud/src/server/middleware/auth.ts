@@ -2,6 +2,7 @@ import type { Context, Env, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import { matchedRoutes } from "hono/route";
 import { findTargetHandler } from "hono/utils/handler";
+import { bindAppAccessRequest } from "../../_internal/app-access-request";
 import { measureServerPhase } from "../../_internal/server-timing";
 import {
   AI_INFERENCE_SCOPE,
@@ -58,7 +59,7 @@ export type ServiceAccountRequestActor =
       delegatedUser: User;
       scopes: string[];
       credentialId?: string | null;
-      /** Verified OAuth client identity for transactional credential checks. */
+      /** Public OAuth client identifier; safe to retain, never the bearer token. */
       oauthClientId?: string | null;
       credentialExpiresAt?: string | null;
       delegation?: InvocationProvenance;
@@ -69,7 +70,7 @@ export type ServiceAccountRequestActor =
       delegatedUser: null;
       scopes: string[];
       credentialId?: string | null;
-      /** Verified OAuth client identity for transactional credential checks. */
+      /** Public OAuth client identifier; safe to retain, never the bearer token. */
       oauthClientId?: string | null;
       credentialExpiresAt?: string | null;
       delegation?: InvocationProvenance;
@@ -252,7 +253,7 @@ const loadAuthenticatedActorUncached = async (
       delegatedUser: authResult.delegatedUser,
       scopes: authResult.scopes,
       credentialId: null,
-      oauthClientId: typeof authResult.payload.client_id === "string" ? authResult.payload.client_id : null,
+      oauthClientId: authResult.oauthClientId,
       credentialExpiresAt: typeof authResult.payload.exp === "number" ? new Date(authResult.payload.exp * 1_000).toISOString() : null,
     };
     c.set("actor", actor);
@@ -487,13 +488,21 @@ const getAuthority = <E extends AuthContext>(c: Context<E>): RequestAuthority =>
   const accessSubject = c.get("accessSubject");
   const credentialKind = c.get("credentialKind");
   if (!actor || !accessSubject || !credentialKind) throw new Error("Request authority has not been resolved");
-  return {
-    actor,
-    accessSubject,
-    credentialKind,
-    scopes: [...(c.get("credentialScopes") ?? [])],
-    ...(c.get("credentialProof") ? { credentialProof: c.get("credentialProof") } : {}),
-  };
+  return bindAppAccessRequest(
+    {
+      actor,
+      accessSubject,
+      credentialKind,
+      scopes: [...(c.get("credentialScopes") ?? [])],
+      ...(c.get("credentialProof") ? { credentialProof: c.get("credentialProof") } : {}),
+    },
+    c.req.raw,
+    credentialKind === "session"
+      ? c.get("sessionToken")
+      : credentialKind !== "invocation"
+        ? (session.getBearerToken(c) ?? undefined)
+        : undefined,
+  );
 };
 
 /**

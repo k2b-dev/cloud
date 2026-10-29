@@ -3,7 +3,7 @@ import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
-import { afterSignInHref } from "./login-redirect";
+import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
 export default function PasskeyLoginButton(props: { redirectTo?: string }) {
@@ -20,9 +20,12 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
       const response = await startAuthentication({
         optionsJSON: options as never,
       });
-      const verifyRes = await apiClient.auth.passkeys.authentication.verify.$post({
-        json: { response },
-      });
+      const verifyRes = await apiClient.auth.passkeys.authentication.verify.$post(
+        {
+          json: { response },
+        },
+        confirmationRequestOptions(props.redirectTo),
+      );
       if (!verifyRes.ok) {
         const data = (await verifyRes.json().catch(() => null)) as {
           message?: string;

@@ -768,6 +768,9 @@ local Cloud group or a direct grant. Cloud rejects these recipients in
 directory groups. Change eligible membership in the directory, or grant the
 local recipient separately.
 
+For independently owned file storage and explicit path grants, see
+[Files machine storage](/en/docs/identity/files-machine-storage).
+
 ## Local group management by machines
 
 Standalone and agent accounts can receive a direct, revocable local group

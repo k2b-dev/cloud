@@ -10,10 +10,11 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { ObjectStoreConfigurationError, ObjectStoreConnectionError, testObjectStoreConnection } from "../_internal/object-store-config";
 import { listApps } from "../_internal/registry";
 import { enrichDirtyAiConversations } from "../ai/enrich";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
-import { settingsDeleteLegacyKeys, settingsListLegacyKeys } from "../services";
+import { settingsDeleteLegacyKeys, settingsListLegacyKeys, settingsService } from "../services";
 import { readAccountCategoryPolicy } from "../services/account-category-policy";
 import { audit } from "../services/audit";
 import { ConfigConflict } from "../services/config-conflict";
@@ -161,6 +162,22 @@ const app = new Hono<AuthContext>()
     );
     return c.json({ items });
   })
+  // The current values and versions of one settings group, so a form can continue after a save without a reload.
+  .get(
+    "/entries",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Read the settings of one group with their versions",
+      ...requiresAdmin,
+    }),
+    v("query", z.object({ group: z.string().min(1).max(64) })),
+    async (c) => {
+      const result = await settingsService.entry.list({ filter: { group: c.req.valid("query").group }, locale: getLocale(c) });
+      c.header("Cache-Control", "no-store");
+      return c.json({ items: result.items });
+    },
+  )
   .get("/legacy", auth.requireRole("admin"), async (c) => {
     return c.json(await settingsListLegacyKeys(await liveSettingKeys()));
   })
@@ -190,6 +207,33 @@ const app = new Hono<AuthContext>()
       return c.json({ message: "Failed to test Gotenberg PDF rendering" }, 500);
     }
   })
+  .post(
+    "/test-storage",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Test the saved Garage storage connection",
+      ...requiresAdmin,
+      responses: { 200: jsonResponse(z.object({ ok: z.literal(true) }), "Object written, read and deleted") },
+    }),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      try {
+        await testObjectStoreConnection();
+        return c.json({ ok: true as const });
+      } catch (error) {
+        return c.json(
+          {
+            message:
+              error instanceof ObjectStoreConfigurationError || error instanceof ObjectStoreConnectionError
+                ? error.message
+                : "Storage test failed. Check the saved settings, Garage availability and bucket permissions, then retry.",
+          },
+          502,
+        );
+      }
+    },
+  )
   .post("/test-freeipa", auth.requireRole("admin"), async (c) => {
     const result = await testFreeIpaConnection();
     if (result.ok) return c.json({ ok: true });

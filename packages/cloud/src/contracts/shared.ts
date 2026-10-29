@@ -446,7 +446,7 @@ export type ServiceAccountRequestActor = {
   delegatedUser: User | null;
   scopes: string[];
   credentialId?: string | null;
-  /** Verified OAuth client identity for transactional credential checks. */
+  /** Public OAuth client identifier, never the bearer token. */
   oauthClientId?: string | null;
   credentialExpiresAt?: string | null;
   delegation?: InvocationProvenance;
