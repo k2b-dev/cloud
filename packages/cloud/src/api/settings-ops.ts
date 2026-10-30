@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { type AuthContext, auth, v } from "../server";
+// Concrete modules, not the server barrel: defineApp imports this file, and the barrel imports defineApp.
+import { type AuthContext, auth } from "../server/middleware/auth";
+import { v } from "../server/middleware/validator";
 import { settingsService } from "../services/settings/app";
 import { SETTINGS_MAP } from "../services/settings/defaults";
 import { readEnvSettingsStatus } from "../services/settings/env-status";
