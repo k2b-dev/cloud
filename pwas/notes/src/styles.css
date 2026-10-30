@@ -1584,8 +1584,15 @@ body.k2b-ui {
   display: none;
 }
 
+/* Mockup v4 dialog padding; on phones the sheet's handle already gives the top space. */
+.n-sheet {
+  padding: 1.4rem 1.5rem 1.25rem;
+}
 /* Sheets on phones (mockup v4): actions stack, the main one on top, each a full-width touch target. */
 @media (max-width: 47.99rem) {
+  .n-sheet {
+    padding: 0 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+  }
   .n-sheet .n-dialog-acts {
     flex-direction: column-reverse;
   }
