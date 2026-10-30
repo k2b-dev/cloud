@@ -31,7 +31,6 @@
     "@types/bun": "catalog:",
     "@types/subset-font": "2.3.0",
     "babel-preset-solid": "1.9.15",
-    "happy-dom": "20.14.5",
     "playwright": "catalog:",
     "subset-font": "2.9.0",
     "typescript": "catalog:"
