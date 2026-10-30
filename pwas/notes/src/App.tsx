@@ -1,5 +1,5 @@
 import { createEffect, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
-import { isDark } from "./prefs";
+import { isDark, preferences } from "./prefs";
 import { linkClick, navigate, route } from "./router";
 import { app, t } from "./state";
 import { Icon } from "./ui/common";
@@ -10,6 +10,7 @@ import { handingOff, NotePage } from "./views/NotePage";
 import { Overview } from "./views/Overview";
 import { openPalette } from "./views/Palette";
 import { SharedLink } from "./views/SharedLink";
+import { WELCOME_TEXT } from "./views/welcome";
 
 export function App() {
   createEffect(() => {
@@ -52,6 +53,17 @@ export function App() {
     }),
   );
 
+  // The first visit opens a real welcome note in the editor, once: the mark stays even after the note is deleted.
+  const welcoming = () => app.ready() && !preferences.welcomeCreated() && app.records().length === 0;
+  createEffect(
+    on(app.ready, (ready) => {
+      if (!ready || preferences.welcomeCreated()) return;
+      if (app.records().length > 0) return preferences.markWelcomeCreated();
+      if (route().name !== "home") return;
+      void app.createNote(WELCOME_TEXT[preferences.locale()]).then((id) => id && preferences.markWelcomeCreated());
+    }),
+  );
+
   const dragging = usePageDrop(() => route().name === "home" && app.records().length > 0);
 
   return (
@@ -59,8 +71,10 @@ export function App() {
       <Switch>
         <Match when={route().name === "home"}>
           <Show when={app.ready()} fallback={<Overview />}>
-            <Show when={app.records().length > 0 && !handingOff()} fallback={<NotePage mode={{ kind: "draft" }} />}>
-              <Overview />
+            <Show when={!welcoming()}>
+              <Show when={app.records().length > 0 && !handingOff()} fallback={<NotePage mode={{ kind: "draft" }} />}>
+                <Overview />
+              </Show>
             </Show>
           </Show>
         </Match>
@@ -72,9 +86,6 @@ export function App() {
           keyed
         >
           {(current) => <NotePage mode={{ kind: "local", id: current.id }} />}
-        </Match>
-        <Match when={route().name === "example"}>
-          <NotePage mode={{ kind: "example" }} />
         </Match>
         <Match
           when={(() => {

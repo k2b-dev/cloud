@@ -4,7 +4,6 @@ export type Route =
   | { name: "home" }
   | { name: "note"; id: string }
   | { name: "shared"; linkId: string }
-  | { name: "example" }
   | { name: "legal"; page: "datenschutz" | "nutzungsbedingungen" | "impressum" }
   | { name: "unknown" };
 
@@ -12,7 +11,6 @@ const LINK_ID = /^[0-9A-Za-z]{16,32}$/;
 
 export function parseRoute(pathname: string): Route {
   if (pathname === "/" || pathname === "") return { name: "home" };
-  if (pathname === "/beispiel") return { name: "example" };
   const note = pathname.match(/^\/n\/([0-9A-Za-z_-]{1,64})$/);
   if (note?.[1]) return { name: "note", id: note[1] };
   const shared = pathname.match(/^\/p\/([^/]+)$/);
