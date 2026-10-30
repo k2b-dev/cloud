@@ -27,6 +27,17 @@ test("metadata escapes text and uses the read capability for both preview images
   expect(html.match(/<title>/g)?.length).toBe(1);
 });
 
+test("metadata keeps titles and excerpts in plain text after removing markup", () => {
+  expect(previewMeta("# Hallo <b>Welt</b>\n").title).toBe("Hallo Welt");
+  const content = "# <scr<script>ipt>alert(1)</script>\n\n<scr<script>ipt>description</script>";
+  const meta = previewMeta(content);
+  expect(meta.title).not.toContain("<");
+  expect(meta.excerpt).not.toContain("<");
+  expect(previewMeta("# Weg -> Ziel\n").title).toBe("Weg -> Ziel");
+  const html = linkMetadata(index, "edit-link", "read-link", origin, content);
+  expect(html).not.toContain("<script>");
+});
+
 test("renderer creates a local 1200 by 630 PNG without fetching note URLs", async () => {
   const original = globalThis.fetch;
   let fetched = false;
