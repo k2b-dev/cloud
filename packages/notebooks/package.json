@@ -57,8 +57,7 @@
     "y-codemirror.next": "catalog:",
     "y-protocols": "catalog:",
     "yjs": "catalog:",
-    "zod": "catalog:",
-    "@k2b/editor": "workspace:*"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@nats-io/transport-node": "catalog:",
