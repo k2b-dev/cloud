@@ -89,7 +89,7 @@ function AreaColumn(props: {
       </AppWorkspace.SidebarSection>
       <AppWorkspace.SidebarSection title={t.g_models}>
         {props.overview.providers.length === 0 ? (
-          <p class="px-3 py-1 text-sm text-(--k2b-text-muted)">{t.emptyNav}</p>
+          <p class="px-2 py-1 text-sm text-(--k2b-text-muted)">{t.emptyNav}</p>
         ) : (
           props.overview.providers.map((provider) => {
             const state = aiProviderState(provider);
@@ -265,7 +265,7 @@ function ClassesColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview:
   return (
     <>
       {nothingAssigned ? (
-        <div class="px-3 pb-2">
+        <div class="pb-2">
           <NoticeCard
             tone={props.index.models.length ? "danger" : "info"}
             title={props.index.models.length ? t.clsNoneAtAll : t.clsEmptyNote}
@@ -275,7 +275,7 @@ function ClassesColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview:
       <AppWorkspace.SidebarSection title={t.slots_people}>
         {AI_MODEL_CLASSES.map((modelClass) => row(modelClass, aiClassSubtitle(t, modelClass)))}
       </AppWorkspace.SidebarSection>
-      <p class="px-4 pb-3 text-xs text-(--k2b-text-muted)">{t.clsRuleShort}</p>
+      <p class="px-2 pb-3 text-xs text-(--k2b-text-muted)">{t.clsRuleShort}</p>
       <AppWorkspace.SidebarSection title={t.slots_cloud}>
         {row("vision")}
         {row("audio")}
@@ -367,7 +367,7 @@ function BudgetsColumn(props: { t: AiAreaMessages; locale: string; query: AiArea
           {t.peopleUsage}
         </AppWorkspace.SidebarItem>
       </AppWorkspace.SidebarSection>
-      <p class="px-4 pb-3 text-xs text-(--k2b-text-muted)">{t.movedBudgets}</p>
+      <p class="px-2 pb-3 text-xs text-(--k2b-text-muted)">{t.movedBudgets}</p>
     </>
   );
 }
@@ -524,7 +524,7 @@ export function AiAreaView(props: AiAreaViewProps) {
     if (query.sec === "classes") return <ClassesColumn t={t} query={query} overview={overview} index={index} />;
     if (overview.providers.length === 0)
       return (
-        <div class="grid gap-3 px-4 py-2">
+        <div class="grid gap-3 px-2 py-2">
           <h3 class="text-base font-semibold">{t.emptyTitle}</h3>
           <p class="text-sm text-(--k2b-text-muted)">{t.emptySub}</p>
           <ol class="list-decimal space-y-1 ps-5 text-sm">
@@ -652,7 +652,7 @@ export function AiAreaView(props: AiAreaViewProps) {
             {/* On a phone the level head has no room for them; they stay at hand below the form. */}
             <Show when={detailActions}>
               {(actions) => (
-                <div class="sticky bottom-0 flex justify-end border-t border-(--k2b-border) bg-(--k2b-surface) px-4 py-3 md:hidden">
+                <div class="sticky bottom-0 flex justify-end border-t border-(--k2b-border) bg-(--k2b-surface) px-2 py-3 md:hidden">
                   <AiDetailActions {...actions()} />
                 </div>
               )}

@@ -298,7 +298,7 @@ export default function AiModelDetail(props: {
   };
 
   return (
-    <div class="grid gap-5 px-4 pb-10">
+    <div class="grid gap-5 px-2 pb-10">
       <AiProviderNotice
         providerId={props.provider.id}
         providerLabel={props.provider.label}
