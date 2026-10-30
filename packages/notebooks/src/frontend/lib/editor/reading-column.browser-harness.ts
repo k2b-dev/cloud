@@ -5,6 +5,7 @@ import { fadeScrollMarginsExtension, fadeScrollPadding, listCommandsExtension } 
 import { ScrollArea } from "@k2b/ui";
 import { createRoot, createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
+import { notebookTableOptions } from "../../../lib/table-options";
 import { editor } from "./index";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "./notebook-options";
 import { createQueryBlockPreviews } from "./query-blocks";
@@ -66,7 +67,7 @@ if (mode !== "book")
             : [
                 dark ? editor.customDarkInit() : editor.customLightInit(),
                 listCommandsExtension(notebookListOptions),
-                editor.tablesExtension("book01"),
+                editor.tablesExtension(notebookTableOptions("book01")),
                 editor.imageExtension(notebookUrlOptions("book01")),
                 editor.listsExtension(notebookListOptions),
                 editor.infoBlocksExtension("de"),

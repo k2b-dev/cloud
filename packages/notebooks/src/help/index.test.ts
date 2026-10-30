@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { parseNotebookChartBlocks } from "@k2b/editor/markdown/lib/chart-blocks";
 import { extractNamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
 import { notebooksPageMessages } from "../frontend/messages";
 import { renderNotebookBook } from "../lib/book-renderer";
-import { parseNotebookChartBlocks } from "../lib/chart-blocks";
+import { notebookChartOptions } from "../lib/chart-options";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
 import { notebookHelp } from ".";
 
@@ -106,7 +107,7 @@ describe("notebookHelp", () => {
         const queries = parseNotebookQueryBlocks(source);
         expect(queries.diagnostics).toEqual([]);
         expect(parseNotebookTocBlocks(source).diagnostics).toEqual([]);
-        expect(parseNotebookChartBlocks(source).diagnostics).toEqual([]);
+        expect(parseNotebookChartBlocks(source, notebookChartOptions).diagnostics).toEqual([]);
         const result = renderNotebookBook({
           markdown: source,
           notebookId: "ABC123",

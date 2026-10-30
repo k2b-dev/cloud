@@ -1,18 +1,18 @@
 /** Notebook presentation only. The public grid owns editing, focus, history and source writes. */
 import { type EditorState, type Extension, type Range, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin } from "@codemirror/view";
-import { isFormula } from "@k2b/cloud/shared";
-import { applyLigatures, refreshMarkdownDecorationsEffect } from "@k2b/editor/markdown";
-import { extractNamedBlocks } from "@k2b/editor/markdown/lib/named-blocks";
 import { i18n } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import type { TableHost } from "@k2b/ui/text-editor";
 import { displayCell, findTables, type Table } from "@k2b/ui/text-editor/model";
-import { createPrettyTablePresentation, formatFormulaValue, type PrettyTableData } from "../pretty-table";
+import { isFormula } from "../formula";
+import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
+import { extractNamedBlocks } from "./lib/named-blocks";
+import { applyLigatures } from "./ligatures";
+import { createPrettyTablePresentation, formatFormulaValue, type PrettyTableData, type PrettyTableOptions } from "./pretty-table";
 import { formulaPreviewWidget } from "./tables";
 
-type PresentationOptions = {
-  notebookId: string;
+export type TablePresentationOptions = Omit<PrettyTableOptions, "locale"> & {
   /** Pass the inherited UI locale accessor, not a separate locale signal. */
   locale?: () => string;
 };
@@ -145,7 +145,7 @@ const copyButton = (element: HTMLElement, value: string, locale: string): HTMLBu
 
 /** The active formula stays over its reserved cell, with the evaluated result
  * beside it. Reuse the same presentation as the inactive grid and exports. */
-const activeFormulaPreview = (options: PresentationOptions): Extension =>
+const activeFormulaPreview = (options: TablePresentationOptions): Extension =>
   ViewPlugin.define((view) => {
     let cell: HTMLElement | null = null;
     let result: HTMLElement | null = null;
@@ -188,7 +188,7 @@ const activeFormulaPreview = (options: PresentationOptions): Extension =>
           cell = target;
         }
         const locale = options.locale?.() ?? (target.ownerDocument.documentElement.lang || "en");
-        const presentation = createPrettyTablePresentation(presentationData(table), { notebookId: options.notebookId, locale });
+        const presentation = createPrettyTablePresentation(presentationData(table), { ...options, locale });
         result.innerHTML = presentation.cellHtml(row - 1, column);
       });
     view.contentDOM.addEventListener("focusin", paint);
@@ -209,7 +209,7 @@ const activeFormulaPreview = (options: PresentationOptions): Extension =>
 /** Spread renderCell into the parent's existing TableHost; add extension only in grid mode.
  * This factory does not install tableGrid, the old tablesExtension, or any key handlers. */
 export const createNotebookTablePresentation = (
-  options: PresentationOptions,
+  options: TablePresentationOptions,
 ): {
   renderCell: NonNullable<TableHost["renderCell"]>;
   extension: Extension;
@@ -223,7 +223,7 @@ export const createNotebookTablePresentation = (
       if (!snapshot || snapshot.locale !== locale) {
         snapshot = {
           locale,
-          presentation: createPrettyTablePresentation(presentationData(table), { notebookId: options.notebookId, locale }),
+          presentation: createPrettyTablePresentation(presentationData(table), { ...options, locale }),
         };
         snapshots.set(table, snapshot);
       }

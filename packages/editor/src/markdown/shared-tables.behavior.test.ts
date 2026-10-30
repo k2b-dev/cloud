@@ -4,7 +4,8 @@ import { EditorView, keymap } from "@codemirror/view";
 import { clipboard } from "@k2b/stdlib/browser";
 import type { TableHost } from "@k2b/ui/text-editor";
 import { findTables } from "@k2b/ui/text-editor/model";
-import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { createDomTestHarness } from "../../../ui/test/dom";
+import { tableOptions } from "./table-options.fixture";
 
 // The public browser entry defines Solid controls at import time. Install the
 // DOM before importing it, as in the existing Notebook table behavior harness.
@@ -18,7 +19,7 @@ bootstrap.cleanup();
 const mount = (doc: string, mode: "grid" | "source" = "grid", locale = "de") => {
   const dom = createDomTestHarness();
   document.documentElement.lang = locale;
-  const adapter = createNotebookTablePresentation({ notebookId: "ABC123" });
+  const adapter = createNotebookTablePresentation({ ...tableOptions() });
   const host: TableHost = {
     undo() {},
     redo() {},
@@ -104,9 +105,9 @@ describe("Notebook shared table presentation", async () => {
     const h = mount(doc);
     try {
       expect(h.dom.root.querySelector("strong")?.textContent).toBe("Work");
-      expect(h.dom.root.querySelector('a[href="/app/notebooks/ABC123/notes/5ARr8F"]')).not.toBeNull();
+      expect(h.dom.root.querySelector('a[href="/notes/5ARr8F"]')).not.toBeNull();
       expect(h.dom.root.querySelector('a[href="https://example.test"]')).not.toBeNull();
-      expect(h.dom.root.querySelector('a[href="/app/notebooks/ABC123/tags/garden"]')).not.toBeNull();
+      expect(h.dom.root.querySelector('a[href="/tags/garden"]')).not.toBeNull();
       expect(h.dom.root.querySelector("time")?.getAttribute("datetime")).toBe("2026-05-14T18:01:15.575Z");
       expect(h.dom.root.querySelector(".md-table-progress-fill")?.getAttribute("style")).toBe("width:25%");
       expect(cell(h.dom.root, 3, 0).hasAttribute("data-notebook-total")).toBe(true);
@@ -297,7 +298,7 @@ describe("Notebook shared table presentation", async () => {
       const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
       link.dispatchEvent(press);
       expect(press.defaultPrevented).toBe(true);
-      expect(link.getAttribute("href")).toBe("/app/notebooks/ABC123/notes/5ARr8F");
+      expect(link.getAttribute("href")).toBe("/notes/5ARr8F");
       expect(cell(h.dom.root, 1, 0).dataset.editing).not.toBe("1");
       expect(link.contentEditable).toBe("false");
     } finally {
@@ -311,7 +312,7 @@ describe("Notebook shared table presentation", async () => {
       document.documentElement.lang = "en";
       const table = findTables("| Value |\n| --- |\n| =1.5 | extra |")[0]!;
       const original = structuredClone(table);
-      const adapter = createNotebookTablePresentation({ notebookId: "ABC123", locale: () => "de-DE" });
+      const adapter = createNotebookTablePresentation({ ...tableOptions(), locale: () => "de-DE" });
       const element = document.createElement("div");
       adapter.renderCell(element, "=1.5", table, 1, 0);
       expect(element.textContent).toBe("1,5");

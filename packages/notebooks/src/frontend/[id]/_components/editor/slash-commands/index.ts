@@ -1,10 +1,13 @@
 import type { Extension } from "@codemirror/state";
 import { type SlashAction, slashMenu } from "@k2b/editor";
-import { codeFenceCompletionSource, infoBlockCompletionSource } from "@k2b/editor/markdown";
+import {
+  codeFenceCompletionSource,
+  infoBlockCompletionSource,
+  tableColumnCompletionSource,
+  tableFormulaCompletionSource,
+} from "@k2b/editor/markdown";
 import { buildAttachmentCompletionSource } from "../../../../lib/editor/attachment-autocomplete";
 import { buildNoteLinkCompletionSource, noteLinkSuggestionsAfterDelete } from "../../../../lib/editor/note-link-autocomplete";
-import { tableColumnCompletionSource } from "../../../../lib/editor/table-columns";
-import { tableFormulaCompletionSource } from "../../../../lib/editor/table-formulas";
 import { buildTagCompletionSource } from "../../../../lib/editor/tag-autocomplete";
 import { slashCommands } from "./commands";
 import { slashCommandMessages } from "./messages";

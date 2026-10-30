@@ -1,12 +1,13 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import { MARK_REGEX, SPECIAL_CHAR_REGEX, SUB_REGEX, SUP_REGEX, TAG_REGEX } from "@k2b/editor/markdown/inline-syntax";
+import { chartBlockFrame, notebookChartHeight, parseNotebookChartBlocks } from "@k2b/editor/markdown/lib/chart-blocks";
 import { findLigatures, frontMatterLength } from "@k2b/editor/markdown/lib/ligatures";
 import { NOTEBOOK_DIRECTIVE_START } from "@k2b/editor/markdown/lib/markdown-context";
 import { codeFenceLanguage } from "@k2b/editor/markdown/lib/markdown-fences";
 import { isNamedBlockHandle } from "@k2b/editor/markdown/lib/named-blocks";
 import { blockMathPattern, inlineMathPattern } from "@k2b/editor/markdown/math-syntax";
 import { highlightTree, tagHighlighter, tags } from "@lezer/highlight";
-import { chartBlockFrame, notebookChartHeight, parseNotebookChartBlocks } from "../../../../lib/chart-blocks";
+import { notebookChartOptions } from "../../../../lib/chart-options";
 
 export const NOTE_PREVIEW_ID = "notebook-note-preview";
 export type NotePreviewPart = string | { className: string; children: NotePreviewPart[]; attributes?: Record<string, string> };
@@ -195,7 +196,7 @@ export const notePreviewChart = (markdown: string, lines: NotePreviewLine[], loc
   const text = markdown.replace(/\r\n?/g, "\n");
   const line = lines.length + 1;
   if (line === 1 || !/^ {0,3}:::chart[ \t]*$/.test(text.split("\n")[line - 1] ?? "")) return null;
-  const block = parseNotebookChartBlocks(text, { line }).blocks[0];
+  const block = parseNotebookChartBlocks(text, { ...notebookChartOptions, line }).blocks[0];
   if (!block) return null;
   const body = text.split("\n").slice(line);
   const frame = chartBlockFrame(
@@ -203,6 +204,7 @@ export const notePreviewChart = (markdown: string, lines: NotePreviewLine[], loc
       0,
       body.findIndex((entry) => /^ {0,3}:::[ \t]*$/.test(entry)),
     ),
+    notebookChartOptions,
   );
   const height = notebookChartHeight(block.input, locale);
   return frame && height ? { ...frame, height } : frame;

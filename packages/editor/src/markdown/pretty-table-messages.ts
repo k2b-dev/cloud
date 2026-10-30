@@ -4,6 +4,7 @@ export const prettyTableMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      showNotesWithTag: ({ tag }: { tag: string }) => `Show notes with #${tag}`,
       suggestion: ({ value }: { value: string }) => `Suggestion: ${value}`,
       formulaName: "Formula",
       parseError: "Invalid formula",
@@ -16,6 +17,7 @@ export const prettyTableMessages = i18n.define({
       circularReference: ({ name }: { name: string }) => `Circular reference involving “${name}”`,
     },
     de: {
+      showNotesWithTag: ({ tag }) => `Notizen mit #${tag} anzeigen`,
       suggestion: ({ value }) => `Vorschlag: ${value}`,
       formulaName: "Die Formel",
       parseError: "Ungültige Formel",

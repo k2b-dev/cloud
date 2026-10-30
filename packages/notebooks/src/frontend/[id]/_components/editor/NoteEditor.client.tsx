@@ -5,7 +5,14 @@ import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { createEditor } from "@k2b/editor";
 import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
-import { fadeScrollMarginsExtension, fadeScrollPadding, listCommandsExtension, pressMissedEditor } from "@k2b/editor/markdown";
+import {
+  createNotebookTablePresentation,
+  fadeScrollMarginsExtension,
+  fadeScrollPadding,
+  listCommandsExtension,
+  notebookSourceFormulasExtension,
+  pressMissedEditor,
+} from "@k2b/editor/markdown";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "@k2b/editor/markdown/lib/named-blocks";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
@@ -21,6 +28,7 @@ import type { AnnotationProjection } from "../../../../lib/annotation-contracts"
 import { extractHeadingLines, headingAtLine } from "../../../../lib/note-insights";
 import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
+import { notebookTableOptions } from "../../../../lib/table-options";
 import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
@@ -35,7 +43,6 @@ import {
   tableCellPresence,
   tableCellSearch,
 } from "../../../lib/editor/shared-editor";
-import { createNotebookTablePresentation, notebookSourceFormulasExtension } from "../../../lib/editor/shared-tables";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { yjs } from "../../../lib/yjs";
 import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
@@ -472,7 +479,7 @@ function EditorInstance(
   const editorView = editorState.view;
   const tableControls = editorState.controls;
   let openTablePicker = () => {};
-  const tablePresentation = createNotebookTablePresentation({ notebookId: props.notebookId, locale });
+  const tablePresentation = createNotebookTablePresentation({ ...notebookTableOptions(props.notebookId), locale });
   const comments = createEditorComments({
     notebookId: props.notebookId,
     noteId: props.noteId,

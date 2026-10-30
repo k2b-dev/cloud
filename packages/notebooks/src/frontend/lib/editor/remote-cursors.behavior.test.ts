@@ -4,6 +4,7 @@ import { StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { notebookTableOptions } from "../../../lib/table-options";
 
 const measurements: (() => void)[] = [];
 const settle = async () => {
@@ -376,11 +377,11 @@ describe("remote cursors", () => {
     const { view, ada, cleanup } = await mount(false, "Before\n\n| Name | Value |\n| --- | --- |\n| Alpha | 1 |\n\nAfter");
     try {
       const { markdownExtension } = await import("@k2b/editor/markdown");
-      const { tablesExtension } = await import("./tables");
+      const { tablesExtension } = await import("@k2b/editor/markdown");
       const { refreshMarkdownDecorationsEffect } = await import("@k2b/editor/markdown");
       view.dispatch({
         selection: { anchor: view.state.doc.length },
-        effects: StateEffect.appendConfig.of([markdownExtension(), tablesExtension("n1")]),
+        effects: StateEffect.appendConfig.of([markdownExtension(), tablesExtension(notebookTableOptions("n1"))]),
       });
       forceParsing(view, view.state.doc.length, 5000);
       view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });

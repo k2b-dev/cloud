@@ -9,7 +9,7 @@
  * already selected for replacement.
  *
  * Functions mirror the registry in
- * `@k2b/cloud/shared/markdown/formula.ts` (the same module
+ * `@k2b/editor/formula` (the same module
  * that EVALUATES the formulas in both edit-mode preview and
  * read-mode rendering). Keep them in sync when new functions are
  * added there.
@@ -32,7 +32,8 @@
  * All three checks are O(line length) — cheap.
  */
 import { type Completion, type CompletionContext, type CompletionResult, snippetCompletion } from "@codemirror/autocomplete";
-import { cellTextBeforeCursor, isTableRow, withIcon } from "@k2b/editor/markdown";
+import { cellTextBeforeCursor, isTableRow } from "./_lib/table-cell";
+import { withIcon } from "./completion-icon";
 
 type Formula = {
   /** Function name as it appears in the formula source. */

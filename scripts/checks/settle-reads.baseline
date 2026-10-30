@@ -67,7 +67,7 @@ packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browse
 packages/notebooks/src/frontend/[id]/_components/versions/version-history.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/attachment-preview.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/editor/lists.browser.test.ts | 1
-packages/notebooks/src/frontend/lib/editor/tables.browser.test.ts | 3
+packages/editor/src/markdown/tables.browser.test.ts | 3
 packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts | 8
 packages/notebooks/src/styles/app-host.browser.test.ts | 2
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-colors.browser-suite.ts | 19

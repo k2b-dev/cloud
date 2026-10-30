@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser } from "../../../ui/test/browser";
 
 // The table widget's bleed reaches into the editor content's inline padding,
 // which only a real engine lays out and clips.
@@ -36,7 +36,7 @@ const editor = (id, extensions) =>
     parent: document.getElementById(id),
     state: EditorState.create({ doc, selection: { anchor: doc.length }, extensions: [markdownExtension(), drawSelection(), EditorView.lineWrapping, noteScroller, ...extensions] }),
   });
-window.rich = editor("rich", [tablesExtension("ABC123"), customLightInit()]);
+window.rich = editor("rich", [tablesExtension(), customLightInit()]);
 editor("raw", [rawLightInit(), lineNumbers()]);
 `;
   const build = await Bun.build({
@@ -48,7 +48,7 @@ editor("raw", [rawLightInit(), lineNumbers()]);
   });
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the table widget fixture.");
   const bundle = await build.outputs[0]!.text();
-  const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../../../styles.css")], plugins: [tailwind] });
+  const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!styles.success) throw new AggregateError(styles.logs, "Could not compile the global stylesheet.");
   const css = await styles.outputs[0]!.text();
   server = Bun.serve({

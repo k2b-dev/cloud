@@ -215,6 +215,12 @@ for (const width of [390, 1200])
         const original = await stable();
         await figure.getByRole("button", { name: "Als Tabelle", exact: true }).click();
         expect(await viewport.locator("table").isVisible()).toBe(true);
+        expect(
+          await viewport.locator(".notebook-book-chart__table").evaluate((element) => {
+            const style = getComputedStyle(element);
+            return [style.marginTop, style.marginBottom];
+          }),
+        ).toEqual(["0px", "0px"]);
         sameBoxes(original, await stable());
         await figure.getByRole("button", { name: "Als Tabelle", exact: true }).click();
         sameBoxes(original, await stable());
@@ -225,6 +231,28 @@ for (const width of [390, 1200])
       await page.context().close();
     }
   }, 30_000);
+
+test(`${browserName}: loading and failure status stays centered inside the chart frame`, async () => {
+  const page = await open();
+  try {
+    const centered = await figures(page)
+      .first()
+      .locator(".notebook-book-chart__viewport")
+      .evaluate((viewport) => {
+        viewport.replaceChildren();
+        const status = document.createElement("p");
+        status.className = "notebook-book-chart__status";
+        status.textContent = "Diagramm wird geladen …";
+        viewport.append(status);
+        const frame = viewport.getBoundingClientRect();
+        const text = status.getBoundingClientRect();
+        return Math.abs((text.top + text.bottom) / 2 - (frame.top + frame.bottom) / 2);
+      });
+    expect(centered).toBeLessThanOrEqual(0.5);
+  } finally {
+    await page.context().close();
+  }
+});
 
 test(`${browserName}: mouse inspection names the series, x label and formatted value`, async () => {
   const page = await open();

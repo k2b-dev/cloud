@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
-
 import type { Tree } from "@lezer/common";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { notebookTableOptions } from "../../../lib/table-options";
 
 // Notebook block scanners load the UI browser export after its DOM globals exist.
 const loading = createDomTestHarness();
@@ -53,7 +53,7 @@ describe("editor decorations in a long note", () => {
     document.documentElement.lang = "en";
     // These widgets load the shared UI, which needs the browser globals of the harness.
     const { linksExtension } = await import("@k2b/editor/markdown");
-    const { tablesExtension } = await import("./tables");
+    const { tablesExtension } = await import("@k2b/editor/markdown");
     const view = new EditorView({
       parent: dom.root,
       state: EditorState.create({
@@ -64,7 +64,7 @@ describe("editor decorations in a long note", () => {
           listsExtension(notebookListOptions),
           markupExtension(),
           codeFontExtension(),
-          tablesExtension("Nb12Cd"),
+          tablesExtension(notebookTableOptions("Nb12Cd")),
           linksExtension(notebookUrlOptions("Nb12Cd")),
           tagPillExtension("Nb12Cd"),
         ],
