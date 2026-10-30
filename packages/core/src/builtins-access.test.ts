@@ -97,6 +97,7 @@ const service = (
 // whose credentials ordinary Cloud authentication must never consume.
 const publicPaths: Record<string, string[]> = {
   core: [
+    "/_internal/apps/bootstrap",
     "/auth/login",
     "/auth/new-password",
     "/auth/password-reset",
@@ -260,6 +261,7 @@ const publicPaths: Record<string, string[]> = {
 };
 const protectedPaths: Record<string, string[]> = {
   core: [
+    "/_internal/apps/bootstrap/private",
     "/me",
     "/admin",
     "/api/auth/pwa/v1/pairings",
