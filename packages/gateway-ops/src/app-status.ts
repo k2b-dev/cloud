@@ -10,6 +10,7 @@ import {
 import { err, fail, ok } from "@k2b/cloud/server";
 import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
 import { z } from "zod";
+import { gatewayOpsMessages } from "./messages";
 import { TELEMETRY_RANGES } from "./observability/telemetry/contracts";
 import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "./observability/telemetry/service";
 import { listRegisteredApps, removeOfflineRegisteredApp } from "./registered-apps";
@@ -40,7 +41,7 @@ export const readGatewayAppStatusSummary = async (
     .slice(0, 50)
     .map((app) => app.id);
   const known = new Map(registered.map((app) => [app.id, app]));
-  const german = context.locale.toLowerCase().startsWith("de");
+  const { t } = gatewayOpsMessages.resolve([context.locale]);
   const data: AppStatusSummaryData = {
     apps: [...new Set([...appIds, ...otherApps])].map((appId) => {
       const traffic = totals.get(appId);
@@ -50,10 +51,21 @@ export const readGatewayAppStatusSummary = async (
         traffic: traffic ? { requests: traffic.requests, errors: traffic.errors, avgMs: traffic.avgDurationMs } : null,
         lastSeenAt: app ? new Date(app.lastSeenAt).toISOString() : null,
         links: [
-          { label: german ? "Protokolle" : "Logs", href: "/admin/observability/logs" },
+          { kind: "logs", label: t.logs, href: "/admin/observability/logs" },
           {
-            label: german ? "In Telemetrie öffnen" : "Open telemetry",
+            kind: "metrics",
+            label: t.metrics,
             href: `/admin/observability/telemetry?app=${encodeURIComponent(appId)}&range=${window}`,
+          },
+          {
+            kind: "routes",
+            label: t.allRoutes,
+            href: `/admin/observability/gateway/routes?search=${encodeURIComponent(appId)}`,
+          },
+          {
+            kind: "capabilities",
+            label: t.capabilities,
+            href: `/admin/observability/capabilities?app=${encodeURIComponent(appId)}`,
           },
         ],
       };

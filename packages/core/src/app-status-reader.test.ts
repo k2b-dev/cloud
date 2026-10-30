@@ -16,7 +16,22 @@ const catalog = (apps: CapabilityCatalogApp[]) => ({
 });
 const summary = () => ({
   ok: true as const,
-  data: { data: { apps: [{ appId: "mail", traffic: null, links: [], lastSeenAt: null }], otherApps: [] } },
+  data: {
+    data: {
+      apps: [
+        {
+          appId: "mail",
+          traffic: null,
+          links: [
+            { kind: "logs" as const, label: "Protokolle", href: "/admin/monitoring" },
+            { label: "More", href: "/admin/more" },
+          ],
+          lastSeenAt: null,
+        },
+      ],
+      otherApps: [],
+    },
+  },
 });
 const params = () => ({ authority: adminAuthority(), locale: "de", appIds: ["mail"], window: "24h" as const });
 
@@ -39,6 +54,7 @@ describe("request-local app-status reader", () => {
     });
     const result = await reader.readAppStatusSummaries(input);
     expect(result.byApp.get("mail")?.[0]?.provider.appId).toBe("healthy");
+    expect(result.byApp.get("mail")?.[0]?.links).toEqual(summary().data.data.apps[0]?.links);
     expect(result.failures.map((f) => [f.provider.appId, f.reason])).toEqual([
       ["denied", "denied"],
       ["invalid", "invalid"],

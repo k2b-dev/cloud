@@ -46,7 +46,7 @@ export const monitoringCapabilities = defineCapabilities({
       title: "Read app traffic", description: "Return traffic for selected apps.", openWorld: false,
       input: AppStatusSummaryInputSchema, data: AppStatusSummaryDataSchema,
       run: async (input, context) => adminError(context) ?? ok({ data: {
-        apps: AppStatusSummaryInputSchema.parse(input).appIds.map(appId => ({ appId, traffic: null, links: [], lastSeenAt: null })), otherApps: [],
+        apps: AppStatusSummaryInputSchema.parse(input).appIds.map(appId => ({ appId, traffic: null, links: [{ kind: "metrics", label: "Monitoring", href: "/admin/monitoring" }], lastSeenAt: null })), otherApps: [],
       } }),
     },
     "status.detail": {
@@ -96,7 +96,7 @@ closed-world and person-readable. The forget Action requires idempotency.
   apps: [{
     appId: "inventory",
     traffic: { requests: 120, errors: 2, avgMs: 18.5 },
-    links: [{ label: "Open monitoring", href: "/admin/monitoring" }],
+    links: [{ kind: "metrics", label: "Monitoring", href: "/admin/monitoring" }],
     lastSeenAt: "2026-10-30T12:00:00Z",
   }],
   otherApps: ["retired-inventory"],
@@ -109,9 +109,18 @@ classification and keep it consistent across summaries, routes, and details.
 Gateway counts status codes from 500 and requests with an `error_kind`.
 
 Return at most four links per app, with root-relative `/admin/` destinations.
+Set the optional `kind` to `logs`, `metrics`, `routes`, or `capabilities` so
+consumers can place links without inspecting provider paths or translated
+labels. A link without `kind` appears under **More**, using its label.
 Labels are final display strings in `context.locale`; Core forwards the
-request locale. `lastSeenAt` is an optional ISO timestamp or null, describing
+request locale. Resolve labels through the provider's message catalog.
+
+`lastSeenAt` is an optional ISO timestamp or null, describing
 when this provider last saw the app. It can differ from Core's registry time.
+
+Gateway returns all four kinds: logs, telemetry filtered by app and observation
+window, gateway routes searched by app ID, and capability executions filtered
+by app ID.
 
 `otherApps` contains up to 50 distinct IDs known to the provider that were not
 requested. Include their rows in `apps` to supply timestamps and figures; the
@@ -174,8 +183,9 @@ failed multi-provider operation can be retried. `forgotten: false` is a failed
 removal from Core's perspective.
 
 Core's administrator-only `DELETE /api/admin/apps/:appId/listing` keeps keys,
-tokens, grants, and subscriptions. It rejects a live app with HTTP 409 and
-`app_running`. It hides the listing only after every reporting provider
+tokens, grants, and subscriptions. It rejects a live app or a rejected registry
+entry at `apps/<appId>` with HTTP 409 and `app_running`. Rejected entries for
+other apps do not block removal. It hides the listing only after every reporting provider
 succeeds. An unavailable provider or failed forget returns HTTP 503 with
 `forget_failed` and keeps the app visible. Core retains reporting provenance
 so an offline provider cannot silently disappear from this step. A live
