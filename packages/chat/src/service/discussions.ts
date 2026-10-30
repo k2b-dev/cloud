@@ -117,7 +117,13 @@ export const postDiscussion = async (input: { ref: Item; body: string; replyTo?:
   const thread = await threads.forResource({ ...bound, input: { ref: input.ref } });
   if (!thread.ok) return thread;
   const sent = normalize(
-    await messages.send({ ...bound, input: { body: input.body, clientId: key, thread: thread.data.thread.id, replyTo: input.replyTo } }),
+    await messages.send({
+      ...bound,
+      replayHash: new Bun.CryptoHasher("sha256")
+        .update(JSON.stringify([input.ref.type, input.ref.id, input.body, input.replyTo ?? null]))
+        .digest("hex"),
+      input: { body: input.body, clientId: key, thread: thread.data.thread.id, replyTo: input.replyTo },
+    }),
   );
   if (!sent.ok) return sent;
   if (sent.data.message.thread !== thread.data.thread.id)

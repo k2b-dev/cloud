@@ -8,6 +8,7 @@ import { chatCapabilities } from "../capabilities";
 import { DiscussionMessageDataSchema } from "../capability-contracts";
 import { changeDiscussionMessage, listDiscussion, postDiscussion, readDiscussionMessage } from "../service/discussions";
 import { mockDiscussionCatalog, providerApp } from "../service/discussions.test-fixture";
+import { messages } from "../service/messages";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
 const originalOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
@@ -100,10 +101,31 @@ suiteFor(
     expect(first.via).toBe("assistant");
     const replayed = await postDiscussion({ ref: item, body: "First" }, context(author, "post-one"));
     expect(replayed.ok && replayed.data.data.ref.id).toBe(first.ref.id);
+    expect(await postDiscussion({ ref: item, body: "Changed" }, context(author, "post-one"))).toMatchObject({
+      ok: false,
+      error: { code: "IDEMPOTENCY_CONFLICT", status: 409 },
+    });
     const reply = await postDiscussion({ ref: item, body: "🦋".repeat(301), replyTo: first.ref.id }, context(other, "reply", "mcp"));
     expect(reply.ok).toBe(true);
     if (!reply.ok) throw new Error("Expected reply");
     expect(reply.data.data.replyTo).toBe(first.ref.id);
+    // These direct provider calls bypass Core's expiring claim and exercise the durable replay guard.
+    const head = () => sql`SELECT seq_head, rev FROM chat.conversations WHERE short_id = ${chat!.short_id}`;
+    const beforeReplays = await head();
+    for (const input of [
+      { ref: item, body: "Changed", replyTo: first.ref.id },
+      { ref: item, body: "🦋".repeat(301) },
+      { ref: item, body: "🦋".repeat(301), replyTo: reply.data.data.ref.id },
+    ])
+      expect(await postDiscussion(input, context(other, "reply", "mcp"))).toMatchObject({
+        ok: false,
+        error: { code: "IDEMPOTENCY_CONFLICT", status: 409 },
+      });
+    expect(await postDiscussion({ ref: item, body: "First", replyTo: first.ref.id }, context(author, "post-one"))).toMatchObject({
+      ok: false,
+      error: { code: "IDEMPOTENCY_CONFLICT", status: 409 },
+    });
+    expect(await head()).toEqual(beforeReplays);
     const page = await listDiscussion({ ref: item, limit: 1 }, context(author, "page"));
     expect(page.ok).toBe(true);
     if (!page.ok) throw new Error("Expected list");
@@ -130,6 +152,12 @@ suiteFor(
     );
     expect(edited.ok && edited.data.data.via).toBe("assistant");
     expect(calls).toEqual(["resource.fetch", "collection.read"]);
+    const postAfterEdit = await postDiscussion({ ref: item, body: "First" }, context(author, "post-one"));
+    expect(postAfterEdit.ok && postAfterEdit.data.data.body).toBe("Corrected");
+    expect(await postDiscussion({ ref: item, body: "Corrected" }, context(author, "post-one"))).toMatchObject({
+      ok: false,
+      error: { code: "IDEMPOTENCY_CONFLICT", status: 409 },
+    });
     const editReplay = await changeDiscussionMessage(
       "edit",
       { id: first.ref.id, revision: 0, body: "Corrected" },
@@ -152,6 +180,11 @@ suiteFor(
     expect(calls).toEqual(["resource.fetch", "collection.read"]);
     const deleted = await changeDiscussionMessage("delete", { id: first.ref.id, revision: 2 }, context(author, "mutation"));
     expect(deleted.ok && deleted.data.data.body).toBeNull();
+    const postAfterDelete = await postDiscussion({ ref: item, body: "First" }, context(author, "post-one"));
+    expect(postAfterDelete).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT", status: 409 } });
+    const [removed] = await sql<{ client_input_hash: string | null }[]>`
+      SELECT client_input_hash FROM chat.messages WHERE short_id = ${first.ref.id}`;
+    expect(removed!.client_input_hash).toBeNull();
     expect(await count()).toBe(1);
     const anotherItem = { ...item, id: crypto.randomUUID() };
     const crossItemReply = await postDiscussion(
@@ -184,6 +217,50 @@ suiteFor(
     expect((await postDiscussion({ ref: item, body: "First" }, context(author, "post-one"))).ok).toBe(false);
     expect(calls.every((id) => id === "resource.fetch" || id === "collection.read")).toBe(true);
     expect(calls.filter((id) => id === "resource.fetch").length).toBeGreaterThan(0);
+  });
+  test("concurrent post keys compare their inputs after waiting for the conversation lock", async () => {
+    const author = await f.person();
+    const chat = await f.fixture(author);
+    const locked = Promise.withResolvers<number>();
+    const release = Promise.withResolvers<void>();
+    const holder = sql.begin(async (db) => {
+      await db`SELECT id FROM chat.conversations WHERE short_id = ${chat.shortId} FOR UPDATE`;
+      const [session] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      locked.resolve(session!.pid);
+      await release.promise;
+    });
+    const holderPid = await locked.promise;
+    const sends = Promise.all(
+      ["First", "Changed"].map((body) =>
+        messages.send({
+          ...author.context,
+          conversationId: chat.shortId,
+          replayHash: new Bun.CryptoHasher("sha256").update(body).digest("hex"),
+          input: { clientId: "locked-replay", body },
+        }),
+      ),
+    );
+    try {
+      const deadline = performance.now() + 3_000; // Real clock bounds waiting for both database sessions.
+      while (true) {
+        const [waiting] = await sql<{ count: number }[]>`WITH RECURSIVE blocked(pid) AS (
+            SELECT ${holderPid}::int
+            UNION SELECT a.pid FROM pg_stat_activity a JOIN blocked b ON b.pid = ANY(pg_blocking_pids(a.pid))
+          ) SELECT count(*)::int AS count FROM pg_stat_activity
+          WHERE pid IN (SELECT pid FROM blocked WHERE pid <> ${holderPid}) AND wait_event_type = 'Lock'
+            AND query LIKE 'SELECT id FROM chat.conversations WHERE short_id = % FOR UPDATE'`;
+        if (waiting!.count === 2) break;
+        if (performance.now() >= deadline) throw new Error("Both post attempts did not reach the conversation lock");
+        await Bun.sleep(10);
+      }
+    } finally {
+      release.resolve();
+      await holder;
+      await sends;
+    }
+    const outcomes = await sends;
+    expect(outcomes.filter((result) => result.ok)).toHaveLength(1);
+    expect(outcomes.filter((result) => !result.ok)).toMatchObject([{ ok: false, error: { code: "IDEMPOTENCY_CONFLICT", status: 409 } }]);
   });
   test("the message reader rejects general-chat messages", async () => {
     const person = await f.person();

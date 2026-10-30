@@ -70,6 +70,15 @@ the shared [idempotency contract](/en/docs/platform/capabilities). If Core retur
 `IDEMPOTENCY_UNCERTAIN`, stop automatic retries and inspect current state before
 deciding on a new action.
 
+For posts to the same item in the same container, reusing a key with a different
+body or `replyTo` returns `IDEMPOTENCY_CONFLICT` (HTTP 409), even after Core's
+claim expires. Use a new key for a new post. After Core's claim expires, an
+identical retry returns the existing message's current state, including later
+edits. Deletion removes the post's input fingerprint; provider-side post
+retries then return
+`IDEMPOTENCY_CONFLICT`. Use `discussion.list` for the item to inspect its
+current messages.
+
 Posting supports remembered approval for one current container. Approval does
 not replace current access checks. Edit and delete ask for approval every time.
 The approval view retains the complete proposed or deleted text, including
