@@ -8,6 +8,7 @@ export type { PosixCandidate } from "./accounts/posix";
 export { accountIdentities, AccountIdentityError } from "./accounts/identities";
 export type { AccountIdentityUser, AccountIdentityGroup, AccountIdentityPage, AccountIdentityAvailability } from "./accounts/identities";
 export type { AccountIdentityReconciliation } from "./accounts/identity-reconciliation";
+export { getAppWorkloadCredential } from "../_internal/workload-credential";
 export { providers } from "./providers";
 export { createAllowedNetworkFetch } from "./allowed-network-fetch";
 export { requestPublicHttps, type PublicHttpInput } from "./public-http";

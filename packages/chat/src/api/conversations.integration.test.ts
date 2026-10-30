@@ -46,24 +46,24 @@ const request = (headers: Headers, path = "", method = "GET", body?: unknown) =>
   });
 
 suite("chat conversations, people, and directory groups", () => {
-  const users: string[] = [];
-  const accounts: string[] = [];
-  // Bulk agents act nowhere, so one statement removes them; a person has about ten times as many references to check.
-  const agents: string[] = [];
-  const groups: string[] = [];
-  const conversations: string[] = [];
-  const accessIds: string[] = [];
+  const trackedUsers: string[] = [];
+  const trackedAccounts: string[] = [];
+  // Bulk agents act nowhere; deleting a person checks about ten times as many references.
+  const trackedAgents: string[] = [];
+  const trackedGroups: string[] = [];
+  const trackedConversations: string[] = [];
+  const trackedAccessIds: string[] = [];
   const user = async (profile = "user", expired = false) => {
     const [row] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, given_name, account_expires)
       VALUES (${`chat-${crypto.randomUUID()}`}, 'local', ${profile}, 'Lea Example', 'Lea', ${expired ? new Date(0) : null}) RETURNING id`;
-    users.push(row!.id);
+    trackedUsers.push(row!.id);
     return row!.id;
   };
   const group = async (ids: string[] = [], provider = "local", name = `Team ${crypto.randomUUID()}`) => {
     const [row] = await sql<{ id: string }[]>`INSERT INTO auth.groups (cn, provider, name)
       VALUES (${`chat-${crypto.randomUUID()}`}, ${provider}, ${name}) RETURNING id`;
     if (!row) throw new Error("Missing test group");
-    groups.push(row.id);
+    trackedGroups.push(row.id);
     if (ids.length)
       await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id)
       SELECT id, ${row.id}::uuid FROM auth.users WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])`;
@@ -73,20 +73,20 @@ suite("chat conversations, people, and directory groups", () => {
     const prefix = `chat-bulk-${crypto.randomUUID()}`;
     const rows = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
       SELECT ${prefix} || '-' || i, 'local', 'user', 'Person ' || lpad(i::text, 4, '0') FROM generate_series(1, ${count}) i RETURNING id`;
-    users.push(...rows.map((row) => row.id));
+    trackedUsers.push(...rows.map((row) => row.id));
     return rows.map((row) => row.id);
   };
   const bulkAgents = async (count: number) => {
     const prefix = `Chat bulk ${crypto.randomUUID()}`;
     const rows = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
       SELECT ${prefix} || ' ' || i, 'agent' FROM generate_series(1, ${count}) i RETURNING id`;
-    agents.push(...rows.map((row) => row.id));
+    trackedAgents.push(...rows.map((row) => row.id));
     return rows.map((row) => row.id);
   };
   const groupGrant = async (chat: { id: string }, groupId: string, owner: string, permission: PermissionLevel = "write") => {
     const access = await createAccess({ principal: { type: "group", groupId }, permission });
     if (!access.ok) throw new Error(access.error.message);
-    accessIds.push(access.data.id);
+    trackedAccessIds.push(access.data.id);
     await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
       VALUES (${chat.id}::uuid, ${access.data.id}::uuid, 'member', 'user', ${owner}::uuid)`;
     return access.data.id;
@@ -99,7 +99,7 @@ suite("chat conversations, people, and directory groups", () => {
   ): Promise<{ id: string; headers: Headers }> => {
     const [row] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, delegated_user_id)
       VALUES (${`Chat ${crypto.randomUUID()}`}, ${kind}, ${delegatedUserId}::uuid) RETURNING id`;
-    accounts.push(row!.id);
+    trackedAccounts.push(row!.id);
     const result = await serviceAccountCredentials.createApiToken({ serviceAccountId: row!.id, name: "chat test", scopes });
     if (!result.ok) throw new Error(result.error.message);
     return { id: row!.id, headers: { authorization: `Bearer ${result.data.token}` } };
@@ -107,7 +107,7 @@ suite("chat conversations, people, and directory groups", () => {
   const grant = async (id: string, userId: string, permission: PermissionLevel, authorId: string, role = "member") => {
     const result = await createAccess({ principal: { type: "user", userId }, permission });
     if (!result.ok) throw new Error(result.error.message);
-    accessIds.push(result.data.id);
+    trackedAccessIds.push(result.data.id);
     await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
       VALUES (${id}::uuid, ${result.data.id}::uuid, ${role}, 'user', ${authorId}::uuid)`;
     if (role === "member") {
@@ -121,7 +121,7 @@ suite("chat conversations, people, and directory groups", () => {
     const shortId = testShortId();
     const [row] = await sql<{ id: string }[]>`INSERT INTO chat.conversations (short_id, created_by_type, created_by_id)
       VALUES (${shortId}, 'user', ${owner}::uuid) RETURNING id`;
-    conversations.push(shortId);
+    trackedConversations.push(shortId);
     const ownerAccess = await grant(row!.id, owner, "admin", owner);
     const entries = new Map([[owner, ownerAccess]]);
     for (const member of members) entries.set(member.id, await grant(row!.id, member.id, member.permission, owner));
@@ -132,13 +132,33 @@ suite("chat conversations, people, and directory groups", () => {
     expect(response.status).toBe(201);
     const result = CreateOutcomeSchema.parse(await response.json());
     if (result.outcome !== "created") throw new Error("Expected a new chat");
-    conversations.push(result.conversation.id);
+    trackedConversations.push(result.conversation.id);
     return result.conversation;
   };
   beforeAll(async () => {
     await migrate();
   });
-  afterEach(async () => {
+  const cleanup = async () => {
+    // A rejected or timed-out hook must never retry another test's fixtures.
+    const users = trackedUsers.splice(0);
+    const accounts = trackedAccounts.splice(0);
+    const agents = trackedAgents.splice(0);
+    const groups = trackedGroups.splice(0);
+    const conversations = trackedConversations.splice(0);
+    const accessIds = trackedAccessIds.splice(0);
+
+    if (agents.length) {
+      // Bun reports body + hook timeouts as a hook failure. Capture the original
+      // query before cleanup can queue behind its locks; bound diagnostic output.
+      const pending = await sql<
+        { pid: number; state: string; wait_event_type: string | null; wait_event: string | null; blockers: number[]; query: string }[]
+      >`SELECT pid, state, wait_event_type, wait_event, pg_blocking_pids(pid) AS blockers, query
+        FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
+          AND state <> 'idle' AND query_start < clock_timestamp() - interval '5 seconds'
+        ORDER BY query_start LIMIT 10`;
+      if (pending.length) console.error("Chat bulk fixture cleanup found unfinished SQL", pending);
+    }
+
     // Junctions cascade from the conversation, but platform access entries have their own owner.
     const rows = conversations.length
       ? await sql<{ access_id: string }[]>`SELECT ca.access_id FROM chat.conversation_access ca
@@ -153,11 +173,14 @@ suite("chat conversations, people, and directory groups", () => {
       await sql`DELETE FROM chat.conversations WHERE short_id = ANY(${toPgTextArray(conversations)}::text[])`;
     }
     const allAccess = [...new Set([...accessIds, ...rows.map((row) => row.access_id)])];
-    if (allAccess.length) await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(allAccess)}::uuid[])`;
+    // Match the fixture's 500-person group batches; cap foreign-key/trigger work per statement.
+    for (let start = 0; start < allAccess.length; start += 500)
+      await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(allAccess.slice(start, start + 500))}::uuid[])`;
     if (groups.length) await sql`DELETE FROM auth.groups WHERE id = ANY(${toPgUuidArray(groups)}::uuid[])`;
     if (accounts.length)
       await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'service_account' AND principal_id = ANY(${toPgUuidArray(accounts)}::uuid[])`;
-    if (agents.length) await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(agents)}::uuid[])`;
+    for (let start = 0; start < agents.length; start += 500)
+      await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(agents.slice(start, start + 500))}::uuid[])`;
     for (const id of accounts) {
       await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ${"p:service_account:" + id}`;
       await sql`DELETE FROM audit.events WHERE target_id = ${id} OR actor_uid = ${id} OR metadata->>'serviceAccountId' = ${id}`;
@@ -167,9 +190,51 @@ suite("chat conversations, people, and directory groups", () => {
       await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'user' AND principal_id = ANY(${toPgUuidArray(users)}::uuid[])`;
       await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(users.map((id) => "p:" + id))}::text[])`;
       await sql`DELETE FROM audit.events WHERE actor_user_id = ANY(${toPgUuidArray(users)}::uuid[]) OR target_id = ANY(${toPgTextArray(users)}::text[])`;
-      await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users)}::uuid[])`;
+      for (let start = 0; start < users.length; start += 500)
+        await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users.slice(start, start + 500))}::uuid[])`;
     }
-    users.length = accounts.length = agents.length = groups.length = conversations.length = accessIds.length = 0;
+  };
+  afterEach(cleanup);
+
+  test("a failed cleanup releases its fixtures before the next test starts", async () => {
+    const owner = await user();
+    const chat = await fixture(owner);
+    await group([owner]);
+    await credential("standalone");
+    await bulkAgents(1);
+    const retained = {
+      users: [...trackedUsers],
+      accounts: [...trackedAccounts],
+      agents: [...trackedAgents],
+      groups: [...trackedGroups],
+      conversations: [...trackedConversations],
+      accessIds: [...trackedAccessIds],
+    };
+    const triggerName = `test_chat_cleanup_${crypto.randomUUID().replaceAll("-", "")}`;
+    await sql.unsafe(`CREATE FUNCTION chat.${triggerName}() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'test cleanup failure'; END $$`);
+    try {
+      await sql.unsafe(
+        `CREATE TRIGGER ${triggerName} BEFORE DELETE ON chat.conversations FOR EACH ROW WHEN (OLD.id = '${chat.id}'::uuid) EXECUTE FUNCTION chat.${triggerName}()`,
+      );
+      await expect(cleanup()).rejects.toThrow("test cleanup failure");
+      for (const tracked of [trackedUsers, trackedAccounts, trackedAgents, trackedGroups, trackedConversations, trackedAccessIds])
+        expect(tracked).toEqual([]);
+      // The old row still rejects deletion: only the next fixture may be touched.
+      const next = await fixture(await user());
+      await cleanup();
+      expect(await sql<{ id: string }[]>`SELECT id FROM chat.conversations WHERE id = ${next.id}::uuid`).toEqual([]);
+      expect(await sql<{ id: string }[]>`SELECT id FROM chat.conversations WHERE id = ${chat.id}::uuid`).toHaveLength(1);
+    } finally {
+      await sql.unsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON chat.conversations`);
+      await sql.unsafe(`DROP FUNCTION IF EXISTS chat.${triggerName}()`);
+      trackedUsers.push(...retained.users);
+      trackedAccounts.push(...retained.accounts);
+      trackedAgents.push(...retained.agents);
+      trackedGroups.push(...retained.groups);
+      trackedConversations.push(...retained.conversations);
+      trackedAccessIds.push(...retained.accessIds);
+    }
   });
 
   test("person preselection reads current guest membership and expiration without creating a chat", async () => {
@@ -281,7 +346,7 @@ suite("chat conversations, people, and directory groups", () => {
           if (operation === "create" && expected === 201) {
             const result = CreateOutcomeSchema.parse(await response.json());
             if (result.outcome !== "created") throw new Error("Expected creation");
-            conversations.push(result.conversation.id);
+            trackedConversations.push(result.conversation.id);
           } else if (operation === "list") {
             const result = ConversationPageSchema.parse(await response.json());
             expect(result.items.some((item) => item.id === chat.shortId)).toBe(permission !== "none");
@@ -383,7 +448,7 @@ suite("chat conversations, people, and directory groups", () => {
         const result = CreateOutcomeSchema.parse(await response.json());
         if (result.outcome !== "created") throw new Error("Expected created");
         ids.add(result.conversation.id);
-        conversations.push(result.conversation.id);
+        trackedConversations.push(result.conversation.id);
       }
       expect(ids.size).toBe(1);
       const [effects] = await sql<{ messages: number; audits: number }[]>`SELECT
@@ -427,7 +492,7 @@ suite("chat conversations, people, and directory groups", () => {
     const entries = await sql<
       { access_id: string }[]
     >`SELECT access_id FROM chat.conversation_access WHERE conversation_id = (SELECT id FROM chat.conversations WHERE short_id = ${chat.id})`;
-    accessIds.push(...entries.map((entry) => entry.access_id));
+    trackedAccessIds.push(...entries.map((entry) => entry.access_id));
     await sql`DELETE FROM chat.conversations WHERE short_id = ${chat.id}`;
     const [removed] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM chat.create_intents WHERE user_id = ${owner}::uuid`;
     expect(removed!.count).toBe(0);
@@ -500,7 +565,7 @@ suite("chat conversations, people, and directory groups", () => {
     const account = await credential("standalone");
     const access = await createAccess({ principal: { type: "service_account", serviceAccountId: account.id }, permission: "read" });
     if (!access.ok) throw new Error(access.error.message);
-    accessIds.push(access.data.id);
+    trackedAccessIds.push(access.data.id);
     await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
       VALUES (${chat.id}::uuid, ${access.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
     const response = await request(account.headers, `/${chat.shortId}/leave`, "POST", {});
@@ -517,7 +582,7 @@ suite("chat conversations, people, and directory groups", () => {
     await sql`DELETE FROM auth.users WHERE id = ${c}::uuid`;
     const response = await request(headers, "", "POST", { members: [{ type: "user", userId: b }] });
     const result = CreateOutcomeSchema.parse(await response.json());
-    if (result.outcome === "created") conversations.push(result.conversation.id);
+    if (result.outcome === "created") trackedConversations.push(result.conversation.id);
     expect(response.status).toBe(200);
     if (result.outcome !== "existing") throw new Error("Expected the existing chat after account deletion");
     expect(result.matches.map((match) => match.id)).toEqual([chat.id]);
@@ -538,7 +603,7 @@ suite("chat conversations, people, and directory groups", () => {
         pending.push(
           Promise.resolve(request(headers, "", "POST", { members: [{ type: "user", userId: other }] })).then(async (response) => {
             const result = CreateOutcomeSchema.parse(await response.json());
-            if (result.outcome === "created") conversations.push(result.conversation.id);
+            if (result.outcome === "created") trackedConversations.push(result.conversation.id);
             return { status: response.status, result };
           }),
         );
@@ -923,14 +988,14 @@ suite("chat conversations, people, and directory groups", () => {
     expect(response.status).toBe(201);
     const outcome = CreateOutcomeSchema.parse(await response.json());
     if (outcome.outcome !== "created") throw new Error("Expected group chat");
-    conversations.push(outcome.conversation.id);
+    trackedConversations.push(outcome.conversation.id);
     expect(outcome.conversation.memberCount).toBe(501);
     for (const people of [[], [{ type: "user", userId: ids[500]! }]]) {
       const repeated = await request(headers, "", "POST", { members: [...people, { type: "group", groupId: child }] });
       expect(repeated.status).toBe(201);
       const result = CreateOutcomeSchema.parse(await repeated.json());
       if (result.outcome !== "created") throw new Error("Group inputs must bypass direct-set matching");
-      conversations.push(result.conversation.id);
+      trackedConversations.push(result.conversation.id);
       const page = MessagePageSchema.parse(await (await request(headers, `/${result.conversation.id}/messages`)).json());
       expect(page.items.map((message) => message.system?.code)).toEqual(["conversation_created", "groups_added"]);
     }
@@ -1348,7 +1413,7 @@ suite("chat conversations, people, and directory groups", () => {
     const account = await credential("standalone", null, ["openid", "read", "admin"]);
     const access = await createAccess({ principal: { type: "service_account", serviceAccountId: account.id }, permission: "admin" });
     if (!access.ok) throw new Error(access.error.message);
-    accessIds.push(access.data.id);
+    trackedAccessIds.push(access.data.id);
     await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
       VALUES (${chat.id}::uuid, ${access.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
     const path = `/${chat.shortId}`;
@@ -1680,7 +1745,7 @@ suite("chat conversations, people, and directory groups", () => {
       >`INSERT INTO auth.service_accounts (name, kind, delegated_user_id, app_id, resource_type, resource_id)
         VALUES ('Unavailable member', ${kind}, ${kind === "user_delegated" ? owner : null}::uuid, ${kind === "resource_bound" ? "chat" : null}, ${kind === "resource_bound" ? "conversation" : null}, ${kind === "resource_bound" ? testShortId() : null}) RETURNING id`;
       if (!account) throw new Error("Missing fixture service account");
-      accounts.push(account.id);
+      trackedAccounts.push(account.id);
       const response = await request(headers, `/${chat.shortId}/members`, "POST", {
         members: [{ type: "service_account", serviceAccountId: account.id }],
       });
@@ -1719,7 +1784,7 @@ suite("chat conversations, people, and directory groups", () => {
     ]) {
       const [row] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
         VALUES ('Audience binding', 'resource_bound', ${binding.appId}, ${binding.resourceType}, ${binding.resourceId}) RETURNING id`;
-      accounts.push(row!.id);
+      trackedAccounts.push(row!.id);
     }
     expect(await count()).toBe(before + 2);
     expect(await count(channel.id)).toBe(before + 3);
@@ -1736,7 +1801,7 @@ suite("chat conversations, people, and directory groups", () => {
     const other = await fixture(owner);
     const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
       VALUES ('Bound channel manager', 'resource_bound', 'chat', 'conversation', ${channel.id}) RETURNING id`;
-    accounts.push(account!.id);
+    trackedAccounts.push(account!.id);
     expect(
       (
         await request(headers, `/${channel.id}/members`, "POST", {
@@ -1965,6 +2030,9 @@ suite("chat conversations, people, and directory groups", () => {
     const discovery = await createAccess({ principal: { type: "authenticated" }, permission: "read" });
     if (!discovery.ok) throw new Error(discovery.error.message);
     await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id) VALUES (${chat.id}::uuid, ${discovery.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
+    // Bulk-loading outruns auto-analyze on a fresh CI database. Measure with current statistics,
+    // including the member-count query in the join transaction.
+    await sql`ANALYZE auth.users, auth.groups, auth.user_groups_v2, auth.group_groups_v2, auth.service_accounts, auth.access, chat.conversations, chat.conversation_access`;
     const allowed = await requireConversation({ ...userContext(member), conversationId: chat.shortId, required: "write" });
     expect(allowed.ok && allowed.data.member_count).toBe(5000);
     const denied = await requireConversation({ ...userContext(outside), conversationId: chat.shortId, required: "write" });
@@ -2045,7 +2113,7 @@ suite("chat conversations, people, and directory groups", () => {
       await sql`UPDATE chat.conversations SET name = ${`Paging ${String(i).padStart(2, "0")}`}, purpose = 'Search 100%_literal' WHERE id = ${chat.id}::uuid`;
       const access = await createAccess({ principal: { type: "group", groupId: audience }, permission: "read" });
       if (!access.ok) throw new Error(access.error.message);
-      accessIds.push(access.data.id);
+      trackedAccessIds.push(access.data.id);
       await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
         VALUES (${chat.id}::uuid, ${access.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
     }
@@ -2176,7 +2244,7 @@ suite("chat conversations, people, and directory groups", () => {
     }
     const [bound] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
       VALUES ('Bound member', 'resource_bound', 'chat', 'conversation', ${channel.id}) RETURNING id`;
-    accounts.push(bound!.id);
+    trackedAccounts.push(bound!.id);
     expect(
       (await request(headers, `/${channel.id}/members`, "POST", { members: [{ type: "service_account", serviceAccountId: bound!.id }] }))
         .status,

@@ -11,6 +11,7 @@ import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId } from "./process-identity";
 import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
+import * as workload from "./workload-credential";
 
 export const inventory = {
   id: "inventory",
@@ -56,6 +57,21 @@ export const publishedEntry = async (options: AppOptions, inspect?: (server: Sta
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };
+    }),
+    // Startup registers the instance and obtains its workload credential before lifecycle work.
+    spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+      instanceId: "0123456789abcdef",
+      register: async () => {},
+      leave: async () => {},
+      join: async () => {},
+      publish: async () => {},
+      adopt: async () => {},
+      renew: async () => {},
+    }),
+    spyOn(workload, "createAppWorkloadCredential").mockReturnValue({
+      start: async () => {},
+      refresh: async () => {},
+      stop: async () => {},
     }),
     spyOn(heartbeat, "createHeartbeat").mockImplementation((_id, entry) => {
       entries.push(entry);
