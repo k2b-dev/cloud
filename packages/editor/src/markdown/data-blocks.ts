@@ -2,6 +2,7 @@ import { type EditorState, type Extension, Prec, type Range, RangeSet, StateFiel
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
 import { holdsDecorations, refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 import { type DataBlock, extractDataBlocks, namedBlockBody, renderDataBlockHtml } from "./lib/named-blocks";
+import { blockAnchorsDrawnElsewhere } from "./named-blocks";
 
 type DataBlockRange = {
   from: number;
@@ -76,6 +77,8 @@ export const dataBlocksExtension = (): Extension => {
     },
     provide(field) {
       return [
+        // The data block widget draws its anchor label together with the block.
+        blockAnchorsDrawnElsewhere.of("data"),
         EditorView.decorations.from(field, (value) => value.decorations),
         EditorView.atomicRanges.of((view) => view.state.field(field).blockWidgetDecorations),
       ];

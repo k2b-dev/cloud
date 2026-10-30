@@ -1,4 +1,4 @@
-import { type Extension, type Range, RangeSet } from "@codemirror/state";
+import { type Extension, Facet, type Range, RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import {
   blockWidgetLineNavigationExtension,
@@ -8,6 +8,13 @@ import {
 } from "./_lib/cursor-zone-field";
 import { extractNamedBlocks } from "./lib/named-blocks";
 
+/**
+ * Block types whose anchor line another extension draws together with the block, such as data blocks. The anchor
+ * label leaves those lines alone; every other named block (tables, lists, …) gets the label.
+ */
+export const blockAnchorsDrawnElsewhere = Facet.define<string, ReadonlySet<string>>({ combine: (types) => new Set(types) });
+
+/** The anchor line `@name` above a block, shown as a quiet label until the caret enters the line. */
 class NamedBlockHandleWidget extends WidgetType {
   constructor(
     private name: string,
@@ -19,8 +26,9 @@ class NamedBlockHandleWidget extends WidgetType {
   override toDOM(view: EditorView) {
     const el = document.createElement("div");
     el.className = "cm-named-block-handle md-block-handle";
+    el.dataset.blockName = this.name;
     el.setAttribute("contenteditable", "false");
-    el.textContent = `@${this.name}`;
+    el.textContent = this.name;
     el.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -52,9 +60,7 @@ export const namedBlocksExtension = (): Extension => {
       const nextLine = state.doc.lineAt(Math.min(block.handleEnd + 1, state.doc.length));
       const sourceVisibleRange = { from: prevLine.from, to: nextLine.to };
       ranges.push(sourceVisibleRange);
-      // Table/data handles are rendered by their block widgets together
-      // with the preview so the handle and body collapse as one stable block.
-      if (block.type === "table" || block.type === "data") continue;
+      if (state.facet(blockAnchorsDrawnElsewhere).has(block.type)) continue;
       if (selectionIntersectsRange(cursor, sourceVisibleRange.from, sourceVisibleRange.to)) continue;
       const handleDecoration = Decoration.replace({
         widget: new NamedBlockHandleWidget(block.name, block.handleStart),

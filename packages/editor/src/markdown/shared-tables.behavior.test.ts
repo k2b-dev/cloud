@@ -158,18 +158,24 @@ describe("Notebook shared table presentation", async () => {
     }
   });
 
-  test("named table captions use the editable source once, including a separated handle", async () => {
-    const doc = "@budget\n\n| Hours | Cost |\n| --- | --- |\n| 2 | =Hours*1.5 |";
+  test("a table anchor reads as one label without @, and the caret in its line shows the source", async () => {
+    const doc = "@budget\n\n| Hours | Cost |\n| --- | --- |\n| 2 | =Hours*1.5 |\n\nAfter";
     const h = mount(doc);
     try {
-      const captions = h.dom.root.querySelectorAll("[data-block-name=budget]");
-      expect(captions).toHaveLength(1);
-      expect(captions[0]?.textContent).toBe("@budget");
-      expect(h.dom.root.querySelector(".cm-named-block-handle")).toBeNull();
-      expect(h.dom.root.querySelector(".k2b-ste-table")?.textContent).not.toContain("@budget");
+      h.view.dispatch({ selection: { anchor: doc.length } });
+      const labels = h.dom.root.querySelectorAll(".md-block-handle");
+      expect(labels).toHaveLength(1);
+      expect(labels[0]?.textContent).toBe("budget");
+      expect(labels[0]?.getAttribute("data-block-name")).toBe("budget");
+      expect(h.dom.root.querySelector(".k2b-ste-table")?.textContent).not.toContain("budget");
+      // The caret in the anchor line shows the editable source instead of the label.
+      h.view.dispatch({ selection: { anchor: 1 } });
+      expect(h.dom.root.querySelector(".md-block-handle")).toBeNull();
+      expect(h.view.contentDOM.textContent).toContain("@budget");
       const at = doc.indexOf("budget");
       h.view.dispatch({ changes: { from: at, to: at + 6, insert: "plan" } });
-      expect(h.dom.root.querySelector("[data-block-name=plan]")?.textContent).toBe("@plan");
+      h.view.dispatch({ selection: { anchor: h.view.state.doc.length } });
+      expect(h.dom.root.querySelector(".md-block-handle")?.textContent).toBe("plan");
       expect(h.view.state.doc.toString()).toBe(doc.replace("budget", "plan"));
     } finally {
       await h.destroy();

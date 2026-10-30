@@ -84,9 +84,9 @@ describe("Notebook on the shared text editor", () => {
     const { page, errors, close } = await open();
     try {
       expect(await cell(page, 1, 2).textContent()).toContain("100");
-      // One editable caption: the @handle stays source text, with no second rendered caption.
-      expect(await page.locator(".cm-notebook-table-caption").count()).toBe(1);
-      expect(await page.locator(".cm-notebook-table-caption").textContent()).toBe("@costs");
+      // One anchor label above the table, without @; the source line stays in the text.
+      expect(await page.locator(".md-block-handle").count()).toBe(1);
+      expect(await page.locator(".md-block-handle").textContent()).toBe("costs");
 
       const before = await text(page);
       await cell(page, 1, 1).click();
