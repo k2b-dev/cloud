@@ -222,6 +222,9 @@ export function NotePage(props: { mode: NoteMode }) {
     const share = record()?.share;
     return share?.kind === "foreign" && share.role === "read";
   };
+  // Memos, so a keystroke that renews the record does not reset the editor's label mid-update.
+  const editorLabel = createMemo(() => record()?.meta.title || t().newNoteLabel);
+  const editorReadOnly = createMemo(() => readOnly() || record()?.pendingDelete === true);
 
   // Floating notes for state changes.
   let offlineToast: ToastHandle | undefined;
@@ -452,8 +455,8 @@ export function NotePage(props: { mode: NoteMode }) {
           <NoteEditor
             text={ready().text}
             awareness={ready().awareness}
-            label={record()?.meta.title || t().newNoteLabel}
-            readOnly={readOnly() || record()?.pendingDelete}
+            label={editorLabel()}
+            readOnly={editorReadOnly()}
             placeholder={first() ? t().titlePlaceholder : undefined}
             autofocus={first() ? "start" : focusNext === record()?.id ? "end" : undefined}
             onReady={(value, undoLast) => {
