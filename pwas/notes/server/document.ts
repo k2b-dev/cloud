@@ -10,12 +10,11 @@ export const validateDocument = (doc: Y.Doc, started = performance.now()): Uint8
   // A shared root loaded from the wire starts as AbstractType. Inspect both its map and sequence.
   if (
     text._map.size ||
-    text
-      .toDelta()
-      .some(
-        (part: { insert: unknown; attributes?: Record<string, unknown> }) =>
-          typeof part.insert !== "string" || Object.keys(part.attributes ?? {}).length,
-      )
+    text.toDelta().some(
+      (part: { insert: unknown; attributes?: Record<string, unknown> }) =>
+        // Postgres text projections cannot represent NUL; reject before durable bytea updates.
+        typeof part.insert !== "string" || part.insert.includes("\u0000") || Object.keys(part.attributes ?? {}).length,
+    )
   ) {
     throw new NotesError("invalid_document");
   }
