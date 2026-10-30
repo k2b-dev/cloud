@@ -63,6 +63,8 @@ export const mutateMessage =
       WHERE id = ${current.data.id}::uuid RETURNING rev`;
       const [changed] = await db<MessageRow[]>`UPDATE chat.messages SET rev = ${head!.rev}, content_rev = content_rev + 1,
       body_md = ${body ?? ""}, links = ${toPgTextArray(body === null ? [] : extractMessageLinks(body))}::text[],
+      via = ${operation === "edit" && input.via ? input.via : db`via`},
+      client_input_hash = ${operation === "delete" ? db`NULL` : db`client_input_hash`},
       edited_at = ${operation === "edit" ? db`clock_timestamp()` : db`edited_at`},
       deleted_at = ${operation === "delete" ? db`clock_timestamp()` : db`NULL`},
       refs = ${operation === "delete" ? db`'[]'::jsonb` : db`refs`}

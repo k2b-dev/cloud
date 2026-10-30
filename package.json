@@ -8,6 +8,7 @@
     "packages": [
       "docs-site",
       "pwas/pwa-auth",
+      "pwas/notes",
       "packages/accounts",
       "packages/api-docs",
       "packages/assistant",

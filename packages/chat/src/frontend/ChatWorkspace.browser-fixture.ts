@@ -140,6 +140,8 @@ const buildHarness = async (): Promise<string> => {
       {
         name: "solid-chat-workspace-test",
         setup(builder) {
+          // Exercise the current shared component source without a separate UI build.
+          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -491,6 +493,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
+      via: null,
       reactions: [],
       mentions: [],
       refs: target.refs ?? [],
@@ -2139,7 +2142,11 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       failingUnread = count;
     },
     /** Stores a message from another person and delivers it live. */
-    receive: (chat: string, author: Person, body: string) => publish(append(chat, author, body, now())),
+    receive: (chat: string, author: Person, body: string, via: "assistant" | "mcp" | null = null) => {
+      const message = append(chat, author, body, now());
+      message.via = via;
+      publish(message);
+    },
     /** Renames a chat and announces it live with a system message, as a details change does. */
     rename: (chat: string, title: string) => {
       const entry = chats.get(chat)!;

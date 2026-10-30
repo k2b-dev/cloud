@@ -774,6 +774,7 @@
         "@fontsource/ibm-plex-mono": "5.3.0",
         "@fontsource/ibm-plex-sans": "5.3.0",
         "@k2b/stdlib": "0.30.0",
+        "@lezer/highlight": "1.2.4",
         "@lezer/markdown": "1.7.2",
         "@tabler/icons-webfont": "3.48.0",
         "dompurify": "3.4.17",
@@ -846,6 +847,35 @@
         "@types/bun": "catalog:",
         "bun-plugin-tailwind": "catalog:",
         "playwright": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "pwas/notes": {
+      "name": "@k2b/notes-site",
+      "dependencies": {
+        "@k2b/cloud": "workspace:*",
+        "@k2b/editor": "workspace:*",
+        "@k2b/stdlib": "catalog:",
+        "@k2b/ui": "workspace:*",
+        "hono": "catalog:",
+        "lib0": "0.2.117",
+        "solid-js": "catalog:",
+        "y-codemirror.next": "catalog:",
+        "y-protocols": "catalog:",
+        "yjs": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@babel/core": "8.0.6",
+        "@babel/preset-typescript": "8.0.1",
+        "@codemirror/state": "catalog:",
+        "@codemirror/view": "catalog:",
+        "@types/babel__core": "7.20.5",
+        "@types/bun": "catalog:",
+        "@types/subset-font": "2.3.0",
+        "babel-preset-solid": "1.9.15",
+        "playwright": "catalog:",
+        "subset-font": "2.9.0",
         "typescript": "catalog:",
       },
     },
@@ -1247,6 +1277,8 @@
     "@k2b/filegate": ["@k2b/filegate@7.1.0", "", {}, "sha512-wezDCkenZ/s+V0hp4AacUjd4d1Dm+Pyr6+M100LiOeoEGLWp+gMoHE/mHQCsUpxnM+GjhOjn9cxYp2DFWNppqA=="],
 
     "@k2b/nessi": ["@k2b/nessi@0.18.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-U6scx1lwIQIfsJ8cMxu6Kbw7P5HbDbtGpiEF+sfp7zBAYn+SYmDLVdimpP7RuTY59smzQIvD+uJdOCdOXZdH9A=="],
+
+    "@k2b/notes-site": ["@k2b/notes-site@workspace:pwas/notes"],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 

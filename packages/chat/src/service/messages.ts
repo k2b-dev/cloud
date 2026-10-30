@@ -16,6 +16,7 @@ import {
   SnapshotQuerySchema,
 } from "./contracts";
 import { conversations } from "./conversations";
+import { prepareSystemReaderCounts } from "./for-you";
 import { chatLive } from "./live";
 import { validateMentions } from "./mentions";
 import { mutateMessage } from "./message-mutations";
@@ -39,7 +40,7 @@ const existing = async (db: typeof sql, conversationId: string, input: ChatConte
     AND author_type = ${author.type} AND author_id = ${author.id}::uuid AND client_id = ${clientId}`;
   return row;
 };
-const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | RateLimited> => {
+const send = async (input: Input & { input: unknown; replayHash?: string }): Promise<Result<Sent> | RateLimited> => {
   const parsed = parse(SendMessageSchema, input.input, input);
   if (!parsed.ok) return parsed;
   const allowed = await requireConversation({ ...input, required: "write" });
@@ -47,6 +48,8 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
   const data = parsed.data;
   const found = await existing(sql, allowed.data.id, input, data.clientId);
   if (found && !(await canReadThread(sql, input, found.thread_id))) return threadNotFound(input);
+  if (found && input.replayHash !== undefined && found.client_input_hash !== input.replayHash)
+    return fail({ code: "IDEMPOTENCY_CONFLICT", status: 409, message: catalog(input).messageReplayConflict });
   if (found)
     return ok({ message: (await messageViews(sql, [found], input.conversationId, input.accessSubject, input.locale))[0]!, created: false });
   const limited = await checkWriteRate(input);
@@ -59,6 +62,8 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
     // A concurrent retry of the same clientId may have committed while this one waited for the lock.
     const retry = await existing(db, current.data.id, input, data.clientId);
     if (retry && !(await canReadThread(db, input, retry.thread_id))) return threadNotFound(input);
+    if (retry && input.replayHash !== undefined && retry.client_input_hash !== input.replayHash)
+      return fail({ code: "IDEMPOTENCY_CONFLICT", status: 409, message: catalog(input).messageReplayConflict });
     if (retry)
       return ok({
         message: (await messageViews(db, [retry], input.conversationId, input.accessSubject, input.locale))[0]!,
@@ -103,6 +108,7 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       mentions: mentioned.data,
       kind: "text",
       clientId: data.clientId,
+      replayHash: input.replayHash,
       body: data.body,
       refs: data.refs,
       attachments: data.attachments,
@@ -153,6 +159,7 @@ const snapshot = async (
   if (!parsed.ok) return parsed;
   const opened = await openParticipant(input);
   if (!opened.ok) return opened;
+  await prepareSystemReaderCounts(input);
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
@@ -242,6 +249,7 @@ const get = async (input: Input & { messageId: string }) => {
 const changes = async (input: Input & { query: unknown }) => {
   const parsed = parse(ChangesQuerySchema, input.query, input);
   if (!parsed.ok) return parsed;
+  await prepareSystemReaderCounts(input);
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
