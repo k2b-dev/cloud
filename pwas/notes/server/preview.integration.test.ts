@@ -119,6 +119,19 @@ databaseSuite()("Notes static website and previews", () => {
     expect((await app.request("/api/unknown")).status).toBe(404);
     expect((await app.request("/missing.js")).status).toBe(404);
   });
+  test("overload and unexpected failures keep the recoverable SPA shell", async () => {
+    const read = service.read.bind(service);
+    try {
+      service.read = async () => {
+        throw new Error("fixture_unavailable");
+      };
+      const response = await app.request(`/p/${links.readId}`);
+      expect(response.status).toBe(500);
+      expect(await response.text()).toBe(index);
+    } finally {
+      service.read = read;
+    }
+  });
   test("cached images are inaccessible after deletion, including requests with the edit capability", async () => {
     expect((await app.request(`/p/${links.readId}/preview.png`)).status).toBe(200);
     await service.remove(links.editId);
