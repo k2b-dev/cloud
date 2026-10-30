@@ -81,7 +81,8 @@ afterEach(async () => {
   }
 });
 
-const editor = () => page.getByRole("textbox");
+// Rendered tables contain their own textboxes; target the Markdown editor itself.
+const editor = () => page.getByRole("textbox").and(page.locator('[data-language="markdown"]'));
 const cards = () => page.getByRole("main").getByRole("link");
 const back = () => page.getByRole("banner").getByRole("link", { name: "Notizen", exact: true });
 
@@ -105,12 +106,9 @@ async function createNote(text: string) {
   await page.goto(origin);
   await page.getByRole("textbox", { name: "Neue Notiz", exact: true }).fill(text);
   await page.waitForURL(/\/n\/[A-Za-z0-9]{22}$/);
-  // Reload only after the debounced metadata and IndexedDB writes have finished.
+  // Wait for the debounced title before testing persistence with a reload.
   await editor().waitFor();
-  await page.waitForFunction(
-    (text) => document.querySelector('[role="textbox"]')?.getAttribute("aria-label") === text,
-    text,
-  );
+  await page.waitForFunction((text) => document.querySelector('[role="textbox"]')?.getAttribute("aria-label") === text, text);
   return page.url();
 }
 
@@ -126,7 +124,14 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.goto(origin);
     const draft = page.getByRole("textbox", { name: "Neue Notiz", exact: true });
     await draft.waitFor();
-    expect(await draft.innerText()).toBe("");
+    expect(
+      await draft.evaluate((element) => {
+        const copy = element.cloneNode(true);
+        if (!(copy instanceof HTMLElement)) throw new Error("Expected an editor element");
+        copy.querySelector(".cm-placeholder")?.remove();
+        return copy.textContent?.trim();
+      }),
+    ).toBe("");
     expect(await page.getByRole("link", { name: "Beispiel ansehen", exact: true }).isVisible()).toBe(true);
     const text = "Mein erster Gedanke";
     await draft.fill(text);
@@ -146,14 +151,19 @@ describe("k2b notes · Produktions-SPA", () => {
     await importNotes();
     const regularCount = await cards().filter({ hasNotText: "Weiterschreiben" }).count();
     expect(await cards().filter({ hasText: "Weiterschreiben" }).count()).toBe(1);
-    await page.getByRole("group", { name: "Nach Tag filtern" }).getByRole("button", { name: /^verein\s+2$/ }).click();
+    await page
+      .getByRole("group", { name: "Nach Tag filtern" })
+      .getByRole("button", { name: /^verein\s+2$/ })
+      .click();
     await page.waitForURL(`${origin}/?tag=verein`);
     expect(await cards().count()).toBe(2);
     await page.reload();
     await page.getByRole("button", { name: /^verein\s+2$/, pressed: true }).waitFor();
     expect(new URL(page.url()).searchParams.get("tag")).toBe("verein");
     expect(await cards().count()).toBe(2);
-    expect(await cards().allTextContents()).toEqual(expect.arrayContaining([expect.stringContaining("Gartenverein"), expect.stringContaining("Satzungsentwurf")]));
+    expect(await cards().allTextContents()).toEqual(
+      expect.arrayContaining([expect.stringContaining("Gartenverein"), expect.stringContaining("Satzungsentwurf")]),
+    );
     // Keep this assertion after the filter checks, so a missing duplicate hero does not hide their result.
     expect(regularCount).toBe(9);
   }, 20_000);
@@ -163,7 +173,11 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.keyboard.press("Control+k");
     const search = page.getByRole("combobox", { name: "Suchbegriff", exact: true });
     await search.fill("tram");
-    await page.getByRole("group", { name: "Im Text", exact: true }).getByRole("option", { name: /Lissabon im März/ }).first().waitFor();
+    await page
+      .getByRole("group", { name: "Im Text", exact: true })
+      .getByRole("option", { name: /Lissabon im März/ })
+      .first()
+      .waitFor();
     await search.press("Enter");
     await page.waitForURL(`${origin}/n/lissabon00000000000000`);
     await page.getByRole("textbox", { name: "Lissabon im März", exact: true }).waitFor();
@@ -174,16 +188,15 @@ describe("k2b notes · Produktions-SPA", () => {
   }, 20_000);
 
   test("Beispiel: Änderungen bleiben ungespeichert", async () => {
-    await createNote("Eine eigene Notiz");
-    await back().click();
-    await page.getByText("1 Notiz in diesem Browser", { exact: true }).waitFor();
+    await importNotes();
+    const previousCount = await cards().count();
     await page.goto(`${origin}/beispiel`);
     await page.getByRole("status").filter({ hasText: "Beispiel · nichts wird gespeichert" }).waitFor();
     await editor().fill("Diese Beispieländerung darf nicht gespeichert werden");
     await back().click();
-    await page.getByText("1 Notiz in diesem Browser", { exact: true }).waitFor();
-    expect(await cards().count()).toBe(1);
-    expect(await cards().first().innerText()).toContain("Eine eigene Notiz");
+    await page.getByText("9 Notizen in diesem Browser", { exact: true }).waitFor();
+    expect(await cards().count()).toBe(previousCount);
+    expect(await cards().filter({ hasText: "Diese Beispieländerung" }).count()).toBe(0);
     await page.goto(`${origin}/beispiel`);
     await editor().waitFor();
     expect(await editor().innerText()).not.toContain("Diese Beispieländerung");
@@ -214,7 +227,8 @@ describe("k2b notes · Produktions-SPA", () => {
     });
     await dialog.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
     await dialog.getByRole("heading", { name: "Notiz ist geteilt", exact: true }).waitFor();
-    for (const id of [READ_ID, EDIT_ID]) expect(await dialog.getByText(`${new URL(origin).host}/p/${id}`, { exact: true }).isVisible()).toBe(true);
+    for (const id of [READ_ID, EDIT_ID])
+      expect(await dialog.getByText(`${new URL(origin).host}/p/${id}`, { exact: true }).isVisible()).toBe(true);
     expect(await dialog.getByRole("img", { name: "QR-Code des Bearbeiten-Links", exact: true }).isVisible()).toBe(true);
     expect(await dialog.getByText("Auf dem Handy weiterschreiben", { exact: true }).isVisible()).toBe(true);
     const cloud = dialog.getByRole("link", { name: /Gefällt dir das\? Mit Cloud/ });
@@ -237,7 +251,7 @@ describe("k2b notes · Produktions-SPA", () => {
       const status = page.getByRole("banner").getByRole("status");
       await status.waitFor();
       if (title === "Lauftraining Herbst") expect(await status.innerText()).toBe("Nur auf diesem Gerät");
-      else await status.filter({ hasText: /Verbindet|Offline/ }).waitFor();
+      else await status.filter({ hasText: "Offline · auf diesem Gerät gesichert" }).waitFor();
       await settled(page);
       measurements.push({ status: await box(status), share: await box(page.getByRole("button", { name: "Teilen", exact: true })) });
       await back().click();
@@ -246,23 +260,25 @@ describe("k2b notes · Produktions-SPA", () => {
     const first = measurements[0]!;
     for (const next of measurements.slice(1)) {
       expect(Math.abs(next.status.width - first.status.width)).toBeLessThanOrEqual(1);
-      for (const dimension of ["x", "y", "width", "height"] as const) expect(Math.abs(next.share[dimension] - first.share[dimension])).toBeLessThanOrEqual(1);
+      for (const dimension of ["x", "y", "width", "height"] as const)
+        expect(Math.abs(next.share[dimension] - first.share[dimension])).toBeLessThanOrEqual(1);
     }
   }, 20_000);
 
   test("Offline-Reload: aktiver Service Worker lädt die App und ihre lokalen Notizen", async () => {
-    const url = await createNote("Offline bleibt diese Notiz da");
+    await importNotes();
+    const previousCount = await cards().count();
     await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated", undefined, { timeout: 10_000 });
     await context.setOffline(true);
     try {
       const response = await page.reload();
       expect(response?.fromServiceWorker()).toBe(true);
-      await page.getByRole("textbox", { name: "Offline bleibt diese Notiz da", exact: true }).waitFor();
-      expect(page.url()).toBe(url);
-      expect(await editor().innerText()).toBe("Offline bleibt diese Notiz da");
-      await back().click();
-      await page.getByText("1 Notiz in diesem Browser", { exact: true }).waitFor();
-      expect(await cards().count()).toBe(1);
+      await page.getByText("9 Notizen in diesem Browser", { exact: true }).waitFor();
+      expect(page.url()).toBe(`${origin}/`);
+      expect(await cards().count()).toBe(previousCount);
+      for (const title of ["Lauftraining Herbst", "Lissabon im März", "Sauerteig – Notizen"]) {
+        expect(await cards().filter({ hasText: title }).first().isVisible()).toBe(true);
+      }
     } finally {
       await context.setOffline(false);
     }
@@ -290,11 +306,12 @@ describe("k2b notes · Produktions-SPA", () => {
     expect(fab.y + fab.height).toBeGreaterThan(800);
     expect(fab.x + fab.width).toBeLessThanOrEqual(390);
     expect(fab.y + fab.height).toBeLessThanOrEqual(844);
-    expect(await create.evaluate((element) => parseFloat(getComputedStyle(element).borderRadius))).toBeGreaterThanOrEqual(fab.width / 2);
+    const radius = await create.evaluate((element) => parseFloat(getComputedStyle(element).borderRadius));
     const search = page.getByRole("button", { name: "Überall suchen", exact: true });
     expect((await box(search)).width).toBeLessThan(60);
     expect((await search.innerText()).trim()).toBe("");
     await search.click();
     await page.getByRole("combobox", { name: "Suchbegriff", exact: true }).waitFor();
+    expect(radius).toBeGreaterThanOrEqual(fab.width / 2);
   }, 20_000);
 });

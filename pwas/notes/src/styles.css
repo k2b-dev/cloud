@@ -776,6 +776,7 @@ body.k2b-ui {
 /* ---------- dialogs ---------- */
 .n-dialog {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   font-size: 0.9375rem;
 }

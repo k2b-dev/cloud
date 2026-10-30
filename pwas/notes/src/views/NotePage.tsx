@@ -1,7 +1,7 @@
 import { Button, Dropdown, type DropdownItem, IconButton, type ToastHandle, toast } from "@k2b/ui";
 import type { TextEditorController } from "@k2b/ui/text-editor";
 import { files as browserFiles, images } from "@k2b/stdlib/browser";
-import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { api } from "../lib/api";
@@ -141,11 +141,18 @@ export function NotePage(props: { mode: NoteMode }) {
 
   // Live connection for shared notes.
   const [live, setLive] = createSignal<LiveSession>();
+  // Keyed by the link, not the record object: every index write (openedAt, meta) creates a new record.
+  const shareKey = createMemo(() => {
+    const share = record()?.share;
+    if (!share) return null;
+    return share.kind === "own" ? `own:${share.editId}` : `foreign:${share.role}:${share.linkId}`;
+  });
   createEffect(
     on(
-      () => [opened(), awareness(), record()?.share] as const,
-      ([current, aw, share]) => {
-        if (!current || !aw || !share) return;
+      () => [opened(), awareness(), shareKey()] as const,
+      ([current, aw, key]) => {
+        const share = untrack(() => record()?.share);
+        if (!current || !aw || !key || !share) return;
         const linkId = share.kind === "own" ? share.editId : share.linkId;
         const canEdit = share.kind === "own" || share.role === "edit";
         const session = connectLive({
@@ -230,7 +237,7 @@ export function NotePage(props: { mode: NoteMode }) {
     preferences.markGuestNameSeen();
     const others = live()?.people() ?? [];
     notice(
-      toast(t().guestBody({ names: others.map((person) => person.name).join(" und ") }), {
+      toast(t().guestBody({ names: others.map((person) => person.name).join(", ") }), {
         title: t().guestTitle({ name: preferences.name() }),
         duration: 0,
         iconClass: "ti ti-user",
@@ -239,10 +246,14 @@ export function NotePage(props: { mode: NoteMode }) {
     );
   });
 
-  createEffect(() => {
-    const current = record();
-    if (current) void app.store()?.update(current.id, { openedAt: Date.now() });
-  });
+  createEffect(
+    on(
+      () => record()?.id,
+      (id) => {
+        if (id) void app.store()?.update(id, { openedAt: Date.now() });
+      },
+    ),
+  );
 
   const keepCopy = async () => {
     const current = opened();
