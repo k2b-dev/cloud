@@ -69,7 +69,9 @@ describe("bounded query", () => {
         "-e",
         `
           import { sql } from "bun";
-          import { runBoundedQuery, stopBoundedQueryPool } from "./bounded-query";
+          const { initializeTestPlatform } = await import("../../../../scripts/fixtures/platform");
+          await initializeTestPlatform("grids");
+          const { runBoundedQuery, stopBoundedQueryPool } = await import("./bounded-query");
           const timedOut = await Promise.allSettled(
             Array.from({ length: 20 }, () => runBoundedQuery(sql\`SELECT pg_sleep(1)\`, 20)),
           );
