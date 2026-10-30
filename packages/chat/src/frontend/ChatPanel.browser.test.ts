@@ -1479,11 +1479,15 @@ for (const { embedded, width } of [
     // The page's file-provider discovery reads the catalog on its own once it is idle (in WebKit after 1 s), so it
     // could otherwise land after the recovery and count as a second recovered load (#1876). Each case waits for that
     // first read of the document it tests, while the catalog still fails, before the command menu opens.
-    const initialRequested = page.waitForRequest(
-      (request) =>
+    // Recorded from the start, so a slow page load does not use up the wait before the document is ready.
+    let initialRead = false;
+    page.on("request", (request) => {
+      if (
         request.url().includes("/capabilities/v1/catalog") &&
-        (!embedded || new URL(request.frame().url()).pathname === "/app/assistant/panel"),
-    );
+        (!embedded || new URL(request.frame().url()).pathname === "/app/assistant/panel")
+      )
+        initialRead = true;
+    });
     await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
       const ordinal = ++catalogRequests;
       if (!embedded) {
@@ -1537,7 +1541,8 @@ for (const { embedded, width } of [
       const view = embedded ? page.frameLocator("[data-cloud-panel-frame]") : page;
       await view.locator('html[data-fixture-ready="true"]').waitFor();
       const composer = view.locator('textarea:not([aria-hidden="true"])');
-      await initialRequested;
+      for (const deadline = performance.now() + 8_000; !initialRead; await Bun.sleep(25))
+        if (performance.now() > deadline) throw new Error("The document's own first catalog read did not come");
       const failed = page.waitForResponse(
         (response) =>
           response.url().includes("/capabilities/v1/catalog") &&
@@ -1597,7 +1602,33 @@ for (const { embedded, width } of [
         await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `resource-recovery-${embedded ? "panel" : "fullview"}.png`) });
       }
     } catch (error) {
-      console.error("Catalog recovery failed", { url: page.url(), frames: page.frames().map((frame) => frame.url()) });
+      // Where a missing dialog is, if anywhere, and what the composer was doing; a read that fails is reported, never awaited.
+      const state = (frame: import("playwright").Frame) =>
+        Promise.race([
+          frame.evaluate(() => {
+            const area = document.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])');
+            return {
+              url: location.pathname + location.search,
+              dialogs: Array.from(document.querySelectorAll('[role="dialog"], dialog[open]')).map((element) =>
+                `${element.tagName}${element.hasAttribute("open") ? "[open]" : ""} ${element.className}`.trim(),
+              ),
+              listbox: Boolean(document.querySelector('[role="listbox"]')),
+              composer: area ? { value: area.value, readOnly: area.readOnly, disabled: area.disabled } : null,
+              active: document.activeElement
+                ? `${document.activeElement.tagName}.${String(document.activeElement.className).slice(0, 40)}`
+                : null,
+            };
+          }),
+          new Promise((resolve) => setTimeout(() => resolve("no answer within 1 s"), 1_000)),
+        ]).catch((reason: unknown) => `unreadable: ${reason instanceof Error ? reason.message : String(reason)}`);
+      const report = {
+        url: page.url(),
+        frames: await Promise.all(page.frames().map(async (frame) => ({ frame: frame.url(), state: await state(frame) }))),
+        catalogRequests,
+        recoveredCatalogLoads,
+        searches,
+      };
+      console.error(`Catalog recovery failed ${JSON.stringify(report, null, 1)}`);
       throw error;
     } finally {
       releaseInitial();

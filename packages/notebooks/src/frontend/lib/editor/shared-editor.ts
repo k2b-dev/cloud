@@ -15,43 +15,13 @@ import {
   startCompletion,
 } from "@codemirror/autocomplete";
 import { getSearchQuery, openSearchPanel, searchPanelOpen } from "@codemirror/search";
-import { Compartment, type EditorState, type Extension } from "@codemirror/state";
+import type { EditorState, Extension } from "@codemirror/state";
 import { type EditorView, getTooltip, repositionTooltips, showTooltip, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { type TextEditorControls, tableHost } from "@k2b/ui/text-editor";
 import { displayCell, findTables, gridLine, rowCount, type Table } from "@k2b/ui/text-editor/model";
-import { createEffect, untrack } from "solid-js";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import { resolveTextCursor } from "./relative-cursor";
-
-/**
- * Reactive extensions as compartments of the one shared view. Each accessor
- * reconfigures only its own compartment. Add them while the owning component is
- * set up: their first run precedes the editor's mount, which reads `extension()`.
- * Later runs are effects, never nested in a CodeMirror update.
- */
-export const createDynamicExtensions = () => {
-  const slots: { compartment: Compartment; value: Extension }[] = [];
-  let view: EditorView | undefined;
-  return {
-    add(extension: Extension | (() => Extension)) {
-      const slot = { compartment: new Compartment(), value: [] as Extension };
-      slots.push(slot);
-      if (typeof extension !== "function") {
-        slot.value = extension;
-        return;
-      }
-      createEffect(() => {
-        slot.value = extension();
-        untrack(() => view?.dispatch({ effects: slot.compartment.reconfigure(slot.value) }));
-      });
-    },
-    extension: (): Extension => slots.map((slot) => slot.compartment.of(slot.value)),
-    attach(next: EditorView) {
-      view = next;
-    },
-  };
-};
 
 const tables = new WeakMap<EditorState, Table[]>();
 const tablesOf = (state: EditorState) => {

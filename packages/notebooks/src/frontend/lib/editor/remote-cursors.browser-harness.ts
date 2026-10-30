@@ -1,10 +1,10 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { customDarkInit, customLightInit } from "@k2b/editor/markdown";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { remoteCursors } from "./remote-cursors";
-import { customDarkInit, customLightInit } from "./theme";
 
 // The note editor's collaboration setup with one other person whose caret sits in the text.
 const dark = new URLSearchParams(location.search).get("theme") === "dark";

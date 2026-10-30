@@ -17,6 +17,7 @@
       "packages/cloud",
       "packages/contacts",
       "packages/core",
+      "packages/editor",
       "packages/cloud-cli",
       "packages/dashboard",
       "packages/faq",

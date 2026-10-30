@@ -1,11 +1,10 @@
-import { afterEach, expect, type Mock, setDefaultTimeout, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, type Mock, setDefaultTimeout, spyOn, test } from "bun:test";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { loadChatView } from "../service";
 import { requireConversation } from "../service/access";
 import {
@@ -17,8 +16,10 @@ import {
   MessageViewSchema,
   ThreadSchema,
 } from "../service/contracts";
+import { mockDiscussionCatalog, providerApp } from "../service/discussions.test-fixture";
 import { appendMessage } from "../service/message-store";
 import { accessKey, readResource, resourceReaderDependencies } from "../service/resource-access";
+import { systemNotificationDependencies } from "../service/system-notification-access";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -26,14 +27,22 @@ setDefaultTimeout(120_000);
 const suite = suiteFor("database", "nats", "valkey");
 suite("mentions and For you", () => {
   const f = messageFixtures();
+  let catalog: ReturnType<typeof mockDiscussionCatalog>;
+  beforeEach(() => {
+    catalog = mockDiscussionCatalog([providerApp("inventory"), providerApp("supplies")]);
+  });
   const app = new Hono<AuthContext>().route("/api/chat", chatApi);
   const keys = new Set<string>();
   const extraGrants: string[] = [];
   const extraAccounts: string[] = [];
   let reader: Mock<typeof resourceReaderDependencies.invoke> | undefined;
+  let principalReader: Mock<typeof systemNotificationDependencies.read> | undefined;
   afterEach(async () => {
+    catalog.mockRestore();
     reader?.mockRestore();
     reader = undefined;
+    principalReader?.mockRestore();
+    principalReader = undefined;
     if (keys.size) await redis.send("DEL", [...keys]);
     keys.clear();
     for (const id of extraGrants.splice(0)) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
@@ -371,30 +380,44 @@ suite("mentions and For you", () => {
   });
 
   for (const [containerType, itemType] of [
-    ["spaces.space", "spaces.item"],
-    ["notebooks.notebook", "notebooks.note"],
+    ["inventory.collection", "inventory.item"],
+    ["supplies.collection", "supplies.item"],
   ] as const)
     test(`${containerType}: system mentions accept cold principals without grants; For you rechecks readers`, async () => {
       const owner = await f.person("Owner"),
         mara = await f.person("Mara"),
         denied = await f.person("Denied");
-      const space = testShortId(),
-        item = testShortId();
+      const space = crypto.randomUUID(),
+        item = crypto.randomUUID();
       let denyMara = false;
+      principalReader = spyOn(systemNotificationDependencies, "read").mockImplementation(async (input) => ({
+        state: "checked",
+        readable: input.principals.filter(
+          (principal) =>
+            principal.type === "user" &&
+            principal.userId !== denied.id &&
+            !(denyMara && input.ref.type === itemType && principal.userId === mara.id),
+        ),
+      }));
+      const countKey = `chat:system-reader:v2:${mara.id}:${JSON.stringify([containerType, space, itemType, item])}`;
+      keys.add(countKey);
       reader = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (_app, capability, _input, caller) => {
         if (capability === `${containerType.split(".")[1]}.read`)
-          return { data: { id: space, name: "Project", permission: "write" }, links: [{ rel: "open", href: `/app/spaces/${space}` }] };
+          return { data: { view: { title: "Project", permission: "write" } }, links: [{ rel: "open", href: `/app/inventory/${space}` }] };
         if (
           capability === `${itemType.split(".")[1]}.read` &&
           caller.cookie !== denied.headers.cookie &&
           !(denyMara && caller.cookie === mara.headers.cookie)
         )
           return {
-            data:
-              itemType === "spaces.item"
-                ? { id: item, title: "Task current title", kind: "task", spaceId: space }
-                : { id: item, title: "Task current title", notebookId: space },
-            links: [{ rel: "open", href: `/app/spaces/${space}/${item}` }],
+            data: {
+              view: {
+                title: "Task current title",
+                permission: "read",
+                container: { ref: { type: containerType, id: space }, title: "Project" },
+              },
+            },
+            links: [{ rel: "open", href: `/app/inventory/${space}/${item}` }],
           };
         return null;
       });
@@ -511,6 +534,7 @@ suite("mentions and For you", () => {
       expect((await loadChatView(mara.context, {})).sidebar.forYouUnread).toBe(1);
       denyMara = true;
       await redis.del(accessKey(`user:${mara.id}`, { type: itemType, id: item }));
+      await redis.del(countKey);
       page = await feed(mara);
       expect(page.items).toEqual([]);
       expect((await loadChatView(mara.context, {})).sidebar.forYouUnread).toBe(0);

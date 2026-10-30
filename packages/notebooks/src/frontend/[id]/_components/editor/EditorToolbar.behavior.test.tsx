@@ -2,6 +2,17 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
+const loading = createDomTestHarness();
+const { createEditor } = await import("@k2b/editor");
+loading.cleanup();
+
+/** The shared editor state the toolbar formats, bound to a test view. */
+const editorFor = (view?: import("@codemirror/view").EditorView) => {
+  const editor = createEditor();
+  if (view) editor.attach(view);
+  return editor;
+};
+
 const read = (path: string) => Bun.file(new URL(path, import.meta.url)).text();
 
 describe("editor toolbar phone viewport and menus", () => {
@@ -27,7 +38,7 @@ describe("editor toolbar phone viewport and menus", () => {
     const { EditorState } = await import("@codemirror/state");
     const { EditorView } = await import("@codemirror/view");
     const { tableGrid } = await import("@k2b/ui/text-editor");
-    const { markdownExtension } = await import("../../../lib/editor/markdown");
+    const { markdownExtension } = await import("@k2b/editor/markdown");
     const { caretFormat } = await import("./editor-actions");
     const { default: EditorToolbar } = await import("./EditorToolbar");
     const { LocaleProvider } = await import("@k2b/ui");
@@ -44,7 +55,7 @@ describe("editor toolbar phone viewport and menus", () => {
         <LocaleProvider locale="en">
           <EditorToolbar
             connected
-            editorView={view}
+            editor={editorFor(view)}
             notebookId="Book01"
             noteId="Note01"
             initialPanelOpen={false}
@@ -241,7 +252,7 @@ describe("editor toolbar pointer and keyboard focus", () => {
         <LocaleProvider locale="de">
           <EditorToolbar
             connected
-            editorView={undefined}
+            editor={editorFor()}
             notebookId="notebook-1"
             noteId="note-1"
             initialPanelOpen={false}
@@ -307,7 +318,7 @@ describe("editor toolbar navigation toggle", () => {
         <LocaleProvider locale="de">
           <EditorToolbar
             connected
-            editorView={undefined}
+            editor={editorFor()}
             notebookId="notebook-1"
             noteId="note-1"
             initialPanelOpen={false}
@@ -369,7 +380,7 @@ describe("editor toolbar formats and shortcuts", () => {
     const { EditorState } = await import("@codemirror/state");
     const { EditorView } = await import("@codemirror/view");
     const { forceParsing } = await import("@codemirror/language");
-    const { markdownExtension } = await import("../../../lib/editor/markdown");
+    const { markdownExtension } = await import("@k2b/editor/markdown");
     const { caretFormat } = await import("./editor-actions");
     const { default: EditorToolbar, formattingKeymap } = await import("./EditorToolbar");
     const { LocaleProvider } = await import("@k2b/ui");
@@ -393,7 +404,7 @@ describe("editor toolbar formats and shortcuts", () => {
         <LocaleProvider locale="en">
           <EditorToolbar
             connected
-            editorView={view}
+            editor={editorFor(view)}
             notebookId="Book01"
             noteId="Note01"
             initialPanelOpen={false}

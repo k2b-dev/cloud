@@ -13,6 +13,15 @@ updated: 2026-10-30
 The Notes website is a standalone service under `pwas/notes`. It uses a
 dedicated Postgres database. It does not connect to a Cloud installation.
 
+The `cloud-notes` image contains the SPA, API, WebSocket and admin view. It runs
+as an unprivileged user on port 3000 and is built for each release architecture.
+For a source checkout, build the UI package and Notes SPA before starting:
+
+```bash
+bun run --cwd packages/ui build
+bun run --cwd pwas/notes build
+```
+
 Set `DATABASE_URL` to that database and start the server:
 
 ```bash
@@ -72,6 +81,7 @@ for this host. The service worker revalidates (`no-cache`); hashed static build
 assets use a one-year immutable cache. The read-only `POST /api/presence` polls
 existing editor awareness without opening notes, writing data, or extending
 retention; it accepts 200 read links and 50 requests per minute per IP.
+
 ## Moderation duty
 
 Administration is disabled until `NOTES_ADMIN_PASSWORD_HASH` contains an

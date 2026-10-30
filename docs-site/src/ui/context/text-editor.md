@@ -144,6 +144,13 @@ applies accepted edits through the collaboration binding. An absent
 its own cell preview, such as a formula result. It runs outside active editing and refreshes when the table changes;
 typing always edits the cell's original Markdown.
 
+## Place a toolbar and menus anywhere
+
+To place a formatting toolbar, a bubble menu at selected text, or a slash menu
+apart from the editor, use [`@k2b/editor`](/en/docs/frontend/editor). Its
+building blocks share one editor state and describe actions as data; its
+`<Editor>` passes every prop here through to this component.
+
 ## Keep an application's own presentation and toolbar
 
 An application presentation without a `status` prop adds no empty status row

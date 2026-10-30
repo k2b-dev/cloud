@@ -3,7 +3,8 @@
 This standalone Bun/Hono service uses its own Postgres database. It does not
 register with Cloud and needs no Core, gateway, NATS, or Valkey.
 
-Run `bun run --cwd pwas/notes start` with `DATABASE_URL` pointing at the Notes
+Build the SPA with `bun run --cwd pwas/notes build` first, then run
+`bun run --cwd pwas/notes start` with `DATABASE_URL` pointing at the Notes
 database. Startup applies the versioned SQL migrations in one transaction.
 Port 3000 serves `/healthz` for process liveness and `/readyz` for database and
 schema readiness. A readiness failure returns 503 without database details.
@@ -20,9 +21,9 @@ and `migrations/`; the SPA owns `src/`, `index.html`, and its build script.
 - [x] Text, state, connection, rate, and total storage limits.
 - [x] Checked image/PDF files in Postgres.
 - [x] Explicit human-open signal and six-month expiry.
-- [ ] Reports, password-protected moderation, and decision log.
+- [x] Reports, password-protected moderation, and decision log.
 - [x] Escaped link metadata and a network-free 1200 × 630 preview.
-- [ ] SPA/API/WebSocket image and graceful shutdown.
+- [x] SPA/API/WebSocket image and graceful shutdown.
 
 Run the integration files through the repository test runner with
 `CLOUD_TEST_DATABASE_URL`. The shared fixture refuses databases whose names
@@ -71,7 +72,7 @@ The process counts rate limits locally. `NOTES_PUBLIC_ORIGIN`,
 required admission budgets; select process limits with the pre-launch load test.
 `NOTES_TRUSTED_PROXY` optionally trusts one immediate peer and its last forwarded
 address. Without it, forwarding headers are ignored. The optional
-`NOTES_ADMIN_PASSWORD_HASH` is reserved for moderation; without it admin is off.
+`NOTES_ADMIN_PASSWORD_HASH` enables moderation; without it admin is off.
 
 Storage accounting reserves payload bytes, UTF-8 snapshot text, and fixed row
 costs before committing. A fenced single writer maintains the counter in memory,
@@ -84,6 +85,9 @@ state; `/readyz` fails when the budget is full.
 Focused integration tests cover real WebSockets, concurrent offline edits,
 read-only rejection, awareness identity, storage/connection/document limits,
 failed persistence, and SIGKILL during compaction and after commit before ACK.
+The browser-provider integration connects independent real browsers to the
+Postgres-backed server, merges offline edits, restarts the server while the
+browsers stay open, and verifies that a read link cannot persist changes.
 
 ## Files
 
@@ -118,6 +122,7 @@ bytes. At most one render runs at a time; other notes receive the retryable
 keyed by content hash. No GET or HEAD writes to Postgres or updates human-open
 dates. HEAD validates access but does not render. Cache hits still check the
 current note status, including deletion and blocking.
+
 ## Reports and moderation
 
 `POST /api/reports` accepts `{linkId, reason, text, email?, confirmed:true}`.
@@ -164,3 +169,17 @@ transfers. Admission and edit-link checks happen before reading upload bodies.
 Body reads are cancelled on disconnect or after one 30-second heartbeat interval,
 so stalled uploads release their slots. Excess transfers return 503
 `transfers_full`; clients can retry.
+
+## Image
+
+`docker build -f pwas/notes/Dockerfile -t cloud-notes .` builds the SPA and server
+for the target architecture. The runtime contains only built assets, a bundled
+server, its font and the native canvas package. It runs as the unprivileged Bun
+user and listens on port 3000. It needs only its dedicated Postgres database
+and the Notes configuration above. CI boots it against a fresh database, checks
+readiness and SPA delivery, then creates a note and verifies its 1200 × 630 PNG.
+The release image is `cloud-notes`; this image does not join the Cloud app set.
+
+The CSP permits the editor's runtime styles and local inline font subsets.
+Scripts remain restricted to the same origin; inline scripts remain blocked.
+WebSockets may connect only to the configured Notes origin.

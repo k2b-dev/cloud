@@ -10,7 +10,7 @@ import { createDomTestHarness } from "../../../../../ui/test/dom";
 // DOM before importing it, as in the existing Notebook table behavior harness.
 const bootstrap = createDomTestHarness();
 const { tableGrid, tableHost } = await import("@k2b/ui/text-editor");
-const { namedBlocksExtension } = await import("./named-blocks");
+const { namedBlocksExtension } = await import("@k2b/editor/markdown");
 const { createNotebookTablePresentation, notebookSourceFormulasExtension } = await import("./shared-tables");
 const { formulaPreviewWidget } = await import("./tables");
 bootstrap.cleanup();

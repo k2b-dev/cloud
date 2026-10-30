@@ -109,6 +109,13 @@ databaseSuite()("Notes durable Yjs sync", () => {
     return { doc, update: Y.encodeStateAsUpdate(doc, vector) };
   };
   const replies = (sent: Uint8Array[]) => sent.map(readReply).filter((value) => value !== null);
+  const waitForCrashedOwner = () =>
+    db.begin(async (tx) => {
+      // Process exit precedes Postgres observing EOF on the owner's separate connection.
+      // Synchronize on that session lock instead of racing the successor's try-lock.
+      await tx`SET LOCAL lock_timeout='2s'`;
+      await tx`SELECT pg_advisory_xact_lock(726628314)`;
+    });
 
   test("concurrent offline edits merge, acknowledge after persistence, and survive compaction", async () => {
     const shared = await pad();
@@ -542,6 +549,7 @@ databaseSuite()("Notes durable Yjs sync", () => {
     } finally {
       if (child.exitCode === null) child.kill();
     }
+    await waitForCrashedOwner();
     service = new NotesService(new NotesStore(db, options.storageBytes), options);
     await service.start();
     expect((await service.read(shared.readId)).content).toBe("hello crash-safe");
@@ -593,6 +601,7 @@ databaseSuite()("Notes durable Yjs sync", () => {
       { through: string; count: number }[]
     >`SELECT applied_through::text AS through,(SELECT count(*)::int FROM pad_updates WHERE read_id=${shared.readId}) AS count FROM pads WHERE read_id=${shared.readId}`;
     expect(row).toEqual({ through: "0", count: 1 });
+    await waitForCrashedOwner();
     service = new NotesService(new NotesStore(db, options.storageBytes), options);
     await service.start();
     expect((await service.read(shared.readId)).content).toBe("hello crash-safe");

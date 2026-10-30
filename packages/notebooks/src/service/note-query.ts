@@ -1,5 +1,5 @@
+import type { NamedDataProperties, NamedDataValue } from "@k2b/editor/markdown";
 import { sql } from "bun";
-import type { NamedDataProperties, NamedDataValue } from "../lib/named-blocks";
 import {
   isQueryField,
   isQueryFilter,

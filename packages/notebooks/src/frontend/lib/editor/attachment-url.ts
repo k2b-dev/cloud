@@ -1,3 +1,7 @@
+import { isSafeMarkdownUrl } from "@k2b/editor/markdown/urls";
+
+export { isSafeMarkdownUrl } from "@k2b/editor/markdown/urls";
+
 /**
  * Browser-side helpers for the `attach://<shortId>` URL scheme + the click
  * download flow. Used by both lib/editor decorations and the editor
@@ -39,18 +43,6 @@ export const attachmentFromContentUrl = (href: string, base: string): { notebook
   if (url.origin !== new URL(base).origin) return null;
   const [, notebookId, attachmentId] = ATTACHMENT_CONTENT_PATH_RE.exec(url.pathname) ?? [];
   return notebookId && attachmentId ? { notebookId, attachmentId } : null;
-};
-
-const SAFE_URL_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
-
-export const isSafeMarkdownUrl = (url: string): boolean => {
-  if (url.startsWith("//")) return false;
-  if (!/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(url)) return true;
-  try {
-    return SAFE_URL_PROTOCOLS.has(new URL(url).protocol);
-  } catch {
-    return false;
-  }
 };
 
 /**

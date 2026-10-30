@@ -1,12 +1,12 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers, WidgetType } from "@codemirror/view";
+import { fadeScrollMarginsExtension, fadeScrollPadding, listCommandsExtension } from "@k2b/editor/markdown";
 import { ScrollArea } from "@k2b/ui";
 import { createRoot, createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { fadeScrollMarginsExtension, fadeScrollPadding } from "./fade-scroll-margins";
 import { editor } from "./index";
-import { listCommandsExtension } from "./list-commands";
+import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "./notebook-options";
 import { createQueryBlockPreviews } from "./query-blocks";
 
 const params = new URLSearchParams(location.search);
@@ -65,21 +65,21 @@ if (mode !== "book")
             ? [editor.rawLightInit(), lineNumbers()]
             : [
                 dark ? editor.customDarkInit() : editor.customLightInit(),
-                listCommandsExtension(),
+                listCommandsExtension(notebookListOptions),
                 editor.tablesExtension("book01"),
-                editor.imageExtension("book01"),
-                editor.listsExtension(),
+                editor.imageExtension(notebookUrlOptions("book01")),
+                editor.listsExtension(notebookListOptions),
                 editor.infoBlocksExtension("de"),
                 editor.dataBlocksExtension(),
                 editor.namedBlocksExtension(),
-                editor.linksExtension("book01"),
+                editor.linksExtension(notebookUrlOptions("book01")),
                 editor.markupExtension(),
                 editor.markExtension(),
                 editor.subSupExtension(),
-                editor.ligaturesExtension(),
+                editor.ligaturesExtension(notebookListOptions),
                 editor.initialMarkdownDecorationRefreshExtension(),
                 editor.pointerSelectionMarkdownRefreshExtension(),
-                editor.mermaidExtension(),
+                editor.mermaidExtension(notebookMermaidOptions),
                 editor.katexExtension(),
                 editor.codeFontExtension(),
                 editor.tagPillExtension("book01"),

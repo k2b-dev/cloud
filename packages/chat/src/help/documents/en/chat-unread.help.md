@@ -57,7 +57,7 @@ If messages arrive while you are away from the tab, **New messages** takes you b
 
 ## See what is for you {icon="at"}
 
-**For you** at the top of the list shows messages that mention you and replies to your messages, from every chat, also from Spaces and Notebooks. The newest come first, and the number shows how many you have not read yet.
+**For you** at the top of the list shows messages that mention you and replies to your messages, from every chat, including resource discussions. The newest come first, and the number shows how many you have not read yet.
 
 :::steps
 1. Choose **For you** in the list.

@@ -6,7 +6,9 @@
   "scripts": {
     "start": "bun server/start.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
-    "test": "bun test --path-ignore-patterns '**/*.behavior.test.*' server"
+    "test": "bun test --path-ignore-patterns '**/*.behavior.test.*' src server",
+    "build": "bun run scripts/build.ts",
+    "dev": "bun run scripts/dev.ts"
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",
@@ -20,10 +22,21 @@
     "@napi-rs/canvas": "1.0.9",
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@k2b/ui": "workspace:*",
-    "solid-js": "catalog:"
+    "solid-js": "catalog:",
+    "y-codemirror.next": "catalog:",
+    "@k2b/editor": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@babel/core": "8.0.6",
+    "@babel/preset-typescript": "8.0.1",
+    "@codemirror/state": "catalog:",
+    "@codemirror/view": "catalog:",
+    "@types/babel__core": "7.20.5",
+    "@types/subset-font": "2.3.0",
+    "babel-preset-solid": "1.9.15",
+    "playwright": "catalog:",
+    "subset-font": "2.9.0"
   }
 }

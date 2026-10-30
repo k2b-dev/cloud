@@ -1,9 +1,9 @@
 import { expect, setSystemTime, test } from "bun:test";
 import { evaluateFormula, markdown as sharedMarkdown } from "@k2b/cloud/shared";
+import { extractNamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
 import { renderSafeMarkdown } from "@k2b/ui";
 import { renderNotebookBook } from "./lib/book-renderer";
 import { parseNotebookChartBlocks } from "./lib/chart-blocks";
-import { extractNamedDataProperties } from "./lib/named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./lib/query-blocks";
 import { extractTags } from "./service/tags";
 

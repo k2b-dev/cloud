@@ -5,6 +5,7 @@ import * as access from "./access";
 import { MAX_THREADS } from "./contracts";
 import * as messageStore from "./message-store";
 import * as threadAccess from "./thread-access";
+import { SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
 import * as threadState from "./thread-state";
 import { type ThreadRow, threads } from "./threads";
 
@@ -114,10 +115,10 @@ for (const selectedOld of [true, false])
     const candidates = queries.find((query) => query.text.includes("SELECT *,"))!;
     expect(fragments.join(" ")).toContain("last_activity_at DESC");
     expect(fragments.join(" ")).toContain("short_id =");
-    expect(candidates.values.at(-1)).toBe(MAX_THREADS);
+    expect(candidates.values.at(-1)).toBe(SUMMARY_TRAVERSAL_BUDGET + 1);
     if (!result.ok) throw new Error("Expected an authorized list");
     expect(result.data.items.map((row) => row.id)).toEqual(
       selectedOld ? ["OldOne", "T00001", "T00002", "T00003", "T00004", "T00008"] : ["OldOne", "T00001", "T00002", "T00003", "T00008"],
     );
-    expect(result.data.nextCursor).toBeNull();
+    expect(result.data.nextCursor).toBe("");
   });

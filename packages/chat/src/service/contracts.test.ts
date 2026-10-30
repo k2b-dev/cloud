@@ -263,12 +263,16 @@ test("thread input is strict, bounded, trimmed and supports explicit read select
 });
 
 test("system chat contracts constrain containers, item metadata and paging", () => {
-  for (const resourceType of ["spaces.space", "notebooks.notebook"])
-    expect(SystemChatParamSchema.safeParse({ resourceType, resourceId: "abcdef" }).success).toBeTrue();
-  expect(SystemChatParamSchema.safeParse({ resourceType: "spaces.item", resourceId: "abcdef" }).success).toBeFalse();
-  expect(ForResourceSchema.parse({ ref: { type: "notebooks.note", id: "note01" } })).toEqual({
-    ref: { type: "notebooks.note", id: "note01" },
-  });
+  for (const resourceType of ["inventory.collection", "supplies.folder"])
+    for (const resourceId of ["11111111-1111-4111-8111-111111111111", "folder/opaque:item", "x".repeat(512)])
+      expect(SystemChatParamSchema.parse({ resourceType, resourceId })).toEqual({ resourceType, resourceId });
+  expect(SystemChatParamSchema.safeParse({ resourceType: "invalid", resourceId: "opaque-id" }).success).toBeFalse();
+  for (const id of ["", "x".repeat(513)]) {
+    expect(SystemChatParamSchema.safeParse({ resourceType: "inventory.collection", resourceId: id }).success).toBeFalse();
+    expect(ForResourceSchema.safeParse({ ref: { type: "inventory.item", id } }).success).toBeFalse();
+  }
+  const ref = { type: "inventory.item", id: "folder/opaque:item" };
+  expect(ForResourceSchema.parse({ ref })).toEqual({ ref });
   expect(ThreadQuerySchema.parse({ filter: "unread", q: " task ", cursor: "abcdef" })).toEqual({
     filter: "unread",
     q: "task",
@@ -276,13 +280,16 @@ test("system chat contracts constrain containers, item metadata and paging", () 
   });
   for (const query of [{ filter: "archived" }, { q: "x".repeat(101) }, { cursor: "not-a-cursor" }])
     expect(ThreadQuerySchema.safeParse(query).success).toBeFalse();
-  expect(
-    ThreadResourceSchema.safeParse({ ref: { type: "spaces.item", id: "item01" }, kind: "task", status: null, done: false, href: "/item" })
-      .success,
-  ).toBeTrue();
-  expect(
-    ThreadResourceSchema.safeParse({ ref: { type: "spaces.item", id: "item01" }, kind: "task", status: null, href: "/item" }).success,
-  ).toBeFalse();
+  const resource = {
+    ref: { type: "inventory.item", id: "item01" },
+    title: "Box",
+    permission: "read",
+    typeTitle: "Item",
+    icon: "ti ti-box",
+  };
+  expect(ThreadResourceSchema.safeParse(resource).success).toBeTrue();
+  expect(ThreadResourceSchema.safeParse({ ...resource, href: "/item" }).success).toBeTrue();
+  expect(ThreadResourceSchema.safeParse({ ...resource, permission: "manage" }).success).toBeFalse();
 });
 
 test("summary and read-all continuations reject malformed state and preserve an unstarted thread page", () => {
@@ -323,4 +330,21 @@ test("channel discovery accepts bounded distinct audiences and service-account m
   expect(SystemMessageSchema.parse({ code: "discovery_changed", params: { count: 2 } }).code).toBe("discovery_changed");
   expect(ConversationSchema.shape.channel.parse(true)).toBeTrue();
   expect(ConversationSchema.shape.member.parse(false)).toBeFalse();
+});
+
+test("discussion cursor maps bound keys, individual values and serialized input", async () => {
+  const { SystemChatQuerySchema, SYSTEM_CHAT_PROVIDER_LIMIT, SYSTEM_CHAT_CURSORS_LIMIT } = await import("./contracts");
+  expect(
+    SystemChatQuerySchema.safeParse({ cursors: JSON.stringify({ "inventory.collection": { cursor: "x".repeat(2048) } }) }).success,
+  ).toBeTrue();
+  expect(
+    SystemChatQuerySchema.safeParse({ cursors: JSON.stringify({ "inventory.collection": { cursor: "x".repeat(2049) } }) }).success,
+  ).toBeFalse();
+  expect(
+    SystemChatQuerySchema.parse({ cursors: JSON.stringify({ "inventory.collection": { cursor: '"'.repeat(2048), offset: 99 } }) }).cursors,
+  ).toEqual({ "inventory.collection": { cursor: '"'.repeat(2048), offset: 99 } });
+  expect(SystemChatQuerySchema.safeParse({ cursors: JSON.stringify({ "inventory.collection": { offset: 101 } }) }).success).toBeFalse();
+  const tooMany = Object.fromEntries(Array.from({ length: SYSTEM_CHAT_PROVIDER_LIMIT + 1 }, (_, i) => [`inventory${i}.collection`, ""]));
+  expect(SystemChatQuerySchema.safeParse({ cursors: JSON.stringify(tooMany) }).success).toBeFalse();
+  expect(SystemChatQuerySchema.safeParse({ cursors: " ".repeat(SYSTEM_CHAT_CURSORS_LIMIT + 1) }).success).toBeFalse();
 });
