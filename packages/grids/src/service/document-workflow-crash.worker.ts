@@ -2,10 +2,9 @@
 import { spyOn } from "bun:test";
 import { request } from "node:http";
 import { bindProcessSync, connections } from "@k2b/cloud";
-import { initializePlatform } from "@k2b/cloud/start";
 import { createSync } from "@k2b/sync";
 import { sql } from "bun";
-import { connectNats } from "../../../../scripts/fixtures/platform";
+import { connectNats, initializeTestPlatform } from "../../../../scripts/fixtures/platform";
 import { localVerificationUrl } from "../../scripts/verification";
 import { DocumentTemplateRendererSchema } from "../contracts";
 import { gridsWorkflows } from "../workflows/module";
@@ -24,7 +23,7 @@ if (
   throw new Error("Crash worker requires an isolated verification database and namespace");
 }
 process.env.SYNC_NAMESPACE = namespace;
-await initializePlatform({ appId: "grids" });
+await initializeTestPlatform("grids");
 localVerificationUrl("NATS", connections().nats.servers[0]);
 const connection = await connectNats({ name: "grids-crash-worker" });
 const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });

@@ -1,7 +1,7 @@
 /** Disposable child of the ZIP crash test; never an application worker entry point. */
 import { spyOn } from "bun:test";
-import { initializePlatform } from "@k2b/cloud/start";
 import { sql } from "bun";
+import { initializeTestPlatform } from "../../../../scripts/fixtures/platform";
 import { localVerificationUrl } from "../../scripts/verification";
 import { createDocumentIssuanceService } from "./document-issuance";
 import * as zipOutput from "./document-zip-output";
@@ -10,7 +10,7 @@ const [requestJson] = process.argv.slice(2);
 const database = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
 if (!database.pathname.endsWith("_test") || !requestJson) throw new Error("Crash worker requires a _test database and a request");
 
-await initializePlatform({ appId: "grids" });
+await initializeTestPlatform("grids");
 
 // Pause once the first staged chunk is durable inside the open transaction; the
 // parent kills this process there so the transaction aborts mid-archive.

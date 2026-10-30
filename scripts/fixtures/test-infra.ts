@@ -54,14 +54,13 @@ import {
 } from "./test-infra-env";
 import { connectTestNats } from "./test-nats";
 
+export type { InfraKind } from "./test-infra-env";
+export { connectTestNats } from "./test-nats";
 // Unit and CLI processes load this gate too; do not load server clients until needed.
 export const initializeTestPlatform = async (appId?: string): Promise<void> => {
   const platform = await import("./platform");
   await platform.initializeTestPlatform(appId);
 };
-
-export type { InfraKind } from "./test-infra-env";
-export { connectTestNats } from "./test-nats";
 
 const testOnlyDefaults: Record<string, string> = {
   APP_SECRET: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
