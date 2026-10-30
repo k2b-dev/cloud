@@ -1,6 +1,6 @@
+import { files as browserFiles, images } from "@k2b/stdlib/browser";
 import { Button, Dropdown, type DropdownItem, IconButton, type ToastHandle, toast } from "@k2b/ui";
 import type { TextEditorController } from "@k2b/ui/text-editor";
-import { files as browserFiles, images } from "@k2b/stdlib/browser";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -11,11 +11,11 @@ import { IMAGE_MAX_SIDE, MAX_FILE_BYTES, MAX_FILES_PER_NOTE, NOTE_TEXT } from ".
 import { preferences } from "../prefs";
 import { navigate } from "../router";
 import { app, t } from "../state";
-import { Footer, Icon, type IconName, Wordmark } from "../ui/common";
 import { Accessory } from "../ui/Accessory";
+import { Footer, Icon, type IconName, Wordmark } from "../ui/common";
 import { NoteEditor } from "../ui/Editor";
-import { EXAMPLE_TEXT } from "./example";
 import { openDelete } from "./Delete";
+import { EXAMPLE_TEXT } from "./example";
 import { overviewMenu } from "./menus";
 import { openPalette } from "./Palette";
 import { openReport } from "./Report";
@@ -28,6 +28,7 @@ type Status = "local" | "shared" | "syncing" | "offline" | "read" | "example" | 
 let focusNext: string | null = null;
 /** True from the first keystroke of the draft until its note is open, so the overview does not replace it early. */
 const [handingOff, setHandingOff] = createSignal(false);
+
 export { handingOff };
 
 const STATUSES: Status[] = ["local", "shared", "syncing", "offline", "read", "example", "unsaved", "pendingDelete"];
@@ -52,14 +53,10 @@ function StatusLabel(props: { status: Status }) {
     <span class="n-status" role="status" data-tone={view()[3]}>
       <Icon name={view()[0]} class={props.status === "syncing" ? "n-spin" : undefined} />
       <span class="n-labels n-long">
-        <For each={STATUSES}>
-          {(status) => <span data-active={status === props.status ? "" : undefined}>{views()[status][1]}</span>}
-        </For>
+        <For each={STATUSES}>{(status) => <span data-active={status === props.status ? "" : undefined}>{views()[status][1]}</span>}</For>
       </span>
       <span class="n-labels n-short">
-        <For each={STATUSES}>
-          {(status) => <span data-active={status === props.status ? "" : undefined}>{views()[status][2]}</span>}
-        </For>
+        <For each={STATUSES}>{(status) => <span data-active={status === props.status ? "" : undefined}>{views()[status][2]}</span>}</For>
       </span>
     </span>
   );
@@ -79,7 +76,9 @@ function Faces(props: { people: { name: string; color: string }[] }) {
         </For>
       </span>
       <span class="n-faces-text">
-        {props.people.length > 1 ? t().writeAlongMany({ count: props.people.length }) : t().writesAlong({ name: props.people[0]?.name ?? "" })}
+        {props.people.length > 1
+          ? t().writeAlongMany({ count: props.people.length })
+          : t().writesAlong({ name: props.people[0]?.name ?? "" })}
       </span>
       <span class="n-sr">{t().hereNow({ names: names(), count: props.people.length })}</span>
     </Show>
@@ -307,7 +306,12 @@ export function NotePage(props: { mode: NoteMode }) {
           const data = await images.create(original);
           const wide = data.width >= data.height;
           if (Math.max(data.width, data.height) > IMAGE_MAX_SIDE)
-            file = await images.resize(wide ? IMAGE_MAX_SIDE : undefined, wide ? undefined : IMAGE_MAX_SIDE)(data).then(images.toBlob("webp", 0.85));
+            file = await images
+              .resize(
+                wide ? IMAGE_MAX_SIDE : undefined,
+                wide ? undefined : IMAGE_MAX_SIDE,
+              )(data)
+              .then(images.toBlob("webp", 0.85));
         } catch {
           file = original;
         } finally {
@@ -334,7 +338,11 @@ export function NotePage(props: { mode: NoteMode }) {
     const current = opened();
     if (!current) return;
     const title = record()?.meta.title || t().untitled;
-    browserFiles.downloadFileFromContent(current.text.toString(), `${title.replace(/[\\/:*?"<>|]+/g, "-").slice(0, 80) || "notiz"}.md`, "text/markdown");
+    browserFiles.downloadFileFromContent(
+      current.text.toString(),
+      `${title.replace(/[\\/:*?"<>|]+/g, "-").slice(0, 80) || "notiz"}.md`,
+      "text/markdown",
+    );
   };
   const addTag = () => {
     const view = editor()?.view;
@@ -355,7 +363,9 @@ export function NotePage(props: { mode: NoteMode }) {
         items: [
           ...(readOnly() ? [] : [{ label: t().addTag, icon: "ti ti-hash", action: addTag }]),
           { label: t().downloadMarkdown, icon: "ti ti-markdown", action: downloadMarkdown },
-          ...(current.share?.kind === "own" ? [{ label: t().stopSharing, icon: "ti ti-link-off", action: () => void stopSharing(current) }] : []),
+          ...(current.share?.kind === "own"
+            ? [{ label: t().stopSharing, icon: "ti ti-link-off", action: () => void stopSharing(current) }]
+            : []),
           ...(!own
             ? [
                 {
@@ -376,7 +386,8 @@ export function NotePage(props: { mode: NoteMode }) {
         ],
       },
     ];
-    if (own) items.push({ items: [{ label: t().deleteNote, icon: "ti ti-trash", variant: "danger", action: () => void openDelete(current) }] });
+    if (own)
+      items.push({ items: [{ label: t().deleteNote, icon: "ti ti-trash", variant: "danger", action: () => void openDelete(current) }] });
     return items;
   };
 
@@ -452,20 +463,20 @@ export function NotePage(props: { mode: NoteMode }) {
           fallback={<div class="n-editor" aria-busy="true" />}
         >
           {(ready) => (
-          <NoteEditor
-            text={ready().text}
-            awareness={ready().awareness}
-            label={editorLabel()}
-            readOnly={editorReadOnly()}
-            placeholder={first() ? t().titlePlaceholder : undefined}
-            autofocus={first() ? "start" : focusNext === record()?.id ? "end" : undefined}
-            onReady={(value, undoLast) => {
-              setEditor(value);
-              setUndo(() => undoLast);
-              if (focusNext === record()?.id) focusNext = null;
-            }}
-            onFiles={(list) => void addFiles(list)}
-          />
+            <NoteEditor
+              text={ready().text}
+              awareness={ready().awareness}
+              label={editorLabel()}
+              readOnly={editorReadOnly()}
+              placeholder={first() ? t().titlePlaceholder : undefined}
+              autofocus={first() ? "start" : focusNext === record()?.id ? "end" : undefined}
+              onReady={(value, undoLast) => {
+                setEditor(value);
+                setUndo(() => undoLast);
+                if (focusNext === record()?.id) focusNext = null;
+              }}
+              onFiles={(list) => void addFiles(list)}
+            />
           )}
         </Show>
         <Show when={first()}>
@@ -510,4 +521,3 @@ export function NotePage(props: { mode: NoteMode }) {
     </div>
   );
 }
-

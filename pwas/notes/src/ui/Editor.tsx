@@ -1,7 +1,7 @@
 import type { EditorView } from "@codemirror/view";
 import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, type SlashAction, slashMenu } from "@k2b/editor";
-import type { TextEditorController } from "@k2b/ui/text-editor";
 import { files as browserFiles } from "@k2b/stdlib/browser";
+import type { TextEditorController } from "@k2b/ui/text-editor";
 import { onCleanup } from "solid-js";
 import { yCollab } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";

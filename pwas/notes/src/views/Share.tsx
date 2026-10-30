@@ -1,5 +1,5 @@
-import { Button, CopyButton, prompts, toast } from "@k2b/ui";
 import { qr } from "@k2b/stdlib/qr";
+import { Button, CopyButton, prompts, toast } from "@k2b/ui";
 import { createSignal, Match, Show, Switch } from "solid-js";
 import { ApiError, api, shareUrl } from "../lib/api";
 import type { NoteRecord } from "../lib/model";
@@ -26,7 +26,9 @@ async function share(record: NoteRecord) {
   await store.update(record.id, { share: { kind: "own", readId: links.readId, editId: links.editId, sharedAt: Date.now() } });
   const stored = await store.listFiles(record.id);
   const failed = (
-    await Promise.allSettled(stored.map((file) => api.uploadFile(links.editId, new File([file.blob], file.name, { type: file.blob.type }), file.key)))
+    await Promise.allSettled(
+      stored.map((file) => api.uploadFile(links.editId, new File([file.blob], file.name, { type: file.blob.type }), file.key)),
+    )
   ).filter((result) => result.status === "rejected");
   if (failed.length > 0) toast.error(t().uploadFailed);
   return links;

@@ -4,7 +4,18 @@ import type { ChartPreview } from "../lib/model";
 import { preferences } from "../prefs";
 import { t } from "../state";
 
-const TAG_COLORS = ["--t-emerald", "--t-blue", "--t-orange", "--t-rose", "--t-lime", "--t-fuchsia", "--t-violet", "--t-teal", "--t-amber", "--t-zinc"];
+const TAG_COLORS = [
+  "--t-emerald",
+  "--t-blue",
+  "--t-orange",
+  "--t-rose",
+  "--t-lime",
+  "--t-fuchsia",
+  "--t-violet",
+  "--t-teal",
+  "--t-amber",
+  "--t-zinc",
+];
 
 /** A tag keeps its colour everywhere: the same name always lands on the same palette entry. */
 export function tagColor(tag: string): string {
@@ -48,7 +59,13 @@ export function Footer(props: { narrow?: boolean; onReport?: () => void }) {
       <a href="/datenschutz">{t().privacy}</a>
       <a href="/nutzungsbedingungen">{t().terms}</a>
       <a href="/impressum">{t().imprint}</a>
-      <Show when={props.onReport}>{(report) => <button type="button" onClick={() => report()()}>{t().reportContent}</button>}</Show>
+      <Show when={props.onReport}>
+        {(report) => (
+          <button type="button" onClick={() => report()()}>
+            {t().reportContent}
+          </button>
+        )}
+      </Show>
     </footer>
   );
 }

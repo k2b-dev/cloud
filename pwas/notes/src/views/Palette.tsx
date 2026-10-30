@@ -1,5 +1,5 @@
-import { Button, IconButton, prompts } from "@k2b/ui";
 import { fuzzy } from "@k2b/stdlib";
+import { Button, IconButton, prompts } from "@k2b/ui";
 import { createMemo, createResource, createSignal, For, type JSX, onMount, Show } from "solid-js";
 import * as Y from "yjs";
 import { NOTE_TEXT, type NoteRecord } from "../lib/model";
@@ -39,7 +39,12 @@ async function loadTexts(records: NoteRecord[]): Promise<{ record: NoteRecord; t
 
 function Marked(props: { text: string; ranges: Ranges }) {
   return (
-    <For each={fuzzy.segments(props.text, props.ranges.map(([start, end]) => [start, end] as [number, number]))}>
+    <For
+      each={fuzzy.segments(
+        props.text,
+        props.ranges.map(([start, end]) => [start, end] as [number, number]),
+      )}
+    >
       {(segment) => (segment.match ? <mark>{segment.text}</mark> : segment.text)}
     </For>
   );

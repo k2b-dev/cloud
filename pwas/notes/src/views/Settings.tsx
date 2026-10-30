@@ -9,9 +9,11 @@ import { openImport } from "./Import";
 import { runExport } from "./menus";
 
 const formatBytes = (bytes: number) =>
-  new Intl.NumberFormat(preferences.locale(), { style: "unit", unit: bytes >= 1_000_000 ? "megabyte" : "kilobyte", maximumFractionDigits: 1 }).format(
-    bytes >= 1_000_000 ? bytes / 1_000_000 : bytes / 1_000,
-  );
+  new Intl.NumberFormat(preferences.locale(), {
+    style: "unit",
+    unit: bytes >= 1_000_000 ? "megabyte" : "kilobyte",
+    maximumFractionDigits: 1,
+  }).format(bytes >= 1_000_000 ? bytes / 1_000_000 : bytes / 1_000);
 
 function SettingsBody(props: { close: () => void }) {
   const [usage, { refetch }] = createResource(async () => (await app.store()?.usage()) ?? null);

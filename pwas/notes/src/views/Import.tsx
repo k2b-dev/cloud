@@ -1,5 +1,5 @@
-import { Button, prompts, toast } from "@k2b/ui";
 import { files as browserFiles } from "@k2b/stdlib/browser";
+import { Button, prompts, toast } from "@k2b/ui";
 import { createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import { applyImport, type ImportPreview, readImport } from "../lib/transfer";
 import { app, t } from "../state";
@@ -58,7 +58,8 @@ function ImportBody(props: { close: () => void; initial?: File[] }) {
     try {
       const result = await applyImport(current, store, mode());
       props.close();
-      if (result.skipped > 0) toast.success(t().importedSkipped({ count: result.skipped }), { title: t().imported({ count: result.imported }) });
+      if (result.skipped > 0)
+        toast.success(t().importedSkipped({ count: result.skipped }), { title: t().imported({ count: result.imported }) });
       else toast.success(t().imported({ count: result.imported }));
     } catch (failure) {
       setError(errorText(failure));
@@ -113,6 +114,8 @@ function ImportBody(props: { close: () => void; initial?: File[] }) {
           <p class="n-lead">{t().importLead}</p>
           <div
             class="n-drop"
+            role="group"
+            aria-label={t().importLead}
             data-over={over() ? "" : undefined}
             aria-busy={reading()}
             onDragOver={(event) => {

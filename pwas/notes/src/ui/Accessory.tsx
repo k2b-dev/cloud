@@ -1,7 +1,7 @@
+import type { EditorView } from "@codemirror/view";
+import { files as browserFiles } from "@k2b/stdlib/browser";
 import { IconButton } from "@k2b/ui";
 import { type TextEditorController, textEditorCommands } from "@k2b/ui/text-editor";
-import { files as browserFiles } from "@k2b/stdlib/browser";
-import type { EditorView } from "@codemirror/view";
 import { createSignal, For, onCleanup } from "solid-js";
 import { t } from "../state";
 import { Icon, type IconName } from "./common";
@@ -10,9 +10,11 @@ const toggleTask = (view: EditorView) => {
   const line = view.state.doc.lineAt(view.state.selection.main.head);
   const task = /^(\s*)[-*] \[[ xX]\] /.exec(line.text);
   const bullet = /^(\s*)[-*] /.exec(line.text);
-  const insert = task ? { from: line.from + (task[1]?.length ?? 0), to: line.from + task[0].length, insert: "" } : bullet
-    ? { from: line.from + bullet[0].length, insert: "[ ] " }
-    : { from: line.from, insert: "- [ ] " };
+  const insert = task
+    ? { from: line.from + (task[1]?.length ?? 0), to: line.from + task[0].length, insert: "" }
+    : bullet
+      ? { from: line.from + bullet[0].length, insert: "[ ] " }
+      : { from: line.from, insert: "- [ ] " };
   view.dispatch({ changes: insert, userEvent: "input.format" });
   view.focus();
   return true;

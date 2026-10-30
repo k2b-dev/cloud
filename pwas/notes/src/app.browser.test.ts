@@ -68,8 +68,16 @@ beforeEach(async () => {
   context = await browser.newContext({ locale: "de-DE", viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
   context.setDefaultTimeout(5_000);
   context.setDefaultNavigationTimeout(10_000);
+  // Pin calendar time without replacing timers, animation frames or performance.
+  await context.addInitScript((epoch) => {
+    const RealDate = Date;
+    globalThis.Date = new Proxy(RealDate, {
+      apply: () => new RealDate(epoch).toString(),
+      construct: (target, args, newTarget) => Reflect.construct(target, args.length ? args : [epoch], newTarget),
+      get: (target, key, receiver) => (key === "now" ? () => epoch : Reflect.get(target, key, receiver)),
+    });
+  }, NOW);
   page = await context.newPage();
-  await page.clock.setFixedTime(new Date(NOW));
   errors = pageErrors(page);
 });
 
