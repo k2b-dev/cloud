@@ -311,3 +311,27 @@ test("connections_not_permitted is a permanent startup error with no retry", asy
   expect(state.waits).toEqual([]);
   expect(state.logs).toEqual([{ appId: "inventory", attempt: 1, errorClass: "permanent" }]);
 });
+
+test("a real HTTP redirect fails permanently once without following or logging its destination", async () => {
+  const state = harness();
+  let received = 0;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => {
+      received++;
+      return new Response(null, { status: 302, headers: { Location: "/PRIVATE" } });
+    },
+  });
+  try {
+    await expect(bootstrapConnections(key, `http://127.0.0.1:${server.port}`, state)).rejects.toThrow(
+      "Core bootstrap permanent: redirect refused; check the direct Core origin",
+    );
+    expect(received).toBe(1);
+    expect(state.waits).toEqual([]);
+    expect(state.logs).toEqual([{ appId: "inventory", attempt: 1, errorClass: "permanent" }]);
+    expect(JSON.stringify(state.logs)).not.toContain("PRIVATE");
+  } finally {
+    await server.stop(true);
+  }
+});

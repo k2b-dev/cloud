@@ -11,6 +11,7 @@ import {
   bootstrapBodyDigest,
 } from "../runtime/bootstrap-protocol";
 import { getActiveAppKey, getInstallationId } from "./app-keys";
+import { get } from "./settings";
 
 export class BootstrapProofError extends Error {
   constructor(readonly code: "invalid_proof" | "wrong_app" | "wrong_installation" | "replayed_proof" | "connections_not_permitted") {
@@ -30,12 +31,45 @@ export const consumeBootstrapProof = async (keyId: string, jti: string, exp: num
   return rows.length === 1;
 };
 
-/** Called by Core's existing minute maintenance. Reuse its 100-row page budget. */
-export const cleanupBootstrapProofs = async (db: SQL = sql): Promise<void> => {
-  await db`DELETE FROM auth.app_proof_replays WHERE (key_id, jti) IN (
-    SELECT key_id, jti FROM auth.app_proof_replays WHERE retain_until <= now()
-    ORDER BY retain_until LIMIT 100 FOR UPDATE SKIP LOCKED
-  )`;
+/** The ingress, per-key admission and minute maintenance share this installation budget. */
+export const bootstrapRateLimit = async (): Promise<number> => Math.max(1, Math.floor(await get<number>("security.rate_limit_per_second")));
+
+/** Drain expired pages, with two minutes of per-key admission capacity to catch up after missed runs. */
+export const cleanupBootstrapProofs = async (
+  db: SQL = sql,
+  { signal }: { signal?: AbortSignal } = {},
+): Promise<{ deleted: number; remaining: number }> => {
+  signal?.throwIfAborted();
+  // Include revoked keys: their retained evidence still needs cleaning after revocation.
+  const [keys] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.service_account_credentials WHERE kind = 'app_key'`;
+  const maxRows = Math.max(1, keys?.count ?? 0) * (await bootstrapRateLimit()) * 60 * 2;
+  let deleted = 0;
+  while (deleted < maxRows) {
+    signal?.throwIfAborted();
+    const batchSize = Math.min(100, maxRows - deleted);
+    const query = db`
+      WITH batch AS MATERIALIZED (
+        SELECT key_id, jti FROM auth.app_proof_replays WHERE retain_until <= now()
+        ORDER BY retain_until LIMIT ${batchSize} FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM auth.app_proof_replays replay USING batch
+      WHERE replay.key_id = batch.key_id AND replay.jti = batch.jti AND replay.retain_until <= now()
+      RETURNING replay.jti
+    `;
+    const abort = () => query.cancel();
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      signal?.throwIfAborted();
+      const rows = await query;
+      deleted += rows.length;
+      if (rows.length < batchSize) break;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+    }
+  }
+  signal?.throwIfAborted();
+  const [backlog] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.app_proof_replays WHERE retain_until <= now()`;
+  return { deleted, remaining: backlog?.count ?? 0 };
 };
 
 /** No caches: every HTTP transmission rechecks revocation, expiry and account state in Postgres. */
@@ -44,7 +78,7 @@ export const authenticateBootstrap = async (
   request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
   db: SQL = sql,
   now = Date.now(),
-): Promise<BootstrapIdentity> => {
+): Promise<{ identity: BootstrapIdentity; jti: string; exp: number }> => {
   if (Buffer.byteLength(proof) > BOOTSTRAP_PROOF_BYTES) throw invalid();
   let appId: string;
   let keyId: string;
@@ -95,6 +129,6 @@ export const authenticateBootstrap = async (
   const installationId = await getInstallationId(db);
   if (claims.aud !== `cloud-core:${installationId}`) throw new BootstrapProofError("wrong_installation");
   if (!key.connectionsAllowed) throw new BootstrapProofError("connections_not_permitted");
-  if (!(await consumeBootstrapProof(keyId, claims.jti, claims.exp!, db))) throw new BootstrapProofError("replayed_proof");
-  return { installationId, appId, keyId };
+  // Admission must succeed before the route atomically consumes this verified nonce.
+  return { identity: { installationId, appId, keyId }, jti: claims.jti, exp: claims.exp! };
 };

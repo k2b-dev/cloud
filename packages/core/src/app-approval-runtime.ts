@@ -30,7 +30,10 @@ export const appApprovalRuntime = {
           () => knownBrowsers.maintainNotices(sql, sender.sendNewBrowserSignIn, { signal }),
           () => appApproval.maintain(sender.sendDeviceEnrollment, signal),
           () => cleanupTerminalLogins(),
-          () => cleanupBootstrapProofs(),
+          async () => {
+            const result = await cleanupBootstrapProofs(sql, { signal });
+            if (result.remaining > 0) console.warn("Bootstrap nonce cleanup backlog", result);
+          },
           () => notifyPendingOAuthNewAccess(sender.sendOAuthNewAccess, signal),
         ]) {
           try {

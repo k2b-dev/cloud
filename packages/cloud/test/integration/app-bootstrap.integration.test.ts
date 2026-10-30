@@ -241,7 +241,7 @@ suiteFor(
     expect((await route.request(BOOTSTRAP_PATH, { method: "POST", body: streamed })).status).toBe(413);
   });
 
-  test("authenticated-key overload consumes the nonce; failed Valkey admission returns retryable 503", async () => {
+  test("authenticated-key overload and failed Valkey admission leave the nonce unused", async () => {
     for (const down of [false, true]) {
       const route = createAppBootstrapRoutes({
         db: replicas[0],
@@ -257,7 +257,11 @@ suiteFor(
       expect(result.headers.get("Cache-Control")).toBe("no-store");
       expect(result.headers.get("Retry-After")).toBe(down ? "1" : "2");
       expect(await result.text()).not.toContain("PRIVATE");
-      expect((await routes[1].request(BOOTSTRAP_PATH, request(proof))).status).toBe(403);
+      const [replay] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid
+        AND jti = ${decodeJwt(proof).jti!}`;
+      expect(replay?.n).toBe(0);
+      const retried = await Promise.all(routes.map((replica) => replica.request(BOOTSTRAP_PATH, request(proof))));
+      expect(retried.map((response) => response.status).sort()).toEqual([200, 403]);
     }
   });
 
@@ -308,6 +312,31 @@ suiteFor(
     await sql`UPDATE auth.app_proof_replays SET retain_until = now() - interval '1 minute' WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`;
     await cleanupBootstrapProofs();
     expect((await sql`SELECT jti FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`).length).toBe(0);
+  });
+
+  test("nonce cleanup drains multiple pages, caps work at the admission budget and honours cancellation", async () => {
+    const previous = await getSetting<number>("security.rate_limit_per_second");
+    const seedExpired = async (count: number) => {
+      await sql`INSERT INTO auth.app_proof_replays (key_id, jti, retain_until)
+        SELECT ${key.keyId}::uuid, 'cleanup-' || n::text, now() - interval '1 minute' FROM generate_series(1, ${count}::int) AS n`;
+    };
+    try {
+      await seedExpired(350);
+      expect(await cleanupBootstrapProofs()).toEqual({ deleted: 350, remaining: 0 });
+      await setSetting("security.rate_limit_per_second", 1);
+      await seedExpired(250);
+      const cancelled = new AbortController();
+      cancelled.abort(new Error("cleanup cancelled"));
+      await expect(cleanupBootstrapProofs(sql, { signal: cancelled.signal })).rejects.toThrow("cleanup cancelled");
+      const [unchanged] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE retain_until <= now()`;
+      expect(unchanged?.n).toBe(250);
+      expect(await cleanupBootstrapProofs()).toEqual({ deleted: 120, remaining: 130 });
+      expect(await cleanupBootstrapProofs()).toEqual({ deleted: 120, remaining: 10 });
+      expect(await cleanupBootstrapProofs()).toEqual({ deleted: 10, remaining: 0 });
+    } finally {
+      await setSetting("security.rate_limit_per_second", previous);
+      await sql`DELETE FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti LIKE 'cleanup-%'`;
+    }
   });
 
   test("revocation is immediately effective on both replicas, including a proof signed before revocation", async () => {

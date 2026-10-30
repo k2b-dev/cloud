@@ -171,7 +171,14 @@ export const bootstrapConnections = async (
       ]);
     } catch (error) {
       // Network/TLS/CA errors may embed credentials or destinations; never retain their text or cause.
-      failure = httpFailure ?? (error instanceof BootstrapError ? error : new BootstrapError("transient", "network or TLS failure"));
+      const redirect = error instanceof TypeError && "code" in error && error.code === "UnexpectedRedirect";
+      failure =
+        httpFailure ??
+        (error instanceof BootstrapError
+          ? error
+          : redirect
+            ? new BootstrapError("permanent", "redirect refused; check the direct Core origin")
+            : new BootstrapError("transient", "network or TLS failure"));
       deps.log({ appId: key.appId, attempt, errorClass: failure.kind });
       if (failure.kind === "permanent") throw failure;
     } finally {

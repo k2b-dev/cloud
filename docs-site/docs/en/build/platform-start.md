@@ -142,10 +142,13 @@ unpadded base64url SHA-256 digest of the exact body bytes. A proof lives at most
 characters without NUL. Compact proofs fit Cloud's 4 KiB token budget.
 
 Core reads the active public key from Postgres on every request, checks the
-signature and identities, checks the key's connection permission, consumes
-`(keyId, jti)` atomically across replicas,
-then checks its Valkey budget. Replay evidence remains until at least
-`exp + 5 minutes`; Core's existing minute maintenance removes expired pages.
+signature and identities, checks the key's connection permission and Valkey
+budget, then consumes `(keyId, jti)` atomically across replicas. Admission
+failures leave the nonce unused. Replay evidence remains until at least
+`exp + 5 minutes`. Core's existing minute maintenance drains expired records in
+100-row batches, with cancellation and a per-run cap of two minutes of
+per-key admission capacity across all stored app keys. Remaining expired
+records are reported as a cleanup backlog and continued on the next run.
 The existing ingress budget also applies to invalid proofs. Authenticated keys
 have a separate budget using `security.rate_limit_per_second`.
 
@@ -154,7 +157,7 @@ connections: { database, valkey, nats, appSecret } }`, with
 `Cache-Control: no-store`. Both sides check the schema and a 64 KiB byte limit;
 Core refuses an oversized delivery configuration at startup. NATS credentials
 and CA fields carry contents, never file paths. Responses and proofs must never
-be logged. The client refuses redirects and verifies TLS with the process's
+be logged. The client treats a refused redirect as a permanent startup error and verifies TLS with the process's
 configured trust store.
 
 Only keys on their app's own `resource_bound` account with `resource_type =
