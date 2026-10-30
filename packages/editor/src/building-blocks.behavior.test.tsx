@@ -130,7 +130,14 @@ describe("slash menu matching", () => {
 
   test("picking an action removes the typed name and runs it on a fresh line mid-text", async () => {
     let ran: RegExpMatchArray | undefined;
-    using page = mount("text ", [{ ...actions[1]!, run: (_view, params) => void (ran = params) }]);
+    using page = mount("text ", [
+      {
+        ...actions[1]!,
+        run: (_view, params) => {
+          ran = params;
+        },
+      },
+    ]);
     await Promise.resolve();
     const view = page.view();
     view.dispatch({ changes: { from: 5, insert: "/table2x3" }, selection: { anchor: 14 }, userEvent: "input.type" });

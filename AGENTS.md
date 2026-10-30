@@ -47,6 +47,8 @@ Use these words consistently:
   `packages/ui`;
 - **`@k2b/ssr`** means the standalone SolidJS islands SSR framework in
   `packages/ssr`;
+- **`@k2b/editor`** means the standalone SolidJS Markdown editor package in
+  `packages/editor`;
 - **documentation** means the canonical Fibel sources under `docs-site`;
 - **deployment** means placement, networking, configuration, and runtime
   infrastructure.
@@ -213,6 +215,8 @@ Before calling a change complete, decide which of these apply:
   application-domain dependencies;
 - `packages/ssr` — standalone `@k2b/ssr` framework with no Cloud
   dependencies; its `AGENTS.md` covers framework internals;
+- `packages/editor` — standalone `@k2b/editor` package (editor, toolbar,
+  bubble menu, slash menu) on `@k2b/ui`, with no Cloud dependencies;
 - other `packages/*` — independently owned built-in applications;
 - `docs-site/docs/en` — canonical developer and operations documentation;
 - `docs-site/src/ui/context` and `docs-site/src/ui/demo-sections` — canonical
