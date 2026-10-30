@@ -108,7 +108,7 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
               </label>
               <textarea
                 id="n-report-text"
-                maxLength={4000}
+                maxLength={10_000}
                 placeholder={t().reportTextPlaceholder}
                 value={text()}
                 onInput={(event) => setText(event.currentTarget.value)}
