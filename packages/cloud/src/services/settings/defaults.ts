@@ -34,6 +34,8 @@ type SettingCommon = {
   envBootstrap?: SettingEnvResolver;
   /** Environment name for migration diagnostics; values are never returned. */
   envVariable?: string;
+  /** Discard these stored settings when this normalized value changes. */
+  resetOnChange?: readonly string[];
   /** Additional server-side validation after kind normalization. */
   validate?: (value: unknown) => string | undefined;
 };
@@ -124,6 +126,7 @@ export const toLegacySettingDefs = (settings: Record<string, unknown>, requested
       envBootstrap: d.envBootstrap as (() => unknown) | undefined,
       envVariable: d.envVariable as string | undefined,
       validate: d.validate as SettingDef["validate"],
+      resetOnChange: d.resetOnChange as readonly string[] | undefined,
       templateVars: d.templateVars as readonly string[] | undefined,
       options: d.options as ReadonlyArray<{ value: string; label: string }> | undefined,
       min: d.min as number | undefined,
@@ -366,7 +369,7 @@ export const validateSettingValue = (def: SettingDef, raw: unknown): SettingVali
 export const SETTINGS_MAP = new Map(SETTINGS.map((setting) => [setting.key, setting] as const));
 
 /** Fields whose divergence changes behaviour rather than just wording. */
-const CONFLICT_FIELDS = ["kind", "default", "min", "max"] as const;
+const CONFLICT_FIELDS = ["kind", "default", "min", "max", "resetOnChange"] as const;
 
 export function registerSettings(defs: SettingDef[]): void {
   for (const def of defs) {
