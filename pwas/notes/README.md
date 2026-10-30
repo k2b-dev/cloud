@@ -21,9 +21,9 @@ and `migrations/`; the SPA owns `src/`, `index.html`, and its build script.
 - [x] Text, state, connection, rate, and total storage limits.
 - [x] Checked image/PDF files in Postgres.
 - [x] Explicit human-open signal and six-month expiry.
-- [ ] Reports, password-protected moderation, and decision log.
+- [x] Reports, password-protected moderation, and decision log.
 - [x] Escaped link metadata and a network-free 1200 × 630 preview.
-- [ ] SPA/API/WebSocket image and graceful shutdown.
+- [x] SPA/API/WebSocket image and graceful shutdown.
 
 Run the integration files through the repository test runner with
 `CLOUD_TEST_DATABASE_URL`. The shared fixture refuses databases whose names
@@ -65,7 +65,7 @@ The process counts rate limits locally. `NOTES_PUBLIC_ORIGIN`,
 required admission budgets; select process limits with the pre-launch load test.
 `NOTES_TRUSTED_PROXY` optionally trusts one immediate peer and its last forwarded
 address. Without it, forwarding headers are ignored. The optional
-`NOTES_ADMIN_PASSWORD_HASH` is reserved for moderation; without it admin is off.
+`NOTES_ADMIN_PASSWORD_HASH` enables moderation; without it admin is off.
 
 Storage accounting reserves payload bytes, UTF-8 snapshot text, and fixed row
 costs before committing. A fenced single writer maintains the counter in memory,
@@ -150,7 +150,6 @@ Administrative sessions, decisions and removal audits remain available when the
 application budget is full. Their bounded records are still accounted for and
 may exceed the application threshold so the operator can free storage. Public
 note creation, uploads, reports and updates remain subject to their thresholds.
-
 
 File requests share a process concurrency budget of `NOTES_MAX_OPEN_PADS`
 transfers. Admission and edit-link checks happen before reading upload bodies.
