@@ -45,9 +45,10 @@ not an extra platform admission boundary.
 `readResourcePrincipals({ ref, container?, principals, signal?, locale?,
 requestId? })` from `@k2b/cloud/capabilities/server` resolves the generated
 Query from the live provider manifest and uses the current process's app
-identity. Configure `CLOUD_APP_CREDENTIAL` with an app-bound workload credential
-scoped to `identity:invoke` and `CLOUD_CORE_INTERNAL_ORIGIN` with Core's direct
-listener origin. Automatic workload provisioning is a separate contract.
+identity and the workload credential Core issues to the app automatically
+(an explicit `CLOUD_APP_CREDENTIAL` override wins, for apps run on the host).
+`CLOUD_CORE_INTERNAL_ORIGIN` must name Core's direct listener origin. When Core
+rejects the credential before dispatch, the call refreshes it once and retries.
 
 Handle all three outcomes:
 

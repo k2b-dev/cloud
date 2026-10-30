@@ -25,6 +25,15 @@ test("declared CLI modules are advertised, routed, and served behind authenticat
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };
     }),
+    spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+      instanceId: "0123456789abcdef",
+      register: async () => {},
+      leave: async () => {},
+      join: async () => {},
+      publish: async () => {},
+      adopt: async () => {},
+      renew: async () => {},
+    }),
     spyOn(heartbeat, "createHeartbeat").mockImplementation((_id, entry) => {
       entries.push(entry);
       return { start: async () => {}, stop: async () => {} };

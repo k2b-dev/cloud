@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { refreshAppWorkloadCredential } from "../_internal/workload-credential";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -124,34 +125,51 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
       });
       return readCapabilityResponse(outcome, capabilityResultSchema(dataSchema, { consumer: true }));
     }
-    const response = await (
-      caller.transport ?? ((request: Request) => fetch(request, caller.workload ? { redirect: "error" } : undefined))
-    )(
-      new Request(request, {
-        body: JSON.stringify(
-          caller.mandate || caller.workload
-            ? {
-                kind: invocation.kind,
-                targetApp: invocation.appId,
-                capabilityId: invocation.capabilityId,
-                input: invocation.input,
-                ...(caller.mandate ? { mandateId: caller.mandate.id, mandateRevision: caller.mandate.revision } : {}),
-                ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
-                ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
-                  ? {
-                      metadata: {
-                        ...(caller.requestId ? { requestId: caller.requestId } : {}),
-                        ...(caller.traceparent ? { traceparent: caller.traceparent } : {}),
-                        ...(caller.tracestate ? { tracestate: caller.tracestate } : {}),
-                        ...(caller.locale ? { locale: caller.locale } : {}),
-                      },
-                    }
-                  : {}),
-              }
-            : { input: invocation.input },
-        ),
-      }),
-    );
+    const brokerRequest = new Request(request, {
+      body: JSON.stringify(
+        caller.mandate || caller.workload
+          ? {
+              kind: invocation.kind,
+              targetApp: invocation.appId,
+              capabilityId: invocation.capabilityId,
+              input: invocation.input,
+              ...(caller.mandate ? { mandateId: caller.mandate.id, mandateRevision: caller.mandate.revision } : {}),
+              ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
+              ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
+                ? {
+                    metadata: {
+                      ...(caller.requestId ? { requestId: caller.requestId } : {}),
+                      ...(caller.traceparent ? { traceparent: caller.traceparent } : {}),
+                      ...(caller.tracestate ? { tracestate: caller.tracestate } : {}),
+                      ...(caller.locale ? { locale: caller.locale } : {}),
+                    },
+                  }
+                : {}),
+            }
+          : { input: invocation.input },
+      ),
+    });
+    const send = caller.transport ?? ((request: Request) => fetch(request, caller.workload ? { redirect: "error" } : undefined));
+    // Only Core's pre-dispatch workload rejection is safe to retry, including a non-idempotent action.
+    const workloadAppId = caller.mandate?.callingAppId ?? caller.workload?.appId;
+    const retryRequest = workloadAppId ? brokerRequest.clone() : undefined;
+    let response = await send(brokerRequest);
+    const credentialRejected = (reply: Response) => reply.status === 401 && reply.headers.get("x-cloud-workload-auth") === "required";
+    if (workloadAppId && retryRequest && credentialRejected(response)) {
+      await response.body?.cancel();
+      let token: string | undefined;
+      try {
+        token = await refreshAppWorkloadCredential(workloadAppId);
+      } catch {
+        // This rejection happened before dispatch; credential state is retryable unavailability.
+      }
+      if (token) retryRequest.headers.set("authorization", `Bearer ${token}`);
+      response = await send(retryRequest);
+      if (credentialRejected(response)) {
+        await response.body?.cancel();
+        return unavailable(undefined, undefined, caller.locale ?? undefined);
+      }
+    }
     return readCapabilityResponse(response, capabilityResultSchema(dataSchema, { consumer: true }));
   } catch (cause) {
     return unavailable(cause, invocation, caller.locale ?? undefined);
