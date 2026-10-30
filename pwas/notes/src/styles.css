@@ -1541,9 +1541,9 @@ body.k2b-ui {
   font-size: 0.9375rem;
   line-height: 1.3;
 }
-.n-editor .cm-tooltip-autocomplete > ul {
+.n-editor .cm-tooltip.cm-tooltip-autocomplete > ul {
   max-height: 22rem;
-  font-family: inherit;
+  font-family: var(--k2b-font-sans);
 }
 .n-editor .cm-tooltip-autocomplete > ul > li {
   display: grid;
