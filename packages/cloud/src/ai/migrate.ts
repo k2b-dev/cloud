@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMaps } from "./map-store";

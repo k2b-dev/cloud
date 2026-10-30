@@ -1,6 +1,7 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { AppPwaActor } from "../../app-pwa/contracts";
 import type { AccessSubject, CapabilityExecutionContext } from "../../contracts";
+import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import { GeoError } from "./errors";
 import type { GeoConfig } from "./settings";

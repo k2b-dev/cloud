@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { redis } from "bun";
+import { redis } from "../runtime/clients";
 
 /**
  * Sliding-window rate limiter on the Cloud Redis.

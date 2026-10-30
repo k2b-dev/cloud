@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
 
 /**
  * Platform-owned capability execution history.

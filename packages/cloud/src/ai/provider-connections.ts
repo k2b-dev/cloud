@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { z } from "zod";
+import { sql } from "../runtime/clients";
 import type { AiProvider } from "../shared/ai-models";
 import { getAiCredential } from "./credentials";
 import { getAiRequestHeaders } from "./request-headers";

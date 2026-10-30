@@ -1,3 +1,4 @@
+import { sql } from "../runtime/clients";
 /**
  * Self-service endpoints — everything a logged-in user does with their OWN
  * account. Owned by core, mounted at /api/me/*. Auth flows live in /auth;
@@ -5,7 +6,7 @@
  */
 
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";

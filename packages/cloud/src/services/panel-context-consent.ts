@@ -1,5 +1,6 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 
 type ConsentAnswer = { allowed: boolean; revision: number };
 export class PanelConsentCancelled extends Error {

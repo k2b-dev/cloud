@@ -1,10 +1,10 @@
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair, jwtVerify, SignJWT } from "jose";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
 import type { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";

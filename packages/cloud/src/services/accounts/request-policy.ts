@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
+
 import { decryptValue } from "../settings/crypto";
 
 /** Read durable policy so disabling new requests is not delayed by the settings cache. */

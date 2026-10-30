@@ -25,7 +25,7 @@ test("excluded channels never resolve destinations or prepare payloads from olde
     globalThis.notificationExcludedSql = sql;
     Bun.plugin({ name: "notification-excluded-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/]platform\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationExcludedSql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationExcludedSql;'), loader: "ts",
       }));
     }});
     mock.module(${JSON.stringify(new URL("./catalog.ts", import.meta.url).pathname)}, () => ({ ensureNotificationDefinition: async () => {} }));

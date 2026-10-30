@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { lazySync } from "../_internal/process-sync";
+import { sql } from "../runtime/clients";
 import { get as getUser } from "../services/accounts/users";
 import { logger, trace } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";

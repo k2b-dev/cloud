@@ -1,4 +1,4 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { decodeJwt, decodeProtectedHeader, type JWTPayload, jwtVerify } from "jose";
 import { importAppPublicKey } from "../app-key";
 import {
@@ -10,6 +10,7 @@ import {
   type BootstrapIdentity,
   bootstrapBodyDigest,
 } from "../runtime/bootstrap-protocol";
+import { sql } from "../runtime/clients";
 import { getActiveAppKey, getInstallationId } from "./app-keys";
 import { get } from "./settings";
 

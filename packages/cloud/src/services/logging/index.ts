@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { PaginationParams } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { registerSettings } from "../settings/defaults";
 import { redactMetadata } from "./redaction";

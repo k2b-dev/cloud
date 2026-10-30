@@ -1,5 +1,6 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { defaultRailPreferences, type RailPreferences, RailPreferencesSchema } from "../contracts/rail-preferences";
+import { sql } from "../runtime/clients";
 
 /** Core-owned data, read by the platform SSR seam without a process-wide cache. */
 export const createRailPreferencesService = (db: SQL = sql) => ({

@@ -1,8 +1,8 @@
 import { beforeAll, expect, test } from "bun:test";
 import { nessi, type Provider } from "@k2b/nessi";
-import { sql } from "bun";
 import { z } from "zod";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
 import { migrateCloudAi } from "./migrate";
 import { inferenceProvider } from "./quota-provider";

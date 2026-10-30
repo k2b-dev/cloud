@@ -59,6 +59,25 @@ it. Platform initialization leaves the environment URL unchanged. During the
 transition from Bun-global clients, `defineApp()` retains the existing URL
 application name for those clients; the import migration removes that rewrite.
 
+## Migrate existing imports
+
+Move `sql` and `redis` value imports from `bun` to `@k2b/cloud`. Keep native
+`SQL` and `RedisClient` type imports from `bun`. Replace owned client
+constructors with `createSql()` or `createRedis()`, preserving their options
+and closing them through the same lifecycle.
+
+In a Cloud source checkout, preview and apply the migration to one package:
+
+```sh
+bun scripts/codemods/platform-clients.ts packages/my-app --dry-run
+bun scripts/codemods/platform-clients.ts packages/my-app
+```
+
+The command prints changed-file and converted-pool counts. It preserves aliases
+and unrelated Bun imports; running it again leaves migrated files unchanged.
+Review explicit Redis URLs, constructor spies, and subprocess startup manually.
+Test-owned native constructors remain available for isolated fixtures.
+
 ## Start a custom data process
 
 Standard application entrypoints need no additional startup call. A separate

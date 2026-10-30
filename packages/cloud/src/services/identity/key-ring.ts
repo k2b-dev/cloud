@@ -1,6 +1,6 @@
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 import { CompactSign, compactVerify, exportJWK, generateKeyPair, importJWK, type JWK } from "jose";
+import { sql } from "../../runtime/clients";
 import { logger } from "../logging";
 import {
   CLOUD_IDENTITY_ALGORITHM,

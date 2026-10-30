@@ -1,4 +1,4 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getApp, listCapabilities } from "../_internal/registry";
 import {
@@ -9,6 +9,7 @@ import {
 } from "../contracts/app-details";
 import { type NotificationDefinitionPresentationCatalog, resolveNotificationDefinitionPresentation } from "../contracts/notification-types";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { AppAccessManagementError, appAccessGrantCounts, canRepairAppAccess } from "./app-access-management";

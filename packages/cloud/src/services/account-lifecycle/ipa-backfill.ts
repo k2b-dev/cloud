@@ -1,5 +1,6 @@
 import type { JobContext, PumpConfig, Sync } from "@k2b/sync";
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
+
 import { freeipa } from "../../server/services/freeipa";
 import { getConfiguredExpiryDays } from "../account-model";
 import { getFreeIpaConfig } from "../freeipa-config";

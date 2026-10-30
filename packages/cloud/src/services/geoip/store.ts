@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { GEOIP_MAX_DATABASE_BYTES, type GeoIpKind } from "../../contracts/geoip";
+import { sql } from "../../runtime/clients";
 import type { GeoIpUploads } from "../../server/request-context/geoip";
 
 const SLICE_BYTES = 8 * 1024 * 1024;

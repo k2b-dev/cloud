@@ -1,7 +1,8 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { type RailAdminInput, RailAdminInputSchema, RailAdminSchema, type RailAdminState } from "../contracts/rail-admin";
 import { RailShortcutSchema } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { buildAccessPrincipalCondition, createAccess } from "../server/services/access";
 
 export class RailAdminError extends Error {

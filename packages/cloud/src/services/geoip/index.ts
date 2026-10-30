@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import { HTTPException } from "hono/http-exception";
 import {
   DBIP_ATTRIBUTION,
@@ -8,6 +7,7 @@ import {
   type GeoIpAdminStatus,
   type GeoIpKind,
 } from "../../contracts/geoip";
+import { sql } from "../../runtime/clients";
 import { createGeoIp, type GeoIp, type GeoIpDatabaseInfo, getGeoIp } from "../../server/request-context/geoip";
 import { audit } from "../audit";
 import { GeoIpError, parseGeoIpUpload, readGeoIpUpload } from "./upload";

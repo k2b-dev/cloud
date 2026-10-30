@@ -1,8 +1,9 @@
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import { z } from "zod";
 import { GeoAutocompleteInputSchema } from "../contracts/geo";
 import { isInstallablePath } from "../contracts/installable";
 import { PWA_LIMITS } from "../contracts/pwa";
+import { sql } from "../runtime/clients";
 import { ratelimit } from "../server/ratelimit";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { getEffectivePermission, hasPermission } from "../server/services/access";

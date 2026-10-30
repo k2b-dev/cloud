@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { serviceAccounts } from "../services/service-accounts";
 import { aiFileStore } from "./files-store";
 import { AiInvalidationSchema } from "./live-events";

@@ -1,7 +1,7 @@
-import { sql } from "bun";
 import { z } from "zod";
 import { type ResourcePrincipal, ResourcePrincipalSchema } from "../../contracts/capabilities";
 import type { AccessSubject } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { decodeAccountCategoryEnabled } from "../account-category-policy";
 import { toPgUuidArray } from "../postgres";
 import type { ServiceAccount } from "../service-accounts";

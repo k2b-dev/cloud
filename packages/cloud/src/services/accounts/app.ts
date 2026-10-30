@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import { accountCategory } from "../../contracts/account-categories";
 import type { PersonAvatar } from "../../contracts/avatar";
 import type {
@@ -14,6 +13,7 @@ import type {
   UserProfile,
   UserProvider,
 } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import type { ServiceAccountRequestActor } from "../../server/middleware/auth";
 import {
   err,

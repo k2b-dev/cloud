@@ -1,7 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { crypto, err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { AI_INFERENCE_SCOPE, type User } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { isUniqueViolation, toPgTextArray } from "./postgres";

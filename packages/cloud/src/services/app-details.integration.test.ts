@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -12,6 +11,7 @@ import { createAppEventRoutes } from "../api/app-events";
 import { appAccess } from "../contracts/app-access";
 import { APP_DETAILS_LIST_LIMIT, APP_SUBSCRIPTION_NEW_WINDOW_MS, AppDetailsSchema } from "../contracts/app-details";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
 import { createAppDetailsService } from "./app-details";
 import { buildProjectedUser } from "./session/user";

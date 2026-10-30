@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
+
 import type { RequestActor } from "../../server/middleware/auth";
 import type { AccessSubject } from "../../server/services/access";
 import { isAccountCategoryAllowed } from "../account-category-policy";

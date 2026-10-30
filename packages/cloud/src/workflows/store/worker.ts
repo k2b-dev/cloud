@@ -11,7 +11,8 @@
  * about *when* something runs, *which* plan it runs, and what happens if the
  * process dies belongs here.
  */
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import type { WorkflowActor, WorkflowInvocationMode, WorkflowJsonValue } from "../contracts";
 import { hashWorkflowJson } from "../language/canonical";
 import type { DefinedWorkflowModule } from "../module";

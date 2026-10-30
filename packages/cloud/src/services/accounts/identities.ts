@@ -1,7 +1,8 @@
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import { z } from "zod";
 import { DEFAULT_LINUX_IDENTITY_CONFIGURATION, LinuxIdentityConfigurationSchema } from "../../contracts/posix";
 import type { RequestActor, UserProfile, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { userFromActor } from "../../server/actor";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { toPgTextArray } from "../postgres";

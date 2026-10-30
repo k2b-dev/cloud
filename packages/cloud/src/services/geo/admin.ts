@@ -1,4 +1,4 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { HTTPException } from "hono/http-exception";
 import {
   GEO_USAGE_GROUPS,
@@ -12,6 +12,7 @@ import {
   geoKeyProblem,
   validateGeoBudget,
 } from "../../contracts/geo-admin";
+import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 import * as settings from "../settings";

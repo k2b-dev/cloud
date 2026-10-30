@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { aiMemories, formatAiMemories, isAiMemoryBm25CapabilityError } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";

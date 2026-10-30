@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import routes from "../../api/admin-core-settings";
+import { sql } from "../../runtime/clients";
 import { stubConnections } from "../../runtime/connections.test-fixture";
 import { session } from "../session";
 import { buildProjectedUser } from "../session/user";
@@ -9,6 +11,8 @@ import { SETTINGS_MAP } from "./defaults";
 import { assertGeoBudgetPair } from "./geo-budget";
 import * as settings from "./index";
 import * as store from "./store";
+
+useUnitClients();
 
 let secretStub: ReturnType<typeof stubConnections> | undefined;
 const month = "geo.monthly_budget_credits",

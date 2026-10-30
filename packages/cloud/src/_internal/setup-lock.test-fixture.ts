@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { initializePlatform } from "../start";
 import { defineApp } from "./define-app";
 

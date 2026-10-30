@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { z } from "zod";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/notifications";
 import { bindNotificationDefinitions, notification } from "../../contracts/notification-types";
+import { sql } from "../../runtime/clients";
 import { registerNotificationDefinitions, startNotificationDefinitionRegistration } from "./catalog";
 
 databaseSuite()("notification catalog schema recovery with Bun SQL", () => {

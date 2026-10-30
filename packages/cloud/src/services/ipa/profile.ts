@@ -1,3 +1,4 @@
+import { sql } from "../../runtime/clients";
 /**
  * Centralized profile calculation for IPA-backed users.
  *
@@ -6,7 +7,6 @@
  * display mirror is only a bootstrap fallback before the first full sync.
  */
 
-import { sql } from "bun";
 import { calculateIpaProfileFromGroupNames } from "../account-model";
 import { getFreeIpaConfig } from "../freeipa-config";
 

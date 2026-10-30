@@ -1,4 +1,4 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { z } from "zod";
 import { lazySync } from "../_internal/process-sync";
 import { env } from "../config/env";
@@ -25,6 +25,7 @@ import {
   appPairingProofMessage,
   APP_APPROVAL_LIMITS as limits,
 } from "../contracts/app-approval";
+import { sql } from "../runtime/clients";
 import { addressPrefix } from "../server/request-context/address";
 import { publicCloudOrigin } from "../shared/app-url";
 import { isAccountCategoryAllowed } from "./account-category-policy";

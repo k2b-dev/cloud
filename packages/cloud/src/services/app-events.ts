@@ -1,10 +1,11 @@
 import type { TopicDeadLetter, TopicInventoryEntry } from "@k2b/sync";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { lazySync } from "../_internal/process-sync";
 import { getCapability, listCapabilities } from "../_internal/registry";
 import type { AppEventEnvelope } from "../contracts/app-events";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { appEventTopic } from "../events/app-event-delivery";
+import { sql } from "../runtime/clients";
 import { createEventAcceptance } from "./app-events/accept";
 import { createEventAdministration } from "./app-events/admin";
 import { createDeclarationSync } from "./app-events/declarations";

@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
+
 import { mailNextDrainDelay } from "./bulk";
 import { attemptOutgoingMail } from "./dispatcher";
 import type { MessageRow } from "./messages";

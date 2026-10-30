@@ -1,3 +1,4 @@
+import { sql } from "../runtime/clients";
 /**
  * Admin API for platform-wide runtime settings.
  *
@@ -6,7 +7,6 @@
  * core app mounts it under `/api/admin/core/settings`.
  */
 
-import { sql } from "bun";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";

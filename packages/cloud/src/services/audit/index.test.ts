@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
 import { testFor } from "../../../../../scripts/fixtures/test-infra";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
+import { sql } from "../../runtime/clients";
 import { audit, sanitizeAuditMetadata, sanitizeAuditText } from "./index";
+
+useUnitClients();
 
 describe("sanitizeAuditMetadata", () => {
   testFor("database")("stores searchable JSON objects rather than encoded strings", async () => {

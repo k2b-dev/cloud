@@ -1,5 +1,6 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { AccessSubject } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import type { RequestActor } from "../server/middleware/auth";
 import { type AuditActor, type AuditRecordParams, audit } from "../services/audit";
 import { toPgTextArray } from "../services/postgres";

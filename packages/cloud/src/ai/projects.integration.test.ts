@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { serviceAccounts } from "../services/service-accounts";
 import { aiFileContentVersion } from "./file-content-version";
 import { migrateCloudAi } from "./migrate";

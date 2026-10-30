@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -10,6 +9,7 @@ import { compileCapabilities } from "../_internal/capabilities";
 import type { AppEventEnvelope } from "../contracts/app-events";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { LocalUserSchema } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
 import { createAppEventBroker } from "../services/app-events";
 import { createAppEventRoutes } from "./app-events";

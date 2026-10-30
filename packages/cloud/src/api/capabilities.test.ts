@@ -1,8 +1,8 @@
 import { describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
@@ -11,6 +11,7 @@ import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
 import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import { stubConnections } from "../runtime/connections.test-fixture";
 import { auth, type RequestAuthority } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
@@ -22,6 +23,8 @@ import {
   loadCapabilityCatalogPage,
   dispatchCapability as performDispatch,
 } from "./capabilities";
+
+useUnitClients();
 
 stubConnections({ appSecret: { current: "capability-stream-tests-only" } });
 

@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { SyncEvent } from "@k2b/sync";
-import { sql } from "bun";
 import { getProcessApplicationId } from "../../_internal/process-identity";
 import type { PaginationParams } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { isSensitiveMetadataKey, REDACTED, redactMetadata } from "./redaction";
 

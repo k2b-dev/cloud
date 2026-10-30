@@ -1,5 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { sql } from "../runtime/clients";
+
 import {
   AiModelInputSchema,
   AiModelPatchSchema,
@@ -12,6 +14,8 @@ import * as credentials from "./credentials";
 import { aiModelCatalog, flattenAiModelVariant, readAiModelProfiles, validateAiSlot } from "./model-catalog";
 import { validateAiReplacement } from "./model-delete";
 import * as headers from "./request-headers";
+
+useUnitClients();
 
 const metadata = { revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", createdAt: "2026-10-16T00:00:00.000Z", updatedBy: null };
 const provider = AiProviderSchema.parse({

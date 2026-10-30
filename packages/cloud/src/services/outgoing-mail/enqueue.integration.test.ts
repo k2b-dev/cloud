@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
-import { sql } from "bun";
 import { smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
@@ -11,6 +10,7 @@ import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync
 import * as registry from "../../_internal/registry";
 import { createAdminOutgoingMailRoutes } from "../../api/admin-outgoing-mail";
 import type { MailMessage } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import { parseNetworkAllowlist } from "../../shared/network-address";
 import { audit } from "../audit";
 import { buildProjectedUser } from "../session/user";

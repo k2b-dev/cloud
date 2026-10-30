@@ -1,6 +1,6 @@
-import { sql } from "bun";
 import { parseStoredReviewContent } from "../../capabilities/review-storage";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
+import { sql } from "../../runtime/clients";
 
 // Start with this person's indexed pending rows; a Studio page alone cannot continue a chat.
 export const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
@@ -15,6 +14,7 @@ import type { CloudRuntime } from "../packages/cloud/src/contracts/app";
 import { appAccess } from "../packages/cloud/src/contracts/app-access";
 import { defineCapabilities } from "../packages/cloud/src/contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../packages/cloud/src/contracts/registry";
+import { sql } from "../packages/cloud/src/runtime/clients";
 import { requireAppAccess } from "../packages/cloud/src/server/middleware/app-access";
 import { type AuthContext, auth, type RequestAuthority } from "../packages/cloud/src/server/middleware/auth";
 import { canUseApp } from "../packages/cloud/src/services/app-access";
@@ -29,6 +29,9 @@ import { session } from "../packages/cloud/src/services/session";
 import { buildProjectedUser } from "../packages/cloud/src/services/session/user";
 import * as settings from "../packages/cloud/src/services/settings";
 import { app as core } from "../packages/core/src/config";
+import { useUnitClients } from "../scripts/fixtures/unit-clients";
+
+useUnitClients();
 
 // Compose the production entry/auth middleware and mounted broker routers. Only
 // persistence, live registry, signer storage and the provider transport are fixtures.

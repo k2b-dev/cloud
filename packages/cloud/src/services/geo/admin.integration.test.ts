@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { sql } from "bun";
 import { initializeTestPlatform, suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { createGeoAdmin, GeoAdminError } from "./admin";
 import { GEO_TEST_NOW, geoTestConfig, geoTestContext } from "./geo.test-fixture";
 import { createGeoLedger } from "./ledger";

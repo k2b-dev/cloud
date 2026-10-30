@@ -2,12 +2,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
 import { migrate as migrateGeoIp } from "../../../../core/src/migrate/core/geoip";
 import { createAdminGeoIpRoutes } from "../../api/admin-geoip";
 import { GEOIP_MAX_REQUEST_BYTES } from "../../contracts/geoip";
+import { sql } from "../../runtime/clients";
 import { createGeoIp } from "../../server/request-context/geoip";
 import { mmdbFixture } from "../../server/request-context/geoip.test-fixture";
 import { audit } from "../audit";

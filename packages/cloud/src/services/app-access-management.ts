@@ -1,7 +1,8 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { AppMeta } from "../contracts/app";
 import type { AppAccessDeclaration, AppAccessSnapshot } from "../contracts/app-access";
 import { publishAppAccessChanged, wakeAppAccessChanged } from "../events/app-access";
+import { sql } from "../runtime/clients";
 import { isAppSessionActor, userFromActor } from "../server/actor";
 import type { RequestAuthority } from "../server/middleware/auth";
 import {

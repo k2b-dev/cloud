@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { BaseGroup, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 
 type DbRow = Record<string, unknown>;
 

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "../../src/runtime/clients";
 import "../../../mail/test/integration-preload";
 import { encryptSecret } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
@@ -11,7 +12,7 @@ import {
   emitWorkflowEvent,
   wakeWorkflowRunsWaitingOn,
 } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
+
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../../../mail/src/capabilities";
 import { draftContentInputSchema } from "../../../mail/src/contracts";

@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import {
   DEFAULT_LINUX_IDENTITY_CONFIGURATION,
   isPosixName,
@@ -8,6 +7,7 @@ import {
   PosixOverridesSchema,
 } from "../../contracts/posix";
 import type { MutationResult } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { type AuditActor, audit } from "../audit";
 import { getFreeIpaConfig } from "../freeipa-config";

@@ -1,7 +1,8 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { appKeyFingerprint, validateAppKeyAppId } from "../app-key";
 import type { User } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { audit } from "./audit";
 import { serviceAccounts } from "./service-accounts";
 

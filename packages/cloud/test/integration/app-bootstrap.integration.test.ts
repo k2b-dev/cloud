@@ -4,7 +4,7 @@ import { type AppKey, formatAppKey, importAppKeySeed } from "@k2b/cloud/app-key"
 import { cleanupBootstrapProofs } from "@k2b/cloud/services/app-bootstrap";
 import { appKeys, getActiveAppKey, getInstallationId } from "@k2b/cloud/services/app-keys";
 import { get as getSetting, set as setSetting } from "@k2b/cloud/services/settings";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { decodeJwt, SignJWT } from "jose";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { requireInfra, suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -15,6 +15,7 @@ import { migrate as migrateSettings } from "../../../core/src/migrate/core/setti
 import { platformStartFixture } from "../../scripts/platform-start.test-fixture";
 import { bootstrapConnections } from "../../src/runtime/bootstrap-client";
 import { BOOTSTRAP_BODY, BOOTSTRAP_PATH, bootstrapBodyDigest, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
+import { sql } from "../../src/runtime/clients";
 
 const NOW = Date.UTC(2030, 0, 2, 3, 4, 5);
 const actor = {

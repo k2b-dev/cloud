@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { migrate as migrateAuth } from "../../../../core/src/migrate/core/auth";
 import { freeipa } from "../../server/services";

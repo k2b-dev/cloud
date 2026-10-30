@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import type { RequestActor } from "../server";
 import { runCloudAiFetchFile } from "./fetch-file-tool";
 import { createCloudAiPresentTool, createCloudAiReadFileTool } from "./file-tools";

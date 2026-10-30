@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { toPgUuidArray } from "../../services/postgres";
 import "../../../../../scripts/fixtures/authorization-preload";
 import {
@@ -391,7 +391,7 @@ test("resolveDisplayNames batches each kind once and leaves missing names absent
     };
     Bun.plugin({ name: "principal-display-sql-fixture", setup(build) {
       build.onLoad({ filter: /server\\/services\\/access[.]ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { type SQLQuery, sql } from "bun";', 'const sql = globalThis.principalDisplaySql;'),
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.principalDisplaySql;'),
         loader: "ts",
       }));
     } });

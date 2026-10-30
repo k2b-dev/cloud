@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { Hono } from "hono";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { env } from "../config/env";
 import * as requestContext from "../server/request-context";
