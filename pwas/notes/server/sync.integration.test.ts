@@ -8,6 +8,7 @@ import { createDisposableDatabase, databaseSuite } from "../../../scripts/fixtur
 import { frame, message, readReply, updateFrame } from "../protocol";
 import { createNotesApp } from "./app";
 import { migrate } from "./database";
+import { decodeDocument } from "./document";
 import { limits, RateLimits, rateKey, requestIp } from "./limits";
 import { serveNotes } from "./runtime";
 import { NotesService } from "./service";
@@ -625,4 +626,15 @@ test("mapped proxy peers and rotating IPv6 addresses share stable connection key
   rates.take("create", "192.0.2.1", 1, 3600000);
   rates.take("create", "192.0.2.2", 1, 3600000);
   expect(() => rates.take("connect", "192.0.2.3", 1, 60000)).not.toThrow();
+});
+
+test("NUL text cannot enter a durable document whose Postgres projection would fail", () => {
+  const doc = new Y.Doc();
+  doc.clientID = 42;
+  try {
+    doc.getText("text").insert(0, "before\u0000after");
+    expect(() => decodeDocument(Y.encodeStateAsUpdate(doc))).toThrow("invalid_document");
+  } finally {
+    doc.destroy();
+  }
 });
