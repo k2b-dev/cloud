@@ -31,6 +31,10 @@ export function SharedLink(props: { linkId: string }) {
         const info = await api.link(linkId);
         const existing = local();
         if (existing) {
+          // An edit link opened after the read link turns the read-only copy into an editable one.
+          const share = existing.share;
+          if (share?.kind === "foreign" && share.role === "read" && info.role === "edit")
+            await store.update(existing.id, { share: { ...share, role: "edit", linkId } });
           navigate(`/n/${existing.id}`, { replace: true });
           return null;
         }

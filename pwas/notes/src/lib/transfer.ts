@@ -48,6 +48,7 @@ const manifestSchema = z.object({
       file: z.string(),
       files: z.array(attachmentSchema),
       share: shareSchema.optional(),
+      state: z.string().optional(),
     }),
   ),
 });
@@ -57,8 +58,9 @@ export type ImportEntry = {
   createdAt: number;
   updatedAt: number;
   files: { key: string; name: string; blob: Blob }[];
-  /** Present only when the export was made with "Links mitnehmen". */
+  /** Present only when the export was made with "Links mitnehmen", always together with `state`. */
   share?: NoteShare;
+  state?: Uint8Array;
 };
 export type ImportPreview = { name: string; notes: number; images: number; duplicates: string[]; entries: ImportEntry[] };
 export type ExportManifest = {
@@ -74,6 +76,8 @@ export type ExportManifest = {
     file: string;
     files: z.infer<typeof attachmentSchema>[];
     share?: NoteShare;
+    /** Path of the Yjs state; shared notes keep their identity only through it. */
+    state?: string;
   }[];
 };
 function safePath(path: string): void {
@@ -122,8 +126,9 @@ export async function exportAll(
   for (const record of store.records()) {
     const doc = new Y.Doc();
     let text: string;
+    const state = await store.encodeState(record.id);
     try {
-      Y.applyUpdate(doc, await store.encodeState(record.id));
+      Y.applyUpdate(doc, state);
       text = doc.getText(NOTE_TEXT).toString();
     } finally {
       doc.destroy();
@@ -139,6 +144,8 @@ export async function exportAll(
       return { key: attachment.key, name: attachment.name, path, type: attachment.blob.type };
     });
     entries.push({ filename: file, source: rewriteImages(text, (target) => paths.get(target) ?? target) });
+    const withLink = options.includeLinks && record.share ? record.share : undefined;
+    if (withLink) entries.push({ filename: `yjs/${record.id}.bin`, source: new Blob([new Uint8Array(state)]) });
     manifest.notes.push({
       id: record.id,
       title: record.meta.title,
@@ -147,7 +154,7 @@ export async function exportAll(
       updatedAt: record.updatedAt,
       file,
       files: exportedFiles,
-      ...(options.includeLinks && record.share ? { share: record.share } : {}),
+      ...(withLink ? { share: withLink, state: `yjs/${record.id}.bin` } : {}),
     });
   }
   entries.unshift({ filename: "manifest.json", source: JSON.stringify(manifest, null, 2) });
@@ -327,7 +334,20 @@ export async function readImport(input: File[], store: NotesStore): Promise<Impo
         }
         const text = rewriteImages(decoder.decode(markdown), (target) => paths.get(target) ?? target);
         if (text.length > MAX_NOTE_LENGTH) throw new ImportError("too_large");
-        entries.push({ id: note.id, text, createdAt: note.createdAt, updatedAt: note.updatedAt, files: attached, share: note.share });
+        // A link only comes back with the note's own Yjs state; Markdown alone would merge as a second copy.
+        let state: Uint8Array | undefined;
+        if (note.share && note.state) {
+          safePath(note.state);
+          state = consume(note.state);
+        }
+        entries.push({
+          id: note.id,
+          text,
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt,
+          files: attached,
+          ...(note.share && state ? { share: note.share, state } : {}),
+        });
       }
     }
   } catch (error) {
@@ -371,14 +391,12 @@ export async function applyImport(
       }
       const importedKeys = new Set(entry.files.map((file) => file.key));
       for (const file of await store.listFiles(id)) if (!importedKeys.has(file.key)) await store.removeFile(id, file.key);
-    } else
-      await store.create(entry.text, {
-        id,
-        createdAt: entry.createdAt,
-        updatedAt: entry.updatedAt,
-        // A second copy beside an existing one never shares its links.
-        ...(entry.share && !duplicate ? { share: entry.share } : {}),
-      });
+    } else if (entry.share && entry.state && !duplicate) {
+      await store.create("", { id, createdAt: entry.createdAt, updatedAt: entry.updatedAt, share: entry.share });
+      await store.applyUpdate(id, entry.state, "import");
+    }
+    // A second copy beside an existing one never shares its links.
+    else await store.create(entry.text, { id, createdAt: entry.createdAt, updatedAt: entry.updatedAt });
     for (const attachment of entry.files) await store.putFile(id, attachment.blob, attachment.name, { key: attachment.key });
     imported++;
   }

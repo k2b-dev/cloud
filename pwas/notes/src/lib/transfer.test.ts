@@ -206,6 +206,9 @@ test("an export with links brings the links back, but never onto a second copy",
     const preview = await readImport([await exported(source, true)], target);
     await applyImport(preview, target, "skip");
     expect(target.records()[0]?.share).toEqual(share);
+    // Same Yjs identity: syncing the original state into the imported note changes nothing, so no text doubles.
+    await target.applyUpdate(id, await source.encodeState(id));
+    expect((await target.open(id)).text.toString()).toBe("# Geteilt");
     await applyImport(await readImport([await exported(source, true)], target), target, "both");
     expect(
       target

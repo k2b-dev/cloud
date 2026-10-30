@@ -6,7 +6,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { api } from "../lib/api";
 import { connectLive, type LiveSession } from "../lib/live";
-import type { OpenNote } from "../lib/local";
+import { type OpenNote, randomId } from "../lib/local";
 import { IMAGE_MAX_SIDE, MAX_FILE_BYTES, MAX_FILES_PER_NOTE, NOTE_TEXT } from "../lib/model";
 import { preferences } from "../prefs";
 import { navigate } from "../router";
@@ -143,11 +143,14 @@ export function NotePage(props: { mode: NoteMode }) {
       if (handing) return;
       handing = true;
       setHandingOff(true);
+      const id = randomId();
+      // Every later keystroke queues behind the note's creation, so nothing typed during the switch is lost.
+      let written = store.create("", { id }).then(() => store.applyUpdate(id, Y.encodeStateAsUpdate(current.doc)));
+      current.doc.on("update", (update: Uint8Array) => {
+        written = written.then(() => store.applyUpdate(id, update));
+      });
       try {
-        const id = await store.create("");
-        await store.applyUpdate(id, Y.encodeStateAsUpdate(current.doc));
-        // Keystrokes between the first one and the switch to /n/:id follow the same way.
-        current.doc.on("update", (update: Uint8Array) => void store.applyUpdate(id, update));
+        await written;
         focusNext = id;
         navigate(`/n/${id}`, { replace: true });
       } finally {
