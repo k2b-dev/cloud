@@ -29,7 +29,7 @@ const load = async () => {
     mock.module("@k2b/ssr/nav", () => ({ ...nav, refreshCurrentPath }));
     const sync = await import("./sync-ended");
     const { formattingKeymap } = await import("./EditorToolbar");
-    const { markdownExtension } = await import("../../../lib/editor/markdown");
+    const { markdownExtension } = await import("@k2b/editor/markdown");
     mock.module("@/api/client", () => ({
       apiClient: { ":id": { "route-state": { $get: routeGet }, notes: { ":noteId": { "table-action": { $post: tablePost } } } } },
     }));

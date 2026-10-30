@@ -67,6 +67,7 @@ export type ChatFeedItem = {
   revision?: number;
   edited?: boolean;
   deleted?: boolean;
+  via?: "assistant" | "mcp" | null;
   status?: MessageRowStatus;
   /** Set on a failed send: sends it again with the same client ID. */
   retry?: () => void;
@@ -396,6 +397,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
 
   const startsGroup = (item: ChatFeedItem, previous: ChatFeedItem | undefined) =>
     !previous ||
+    (item.via ?? null) !== (previous.via ?? null) ||
     !sameDay(item.at, previous.at, config()) ||
     startsMessageGroup(
       { author: item.authorId, at: item.at, system: item.kind !== "text" },
@@ -599,6 +601,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           ) : (
             <MessageRow
               author={{ name: item.authorName }}
+              badge={item.via ? (item.via === "assistant" ? t().viaAssistant : t().viaMcp) : undefined}
               text={item.body}
               edited={item.edited}
               deleted={item.deleted}

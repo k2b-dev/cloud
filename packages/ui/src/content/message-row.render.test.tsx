@@ -50,6 +50,11 @@ const textOf = (html: string) => {
 const long = Array.from({ length: 20 }, (_, index) => `Line ${index + 1}`).join("\n");
 
 describe("MessageRow", () => {
+  test("shows an own message's badge beside its time", () => {
+    const html = row({ own: true, badge: "via Assistant" });
+    expect(html).toContain('class="k2b-message-row__badge"');
+    expect(textOf(html)).toContain("via Assistant 09:31");
+  });
   test("starts a group of others with avatar, name, badge, and time on the left", () => {
     const html = row({ badge: "Agent", dateTime: "2026-10-06T07:31:00Z" });
 

@@ -1,7 +1,7 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 import { UNREAD_COUNT_PATH } from "./frontend/route";
-
 import { NOTIFICATIONS } from "./notifications";
+import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "chat",
@@ -67,6 +67,7 @@ export const app = defineApp({
     },
   },
   notifications: NOTIFICATIONS,
+  skills: SKILLS,
   openapi: "/api/chat/openapi.json",
   routes: ["/api/chat", "/app/chat", "/admin/chat", "/public/chat"],
 });

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { parseNamedDataBlockResult } from "@k2b/editor/markdown/lib/named-blocks";
 import { parseNotebookChartBlocks } from "./chart-blocks";
-import { parseNamedDataBlockResult } from "./named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./query-blocks";
 
 test("the shipped Assistant skill uses executable data, query, TOC and chart examples", async () => {

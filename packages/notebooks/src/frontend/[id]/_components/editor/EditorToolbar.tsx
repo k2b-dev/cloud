@@ -1,10 +1,10 @@
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { asUndoStep, type EditorAction, type EditorHandle, Toolbar, type ToolbarCustom, type ToolbarMenu } from "@k2b/editor";
+import { indentListItems, outdentListItems, setListKind } from "@k2b/editor/markdown";
 import { Button, Dropdown, IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { type InlineFormat, TableSizePicker, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { indentListItems, outdentListItems, setListKind } from "../../../lib/editor/list-commands";
 import { ariaShortcut, isApple, shortcutLabel } from "../../../lib/shortcut-label";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";

@@ -44,8 +44,7 @@
  */
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import type { EditorState } from "@codemirror/state";
-import { cellTextBeforeCursor, isTableRow, splitTableLineCells, TABLE_SEPARATOR_RE, tableCellText } from "./_lib/table-cell";
-import { withIcon } from "./completion-icon";
+import { cellTextBeforeCursor, isTableRow, splitTableLineCells, TABLE_SEPARATOR_RE, tableCellText, withIcon } from "@k2b/editor/markdown";
 
 const isSeparatorRow = (lineText: string): boolean => TABLE_SEPARATOR_RE.test(lineText);
 

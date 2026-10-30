@@ -46,3 +46,18 @@ test("allows shared platform imports, API services and the app's PWA route", () 
   const source = 'import { caller } from "@k2b/cloud/capabilities/server"; const url = "/api/accounts/entities"; const pwa = "/pwa/chat";';
   expect(checkSource("chat.ts", source, ["capabilities", "accounts", "pwa"])).toEqual([]);
 });
+
+test("allows OAuth credential-kind comparisons while rejecting OAuth app references", () => {
+  for (const source of [
+    'const scoped = context.authority?.credentialKind === "oauth";',
+    'const scoped = "oauth" !== context.actor.delegation?.credentialKind;',
+  ])
+    expect(checkSource("chat.ts", source, ["oauth"])).toEqual([]);
+  for (const source of [
+    'const app = "oauth";',
+    'const scoped = context.appId === "oauth";',
+    'const type = "oauth.client";',
+    'const route = "/app/oauth";',
+  ])
+    expect(checkSource("chat.ts", source, ["oauth"])).toHaveLength(1);
+});

@@ -39,10 +39,9 @@ import {
   type CompletionSource,
   pickedCompletion,
 } from "@codemirror/autocomplete";
+import { isInsideFencedCode, withIcon } from "@k2b/editor/markdown";
 import { apiClient } from "@/api/client";
 import { createNotebookFetchCache } from "./_lib/notebook-fetch-cache";
-import { withIcon } from "./completion-icon";
-import { isInsideFencedCode } from "./editor-scope";
 
 /** Notebook tag-search response shape. */
 type TagSummary = { tag: string; count: number };

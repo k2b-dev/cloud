@@ -1,5 +1,5 @@
+import { extractNamedBlockSummaries, type NamedBlockSummary } from "@k2b/editor/markdown/lib/named-blocks";
 import type { NoteAuthors } from "../lib/activity-actions";
-import { extractNamedBlockSummaries, type NamedBlockSummary } from "../lib/named-blocks";
 import { extractTaskProgress, extractTocFromMarkdown, type TaskProgress, type TocItem } from "../lib/note-insights";
 import { type PresentationMode, resolvePresentationMode } from "../lib/presentation-mode";
 import { requestedPresentationMode, withPresentationMode } from "../lib/presentation-url";
