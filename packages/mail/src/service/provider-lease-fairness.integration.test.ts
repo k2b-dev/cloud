@@ -10,6 +10,7 @@ import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
+import * as commandAuthorization from "./command-authorization";
 import {
   enqueueMailCommand,
   MOVE_SET_ADMISSION_MS,
@@ -540,7 +541,7 @@ suite("mail provider lease fairness", () => {
     mailbox: Mailbox,
     messageIds: string[],
     label: string,
-    options: { from?: string; to?: string; startTogether?: boolean } = {},
+    options: { from?: string; to?: string; startTogether?: boolean; enqueue?: boolean } = {},
   ): Promise<string[]> => {
     const messages = await sql<{ id: string }[]>`
       SELECT id FROM mail.message_contents
@@ -553,7 +554,7 @@ suite("mail provider lease fairness", () => {
       const command = await createActorCommand({
         context,
         mailboxId: mailbox.mailboxId,
-        enqueue: !options.startTogether,
+        enqueue: !options.startTogether && options.enqueue !== false,
         input: {
           kind: "move",
           messageId: message.id,
@@ -565,7 +566,7 @@ suite("mail provider lease fairness", () => {
       if (!command.ok) throw new Error(JSON.stringify(command.error));
       commandIds.push(command.data.id);
     }
-    if (options.startTogether && commandIds[0]) await enqueueMailCommand(commandIds[0], "move");
+    if (options.startTogether && options.enqueue !== false && commandIds[0]) await enqueueMailCommand(commandIds[0], "move");
     return commandIds;
   };
 
@@ -614,25 +615,21 @@ suite("mail provider lease fairness", () => {
     };
   };
 
-  /** Delay only statements that changed matching mailbox rows, including zero-row UPDATEs safely. */
-  const slowStatements = async (
-    mailbox: Mailbox,
-    table: "commands" | "message_placements",
-    seconds: number,
-    condition: string,
-  ): Promise<() => Promise<void>> => {
-    const name = `test_slow_statement_${suffix}_${++slowCommandTrigger}`;
+  /** Count matching statements, independently of the database's wall-clock latency. */
+  const countStatements = async (mailbox: Mailbox, table: "commands" | "message_placements", condition: string) => {
+    const name = `test_statement_${suffix}_${++slowCommandTrigger}`;
     const key = table === "commands" ? "id" : "remote_message_ref_id";
     const mailboxCondition =
       table === "commands"
         ? `new_row.mailbox_id = '${mailbox.mailboxId}'::uuid`
         : `EXISTS (SELECT 1 FROM mail.message_contents content WHERE content.id = new_row.message_id AND content.mailbox_id = '${mailbox.mailboxId}'::uuid)`;
     await sql.begin(async (tx) => {
+      await tx.unsafe(`CREATE SEQUENCE mail.${name}`);
       await tx.unsafe(`CREATE FUNCTION mail.${name}() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
           IF EXISTS (SELECT 1 FROM old_rows old_row JOIN new_rows new_row USING (${key})
             WHERE ${mailboxCondition} AND (${condition})) THEN
-            PERFORM pg_sleep(${seconds});
+            PERFORM nextval('mail.${name}');
           END IF;
           RETURN NULL;
         END;
@@ -641,12 +638,62 @@ suite("mail provider lease fairness", () => {
         REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT
         EXECUTE FUNCTION mail.${name}()`);
     });
-    return async () => {
-      await sql.begin(async (tx) => {
-        await tx.unsafe(`DROP TRIGGER ${name} ON mail.${table}`);
-        await tx.unsafe(`DROP FUNCTION mail.${name}()`);
-      });
+    return {
+      count: async (): Promise<number> => {
+        const [row] = await sql.unsafe<{ count: number }[]>(
+          `SELECT CASE WHEN is_called THEN last_value ELSE 0 END::int AS count FROM mail.${name}`,
+        );
+        return row!.count;
+      },
+      remove: async () => {
+        await sql.begin(async (tx) => {
+          await tx.unsafe(`DROP TRIGGER ${name} ON mail.${table}`);
+          await tx.unsafe(`DROP FUNCTION mail.${name}()`);
+          await tx.unsafe(`DROP SEQUENCE mail.${name}`);
+        });
+      },
     };
+  };
+
+  /** Drive one real command-job turn without involving the broker's retry scheduling. */
+  const commandTurn = async (mailbox: Mailbox): Promise<void> => {
+    await runMailboxCommandsJob({ input: { mailboxId: mailbox.mailboxId }, heartbeat: async () => undefined, resubmit: () => undefined });
+  };
+
+  /** Register an Inbox waiter while another operation holds the real provider lease. */
+  const waitForInboxLease = async (mailbox: Mailbox): Promise<void> => {
+    let code: unknown;
+    try {
+      await syncFolderBatch(mailbox.folderId(INBOX), async () => undefined);
+    } catch (error) {
+      code = error instanceof Error && "code" in error ? error.code : undefined;
+    }
+    expect(code).toBe("SYNC_BUSY");
+  };
+
+  /** Record ordering at the lease boundary, including requests that find it busy. */
+  const traceLease = (mailbox: Mailbox) => {
+    const events: Array<{ kind: "busy" | "acquired"; waiter: string; priority: ProviderLeasePriority }> = [];
+    const acquire = providerLeases.acquireProviderLease;
+    const spy = spyOn(providerLeases, "acquireProviderLease").mockImplementation(async (params) => {
+      const turn = await acquire(params);
+      if (params.resource === mailbox.remoteResourceId) events.push({ kind: turn.lock ? "acquired" : "busy", ...params });
+      return turn;
+    });
+    return { events, restore: () => spy.mockRestore() };
+  };
+
+  /** Hold a real provider turn until its competitor has joined the lease line. */
+  const pauseArchive = (mailbox: Mailbox) => {
+    const resume = Promise.withResolvers<void>();
+    const pause = { reached: false, release: resume.resolve };
+    afterStatus = async (account, path) => {
+      if (account !== mailbox.account || path !== ARCHIVE) return;
+      afterStatus = null;
+      pause.reached = true;
+      await resume.promise;
+    };
+    return pause;
   };
 
   beforeAll(async () => {
@@ -1240,43 +1287,38 @@ suite("mail provider lease fairness", () => {
     expect(await placedIn(mailbox, INBOX, messageIds)).toBe(0);
   }, 120_000);
 
-  test("a folder sync waits for at most one move set's two seconds and a few slow statements while each marker and settle statement is slow", async () => {
+  test("a move set marks and settles in three statements regardless of its member count", async () => {
     const mailbox = await connect("slow-statements");
     const messageIds = await deliverAndSync(mailbox, 150, "slow-statements");
-    const removeCommands = await slowStatements(
+    const commands = await countStatements(
       mailbox,
       "commands",
-      1,
       "old_row.provider_effect_attempt IS DISTINCT FROM new_row.provider_effect_attempt OR (old_row.state = 'executing' AND new_row.state = 'confirmed')",
     );
-    let removePlacements: (() => Promise<void>) | undefined;
+    let placements: Awaited<ReturnType<typeof countStatements>> | undefined;
+    // Freeze admission time so each full set contains 50 moves regardless of runner load.
+    // The separate left-out case advances this clock to exercise the admission deadline.
+    const clock = spyOn(performance, "now").mockReturnValue(0);
     let moves: string[] = [];
-    let sync: Promise<number> | undefined;
     try {
-      removePlacements = await slowStatements(
-        mailbox,
-        "message_placements",
-        1,
-        "old_row.deleted_at IS NULL AND new_row.deleted_at IS NOT NULL",
-      );
-      moves = await queueMoves(mailbox, messageIds, "slow-statements", { startTogether: true });
-      await waitFor(async () => ((await commandStates(moves)).executing ?? 0) >= 2, "the statement-slow move set to start");
-      const [newMail] = deliver(mailbox, 1, "slow-statements-new");
-      const timing: { firstLeaseTurnMs?: number } = {};
-      // Three slow statements: effect marker, source placement deletion, confirmation; K=4 adds one second of slack.
-      const longestWaitMs = MOVE_SET_ADMISSION_MS * 5 + 3_000 + 4 * 1_000;
-      sync = runFolderSyncJob(mailbox.folderId(INBOX), { timing });
-      // Bound failure too: remove triggers before waiting for the old per-command implementation to drain.
-      await waitFor(async () => timing.firstLeaseTurnMs !== undefined, "the sync's turn after a statement-slow set", longestWaitMs);
-      await sync;
-      expect(timing.firstLeaseTurnMs ?? Number.POSITIVE_INFINITY).toBeLessThan(longestWaitMs);
-      expect(await imported(mailbox, newMail!)).toBe(true);
+      placements = await countStatements(mailbox, "message_placements", "old_row.deleted_at IS NULL AND new_row.deleted_at IS NOT NULL");
+      moves = await queueMoves(mailbox, messageIds, "slow-statements", { enqueue: false });
+      await commandTurn(mailbox);
+      await commandTurn(mailbox);
+      await commandTurn(mailbox);
+      // One marker and one confirmation statement, plus one source deletion, per set.
+      // Per-message marking/settlement would charge 150 statements instead of three.
+      expect(moveSets.filter((entry) => entry.label === "slow-statements").map((entry) => entry.uids)).toEqual([50, 50, 50]);
+      expect(await commands.count()).toBe(6);
+      expect(await placements.count()).toBe(3);
     } finally {
-      await removeCommands();
-      if (removePlacements) await removePlacements();
-      await sync;
+      clock.mockRestore();
+      try {
+        await commands.remove();
+      } finally {
+        await placements?.remove();
+      }
     }
-    await waitFor(async () => (await pending(moves)) === 0, "all statement-slow moves to finish", 90_000);
     expect(await confirmed(moves)).toBe(150);
     const activity = await sql<{ command_id: string; events: number }[]>`
       SELECT command_id, count(*)::int AS events FROM mail.activity_events
@@ -1402,11 +1444,15 @@ suite("mail provider lease fairness", () => {
   test("a move a set leaves out stays queued as it was and runs with the next set", async () => {
     const mailbox = await connect("left-out");
     const messageIds = await deliverAndSync(mailbox, 5, "left-out");
-    const removeSlowUpdates = await slowCommandUpdates(
-      mailbox,
-      (MOVE_SET_ADMISSION_MS + 100) / 1000,
-      "OLD.state = 'queued' AND NEW.state = 'executing'",
-    );
+    let now = 0;
+    const clock = spyOn(performance, "now").mockImplementation(() => now);
+    const authorize = commandAuthorization.commandStillAuthorized;
+    const authorization = spyOn(commandAuthorization, "commandStillAuthorized").mockImplementation(async (...args) => {
+      const allowed = await authorize(...args);
+      // Preparation checks access once per admitted move, outside the effect transaction.
+      if (args[0].mailbox_id === mailbox.mailboxId && args[2] === undefined) now += MOVE_SET_ADMISSION_MS / 2;
+      return allowed;
+    });
     type CommandSnapshot = { state: string; attempt: number; queue_position: string; last_error_code: string | null };
     const snapshot: CommandSnapshot[] = [];
     let moves: string[] = [];
@@ -1445,7 +1491,8 @@ suite("mail provider lease fairness", () => {
       expect(moveSets.filter((entry) => entry.label === "left-out").map((entry) => entry.uids)).toEqual([2, 2, 1]);
     } finally {
       afterStatus = null;
-      await removeSlowUpdates();
+      authorization.mockRestore();
+      clock.mockRestore();
     }
   }, 120_000);
 
@@ -1558,29 +1605,50 @@ suite("mail provider lease fairness", () => {
         internalDate: new Date(Date.UTC(2025, 0, 1) + index * 60_000),
       });
     }
-    let backfillDone = false;
-    const backfill = runFolderSyncJob(mailbox.folderId(ARCHIVE)).then(() => {
-      backfillDone = true;
-    });
-    await waitFor(async () => {
-      const [count] = await sql<{ count: number }[]>`
-          SELECT count(*)::int AS count FROM mail.message_contents WHERE mailbox_id = ${mailbox.mailboxId}::uuid
-        `;
-      return (count?.count ?? 0) >= 200;
-    }, "the Archive backfill to start");
+    const lease = traceLease(mailbox);
+    const first = pauseArchive(mailbox);
+    let second: ReturnType<typeof pauseArchive> | undefined;
+    let backfill = syncFolderTurn(mailbox.folderId(ARCHIVE));
+    try {
+      await waitFor(async () => first.reached, "the Archive to hold the provider lease");
+      const [newMail] = deliver(mailbox, 1, "during-backfill");
+      await waitForInboxLease(mailbox);
+      const requested = lease.events.length;
+      first.release();
+      const next = await backfill;
+      expect(next?.input.backfill).toBe(true);
+      // The real release registered Archive's continuation. Run the Inbox retry now,
+      // rather than testing whether the host schedules a worker before presence expires.
+      await syncFolderBatch(mailbox.folderId(INBOX), async () => undefined);
+      expect(lease.events.slice(requested).find((event) => event.kind === "acquired")?.waiter).toBe(
+        `sync-folder:${mailbox.folderId(INBOX)}`,
+      );
+      expect(await imported(mailbox, newMail!)).toBe(true);
 
-    const [newMail] = deliver(mailbox, 1, "during-backfill");
-    const syncMs = await runFolderSyncJob(mailbox.folderId(INBOX));
-    expect(await imported(mailbox, newMail!)).toBe(true);
-    expect(syncMs).toBeLessThan(5_000);
-
-    // Older mail is background work: a move goes before the backfill's next batch.
-    const startedAt = performance.now();
-    const [move] = await queueMoves(mailbox, [toArchive!], "during-backfill-move");
-    await waitFor(async () => (await confirmed([move!])) === 1, "the move during the backfill", 10_000);
-    expect(performance.now() - startedAt).toBeLessThan(5_000);
-    expect(backfillDone).toBe(false);
-    await backfill;
+      second = pauseArchive(mailbox);
+      backfill = syncFolderTurn(mailbox.folderId(ARCHIVE), next!.input);
+      await waitFor(async () => second!.reached, "the Archive background turn");
+      const [move] = await queueMoves(mailbox, [toArchive!], "during-backfill-move", { enqueue: false });
+      await commandTurn(mailbox);
+      expect(lease.events.at(-1)?.kind).toBe("busy");
+      expect(lease.events.at(-1)?.priority).toBe("command");
+      expect(await confirmed([move!])).toBe(0);
+      const commandRequested = lease.events.length;
+      second.release();
+      const remaining = await backfill;
+      expect(remaining?.input.backfill).toBe(true);
+      await commandTurn(mailbox);
+      expect(lease.events.slice(commandRequested).find((event) => event.kind === "acquired")?.priority).toBe("command");
+      expect(await confirmed([move!])).toBe(1);
+      // Backfill remains unfinished when the foreground work completes, then drains normally.
+      await runFolderSyncJob(mailbox.folderId(ARCHIVE), { input: remaining!.input });
+    } finally {
+      first.release();
+      second?.release();
+      afterStatus = null;
+      await Promise.allSettled([backfill]);
+      lease.restore();
+    }
   }, 120_000);
 
   test("a body batch that yields to a folder sync queues its remaining bodies even if the first body was already complete", async () => {
