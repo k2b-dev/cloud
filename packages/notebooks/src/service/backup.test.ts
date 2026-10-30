@@ -1,4 +1,5 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { app } from "../config";
 import {
   buildNotebookBackupPaths,
   checkSnapshotTarget,
@@ -10,6 +11,12 @@ import {
   validateSnapshotEndpoint,
 } from "./backup";
 import type { NotebookExport } from "./export";
+
+let settings: ReturnType<typeof spyOn<typeof app.settings, "get">>;
+beforeEach(() => {
+  settings = spyOn(app.settings, "get").mockResolvedValue([]);
+});
+afterEach(() => settings.mockRestore());
 
 const config: NotebookBackupConfig = {
   enabled: true,
@@ -151,13 +158,9 @@ test("snapshot save checks refuse known internal targets with a stable code", as
 });
 
 test("snapshot allowlist validates current admin settings", async () => {
-  const { app } = await import("../config");
-  const get = spyOn(app.settings, "get").mockResolvedValue(["0.0.0.0/0"]);
-  try {
-    await expect(snapshotAllowlist()).rejects.toThrow("notebooks.snapshot_allowed_targets");
-  } finally {
-    get.mockRestore();
-  }
+  settings.mockResolvedValue(["0.0.0.0/0"]);
+  await expect(snapshotAllowlist()).rejects.toThrow("notebooks.snapshot_allowed_targets");
+  expect(settings).toHaveBeenCalledWith("notebooks.snapshot_allowed_targets");
 });
 
 test("save checks use the signed URL hostname, including the default AWS region", async () => {
