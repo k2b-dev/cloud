@@ -96,6 +96,13 @@ export const api = {
     return { readId: text(field(body, "readId")), editId: text(field(body, "editId")) };
   },
 
+  /** Whether the site takes new shared notes right now; a full storage pauses it. */
+  async sharingPaused(): Promise<boolean> {
+    const response = await request("/api/status");
+    const body: unknown = await response.json();
+    return field(body, "sharingPaused") === true;
+  },
+
   /** Never writes on the server: opening a link is not yet a human visit. */
   async link(linkId: string): Promise<LinkInfo> {
     const response = await request(`/api/pads/${encodeURIComponent(linkId)}`);
