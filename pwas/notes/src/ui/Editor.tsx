@@ -16,7 +16,7 @@ export function NoteEditor(props: {
   readOnly?: boolean;
   placeholder?: string;
   autofocus?: "end" | "start";
-  onReady?: (editor: TextEditorController) => void;
+  onReady?: (editor: TextEditorController, undo: () => void) => void;
   onFiles?: (files: File[]) => void;
 }) {
   const undoManager = new Y.UndoManager(props.text);
@@ -37,7 +37,7 @@ export function NoteEditor(props: {
       }}
       extensions={[yCollab(props.text, props.awareness, { undoManager })]}
       onReady={(editor) => {
-        props.onReady?.(editor);
+        props.onReady?.(editor, () => void undoManager.undo());
         const view = editor.view;
         // Cursors of others disappear when this person leaves the editor.
         const blur = () =>

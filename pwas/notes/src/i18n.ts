@@ -254,6 +254,14 @@ const de = {
   legalDraft: "Entwurf. Der endgültige Text kommt nach der rechtlichen Prüfung.",
   // accessory
   undo: "Rückgängig",
+  fmtBold: "Fett",
+  fmtItalic: "Kursiv",
+  fmtHeading: "Überschrift",
+  fmtList: "Liste",
+  fmtTask: "Checkliste",
+  fmtTag: "Tag",
+  fmtImage: "Bild oder PDF",
+  fmtLink: "Link",
 };
 
 type Messages = { [K in keyof typeof de]: (typeof de)[K] };
@@ -492,6 +500,14 @@ const en: Messages = {
   exampleTitle: "How writing works here",
   legalDraft: "Draft. The final text follows the legal review.",
   undo: "Undo",
+  fmtBold: "Bold",
+  fmtItalic: "Italic",
+  fmtHeading: "Heading",
+  fmtList: "List",
+  fmtTask: "Checklist",
+  fmtTag: "Tag",
+  fmtImage: "Image or PDF",
+  fmtLink: "Link",
 };
 
 export const messages = i18n.define({ baseLocale: "de", messages: { de, en } });

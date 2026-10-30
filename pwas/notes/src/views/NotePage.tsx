@@ -12,6 +12,7 @@ import { preferences } from "../prefs";
 import { navigate } from "../router";
 import { app, t } from "../state";
 import { Footer, Icon, type IconName, Wordmark } from "../ui/common";
+import { Accessory } from "../ui/Accessory";
 import { NoteEditor } from "../ui/Editor";
 import { EXAMPLE_TEXT } from "./example";
 import { openDelete } from "./Delete";
@@ -88,6 +89,7 @@ export function NotePage(props: { mode: NoteMode }) {
     return mode.kind === "local" ? app.records().find((entry) => entry.id === mode.id) : undefined;
   });
   const [editor, setEditor] = createSignal<TextEditorController>();
+  const [undo, setUndo] = createSignal<() => void>(() => {});
 
   // The open document: from the store for local notes, in memory for the draft and the example.
   const [opened] = createResource(
@@ -424,8 +426,9 @@ export function NotePage(props: { mode: NoteMode }) {
             readOnly={readOnly() || record()?.pendingDelete}
             placeholder={first() ? t().titlePlaceholder : undefined}
             autofocus={first() ? "start" : focusNext === record()?.id ? "end" : undefined}
-            onReady={(value) => {
+            onReady={(value, undoLast) => {
               setEditor(value);
+              setUndo(() => undoLast);
               if (focusNext === record()?.id) focusNext = null;
             }}
             onFiles={(list) => void addFiles(list)}
@@ -467,6 +470,9 @@ export function NotePage(props: { mode: NoteMode }) {
           </div>
         </Show>
       </main>
+      <Show when={!readOnly() && props.mode.kind !== "draft" ? editor() : undefined}>
+        {(current) => <Accessory editor={current()} onUndo={() => undo()()} onFiles={(list) => void addFiles(list)} />}
+      </Show>
       <Footer narrow onReport={() => openReport(foreignLink())} />
     </div>
   );
