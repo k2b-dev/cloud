@@ -33,6 +33,15 @@ export const checkSource = (file: string, source: string, apps: readonly string[
             (ts.isStringLiteralLike(node) &&
               text === app &&
               !common.has(app) &&
+              !(
+                app === "oauth" &&
+                ts.isBinaryExpression(node.parent) &&
+                (node.parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+                  node.parent.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken) &&
+                [node.parent.left, node.parent.right].some(
+                  (operand) => ts.isPropertyAccessExpression(operand) && operand.name.text === "credentialKind",
+                )
+              ) &&
               !(app === "pwa" && ts.isPropertyAssignment(node.parent) && node.parent.name.getText(ast) === "layout"))),
       );
       if (app)
