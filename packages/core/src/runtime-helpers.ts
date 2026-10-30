@@ -25,7 +25,7 @@ import {
 } from "@k2b/cloud/services";
 import { appApproval } from "@k2b/cloud/services/app-approval";
 import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flows/deferred";
-import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
+import { initializeIdentityAuthority, startAppWorkloadBroker, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
 import { startWorkflowEventRetention } from "@k2b/cloud/workflows/store";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
@@ -53,6 +53,7 @@ import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
 
+let stopAppWorkloadBroker: (() => Promise<void>) | undefined;
 let stopAppEventBroker: (() => Promise<void>) | undefined;
 let stopPersonalGroupHistory: (() => Promise<void>) | undefined;
 let stopCloudAiRuntime: (() => void) | null = null;
@@ -152,6 +153,7 @@ export const startCoreServices = async (
   outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();
+    stopAppWorkloadBroker = await startAppWorkloadBroker();
     stopAppEventBroker = await startAppEventBroker();
     stopHelpMaintenance = startHelpMaintenance();
     await startAppSkillsWatcher();
@@ -195,6 +197,8 @@ export const startCoreServices = async (
     await lifecycleJobs.start({ notificationSender });
     stopPersonalGroupHistory = startPersonalGroupHistory();
   } catch (error) {
+    await stopAppWorkloadBroker?.();
+    stopAppWorkloadBroker = undefined;
     await stopAppEventBroker?.();
     stopAppEventBroker = undefined;
     await stopPersonalGroupHistory?.();
@@ -232,6 +236,8 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
   try {
     // Sign-in and reset requests already answered must reach the notification store before it stops.
     await drainDeferredAuthRequests();
+    await stopAppWorkloadBroker?.();
+    stopAppWorkloadBroker = undefined;
     await stopAppEventBroker?.();
     stopAppEventBroker = undefined;
     await stopPersonalGroupHistory?.();

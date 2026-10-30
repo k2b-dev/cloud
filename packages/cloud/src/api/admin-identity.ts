@@ -86,7 +86,10 @@ type IdentityAdminDependencies = {
   status: typeof getIdentitySigningKeyStatus;
   rewrap: typeof rewrapIdentitySigningKeys;
   revoke: typeof revokeIdentitySigningKey;
-  serviceAccounts: Pick<typeof serviceAccounts, "getOrCreateResourceBound" | "createStandalone" | "listStandalone" | "get" | "setStatus">;
+  serviceAccounts: Pick<
+    typeof serviceAccounts,
+    "getByResource" | "getOrCreateResourceBound" | "createStandalone" | "listStandalone" | "get" | "setStatus"
+  >;
   credentials: Pick<
     typeof serviceAccountCredentials,
     "createResourceApiToken" | "createStandaloneApiToken" | "getOverview" | "listOverview" | "revoke"
@@ -150,6 +153,29 @@ export const createAdminIdentityRoutes = (
             filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app" },
           }),
         ),
+    )
+    .patch(
+      "/workloads/:appId",
+      describeRoute({ tags: ["App credentials"], summary: "Enable or disable app workload issuance and calls across all instances" }),
+      v("param", WorkloadAppParamsSchema),
+      v("json", ServiceAccountStatusInputSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { appId } = c.req.valid("param");
+          const { status } = c.req.valid("json");
+          const account = await service.serviceAccounts.getByResource({ appId, resourceType: "cloud.app", resourceId: appId });
+          if (!account) return fail(err.notFound("Workload service account"));
+          const updated = await service.serviceAccounts.setStatus({ id: account.id, status });
+          if (!updated.ok) return updated;
+          await service.audit.record({
+            action: status === "disabled" ? "service_account.disable" : "service_account.enable",
+            outcome: "allowed",
+            actor: auditActor(c.get("user")),
+            target: { type: "service_account", id: account.id, label: account.name },
+            metadata: { appId, serviceAccountId: account.id, status },
+          });
+          return ok({ appId, status });
+        }),
     )
     .post(
       "/workloads/:appId/credentials",

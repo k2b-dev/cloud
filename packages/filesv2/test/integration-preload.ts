@@ -1,6 +1,6 @@
 import { afterAll } from "bun:test";
 import { sql } from "bun";
-import { createDisposableDatabase, testInfra } from "../../../scripts/fixtures/test-infra";
+import { createDisposableDatabase, ownTestDatabase, testInfra } from "../../../scripts/fixtures/test-infra";
 
 /**
  * Filesv2 integration suites create stand-in `auth`/`settings`/`audit` tables
@@ -13,6 +13,8 @@ import { createDisposableDatabase, testInfra } from "../../../scripts/fixtures/t
 if (testInfra.database) {
   const database = await createDisposableDatabase("filesv2");
   process.env.DATABASE_URL = database.url;
+  // Work an aborted test leaves running here ends after each test, instead of holding every later hook (#1797).
+  ownTestDatabase(database.name);
   afterAll(async () => {
     await sql.close().catch(() => undefined);
     await database.drop();
