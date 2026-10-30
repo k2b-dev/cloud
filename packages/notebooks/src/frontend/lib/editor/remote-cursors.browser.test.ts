@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { REMOTE_CARET_IDLE_CLASS, REMOTE_CARET_LABEL_IDLE_MS } from "@k2b/editor/collab";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../../ui/test/browser";
-import { REMOTE_CARET_IDLE_CLASS, REMOTE_CARET_LABEL_IDLE_MS } from "./remote-cursors";
 
 // Fading, hover, and reduced motion are computed styles, so this runs the editor theme in a real browser.
 import type {} from "./remote-cursors.browser-harness";

@@ -17,7 +17,7 @@ const mount = async (seedCursors = false, text = "Collaborative notes") => {
   const { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate } = await import("y-protocols/awareness");
   const { yCollab } = await import("y-codemirror.next");
   const { createTrustedTextAwareness } = await import("@k2b/cloud/shared-text");
-  const { REMOTE_CARET_IDLE_CLASS, remoteCursors } = await import("./remote-cursors");
+  const { REMOTE_CARET_IDLE_CLASS, remoteCursors } = await import("@k2b/editor/collab");
   jest.useFakeTimers();
   jest.setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
   const doc = new Y.Doc();
@@ -337,7 +337,7 @@ describe("remote cursors", () => {
     const { view, awareness, ada, cleanup } = await mount();
     const focused = spyOn(document, "hasFocus").mockReturnValue(true);
     try {
-      const { REMOTE_CARET_LABEL_IDLE_MS } = await import("./remote-cursors");
+      const { REMOTE_CARET_LABEL_IDLE_MS } = await import("@k2b/editor/collab");
       view.focus();
       view.dispatch({ selection: { anchor: 3 } });
       awareness.setLocalStateField("cursor", null);

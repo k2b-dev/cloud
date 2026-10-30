@@ -4,11 +4,11 @@ import { forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorState, type Extension, StateEffect, type Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
+import { isolateYjsHistory } from "@k2b/editor/collab";
 import { isServer } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
-import { isolateYjsHistory } from "../../../lib/yjs/history";
 
 const loading = createDomTestHarness();
 const { basicExtensions, markdownExtension } = await import("@k2b/editor/markdown");

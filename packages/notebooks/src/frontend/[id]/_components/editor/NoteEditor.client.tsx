@@ -4,6 +4,7 @@ import { EditorView, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { createEditor } from "@k2b/editor";
+import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
 import { fadeScrollMarginsExtension, fadeScrollPadding, listCommandsExtension, pressMissedEditor } from "@k2b/editor/markdown";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "@k2b/editor/markdown/lib/named-blocks";
 import { clipboard, files } from "@k2b/stdlib/browser";
@@ -27,7 +28,6 @@ import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
-import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import {
   caretIntoTableCell,
   cellFormattingKeys,
@@ -38,7 +38,6 @@ import {
 import { createNotebookTablePresentation, notebookSourceFormulasExtension } from "../../../lib/editor/shared-tables";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { yjs } from "../../../lib/yjs";
-import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
 import { notebookWorkspaceMessages } from "../../messages";
 import { createEditorComments } from "../comments/EditorComments";
