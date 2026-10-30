@@ -1628,3 +1628,8 @@ body.k2b-ui {
   white-space: nowrap;
   cursor: pointer;
 }
+
+/* Checklist boxes take the site ink, as in mockup v4. */
+.n-editor .custom-list-task-marker {
+  accent-color: var(--ink);
+}
