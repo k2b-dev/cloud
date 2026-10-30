@@ -610,7 +610,9 @@ Administrators can allow internal administrator-configured endpoints with the se
 public targets only),
 `assistant.rsql_allowed_targets` owned by Assistant (default `rsql`), and
 `outgoing_mail.allowed_targets` owned by the platform (default empty, covering both SMTP
-and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs.
+and bounce IMAP). Administrators edit them under **Observability → Health
+check**, in **Database settings** on the Studio administration page, and under
+**Base settings**. Each accepts exact host names, IP addresses and CIDRs.
 `host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
 leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
 include a port. A saved list replaces the default and applies to new requests or connections. Invalid entries, including `/0`, are rejected on write. The deprecated environment variables bootstrap absent settings once; invalid bootstrap input is ignored with a warning.
@@ -640,7 +642,8 @@ scrape and every redirect (at most three) and pins each connection. Revocation
 takes effect on the next scrape. Responses must be uncompressed.
 
 Notebooks operators can allow internal S3-compatible storage with
-the `notebooks.snapshot_allowed_targets` admin setting.
+the `notebooks.snapshot_allowed_targets` admin setting, under **Settings** on
+`/admin/notebooks`.
 Use the narrowest entry: an exact host name, one IP address, or the smallest
 required CIDR range. Host entries trust all validated addresses for that exact
 name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries are rejected on write. Changes apply to new snapshot requests.
