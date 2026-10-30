@@ -1,7 +1,7 @@
+import { resolveTextCursor } from "@k2b/editor/collab";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import { type HeadingLine, headingAtLine } from "../../../../lib/note-insights";
-import { resolveTextCursor } from "../../../lib/editor/relative-cursor";
 import type { PresenceLocationsEventDetail } from "../detail/events";
 
 /** Old clients without a user id, and malformed or unrelated cursor positions, are ignored. */

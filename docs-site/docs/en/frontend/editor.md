@@ -116,6 +116,42 @@ reconfigured. The slot leaves the view when the calling owner is disposed. The
 building blocks use the same mechanism, so a menu that unmounts takes its
 extension with it.
 
+## Write together
+
+`@k2b/editor/collab` adds collaborative editing on Yjs. Install `yjs`,
+`y-protocols`, and `y-codemirror.next` next to the package; the root export
+does not need them.
+
+```tsx
+import { collab } from "@k2b/editor/collab";
+
+const text = doc.getText("text");
+const undoManager = new Y.UndoManager(text);
+
+<Editor
+  editor={editor}
+  label="Note"
+  initialValue={text.toString()}
+  maxLength={2_097_152}
+  extensions={collab({ text, undoManager, awareness })}
+  host={{ undo: () => undoManager.undo(), redo: () => undoManager.redo(), boundary: () => undoManager.stopCapturing() }}
+/>;
+```
+
+`collab({ text, undoManager, awareness })` binds the view to the shared
+`Y.Text`, keeps CodeMirror's history boundaries in the Yjs undo stack, and
+draws the other writers' cursors. Every action run through `editor.run` stays
+one undo step. The editor writes its own cursor into the awareness state as
+`cursor: { anchor, head }`, relative positions from
+`Y.relativePositionToJSON`, and reads `user.name` and `user.color` of the
+others. An application that checks presence on its server keeps exactly these
+fields.
+
+The transport stays in the application: the WebSocket or another provider,
+reconnecting, and confirming updates. The parts are also exported alone:
+`isolateYjsHistory(undoManager)` for a host that binds Yjs itself, and
+`remoteCursors(text, awareness)`.
+
 ## Locale
 
 The package's own texts, such as the toolbar's accessible name, come from its

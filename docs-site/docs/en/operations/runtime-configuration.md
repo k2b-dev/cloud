@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-23
+updated: 2026-10-30
 ---
 
 # Runtime configuration
@@ -18,6 +18,61 @@ For the services and optional integrations needed by each app, start with
 
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
+
+## Read secrets from mounted files
+
+Set `NAME_FILE` to a file path in the owning process or container, for example
+`APP_SECRET_FILE=/run/secrets/app-secret`. Mount the file so that the process can
+read it, and unset `NAME` and its aliases: providing both sources with non-empty
+values stops startup. Empty or whitespace-only environment values are unset.
+Cloud removes exactly one trailing LF or CRLF from the file and preserves all
+other whitespace. An empty result follows the same
+unset/default rule as an empty environment value. A missing or unreadable file
+stops startup with the variable name and path, without printing its contents.
+Inject the variable into the container itself; the repository's Compose input
+files do not automatically forward `*_FILE` variables. Keep the secret exactly
+the same when moving it to a file: extra spaces or a second newline change its
+value. Cloud reads the file once per entry and path; replace the file and restart
+the process to apply a changed secret.
+
+File alternatives are supported for:
+
+- `APP_SECRET` and `ADMIN_LOGIN_TOKEN`;
+- `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`, `CLOUD_IDENTITY_NEXT_KEY` and
+  `CLOUD_IDENTITY_PREVIOUS_KEY`;
+- `CLOUD_OAUTH_BROKER_SECRET` and `CLOUD_APP_CREDENTIAL`;
+- Cloud Login's `CLOUD_LOGIN_VAPID_PRIVATE_KEY`.
+
+### Declare an application secret
+
+Application registries use the same mechanism through `@k2b/cloud/config`:
+
+```ts
+import { defineEnv, envSource, envString } from "@k2b/cloud/config";
+
+const appEnv = defineEnv({
+  PROVIDER_TOKEN: {
+    schema: envString,
+    scope: "secret",
+    secretFile: true,
+    doc: "Provider credential for this application.",
+  },
+});
+
+const token = appEnv.PROVIDER_TOKEN;
+const source = envSource(appEnv, "PROVIDER_TOKEN");
+```
+
+`secretFile: true` enables the canonical `PROVIDER_TOKEN_FILE` variable and
+validates a configured file when the registry is created. Values remain lazy
+on subsequent access, with file contents cached per entry and path.
+`envSource(registry, name)` returns `"env"`, `"alias"`,
+`"file"`, `"default"` or `"unset"` for the effective raw value, without evaluating
+a default factory. Empty environment values and empty file results return
+`"default"` when a default exists, otherwise `"unset"`. Explicit `false` and `0`
+values retain their source. Source detection resolves configured files with
+the same cache and throws for unreadable files or conflicting sources; it does not validate the value's
+schema. Read the registry property to obtain the validated value.
 
 ## Replace the legacy Weather geo configuration
 
