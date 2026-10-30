@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { connect, createServer, type Socket } from "node:net";
 import { RedisClient, sql } from "bun";
+import { initializeTestPlatform } from "../../../../../scripts/fixtures/platform";
 
 // Runs in its own process (see outage.integration.test.ts) because the request
 // cache client is a module singleton that must connect through the proxy below.
@@ -33,6 +34,7 @@ await listen(0);
 const address = proxy.address();
 assert(address && typeof address !== "string");
 process.env.REDIS_URL = process.env.VALKEY_URL = `redis://127.0.0.1:${address.port}`;
+await initializeTestPlatform();
 const baseline = new RedisClient(process.env.REDIS_URL);
 const { requestCacheRedis } = await import("../../../src/services/request-cache-redis");
 const { readKey } = await import("../../../src/services/settings/store");

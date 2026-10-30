@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { initializeTestPlatform } from "../../../../../scripts/fixtures/platform";
 import { downstreamBudget } from "../../../src/services/downstream-budget";
 
 const downstream = process.argv[2];
@@ -8,6 +9,7 @@ if (downstream !== "gotenberg" && downstream !== "smtp") throw new Error("Unknow
 const namespace = process.argv[3];
 if (!namespace?.startsWith("test-")) throw new Error("Expected a shared test namespace");
 process.env.SYNC_NAMESPACE = namespace;
+await initializeTestPlatform();
 const timeoutMs = Number(process.argv[4] ?? 60_000);
 const command = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
 try {

@@ -3,7 +3,7 @@ import type { Sync } from "@k2b/sync";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { env } from "../config/env";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import { jsonResponse } from "../server/middleware/openapi";
 import { v } from "../server/middleware/validator";
 import * as notificationCatalog from "../services/notifications/catalog";
@@ -18,8 +18,7 @@ import * as watcher from "./runtime-watcher";
 type Operation = { responses?: Record<string, { description?: string; content?: Record<string, { schema?: unknown }> }> };
 
 test("the published OpenAPI spec describes the validation error body Cloud sends", async () => {
-  const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-  Object.defineProperty(env, "APP_SECRET", { value: "openapi-test-only", configurable: true });
+  const secretStub = stubConnections({ appSecret: { current: "openapi-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   // Only the methods used by startup are implemented; heartbeat transport is stubbed.
@@ -98,6 +97,6 @@ test("the published OpenAPI spec describes the validation error body Cloud sends
     processSync.unbindProcessSync();
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
-    Object.defineProperty(env, "APP_SECRET", originalSecret);
+    secretStub.mockRestore();
   }
 });

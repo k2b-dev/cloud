@@ -1,3 +1,4 @@
+import { connections } from "../../runtime/connections";
 /**
  * Encryption helpers for settings at-rest.
  *
@@ -7,7 +8,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { env } from "../../config/env";
 import { crypto } from "../../server/services";
 
 /**
@@ -34,7 +34,7 @@ import { crypto } from "../../server/services";
  * with deployments that have always used hex-format APP_SECRET.
  */
 export const getAppSecret = (): string => {
-  const raw = env.APP_SECRET.trim();
+  const raw = connections().appSecret.current.trim();
   if (!raw) {
     throw new Error("APP_SECRET is required to read or write encrypted settings");
   }

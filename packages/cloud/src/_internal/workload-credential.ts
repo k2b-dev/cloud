@@ -1,4 +1,5 @@
 import { env } from "../config/env";
+import { connections } from "../runtime/connections";
 import { getProcessApplicationId } from "./process-identity";
 import { getProcessNats } from "./process-sync";
 import {
@@ -50,7 +51,7 @@ export const createAppWorkloadCredential = (options: {
   const request =
     options.request ??
     (async (input: WorkloadRequest) => {
-      const response = await getProcessNats().request(workloadSubject(env.SYNC_NAMESPACE), JSON.stringify(input), {
+      const response = await getProcessNats().request(workloadSubject(connections().nats.namespace), JSON.stringify(input), {
         timeout: WORKLOAD_REQUEST_TIMEOUT_MS,
       });
       return response.json<unknown>();

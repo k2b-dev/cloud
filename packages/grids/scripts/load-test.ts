@@ -724,4 +724,6 @@ const main = async (): Promise<void> => {
   usage();
 };
 
+const { initializePlatform } = await import("@k2b/cloud/start");
+await initializePlatform({ appId: "grids", source: "env" });
 await main();

@@ -1,7 +1,8 @@
 import { afterAll } from "bun:test";
 import { sql } from "bun";
-import { createMigratedDatabase, requireInfra, testInfra } from "../../../scripts/fixtures/test-infra";
+import { createMigratedDatabase, initializeTestPlatform, requireInfra, testInfra } from "../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../scripts/fixtures/test-sync";
+import { closePlatformClients } from "../../cloud/src/runtime/clients";
 
 /**
  * Integration runs never touch the developer database. The dev stack's
@@ -25,6 +26,7 @@ if (testInfra.database && testInfra.nats) {
 
   const namespace = `test-mail-${crypto.randomUUID()}`;
   process.env.SYNC_NAMESPACE = namespace;
+  await initializeTestPlatform("mail");
   const { startProcessSync } = await import("@k2b/cloud");
   const runtime = await startProcessSync({ application: "mail" }).catch(async (error: unknown) => {
     await database.drop();
@@ -36,6 +38,7 @@ if (testInfra.database && testInfra.nats) {
       await runtime.stop();
       await deleteTestNamespace(namespace);
     } finally {
+      await closePlatformClients();
       await sql.close().catch(() => undefined);
       await database.drop();
     }

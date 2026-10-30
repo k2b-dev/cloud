@@ -79,6 +79,11 @@ and native clients, then returns `load()`'s module. For a worker with no module
 loader, `initializePlatform({ appId, source? }): Promise<void>` uses the same
 initializer. Each process initializes once; a second call throws
 `Platform has already started`. Core and Gateway always use `source: "env"`, selected by their application ID.
+Repository test subprocesses can inherit the integration initializer through
+`BUN_OPTIONS`. After selecting a different test target, use the reset-aware
+`initializeTestPlatform()` fixture before domain work; do not call the
+production initializer a second time.
+
 The development preload checks `APP_ID` against the declared application ID.
 A mismatch stops startup.
 
@@ -92,6 +97,8 @@ snapshot with `appId`, `database.url`, `valkey.url`, `nats`, `appSecret`, and
 The matching `sources` fields identify `env` or `core` for each value.
 Before start it throws `connections() used before platform start` and names
 the startup entrypoints that initialize it.
+Settings reads also propagate missing startup instead of treating it as a cache
+outage or an unreadable stored value.
 Treat credentials as secrets; never return the snapshot in diagnostics.
 
 This release's startup uses environment values. Explicit valid environment

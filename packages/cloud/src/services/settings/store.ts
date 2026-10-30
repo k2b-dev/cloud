@@ -16,6 +16,7 @@
 import { sql } from "bun";
 import { HTTPException } from "hono/http-exception";
 import { hasRole, type User } from "../../contracts/shared";
+import { connections } from "../../runtime/connections";
 import { claimCacheFill, completeCacheFill, MISSING_SETTING } from "../cache-fill";
 import { stripImageDataUrlMetadata } from "../image-metadata";
 import { toPgTextArray } from "../postgres";
@@ -89,6 +90,8 @@ export const readKeyState = async (key: string, db: SqlClient = sql): Promise<Se
 export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
   const result = new Map<string, unknown>();
   if (keys.length === 0) return result;
+  // Missing startup is a programming error, never a cache outage or unreadable row.
+  connections();
   // Bound access is read with its endpoint in one database snapshot. Never
   // resolve it from an independently cached secret.
   const boundKeys = keys.filter((key) => settingOwners(key).length > 0);
@@ -163,6 +166,7 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
 export const readStates = async (keys: readonly string[], db: SqlClient = sql): Promise<Map<string, SettingRead>> => {
   const result = new Map<string, SettingRead>();
   if (keys.length === 0) return result;
+  connections();
   const snapshotKeys = [...new Set(keys.flatMap((key) => [key, ...settingOwners(key).map((owner) => owner.key)]))];
   const rows = await db<StoredRow[]>`SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray(snapshotKeys)}::text[])`;
   const byKey = new Map(rows.map((row) => [row.key, row]));
@@ -206,6 +210,7 @@ const knownKeysWith = (extraKnownKeys: readonly string[]) =>
   Array.from(new Set([...allKnownKeys(), ...retainedLegacyKeys, ...extraKnownKeys]));
 
 export const listLegacyKeys = async (extraKnownKeys: readonly string[] = []): Promise<LegacySettingRow[]> => {
+  connections();
   const knownKeys = knownKeysWith(extraKnownKeys);
   const rows = await sql<LegacyStoredRow[]>`
     SELECT key, value, updated_at
