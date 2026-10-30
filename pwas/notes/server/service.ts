@@ -19,7 +19,7 @@ const read = <T>(decode: () => T): T => {
   }
 };
 
-type Room = { doc: Y.Doc; through: string; updates: number; peers: Set<Connection>; touched: number; changed: number };
+type Room = { doc: Y.Doc; through: string; updates: number; logBytes: number; peers: Set<Connection>; touched: number; changed: number };
 type Queue = { tail: Promise<unknown>; pending: number };
 export type Peer = {
   send: (bytes: Uint8Array) => void;
@@ -254,7 +254,8 @@ export class NotesService {
         const subtype = read(() => decoding.readVarUint(decoder));
         if (subtype === sync.messageYjsSyncStep1) {
           const vector = read(() => decoding.readVarUint8Array(decoder));
-          if (decoder.pos !== bytes.length || vector.byteLength > limits.stateBytes) throw new NotesError("invalid_frame");
+          if (decoder.pos !== bytes.length || vector.byteLength > limits.vectorBytes) throw new NotesError("invalid_frame");
+          read(() => Y.decodeStateVector(vector));
           await this.enqueue(connection.readId, async () => {
             const room = await this.room(connection.readId);
             this.send(
@@ -323,6 +324,7 @@ export class NotesService {
         this.send(connection, ackFrame(id));
         return;
       }
+      if (room.logBytes + bytes.byteLength > limits.stateBytes) await this.compactRoom(connection.readId, room);
       let result: Awaited<ReturnType<NotesStore["append"]>>;
       try {
         result = await this.store.append(connection.readId, id, bytes);
@@ -339,6 +341,7 @@ export class NotesService {
       room.doc = candidate;
       if (BigInt(result.id) > BigInt(room.through)) room.through = result.id;
       room.updates += result.duplicate ? 0 : 1;
+      room.logBytes += result.duplicate ? 0 : bytes.byteLength;
       room.changed = room.touched = Date.now();
       previous.destroy();
       this.broadcast(
@@ -347,7 +350,7 @@ export class NotesService {
         connection,
       );
       this.send(connection, ackFrame(id));
-      if (room.updates >= limits.compactUpdates) {
+      if (room.updates >= limits.compactUpdates || room.logBytes >= limits.stateBytes) {
         try {
           await this.compactRoom(connection.readId, room);
         } catch {
@@ -369,6 +372,7 @@ export class NotesService {
     if (!room.updates) return;
     await this.store.compact(readId, Y.encodeStateAsUpdate(room.doc), room.through, room.doc.getText("text").toString());
     room.updates = 0;
+    room.logBytes = 0;
   }
   private release(connection: Connection): void {
     if (connection.released) return;

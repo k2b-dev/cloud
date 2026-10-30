@@ -4,6 +4,7 @@ import { NotesError } from "./errors";
 export const limits = {
   text: 2_097_152,
   stateBytes: 16_777_216,
+  vectorBytes: 65_536,
   fileBytes: 5_242_880,
   files: 20,
   peersPerPad: 50,
