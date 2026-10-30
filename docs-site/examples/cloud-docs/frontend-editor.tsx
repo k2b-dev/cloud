@@ -1,4 +1,5 @@
 import { BubbleMenu, createEditor, Editor, markdownActions, SlashMenu, Toolbar } from "@k2b/editor";
+import { type CollabOptions, collab } from "@k2b/editor/collab";
 
 import {
   basicExtensions,
@@ -44,5 +45,20 @@ export function NoteEditor(props: { initial: string; locale: string }) {
         ]}
       />
     </>
+  );
+}
+
+export function SharedNoteEditor(props: CollabOptions & { undoManager: NonNullable<CollabOptions["undoManager"]> }) {
+  const editor = createEditor();
+  const { undoManager } = props;
+  return (
+    <Editor
+      editor={editor}
+      label="Note"
+      initialValue={props.text.toString()}
+      maxLength={2_097_152}
+      extensions={collab({ text: props.text, undoManager, awareness: props.awareness })}
+      host={{ undo: () => undoManager.undo(), redo: () => undoManager.redo(), boundary: () => undoManager.stopCapturing() }}
+    />
   );
 }
