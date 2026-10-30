@@ -193,10 +193,10 @@ export default function Keys(props: KeysProps) {
       <span>
         <b>{reason}</b> {t().withCli}
       </span>
-      <code class="mt-1.5 block rounded-md bg-(--k2b-surface-subtle) px-2 py-1 font-mono text-[12.5px]">{`cld admin apps keys create ${props.app.id} --out-dir ./secrets`}</code>
+      <code class="mt-1.5 block font-mono">{`cld admin apps keys create ${props.app.id} --out-dir ./secrets`}</code>
       <Show when={props.docsHref}>
         {(href) => (
-          <a class="mt-1.5 inline-block text-[13px] underline underline-offset-3" href={href()}>
+          <a class="mt-1.5 inline-block underline underline-offset-3" href={href()}>
             {t().withoutCli}
           </a>
         )}
@@ -214,7 +214,7 @@ export default function Keys(props: KeysProps) {
             <Button size="sm" variant="secondary" loading={enable.loading()} onClick={() => void enable.mutate()}>
               {t().backgroundOn}
             </Button>
-            <Show when={enable.error()}>{(error) => <span class="text-[12.5px]">{error().message}</span>}</Show>
+            <Show when={enable.error()}>{(error) => <span>{error().message}</span>}</Show>
           </span>
         </NoticeCard>
       </Show>

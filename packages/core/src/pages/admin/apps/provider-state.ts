@@ -5,4 +5,5 @@ export type ProviderParts = { traffic: string | null; errors: string | null; err
 
 const [retrying, setRetrying] = createSignal(false);
 const [refreshed, setRefreshed] = createSignal<ProviderParts | null>(null);
+
 export { refreshed, retrying, setRefreshed, setRetrying };

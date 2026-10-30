@@ -83,10 +83,15 @@ The following steps create an optional override for an app running on the host.
 3. Enter the **Name** and, if needed, the expiry time.
 4. Choose **Create token** in the dialog.
 5. Copy the token. Cloud shows it only once; afterwards only its metadata and **Revoke** stay available.
-6. Give the token only to the owning app, as `CLOUD_APP_CREDENTIAL`, through the secret store of the deployment.
-7. Set Core's private address in `CLOUD_CORE_INTERNAL_ORIGIN`. Background calls need it.
-8. Apply the change and check the background work of the app.
-9. Choose **Revoke** for the old credential and confirm in the dialog.
+:::
+
+Then switch the app to the new token:
+
+:::steps
+1. Give the token only to the owning app, as `CLOUD_APP_CREDENTIAL`, through the secret store of the deployment.
+2. Set Core's private address in `CLOUD_CORE_INTERNAL_ORIGIN`. Background calls need it.
+3. Apply the change and check the background work of the app.
+4. Choose **Revoke** for the old credential and confirm in the dialog.
 :::
 
 Revoking stops new calls with that credential.

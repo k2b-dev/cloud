@@ -1,5 +1,6 @@
 import { type AppRegistryDetail, assessRuntimeCompatibility, listAppsDetailed, readAppRegistrySnapshot } from "@k2b/cloud";
 import { appAccessMessages } from "@k2b/cloud/access/ui";
+import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/server";
 import {
@@ -15,15 +16,14 @@ import {
   serviceAccountCredentials,
 } from "@k2b/cloud/services";
 import { appKeys } from "@k2b/cloud/services/app-keys";
-import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { AdminLayout, getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
 import { createAppStatusReader } from "../../../app-status";
-import { listAppListing, rememberAppStatusReports } from "../../../known-apps";
 import { ssr } from "../../../config";
+import { listAppListing, rememberAppStatusReports } from "../../../known-apps";
 import { settingsDocumentationHref } from "../settings/documentation";
 import { appsFormat } from "./format";
 import type { KeyEntry } from "./keys-dialogs";
-import { type AppInput, type AppStatusWindow, deriveApp, parseAppsQuery, type ProviderNumbers, sortApps } from "./model";
+import { type AppInput, type AppStatusWindow, deriveApp, type ProviderNumbers, parseAppsQuery, sortApps } from "./model";
 import { appsPageMessages } from "./page-messages";
 import { AppsView, type AppsViewData, type DetailData, type RouteRow } from "./view";
 

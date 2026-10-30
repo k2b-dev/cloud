@@ -11,6 +11,11 @@ export type SelectionAllowance = { file: string; subject: string; reason: string
 /** CSS subjects match exactly; TS/TSX subjects match a substring of the trimmed source line. */
 export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   {
+    file: "packages/core/src/pages/admin/apps/KeysCreate.island.tsx",
+    subject: 'variant={active() === 0 ? "primary" : "secondary"}',
+    reason: "Action: creating a key is the keys column's one main action while the app has no active key.",
+  },
+  {
     file: "packages/pulse/src/frontend/workspace/base-settings-dialog.tsx",
     subject: 'background: "var(--k2b-selected)",',
     reason:

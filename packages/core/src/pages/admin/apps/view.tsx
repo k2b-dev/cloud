@@ -10,6 +10,8 @@ import { type AppsFormat, providerValues } from "./format";
 import Keys, { type KeysProps } from "./Keys.island";
 import KeysCreate from "./KeysCreate.island";
 import { keysMessages } from "./keys-messages";
+import MovedNotice from "./MovedNotice.island";
+import { appDetailsMessages } from "./messages";
 import {
   type AppEntry,
   type AppHint,
@@ -23,11 +25,9 @@ import {
   routeSummary,
   WINDOWS,
 } from "./model";
-import MovedNotice from "./MovedNotice.island";
-import { appDetailsMessages } from "./messages";
-import { type AppsPageMessages, appsPageMessages } from "./page-messages";
 import ProviderRetry from "./ProviderRetry.island";
 import ProviderValue from "./ProviderValue.island";
+import { type AppsPageMessages, appsPageMessages } from "./page-messages";
 import Redeliver from "./Redeliver.island";
 import RemoveApp from "./RemoveApp.island";
 

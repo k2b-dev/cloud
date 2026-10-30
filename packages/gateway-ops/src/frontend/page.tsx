@@ -1,7 +1,7 @@
 import { readAppRegistrySnapshot } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { formatNumber as fmtCount } from "@k2b/cloud/shared";
 import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
+import { formatNumber as fmtCount } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../config";

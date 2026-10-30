@@ -22,7 +22,6 @@ import { websocket } from "hono/bun";
 import { aiChatTaskRoutes } from "./ai-chat-task-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
-import { createAdminAppStatusRoutes } from "./pages/admin/apps/status-api";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
@@ -32,6 +31,7 @@ import { app } from "./config";
 import { coreHelp } from "./help";
 import { buildSearchIndexes as buildOutgoingMailSearchIndexes } from "./migrate/core/outgoing-mail";
 import { createCoreNotificationSender } from "./notifications";
+import { createAdminAppStatusRoutes } from "./pages/admin/apps/status-api";
 import { createPagesRouter } from "./pages/create";
 import { runCoreSetup, startCoreServices, stopCoreServices } from "./runtime-helpers";
 

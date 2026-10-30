@@ -79,6 +79,7 @@ test("an old link lands with a hint that closes and leaves the address clean", a
   expect(await hint.innerText()).toContain("„Systembeobachtung › Gateway › Apps“ ist jetzt hier.");
   const list = await page.locator("[data-apps-summary]").boundingBox();
   await page.getByRole("button", { name: "Hinweis schließen" }).click();
+  await settled(page);
   expect(await hint.count()).toBe(0);
   expect(new URL(page.url()).search).toBe("");
   // The list moves up by the hint's height only once, when the person closes it.
