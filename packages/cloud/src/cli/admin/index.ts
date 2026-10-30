@@ -14,6 +14,7 @@ import { aiQuotaCommands } from "./ai-quotas";
 import { aiSkillCommands } from "./ai-skills";
 import { aiUsageCommands } from "./ai-usage";
 import { appCredentialCommands } from "./app-credentials";
+import { appKeyCommands } from "./app-keys";
 import { appSignInCommands } from "./app-sign-in";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
@@ -51,7 +52,8 @@ export default defineCliCommands({
     agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials, and change their pictures.",
     "agents avatar": "Show and change an agent's picture: its robot parts or a photo.",
     "app-sign-in": "Manage app sign-in and pairing.",
-    apps: "Inspect and remove registered apps.",
+    apps: "Inspect registered apps and manage app keys.",
+    "apps keys": "Create, list, and revoke Ed25519 app keys.",
     documentation: "Manage the administration documentation website.",
     geoip: "Replace and inspect sign-in location databases.",
     jobs: "Inspect background jobs and their runs.",
@@ -90,6 +92,7 @@ export default defineCliCommands({
   },
   commands: [
     ...appCredentialCommands,
+    ...appKeyCommands,
     ...agentCommands,
     ...documentationCommands,
     ...appSignInCommands,

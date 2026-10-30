@@ -19,6 +19,14 @@ For the services and optional integrations needed by each app, start with
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
 
+## Enroll application public keys
+
+Core now accepts locally generated Ed25519 public keys through administrator
+APIs and `cld admin apps keys`. The installation ID lives in Core’s database.
+Enrollment alone does not change application startup or remove any existing
+environment values. See [App keys](/en/docs/operations/app-keys) for creation,
+resumable CLI output, rotation, and revocation.
+
 ## Replace the legacy Weather geo configuration
 
 Upgrade Core and configure its secret `geo.api_key` and credit budgets before

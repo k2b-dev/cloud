@@ -11,6 +11,7 @@ const enabled = testInfra.database !== undefined,
 let database: Awaited<ReturnType<typeof createDisposableDatabase>> | undefined;
 const base = "11111111-1111-4111-8111-111111111111",
   source = "22222222-2222-4222-8222-222222222222",
+  workload = "55555555-5555-4555-8555-555555555555",
   account = "33333333-3333-4333-8333-333333333333",
   access = "44444444-4444-4444-8444-444444444444";
 beforeAll(async () => {
@@ -38,6 +39,9 @@ const seedOld = async (ledger: boolean) => {
   await sql`INSERT INTO pulse.base_access VALUES(${base}::uuid,${access}::uuid)`;
   await sql`INSERT INTO auth.service_accounts(id,kind,app_id,resource_type,resource_id) VALUES(${account}::uuid,'resource_bound','pulse','pulse_source','Old002')`;
   await sql`INSERT INTO auth.service_account_credentials VALUES(${account}::uuid)`;
+  await sql`INSERT INTO auth.service_accounts(id,kind,app_id,resource_type,resource_id) VALUES(${workload}::uuid,'resource_bound','pulse','cloud.app','pulse') ON CONFLICT DO NOTHING`;
+  await sql`DELETE FROM auth.service_account_credentials WHERE service_account_id=${workload}::uuid`;
+  await sql`INSERT INTO auth.service_account_credentials VALUES(${workload}::uuid)`;
   if (ledger) {
     await sql`CREATE TABLE pulse.schema_migrations(version INT PRIMARY KEY,name TEXT NOT NULL UNIQUE,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
     await sql`INSERT INTO pulse.schema_migrations(version,name) VALUES(1,'baseline'),(2,'base_stores')`;
@@ -118,7 +122,8 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         expect(await sql`SELECT id FROM pulse.bases`).toHaveLength(0);
         expect(await sql`SELECT id FROM pulse.sources`).toHaveLength(0);
         expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${account}::uuid`).toHaveLength(0);
-        expect(await sql`SELECT * FROM auth.service_account_credentials`).toHaveLength(0);
+        expect(await sql`SELECT * FROM auth.service_account_credentials`).toEqual([{ service_account_id: workload }]);
+        expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${workload}::uuid`).toHaveLength(1);
         expect(await sql`SELECT id FROM auth.access WHERE id=${access}::uuid`).toHaveLength(0);
         await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${base}::uuid,'New001','Preserved')`;
         const before = await sql`SELECT * FROM pulse.schema_migrations`;

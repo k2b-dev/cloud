@@ -2050,3 +2050,11 @@ metadata (`assistant`, `mcp`, or `null`). Application authors must persist and d
 create or change visible content. Existing stored content is not backfilled.
 This adds no permission and needs no operator configuration. See
 [App capabilities](/en/docs/platform/capabilities).
+
+## Enroll an application before its first start
+
+An administrator can register Ed25519 public keys for stopped and third-party
+apps through `cld admin apps keys` or Core’s administrator API. Enrollment uses
+the same app-bound service account as workload credentials. Keep the current
+runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
+for the supported commands and recovery steps.

@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { migrateAppKeys } from "./app-keys";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 import { migratePosix } from "./posix";
 import { migrate as migrateServiceAccountGroupManagers } from "./service-account-group-managers";
@@ -817,6 +818,7 @@ export const migrate = async (): Promise<void> => {
     ON auth.service_account_credentials(token_prefix)
     WHERE status = 'active'
   `.simple();
+  await migrateAppKeys();
   console.log("  ✓ auth.service_account_credentials table");
 
   await sql`
