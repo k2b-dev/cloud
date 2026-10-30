@@ -7,6 +7,7 @@ import {
   DiscussionActivityInputSchema,
   DiscussionContainersDataSchema,
   DiscussionContainersInputSchema,
+  type ResourceReadableInput,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { discussionProviderDependencies } from "./discussion-read";
@@ -31,6 +32,7 @@ export const providerApp = (appId: string, container = "collection", item = "ite
       protocolVersion: 2,
       types: {
         [container]: {
+          access: { readable: async ({ principals }: ResourceReadableInput) => principals },
           title: "Collection",
           description: "An item collection.",
           reader: `${container}.read`,
@@ -38,6 +40,7 @@ export const providerApp = (appId: string, container = "collection", item = "ite
           color: "blue",
         },
         [item]: {
+          access: { readable: async ({ principals }: ResourceReadableInput) => principals },
           title: "Inventory item",
           description: "An item.",
           reader: `${item}.read`,

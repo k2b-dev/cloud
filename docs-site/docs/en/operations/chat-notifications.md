@@ -5,7 +5,7 @@ section: Operations
 order: 1076
 description: Configure Chat push content and inspect delivery workers and badge counts.
 tags: [chat, notifications, browser, operations]
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # Chat notifications
@@ -27,7 +27,7 @@ use the recipient's last interactive Chat read locale, or the operator's
 
 Cloud's notification preferences expose three Chat kinds:
 
-- `chat.mention`: mentions and replies; browser recommended, email selectable.
+- `chat.mention`: mentions, replies, and followed item discussions; browser recommended, email selectable.
 - `chat.message`: new messages in chats whose effective level is **All messages**;
   browser recommended, email unavailable with an explanation.
 - `chat.added`: another person adds the recipient to a chat or channel;
@@ -63,8 +63,40 @@ The additive startup migration creates `chat.notification_outbox`,
 `chat.notification_pending`, and `chat.notification_push_state`. Last push
 sequence and time survive process restarts. No environment variable is added.
 
-Push notifications currently cover ordinary chats and channels. System-chat
-push notifications are not available in this slice.
+## Enable resource discussion notifications after the upgrade
+
+Update Core first, then deploy Chat and the discussion providers. Chat declares
+`platformPermissions: ["resources:readers"]` and receives its workload credential
+automatically. There is no Chat credential to create or environment variable to
+add. Deployment of Chat's declaration admits the reader checks, as described in
+[App-to-app reader checks](/en/docs/platform/app-to-app-queries).
+
+A provider offers the `discussions` role and `access.readable` on its resource
+Types. The same path works for built-in and third-party providers. Following an
+item discussion selects its incoming messages for push; mentions and replies
+also qualify. The conversation's notification level still applies.
+
+Chat asks the platform about the item and its expected container, using only
+current participants of that conversation or followers of that thread. An item
+moved to another container is no longer readable through the old conversation.
+Chat checks during recipient preparation and again before the final send.
+Every prepared decision expires after three seconds; lock waits are bounded.
+Owner checks run outside Chat database transactions.
+
+- A checked result keeps only the readable recipients. A rejection drops the
+  recipient without retrying.
+- A temporary failure omits the item from counts and retries delivery through
+  the existing job. An earlier positive decision cannot authorize the push.
+- `not_configured` suppresses push until setup is complete. **Administration →
+  Chat** shows the last actual check's state, resource type, time and reason,
+  such as a missing reader function, automatic credential or Core admission.
+  Before any check it says **Not checked yet**.
+
+System-chat pushes never include a “+n more” count, because coalesced messages
+can belong to different resources. Chat checks both the chosen personal message
+and the newest message when they belong to different item discussions.
+Cloud cannot recall a push after accepting it; later revocation still blocks
+opening the resource.
 
 ## Check the badge
 
@@ -73,7 +105,15 @@ The same function supplies push badges and the navigation badge. It adds chats
 with effective **All messages** and unread content to the existing unread
 mentions/replies count. Each component is capped at 99; permission checks and
 bounded candidate scans can undercount inaccessible or very large collections.
-Service-account credentials receive zero.
+Service-account credentials receive zero. System-chat mention and reply
+counts use the same item reader check. Interactive decisions, including denials,
+may be reused for at most 60 seconds. Each person can trigger at most 100 new
+checks per 60 seconds, and all interactive traffic shares a limit of 500.
+Overlapping requests share a cache reservation. These limits leave at least
+1,001 of Core's 1,501 reader requests per minute outside interactive traffic;
+delivery always checks freshly. Push jobs reuse only cached count decisions,
+so their badges never spend the interactive reader budget. Cached-only count reads inside a database
+snapshot omit decisions that were not prepared before entering it.
 
 Read state is authoritative in Postgres. The browser closes a local group with
 `closeGroup("chat", conversation.id)` and refreshes the count after reading;

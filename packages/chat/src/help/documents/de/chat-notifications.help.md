@@ -8,6 +8,8 @@ order: 125
 
 Jeder Chat hat eine von 3 Stufen: **Alle Nachrichten**, **Nur Erwähnungen** oder **Aus**. Cloud zeigt auf einem Gerät höchstens 1 Benachrichtigung pro Chat. Eine neue Nachricht ersetzt die alte, zum Beispiel „Nora: Passt, danke! (+5 weitere)“.
 
+Bei Diskussionen über Einträge entfällt die Anzahl weiterer Nachrichten. Auch Nachrichten in Diskussionen, denen du folgst, können dich benachrichtigen. Du musst den Eintrag weiterhin ansehen dürfen. Kann die zuständige App das gerade nicht prüfen, wird bis zur erfolgreichen Prüfung kein Inhalt gesendet.
+
 ## Stufe wählen {icon="bell"}
 
 :::steps
@@ -36,7 +38,7 @@ Speichert die Stufe nicht, zeigt die Info, welche Stufe weiter gilt, und **Erneu
 
 ## Einer Diskussion folgen {icon="bell-ringing"}
 
-Im Chat eines Space oder eines Notizbuchs gilt **Nur Erwähnungen**. Wenn du in der Diskussion einer Aufgabe oder Notiz schreibst, folgst du ihr. Neue Nachrichten dort melden sich wie Erwähnungen.
+Im Chat einer Sammlung gilt **Nur Erwähnungen**. Wenn du in der Diskussion eines Eintrags schreibst, folgst du ihr. Neue Nachrichten dort melden sich wie Erwähnungen.
 
 :::steps
 1. Öffne die Diskussion.

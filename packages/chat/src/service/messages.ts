@@ -16,6 +16,7 @@ import {
   SnapshotQuerySchema,
 } from "./contracts";
 import { conversations } from "./conversations";
+import { prepareSystemReaderCounts } from "./for-you";
 import { chatLive } from "./live";
 import { validateMentions } from "./mentions";
 import { mutateMessage } from "./message-mutations";
@@ -153,6 +154,7 @@ const snapshot = async (
   if (!parsed.ok) return parsed;
   const opened = await openParticipant(input);
   if (!opened.ok) return opened;
+  await prepareSystemReaderCounts(input);
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
@@ -242,6 +244,7 @@ const get = async (input: Input & { messageId: string }) => {
 const changes = async (input: Input & { query: unknown }) => {
   const parsed = parse(ChangesQuerySchema, input.query, input);
   if (!parsed.ok) return parsed;
+  await prepareSystemReaderCounts(input);
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;

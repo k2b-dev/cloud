@@ -10,6 +10,23 @@ import { chatService } from "../service";
 export default ssr<AuthContext>(async (c) => {
   const { t } = chatMessages.resolve([getLocale(c)]);
   const health = await chatService.health();
+  const check = health.systemNotifications;
+  const reason = new Map([
+    ["no_readable", t.readerNoReadable],
+    ["no_credential", t.readerNoCredential],
+    ["no_internal_origin", t.readerNoOrigin],
+    ["no_app_identity", t.readerNoIdentity],
+    ["not_admitted", t.readerNotAdmitted],
+    ["check_unavailable", t.readerUnavailable],
+    ["health_unavailable", t.readerHealthUnavailable],
+  ]).get(check.reason ?? "");
+  const checkDetail = [
+    reason ?? (check.status === "unchecked" ? t.systemNotificationsSetup : null),
+    check.resourceType,
+    check.checkedAt ? t.observed({ time: dates.formatTime(check.checkedAt, getDateConfig(c)) }) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const ok = health.status === "ok";
   const time = dates.formatTime(health.observedAt, getDateConfig(c));
 
@@ -29,6 +46,19 @@ export default ssr<AuthContext>(async (c) => {
             label={t.database}
             value={health.database.status === "ok" ? t.databaseReady : t.databaseUnavailable}
             sub={health.database.latencyMs === null ? undefined : t.latency({ value: health.database.latencyMs })}
+          />
+          <StatCell
+            label={t.systemNotifications}
+            value={
+              health.systemNotifications.status === "ok"
+                ? t.systemNotificationsOk
+                : health.systemNotifications.status === "unchecked"
+                  ? t.systemNotificationsUnchecked
+                  : health.systemNotifications.status === "failing"
+                    ? t.systemNotificationsFailing
+                    : t.systemNotificationsNotConfigured
+            }
+            sub={checkDetail || undefined}
           />
         </StatGrid>
       </div>
