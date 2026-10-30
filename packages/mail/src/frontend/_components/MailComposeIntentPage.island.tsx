@@ -84,7 +84,7 @@ export default function MailComposeIntentPage(props: {
                       async ({ query }) =>
                         emails
                           .filter((email) => email.email.includes(query))
-                          .map((email) => ({ value: email, label: email.email, desc: email.label ?? undefined })),
+                          .map((email) => ({ id: email.email, value: email, label: email.email, desc: email.label ?? undefined })),
                       { title: copy.recipient, minQueryLength: 0 },
                     )
                   )?.value;

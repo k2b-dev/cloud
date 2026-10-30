@@ -542,6 +542,8 @@ export const launchBrowser = async ({
  * Presses the middle of `target`, runs `rebuild` while the button is down, and releases at the same point.
  * Use it for every list whose host can rebuild equal items: a row replaced between press and release swallows
  * the click (#2140). `rebuild` gives the page new objects with the same identity, as a host does on any change.
+ * Where a host can also drop and rebuild the list's container (a menu that closes and reopens), let `rebuild` do
+ * that too and wait until the new container shows before the release.
  */
 export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: () => Promise<unknown>): Promise<void> => {
   await target.waitFor();
