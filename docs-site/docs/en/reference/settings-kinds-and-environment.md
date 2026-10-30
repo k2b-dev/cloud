@@ -26,6 +26,8 @@ control.
 | `placeholder` | No | Input hint for string-like, number, and list settings |
 | `envFallback` | No | Server-side function that returns a fallback value |
 | `envBootstrap` | No | Server-side function that can create the initial persisted value |
+| `envVariable` | No | Environment variable name shown in migration diagnostics |
+| `validate` | No | Server-side function returning an error string for an invalid normalized value, or `undefined` |
 
 `template` also accepts `templateVars`. `enum` requires `options`, an array of
 `{ value, label }`. `number` accepts `min` and `max`.

@@ -69,10 +69,10 @@ Declared in `packages/gateway-ops/src/env.ts`.
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
 | `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for health webhooks; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
-| `NATS_ADMIN_SERVERS` | list | runtime | empty list | no | Optional comma-separated NATS system-account servers used only for Gateway Ops cluster diagnostics. |
-| `NATS_ADMIN_CREDS_FILE` | string | runtime | unset | no | Path to the mounted system-account `.creds` file for NATS diagnostics; do not combine with the NKey seed file. |
-| `NATS_ADMIN_NKEY_SEED_FILE` | string | runtime | unset | no | Path to a static system-account NKey seed file for NATS diagnostics; an alternative to the `.creds` file. |
-| `NATS_ADMIN_TLS_CA_FILE` | string | runtime | unset | no | Path to the CA certificate that enables TLS for the NATS diagnostics connection. |
+| `NATS_ADMIN_SERVERS` | list | runtime | empty list | no | Deprecated: bootstraps gateway.nats_admin_servers once; configure NATS diagnostics in Administration instead. |
+| `NATS_ADMIN_CREDS_FILE` | string | runtime | unset | no | Deprecated: imports system-account .creds file contents into gateway.nats_admin_access at startup; do not combine with NATS_ADMIN_NKEY_SEED_FILE. |
+| `NATS_ADMIN_NKEY_SEED_FILE` | string | runtime | unset | no | Deprecated: imports the user NKey seed contents into gateway.nats_admin_access and selects the nkey format at startup. |
+| `NATS_ADMIN_TLS_CA_FILE` | string | runtime | unset | no | Deprecated: imports CA PEM contents into gateway.nats_admin_tls_ca at startup; no file path is stored. |
 
 ## Application: gateway
 
