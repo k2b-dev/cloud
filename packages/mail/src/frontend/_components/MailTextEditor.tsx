@@ -1,5 +1,6 @@
 import { autocompletion, type CompletionContext } from "@codemirror/autocomplete";
 import { Transaction } from "@codemirror/state";
+import { isolateYjsHistory } from "@k2b/editor/collab";
 import { Button, type Completion, Dropdown, useLocale } from "@k2b/ui";
 import { type TableHost, TextEditor, type TextEditorController, type TextEditorControls } from "@k2b/ui/text-editor";
 import { type Accessor, createEffect, createSignal, onCleanup, Show, untrack } from "solid-js";
@@ -7,7 +8,6 @@ import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import { type MailDraftDocumentClient, type MailSharedDraftState, mailSharedDraftMessages } from "../../lib/draft-document-client";
 import { mailComposerMessages } from "./mail-composer-messages";
-import { isolateYjsHistory } from "./mail-draft-document-history";
 import { mailDraftPeers, mailDraftTablePresence } from "./mail-draft-document-presence";
 import { createMailDraftTableStructure, type UnknownTableAction } from "./mail-draft-document-table";
 

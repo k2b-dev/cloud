@@ -1,5 +1,6 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { BlockType, EditorView } from "@codemirror/view";
+import { remoteCursors } from "@k2b/editor/collab";
 import { pointerSelectionHeld } from "@k2b/editor/markdown";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
@@ -7,7 +8,6 @@ import * as Y from "yjs";
 import { handleSoftNoteNavigationRequests } from "../soft-navigation";
 import { editor } from "./index";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "./notebook-options";
-import { remoteCursors } from "./remote-cursors";
 
 const doc = [
   "# Project heading",
