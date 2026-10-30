@@ -241,6 +241,29 @@ describe("@k2b/ssr/nav", () => {
     }
   });
 
+  test("startViewTransition runs the update directly under reduced motion", () => {
+    setupBrowserMocks({ startViewTransition: true });
+    let transitions = 0;
+    Object.assign(globalThis.document, {
+      startViewTransition: (callback: () => void) => {
+        transitions++;
+        callback();
+        return { ready: Promise.resolve() };
+      },
+    });
+    Object.assign(globalThis.window, {
+      matchMedia: (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)" }),
+    });
+    let called = false;
+
+    startViewTransition(() => {
+      called = true;
+    });
+
+    expect(called).toBe(true);
+    expect(transitions).toBe(0);
+  });
+
   test("startViewTransition uses the browser API when available", () => {
     setupBrowserMocks({ startViewTransition: true });
     let called = false;
