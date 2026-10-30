@@ -1,6 +1,6 @@
 {
   "name": "@k2b/cloud",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "Application platform library for independently deployed Hono and SolidJS services behind a dynamic gateway.",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -21,11 +21,13 @@
     "!src/**/*.test-fixture.ts",
     "!src/**/*.test-fixture.tsx",
     "!scripts/**/*.test.ts",
+    "!scripts/**/*.test-fixture.ts",
     "!scripts/runtime-recovery-*.ts"
   ],
   "exports": {
     ".": "./src/index.ts",
     "./app-key": "./src/app-key.ts",
+    "./start": "./src/start.ts",
     "./desktop": "./src/desktop/index.ts",
     "./desktop/solid": "./src/desktop/solid.tsx",
     "./server": "./src/server/index.ts",
@@ -128,8 +130,8 @@
     "@tabler/icons": "3.48.0",
     "@tailwindcss/typography": "0.5.20",
     "@k2b/nessi": "0.18.0",
-    "@k2b/ssr": "0.20.1",
-    "@k2b/ui": "0.36.0",
+    "@k2b/ssr": "0.20.2",
+    "@k2b/ui": "0.37.0",
     "@k2b/stdlib": "0.30.0",
     "@k2b/sync": "7.0.1",
     "@nats-io/jetstream": "3.4.0",

@@ -66,9 +66,13 @@ replicas must ensure the same environment reaches every replica.
 | `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | `mail.workflow_ai_body_max_chars` | `mail` | New AI work |
 | `GOTENBERG_URL` | `gotenberg.url` | Platform / Core | New PDF requests |
 
-Use `settings set --app assistant` and `settings set --app mail` for those
-applications' migrated settings. Their existing administration forms do not
-expose these keys.
+Administrators edit the application-owned settings in Administration:
+`gateway.webhook_allowed_targets` under **Observability → Health check**,
+`assistant.rsql_allowed_targets` in **Database settings** on the Studio
+administration page (`/admin/assistant`), `notebooks.snapshot_allowed_targets`
+under **Settings** on `/admin/notebooks`, and `mail.workflow_ai_body_max_chars`
+on `/admin/mail`. A refused value shows its reason at the field. With `cld`, use
+`settings set --app <app>` for these keys.
 
 Network settings accept comma-separated or newline-separated strings and JSON
 string arrays. Existing exact-host, IP, CIDR and port rules remain in force;

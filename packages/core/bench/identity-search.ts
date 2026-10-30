@@ -96,6 +96,8 @@ const meteredUrl = new URL(source);
 meteredUrl.hostname = "127.0.0.1";
 meteredUrl.port = String(address.port);
 process.env.DATABASE_URL = metered ? meteredUrl.href : source.href;
+const { initializePlatform } = await import("@k2b/cloud/start");
+await initializePlatform({ appId: "core", source: "env" });
 const telemetry = new RedisClient(process.env.REDIS_URL!);
 const redisSnapshot = async (): Promise<Counts> => {
   const raw = String(await telemetry.send("INFO", ["commandstats"]));
@@ -175,7 +177,7 @@ const warmCaches = async () => {
   if (performance.now() - lastCacheWarmup < 30_000 && cacheWarmups > 0) return;
   invalidateIdentityRuntimeConfig();
   identity.invalidateIdentitySignerCache("invocation");
-  await getIdentityRuntimeConfig();
+  assert.equal((await getIdentityRuntimeConfig()).issuer, issuer, "Benchmark settings must use the seeded cache");
   await identity.prepareIdentitySigner("invocation");
   await providerControl("warm");
   lastCacheWarmup = performance.now();

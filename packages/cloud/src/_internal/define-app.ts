@@ -70,6 +70,7 @@ import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
+import { connections } from "../runtime/connections";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
@@ -705,7 +706,7 @@ export const defineApp = <
     // Settings are encrypted at rest, so every container needs the secret. It
     // is only read on the first decrypt, which meant a container without it
     // booted cleanly and failed much later with an unrelated-looking error.
-    if (!env.APP_SECRET.trim()) {
+    if (!connections().appSecret.current.trim()) {
       throw new Error(
         `APP_SECRET is not set (app "${meta.id}"). Settings are encrypted at rest and every app in the ` +
           "deployment must share the same value; without it the first settings read fails.",

@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
-import { env } from "../config/env";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -16,8 +16,7 @@ describe("application startup readiness", () => {
     const failure = skipSetup ? null : mode;
     test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
       const events: string[] = [];
-      const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-      Object.defineProperty(env, "APP_SECRET", { value: "startup-test-only", configurable: true });
+
       const signals = ["SIGTERM", "SIGINT"] as const;
       const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
       const step = async (name: string) => {
@@ -45,6 +44,7 @@ describe("application startup readiness", () => {
             events.push("stop-workload");
           },
         })),
+        stubConnections(),
         spyOn(applicationPackage, "registerApplicationPackage").mockImplementation(() => step("package")),
         spyOn(processSync, "startProcessSync").mockImplementation(async () => {
           processSync.bindProcessSync(sync);
@@ -157,7 +157,6 @@ describe("application startup readiness", () => {
         }
         processSync.unbindProcessSync();
         for (const spy of spies.toReversed()) spy.mockRestore();
-        Object.defineProperty(env, "APP_SECRET", originalSecret);
       }
     });
   }

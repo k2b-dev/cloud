@@ -120,12 +120,47 @@ test("an empty schedule is invalid at its field and blocks Save; an unreadable v
   await page.getByRole("checkbox", { name: "Replace stored value: Check schedule" }).check();
   // The displayed fallback can be saved as it is once the replacement is confirmed.
   expect(await visible("Save").isDisabled()).toBe(false);
+  // Discard also takes back the confirmation.
+  await visible("Discard").click();
+  expect(await page.getByRole("checkbox", { name: "Replace stored value: Check schedule" }).isChecked()).toBe(false);
+  expect(await visible("Save").isDisabled()).toBe(true);
 
   await goto("/admin/observability/retention?state=unreadable");
   expect(await page.getByText("Stored settings cannot be read").isVisible()).toBe(true);
   expect(await visible("Save").isDisabled()).toBe(true);
   await page.getByRole("checkbox", { name: "Replace stored value: Request events" }).check();
   expect(await visible("Save").isDisabled()).toBe(false);
+  expect(errors).toEqual([]);
+}, 30_000);
+
+test("health webhook targets are edited as a list, and a target the server refuses stays marked at its field", async () => {
+  const shots = process.env.ADMIN_SETTINGS_SHOTS;
+  for (const width of [1440, 390]) {
+    await goto("/admin/observability/health-check", width);
+    const targets = page.getByRole("textbox", { name: /^Health webhook allowed targets/ });
+    expect(await page.getByText("Changes apply to new deliveries.").isVisible()).toBe(true);
+    expect(await targets.inputValue()).toBe("alerts.internal, 10.20.0.0/16");
+    if (shots) await page.screenshot({ path: `${shots}/gateway-health-check-${width}.png`, fullPage: true, animations: "disabled" });
+  }
+
+  await goto("/admin/observability/health-check");
+  const targets = page.getByRole("textbox", { name: /^Health webhook allowed targets/ });
+  await targets.fill("alerts.internal, 10.20.0.0/16, 0.0.0.0/0");
+  await targets.blur();
+  const request = page.waitForRequest((candidate) => candidate.method() === "PUT" && candidate.url().includes("webhook_allowed_targets"));
+  await visible("Save").click();
+  expect((await request).postDataJSON()).toEqual({ value: ["alerts.internal", "10.20.0.0/16", "0.0.0.0/0"] });
+  await page.waitForFunction(() => document.querySelector('.k2b-save-status__state[data-state="failed"]'));
+  expect(await page.getByText(/\/0 is forbidden/).isVisible()).toBe(true);
+  expect(await page.getByText("Check the marked field.").isVisible()).toBe(true);
+  expect(await targets.getAttribute("aria-invalid")).toBe("true");
+  if (shots) await page.screenshot({ path: `${shots}/gateway-health-check-refused-1440.png`, fullPage: true, animations: "disabled" });
+
+  await targets.fill("alerts.internal, 10.20.0.0/16, 10.30.0.5");
+  await targets.blur();
+  expect(await page.getByText(/\/0 is forbidden/).count()).toBe(0);
+  await visible("Save").click();
+  await page.waitForFunction(() => document.querySelector('.k2b-save-status__state[data-state="saved"]'));
   expect(errors).toEqual([]);
 }, 30_000);
 

@@ -3871,10 +3871,13 @@ const appWithAdmin = appWithLimits
           ? await notebooksService.backup.updateCron(value, { replaceUnreadable })
           : await settingsService.entry.update({ key, value, replaceUnreadable });
       if (!result.ok) {
+        // A refused value names its reason, which the settings dialog shows at the field.
         const message =
           key === "notebooks.snapshot_cron"
             ? fallbackServiceMessage(getLocale(c), result.error.status, result.error.message)
-            : messages(c).settingUpdateFailed;
+            : result.error.status === 400
+              ? result.error.message
+              : messages(c).settingUpdateFailed;
         return respond(c, fail({ ...result.error, message }));
       }
       // If the user changed the reindex cron, reschedule live (no restart

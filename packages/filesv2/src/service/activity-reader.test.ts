@@ -1,18 +1,18 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
 import { actorId, baseId, candidate, historyFixture, home, otherId, publicBaseId } from "../../test/activity-reader-fixture";
 import { testActor, testCall } from "../../test/files-call";
 import { withActivityReadBudget } from "./activity-read-budget";
 import { FilesError } from "./errors";
 
 const batchId = "30000000-0000-4000-8000-000000000001";
-const previousSecret = process.env.APP_SECRET;
+let secretStub: ReturnType<typeof stubConnections> | undefined;
 beforeAll(() => {
-  process.env.APP_SECRET = "files-history-reader-test-secret";
+  secretStub = stubConnections({ appSecret: { current: "files-history-reader-test-secret" } });
 });
 afterAll(() => {
-  if (previousSecret === undefined) delete process.env.APP_SECRET;
-  else process.env.APP_SECRET = previousSecret;
+  secretStub?.mockRestore();
 });
 
 const call = testCall(testActor);
