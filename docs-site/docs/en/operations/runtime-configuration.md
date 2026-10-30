@@ -37,6 +37,42 @@ configuration. Set both URLs before running the preload. Postgres URL aliases
 configuration now need an explicit URL. See
 [Platform start and connections](/en/docs/build/platform-start) for the author API.
 
+## Bootstrap application connections from Core
+
+Applications can authenticate at startup with `CLOUD_APP_KEY` or
+`CLOUD_APP_KEY_FILE` and the direct Core listener origin in
+`CLOUD_CORE_INTERNAL_ORIGIN`. The origin must use HTTP or HTTPS, with no path,
+query, fragment or embedded credentials. The public gateway blocks this
+internal route.
+
+**Keep the application's infrastructure environment values for now.**
+Key-only production operation is not supported until the platform-client import
+migration is complete: remaining Bun-global SQL and Redis consumers still read
+those values from the environment. Enrollment and bootstrap do not complete
+that migration. See [Use the key at start](/en/docs/operations/app-keys#use-the-key-at-start).
+
+A present key must have the `cloud-app-key-v1` format and match the app ID
+embedded by the build or selected by the development preload. Invalid,
+revoked, unknown, wrong-app or wrong-installation credentials stop startup;
+Cloud never silently falls back to environment mode. HTTP 403 with
+`connections_not_permitted` means the key is not allowed to receive
+infrastructure connections; startup stops without retry. Key management has
+no API or UI for changing that internal permission yet. Core and Gateway use
+infrastructure environment values and refuse an app key.
+
+Each explicitly supplied connection value wins independently, including a
+supported alias, mounted secret, or explicit `false`. Core supplies the rest;
+environment defaults do not override Core values. Without a key, the existing
+environment mode remains available. The platform keeps the bootstrap response
+in memory and never writes delivered values to `process.env`.
+
+Until Core answers, the app opens no HTTP listener and is not ready. Network,
+TLS/CA, HTTP 429 and HTTP 503 failures retry for at most five minutes, with a
+ten-second deadline per attempt and bounded `Retry-After` waits. Other HTTP or
+protocol errors stop startup immediately. Failed attempts log only app ID,
+attempt and error class. After exhaustion the process exits; the operator's
+restart policy decides when to try again.
+
 ## Read secrets from mounted files
 
 Set `NAME_FILE` to a file path in the owning process or container, for example
@@ -58,7 +94,7 @@ File alternatives are supported for:
 - `APP_SECRET` and `ADMIN_LOGIN_TOKEN`;
 - `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`, `CLOUD_IDENTITY_NEXT_KEY` and
   `CLOUD_IDENTITY_PREVIOUS_KEY`;
-- `CLOUD_OAUTH_BROKER_SECRET` and `CLOUD_APP_CREDENTIAL`;
+- `CLOUD_APP_KEY`, `CLOUD_OAUTH_BROKER_SECRET` and `CLOUD_APP_CREDENTIAL`;
 - Cloud Login's `CLOUD_LOGIN_VAPID_PRIVATE_KEY`.
 
 ### Declare an application secret
@@ -96,8 +132,9 @@ schema. Read the registry property to obtain the validated value.
 
 Core now accepts locally generated Ed25519 public keys through administrator
 APIs and `cld admin apps keys`. The installation ID lives in Core’s database.
-Enrollment alone does not change application startup or remove any existing
-environment values. See [App keys](/en/docs/operations/app-keys) for creation,
+Enrollment alone does not change application startup. Supplying a key enables
+the startup protocol above; keep existing infrastructure environment values
+until the import migration is complete. See [App keys](/en/docs/operations/app-keys) for creation,
 resumable CLI output, rotation, and revocation.
 
 ## Replace the legacy Weather geo configuration

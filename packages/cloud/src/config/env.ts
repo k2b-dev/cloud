@@ -168,9 +168,15 @@ const registry = defineEnv({
     secretFile: true,
     doc: "Core and OAuth only: 64-hex secret that lets the OAuth app request token signatures from Core; generate independently with `openssl rand -hex 32`.",
   },
+  CLOUD_APP_KEY: {
+    schema: z.string(),
+    scope: "secret",
+    secretFile: true,
+    doc: "App Ed25519 private key for startup connection bootstrap; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Keep infrastructure env until the platform-client import migration is complete.",
+  },
   CLOUD_CORE_INTERNAL_ORIGIN: {
     schema: z.string(),
-    doc: "Direct Core listener origin for OAuth issuance, mandate-backed background work and internal callbacks; host-run callers use the Core port, not the gateway.",
+    doc: "Direct Core listener origin for app connection bootstrap, OAuth issuance, mandate-backed background work and internal callbacks; never the gateway. Cross-host bootstrap requires verified TLS; install private CAs through NODE_EXTRA_CA_CERTS before the first fetch.",
   },
   CLOUD_APP_CREDENTIAL: {
     schema: z.string(),
