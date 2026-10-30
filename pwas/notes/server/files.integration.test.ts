@@ -118,6 +118,65 @@ databaseSuite()("Notes file transport and persistence", () => {
       ),
     ).rejects.toMatchObject({ code: "body_limit" });
   });
+  test("permissions are checked before reading uploads and the global transfer budget rejects excess work", async () => {
+    const readonlyRequest = new Request(`${origin}/api/pads/${links.readId}/files`, {
+      method: "POST",
+      headers: { Origin: origin },
+      body: form(),
+    });
+    expect((await app.fetch(readonlyRequest)).status).toBe(403);
+    expect(readonlyRequest.bodyUsed).toBe(false);
+    setSystemTime(new Date("2026-10-30T13:00:01Z"));
+    service.rates.prune();
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let count = 0;
+    const editablePad = service.store.editablePad.bind(service.store);
+    service.store.editablePad = async (token) => {
+      if (++count === options.maxOpenPads) entered();
+      await gate;
+      return editablePad(token);
+    };
+    const pending = Array.from({ length: options.maxOpenPads }, () => upload());
+    try {
+      await ready;
+      expect((await app.request(`/api/pads/${links.readId}/files/image`)).status).toBe(503);
+      release();
+      const completed = await Promise.all(pending);
+      expect(completed.filter((result) => result.status === 201)).toHaveLength(limits.uploadPerHour);
+      expect((await app.request(`/api/pads/${links.readId}/files/image`)).status).toBe(200);
+    } finally {
+      release();
+      await Promise.allSettled(pending);
+      service.store.editablePad = editablePad;
+    }
+  });
+  test("aborting a stalled upload releases its reader", async () => {
+    const controller = new AbortController();
+    let cancelled = false;
+    const stream = new ReadableStream({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const reading = readUpload(
+      new Request(origin, {
+        method: "POST",
+        headers: { "Content-Type": "multipart/form-data; boundary=x" },
+        body: stream,
+        signal: controller.signal,
+      }),
+    );
+    controller.abort();
+    await expect(reading).rejects.toMatchObject({ code: "request_aborted" });
+    expect(cancelled).toBe(true);
+  });
   test("deletion fences late uploads and removes the stored bytes", async () => {
     const checked = await readUpload(new Request(`${origin}/upload`, { method: "POST", body: form() }));
     await Promise.allSettled([service.remove(links.editId), service.upload(links.editId, checked)]);

@@ -108,3 +108,9 @@ bytes. At most one render runs at a time; other notes receive the retryable
 keyed by content hash. No GET or HEAD writes to Postgres or updates human-open
 dates. HEAD validates access but does not render. Cache hits still check the
 current note status, including deletion and blocking.
+
+File requests share a process concurrency budget of `NOTES_MAX_OPEN_PADS`
+transfers. Admission and edit-link checks happen before reading upload bodies.
+Body reads are cancelled on disconnect or after one 30-second heartbeat interval,
+so stalled uploads release their slots. Excess transfers return 503
+`transfers_full`; clients can retry.
