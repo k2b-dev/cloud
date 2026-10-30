@@ -50,12 +50,19 @@ export async function build({ development = false, outdir = dist } = {}) {
   });
   if (!result.success) throw new AggregateError(result.logs, "Notes site build failed");
   const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
-  const css = result.outputs.find((output) => output.path.endsWith(".css"));
-  if (!entry || !css) throw new Error("Missing notes site build output");
+  // The entrypoint styles establish tokens; imported component CSS follows them.
+  const css = result.outputs
+    .filter((output) => output.path.endsWith(".css"))
+    .sort(
+      (a, b) =>
+        Number(b.path.split("/").pop()!.startsWith("styles-")) - Number(a.path.split("/").pop()!.startsWith("styles-")) ||
+        a.path.localeCompare(b.path),
+    );
+  if (!entry || !css.length) throw new Error("Missing notes site build output");
   const scripts = await Promise.all(result.outputs.filter((output) => output.path.endsWith(".js")).map((output) => output.text()));
-  const cssText = `${await css.text()}\n${await iconStyles(scripts.join("\n"))}`;
+  const cssText = `${(await Promise.all(css.map((output) => output.text()))).join("\n")}\n${await iconStyles(scripts.join("\n"))}`;
   const cssName = `styles-${Bun.hash(cssText).toString(16)}.css`;
-  await rm(css.path);
+  await Promise.all(css.map((output) => rm(output.path)));
   await Bun.write(resolve(outdir, "assets", cssName), cssText);
   await cp(resolve(packageRoot, "public"), outdir, { recursive: true });
   await Bun.write(

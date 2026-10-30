@@ -33,7 +33,8 @@ the workspace with `bun scripts/workspace.ts apps`.
 | **Development** | [`api-docs`](packages/api-docs) — Scalar UI aggregating every running app's OpenAPI spec |
 
 The release set also contains the website image (`cloud-website`), the Cloud
-Login PWA image (`cloud-pwa-auth`), and the `cld` CLI.
+Login PWA image (`cloud-pwa-auth`), the standalone notes image (`cloud-notes`),
+and the `cld` CLI.
 
 ## Build your own app
 
