@@ -1,4 +1,4 @@
-import { createMemo, For, type JSX } from "solid-js";
+import { createMemo, For, type JSX, untrack } from "solid-js";
 
 type Entry<T> = { item: T; key: string; identity: string };
 
@@ -22,7 +22,8 @@ export function KeyedFor<T>(props: {
     for (const entry of previous) byIdentity.set(entry.identity, [...(byIdentity.get(entry.identity) ?? []), entry.key]);
     const used = new Set<string>();
     const next = props.each.map((item): Entry<T> => {
-      const identity = props.by(item);
+      // Only a new list reconciles rows; a getter behind the identity changing alone must not re-read the list.
+      const identity = untrack(() => props.by(item));
       const same = byObject.get(item);
       const equal = byIdentity.get(identity)?.find((key) => !used.has(key));
       const key = same !== undefined && !used.has(same) ? same : (equal ?? `row-${counter++}`);
