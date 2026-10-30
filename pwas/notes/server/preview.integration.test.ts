@@ -120,6 +120,25 @@ databaseSuite()("Notes static website and previews", () => {
     expect((await app.request("/api/unknown")).status).toBe(404);
     expect((await app.request("/missing.js")).status).toBe(404);
   });
+  test("administrator HTML and APIs are disabled without an operator password", async () => {
+    for (const method of ["GET", "HEAD"])
+      for (const path of ["/admin", "/admin/", "/admin/session", "/api/admin/session"])
+        expect((await app.request(path, { method })).status).toBe(404);
+    const options = {
+      origin,
+      adminPasswordHash: await Bun.password.hash("fixture-only-operator-password", {
+        algorithm: "argon2id",
+        memoryCost: 8192,
+        timeCost: 1,
+      }),
+    };
+    const enabled = createNotesApp(async () => true, service, options);
+    await mountWebsite(enabled, service, options, directory, 5);
+    const response = await enabled.request("/admin");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(index);
+    expect((await enabled.request("/admin", { method: "HEAD" })).status).toBe(200);
+  });
   test("overload and unexpected failures keep the recoverable SPA shell", async () => {
     const read = service.read.bind(service);
     try {

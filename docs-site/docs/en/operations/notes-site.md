@@ -71,7 +71,8 @@ no-store response headers at the proxy, and disable path logging for this host.
 ## Moderation duty
 
 Administration is disabled until `NOTES_ADMIN_PASSWORD_HASH` contains an
-Argon2id password hash. Serve `/admin` through the same HTTPS origin as the SPA.
+Argon2id password hash. Without it, `/admin` and its APIs return 404.
+Serve `/admin` through the same HTTPS origin as the SPA.
 Sessions expire after 12 hours; changing the hash invalidates them all. Every
 mutation checks Origin and CSRF, including login. Never cache admin responses.
 
