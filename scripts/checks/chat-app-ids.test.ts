@@ -21,3 +21,28 @@ test("allows sentence punctuation and relative files whose names overlap app IDs
   );
   expect(checkSource("chat.ts", 'const prefix = "spaces.";', ["spaces"])).toHaveLength(1);
 });
+
+for (const source of [
+  'const route = "/app/spaces";',
+  'const type = "spaces:item";',
+  "const view = <span>spaces.item</span>;",
+  "const pattern = /spaces\\.item/;",
+  'const route = "/app/spaces?view=all";',
+])
+  test(`rejects app references in ${source}`, () => {
+    expect(checkSource("chat.tsx", source, ["spaces"])).toHaveLength(1);
+  });
+
+test("allows common words but rejects their qualified app references", () => {
+  const apps = ["mail", "tools", "core", "contacts", "assistant"];
+  for (const app of apps) {
+    expect(checkSource("chat.ts", `const label = "${app}";`, apps)).toEqual([]);
+    expect(checkSource("chat.ts", `const type = "${app}.item";`, apps)).toHaveLength(1);
+    expect(checkSource("chat.ts", `const route = "/app/${app}";`, apps)).toHaveLength(1);
+  }
+});
+
+test("allows shared platform imports, API services and the app's PWA route", () => {
+  const source = 'import { caller } from "@k2b/cloud/capabilities/server"; const url = "/api/accounts/entities"; const pwa = "/pwa/chat";';
+  expect(checkSource("chat.ts", source, ["capabilities", "accounts", "pwa"])).toEqual([]);
+});
