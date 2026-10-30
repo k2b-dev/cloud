@@ -253,6 +253,7 @@ export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
 
 export { geoip } from "./geoip";
 export { appDetails } from "./app-details";
+export { appAdminFacts, type AppAdminFacts } from "./app-admin-facts";
 export {
   knownBrowsers,
   KNOWN_BROWSER_LIMITS,
