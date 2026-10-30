@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { env } from "@k2b/cloud/config";
 import { SQL } from "bun";
 import { migrate } from "./database";
@@ -25,6 +26,7 @@ export const startNotes = async () => {
   try {
     return await serveNotes(db, {
       origin: appEnv.NOTES_PUBLIC_ORIGIN,
+      staticDirectory: resolve(import.meta.dir, "../dist"),
       trustedProxy: appEnv.NOTES_TRUSTED_PROXY,
       storageBytes: appEnv.NOTES_STORAGE_BYTES,
       maxConnections: appEnv.NOTES_MAX_CONNECTIONS,

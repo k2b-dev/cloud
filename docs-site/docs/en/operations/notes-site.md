@@ -59,3 +59,11 @@ verify a restore, and measure an RPO of at most 24 hours and an RTO of 4 hours.
 Backup retention can outlast deletion from the running database. Keep capability
 paths out of access, error, tracing, and telemetry logs at every proxy layer;
 the application emits only fixed diagnostic codes.
+
+The Notes process serves the SPA, API and WebSocket together. Shared HTML carries
+escaped Open Graph metadata; both capabilities use the same read-link preview
+image. PNG rendering uses a bundled font and local numeric chart data without
+network requests. The in-memory image cache is bounded by the configured open
+note budget and expires when content changes. GET and HEAD never write durable
+data; HEAD does not invoke the rasterizer. Preserve the no-referrer, noindex and
+no-store response headers at the proxy, and disable path logging for this host.
