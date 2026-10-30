@@ -3,6 +3,7 @@ import { Hono } from "hono";
 export const createNotesApp = (ready: () => Promise<boolean>) => {
   const app = new Hono();
   app.use("*", async (c, next) => {
+    await next();
     c.header("Referrer-Policy", "no-referrer");
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("X-Content-Type-Options", "nosniff");
@@ -11,12 +12,11 @@ export const createNotesApp = (ready: () => Promise<boolean>) => {
       "Content-Security-Policy",
       "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     );
-    await next();
   });
   // Do not log Request, URL, SQL errors, or exception messages: these can contain capability links.
   app.onError((_error, c) => {
     console.error("[notes] request_failed");
-    return c.json({ error: "unavailable" }, 503);
+    return c.json({ error: "internal_error" }, 500);
   });
   app.get("/healthz", (c) => c.json({ status: "ok" }));
   app.get("/readyz", async (c) => {

@@ -3,6 +3,7 @@ import { SQL } from "bun";
 import { createDisposableDatabase, databaseSuite } from "../../../scripts/fixtures/test-infra";
 import { createNotesApp } from "./app";
 import { databaseReady, migrate } from "./database";
+import { startupCode } from "./start";
 
 databaseSuite()("Notes standalone database", () => {
   let database: Awaited<ReturnType<typeof createDisposableDatabase>>;
@@ -43,4 +44,39 @@ test("readiness failure returns a stable code without exception details", async 
   expect(await response.text()).not.toContain("private database");
   expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
   expect(response.headers.get("X-Robots-Tag")).toContain("noindex");
+});
+
+test("privacy headers cover raw responses and unexpected failures", async () => {
+  const app = createNotesApp(async () => true);
+  app.get("/raw", () => new Response("ok"));
+  app.get("/failure", () => {
+    throw new Error("private details");
+  });
+  const original = console.error;
+  const logs: string[] = [];
+  console.error = (value: string) => {
+    logs.push(value);
+  };
+  try {
+    for (const path of ["/raw", "/failure"]) {
+      const response = await app.request(path);
+      expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+      expect(response.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+      expect(response.headers.get("X-Robots-Tag")).toContain("noindex");
+      if (path === "/failure") {
+        expect(response.status).toBe(500);
+        expect(await response.text()).toContain("internal_error");
+      }
+    }
+    expect(logs).toEqual(["[notes] request_failed"]);
+  } finally {
+    console.error = original;
+  }
+});
+
+test("startup diagnostics expose only stable codes", () => {
+  expect(startupCode(new Error("notes_schema_newer_than_server"))).toBe("notes_schema_newer_than_server");
+  expect(startupCode(new Error("secret connection URL"))).toBe("startup_failed");
+  expect(startupCode({ code: "28P01", message: "private details" })).toBe("database_28P01");
+  expect(startupCode({ code: "sensitive url value" })).toBe("startup_failed");
 });
