@@ -2120,34 +2120,38 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     </div>
   );
 
-  const commandRowMap = createMemo(() => new Map(commandModel().rows.map((row) => [row.command, row])));
+  // Rows are keyed by the command's key, not its object: hosts rebuild their command objects whenever their inputs change,
+  // and a row replaced between the press and the release would swallow the click (#2140).
+  const commandRowMap = createMemo(() => new Map(commandModel().rows.map((row) => [chatCommandKey(row.command), row])));
   const commandGroupKey = (group: ReturnType<typeof commandModel>["groups"][number]) =>
     group.scopeTitle ? "scope" : group.section ? `section:${group.section.id}` : "flat";
-  const renderCommandRow = (command: ChatCommand) => {
-    const highlight = () => commandRowMap().get(command)?.highlight;
-    const title = () => command.label ?? command.name;
-    const opening = () => openingRow() === chatCommandKey(command);
-    const failure = () => openFailures()[chatCommandKey(command)];
+  const renderCommandRow = (initial: ChatCommand) => {
+    const key = chatCommandKey(initial);
+    const command = () => commandRowMap().get(key)?.command ?? initial;
+    const highlight = () => commandRowMap().get(key)?.highlight;
+    const title = () => command().label ?? command().name;
+    const opening = () => openingRow() === key;
+    const failure = () => openFailures()[key];
     return (
       <button
         class="k2b-chat-composer__command"
-        id={commandOptionId(command)}
+        id={commandOptionId(command())}
         type="button"
         role="option"
         tabIndex={-1}
-        aria-selected={selectedCommand() === command}
-        aria-disabled={Boolean(command.disabled || command.reason)}
+        aria-selected={selectedCommandKey() === key}
+        aria-disabled={Boolean(command().disabled || command().reason)}
         aria-busy={opening() ? "true" : undefined}
-        aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
-        data-reason={command.reason ? "true" : undefined}
-        data-active={selectedCommand() === command ? "true" : undefined}
+        aria-describedby={command().reason ? `${commandOptionId(command())}-reason` : undefined}
+        data-reason={command().reason ? "true" : undefined}
+        data-active={selectedCommandKey() === key ? "true" : undefined}
         onMouseDown={keepFieldFocus}
         onClick={(event) => {
           event.preventDefault();
-          void executeCommand(command);
+          void executeCommand(command());
         }}
       >
-        <i class={command.icon ?? "ti ti-slash"} aria-hidden="true" />
+        <i class={command().icon ?? "ti ti-slash"} aria-hidden="true" />
         <span class="k2b-chat-composer__command-text">
           <strong>
             <Show when={highlight()} fallback={title()}>
@@ -2161,26 +2165,26 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </Show>
           </strong>
           <Show
-            when={command.open && !command.reason}
+            when={command().open && !command().reason}
             fallback={
-              <Show when={command.reason ?? command.description}>
-                <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>
-                  {command.reason ?? command.description}
+              <Show when={command().reason ?? command().description}>
+                <small id={command().reason ? `${commandOptionId(command())}-reason` : undefined}>
+                  {command().reason ?? command().description}
                 </small>
               </Show>
             }
           >
             {/* The busy line shares the description's place, so the row keeps its height while it opens. */}
             <span class="k2b-chat-composer__command-detail" data-state={opening() ? "busy" : failure() ? "failed" : undefined}>
-              <small aria-hidden={opening() ? "true" : undefined}>{failure() ?? command.description}</small>
+              <small aria-hidden={opening() ? "true" : undefined}>{failure() ?? command().description}</small>
               <small aria-hidden={opening() ? undefined : "true"}>
                 <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                {command.busyLabel ?? chatMessages().commandOpening}
+                {command().busyLabel ?? chatMessages().commandOpening}
               </small>
             </span>
           </Show>
         </span>
-        <Show when={command.selected}>
+        <Show when={command().selected}>
           <span class="k2b-chat-composer__command-end">
             <i class="ti ti-check" aria-hidden="true" />
             <span class="k2b-sr-only">{chatMessages().commandSelected}</span>
@@ -2332,9 +2336,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     const group = createMemo(() => commandModel().groups.find((group) => commandGroupKey(group) === key));
                     const headingId = () =>
                       `${commandListId}-g-${key === "scope" ? "scope" : props.commandSections?.findIndex((section) => section.id === group()?.section?.id)}`;
-                    const rows = () => group()?.rows.map((row) => row.command) ?? [];
+                    const rows = () => group()?.rows.map((row) => chatCommandKey(row.command)) ?? [];
+                    const row = (key: string) => commandRowMap().get(key)!.command;
                     return (
-                      <Show when={key !== "flat"} fallback={<For each={rows()}>{renderCommandRow}</For>}>
+                      <Show when={key !== "flat"} fallback={<For each={rows()}>{(key) => renderCommandRow(row(key))}</For>}>
                         <div class="k2b-chat-composer__command-group" role="group" aria-labelledby={headingId()}>
                           <div class="k2b-chat-composer__command-heading" id={headingId()} role="presentation">
                             <span>{group()?.scopeTitle ?? group()?.section?.label}</span>
@@ -2342,7 +2347,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                               <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
                             </Show>
                           </div>
-                          <For each={rows()}>{renderCommandRow}</For>
+                          <For each={rows()}>{(key) => renderCommandRow(row(key))}</For>
                           <Index each={Array.from({ length: Math.max(group()?.placeholder ? 1 : 0, group()?.pendingRows ?? 0) })}>
                             {() => (
                               <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">

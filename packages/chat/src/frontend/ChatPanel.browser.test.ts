@@ -1458,6 +1458,20 @@ for (const { embedded, width } of [
   test(`catalog and resource recovery in real ${embedded ? "panel" : "fullview"} at ${width}px`, async () => {
     fixture.assistant.reset();
     const context = await newContext({ viewport: { width, height: 900 } });
+    // Which element each press and click reached, per frame, for the failure report (#2140).
+    await context.addInitScript(() => {
+      const presses: string[] = [];
+      Object.assign(window, { presses });
+      for (const type of ["pointerdown", "click"])
+        addEventListener(
+          type,
+          (event) => {
+            const target = event.target instanceof Element ? (event.target.closest('[role="option"], button') ?? event.target) : null;
+            presses.push(`${type} ${target ? `${target.tagName}#${target.id} ${(target.textContent ?? "").trim().slice(0, 30)}` : "none"}`);
+          },
+          true,
+        );
+    });
     const page = await context.newPage();
     let documents = 0;
     page.on("request", (request) => {
@@ -1610,10 +1624,11 @@ for (const { embedded, width } of [
             return {
               url: location.pathname + location.search,
               dialogs: Array.from(document.querySelectorAll('[role="dialog"], dialog[open]')).map((element) =>
-                `${element.tagName}${element.hasAttribute("open") ? "[open]" : ""} ${element.className}`.trim(),
+                `${element.tagName}${element.hasAttribute("open") ? "[open]" : ""} ${element.checkVisibility() ? "visible" : "hidden"} ${element.className}`.trim(),
               ),
               listbox: Boolean(document.querySelector('[role="listbox"]')),
               composer: area ? { value: area.value, readOnly: area.readOnly, disabled: area.disabled } : null,
+              presses: ((window as Window & { presses?: string[] }).presses ?? []).slice(-6),
               active: document.activeElement
                 ? `${document.activeElement.tagName}.${String(document.activeElement.className).slice(0, 40)}`
                 : null,
