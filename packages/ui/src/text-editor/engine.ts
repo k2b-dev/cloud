@@ -51,7 +51,8 @@ const builtInPresentation = (mode: Exclude<TextEditorMode, "plain">): Extension 
 export function createTextEditor(options: TextEditorOptions) {
   const modeSlot = new Compartment();
   const readOnlySlot = new Compartment();
-  const labelSlot = new Compartment();
+  // The label is read on every view update; changing it never dispatches, so a host may set it during an update.
+  let label = options.label;
   const presentation = options.presentation ?? builtInPresentation;
   const runHistory = (view: EditorView, direction: "undo" | "redo") => {
     view.state.facet(tableHost)?.[direction]();
@@ -74,7 +75,7 @@ export function createTextEditor(options: TextEditorOptions) {
         drawSelection(),
         EditorView.lineWrapping,
         placeholder(options.placeholder ?? ""),
-        labelSlot.of(EditorView.contentAttributes.of({ "aria-label": options.label })),
+        EditorView.contentAttributes.of(() => ({ "aria-label": label })),
         Prec.highest([
           keymap.of([
             { key: "Mod-z", run: (view) => runHistory(view, "undo"), shift: (view) => runHistory(view, "redo"), preventDefault: true },
@@ -153,8 +154,10 @@ export function createTextEditor(options: TextEditorOptions) {
     view,
     /** Also re-reads `presentation`, so a host can refresh it, e.g. after a theme change. */
     setMode: (mode: TextEditorMode) => view.dispatch({ effects: modeSlot.reconfigure(modeExtensions(mode)) }),
-    setLabel: (label: string) =>
-      view.dispatch({ effects: labelSlot.reconfigure(EditorView.contentAttributes.of({ "aria-label": label })) }),
+    setLabel: (next: string) => {
+      label = next;
+      view.contentDOM.setAttribute("aria-label", next);
+    },
     // Hosts re-run this from reactive state that may change inside an editor update; an unchanged value must not dispatch.
     setReadOnly: (readOnly: boolean) => {
       if (view.state.readOnly === readOnly && view.state.facet(EditorView.editable) === !readOnly) return;

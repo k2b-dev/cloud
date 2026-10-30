@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { z } from "zod";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
@@ -6,9 +6,16 @@ import { aiModelFixture } from "../../ai/model-fixture";
 import { createAiProvider } from "../../ai/provider";
 import * as structured from "../../ai/structured";
 import * as taskModel from "../../ai/task-model";
+import { coreSettings } from "../../services/settings/api";
 import { executeWorkflowAiRequest, processWorkflowAiTask, settleWorkflowAiAttemptFailure } from "./runtime";
 import * as store from "./store";
 import type { WorkflowAiTask } from "./types";
+
+let settingsGet: ReturnType<typeof spyOn<typeof coreSettings, "get">>;
+beforeEach(() => {
+  settingsGet = spyOn(coreSettings, "get").mockResolvedValue(60_000);
+});
+afterEach(() => settingsGet.mockRestore());
 
 const task = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -127,7 +134,8 @@ for (const retryable of [true, false])
     }
   });
 
-test("a keepalive-only or non-settling runner cannot hold a workflow attempt past its absolute budget", async () => {
+test("a new attempt reads its current setting and bounds a keepalive-only runner", async () => {
+  settingsGet.mockResolvedValue(20);
   const claim = spyOn(store, "claimWorkflowAiTask").mockResolvedValue(task);
   const cancel = spyOn(store, "workflowAiTaskCancellationRequested").mockResolvedValue(false);
   let providerSignal: AbortSignal | undefined;
@@ -142,7 +150,6 @@ test("a keepalive-only or non-settling runner cannot hold a workflow attempt pas
         {
           maxAttempts: 3,
           cancelPollMs: 500,
-          attemptTimeoutMs: 20,
           runStructured: async (input) => {
             providerSignal = input.signal;
             // An SSE provider may continue sending comments without ever completing.
@@ -152,6 +159,7 @@ test("a keepalive-only or non-settling runner cannot hold a workflow attempt pas
       ),
     ).rejects.toMatchObject({ code: "WORKFLOW_AI_TIMEOUT", retryable: true });
     expect(providerSignal?.aborted).toBe(true);
+    expect(settingsGet).toHaveBeenCalledWith("ai.workflow_attempt_timeout_ms");
   } finally {
     claim.mockRestore();
     cancel.mockRestore();

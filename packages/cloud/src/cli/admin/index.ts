@@ -14,6 +14,7 @@ import { aiQuotaCommands } from "./ai-quotas";
 import { aiSkillCommands } from "./ai-skills";
 import { aiUsageCommands } from "./ai-usage";
 import { appCredentialCommands } from "./app-credentials";
+import { appKeyCommands } from "./app-keys";
 import { appSignInCommands } from "./app-sign-in";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
@@ -28,6 +29,7 @@ import { metricsCommands } from "./metrics";
 import { natsCommands } from "./nats";
 import { notificationCommands } from "./notifications";
 import { outgoingMailCommands } from "./outgoing-mail";
+import { settingsCommands } from "./settings";
 import { syncCommands } from "./sync";
 import { telemetryCommands } from "./telemetry";
 import { webhookCommands } from "./webhooks";
@@ -51,7 +53,8 @@ export default defineCliCommands({
     agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials, and change their pictures.",
     "agents avatar": "Show and change an agent's picture: its robot parts or a photo.",
     "app-sign-in": "Manage app sign-in and pairing.",
-    apps: "Inspect and remove registered apps.",
+    apps: "Inspect registered apps and manage app keys.",
+    "apps keys": "Create, list, and revoke Ed25519 app keys.",
     documentation: "Manage the administration documentation website.",
     geoip: "Replace and inspect sign-in location databases.",
     jobs: "Inspect background jobs and their runs.",
@@ -71,6 +74,7 @@ export default defineCliCommands({
     postgres: "Inspect Postgres diagnostics.",
     redis: "Inspect Valkey diagnostics.",
     routes: "Inspect gateway routes.",
+    settings: "Inspect environment migration and change administrator settings.",
     sync: "Inspect Sync resources, schedules, and dead letters.",
     "sync dead-letters": "Inspect, replay, requeue, or remove dead letters.",
     "sync resources": "List Sync resource declarations.",
@@ -90,6 +94,7 @@ export default defineCliCommands({
   },
   commands: [
     ...appCredentialCommands,
+    ...appKeyCommands,
     ...agentCommands,
     ...documentationCommands,
     ...appSignInCommands,
@@ -115,5 +120,6 @@ export default defineCliCommands({
     ...metricsCommands,
     ...natsCommands,
     ...syncCommands,
+    ...settingsCommands,
   ],
 });

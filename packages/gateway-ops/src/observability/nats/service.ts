@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { env } from "@k2b/cloud/config";
 import { connect, credsAuthenticator, nkeyAuthenticator } from "@nats-io/transport-node";
 import { z } from "zod";
-import { appEnv } from "../../env";
+import { readNatsAccess } from "./access-state";
+import { credsContentAuthenticator, systemAccessKind } from "./settings";
 
 // The system JSZ API paginates accounts, not streams. Never request account
 // expansion there: account inventory uses the separately authenticated JS API.
@@ -49,8 +50,20 @@ const nodeSchema = z.object({
 });
 const processSchema = z.object({ server: z.object({ id: z.string() }), data: z.object({ mem: number }) });
 export type NatsDiagnosticStatus = "not_configured" | "available" | "partial" | "unavailable";
-export type NatsConnectionConfig = { servers: string[]; credsFile?: string; seedFile?: string; tlsCaFile?: string };
-export type NatsDiagnosticsConfig = { admin: NatsConnectionConfig; application: NatsConnectionConfig };
+export type NatsConnectionConfig = {
+  servers: string[];
+  credsFile?: string;
+  tlsCaFile?: string;
+  creds?: string;
+  seed?: string;
+  tlsCa?: string;
+};
+export type NatsDiagnosticsConfig = {
+  admin: NatsConnectionConfig;
+  application: NatsConnectionConfig;
+  adminSettingsUnavailable?: true;
+  adminAccessRequired?: boolean;
+};
 export type NatsReplica = { name: string; current: boolean | null; offline: boolean | null; lag: number | null };
 export type NatsCluster = { name: string | null; leader: string | null; replicas: NatsReplica[] };
 export type NatsStream = {
@@ -94,7 +107,7 @@ export type NatsInventorySummary = {
 };
 export type NatsDiagnostics = {
   sampledAt: string;
-  cluster: { status: NatsDiagnosticStatus; issue?: string; nodes: NatsNode[] };
+  cluster: { status: NatsDiagnosticStatus; issue?: string; nodes: NatsNode[]; settingsUnavailable?: true; accessRequired?: true };
   inventory: {
     status: NatsDiagnosticStatus;
     issue?: string;
@@ -110,28 +123,40 @@ export type NatsDiagnostics = {
   };
 };
 export type NatsDiagnosticsOptions = { streamOffset?: number; consumerStream?: string; consumerOffset?: number };
-export const natsDiagnosticsConfig = (): NatsDiagnosticsConfig => {
-  return {
-    admin: {
-      servers: appEnv.NATS_ADMIN_SERVERS,
-      credsFile: appEnv.NATS_ADMIN_CREDS_FILE,
-      seedFile: appEnv.NATS_ADMIN_NKEY_SEED_FILE,
-      tlsCaFile: appEnv.NATS_ADMIN_TLS_CA_FILE,
-    },
-    application: { servers: env.NATS_SERVERS, credsFile: env.NATS_CREDS_FILE, tlsCaFile: env.NATS_TLS_CA_FILE },
-  };
+export const natsAccountDiagnosticsConfig = (): NatsDiagnosticsConfig => ({
+  admin: { servers: [] },
+  application: { servers: env.NATS_SERVERS, credsFile: env.NATS_CREDS_FILE, tlsCaFile: env.NATS_TLS_CA_FILE },
+});
+export const natsDiagnosticsConfig = async (): Promise<NatsDiagnosticsConfig> => {
+  try {
+    const { servers, kind, access, ca, unreadable, accessRequired } = await readNatsAccess();
+    const matches = !Object.values(unreadable).some(Boolean) && !accessRequired && (!access || systemAccessKind(access) === kind);
+    return {
+      admin: {
+        servers: matches ? servers : [],
+        ...(matches && access && kind === "creds" ? { creds: access } : {}),
+        ...(matches && access && kind === "nkey" ? { seed: access } : {}),
+        ...(ca ? { tlsCa: ca } : {}),
+      },
+      adminAccessRequired: accessRequired,
+      application: natsAccountDiagnosticsConfig().application,
+    };
+  } catch {
+    return { ...natsAccountDiagnosticsConfig(), adminSettingsUnavailable: true };
+  }
 };
 const dial = (config: NatsConnectionConfig, role: string) => {
-  if (config.credsFile && config.seedFile) throw new Error("NATS diagnostics authentication modes are mutually exclusive");
+  if (config.creds && config.seed) throw new Error("NATS diagnostics authentication modes are mutually exclusive");
   return connect({
     servers: config.servers,
     name: `cloud-gateway-ops-diagnostics-${role}`,
     timeout: REQUEST_TIMEOUT_MS,
     reconnect: false,
     ignoreClusterUpdates: true,
-    ...(config.seedFile ? { authenticator: nkeyAuthenticator(new Uint8Array(readFileSync(config.seedFile))) } : {}),
+    ...(config.seed ? { authenticator: nkeyAuthenticator(new TextEncoder().encode(config.seed)) } : {}),
+    ...(config.creds ? { authenticator: credsContentAuthenticator(config.creds) } : {}),
     ...(config.credsFile ? { authenticator: credsAuthenticator(readFileSync(config.credsFile)) } : {}),
-    ...(config.tlsCaFile ? { tls: { caFile: config.tlsCaFile } } : {}),
+    ...(config.tlsCa ? { tls: { ca: config.tlsCa } } : config.tlsCaFile ? { tls: { caFile: config.tlsCaFile } } : {}),
   });
 };
 type DiagnosticMessage = { json(): unknown };
@@ -185,9 +210,24 @@ const validOffset = (offset = 0) => {
 const nextOffset = (offset: number, count: number, total: number) => (count > 0 && offset + count < total ? offset + count : null);
 
 export const getNatsClusterDiagnostics = async (
-  config = natsDiagnosticsConfig(),
+  config: NatsDiagnosticsConfig | Promise<NatsDiagnosticsConfig> = natsDiagnosticsConfig(),
   dependencies = defaultDependencies,
 ): Promise<NatsDiagnostics["cluster"]> => {
+  config = await config;
+  if (config.adminSettingsUnavailable)
+    return {
+      status: "unavailable",
+      nodes: [],
+      issue: "NATS diagnostics settings could not be read. Retry when the settings service is available.",
+      settingsUnavailable: true,
+    };
+  if (config.adminAccessRequired)
+    return {
+      status: "not_configured",
+      nodes: [],
+      accessRequired: true,
+      issue: "Enter system access for the current server list to enable cluster diagnostics.",
+    };
   if (!config.admin.servers.length) return { status: "not_configured", nodes: [] };
   let connection: DiagnosticConnection | undefined;
   const nodes = new Map<string, NatsNode>();
@@ -270,9 +310,10 @@ export const getNatsClusterDiagnostics = async (
 
 export const getNatsDiagnostics = async (
   options: NatsDiagnosticsOptions = {},
-  config = natsDiagnosticsConfig(),
+  config: NatsDiagnosticsConfig | Promise<NatsDiagnosticsConfig> = natsDiagnosticsConfig(),
   dependencies = defaultDependencies,
 ): Promise<NatsDiagnostics> => {
+  config = await config;
   const offset = validOffset(options.streamOffset),
     consumerOffset = validOffset(options.consumerOffset);
   if (options.consumerStream && /[.\s*>/\\]/u.test(options.consumerStream)) throw new Error("Invalid NATS stream name");
@@ -330,7 +371,7 @@ export const getNatsDiagnostics = async (
 
 /** Complete account scan only when status=available; all other states must not be reported as zero. */
 export const getNatsInventorySummary = async (
-  config = natsDiagnosticsConfig(),
+  config = natsAccountDiagnosticsConfig(),
   dependencies = defaultDependencies,
 ): Promise<NatsInventorySummary> => {
   const result: NatsInventorySummary = { status: "not_configured", streams: [], total: null, sampledAt: new Date().toISOString() };

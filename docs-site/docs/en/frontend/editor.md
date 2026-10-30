@@ -168,7 +168,10 @@ utilities and the completion palette are included:
 ```
 
 Import optional Markdown extensions from `@k2b/editor/markdown`. Add them to
-`editor.use()` or the CodeMirror view that the application already owns:
+`editor.use()` or the CodeMirror view that the application already owns. The
+package has no import side effects apart from its stylesheet, so a bundler
+leaves out what the host does not import, such as Mermaid or KaTeX. Code
+languages in fenced blocks load when a block of that language first appears:
 
 ```ts
 import {
@@ -193,7 +196,7 @@ expects the host to load KaTeX’s stylesheet and fonts.
 | --- | --- |
 | `listsExtension`, `ligaturesExtension` | `excludedRanges(markdown)` returns source spans that stay literal, such as application directives. |
 | `listCommandsExtension` | The same `excludedRanges`, plus `isRemoteTransaction(transaction)` to prevent automatic number repairs on collaboration updates. Supply the same range callback to lists and commands. |
-| `imageExtension`, `linksExtension` | `resolveUrl(kind, ref)` resolves application schemes. `openImage(image, url, label)` and `openLink(url, ref, label)` keep previews and navigation in the host. Without callbacks, links use document navigation and images open their URL in a new tab. Unresolved custom schemes stay source. |
+| `imageExtension`, `linksExtension` | `resolveUrl(kind, ref)` resolves application schemes. `openImage(image, url, label)` and `openLink(url, ref, label)` keep previews and navigation in the host. Without callbacks, links use document navigation and images open their URL in a new tab. Unresolved custom schemes stay source. For an image, `resolveUrl` may return a `blob:` URL, such as one for an image stored in the browser; a `blob:` URL written into the text itself stays source. |
 | `imageExtension` | `foreignImagesAsLinks: true` renders images from other origins as links without fetching them. The default renders images as before. |
 | `mermaidExtension` | Required `configuration({ dark })` returns a Mermaid configuration. Optional `title(markdown)` names fullscreen views and exports; `locale` sets the detached preview's locale. Rendering is serialized, and cached SVGs are separated by configuration callback and theme. |
 | `infoBlocksExtension` | Pass the current locale for untitled notice labels. |

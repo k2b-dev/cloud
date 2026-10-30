@@ -15,7 +15,7 @@ export default await app.start({
   lifecycle: {
     ...gatewayOpsLifecycle,
     start: async (context) => {
-      webhookAllowlist();
+      await webhookAllowlist();
       await gatewayOpsLifecycle.start?.(context);
     },
   },

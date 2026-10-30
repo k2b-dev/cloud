@@ -49,3 +49,5 @@ Configure sender profiles and application access through
 
 See [Sign-in locations](/en/docs/operations/sign-in-locations) for the bundled
 location snapshot, its license, and its privacy and proxy requirements.
+
+Enroll and manage application public keys with [App keys](/en/docs/operations/app-keys).

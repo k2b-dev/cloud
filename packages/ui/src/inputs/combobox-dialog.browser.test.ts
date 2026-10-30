@@ -17,11 +17,13 @@ window.openComboboxDialog = () => void prompts.dialog(
   () => createComponent(Combobox, {
     label: "Add people",
     debounceMs: 0,
-    fetchData: async () => [
-      { id: "alice", label: "Alice" },
-      { id: "bob", label: "Bob" },
-    ],
-    onSelect: () => {},
+    // Each answer holds new objects for the same people, as a real fetch does; a held answer waits for the test.
+    fetchData: () => {
+      const answer = () => [{ id: "alice", label: "Alice" }, { id: "bob", label: "Bob" }];
+      if (!window.holdFetch) return Promise.resolve(answer());
+      return new Promise((resolve) => { window.releaseFetch = () => resolve(answer()); });
+    },
+    onSelect: (option) => { window.selected = option.id; },
   }),
   { title: "Manage access" },
 );
@@ -33,6 +35,9 @@ const script = await build.outputs[0]!.text();
 declare global {
   interface Window {
     openComboboxDialog: () => void;
+    holdFetch?: boolean;
+    releaseFetch?: () => void;
+    selected?: string;
   }
 }
 
@@ -120,6 +125,30 @@ describe("@k2b/ui Combobox focus and Escape inside a dialog", () => {
       await page.keyboard.type("a");
       await page.getByRole("option").first().waitFor({ state: "visible", timeout: 2_000 });
       expect(await input.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a press on an option selects it when a new answer with the same options lands before the release", async () => {
+    const page = await open();
+    try {
+      const input = page.getByRole("combobox");
+      await input.click();
+      const option = page.getByRole("option", { name: "Alice", exact: true });
+      await option.waitFor({ state: "visible", timeout: 2_000 });
+      await page.evaluate(() => {
+        window.holdFetch = true;
+      });
+      await input.press("l");
+      await page.waitForFunction(() => window.releaseFetch !== undefined, undefined, { timeout: 2_000 });
+      const bounds = (await option.boundingBox())!;
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      await page.mouse.down();
+      await page.evaluate(() => window.releaseFetch?.());
+      await page.waitForFunction(() => !document.querySelector(".k2b-spin"), undefined, { timeout: 2_000 });
+      await page.mouse.up();
+      await page.waitForFunction(() => window.selected === "alice", undefined, { timeout: 2_000 });
     } finally {
       await page.close();
     }
