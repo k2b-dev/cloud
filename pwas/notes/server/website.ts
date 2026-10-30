@@ -49,6 +49,7 @@ export const mountWebsite = async (
     }
   });
   app.get("*", (c) => {
+    if (!options.adminPasswordHash && (c.req.path === "/admin" || c.req.path.startsWith("/admin/"))) throw new NotesError("not_found", 404);
     const asset = assets.get(c.req.path);
     if (asset) return new Response(asset, { headers: { "Content-Type": asset.type } });
     if (c.req.path.startsWith("/api/") || /\.[a-z0-9]+$/i.test(c.req.path)) throw new NotesError("not_found", 404);
