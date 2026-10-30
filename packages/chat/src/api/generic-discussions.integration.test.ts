@@ -130,6 +130,12 @@ suiteFor(
     expect(page.cursors).toEqual({ "inventory.collection": "" });
     const chat = await open(person);
     expect(chat.discussionItemType).toBe(item.type);
+    // A stored per-chat icon must never replace the provider type's catalog icon.
+    await sql`UPDATE chat.conversations SET icon = 'ti ti-rocket' WHERE short_id = ${chat.id}`;
+    const reread = ConversationSchema.parse(await (await api(person, `/conversations/${chat.id}`)).json());
+    expect(reread.icon).toBe("ti ti-box");
+    const listed = SystemChatPageSchema.parse(await (await api(person, "/system-chats")).json());
+    expect(listed.items[0]?.conversation?.icon).toBe("ti ti-box");
     const response = await api(person, `/conversations/${chat.id}/threads/for-resource`, "POST", { ref: item });
     expect(response.status).toBe(200);
     const thread = ThreadSchema.parse(await response.json());

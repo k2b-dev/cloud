@@ -122,7 +122,7 @@ describe("Search in the chat list", () => {
     }
   }, 30_000);
 
-  test("when Spaces and Notebooks fail, the other hits stay with a line to try again; a failed search recovers", async () => {
+  test("when discussion providers fail, the other hits stay with a line to try again; a failed search recovers", async () => {
     seed();
     harness.searchContainer({ type: "notebooks.notebook", id: "Book01" }, "Print shop notes");
     harness.failSearchSystem();
@@ -157,7 +157,7 @@ describe("Search in the chat list", () => {
     }
   }, 30_000);
 
-  test("opening an item thread from the search unfolds “Spaces and Notebooks”", async () => {
+  test("opening an item thread from the search unfolds “Discussions”", async () => {
     const { fair, posters } = seed();
     const { page, errors } = await load(desktop);
     try {

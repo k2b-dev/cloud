@@ -1,4 +1,4 @@
-import { afterEach, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { redis, sql } from "bun";
@@ -21,6 +21,7 @@ import {
   ThreadListSchema,
   ThreadSchema,
 } from "../service/contracts";
+import { mockDiscussionCatalog, providerApp } from "../service/discussions.test-fixture";
 import { cleanupAttachments, ORPHAN_CLEANUP_BATCH } from "../service/maintenance";
 import { accessKey, resourceReaderDependencies } from "../service/resource-access";
 import chatApi from ".";
@@ -30,6 +31,10 @@ setDefaultTimeout(30_000);
 const suite = suiteFor("database", "nats", "valkey");
 suite("Chat message attachments", () => {
   const f = messageFixtures();
+  let catalog: ReturnType<typeof mockDiscussionCatalog>;
+  beforeEach(() => {
+    catalog = mockDiscussionCatalog([providerApp("inventory")]);
+  });
   const server = new Hono<AuthContext>().route("/api/chat", chatApi);
   const upload = (
     person: Person,
@@ -72,6 +77,7 @@ suite("Chat message attachments", () => {
   const readerKeys: string[] = [];
   let reader: ReturnType<typeof spyOn> | undefined;
   afterEach(async () => {
+    catalog.mockRestore();
     reader?.mockRestore();
     reader = undefined;
     if (readerKeys.length) await redis.send("DEL", readerKeys.splice(0));
@@ -395,33 +401,39 @@ suite("Chat message attachments", () => {
   test("resource threads apply current reader access to uploads, downloads, history and shared files", async () => {
     const owner = await f.person(),
       chat = await f.fixture(owner),
-      container = testShortId(),
-      item = testShortId();
-    await sql`UPDATE chat.conversations SET kind = 'system', resource_type = 'spaces.space', resource_id = ${container} WHERE id = ${chat.id}::uuid`;
+      container = crypto.randomUUID(),
+      item = crypto.randomUUID();
+    await sql`UPDATE chat.conversations SET kind = 'system', resource_type = 'inventory.collection', resource_id = ${container} WHERE id = ${chat.id}::uuid`;
     let readable = true;
     reader = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (_app, capability, input) => {
-      const ref = { type: capability === "space.read" ? "spaces.space" : "spaces.item", id: String(input.id) };
+      const ref = { type: capability === "collection.read" ? "inventory.collection" : "inventory.item", id: String(input.id) };
       readerKeys.push(accessKey(`user:${owner.id}`, ref));
       if (capability === "item.read" && !readable) return null;
       return {
         data:
-          capability === "space.read"
-            ? { id: container, name: "Space", permission: "write" }
-            : { id: item, title: "Task", kind: "task", spaceId: container },
-        links: [{ rel: "open", href: "/app/spaces/test" }],
+          capability === "collection.read"
+            ? { view: { title: "Warehouse", permission: "write" } }
+            : {
+                view: {
+                  title: "Box",
+                  permission: "read",
+                  container: { ref: { type: "inventory.collection", id: container }, title: "Warehouse" },
+                },
+              },
+        links: [{ rel: "open", href: "/app/inventory/test" }],
       };
     });
-    const thread = ThreadSchema.parse(
-      await (
-        await f.request(owner.headers, `/${chat.shortId}/threads/for-resource`, "POST", { ref: { type: "spaces.item", id: item } })
-      ).json(),
-    );
+    const threadResponse = await f.request(owner.headers, `/${chat.shortId}/threads/for-resource`, "POST", {
+      ref: { type: "inventory.item", id: item },
+    });
+    expect(threadResponse.status).toBe(200);
+    const thread = ThreadSchema.parse(await threadResponse.json());
     const file = await uploaded(owner, chat.shortId, undefined, thread.id);
     expect((await download(owner, chat.shortId, file.id)).status).toBe(200);
     await send(owner, chat.shortId, { thread: thread.id, attachments: [file.id] });
     expect((await download(owner, chat.shortId, file.id)).status).toBe(200);
     readable = false;
-    await redis.del(accessKey(`user:${owner.id}`, { type: "spaces.item", id: item }));
+    await redis.del(accessKey(`user:${owner.id}`, { type: "inventory.item", id: item }));
     expect((await download(owner, chat.shortId, file.id)).status).toBe(404);
     expect((await upload(owner, chat.shortId, undefined, thread.id)).status).toBe(404);
     expect(SharedPageSchema.parse(await (await f.request(owner.headers, `/${chat.shortId}/shared?kind=documents`)).json()).items).toEqual(

@@ -263,13 +263,16 @@ test("thread input is strict, bounded, trimmed and supports explicit read select
 });
 
 test("system chat contracts constrain containers, item metadata and paging", () => {
-  for (const resourceType of ["spaces.space", "notebooks.notebook"])
-    expect(SystemChatParamSchema.safeParse({ resourceType, resourceId: "abcdef" }).success).toBeTrue();
-  expect(SystemChatParamSchema.safeParse({ resourceType: "inventory.collection", resourceId: "opaque-id" }).success).toBeTrue();
-  expect(SystemChatParamSchema.safeParse({ resourceType: "invalid", resourceId: "abcdef" }).success).toBeFalse();
-  expect(ForResourceSchema.parse({ ref: { type: "notebooks.note", id: "note01" } })).toEqual({
-    ref: { type: "notebooks.note", id: "note01" },
-  });
+  for (const resourceType of ["inventory.collection", "supplies.folder"])
+    for (const resourceId of ["11111111-1111-4111-8111-111111111111", "folder/opaque:item", "x".repeat(512)])
+      expect(SystemChatParamSchema.parse({ resourceType, resourceId })).toEqual({ resourceType, resourceId });
+  expect(SystemChatParamSchema.safeParse({ resourceType: "invalid", resourceId: "opaque-id" }).success).toBeFalse();
+  for (const id of ["", "x".repeat(513)]) {
+    expect(SystemChatParamSchema.safeParse({ resourceType: "inventory.collection", resourceId: id }).success).toBeFalse();
+    expect(ForResourceSchema.safeParse({ ref: { type: "inventory.item", id } }).success).toBeFalse();
+  }
+  const ref = { type: "inventory.item", id: "folder/opaque:item" };
+  expect(ForResourceSchema.parse({ ref })).toEqual({ ref });
   expect(ThreadQuerySchema.parse({ filter: "unread", q: " task ", cursor: "abcdef" })).toEqual({
     filter: "unread",
     q: "task",

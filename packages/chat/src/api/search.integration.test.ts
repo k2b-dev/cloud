@@ -394,9 +394,11 @@ suite("chat list search", () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data.items.length).toBeLessThanOrEqual(8);
-        expect(result.data.systemUnavailable).toBe(true);
+        expect(result.data.incomplete).toBe(true);
+        expect(result.data.systemUnavailable).toBeUndefined();
       }
-      expect(calls.length).toBeLessThanOrEqual(READER_REQUEST_BUDGET);
+      // Discovery consumes one remote call; cache reads and shared pending readers consume none.
+      expect(calls).toHaveLength(READER_REQUEST_BUDGET - 1);
     } finally {
       cacheMiss.mockRestore();
     }
