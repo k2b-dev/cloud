@@ -13,10 +13,10 @@ loading.cleanup();
 /** One editor with a toolbar outside it, as a host places them. */
 const mount = (doc: string, slash: import("./index").SlashAction[] = []) => {
   const dom = createDomTestHarness();
-  const actions = markdownActions("en");
   let editor!: ReturnType<typeof createEditor>;
   const dispose = render(() => {
     editor = createEditor();
+    const actions = markdownActions(editor, "en");
     return (
       <LocaleProvider locale="en">
         <Toolbar editor={editor} groups={[{ items: [actions.bold, actions.italic] }, { items: [actions.bulletList] }]} />
@@ -56,12 +56,17 @@ describe("@k2b/editor building blocks", () => {
     return;
   }
 
-  test("a toolbar placed outside the editor formats the selection as one undo step", async () => {
+  test("a toolbar placed outside the editor formats the selection apart from the typing before it", async () => {
+    const { undo } = await import("@codemirror/commands");
     using page = mount("word here");
     await Promise.resolve();
+    const view = page.view();
+    view.dispatch({ changes: { from: 9, insert: "!" }, selection: { anchor: 10 }, userEvent: "input.type" });
     page.select(0, 4);
     page.button("Bold").click();
-    expect(page.view().state.doc.toString()).toBe("**word** here");
+    expect(view.state.doc.toString()).toBe("**word** here!");
+    undo(view);
+    expect(view.state.doc.toString()).toBe("word here!");
   });
 
   test("the pressed state follows the caret through the shared state", async () => {
@@ -73,6 +78,21 @@ describe("@k2b/editor building blocks", () => {
     expect(page.button("Bold").getAttribute("aria-pressed")).toBe("false");
   });
 
+  test("a read-only editor ignores an action without its own enabled check", async () => {
+    using page = mount("word");
+    await Promise.resolve();
+    page.editor.controller()?.setReadOnly(true);
+    const action: import("./index").EditorAction = {
+      id: "insert",
+      icon: "ti-plus",
+      label: "Insert",
+      run: (view: import("@codemirror/view").EditorView) => view.dispatch({ changes: { from: 0, insert: "x" } }),
+    };
+    expect(page.editor.isEnabled(action)).toBe(false);
+    page.editor.run(action);
+    expect(page.view().state.doc.toString()).toBe("word");
+  });
+
   test("a read-only editor disables the actions and ignores presses", async () => {
     using page = mount("word");
     await Promise.resolve();
@@ -81,6 +101,33 @@ describe("@k2b/editor building blocks", () => {
     expect(page.button("Bold").getAttribute("aria-disabled")).toBe("true");
     page.button("Bold").click();
     expect(page.view().state.doc.toString()).toBe("word");
+  });
+
+  test("reactive extensions reconfigure only their own slot of the one view", async () => {
+    const { EditorState, Facet } = await import("@codemirror/state");
+    const { EditorView } = await import("@codemirror/view");
+    const { createSignal } = await import("solid-js");
+    const dom = createDomTestHarness();
+    const marker = Facet.define<string, string[]>();
+    const [mode, setMode] = createSignal("rich");
+    const { editor, dispose } = createRoot((dispose) => {
+      const editor = createEditor();
+      editor.use(marker.of("static"));
+      editor.use(() => marker.of(mode()));
+      return { editor, dispose };
+    });
+    await Promise.resolve();
+    const view = new EditorView({ parent: dom.root, state: EditorState.create({ extensions: editor.extension() }) });
+    try {
+      editor.attach(view);
+      expect(view.state.facet(marker)).toEqual(["static", "rich"]);
+      setMode("source");
+      expect(view.state.facet(marker)).toEqual(["static", "source"]);
+    } finally {
+      dispose();
+      view.destroy();
+      dom.cleanup();
+    }
   });
 
   test("an extension added after mount joins the view and leaves with its owner", async () => {
@@ -95,8 +142,30 @@ describe("@k2b/editor building blocks", () => {
     page.view().dispatch({ changes: { from: 4, insert: "!" } });
     expect(seen.at(-1)).toBe(5);
     dispose();
+    await Promise.resolve();
     page.view().dispatch({ changes: { from: 5, insert: "?" } });
     expect(seen.at(-1)).toBe(5);
+  });
+
+  test("a host effect that dispatches to the view does not run again on every editor update", async () => {
+    const { createEffect, createSignal } = await import("solid-js");
+    const { StateEffect } = await import("@codemirror/state");
+    using page = mount("text");
+    await Promise.resolve();
+    const ping = StateEffect.define<number>();
+    const [value, setValue] = createSignal(0);
+    let runs = 0;
+    const dispose = createRoot((dispose) => {
+      createEffect(() => {
+        runs++;
+        page.editor.view()?.dispatch({ effects: ping.of(value()) });
+      });
+      return dispose;
+    });
+    setValue(1);
+    page.view().dispatch({ changes: { from: 4, insert: "!" } });
+    expect(runs).toBe(2);
+    dispose();
   });
 });
 

@@ -34,6 +34,7 @@
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
+    "@k2b/editor": "workspace:*",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "solid-js": "catalog:",

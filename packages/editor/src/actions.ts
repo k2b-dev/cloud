@@ -2,8 +2,8 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { formatShortcut, keyboardPlatform } from "@k2b/ui";
-import { textEditorCommands } from "@k2b/ui/text-editor";
-import type { EditorAction } from "./editor-state";
+import { type InlineFormat, textEditorCommands } from "@k2b/ui/text-editor";
+import type { EditorAction, EditorHandle } from "./editor-state";
 import { editorMessages } from "./messages";
 
 /** Apple keyboards name the platform modifier Command; everyone else uses Control. */
@@ -38,31 +38,56 @@ const inside = (state: EditorState, names: string[]) => {
   return false;
 };
 const lineStarts = (pattern: RegExp) => (state: EditorState) => pattern.test(state.doc.lineAt(state.selection.main.head).text);
-const writable = (state: EditorState) => !state.readOnly;
-const command = (run: (view: EditorView) => boolean) => (view: EditorView) => {
-  run(view);
-};
 
 /**
  * Markdown actions on `@k2b/ui`'s text editor commands, labelled in the locale. Hosts pick and order them per place
- * and add their own; ids stay stable across locales.
+ * and add their own; ids stay stable across locales. In a focused table cell, inline formats apply to the cell and
+ * block formats are off, because they would split the table row.
  */
-export const markdownActions = (locale?: string) => {
+export const markdownActions = (editor: EditorHandle, locale?: string) => {
   const { t } = editorMessages.resolve(locale ? [locale] : []);
-  const action = (id: string, icon: string, label: string, run: (view: EditorView) => boolean, extra: Partial<EditorAction> = {}) =>
-    ({ id, icon, label, run: command(run), isEnabled: writable, ...extra }) satisfies EditorAction;
+  const inCell = () => !!editor.controls()?.tableActive();
+  const action = (
+    id: string,
+    icon: string,
+    label: string,
+    run: (view: EditorView) => boolean,
+    extra: Partial<EditorAction> & { cell?: InlineFormat } = {},
+  ): EditorAction => {
+    const { cell, ...rest } = extra;
+    return {
+      id,
+      icon,
+      label,
+      run: (view) => {
+        if (!cell || !editor.controls()?.formatCell(cell)) run(view);
+      },
+      isEnabled: cell ? undefined : () => !inCell(),
+      ...rest,
+    };
+  };
   return {
-    bold: action("bold", "ti-bold", t.bold, textEditorCommands.bold, { shortcut: "Mod-b", isActive: (s) => inside(s, ["StrongEmphasis"]) }),
+    bold: action("bold", "ti-bold", t.bold, textEditorCommands.bold, {
+      cell: "bold",
+      shortcut: "Mod-b",
+      isActive: (s) => inside(s, ["StrongEmphasis"]),
+    }),
     italic: action("italic", "ti-italic", t.italic, textEditorCommands.italic, {
+      cell: "italic",
       shortcut: "Mod-i",
       isActive: (s) => inside(s, ["Emphasis"]),
     }),
     strikethrough: action("strikethrough", "ti-strikethrough", t.strikethrough, textEditorCommands.strike, {
+      cell: "strike",
       shortcut: "Mod-Shift-x",
       isActive: (s) => inside(s, ["Strikethrough"]),
     }),
-    code: action("code", "ti-code", t.code, textEditorCommands.code, { isActive: (s) => inside(s, ["InlineCode"]) }),
-    link: action("link", "ti-link", t.link, textEditorCommands.link, { shortcut: "Mod-k", isActive: (s) => inside(s, ["Link"]) }),
+    code: action("code", "ti-code", t.code, textEditorCommands.code, { cell: "code", isActive: (s) => inside(s, ["InlineCode"]) }),
+    link: action("link", "ti-link", t.link, textEditorCommands.link, {
+      cell: "link",
+      shortcut: "Mod-k",
+      isActive: (s) => inside(s, ["Link"]),
+    }),
     heading1: action("heading1", "ti-h-1", t.heading1, textEditorCommands.heading1, { isActive: lineStarts(/^# /) }),
     heading2: action("heading2", "ti-h-2", t.heading2, textEditorCommands.heading2, { isActive: lineStarts(/^## /) }),
     heading3: action("heading3", "ti-h-3", t.heading3, textEditorCommands.heading3, { isActive: lineStarts(/^### /) }),

@@ -28,6 +28,7 @@ import {
   PeoplePageSchema,
 } from "../service/contracts";
 import { chatLiveChannels } from "../service/live-channels";
+import { systemNotificationDependencies } from "../service/system-notification-access";
 import chatApi from ".";
 
 setDefaultTimeout(30_000);
@@ -1663,35 +1664,43 @@ suite("chat conversations, people, and directory groups", () => {
   });
 
   test("a 300-chat sidebar pages every chat with bounded responses", async () => {
-    const owner = await user();
-    const headers = await cookie(owner);
-    for (let offset = 0; offset < 300; offset += 10) await Promise.all(Array.from({ length: 10 }, () => fixture(owner)));
-    const ids = new Set<string>();
-    let cursor: string | null = null;
-    do {
-      const response = await request(headers, cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
-      expect(response.status).toBe(200);
-      const page = ConversationPageSchema.parse(await response.json());
-      expect(page.items.length).toBeLessThanOrEqual(50);
-      for (const row of page.items) {
-        expect(ids.has(row.id)).toBe(false);
-        ids.add(row.id);
-      }
-      cursor = page.nextCursor;
-    } while (cursor);
-    expect(ids.size).toBe(300);
-    const elapsed: number[] = [];
-    for (let sample = 0; sample < 20; sample++) {
-      const start = performance.now();
-      const response = await request(headers);
-      expect(response.status).toBe(200);
-      expect(ConversationPageSchema.parse(await response.json()).items).toHaveLength(50);
-      elapsed.push(performance.now() - start);
-    }
-    elapsed.sort((a, b) => a - b);
-    console.info(
-      `300-chat sidebar endpoint p95: ${elapsed[Math.ceil(elapsed.length * 0.95) - 1]!.toFixed(2)} ms (20 warm reads, local integration fixture)`,
+    const reader = spyOn(systemNotificationDependencies, "read").mockRejectedValue(
+      new Error("Ordinary chats must not call system readers"),
     );
+    try {
+      const owner = await user();
+      const headers = await cookie(owner);
+      for (let offset = 0; offset < 300; offset += 10) await Promise.all(Array.from({ length: 10 }, () => fixture(owner)));
+      const ids = new Set<string>();
+      let cursor: string | null = null;
+      do {
+        const response = await request(headers, cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
+        expect(response.status).toBe(200);
+        const page = ConversationPageSchema.parse(await response.json());
+        expect(page.items.length).toBeLessThanOrEqual(50);
+        for (const row of page.items) {
+          expect(ids.has(row.id)).toBe(false);
+          ids.add(row.id);
+        }
+        cursor = page.nextCursor;
+      } while (cursor);
+      expect(ids.size).toBe(300);
+      const elapsed: number[] = [];
+      for (let sample = 0; sample < 20; sample++) {
+        const start = performance.now();
+        const response = await request(headers);
+        expect(response.status).toBe(200);
+        expect(ConversationPageSchema.parse(await response.json()).items).toHaveLength(50);
+        elapsed.push(performance.now() - start);
+      }
+      elapsed.sort((a, b) => a - b);
+      console.info(
+        `300-chat sidebar endpoint p95: ${elapsed[Math.ceil(elapsed.length * 0.95) - 1]!.toFixed(2)} ms (20 warm reads, local integration fixture)`,
+      );
+      expect(reader).not.toHaveBeenCalled();
+    } finally {
+      reader.mockRestore();
+    }
   });
 
   test("Unread excludes inherited chats until their participant read position exists", async () => {

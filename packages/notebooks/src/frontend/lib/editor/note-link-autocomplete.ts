@@ -40,9 +40,8 @@ import {
   startCompletion,
 } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
+import { isInsideFencedCode, withIcon } from "@k2b/editor/markdown";
 import { apiClient } from "../../../api/client";
-import { withIcon } from "./completion-icon";
-import { isInsideFencedCode } from "./editor-scope";
 
 /** Lightweight note projection — only what the popup needs. */
 type NoteRef = {

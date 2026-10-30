@@ -18,13 +18,15 @@ export type EditorAction = {
   run: (view: EditorView) => void | Promise<void>;
   /** Pressed state, for toggles such as bold. */
   isActive?: (state: EditorState) => boolean;
-  /** `false` greys the action out and ignores presses. */
+  /** `false` greys the action out and ignores presses. Every action is off in a read-only editor. */
   isEnabled?: (state: EditorState) => boolean;
 };
 
 /**
- * Run a command as one undo step of its own: close the open undo item before it and again after its last edit, also
- * when the command waits for a picker first. A view destroyed meanwhile ignores the closing transaction.
+ * Keep a command's edits apart from the surrounding typing in the undo history: close the open undo item before it
+ * and again after its last edit, also when the command waits for a picker first. Edits inside the command group as
+ * the history groups them; a command that should undo at once dispatches one transaction. A view destroyed meanwhile
+ * ignores the closing transaction.
  */
 export const asUndoStep = (view: EditorView, run: () => void | Promise<void>) => {
   view.dispatch({ annotations: isolateHistory.of("before") });
@@ -55,7 +57,7 @@ export type EditorHandle = {
    * its own slot. The slot leaves the view again when the calling owner is disposed.
    */
   use: (extension: Extension | (() => Extension)) => void;
-  /** Run an action as one undo step and keep focus in the note; disabled actions do nothing. */
+  /** Run an action apart from surrounding edits in the undo history and keep focus in the editor; disabled actions do nothing. */
   run: (action: Pick<EditorAction, "run" | "isEnabled">) => void | Promise<void>;
   isActive: (action: Pick<EditorAction, "isActive">) => boolean;
   isEnabled: (action: Pick<EditorAction, "isEnabled">) => boolean;
@@ -81,8 +83,10 @@ export function createEditor(): EditorHandle {
   const [controller, setController] = createSignal<TextEditorController>();
   const [controls, setControls] = createSignal<TextEditorControls>();
   const slots = new Set<{ compartment: Compartment; value: Extension }>();
+  // Listeners run inside the dispatch of whoever changed the view, maybe a host effect. They only write signals: a
+  // read here would subscribe that effect to every editor update, and its next dispatch would run it again.
   const tracker = EditorView.updateListener.of((update) => {
-    if (update.state !== state()) setState(update.state);
+    setState(update.state);
     if (update.focusChanged) setFocused(update.view.hasFocus);
   });
 
@@ -101,7 +105,12 @@ export function createEditor(): EditorHandle {
     if (getOwner())
       onCleanup(() => {
         slots.delete(slot);
-        untrack(() => view()?.dispatch({ effects: slot.compartment.reconfigure([]) }));
+        // A whole editor that unmounts disposes its places in the same pass; a view torn down meanwhile keeps its
+        // configuration, so no listener reads a field that just left. A place that leaves a living editor goes.
+        const current = untrack(view);
+        queueMicrotask(() => {
+          if (current?.dom.isConnected) current.dispatch({ effects: slot.compartment.reconfigure([]) });
+        });
       });
   };
 
@@ -125,7 +134,8 @@ export function createEditor(): EditorHandle {
   };
   const isEnabled = (action: Pick<EditorAction, "isEnabled">) => {
     const current = state();
-    return !!current && action.isEnabled?.(current) !== false;
+    // CodeMirror's read-only facet stops typing, not dispatched changes, so actions check it here.
+    return !!current && !current.readOnly && action.isEnabled?.(current) !== false;
   };
 
   return {

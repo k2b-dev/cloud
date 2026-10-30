@@ -9,9 +9,9 @@ import {
   type RenderHtmlToPdfResult,
   renderHtmlToPdfWithConfig,
 } from "@k2b/cloud/services/pdf";
+import { LIGATURE_CLASS, LIGATURES } from "@k2b/editor/markdown/lib/ligatures";
 import katexCss from "katex/dist/katex.min.css" with { type: "text" };
 import { type BookImagePlacement, type BookReferences, renderNotebookBook } from "../lib/book-renderer";
-import { LIGATURE_CLASS, LIGATURES } from "../lib/ligatures";
 import { type NotebookMapImage, notebookMapRevision, parseNotebookMapBlocks } from "../lib/map-blocks";
 import type { NotePdfOmission } from "../lib/pdf-omissions";
 import * as attachments from "./attachments";

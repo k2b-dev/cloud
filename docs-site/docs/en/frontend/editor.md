@@ -32,7 +32,7 @@ import { BubbleMenu, Editor, SlashMenu, Toolbar, createEditor, markdownActions }
 
 export function NoteEditor(props: { initial: string; locale: string }) {
   const editor = createEditor();
-  const actions = markdownActions(props.locale);
+  const actions = markdownActions(editor, props.locale);
   return (
     <>
       <Toolbar
@@ -71,14 +71,17 @@ An action is a plain object:
 | `isEnabled(state)` | `false` greys the action out and ignores presses. |
 
 Each place has its own list, so the toolbar can show more than the bubble menu.
-`markdownActions(locale)` returns ready actions for bold, italic,
+`markdownActions(editor, locale)` returns ready actions for bold, italic,
 strikethrough, inline code, link, headings, lists, quote, code block, and table.
-Applications add their own actions next to them.
+In a focused table cell, the inline formats apply to the cell and the block
+formats are off. Applications add their own actions next to them.
 
-`editor.run(action)` runs an action as one undo step, also when it waits for a
-picker, and returns focus to the editor. Disabled actions and read-only editors
-do nothing. `asUndoStep(view, run)` gives the same boundary to commands that run
-outside a place, such as a keymap.
+`editor.run(action)` keeps an action's edits apart from the surrounding typing
+in the undo history, also when it waits for a picker, and returns focus to the
+editor. An action that should undo at once dispatches one transaction. Disabled
+actions do nothing, and every action is off in a read-only editor.
+`asUndoStep(view, run)` gives the same boundary to commands that run outside a
+place, such as a keymap.
 
 ## Add the toolbar and the menus
 
@@ -91,7 +94,8 @@ sync status. Pressing a control keeps focus and selection in the editor. With
 the editor has focus.
 
 `<BubbleMenu>` opens at a selection once it settles, not while a pointer still
-drags it. Escape, a collapsed selection, or leaving the editor closes it. On
+drags it. It stays open while focus moves between the text and the menu. Escape,
+a collapsed selection, or leaving both closes it. On
 touch screens it sits below the selection, where the system's own menu does not
 cover it. Children after the actions hold extra controls, such as **Comment**.
 
@@ -117,3 +121,62 @@ extension with it.
 The package's own texts, such as the toolbar's accessible name, come from its
 English and German catalogs. They follow the locale that `LocaleProvider` from
 `@k2b/ui` sets; actions carry labels from the application.
+
+## Compose Markdown extensions
+
+Import the package stylesheet in the host's Tailwind stylesheet so widget
+utilities and the completion palette are included:
+
+```css
+@import "@k2b/editor/styles.css";
+```
+
+Import optional Markdown extensions from `@k2b/editor/markdown`. Add them to
+`editor.use()` or the CodeMirror view that the application already owns:
+
+```ts
+import {
+  basicExtensions, codeFontExtension, initialMarkdownDecorationRefreshExtension,
+  markdownExtension, markupExtension, pointerSelectionMarkdownRefreshExtension,
+} from "@k2b/editor/markdown";
+
+editor.use([
+  basicExtensions(), markdownExtension(), markupExtension(), codeFontExtension(),
+  initialMarkdownDecorationRefreshExtension(), pointerSelectionMarkdownRefreshExtension(),
+]);
+```
+
+The subpath includes lists and list commands, display ligatures, marks,
+subscript and superscript, notices, named data blocks, images, links, math,
+Mermaid, completions, themes, and scroll helpers. The Markdown parsers are also
+available to render the same source outside an editor. Extensions preserve the
+source text; editing a rendered block reveals its Markdown. The math extension
+expects the host to load KaTeX’s stylesheet and fonts.
+
+| Extension | Application options |
+| --- | --- |
+| `listsExtension`, `ligaturesExtension` | `excludedRanges(markdown)` returns source spans that stay literal, such as application directives. |
+| `listCommandsExtension` | The same `excludedRanges`, plus `isRemoteTransaction(transaction)` to prevent automatic number repairs on collaboration updates. Supply the same range callback to lists and commands. |
+| `imageExtension`, `linksExtension` | `resolveUrl(kind, ref)` resolves application schemes. `openImage(image, url, label)` and `openLink(url, ref, label)` keep previews and navigation in the host. Without callbacks, links use document navigation and images open their URL in a new tab. Unresolved custom schemes stay source. |
+| `imageExtension` | `foreignImagesAsLinks: true` renders images from other origins as links without fetching them. The default renders images as before. |
+| `mermaidExtension` | Required `configuration({ dark })` returns a Mermaid configuration. Optional `title(markdown)` names fullscreen views and exports; `locale` sets the detached preview's locale. Rendering is serialized, and cached SVGs are separated by configuration callback and theme. |
+| `infoBlocksExtension` | Pass the current locale for untitled notice labels. |
+
+For application directive ranges, the subpath exports `extractDataBlocks` and
+`extractNotebookDirectiveRanges`. The latter scans `query`, `toc`, `chart`, and
+`map` source geometry; query validation, data access, and chart rendering stay
+with the application.
+
+`customLightInit`, `customDarkInit`, `rawLightInit`, and `rawDarkInit` use
+`--editor-measure` for the content width, defaulting to the available width.
+Set this variable on the editor or an ancestor to match the host's reading
+column. The themes retain their CodeMirror selectors, so host styles for
+comments and document layout can still target the editor.
+
+Source parsers also have direct `@k2b/editor/markdown/lib/*` entry points,
+so server and CLI consumers can load them without the editor widgets.
+
+The preview helpers `inline-syntax`, `math-syntax`, `fade-scroll-margins`,
+`mermaid-render`, `mermaid-viewport`, and `urls` also have direct imports
+under `@k2b/editor/markdown/` to keep read-only previews and print independent
+of the full extension set.

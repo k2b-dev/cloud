@@ -16,7 +16,7 @@ export type DiscussionProvider = {
 /** Request-local discovery. Failure, truncation, and cancellation throw; no partial success or retained authority. */
 export const discussionProviders = async (
   caller: CapabilityCaller,
-  options: { deadline: number; signal?: AbortSignal },
+  options: { deadline: number; signal?: AbortSignal; page?: <T>(read: () => Promise<T>) => Promise<T> },
 ): Promise<DiscussionProvider[]> => {
   if (!Number.isFinite(options.deadline)) throw new RangeError("Discussion deadline must be a finite epoch time in milliseconds");
   const controller = new AbortController();
@@ -68,7 +68,8 @@ export const discussionProviders = async (
     for (let calls = 0; calls < MAX_CALLS; calls++) {
       if (options.deadline <= Date.now()) controller.abort(new Error("DISCUSSION_DEADLINE"));
       signal.throwIfAborted();
-      const page = await Promise.race([listCapabilityCatalog({ caller: credentials, cursor, limit: 25 }), cancelled]);
+      const read = () => listCapabilityCatalog({ caller: credentials, cursor, limit: 25 });
+      const page = await Promise.race([options.page ? options.page(read) : read(), cancelled]);
       signal.throwIfAborted();
       if (!page.ok) throw new Error(`Discussion discovery unavailable: ${page.error.code}`);
       if (caller.authority) addBytes(new TextEncoder().encode(JSON.stringify(page.data)).byteLength);

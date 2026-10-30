@@ -62,6 +62,10 @@ Handle all three outcomes:
 - A thrown error: the check is temporarily unavailable or invalid. Let the
   consumer's bounded retry mechanism retry it. Do not treat failure as a
   negative readability result or enqueue a push based on a stale answer.
+  `ResourceReaderRateLimited` exposes `retryAfterMs`: the HTTP `Retry-After`
+  delay, or 60 seconds when absent. A consumer can resubmit after that delay
+  within a bounded retry budget, without spending its short failure attempts.
+  Every resubmission requires a fresh check.
 
 The typed capability client also supports `workload: { appId }` with Bearer
 workload authorization for the generated Query. It calls

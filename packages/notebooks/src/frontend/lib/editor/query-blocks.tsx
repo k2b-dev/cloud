@@ -3,6 +3,12 @@ import { setDiagnostics } from "@codemirror/lint";
 import { type EditorState, type Extension, type Range, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { type GeoDocument, serializeGeoDocument } from "@k2b/cloud/geo/document";
+import {
+  blockWidgetLineNavigationExtension,
+  holdsDecorations,
+  refreshMarkdownDecorationsEffect,
+  selectionIntersectsRange,
+} from "@k2b/editor/markdown";
 import { query, timed } from "@k2b/stdlib/solid";
 import { Button } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
@@ -13,12 +19,6 @@ import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../../[id]/_components/sidebar/workspace-events";
 import { enhanceNotebookCharts } from "../notebook-charts";
 import { enhanceNotebookMaps } from "../notebook-maps";
-import {
-  blockWidgetLineNavigationExtension,
-  holdsDecorations,
-  refreshMarkdownDecorationsEffect,
-  selectionIntersectsRange,
-} from "./_lib/cursor-zone-field";
 import { queryBlockMessages } from "./query-block-messages";
 
 export type BlockPreviewResult = {

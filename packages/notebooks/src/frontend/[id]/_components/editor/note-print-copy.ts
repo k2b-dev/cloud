@@ -1,5 +1,5 @@
+import { renderMermaid } from "@k2b/editor/markdown/mermaid-render";
 import type { renderNotebookBook } from "../../../../lib/book-renderer";
-import { renderMermaid } from "../../../lib/mermaid-render";
 import { createPrintDiagrams, mermaidFenceSources } from "./note-print-diagrams";
 
 type Options = {

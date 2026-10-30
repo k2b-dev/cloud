@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { ConversationSchema, ThreadSchema } from "../service/contracts";
-import { loadSystemChats } from "./system-chats";
-import { chatHasThreads, systemThreadRows } from "./threads";
+import { containerIcon, loadSystemChats } from "./system-chats";
+import { chatHasThreads, systemThreadRows, threadIcon } from "./threads";
 
 const at = "2026-10-14T12:00:00.000Z";
 const conversation = ConversationSchema.parse({
@@ -68,7 +68,11 @@ test("loading a sidebar page does not exhaust any conversation summary", async (
     async () => {
       calls++;
       return calls === 1
-        ? Response.json({ items: [{ ref: conversation.resource, name: "Space", conversation }], spacesCursor: null, notebooksCursor: null })
+        ? Response.json({
+            items: [{ ref: conversation.resource, name: "Space", typeTitle: "Collection", icon: "ti ti-box", conversation }],
+            cursors: {},
+            skipped: [],
+          })
         : Response.json({ ...conversation, summaryCursor: null });
     },
     { preconnect: original.preconnect },
@@ -80,4 +84,13 @@ test("loading a sidebar page does not exhaust any conversation summary", async (
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("resource icons accept only one Tabler icon class", () => {
+  for (const icon of ["arbitrary", "ti ti-box extra", "ti ti-Box", "ti ti-box\n", "ti ti-box/other"]) {
+    expect(containerIcon(icon)).toBe("ti ti-messages");
+    const resource = { ref: { type: "inventory.item", id: "box" }, title: "Box", permission: "read" as const, typeTitle: "Item", icon };
+    expect(threadIcon({ resource })).toBe("ti ti-hash");
+  }
+  expect(containerIcon("ti ti-box")).toBe("ti ti-box");
 });

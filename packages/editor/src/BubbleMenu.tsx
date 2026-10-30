@@ -1,4 +1,5 @@
-import { EditorView } from "@codemirror/view";
+import { Prec } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
 import { SelectionToolbar, Toolbar, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import type { EditorAction, EditorHandle } from "./editor-state";
@@ -41,6 +42,12 @@ export function BubbleMenu(props: BubbleMenuProps) {
   const [dragging, setDragging] = createSignal(false);
   const [dismissed, setDismissed] = createSignal<unknown>();
   const [geometry, setGeometry] = createSignal(0);
+  // Focus that moves from the text into the menu, such as Tab to a button or a host input, keeps it open.
+  const [menuFocused, setMenuFocused] = createSignal(false);
+  const dismiss = () => {
+    setDismissed(props.editor.state()?.selection);
+    props.editor.view()?.focus();
+  };
 
   props.editor.use([
     EditorView.domEventHandlers({
@@ -59,13 +66,26 @@ export function BubbleMenu(props: BubbleMenuProps) {
     EditorView.updateListener.of((update) => {
       if (update.geometryChanged || update.viewportChanged) setGeometry((value) => value + 1);
     }),
+    // Escape in the text closes an open menu first; with no menu, the key keeps its other meanings.
+    Prec.high(
+      keymap.of([
+        {
+          key: "Escape",
+          run: () => {
+            if (!anchor()) return false;
+            dismiss();
+            return true;
+          },
+        },
+      ]),
+    ),
   ]);
 
   const anchor = () => {
     geometry();
     const view = props.editor.view();
     const state = props.editor.state();
-    if (!view || !state || dragging() || !props.editor.focused()) return null;
+    if (!view || !state || dragging() || !(props.editor.focused() || menuFocused())) return null;
     if (state.readOnly && !props.readOnly) return null;
     const range = state.selection.main;
     if (range.empty || dismissed() === state.selection) return null;
@@ -80,22 +100,27 @@ export function BubbleMenu(props: BubbleMenuProps) {
       placement={coarse() ? "below" : "above"}
       boundary={props.boundary}
       class={props.class}
-      onEscape={() => {
-        setDismissed(props.editor.state()?.selection);
-        props.editor.view()?.focus();
-      }}
+      onEscape={dismiss}
     >
-      <For each={props.groups}>
-        {(group, index) => (
-          <>
-            <Show when={index() > 0}>
-              <Toolbar.Separator />
-            </Show>
-            <For each={group}>{(action) => <ToolbarButton editor={props.editor} action={action} size="sm" />}</For>
-          </>
-        )}
-      </For>
-      {props.children}
+      <div
+        style={{ display: "contents" }}
+        onFocusIn={() => setMenuFocused(true)}
+        onFocusOut={(event) => {
+          if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setMenuFocused(false);
+        }}
+      >
+        <For each={props.groups}>
+          {(group, index) => (
+            <>
+              <Show when={index() > 0}>
+                <Toolbar.Separator />
+              </Show>
+              <For each={group}>{(action) => <ToolbarButton editor={props.editor} action={action} size="sm" />}</For>
+            </>
+          )}
+        </For>
+        {props.children}
+      </div>
     </SelectionToolbar>
   );
 }

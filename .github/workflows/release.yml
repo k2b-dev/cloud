@@ -554,7 +554,9 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "@k2b/editor must pin an exact @k2b/ui version, found '$version'." >&2; exit 1; }
           # A version published by this run may take minutes to become installable; an older pin must be installable already.
           deadline=$((SECONDS + $([[ "$UI_RELEASED" == "true" ]] && echo 1200 || echo 60)))
+          # A new version reaches npm's full metadata, the install metadata, and the tarball download at different times.
           until [[ "$(npm view "@k2b/ui@$version" version --prefer-online 2>/dev/null || true)" == "$version" ]] &&
+            curl -fsS --max-time 60 -H 'Accept: application/vnd.npm.install-v1+json' https://registry.npmjs.org/@k2b%2fui | jq -e --arg v "$version" '.versions[$v]' >/dev/null &&
             curl -fsS --max-time 120 -o /dev/null "$(npm view "@k2b/ui@$version" dist.tarball --prefer-online)"; do
             ((SECONDS < deadline)) || { echo "@k2b/ui@$version is not installable from npm after ${SECONDS}s. Publish it first, then run the release again." >&2; exit 1; }
             echo "@k2b/ui@$version is not installable yet; checking again in 15s."

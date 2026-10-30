@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { createAccess } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
@@ -15,6 +15,7 @@ import {
   ThreadListSchema,
   ThreadSchema,
 } from "../service/contracts";
+import { mockDiscussionCatalog, providerApp } from "../service/discussions.test-fixture";
 import { defaultNotificationLevelSql, effectiveNotificationLevelSql, resolveNotifications } from "../service/notification-levels";
 import { accessKey, resourceReaderDependencies } from "../service/resource-access";
 import { messageFixtures, type Person } from "./messages.test-fixture";
@@ -25,6 +26,10 @@ suiteFor(
   "valkey",
 )("chat notification preferences", () => {
   const f = messageFixtures();
+  let catalog: ReturnType<typeof mockDiscussionCatalog>;
+  beforeEach(() => {
+    catalog = mockDiscussionCatalog([providerApp("inventory")]);
+  });
   const get = async (person: Person, chat: string) => ConversationSchema.parse(await (await f.request(person.headers, `/${chat}`)).json());
   const set = (person: Person, chat: string, input: unknown) => f.request(person.headers, `/${chat}/notifications`, "PUT", input);
   const preferences = async (person: Person, chat: string) =>
@@ -32,36 +37,43 @@ suiteFor(
   const keys = new Set<string>();
   let reader: ReturnType<typeof spyOn> | undefined;
   afterEach(async () => {
+    catalog.mockRestore();
     reader?.mockRestore();
     reader = undefined;
     if (keys.size) await redis.send("DEL", [...keys]);
     keys.clear();
   });
   const system = async (person: Person) => {
-    const container = testShortId(),
-      item = testShortId();
+    const container = crypto.randomUUID(),
+      item = crypto.randomUUID();
     reader = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (_app, capability, input) => {
-      if (capability === "space.read" && input.id === container)
+      if (capability === "collection.read" && input.id === container)
         return {
-          data: { id: container, name: "Project", permission: "write" },
-          links: [{ rel: "open", href: `/app/spaces/${container}` }],
+          data: { view: { title: "Project", permission: "write" } },
+          links: [{ rel: "open", href: `/app/inventory/${container}` }],
         };
       if (capability === "item.read" && input.id === item)
         return {
-          data: { id: item, title: "Plinth for hall 2", kind: "task", spaceId: container },
-          links: [{ rel: "open", href: `/app/spaces/${container}/${item}` }],
+          data: {
+            view: {
+              title: "Plinth for hall 2",
+              permission: "read",
+              container: { ref: { type: "inventory.collection", id: container }, title: "Project" },
+            },
+          },
+          links: [{ rel: "open", href: `/app/inventory/${container}/${item}` }],
         };
       return null;
     });
     for (const [type, id] of [
-      ["spaces.space", container],
-      ["spaces.item", item],
+      ["inventory.collection", container],
+      ["inventory.item", item],
     ])
       keys.add(accessKey(`user:${person.id}`, { type: type!, id: id! }));
     const chat = await f.fixture(person);
-    await sql`UPDATE chat.conversations SET kind = 'system', resource_type = 'spaces.space', resource_id = ${container} WHERE id = ${chat.id}::uuid`;
+    await sql`UPDATE chat.conversations SET kind = 'system', resource_type = 'inventory.collection', resource_id = ${container} WHERE id = ${chat.id}::uuid`;
     const response = await f.request(person.headers, `/${chat.shortId}/threads/for-resource`, "POST", {
-      ref: { type: "spaces.item", id: item },
+      ref: { type: "inventory.item", id: item },
     });
     expect(response.status).toBe(200);
     return { chat, thread: ThreadSchema.parse(await response.json()) };

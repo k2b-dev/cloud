@@ -42,6 +42,7 @@ export default function ChatSharedSection(props: {
   const [kind, setKind] = createSignal<Kind>("all");
   const [thread, setThread] = createSignal("all");
   const [items, setItems] = createSignal<readonly SharedItem[]>([]);
+  const [incomplete, setIncomplete] = createSignal(false);
   const [cursor, setCursor] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<"loading" | "ready" | "failed">("loading");
   const [loadingMore, setLoadingMore] = createSignal(false);
@@ -74,13 +75,14 @@ export default function ChatSharedSection(props: {
       try {
         let page = await props.load(query());
         const rows = [...page.items];
-        while (rows.length < depth && page.nextCursor && list === generation) {
+        while (rows.length < depth && page.nextCursor && !page.incomplete && list === generation) {
           page = await props.load(query(page.nextCursor));
           rows.push(...page.items);
         }
         if (list !== generation) return;
         setItems(rows);
         setCursor(page.nextCursor);
+        setIncomplete(page.incomplete === true);
         setStatus("ready");
       } catch {
         if (list === generation) setStatus("failed");
@@ -99,7 +101,7 @@ export default function ChatSharedSection(props: {
     refresh();
   };
   const more = () => {
-    if (!cursor() || loadingMore() || status() !== "ready") return;
+    if (incomplete() || !cursor() || loadingMore() || status() !== "ready") return;
     setLoadingMore(true);
     run(async (list) => {
       const next = cursor();
@@ -109,6 +111,7 @@ export default function ChatSharedSection(props: {
         if (list !== generation) return;
         setItems((current) => [...current, ...page.items]);
         setCursor(page.nextCursor);
+        setIncomplete(page.incomplete === true);
       } catch {
         if (list === generation) setStatus("failed");
       } finally {
@@ -168,6 +171,14 @@ export default function ChatSharedSection(props: {
             options={threadOptions()}
           />
         </Show>
+        <Show when={incomplete() && status() === "ready"}>
+          <InlineGuidance tone="neutral" role="status">
+            {t().discussionsIncomplete}{" "}
+            <Button variant="text" size="xs" onClick={refresh}>
+              {t().retry}
+            </Button>
+          </InlineGuidance>
+        </Show>
         <Switch>
           <Match when={status() === "failed"}>
             <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
@@ -184,7 +195,7 @@ export default function ChatSharedSection(props: {
               <Skeleton />
             </div>
           </Match>
-          <Match when={items().length === 0}>
+          <Match when={items().length === 0 && !incomplete()}>
             <p class="text-sm text-dimmed">{kind() === "all" && thread() === "all" ? t().nothingShared : t().nothingForFilter}</p>
           </Match>
           <Match when={kind() === "images"}>
@@ -209,7 +220,7 @@ export default function ChatSharedSection(props: {
                 )}
               </For>
             </ul>
-            <Show when={cursor()}>
+            <Show when={cursor() && !incomplete()}>
               <Button
                 variant="text"
                 size="xs"
@@ -228,7 +239,7 @@ export default function ChatSharedSection(props: {
                 {(item) => <SharedRow item={item} meta={meta(item)} cards={props.cards} onJump={() => props.onJump(item)} />}
               </For>
             </ul>
-            <Show when={cursor()}>
+            <Show when={cursor() && !incomplete()}>
               <Button
                 variant="text"
                 size="xs"
