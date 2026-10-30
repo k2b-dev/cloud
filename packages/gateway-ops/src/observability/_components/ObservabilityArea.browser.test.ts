@@ -138,3 +138,57 @@ test("lists without entries and lists that fail to load show a way on", async ()
   expect(await page.getByRole("link", { name: "Try again" }).isVisible()).toBe(true);
   expect(errors).toEqual([]);
 }, 30_000);
+
+test("NATS access preserves pasted content, saves and recovers from refused writes on desktop and phone", async () => {
+  for (const [width, theme] of [
+    [1440, "light"],
+    [390, "light"],
+    [1440, "dark"],
+    [390, "dark"],
+  ] as const) {
+    await goto(`/admin/observability/nats/access?theme=${theme}`, width);
+    const access = page.getByRole("textbox", { name: /^System access/ });
+    expect(await access.inputValue()).toBe("");
+    expect(await access.getAttribute("spellcheck")).toBe("false");
+    const content = "-----BEGIN NATS USER JWT-----\nsynthetic fixture\n------END NATS USER JWT------";
+    await access.fill(content);
+    const request = page.waitForRequest(
+      (candidate) => candidate.method() === "PUT" && candidate.url().endsWith("gateway.nats_admin_access"),
+    );
+    await visible("Save").click();
+    expect((await request).postDataJSON()).toEqual({ value: content, replaceUnreadable: false });
+    await page.waitForFunction(() => document.querySelector('.k2b-save-status__state[data-state="saved"]'));
+    expect(await access.inputValue()).toBe("");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  await goto("/admin/observability/nats/access");
+  const format = page.getByRole("combobox", { name: "System access format", exact: true });
+  expect(await format.innerText()).toContain(".creds file content");
+  await format.click();
+  await page.getByRole("option", { name: "NKey seed", exact: true }).click();
+  expect(await page.getByText(/^Paste access in the new format too/).isVisible()).toBe(true);
+  const kindRequest = page.waitForRequest(
+    (candidate) => candidate.method() === "PUT" && candidate.url().endsWith("gateway.nats_admin_access_kind"),
+  );
+  await visible("Save").click();
+  expect((await kindRequest).postDataJSON()).toEqual({ value: "nkey", replaceUnreadable: false });
+  await page.waitForFunction(() => document.querySelector('.k2b-save-status__state[data-state="saved"]'));
+  expect(await format.innerText()).toContain("NKey seed");
+  expect(await page.getByText(/^Paste access in the new format too/).count()).toBe(0);
+
+  await goto("/admin/observability/nats/access?state=savefail", 390);
+  const access = page.getByRole("textbox", { name: /^System access/ });
+  await access.fill("synthetic replacement");
+  await visible("Save").click();
+  await page.waitForFunction(() => document.querySelector('.k2b-save-status__state[data-state="failed"]'));
+  expect(await access.inputValue()).toBe("synthetic replacement");
+  await visible("Discard").click();
+  expect(await access.inputValue()).toBe("");
+  await goto("/admin/observability/nats/access?state=unreadable");
+  expect(await page.getByRole("textbox", { name: /^System access/ }).isDisabled()).toBe(true);
+  await page.getByRole("checkbox", { name: "Replace stored value: System access" }).check();
+  expect(await visible("Save").isDisabled()).toBe(true);
+  await page.getByRole("textbox", { name: /^System access/ }).fill("synthetic replacement");
+  expect(await visible("Save").isDisabled()).toBe(false);
+  expect(errors).toEqual([]);
+}, 30_000);

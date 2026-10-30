@@ -10,6 +10,20 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## NATS diagnostics access moves to settings
+
+The four Gateway Ops `NATS_ADMIN_*` inputs are deprecated. During this release,
+startup imports missing settings from them, storing credentials, seeds, and CA
+PEM as **contents**, never paths. Stored rows take precedence. Unreadable files
+produce a warning with the variable and path; correct the mount and restart,
+or configure diagnostics in **Administration → Observability → NATS → Diagnostics access**.
+
+Verify cluster diagnostics with a refresh before removing the old inputs and
+mounts. Later changes apply to the next diagnostics connection. The secret
+System access value stays encrypted and hidden in administration responses.
+See [NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for setting keys and the migration steps.
+
 ## App workload credentials are delivered automatically
 
 Core now issues and rotates a credential for every registered app instance.
@@ -25,6 +39,20 @@ Removing its old Compose input does not itself revoke that credential.
 over automatic delivery. Existing admin UI, API and CLI creation and revocation
 paths remain available. See [runtime configuration](/en/docs/operations/runtime-configuration)
 for credential lifetimes, recovery after revocation, and the shared-infrastructure trust limit.
+
+## Storage import
+
+Import `storage` from `@k2b/cloud`. The former `@k2b/cloud/services` export
+remains available for this release and is deprecated. Its behavior and saved
+storage configuration are unchanged. See [Object store](/en/docs/platform/object-store).
+
+## Network and AI environment values become administrator settings
+
+This release imports nine network and AI values at startup, without replacing
+stored rows. `GOTENBERG_URL` is bootstrap-only; `CLOUD_IDENTITY_JWKS_ORIGIN`
+is replaced by `CLOUD_CORE_INTERNAL_ORIGIN`, and `GATEWAY_INSTANCE_ID` defaults
+to a random per-process ID. Run `cld admin settings status --env` before
+removing legacy variables. Follow the [operator migration steps](/en/docs/operations/deprecations-and-migrations).
 
 ## Personal Linux groups in exports
 

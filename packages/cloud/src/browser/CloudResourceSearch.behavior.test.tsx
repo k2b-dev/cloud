@@ -681,6 +681,32 @@ if (!isServer)
     }
   });
 
+if (!isServer)
+  test("a host that rebuilds equal commands keeps their option elements, so a press in progress still clicks", async () => {
+    const dom = createDomTestHarness();
+    const { createSignal } = await import("solid-js");
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    const command = { id: "first", title: "First", description: "Current", context: true, action: () => {} };
+    const [commands, setCommands] = createSignal([command]);
+    const dispose = render(
+      () => (
+        <CloudResourceSearch searchResources={false} commands={commands()} onCommand={() => {}} onSelect={() => {}} onClose={() => {}} />
+      ),
+      dom.root,
+    );
+    try {
+      await waitFor(() => dom.root.querySelectorAll('[role="option"]').length === 1, "context command");
+      const row = dom.root.querySelector('[role="option"]');
+      // New objects with the same identity, as a host builds them on every change of its inputs (#2140).
+      setCommands([{ ...command }]);
+      expect(dom.root.querySelector('[role="option"]')).toBe(row);
+      expect(row?.isConnected).toBe(true);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
 test("provider contexts use one chip, replace in place, and clear their hidden filter with the chip", async () => {
   if (isServer) return;
   const dom = createDomTestHarness();

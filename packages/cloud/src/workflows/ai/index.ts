@@ -1,4 +1,5 @@
 export { startWorkflowAiRuntime, stopWorkflowAiRuntime, submitWorkflowAiTask, type WorkflowAiRuntimeOptions } from "./runtime";
+export { getWorkflowAiBudget } from "./settings";
 export {
   createWorkflowAiTask,
   getWorkflowAiTask,

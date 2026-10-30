@@ -1,16 +1,18 @@
-import { afterEach, beforeEach, expect } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn } from "bun:test";
+import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 import type { GatewayHealth } from "./health";
 
-let originalTargets: string | undefined;
+let targets: string[];
+let policy: ReturnType<typeof spyOn<typeof settingsStore, "readKey">>;
+const readSetting = settingsStore.readKey;
 beforeEach(() => {
-  originalTargets = process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS;
-  process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS = "127.0.0.1";
+  targets = ["127.0.0.1"];
+  policy = spyOn(settingsStore, "readKey").mockImplementation((key) =>
+    key === "gateway.webhook_allowed_targets" ? Promise.resolve(targets) : readSetting(key),
+  );
 });
-afterEach(() => {
-  if (originalTargets === undefined) delete process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS;
-  else process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS = originalTargets;
-});
+afterEach(() => policy.mockRestore());
 const dbTest = testFor("database");
 
 const health: GatewayHealth = {
@@ -84,18 +86,18 @@ dbTest("internal health webhook refusal is recorded and an operator allowlist en
       repeatIntervalMs: 60_000,
       timeoutMs: 1000,
     });
-    delete process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS;
+    targets = [];
     await expect(deliverHealthWebhook(webhook, health, "test")).rejects.toMatchObject({
       name: "HealthWebhookDeliveryError",
-      message: expect.stringContaining("GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS"),
+      message: expect.stringContaining("gateway.webhook_allowed_targets"),
     });
     expect(received).toBe(0);
     expect(await getHealthWebhook(webhook.id)).toMatchObject({
       failureCount: 1,
       deliveryCount: 1,
-      lastError: expect.stringContaining("GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS"),
+      lastError: expect.stringContaining("gateway.webhook_allowed_targets"),
     });
-    process.env.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS = "127.0.0.1";
+    targets = ["127.0.0.1"];
     await deliverHealthWebhook(webhook, health, "test");
     expect(received).toBe(1);
     expect(await getHealthWebhook(webhook.id)).toMatchObject({ failureCount: 0, deliveryCount: 2, lastError: null });

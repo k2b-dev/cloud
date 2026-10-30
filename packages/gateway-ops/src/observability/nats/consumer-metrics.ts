@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { type NatsDiagnosticsDependencies, type NatsInventorySummary, natsDiagnosticsConfig, natsDiagnosticsDependencies } from "./service";
+import {
+  type NatsDiagnosticsDependencies,
+  type NatsInventorySummary,
+  natsAccountDiagnosticsConfig,
+  natsDiagnosticsDependencies,
+} from "./service";
 
 const counter = z.number().int().nonnegative();
 const pageSchema = z.object({
@@ -14,7 +19,7 @@ const emptyTotals = (): Totals => ({ pending: 0, ackPending: 0, redelivered: 0 }
 /** Four concurrent read-only scans share one five-second request budget. */
 export async function getNatsConsumerMetricSamples(
   inventory: NatsInventorySummary,
-  config = natsDiagnosticsConfig(),
+  config = natsAccountDiagnosticsConfig(),
   dependencies: NatsDiagnosticsDependencies = natsDiagnosticsDependencies,
 ): Promise<Sample[]> {
   const up: Sample = {

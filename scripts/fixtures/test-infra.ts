@@ -57,6 +57,11 @@ import { cancellingTestWork, finishTestWork, observeTestWork } from "./test-work
 
 export type { InfraKind } from "./test-infra-env";
 export { connectTestNats } from "./test-nats";
+// Unit and CLI processes load this gate too; do not load server clients until needed.
+export const initializeTestPlatform = async (appId?: string): Promise<void> => {
+  const platform = await import("./platform");
+  await platform.initializeTestPlatform(appId);
+};
 
 const testOnlyDefaults: Record<string, string> = {
   APP_SECRET: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -350,13 +355,14 @@ export const endLingeringTestWork = async (): Promise<string[]> => {
   if (ownedDatabases.size === 0) return [];
   const admin = new SQL(requireDatabaseUrl(), { max: 1 });
   try {
-    type Lingering = { pid: number; database: string; state: string; ms: number; query: string; blockers: number[] };
+    type Lingering = { pid: number; database: string; state: string; ms: number; query: string; blockers: number[]; wait: string };
     const rows: Lingering[] = [];
     for (const database of ownedDatabases)
       rows.push(
         ...(await admin<Lingering[]>`
           SELECT pid, datname AS database, state, (extract(epoch FROM now() - state_change) * 1000)::int AS ms,
-            left(query, 300) AS query, pg_blocking_pids(pid) AS blockers
+            left(query, 300) AS query, pg_blocking_pids(pid) AS blockers,
+            coalesce(wait_event_type || ':' || wait_event, 'running') AS wait
           FROM pg_stat_activity
           WHERE datname = ${database} AND pid <> pg_backend_pid()
             AND (state = 'active' OR state LIKE 'idle in transaction%') AND state_change < now() - interval '250 milliseconds'`),
@@ -371,7 +377,7 @@ export const endLingeringTestWork = async (): Promise<string[]> => {
         await admin`SELECT pg_terminate_backend(${row.pid})`;
       }
       reports.push(
-        `${action} ${row.state} work in ${row.database} after ${row.ms} ms (pid ${row.pid}, blocked by ${row.blockers.join(", ") || "nothing"}): ${row.query}`,
+        `${action} ${row.state} work in ${row.database} after ${row.ms} ms (pid ${row.pid}, blocked by ${row.blockers.join(", ") || "nothing"}, waiting on ${row.wait}): ${row.query}`,
       );
     }
     for (const report of reports) console.warn(`[test-infra] work outlived its test and was ${report}`);

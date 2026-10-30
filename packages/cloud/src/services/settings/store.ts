@@ -20,6 +20,7 @@ import { claimCacheFill, completeCacheFill, MISSING_SETTING } from "../cache-fil
 import { stripImageDataUrlMetadata } from "../image-metadata";
 import { toPgTextArray } from "../postgres";
 import { requestCacheRedis } from "../request-cache-redis";
+import { bindSettingValue, resolveBoundSetting, settingOwners, unwrapSettingValue } from "./binding";
 import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
 import { SettingUnreadableError } from "./errors";
@@ -32,7 +33,7 @@ const REDIS_KEY = (k: string) => `settings:${k}`;
 type SqlClient = typeof sql;
 
 export type StoredSettingState = "none" | "readable" | "unreadable";
-export type SettingRead = { value: unknown; stored: StoredSettingState };
+export type SettingRead = { value: unknown; stored: StoredSettingState; bindingMismatch?: true };
 
 /**
  * Forget cached values so every container re-reads on next access.
@@ -43,7 +44,8 @@ export type SettingRead = { value: unknown; stored: StoredSettingState };
  * therefore invalidate after it commits.
  */
 export const invalidateSettingsCache = async (keys: readonly string[]): Promise<void> => {
-  if (keys.length > 0) await (await requestCacheRedis()).del(...keys.map(REDIS_KEY));
+  if (keys.length > 0)
+    await (await requestCacheRedis()).del(...keys.flatMap((key) => [key, ...(SETTINGS_MAP.get(key)?.resetOnChange ?? [])]).map(REDIS_KEY));
 };
 const REDIS_TTL_SEC = 300;
 
@@ -87,6 +89,15 @@ export const readKeyState = async (key: string, db: SqlClient = sql): Promise<Se
 export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unknown>> => {
   const result = new Map<string, unknown>();
   if (keys.length === 0) return result;
+  // Bound access is read with its endpoint in one database snapshot. Never
+  // resolve it from an independently cached secret.
+  const boundKeys = keys.filter((key) => settingOwners(key).length > 0);
+  if (boundKeys.length) {
+    const bound = await readStates(boundKeys);
+    const other = await bulkRead(keys.filter((key) => !bound.has(key)));
+    for (const key of keys) result.set(key, bound.has(key) ? bound.get(key)!.value : other.get(key));
+    return result;
+  }
   let cached: Array<string | null>;
   try {
     cached = await (await requestCacheRedis()).mget(...keys.map(REDIS_KEY));
@@ -152,17 +163,29 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
 export const readStates = async (keys: readonly string[], db: SqlClient = sql): Promise<Map<string, SettingRead>> => {
   const result = new Map<string, SettingRead>();
   if (keys.length === 0) return result;
-  const rows = await db<StoredRow[]>`SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray([...keys])}::text[])`;
+  const snapshotKeys = [...new Set(keys.flatMap((key) => [key, ...settingOwners(key).map((owner) => owner.key)]))];
+  const rows = await db<StoredRow[]>`SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray(snapshotKeys)}::text[])`;
   const byKey = new Map(rows.map((row) => [row.key, row]));
+  const resolve = async (key: string) => {
+    const row = byKey.get(key);
+    const def = SETTINGS_MAP.get(key);
+    if (!row) return resolveFallback(def);
+    const raw = await decryptValue(row.value);
+    const checked = def ? validateSettingValue(def, unwrapSettingValue(key, raw)) : { ok: true as const, value: raw };
+    if (!checked.ok) throw new SettingUnreadableError(key);
+    return checked.value;
+  };
   for (const key of keys) {
     const row = byKey.get(key);
     const def = SETTINGS_MAP.get(key);
     result.set(key, { stored: row ? "unreadable" : "none", value: resolveFallback(def) });
     if (!row) continue;
     try {
-      const value = await decryptValue(row.value);
-      const validated = def ? validateSettingValue(def, value) : { ok: true as const, value };
-      if (validated.ok) result.set(key, { stored: "readable", value: validated.value });
+      const raw = await decryptValue(row.value);
+      const bound = await resolveBoundSetting(key, raw, resolve);
+      const validated = def ? validateSettingValue(def, bound.value) : { ok: true as const, value: bound.value };
+      if (validated.ok)
+        result.set(key, { stored: "readable", value: validated.value, ...(bound.mismatch ? { bindingMismatch: true } : {}) });
     } catch {
       // Keep this process's fallback without changing the stored row or cache.
     }
@@ -220,6 +243,37 @@ export const deleteLegacyKeys = async (extraKnownKeys: readonly string[] = []): 
   return { deleted };
 };
 
+/** Serialize a setting and every value it discards, including missing rows. */
+export const lockSettingChanges = async (tx: SqlClient, key: string): Promise<void> => {
+  const owners = SETTINGS.filter((def) => def.resetOnChange?.length && (def.key === key || def.resetOnChange.includes(key)));
+  for (const owner of owners.sort((a, b) => a.key.localeCompare(b.key)))
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`settings.change:${owner.key}`}, 0))`;
+};
+
+/** Keep an empty row so environment bootstrap cannot restore discarded access. */
+export const resetChangedSettings = async (
+  tx: SqlClient,
+  key: string,
+  value: unknown,
+  preserve: ReadonlySet<string> = new Set(),
+  prior?: SettingRead,
+): Promise<void> => {
+  const def = SETTINGS_MAP.get(key);
+  if (!def?.resetOnChange?.length) return;
+  const previous = prior ?? (await readKeyState(key, tx));
+  if (previous.stored !== "unreadable" && JSON.stringify(previous.value) === JSON.stringify(value)) return;
+  for (const target of def.resetOnChange) {
+    if (preserve.has(target)) continue;
+    const targetDef = SETTINGS_MAP.get(target);
+    if (!targetDef) throw new Error(`Unknown setting: ${target}`);
+    const empty = await encryptValue(targetDef.default);
+    await tx`
+      INSERT INTO settings.entries (key, value, updated_at) VALUES (${target}, ${empty}, now())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+    `;
+  }
+};
+
 /**
  * Encrypt the value, upsert the DB row, invalidate the Redis key.
  *
@@ -238,8 +292,16 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
 
   const storedValue =
     def.kind === "image" && typeof validated.value === "string" ? stripImageDataUrlMetadata(validated.value) : validated.value;
-  const encrypted = await encryptValue(storedValue);
   const write = async (tx: SqlClient) => {
+    await lockSettingChanges(tx, key);
+    await resetChangedSettings(tx, key, validated.value);
+    const encrypted = await encryptValue(
+      await bindSettingValue(key, storedValue, async (owner) => {
+        const state = await readKeyState(owner, tx);
+        if (state.stored === "unreadable") throw new SettingUnreadableError(owner);
+        return state.value;
+      }),
+    );
     for (let attempt = 0; attempt < 3; attempt++) {
       let [row] = await tx<{ value: string }[]>`UPDATE settings.entries SET value = value WHERE key = ${key} RETURNING value`;
       if (!row) {
@@ -256,7 +318,7 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
       if (options?.replaceUnreadable !== true) {
         let readable = false;
         try {
-          readable = validateSettingValue(def, await decryptValue(row.value)).ok;
+          readable = validateSettingValue(def, unwrapSettingValue(key, await decryptValue(row.value))).ok;
         } catch {
           // Only the key is exposed by the recovery error.
         }
@@ -283,7 +345,10 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
 
 /** Delete the DB row and invalidate Redis. With `db`, the caller owns geo budget pair validation and post-commit invalidation. */
 export const deleteKey = async (key: string, db?: SqlClient): Promise<void> => {
+  const def = SETTINGS_MAP.get(key);
   const remove = async (tx: SqlClient) => {
+    await lockSettingChanges(tx, key);
+    await resetChangedSettings(tx, key, resolveFallback(def));
     await tx`DELETE FROM settings.entries WHERE key = ${key}`;
   };
   if (db) await remove(db);

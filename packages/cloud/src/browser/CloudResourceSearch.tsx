@@ -247,6 +247,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     // Instant rows come first: streamed app sections are appended below them and never push them down.
     return [...commands, ...results()];
   });
+  const itemsByKey = createMemo(() => new Map(items().map((item) => [itemKey(item), item])));
   const selectable = (item: SearchItem) =>
     !props.disabled &&
     !choosingTag() &&
@@ -627,48 +628,54 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
               </Show>
               <Show when={showList()}>
                 <section id={`${id}-options`} role="listbox" aria-label={t().searchCloudResources} class="cloud-resource-search__results">
-                  <For each={items()}>
-                    {(item, index) => (
-                      <>
-                        <Show when={index() === 0 || items()[index() - 1]?.appId !== item.appId}>
-                          <div class="cloud-resource-search__group" role="presentation">
-                            {item.appName}
-                          </div>
-                        </Show>
-                        <button
-                          type="button"
-                          id={`${id}-result-${index()}`}
-                          data-result-index={index()}
-                          role="option"
-                          aria-selected={props.selectionMode ? selectedKey() === itemKey(item) : activeIndex() === index()}
-                          aria-disabled={!selectable(item)}
-                          class="cloud-resource-search__result"
-                          classList={{
-                            "is-active": activeIndex() === index(),
-                            "is-selected": props.selectionMode && selectedKey() === itemKey(item),
-                          }}
-                          onFocus={() => selectIndex(index())}
-                          onMouseEnter={() => {
-                            if (!props.selectionMode) selectIndex(index());
-                          }}
-                          onClick={(event) => {
-                            if ((event.metaKey || event.ctrlKey) && props.onOpenInNewTab && !props.selectionMode) {
-                              if (selectable(item)) openNewTab(item);
-                            } else chooseItem(item);
-                          }}
-                        >
-                          <i class={item.icon ?? item.appIcon} aria-hidden="true" />
-                          <span class="cloud-resource-search__result-copy">
-                            <span>{item.title}</span>
-                            <small>{isApp(item) ? t().app : (item.preview ?? item.appName)}</small>
-                          </span>
-                          <Show when={commandFor(item)?.shortcut}>{(shortcut) => <Kbd keys={shortcut()} />}</Show>
-                          <Show when={props.selectionMode && selectedKey() === itemKey(item)}>
-                            <i class="ti ti-check" aria-hidden="true" />
+                  {/* Keyed by result, not object: commands become new objects whenever results stream in, and a row
+                      replaced between press and release would swallow the click. */}
+                  <For each={items().map(itemKey)}>
+                    {(key, index) => {
+                      const first = itemsByKey().get(key)!;
+                      const item = () => itemsByKey().get(key) ?? first;
+                      return (
+                        <>
+                          <Show when={index() === 0 || items()[index() - 1]?.appId !== item().appId}>
+                            <div class="cloud-resource-search__group" role="presentation">
+                              {item().appName}
+                            </div>
                           </Show>
-                        </button>
-                      </>
-                    )}
+                          <button
+                            type="button"
+                            id={`${id}-result-${index()}`}
+                            data-result-index={index()}
+                            role="option"
+                            aria-selected={props.selectionMode ? selectedKey() === itemKey(item()) : activeIndex() === index()}
+                            aria-disabled={!selectable(item())}
+                            class="cloud-resource-search__result"
+                            classList={{
+                              "is-active": activeIndex() === index(),
+                              "is-selected": props.selectionMode && selectedKey() === itemKey(item()),
+                            }}
+                            onFocus={() => selectIndex(index())}
+                            onMouseEnter={() => {
+                              if (!props.selectionMode) selectIndex(index());
+                            }}
+                            onClick={(event) => {
+                              if ((event.metaKey || event.ctrlKey) && props.onOpenInNewTab && !props.selectionMode) {
+                                if (selectable(item())) openNewTab(item());
+                              } else chooseItem(item());
+                            }}
+                          >
+                            <i class={item().icon ?? item().appIcon} aria-hidden="true" />
+                            <span class="cloud-resource-search__result-copy">
+                              <span>{item().title}</span>
+                              <small>{isApp(item()) ? t().app : (item().preview ?? item().appName)}</small>
+                            </span>
+                            <Show when={commandFor(item())?.shortcut}>{(shortcut) => <Kbd keys={shortcut()} />}</Show>
+                            <Show when={props.selectionMode && selectedKey() === itemKey(item())}>
+                              <i class="ti ti-check" aria-hidden="true" />
+                            </Show>
+                          </button>
+                        </>
+                      );
+                    }}
                   </For>
                 </section>
               </Show>

@@ -32,6 +32,12 @@ type SettingCommon = {
   group: string;
   envFallback?: SettingEnvResolver;
   envBootstrap?: SettingEnvResolver;
+  /** Environment name for migration diagnostics; values are never returned. */
+  envVariable?: string;
+  /** Discard these stored settings when this normalized value changes. */
+  resetOnChange?: readonly string[];
+  /** Additional server-side validation after kind normalization. */
+  validate?: (value: unknown) => string | undefined;
 };
 
 type SettingStringLikeKind = "string" | "text" | "email" | "url" | "secret" | "image" | "cron" | "timezone" | "template";
@@ -118,6 +124,9 @@ export const toLegacySettingDefs = (settings: Record<string, unknown>, requested
       presentation: compilePresentation(d.presentation, baseLocale, key),
       envFallback: d.envFallback as (() => unknown) | undefined,
       envBootstrap: d.envBootstrap as (() => unknown) | undefined,
+      envVariable: d.envVariable as string | undefined,
+      validate: d.validate as SettingDef["validate"],
+      resetOnChange: d.resetOnChange as readonly string[] | undefined,
       templateVars: d.templateVars as readonly string[] | undefined,
       options: d.options as ReadonlyArray<{ value: string; label: string }> | undefined,
       min: d.min as number | undefined,
@@ -262,7 +271,11 @@ export const normalizeSettingValue = (def: SettingDef, raw: unknown): unknown =>
 };
 
 export const validateSettingValue = (def: SettingDef, raw: unknown): SettingValidationResult => {
+  if (def.validate && def.kind === "string_list" && Array.isArray(raw) && raw.some((entry) => typeof entry !== "string"))
+    return { ok: false, error: `${getSettingLabel(def)} must be a list of strings` };
   const value = normalizeSettingValue(def, raw);
+  const error = def.validate?.(value);
+  if (error) return { ok: false, error };
 
   if (def.key === "app.documentation_url") {
     try {
@@ -356,7 +369,7 @@ export const validateSettingValue = (def: SettingDef, raw: unknown): SettingVali
 export const SETTINGS_MAP = new Map(SETTINGS.map((setting) => [setting.key, setting] as const));
 
 /** Fields whose divergence changes behaviour rather than just wording. */
-const CONFLICT_FIELDS = ["kind", "default", "min", "max"] as const;
+const CONFLICT_FIELDS = ["kind", "default", "min", "max", "resetOnChange"] as const;
 
 export function registerSettings(defs: SettingDef[]): void {
   for (const def of defs) {
@@ -368,7 +381,8 @@ export function registerSettings(defs: SettingDef[]): void {
       // the winner would then depend on which container loaded which module.
       const existing = SETTINGS[existingIndex] as Record<string, unknown>;
       const incoming = def as unknown as Record<string, unknown>;
-      const conflicts = CONFLICT_FIELDS.filter((field) => JSON.stringify(existing[field]) !== JSON.stringify(incoming[field]));
+      const conflicts: string[] = CONFLICT_FIELDS.filter((field) => JSON.stringify(existing[field]) !== JSON.stringify(incoming[field]));
+      if (existing.validate !== incoming.validate) conflicts.push("validate");
       if (conflicts.length > 0) {
         throw new Error(
           `Setting "${def.key}" is registered twice with different ${conflicts.join(", ")}. ` +

@@ -1,4 +1,7 @@
 import { appAccess, defineApp } from "@k2b/cloud";
+import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
+import { appEnv } from "./env";
+import { natsDiagnosticsSettings } from "./observability/nats/settings";
 
 const port = 3000;
 
@@ -88,6 +91,25 @@ export const app = defineApp({
   ],
   nav: { href: "", section: "hidden", requiresRoles: ["admin"] },
   settings: {
+    "gateway.webhook_allowed_targets": {
+      kind: "string_list",
+      default: [],
+      label: "Health webhook allowed targets",
+      description: "Exact internal hosts, IPs or CIDRs allowed for health webhooks. Changes apply to new deliveries.",
+      envVariable: "GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS",
+      envBootstrap: () => appEnv.$readPresent("GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS"),
+      validate: validateNetworkAllowlist,
+      presentation: {
+        translations: {
+          de: {
+            label: "Erlaubte Health-Webhook-Ziele",
+            description: "Exakte interne Hosts, IPs oder CIDRs für Health-Webhooks. Änderungen gelten für neue Zustellungen.",
+          },
+        },
+      },
+    },
+
+    ...natsDiagnosticsSettings,
     "gateway.health_check_schedule": {
       kind: "cron",
       label: "Health Check Schedule",

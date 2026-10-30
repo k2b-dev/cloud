@@ -21,10 +21,13 @@
     "!src/**/*.test-fixture.ts",
     "!src/**/*.test-fixture.tsx",
     "!scripts/**/*.test.ts",
+    "!scripts/**/*.test-fixture.ts",
     "!scripts/runtime-recovery-*.ts"
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./app-key": "./src/app-key.ts",
+    "./start": "./src/start.ts",
     "./desktop": "./src/desktop/index.ts",
     "./desktop/solid": "./src/desktop/solid.tsx",
     "./server": "./src/server/index.ts",

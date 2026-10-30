@@ -1,7 +1,10 @@
 /** A source reference and the host's resolved destination. */
 export type MarkdownUrlKind = "image" | "link";
 export type MarkdownUrlOptions = {
-  /** Resolve application-owned schemes; ordinary URLs may be returned unchanged. */
+  /**
+   * Resolve application-owned schemes; ordinary URLs may be returned unchanged. For an image, the result may also be a
+   * `blob:` URL, such as one for an image the browser stores locally; links stay limited to safe protocols.
+   */
   resolveUrl?: (kind: MarkdownUrlKind, ref: string) => string;
   /** A reference link opened while keeping the editor selection. */
   openLink?: (url: string, ref: string, label: string) => void;

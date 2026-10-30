@@ -63,7 +63,7 @@ grow with the replica count.
 
 | Application | Several replicas | Coordinated by | Per-process limits that multiply |
 |---|---|---|---|
-| Gateway (`gateway`) | Yes | No registry entry; each process builds its route table from the shared registry. Give each replica its own `GATEWAY_INSTANCE_ID` or `HOSTNAME`, or their operations snapshots overwrite each other | None |
+| Gateway (`gateway`) | Yes | No registry entry; each process builds its route table from the shared registry. Each process uses a random ID for its operations snapshots. Remove the deprecated `GATEWAY_INSTANCE_ID` override; `HOSTNAME` is no longer used as an ID | None |
 | Core (`core`) | Yes | NATS schedulers and keyed jobs with Postgres claims for AI turns, outgoing mail and notifications | 8 AI turn workers, 8 SMTP send workers plus 4 bulk send workers, 4 notification workers, 2 chat PDF conversions |
 | Accounts (`accounts`) | Yes | Postgres draft rows and recipient claims | None |
 | API Docs (`api-docs`) | Yes | Specs built per request from the shared registry | None |

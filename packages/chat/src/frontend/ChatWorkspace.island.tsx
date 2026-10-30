@@ -257,6 +257,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // The latest open whose snapshot is still loading; an older one that a newer navigation superseded no longer counts.
   let openToken = 0;
   let pendingOpen = 0;
+  /** An info toggle chosen while a chat was still opening; it runs once that open ends, for the same chat only. */
+  let deferredPanel: { chatId: string | null; run: () => void } | undefined;
+  const deferPanel = (run: () => void) => {
+    deferredPanel = { chatId: route().chatId, run };
+  };
+  const runDeferredPanel = () => {
+    const deferred = deferredPanel;
+    deferredPanel = undefined;
+    if (deferred && pendingOpen === 0 && deferred.chatId === route().chatId) deferred.run();
+  };
   let systemOpen = 0;
   let pendingSends = 0;
 
@@ -1384,8 +1394,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
     if (!next.chatId) {
       const live = store;
-      // Closing the chat supersedes a pending open.
+      // Closing the chat supersedes a pending open, and an info toggle chosen during it.
       pendingOpen = 0;
+      deferredPanel = undefined;
       setBusy(false);
       batch(() => {
         live.closeConversation();
@@ -1413,6 +1424,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (pendingOpen === token) {
         pendingOpen = 0;
         setBusy(false);
+        runDeferredPanel();
       }
     }
   };
@@ -1531,7 +1543,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
-    if (pendingOpen !== 0) return;
+    if (pendingOpen !== 0) {
+      deferPanel(() => openInfo(navigation));
+      return;
+    }
     const id = route().chatId;
     if (!id || !openChat() || panel() === "info") return;
     const messageId = route().messageId;
@@ -1558,7 +1573,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     void openView(current.id, view, undefined, item.messageId);
   };
   const closeInfo = (navigation?: LinkNavigateEvent) => {
-    if (pendingOpen !== 0) return;
+    if (pendingOpen !== 0) {
+      deferPanel(() => closeInfo(navigation));
+      return;
+    }
     const id = route().chatId;
     if (!id || panel() === null) return;
     if (infoFromChat()) {
@@ -2191,7 +2209,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       label={t().chatInfo}
       href={listHref(routeAddress({ ...route(), chatId: current.id, panel: panel() === "info" ? null : "info" }, basePath))}
       navigation="enhanced"
-      onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
+      // The clicked address says what the person chose; the panel can change before the view transition calls back (#2116).
+      onNavigate={(navigation) => (navigation.url.searchParams.get("panel") === "info" ? openInfo(navigation) : closeInfo(navigation))}
       aria-expanded={panel() === "info"}
       aria-controls="k2b-workspace-detail-chat-info"
     >

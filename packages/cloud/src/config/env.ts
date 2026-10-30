@@ -4,22 +4,13 @@
  * `src/env.ts`; values are parsed lazily on access (see `define-env.ts`).
  */
 import { z } from "zod";
+import { DEFAULT_TRUSTED_PROXIES } from "../services/settings/validation";
 import { defineEnv, envBoolean, envList } from "./define-env";
+import { DEFAULT_WORKFLOW_AI_BUDGET, workflowAiBudgetSchema } from "./workflow-ai";
 
 const syncReplicas = z
   .enum(["1", "3", "5"], { error: "must be 1, 3, or 5" })
   .transform((value): 1 | 3 | 5 => (value === "1" ? 1 : value === "3" ? 3 : 5));
-
-const budgetSchema = z
-  .object({
-    maxStepsPerSource: z.number().int().positive(),
-    tasksPerMinute: z.number().int().positive(),
-    burst: z.number().int().positive(),
-    sourcesPer24Hours: z.number().int().positive(),
-    scopeConcurrent: z.number().int().positive(),
-    globalConcurrent: z.number().int().positive(),
-  })
-  .strict();
 
 const registry = defineEnv({
   // Process
@@ -35,6 +26,7 @@ const registry = defineEnv({
   // Infrastructure
   DATABASE_URL: {
     schema: z.string(),
+    aliases: ["DATABASEURL", "TLS_DATABASE_URL", "POSTGRES_URL", "PGURL", "PG_URL", "TLS_POSTGRES_DATABASE_URL"],
     example: "postgresql://ipa:ipa@localhost:5432/ipa",
     doc: "Postgres connection read by Bun SQL and by application-owned pools.",
   },
@@ -88,9 +80,9 @@ const registry = defineEnv({
           return z.NEVER;
         }
       })
-      .pipe(budgetSchema),
-    default: { maxStepsPerSource: 2, tasksPerMinute: 10, burst: 20, sourcesPer24Hours: 2_000, scopeConcurrent: 1, globalConcurrent: 4 },
-    doc: "JSON scoped workflow inference budget: active or successful logical requests per source/24h, token-bucket admission per minute and burst, distinct sources per rolling 24h, outstanding tasks per scope and globally; capacity/rate overload uses bounded workflow retries, daily/source limits fail visibly, and cache hits consume no reservation.",
+      .pipe(workflowAiBudgetSchema),
+    default: DEFAULT_WORKFLOW_AI_BUDGET,
+    doc: "Deprecated: bootstraps `ai.workflow_budget` once when no stored value exists; remove after `cld admin settings status --env` succeeds. JSON scoped workflow inference budget: active or successful logical requests per source/24h, token-bucket admission per minute and burst, distinct sources per rolling 24h, outstanding tasks per scope and globally; capacity/rate overload uses bounded workflow retries, daily/source limits fail visibly, and cache hits consume no reservation.",
   },
 
   // Workflow inference: p95 ~4s in the pilot; 60s bounds a whole attempt,
@@ -98,12 +90,12 @@ const registry = defineEnv({
   WORKFLOW_AI_ATTEMPT_TIMEOUT_MS: {
     schema: z.coerce.number().int().positive(),
     default: 60_000,
-    doc: "Absolute workflow AI attempt budget in milliseconds, including admission and repair; expiry aborts the provider and follows the bounded retry policy.",
+    doc: "Deprecated: bootstraps `ai.workflow_attempt_timeout_ms` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Absolute workflow AI attempt budget in milliseconds, including admission and repair; expiry aborts the provider and follows the bounded retry policy.",
   },
   WORKFLOW_AI_QUEUE_TIMEOUT_MS: {
     schema: z.coerce.number().int().positive(),
     default: 60_000,
-    doc: "Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow.",
+    doc: "Deprecated: bootstraps `ai.workflow_queue_timeout_ms` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow.",
   },
 
   // Installation
@@ -115,7 +107,7 @@ const registry = defineEnv({
   GOTENBERG_URL: {
     schema: z.string(),
     example: "http://localhost:3001",
-    doc: "Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written.",
+    doc: "Deprecated: env only bootstraps `gotenberg.url`; remove after `cld admin settings status --env` succeeds. Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written.",
   },
   APP_SECRET: {
     schema: z.string(),
@@ -133,12 +125,19 @@ const registry = defineEnv({
     doc: "Core only: temporary first-administrator or recovery login token; remove it after normal administrator sign-in works.",
   },
 
+  // Gateway trust boundary
+  GATEWAY_TRUSTED_PROXIES: {
+    schema: envList,
+    default: DEFAULT_TRUSTED_PROXIES,
+    doc: "Deprecated: bootstraps `gateway.trusted_proxies` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated IP addresses or CIDR ranges of the reverse proxies allowed to name the client in `X-Forwarded-For`; the default trusts loopback and private networks, which covers Traefik on a Docker network. Set the proxy's exact address or subnet when clients on private networks reach the gateway directly or through a proxy that appends to their `X-Forwarded-For`. Invalid bootstrap input with no stored row and invalid stored proxy lists stop gateway startup.",
+  },
+
   // Outbound network
   OUTGOING_MAIL_ALLOWED_TARGETS: {
     schema: envList,
     default: [],
     scope: "runtime",
-    doc: "Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for outgoing mail SMTP and bounce IMAP connections; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup.",
+    doc: "Deprecated: bootstraps `outgoing_mail.allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for outgoing mail SMTP and bounce IMAP connections; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning.",
   },
 
   // Identity and OAuth
@@ -179,7 +178,7 @@ const registry = defineEnv({
   },
   CLOUD_IDENTITY_JWKS_ORIGIN: {
     schema: z.string(),
-    doc: "Optional private origin of the Core listener for session and invocation JWKS; unset fetches keys from the public issuer origin.",
+    doc: "Deprecated: use `CLOUD_CORE_INTERNAL_ORIGIN`; the explicit old origin remains honored for this release. Optional private origin of the Core listener for session and invocation JWKS; unset uses `CLOUD_CORE_INTERNAL_ORIGIN`, then the public issuer origin.",
   },
   CLOUD_OAUTH_JWKS_ORIGIN: {
     schema: z.string(),

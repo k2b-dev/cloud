@@ -2,11 +2,17 @@ import { expect, test } from "bun:test";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
 import { natsMetricSamples } from "./metrics";
 import { nodeReplicaStatus } from "./replica-status";
-import { getNatsClusterDiagnostics, getNatsDiagnostics, getNatsInventorySummary, natsDiagnosticsConfig } from "./service";
+import {
+  getNatsClusterDiagnostics,
+  getNatsDiagnostics,
+  getNatsInventorySummary,
+  natsAccountDiagnosticsConfig,
+  natsDiagnosticsConfig,
+} from "./service";
 
 // A dedicated NATS system account is not part of the shared test infrastructure.
 test.skip("dedicated system identity sees the cluster while the application identity cannot", async () => {
-  const config = natsDiagnosticsConfig();
+  const config = await natsDiagnosticsConfig();
   const cluster = await getNatsClusterDiagnostics(config);
   expect(cluster.status).toBe("available");
   expect(cluster.nodes.every((node) => node.processMemory !== null && node.processMemory > 0)).toBe(true);
@@ -30,7 +36,7 @@ integration(
     const name = `S6_QD_${crypto.randomUUID().replaceAll("-", "")}`;
     const subject = `${namespace}.work`;
     const connection = await connectTestNats({ timeout: 1500, reconnect: false });
-    const config = { admin: { servers: [] }, application: natsDiagnosticsConfig().application };
+    const config = { admin: { servers: [] }, application: natsAccountDiagnosticsConfig().application };
     let created = false;
     try {
       const create = await connection.request(

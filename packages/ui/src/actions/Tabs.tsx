@@ -1,6 +1,10 @@
-import { children, createEffect, createMemo, createUniqueId, For, type JSX, Show } from "solid-js";
+import { children, createEffect, createMemo, createUniqueId, type JSX, Show } from "solid-js";
 import type { MaybeAccessor } from "../inputs/field-contract";
 import { resolveMaybeAccessor } from "../inputs/field-contract";
+import { KeyedFor } from "../internal/keyed-for";
+
+const tabName = (label: JSX.Element) => (typeof label === "string" ? label : undefined);
+
 import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "../layout/scroll-fade";
 
@@ -143,7 +147,9 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
           aria-label={props.ariaLabel}
           aria-orientation={props.orientation ?? "horizontal"}
         >
-          <For each={items()}>
+          {/* Keyed by value: tab objects are rebuilt whenever a tab's props change, and a tab replaced between press and
+              release would swallow the click (#2140). */}
+          <KeyedFor each={items()} by={(option) => option.value}>
             {(option, index) => {
               const id = () => `${instanceId}-tab-${index()}`;
               const panelId = () => `${instanceId}-panel-${index()}`;
@@ -156,15 +162,15 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
                     id={id()}
                     type="button"
                     role="tab"
-                    aria-selected={current() === option.value}
-                    aria-controls={option.panel !== undefined ? panelId() : undefined}
+                    aria-selected={current() === option().value}
+                    aria-controls={option().panel !== undefined ? panelId() : undefined}
                     tabIndex={tabStopIndex() === index() ? 0 : -1}
-                    disabled={option.disabled}
-                    onClick={() => props.onValueChange(option.value)}
+                    disabled={option().disabled}
+                    onClick={() => props.onValueChange(option().value)}
                     onKeyDown={(event) => {
-                      if ((event.key === "Delete" || event.key === "Backspace") && option.onClose) {
+                      if ((event.key === "Delete" || event.key === "Backspace") && option().onClose) {
                         event.preventDefault();
-                        requestClose(option);
+                        requestClose(option());
                         return;
                       }
                       const previous = props.orientation === "vertical" ? "ArrowUp" : "ArrowLeft";
@@ -180,19 +186,16 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
                       }
                     }}
                   >
-                    <Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-                    <span class={props.variant === "pill" ? "k2b-truncate-fade" : undefined}>{option.label}</span>
+                    <Show when={option().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                    <span class={props.variant === "pill" ? "k2b-truncate-fade" : undefined}>{option().label}</span>
                   </button>
-                  <Show when={option.onClose}>
+                  <Show when={option().onClose}>
                     <button
                       type="button"
                       class="k2b-tabs__close"
-                      aria-label={
-                        option.closeLabel ??
-                        messages().closeNamed({ name: typeof option.label === "string" ? option.label : props.ariaLabel })
-                      }
-                      disabled={option.disabled}
-                      onClick={() => requestClose(option)}
+                      aria-label={option().closeLabel ?? messages().closeNamed({ name: tabName(option().label) ?? props.ariaLabel })}
+                      disabled={option().disabled}
+                      onClick={() => requestClose(option())}
                     >
                       <i class="ti ti-x" aria-hidden="true" />
                     </button>
@@ -200,7 +203,7 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
                 </div>
               );
             }}
-          </For>
+          </KeyedFor>
         </div>
         <Show when={trailing()}>
           <div class="k2b-tabs__trailing">{trailing()}</div>
