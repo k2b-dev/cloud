@@ -3,16 +3,20 @@ import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { createEditor } from "@k2b/editor";
+import {
+  basicExtensions,
+  fadeScrollMarginsExtension,
+  fadeScrollPadding,
+  listCommandsExtension,
+  listsExtension,
+  markdownExtension,
+  noteScroller,
+} from "@k2b/editor/markdown";
 import { LocaleProvider, ScrollArea } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { notebooksYjs } from "../../../../lib/yjs";
-import { basicExtensions } from "../../../lib/editor/basic";
-import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
-import { listCommandsExtension } from "../../../lib/editor/list-commands";
-import { listsExtension } from "../../../lib/editor/lists";
-import { markdownExtension } from "../../../lib/editor/markdown";
-import { noteScroller } from "../../../lib/editor/note-scroller";
+import { notebookListOptions } from "../../../lib/editor/notebook-options";
 import { notebookWorkspaceMessages } from "../../messages";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
@@ -48,11 +52,11 @@ function Harness() {
           history(),
           formattingKeymap({ notebookId: "Book01" }),
           markdownExtension(),
-          listCommandsExtension(),
+          listCommandsExtension(notebookListOptions),
           EditorView.updateListener.of((update) => {
             if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
           }),
-          listsExtension(),
+          listsExtension(notebookListOptions),
           noteScroller,
           fadeScrollMarginsExtension(() => scrollPort),
         ],

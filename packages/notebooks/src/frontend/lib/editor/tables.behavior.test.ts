@@ -3,10 +3,9 @@ import { CompletionContext } from "@codemirror/autocomplete";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
-import { markdownExtension } from "./markdown";
 import { tableColumnCompletionSource } from "./table-columns";
 
 describe("Notebook table escaped pipes", () => {
@@ -27,6 +26,7 @@ describe("Notebook table escaped pipes", () => {
   for (const sourceVisible of [false, true]) {
     test(`escaped pipes preserve ${sourceVisible ? "inline" : "block"} formula previews`, async () => {
       const dom = createDomTestHarness();
+      const { markdownExtension, refreshMarkdownDecorationsEffect } = await import("@k2b/editor/markdown");
       document.documentElement.lang = "en";
       const { tablesExtension } = await import("./tables");
       const doc = "Intro\n\n\n| Name | Result |\n| --- | --- |\n| Ada \\| Grace | =LEN(Name) |";

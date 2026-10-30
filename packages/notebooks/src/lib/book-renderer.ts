@@ -1,4 +1,9 @@
 import { markdownCalloutSanitizeOptions } from "@k2b/cloud/shared";
+import { anchorHash, headingAnchor, parseNoteLink } from "@k2b/editor/markdown/lib/heading-anchors";
+import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "@k2b/editor/markdown/lib/ligatures";
+import { literalMarkdownLines, notebookDirectiveLength } from "@k2b/editor/markdown/lib/markdown-context";
+import { parseSizedMarkdownImage } from "@k2b/editor/markdown/lib/markdown-image";
+import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "@k2b/editor/markdown/lib/named-blocks";
 import { dates, highlight, text } from "@k2b/stdlib";
 import {
   type MarkdownReference,
@@ -15,13 +20,8 @@ import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
 import { bookRendererMessages, notebookBlockDiagnosticMessage } from "./book-renderer-messages";
 import { parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
-import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
-import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
 import { type NotebookMapImage, type NotebookMapState, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
 import { notebookMapMessages } from "./map-messages";
-import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
-import { parseSizedMarkdownImage } from "./markdown-image";
-import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
 import { type NotePdfOmission, type NotePdfOmissionKind, notePdfOmissionLabel } from "./pdf-omissions";
 import {
   type NotebookBlockDiagnostic,

@@ -1,0 +1,268 @@
+/* Generate utility classes for the source package in the consuming Tailwind build. */
+@source "./**/*.{ts,tsx}";
+
+/* ── Slash-command autocomplete palette ─────────────────────────────────
+   The CodeMirror autocomplete tooltip is portaled outside the editor
+   surface AND its theme is injected as a runtime `<style>` after this file
+   loads. Equal-specificity rules lose to CM's defaults (filled `aria-selected`
+   background, hardcoded option padding, section dividers) — so the overrides
+   below use `!important` for the bits that fight CM directly.
+
+   Visual baseline = the platform `Select` component (see
+   `@k2b/ui` Select): popup-style container, no
+   filled-background selected state — just `text-primary` + underline. */
+
+.cm-tooltip.cm-tooltip-autocomplete {
+  /* `popup` utility: rounded-lg, white/zinc-900 bg, zinc-200/800 border,
+     shadow-lg. Sized to feel like the platform Select dropdown — but
+     compact-density per-row so a dozen suggestions fit in the
+     viewport without scrolling. */
+  border-radius: 0.5rem !important;
+  background-color: white !important;
+  border: 1px solid rgb(228 228 231) !important;
+  box-shadow: var(--ui-shadow-float) !important;
+  padding: 0.1875rem !important;
+  min-width: 22rem;
+  font-family: inherit !important;
+  font-size: 0.75rem !important;
+  overflow: hidden;
+}
+.dark .cm-tooltip.cm-tooltip-autocomplete {
+  background-color: rgb(24 24 27) !important;
+  border-color: rgb(39 39 42) !important;
+}
+
+.cm-tooltip-autocomplete > ul {
+  font-family: inherit !important;
+  max-height: 28rem;
+  padding: 0 !important;
+  margin: 0;
+  list-style: none;
+}
+
+.cm-tooltip-autocomplete > ul > li {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.1875rem 0.375rem !important;
+  border-radius: 0.25rem;
+  /* Default colour. Hover paints a soft grey bg WITHOUT touching the
+     text — pure pointer affordance. Keyboard selection paints the
+     LABEL blue WITHOUT a bg — pure focus indicator. The two channels
+     (bg vs. text) don't fight, so the keyboard-selected row stays
+     unambiguous even when the mouse happens to hover a different
+     option in the list. */
+  color: rgb(113 113 122) !important;
+  cursor: pointer;
+  user-select: none;
+  border: 0 !important;
+  background: transparent !important;
+  text-decoration: none !important;
+  line-height: 1.3;
+}
+.dark .cm-tooltip-autocomplete > ul > li {
+  color: rgb(161 161 170) !important;
+}
+
+/* Hover = soft grey background, text colour unchanged. */
+.cm-tooltip-autocomplete > ul > li:hover {
+  background: var(--ui-hover) !important;
+  text-decoration: none !important;
+}
+
+/* Keyboard-selected = platform action-blue text, no background: it is a
+   control option, not a picked object. Pairs cleanly with hover (which
+   only paints bg) so a row that's both selected AND hovered shows blue
+   text on the hover bg. */
+.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  color: var(--k2b-action) !important;
+  background: transparent !important;
+  text-decoration: none !important;
+}
+
+/* Selected + hovered = blue text on the hover-bg (so the user can
+   still see "this row is also under my cursor" without losing the
+   selection indicator). */
+.cm-tooltip-autocomplete > ul > li[aria-selected]:hover {
+  background: var(--ui-hover) !important;
+}
+
+.cm-tooltip-autocomplete .cm-slash-icon {
+  flex-shrink: 0;
+  width: 0.875rem;
+  font-size: 0.8125rem;
+  color: inherit; /* picks up the row's color */
+}
+
+.cm-tooltip-autocomplete .cm-completionLabel {
+  flex: 0 0 auto;
+}
+
+/* Our custom completion detail renderer — short signature or one-line
+   description shown inline next to the label. Dimmed so the label
+   reads as primary. Truncates with ellipsis at the popup edge. */
+.cm-tooltip-autocomplete .cm-completion-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 0.375rem;
+  font-size: 0.625rem;
+  color: rgb(161 161 170); /* zinc-400 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completion-detail {
+  /* Selected row turns blue; keep the detail subtler — still
+     readable but visually secondary. Hover does NOT tint the detail
+     (hover is just a soft bg, see the rule above). */
+  color: rgb(96 165 250 / 0.85); /* blue-400 / 85% */
+}
+.dark .cm-tooltip-autocomplete .cm-completion-detail {
+  color: rgb(113 113 122); /* zinc-500 */
+}
+
+/* Hide every "extra" element CM emits — descriptions, section dividers,
+   section headings, AND the per-option info side panel. KISS palette:
+   just `[icon] Label  detail` rows, in registry order.
+
+   Why hide `.cm-tooltip.cm-completionInfo` too: CM renders it as a
+   floating panel on the selected option (the long-form `info` text).
+   When there's no room to the right of the popup it falls back to
+   rendering INSIDE the option list — observed as a "subbox" cutting
+   off the description mid-sentence. We already surface a one-liner
+   inline via `cm-completion-detail`, so the verbose info panel is dead
+   weight; killing it removes the cutoff bug and keeps the popup
+   compact + consistent. */
+.cm-tooltip-autocomplete .cm-completionDetail,
+.cm-tooltip-autocomplete .cm-completionSectionLabel,
+.cm-tooltip-autocomplete completion-section,
+.cm-tooltip-autocomplete .cm-completionListIncompleteTop,
+.cm-tooltip-autocomplete .cm-completionListIncompleteBottom,
+.cm-tooltip.cm-completionInfo {
+  display: none !important;
+}
+
+.md-block-handle {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.35rem 0 0.15rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: rgb(239 246 255);
+  color: rgb(37 99 235);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.dark .md-block-handle {
+  background: rgb(30 58 138 / 0.25);
+  color: rgb(147 197 253);
+}
+
+.md-data-handle-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.md-data-block {
+  display: block;
+  margin: 0.5rem 0;
+}
+
+.md-data-grid {
+  display: grid;
+  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+  overflow-x: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-surface);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-surface);
+}
+
+.md-data-row {
+  display: contents;
+}
+
+.md-data-row:not(:last-child) > .md-data-key,
+.md-data-row:not(:last-child) > .md-data-value {
+  border-bottom: 1px solid var(--ui-data-row-divider);
+}
+
+.md-data-key,
+.md-data-value,
+.md-data-empty {
+  --md-data-cell-base: transparent;
+  --md-data-column-highlight: transparent;
+  --md-data-row-highlight: transparent;
+
+  display: block;
+  min-height: 2rem;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  padding: 0.5rem 0.75rem;
+  background:
+    linear-gradient(var(--md-data-row-highlight), var(--md-data-row-highlight)),
+    linear-gradient(var(--md-data-column-highlight), var(--md-data-column-highlight)), var(--md-data-cell-base);
+  box-shadow: none;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.md-data-key {
+  --md-data-cell-base: var(--ui-data-header);
+
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.md-data-value,
+.md-data-empty {
+  min-width: 12rem;
+  overflow-wrap: anywhere;
+}
+
+.md-data-empty {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: rgb(113 113 122);
+}
+
+.md-data-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.25rem;
+  margin-bottom: 0.125rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: rgb(239 246 255);
+  color: rgb(29 78 216);
+  font-weight: 500;
+}
+
+.dark .md-data-empty {
+  color: rgb(161 161 170);
+}
+
+.dark .md-data-chip {
+  background: rgb(30 58 138 / 0.35);
+  color: rgb(147 197 253);
+}
+
+@media (hover: hover) {
+  .md-data-row:hover > :is(.md-data-key, .md-data-value) {
+    --md-data-row-highlight: var(--ui-data-row-hover);
+  }
+
+  .md-data-grid:has(.md-data-key:hover) .md-data-key,
+  .md-data-grid:has(.md-data-value:hover) .md-data-value {
+    --md-data-column-highlight: var(--ui-data-column-hover);
+  }
+}

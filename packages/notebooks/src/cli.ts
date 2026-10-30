@@ -20,6 +20,7 @@ import {
   withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import { findNamedBlocks, type NamedBlockType, namedBlockBody } from "@k2b/editor/markdown/lib/named-blocks";
 import {
   ANNOTATION_AGENT_HELP,
   ANNOTATION_COMMAND_GROUP,
@@ -54,7 +55,6 @@ import {
   writeManifest,
 } from "./cli-mirror";
 import type { Annotation, AnnotationProjection } from "./lib/annotation-contracts";
-import { findNamedBlocks, type NamedBlockType, namedBlockBody } from "./lib/named-blocks";
 import { NOTE_DELETE_PERMISSIONS } from "./lib/note-delete-permission";
 import {
   applyNoteEdits,

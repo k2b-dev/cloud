@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { frontMatterLength, LIGATURES } from "../../../../lib/ligatures";
+import { frontMatterLength, LIGATURES } from "@k2b/editor/markdown/lib/ligatures";
 import { NOTE_PREVIEW_BUDGET, type NotePreviewPart, notePreviewLines } from "./note-preview";
 
 const repositoryRoot = resolve(import.meta.dir, "../../../../../../..");

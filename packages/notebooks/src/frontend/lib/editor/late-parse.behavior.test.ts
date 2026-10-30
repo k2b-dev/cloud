@@ -2,18 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { forceParsing, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
+
 import type { Tree } from "@lezer/common";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { cursorZoneStateField, initialMarkdownDecorationRefreshExtension } from "./_lib/cursor-zone-field";
-import { codeFontExtension } from "./code-font";
-import { markdownExtension } from "./markdown";
-import { markupExtension } from "./markup";
+
 import { tagPillExtension } from "./tag-pill";
 
 // Notebook block scanners load the UI browser export after its DOM globals exist.
 const loading = createDomTestHarness();
-const { listsExtension } = await import("./lists");
+const { codeFontExtension, cursorZoneStateField, initialMarkdownDecorationRefreshExtension, markdownExtension, markupExtension } =
+  await import("@k2b/editor/markdown");
+const { notebookListOptions, notebookUrlOptions } = await import("./notebook-options");
+const { listsExtension } = await import("@k2b/editor/markdown");
 loading.cleanup();
 
 // CodeMirror parses a long note in steps: the first state holds a syntax tree for
@@ -52,7 +53,7 @@ describe("editor decorations in a long note", () => {
     const dom = createDomTestHarness();
     document.documentElement.lang = "en";
     // These widgets load the shared UI, which needs the browser globals of the harness.
-    const { linksExtension } = await import("./links");
+    const { linksExtension } = await import("@k2b/editor/markdown");
     const { tablesExtension } = await import("./tables");
     const view = new EditorView({
       parent: dom.root,
@@ -61,11 +62,11 @@ describe("editor decorations in a long note", () => {
         selection: { anchor: 0 },
         extensions: [
           markdownExtension(),
-          listsExtension(),
+          listsExtension(notebookListOptions),
           markupExtension(),
           codeFontExtension(),
           tablesExtension("Nb12Cd"),
-          linksExtension("Nb12Cd"),
+          linksExtension(notebookUrlOptions("Nb12Cd")),
           tagPillExtension("Nb12Cd"),
         ],
       }),
@@ -114,7 +115,7 @@ describe("editor decorations in a long note", () => {
       state: EditorState.create({
         doc,
         selection: { anchor: 0 },
-        extensions: [markdownExtension(), listsExtension(), probe, initialMarkdownDecorationRefreshExtension()],
+        extensions: [markdownExtension(), listsExtension(notebookListOptions), probe, initialMarkdownDecorationRefreshExtension()],
       }),
     });
     try {

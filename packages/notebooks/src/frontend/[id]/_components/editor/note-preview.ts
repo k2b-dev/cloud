@@ -1,12 +1,12 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
+import { MARK_REGEX, SPECIAL_CHAR_REGEX, SUB_REGEX, SUP_REGEX, TAG_REGEX } from "@k2b/editor/markdown/inline-syntax";
+import { findLigatures, frontMatterLength } from "@k2b/editor/markdown/lib/ligatures";
+import { NOTEBOOK_DIRECTIVE_START } from "@k2b/editor/markdown/lib/markdown-context";
+import { codeFenceLanguage } from "@k2b/editor/markdown/lib/markdown-fences";
+import { isNamedBlockHandle } from "@k2b/editor/markdown/lib/named-blocks";
+import { blockMathPattern, inlineMathPattern } from "@k2b/editor/markdown/math-syntax";
 import { highlightTree, tagHighlighter, tags } from "@lezer/highlight";
 import { chartBlockFrame, notebookChartHeight, parseNotebookChartBlocks } from "../../../../lib/chart-blocks";
-import { findLigatures, frontMatterLength } from "../../../../lib/ligatures";
-import { NOTEBOOK_DIRECTIVE_START } from "../../../../lib/markdown-context";
-import { codeFenceLanguage } from "../../../../lib/markdown-fences";
-import { isNamedBlockHandle } from "../../../../lib/named-blocks";
-import { MARK_REGEX, SPECIAL_CHAR_REGEX, SUB_REGEX, SUP_REGEX, TAG_REGEX } from "../../../lib/editor/_lib/inline-syntax";
-import { blockMathPattern, inlineMathPattern } from "../../../lib/editor/_lib/math-syntax";
 
 export const NOTE_PREVIEW_ID = "notebook-note-preview";
 export type NotePreviewPart = string | { className: string; children: NotePreviewPart[]; attributes?: Record<string, string> };

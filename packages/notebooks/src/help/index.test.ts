@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { extractNamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
 import { notebooksPageMessages } from "../frontend/messages";
 import { renderNotebookBook } from "../lib/book-renderer";
 import { parseNotebookChartBlocks } from "../lib/chart-blocks";
-import { extractNamedDataProperties } from "../lib/named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
 import { notebookHelp } from ".";
 

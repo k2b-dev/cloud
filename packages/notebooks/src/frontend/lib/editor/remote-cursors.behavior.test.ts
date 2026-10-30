@@ -375,9 +375,9 @@ describe("remote cursors", () => {
   test("keeps a remote caret inside a rendered table without an inline widget", async () => {
     const { view, ada, cleanup } = await mount(false, "Before\n\n| Name | Value |\n| --- | --- |\n| Alpha | 1 |\n\nAfter");
     try {
-      const { markdownExtension } = await import("./markdown");
+      const { markdownExtension } = await import("@k2b/editor/markdown");
       const { tablesExtension } = await import("./tables");
-      const { refreshMarkdownDecorationsEffect } = await import("./_lib/cursor-zone-field");
+      const { refreshMarkdownDecorationsEffect } = await import("@k2b/editor/markdown");
       view.dispatch({
         selection: { anchor: view.state.doc.length },
         effects: StateEffect.appendConfig.of([markdownExtension(), tablesExtension("n1")]),
