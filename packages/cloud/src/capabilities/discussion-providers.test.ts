@@ -104,3 +104,26 @@ test("a provider with an omitted reader query does not advertise push availabili
   expect(providers).toHaveLength(1);
   expect(providers[0]!.app.manifest.resourceTypes?.find((model) => model.type === "item")?.readable).toBeUndefined();
 });
+
+test("each catalog page spends the consumer's shared budget before transport", async () => {
+  let pages = 0,
+    calls = 0;
+  await expect(
+    discussionProviders(
+      {
+        transport: async () => {
+          calls++;
+          return page([], `cursor-${calls}`);
+        },
+      },
+      {
+        ...options,
+        page: async (read) => {
+          if (++pages > 2) throw new Error("CONSUMER_BUDGET");
+          return read();
+        },
+      },
+    ),
+  ).rejects.toThrow("CONSUMER_BUDGET");
+  expect(calls).toBe(2);
+});

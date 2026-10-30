@@ -80,6 +80,11 @@ ref and title. Never disclose a title or permission before authorizing the
 reader. Consumers that cache localized views must include locale in their
 cache key.
 
+An `open` semantic link in the reader envelope is recommended so consumers can
+offer “Open in …”. It is optional: a reader with a compatible view can offer
+discussions without an open link. Chat hides its open-resource controls when
+the link is absent.
+
 The compiler derives view support from the reader's data schema. There is no
 second author declaration to keep synchronized. An optional or incompatible
 `view` stays ordinary domain data and does not advertise standard view
@@ -120,7 +125,7 @@ checks the role, views, and operation schemas. Startup rejects incompatible
 providers; the registry and consumers ignore an incompatible role while
 retaining the application's other capabilities.
 
-`discussionProviders(caller, { deadline, signal? })` from
+`discussionProviders(caller, { deadline, signal?, page? })` from
 `@k2b/cloud/capabilities/server` discovers compatible providers through the
 current caller's paginated catalog. It returns `{ app, itemType,
 containerType, containers, activity? }` descriptors. Discovery has a shared
@@ -130,6 +135,11 @@ pages, or an exhausted budget throw; a partial list is never reported as
 complete. No identity or provider data survives the call. Subsequent list,
 reader, and activity calls use the ordinary capability client and the
 caller's authority; callers must budget those calls as well.
+
+Consumers can supply `page(read)` to include every catalog page in their own
+request budget. The callback must execute and return `read()` or reject when
+the budget is exhausted. Discovery retains its own call, byte and deadline
+limits. Chat uses this callback to share one budget with lists and readers.
 
 A discussions role works without reader checks. Push consumers require
 `access.readable` on both the item and container Types; otherwise they must

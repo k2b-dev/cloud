@@ -988,14 +988,16 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         if (failingSystems-- > 0) return Response.json({ message: "Unavailable" }, { status: 503 });
         return Response.json({
           items: [...containers.values()]
-            .filter((item) => url.searchParams.get(item.ref.type === "spaces.space" ? "spacesCursor" : "notebooksCursor") !== "")
+            .filter((item) => !url.searchParams.has("cursors") || JSON.parse(url.searchParams.get("cursors") ?? "{}")[item.ref.type] !== "")
             .map((item) => ({
               ref: item.ref,
               name: item.name,
+              typeTitle: "Collection",
+              icon: "ti ti-box",
               conversation: item.chat ? (chats.get(item.chat)?.conversation ?? null) : null,
             })),
-          spacesCursor: null,
-          notebooksCursor: null,
+          cursors: Object.fromEntries([...containers.values()].map((item) => [item.ref.type, ""])),
+          skipped: [],
         });
       }
       const systemOpen = /^\/api\/chat\/system-chats\/([^/]+)\/([^/]+)\/open$/.exec(url.pathname);
@@ -1024,7 +1026,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             ref: { type: element.type ?? "spaces.task", id: element.id },
             title: element.title,
             preview: element.context || undefined,
-            href: `/app/spaces/task/${element.id}`,
+            href: element.kind === "note" ? `/app/notebooks/notes/${element.id}` : `/app/spaces/task/${element.id}`,
           }));
         const lines = [
           { type: "start", query, apps: [{ id: "spaces", name: "Spaces", icon: "ti ti-layout-kanban" }], providers: ["spaces"] },
@@ -1096,7 +1098,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           // Without Spaces and Notebooks, their chats and item threads cannot be checked, so none come back.
           if (row.kind === "system" && searchSystemUnavailable) continue;
           if (row.kind === "system" && (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")) {
-            if (match(row.title)) items.push({ kind: "system", ref, name: row.title, conversation: row });
+            if (match(row.title)) items.push({ kind: "system", ref, name: row.title, icon: row.icon ?? "ti ti-box", conversation: row });
           } else if (row.member && match(row.title)) items.push({ kind: "chat", conversation: row });
           if (row.kind !== "system" && !row.member) continue;
           for (const thread of chat.threads)
@@ -1107,12 +1109,13 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
                 thread: {
                   id: thread.id,
                   name: thread.name,
-                  ...(thread.resource ? { resource: { kind: thread.resource.kind, done: thread.resource.done } } : {}),
+                  ...(thread.resource ? { resource: { icon: thread.resource.icon, done: thread.resource.done } } : {}),
                 },
               });
         }
         if (!searchSystemUnavailable)
-          for (const hit of emptyContainerHits) if (match(hit.name)) items.push({ kind: "system", ...hit, conversation: null });
+          for (const hit of emptyContainerHits)
+            if (match(hit.name)) items.push({ kind: "system", ...hit, icon: "ti ti-box", conversation: null });
         return Response.json({ items: items.slice(0, 8), ...(searchSystemUnavailable ? { systemUnavailable: true } : {}) });
       }
       if (url.pathname === "/api/chat/for-you" && request.method === "GET") {
@@ -1410,10 +1413,13 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
                 lastActivityAt: chatTestNow.toISOString(),
                 resource: {
                   ref: input.ref,
-                  kind: element.kind ?? "task",
+                  title: element.title,
+                  permission: "read",
+                  typeTitle: element.kind === "note" ? "Note" : "Item",
+                  icon: element.kind === "note" ? "ti ti-note" : "ti ti-package",
                   done: element.done ?? false,
-                  status: element.status ?? null,
-                  href: `/app/spaces/task/${element.id}`,
+                  status: element.status ?? undefined,
+                  href: element.kind === "note" ? `/app/notebooks/notes/${element.id}` : `/app/spaces/task/${element.id}`,
                 },
               };
               chat.threads.push(thread);
@@ -1832,7 +1838,16 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     systemRequests,
     setSystem: (id: string, ref: CloudResourceRef) => {
       const chat = chats.get(id)!;
-      chat.conversation = { ...chat.conversation, kind: "system", channel: false, member: false, resource: ref, summaryCursor: null };
+      chat.conversation = {
+        ...chat.conversation,
+        kind: "system",
+        channel: false,
+        member: false,
+        resource: ref,
+        summaryCursor: null,
+        icon: "ti ti-box",
+        discussionItemType: ref.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
+      };
       containers.set(`${ref.type}:${ref.id}`, { ref, name: chat.conversation.title, chat: id });
     },
     emptyContainer: (ref: CloudResourceRef, name: string) => containers.set(`${ref.type}:${ref.id}`, { ref, name, chat: null }),

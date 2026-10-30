@@ -1,3 +1,4 @@
+import { createEditor } from "@k2b/editor";
 /**
  * The Notebook editor composition from NoteEditor.client.tsx around the shared
  * @k2b/ui TextEditor, with an in-page server and a second person instead of
@@ -22,7 +23,6 @@ import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import {
   caretIntoTableCell,
   cellFormattingKeys,
-  createDynamicExtensions,
   outsideTable,
   tableCellCompletions,
   tableCellPresence,
@@ -161,21 +161,21 @@ function Harness() {
 
   // Same order and modes as NoteEditor.client.tsx.
   let openTablePicker = () => {};
-  const extensions = createDynamicExtensions();
-  extensions.add(cellFormattingKeys(controls));
-  extensions.add(tableCellSearch);
-  extensions.add(() => yCollab(ytext, null, { undoManager }));
-  extensions.add(() => isolateYjsHistory(undoManager));
-  extensions.add(() => remoteCursors(ytext, awareness));
-  extensions.add(tableCellPresence(ytext, awareness));
-  extensions.add(editor.basicExtensions());
-  extensions.add(
+  const extensions = createEditor();
+  extensions.use(cellFormattingKeys(controls));
+  extensions.use(tableCellSearch);
+  extensions.use(() => yCollab(ytext, null, { undoManager }));
+  extensions.use(() => isolateYjsHistory(undoManager));
+  extensions.use(() => remoteCursors(ytext, awareness));
+  extensions.use(tableCellPresence(ytext, awareness));
+  extensions.use(editor.basicExtensions());
+  extensions.use(
     slashCommandsExtension({ notebookId: "Book01", notebookName: "Budget", locale, openTablePicker: () => openTablePicker() }),
   );
-  extensions.add(() => formattingKeymap({ notebookId: "Book01" }));
-  extensions.add(editor.markdownExtension());
-  extensions.add(editor.searchTheme());
-  extensions.add(() =>
+  extensions.use(() => formattingKeymap({ notebookId: "Book01" }));
+  extensions.use(editor.markdownExtension());
+  extensions.use(editor.searchTheme());
+  extensions.use(() =>
     readOnly()
       ? []
       : [
@@ -185,14 +185,14 @@ function Harness() {
           }),
         ],
   );
-  extensions.add(() => {
+  extensions.use(() => {
     const dark = document.documentElement.classList.contains("dark");
     if (rich()) return dark ? editor.customDarkInit() : editor.customLightInit();
     return dark ? editor.rawDarkInit() : editor.rawLightInit();
   });
-  extensions.add(editor.noteScroller);
-  extensions.add(() => (rich() ? [] : [lineNumbers(), notebookSourceFormulasExtension({ locale: () => locale })]));
-  extensions.add(() =>
+  extensions.use(editor.noteScroller);
+  extensions.use(() => (rich() ? [] : [lineNumbers(), notebookSourceFormulasExtension({ locale: () => locale })]));
+  extensions.use(() =>
     rich()
       ? [
           presentation.extension,
@@ -336,7 +336,7 @@ function Harness() {
             }}
             onDroppedImages={(count, files) => files.length >= count}
             onReady={(controller, next) => {
-              extensions.attach(controller.view);
+              extensions.attach(controller.view, { controller, controls: next });
               setControls(next);
               setView(controller.view);
             }}
@@ -344,7 +344,7 @@ function Harness() {
         </ScrollArea>
         <EditorToolbar
           connected={true}
-          editorView={view()}
+          editor={extensions}
           notebookId="Book01"
           noteId="Note01"
           initialPanelOpen={false}

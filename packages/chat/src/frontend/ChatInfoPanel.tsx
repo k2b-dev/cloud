@@ -18,7 +18,6 @@ import type { z } from "zod";
 import type { MemberSchema, PermissionSchema } from "../service/contracts";
 import { type ChatDialogStore, type Conversation, errorMessage, useChatMessages } from "./chat-dialog";
 import { MemberAvatar } from "./MemberPicker";
-import { systemMembers } from "./system-chats";
 
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -212,7 +211,7 @@ export default function ChatInfoPanel(props: {
       <DetailPanel.Header
         kind={<span>{props.conversation.channel ? t().channelChoice : t().chatChoice}</span>}
         title={props.conversation.title}
-        subtitle={system() ? systemMembers(props.conversation.resource?.type, t()) : t().members({ count: props.conversation.memberCount })}
+        subtitle={system() ? t().systemMembers : t().members({ count: props.conversation.memberCount })}
         menu={commands()}
         menuLabel={t().chatActions({ title: props.conversation.title })}
         actions={
@@ -307,7 +306,7 @@ export default function ChatInfoPanel(props: {
         </Show>
         <Show when={system()}>
           <p class="chat-system-chats__membership">
-            {systemMembers(props.conversation.resource?.type, t())}. {t().systemAccessHint}
+            {t().systemMembers}. {t().systemAccessHint}
           </p>
           {props.notifications}
         </Show>

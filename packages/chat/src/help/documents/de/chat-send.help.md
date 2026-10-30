@@ -68,7 +68,7 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 3. Sende die Nachricht.
 :::
 
-Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben haben. In einem Chat eines Space oder Notebooks zeigt sie die Personen, die dort geschrieben haben. Die erwähnte Person findet die Nachricht unter **Für dich**, sofern sie sie lesen darf.
+Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben haben. In einer Ressourcen-Diskussion zeigt sie die Personen, die dort geschrieben haben. Die erwähnte Person findet die Nachricht unter **Für dich**, sofern sie sie lesen darf.
 
 ## Cloud-Element teilen {icon="share"}
 

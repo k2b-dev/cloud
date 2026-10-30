@@ -190,9 +190,8 @@ const EVENT_ESTIMATE = 26;
 export default function ChatConversation(props: ChatConversationProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
-  const resourceLabel = () =>
-    props.resource?.kind === "note" ? t().goToNote : props.resource?.kind === "event" ? t().goToEvent : t().goToTask;
-  const resourceKind = () => (props.resource?.kind === "note" ? t().note : props.resource?.kind === "event" ? t().event : t().task);
+  const resourceLabel = () => t().openInType({ title: props.resource?.typeTitle ?? "" });
+  const resourceKind = () => props.resource?.typeTitle ?? "";
   const resourceStatus = () => props.resource?.status ?? (props.resource?.done ? t().threadsDone : null);
   const config = () => ({ ...props.dateConfig, locale: locale() });
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
@@ -463,7 +462,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               <h1 class="chat-conversation__wide-name">{wide().title}</h1>
               <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
               <p class="chat-conversation__phone-subtitle">
-                {wide().chat} · {props.subtitle ?? t().members({ count: props.memberCount })}
+                {[...new Set([wide().chat, props.subtitle ?? t().members({ count: props.memberCount })])].join(" · ")}
               </p>
             </div>
           )}
@@ -481,16 +480,22 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               <span class="chat-resource-head__metadata">
                 <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
               </span>
-              <span class="chat-resource-head__link">
-                <ButtonLink href={resource().href} variant="text" size="sm">
-                  {resourceLabel()}
-                </ButtonLink>
-              </span>
-              <span class="chat-resource-head__icon">
-                <IconButtonLink href={resource().href} label={resourceLabel()}>
-                  <i class="ti ti-external-link" aria-hidden="true" />
-                </IconButtonLink>
-              </span>
+              <Show when={resource().href}>
+                {(href) => (
+                  <>
+                    <span class="chat-resource-head__link">
+                      <ButtonLink href={href()} variant="text" size="sm">
+                        {resourceLabel()}
+                      </ButtonLink>
+                    </span>
+                    <span class="chat-resource-head__icon">
+                      <IconButtonLink href={href()} label={resourceLabel()}>
+                        <i class="ti ti-external-link" aria-hidden="true" />
+                      </IconButtonLink>
+                    </span>
+                  </>
+                )}
+              </Show>
             </>
           )}
         </Show>
@@ -515,14 +520,21 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       <Show when={props.resource}>
         {(resource) => (
           <div class="chat-resource-head__mobile">
-            <span>{resourceKind()}</span>
+            {/* The reader's context line already names the kind; show it only when the reader gives none. */}
+            <Show when={!resource().context}>
+              <span>{resourceKind()}</span>
+            </Show>
             <Show when={resourceStatus()}>
               {(status) => <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />}
             </Show>
             <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
-            <ButtonLink href={resource().href} variant="text" size="xs">
-              {resourceLabel()}
-            </ButtonLink>
+            <Show when={resource().href}>
+              {(href) => (
+                <ButtonLink href={href()} variant="text" size="xs">
+                  {resourceLabel()}
+                </ButtonLink>
+              )}
+            </Show>
           </div>
         )}
       </Show>

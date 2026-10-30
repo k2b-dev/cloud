@@ -5,6 +5,7 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "chat",
+  platformPermissions: ["resources:readers"],
   cli: { chat: { module: "src/cli.ts", references: "src/cli-references" } },
   // APIs admit roleless service accounts; navigation keeps its narrower audience.
   access: appAccess.signedIn({

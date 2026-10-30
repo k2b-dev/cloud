@@ -7,7 +7,7 @@ description: Set notifications per chat, follow discussions, and turn on notific
 order: 125
 ---
 
-Each chat has one of 3 levels: **All messages**, **Mentions only**, or **Off**. Cloud shows at most 1 notification per chat on a device. A new message replaces the old one, for example "Nora: Thanks! (+5 more)".
+Each chat has one of 3 levels: **All messages**, **Mentions only**, or **Off**. Cloud shows at most 1 notification per chat on a device. A new message replaces the old one, for example "Nora: Thanks! (+5 more)". Resource discussions omit the additional-message count.
 
 ## Choose a level {icon="bell"}
 
@@ -21,7 +21,7 @@ If the level does not save, Info shows the level that still applies and **Try ag
 
 :::reference
 - **All messages**: every new message notifies you, in all threads.
-- **Mentions only**: you get a notification when someone mentions you or replies to you.
+- **Mentions only**: you get a notification when someone mentions you, replies to you, or writes in an item discussion you follow.
 - **Off**: no notifications. Mentions still appear in **For you**.
 - **Default** marks the level that applies when you do not choose. Direct messages and chats with up to 20 members use **All messages**. Larger chats use **Mentions only**. In a channel where you can only read, you get **All messages**.
 - When you choose a level yourself, it stays when the chat grows. Choose the level marked **Default** to follow the chat's rule again.
@@ -37,7 +37,7 @@ If the level does not save, Info shows the level that still applies and **Try ag
 
 ## Follow a discussion {icon="bell-ringing"}
 
-In the chat of a Space or a notebook, the level is **Mentions only**. When you write in the discussion of a task or a note, you follow it. New messages there notify you like mentions.
+A collection chat defaults to **Mentions only**. When you write in an item discussion, you follow it. New messages there notify you like mentions.
 
 :::steps
 1. Open the discussion.
@@ -55,6 +55,8 @@ In the chat of a Space or a notebook, the level is **Mentions only**. When you w
 - If you read a message within 3 seconds, no notification comes.
 - When you read a chat on one device, the other devices remove its notification when you open Cloud there.
 :::
+
+Discussion notifications require current access to both the item and its collection. If the owning app cannot check access, Chat retries a limited number of times. After those retries, the notification is dropped. An administrator can inspect failed deliveries from Chat administration.
 
 ## Turn on notifications on a device {icon="device-mobile"}
 

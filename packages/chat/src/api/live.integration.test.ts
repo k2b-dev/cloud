@@ -10,7 +10,6 @@ import { websocket } from "hono/bun";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import {
   ChatLiveEventSchema,
@@ -20,6 +19,7 @@ import {
   ThreadListSchema,
   ThreadSchema,
 } from "../service/contracts";
+import { mockDiscussionCatalog, providerApp } from "../service/discussions.test-fixture";
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
 import { accessKey, resourceReaderDependencies } from "../service/resource-access";
@@ -119,37 +119,45 @@ suite("Chat live delivery on two replicas", () => {
     const owner = await f.person("Owner"),
       allowed = await f.person("Reader"),
       denied = await f.person("Denied item");
-    const space = testShortId(),
-      item = testShortId();
+    const space = crypto.randomUUID(),
+      item = crypto.randomUUID();
     const keys = [owner, allowed, denied].flatMap((person) => [
-      accessKey(`user:${person.id}`, { type: "spaces.space", id: space }),
-      accessKey(`user:${person.id}`, { type: "spaces.item", id: item }),
+      accessKey(`user:${person.id}`, { type: "inventory.collection", id: space }),
+      accessKey(`user:${person.id}`, { type: "inventory.item", id: item }),
     ]);
+    const catalog = mockDiscussionCatalog([providerApp("inventory")]);
     const reader = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (_app, capability, _input, caller) => {
-      if (capability === "space.read")
-        return { data: { id: space, name: "Project", permission: "write" }, links: [{ rel: "open", href: `/app/spaces/${space}` }] };
+      if (capability === "collection.read")
+        return { data: { view: { title: "Project", permission: "write" } }, links: [{ rel: "open", href: `/app/inventory/${space}` }] };
       if (capability === "item.read" && caller.cookie !== denied.headers.cookie)
         return {
-          data: { id: item, title: "Private task", kind: "task", spaceId: space },
-          links: [{ rel: "open", href: `/app/spaces/${space}/${item}` }],
+          data: {
+            view: {
+              title: "Private task",
+              permission: "read",
+              container: { ref: { type: "inventory.collection", id: space }, title: "Project" },
+            },
+          },
+          links: [{ rel: "open", href: `/app/inventory/${space}/${item}` }],
         };
       return null;
     });
     let a: Awaited<ReturnType<typeof open>> | undefined, b: Awaited<ReturnType<typeof open>> | undefined;
     try {
       const response = await new Hono<AuthContext>().route("/api/chat", chatApi).fetch(
-        new Request(`http://127.0.0.1:${pods[0]!.port}/api/chat/system-chats/spaces.space/${space}/open`, {
+        new Request(`http://127.0.0.1:${pods[0]!.port}/api/chat/system-chats/inventory.collection/${space}/open`, {
           method: "POST",
           headers: { ...owner.headers, "x-forwarded-for": uniqueCallerAddress() },
         }),
       );
+      expect(response.status).toBe(200);
       const chat = ConversationSchema.parse(await response.json());
       f.trackChat(chat.id);
       // Populate only container decisions using authorized HTTP, before the item exists.
       for (const person of [allowed, denied]) {
         expect((await f.request(person.headers, `/${chat.id}`)).status).toBe(200);
-        expect(await redis.get(accessKey(`user:${person.id}`, { type: "spaces.space", id: space }))).not.toBeNull();
-        expect(await redis.get(accessKey(`user:${person.id}`, { type: "spaces.item", id: item }))).toBeNull();
+        expect(await redis.get(accessKey(`user:${person.id}`, { type: "inventory.collection", id: space }))).not.toBeNull();
+        expect(await redis.get(accessKey(`user:${person.id}`, { type: "inventory.item", id: item }))).toBeNull();
       }
       a = await open(0, allowed);
       b = await open(1, denied);
@@ -159,7 +167,7 @@ suite("Chat live delivery on two replicas", () => {
       const createdAt = Date.now();
       const created = ThreadSchema.parse(
         await (
-          await f.request(owner.headers, `/${chat.id}/threads/for-resource`, "POST", { ref: { type: "spaces.item", id: item } })
+          await f.request(owner.headers, `/${chat.id}/threads/for-resource`, "POST", { ref: { type: "inventory.item", id: item } })
         ).json(),
       );
       await until(() => [a!, b!].every((socket) => socket.events("chat").some((event) => event.type === "threads")), 5_000);
@@ -198,6 +206,7 @@ suite("Chat live delivery on two replicas", () => {
       a?.socket.close();
       b?.socket.close();
       reader.mockRestore();
+      catalog.mockRestore();
       await redis.send("DEL", keys);
     }
   });

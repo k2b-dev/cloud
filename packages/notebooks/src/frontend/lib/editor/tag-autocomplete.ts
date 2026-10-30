@@ -165,7 +165,7 @@ const buildResult = (word: { from: number; to: number }, context: CompletionCont
 
 /**
  * Factory — closes over the notebookId so the source can hit the
- * right tag endpoint. Mirrors `buildSlashSource(ctx)` so the wiring
+ * right tag endpoint. Mirrors the slash source of `@k2b/editor` so the wiring
  * in `slash-commands/index.ts` stays uniform.
  *
  * # Sync-when-cached pattern

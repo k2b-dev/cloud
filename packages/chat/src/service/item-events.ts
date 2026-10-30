@@ -1,26 +1,16 @@
+import type { DiscussionProvider } from "@k2b/cloud/capabilities/server";
+import { ResourceActivityEventSchema } from "@k2b/cloud/contracts";
 import { fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import { type ChatContext, messages, requireConversation } from "./access";
-import { ItemEventSchema, type ItemEventsPageSchema, ItemEventsQuerySchema } from "./contracts";
-import { ContainerRefSchema, ItemRefSchema, readerBatch, readResource, resourceReaderDependencies } from "./resource-access";
+import { type ItemEventsPageSchema, ItemEventsQuerySchema } from "./contracts";
+import { discussionRead, providerFor } from "./discussion-read";
+import { ContainerRefSchema, ItemRefSchema, invokeDiscussion, readerBatch, readResource } from "./resource-access";
 import { findThread, threadNotFound } from "./threads";
 
-const OwnerEventSchema = z.object({
-  id: z.string().max(100),
-  at: z.string().datetime({ offset: true }),
-  ref: ItemRefSchema.nullable(),
-  title: z.string().max(500).nullable().optional(),
-  actor: z.object({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
-  icon: z
-    .string()
-    .regex(/^ti ti-[a-z0-9-]+$/)
-    .max(80),
-  sentence: z.string().max(4000),
-  href: ItemEventSchema.shape.href,
-  count: z.number().int().min(1),
-});
+const OwnerEventSchema = ResourceActivityEventSchema;
 export const OwnerActivitySchema = z.array(OwnerEventSchema).max(100);
 type OwnerEvent = z.infer<typeof OwnerEventSchema>;
 type ItemRef = z.infer<typeof ItemRefSchema>;
@@ -37,17 +27,18 @@ export const mapItemEvent = (event: OwnerEvent & { ref: ItemRef }, thread?: { id
   thread: thread ?? { ref: event.ref, name: event.title ?? "" },
 });
 export const activityQuery = (
+  provider: Pick<DiscussionProvider, "app" | "activity">,
   container: z.infer<typeof ContainerRefSchema>,
   query: z.output<typeof ItemEventsQuerySchema>,
   item?: ItemRef,
   timeZone?: string,
-): { appId: "spaces" | "notebooks"; capabilityId: "space.activity" | "notebook.activity"; input: Record<string, unknown> } => ({
-  appId: container.type === "spaces.space" ? "spaces" : "notebooks",
-  capabilityId: container.type === "spaces.space" ? "space.activity" : "notebook.activity",
+) => ({
+  appId: provider.app.appId,
+  capabilityId: provider.activity!,
   input: {
-    [container.type === "spaces.space" ? "space" : "notebook"]: container.id,
+    container: container.id,
     ...(item ? { item: item.id } : {}),
-    ...(container.type === "spaces.space" && timeZone ? { timeZone } : {}),
+    ...(timeZone ? { timeZone } : {}),
     before: query.before,
     after: query.after,
     cursor: query.cursor,
@@ -66,34 +57,43 @@ export const itemEvents = {
     const conversation = access.data;
     const container = ContainerRefSchema.safeParse({ type: conversation.resource_type, id: conversation.resource_id });
     if (conversation.kind !== "system" || !container.success || !input.caller) return notFound();
+    const provider = await providerFor(input, container.data.type, "container").catch(() => null);
+    if (!provider) return ok({ items: [], nextCursor: query.cursor ?? null, unavailable: true });
+    if (!provider.activity) return ok({ items: [], nextCursor: null });
     let item: ItemRef | undefined;
     if (query.thread !== "all") {
       const thread = await findThread(sql, conversation.id, query.thread, input);
       const ref = ItemRefSchema.safeParse({ type: thread?.resource_type, id: thread?.resource_id });
-      if (!ref.success) return threadNotFound(input);
+      if (!ref.success || ref.data.type !== provider.itemType) return threadNotFound(input);
       const decision = await readResource(input, ref.data);
-      if (decision?.container?.type !== container.data.type || decision.container.id !== container.data.id) return threadNotFound(input);
+      if (decision?.container?.ref.type !== container.data.type || decision.container.ref.id !== container.data.id)
+        return threadNotFound(input);
       item = ref.data;
     }
-    const request = activityQuery(container.data, query, item, input.timeZone);
+    // Reserve one reader per event before requesting the owner page. Repeated refs cost less,
+    // but the worst case must fit without advancing past unreadable work.
+    const limit = Math.min(query.limit, discussionRead(input).remaining - 1);
+    if (limit < 1) return ok({ items: [], nextCursor: query.cursor ?? null, unavailable: true });
+    const request = activityQuery(provider, container.data, { ...query, limit }, item, input.timeZone);
     let page: { items: OwnerEvent[]; nextCursor: string | null };
     try {
       input.caller.signal?.throwIfAborted();
-      const response = await resourceReaderDependencies.invoke(request.appId, request.capabilityId, request.input, input.caller);
+      const response = await invokeDiscussion(input, request.appId, request.capabilityId, request.input);
       if (response === null) return notFound();
       page = {
-        items: OwnerActivitySchema.max(query.limit).parse(response.data),
+        items: OwnerActivitySchema.max(limit).parse(response.data),
         nextCursor: z
           .string()
-          .max(256)
+          .max(2048)
           .nullable()
           .parse(response.page?.nextCursor ?? null),
       };
+      if (page.nextCursor !== null && page.nextCursor === query.cursor) throw new Error("Activity cursor did not advance");
     } catch {
       input.caller.signal?.throwIfAborted();
-      return ok({ items: [], nextCursor: null, unavailable: true });
+      return ok({ items: [], nextCursor: query.cursor ?? null, unavailable: true });
     }
-    const type = container.data.type === "spaces.space" ? "spaces.item" : "notebooks.note";
+    const type = provider.itemType;
     const events = page.items.flatMap((event) =>
       event.ref?.type === type && (!item || item.id === event.ref.id) ? [{ ...event, ref: event.ref }] : [],
     );
@@ -102,17 +102,33 @@ export const itemEvents = {
       WHERE conversation_id = ${conversation.id}::uuid AND resource_type = ${type}
       AND resource_id = ANY(${toPgTextArray(events.map((event) => event.ref.id))}::text[])`
       : [];
-    const rows = await readerBatch(
-      events,
-      async (event) => {
+    try {
+      const refs = [...new Map(events.map((event) => [event.ref.id, event.ref])).values()];
+      let unavailable = false;
+      const decisions = new Map(
+        await readerBatch(
+          refs,
+          async (ref) =>
+            [
+              ref.id,
+              await readResource(input, ref, undefined, () => {
+                unavailable = true;
+              }),
+            ] as const,
+          input.caller.signal,
+        ),
+      );
+      if (unavailable) return ok({ items: [], nextCursor: query.cursor ?? null, unavailable: true });
+      const rows = events.flatMap((event) => {
+        const resource = decisions.get(event.ref.id);
+        if (!resource || resource.container?.ref.type !== container.data.type || resource.container.ref.id !== container.data.id) return [];
         const thread = threads.find((candidate) => candidate.resource_id === event.ref.id);
-        if (!thread) return mapItemEvent(event);
-        const resource = await readResource(input, event.ref);
-        if (!resource || resource.container?.type !== container.data.type || resource.container.id !== container.data.id) return null;
-        return mapItemEvent(event, { id: thread.short_id, name: resource.name });
-      },
-      input.caller.signal,
-    );
-    return ok({ items: rows.filter((row) => row !== null), nextCursor: page.nextCursor });
+        return [mapItemEvent(event, thread ? { id: thread.short_id, name: resource.title } : undefined)];
+      });
+      return ok({ items: rows, nextCursor: page.nextCursor });
+    } catch {
+      input.caller.signal?.throwIfAborted();
+      return ok({ items: [], nextCursor: query.cursor ?? null, unavailable: true });
+    }
   },
 };

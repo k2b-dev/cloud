@@ -7,7 +7,7 @@ description: Halte Themen in Threads getrennt, antworte mit Zitat und sieh alle 
 order: 115
 ---
 
-Für Chats von Spaces und Notebooks gilt [Spaces und Notebooks in Chat](help:chat-system-chats).
+Für Ressourcen-Diskussionen gilt [Diskussionen über Ressourcen](help:chat-system-chats).
 
 Ein Thread ist ein benannter Strang in einem Chat, zum Beispiel „Problemfälle“ im Chat „IT“. Jeder Chat mit Threads hat außerdem **Allgemein** für alles, was in keinen Thread passt. Jeder Thread hat eigene ungelesene Nachrichten und einen eigenen Entwurf.
 
