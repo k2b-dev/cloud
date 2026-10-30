@@ -5,6 +5,7 @@ import { preferences, type ThemeChoice } from "../prefs";
 import { navigate } from "../router";
 import { app, t } from "../state";
 import { Icon } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 import { openImport } from "./Import";
 import { runExport } from "./menus";
 
@@ -145,5 +146,5 @@ function SettingsBody(props: { close: () => void }) {
 }
 
 export function openSettings() {
-  void prompts.dialog<void>((close) => <SettingsBody close={() => close()} />, { header: false, history: true });
+  void openSheet((close) => <SettingsBody close={() => close()} />);
 }

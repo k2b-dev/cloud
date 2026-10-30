@@ -1,11 +1,12 @@
 import { qr } from "@k2b/stdlib/qr";
-import { Button, CopyButton, prompts, toast } from "@k2b/ui";
+import { Button, CopyButton, toast } from "@k2b/ui";
 import { createResource, createSignal, Match, Show, Switch } from "solid-js";
 import { ApiError, api, shareUrl } from "../lib/api";
 import type { NoteRecord } from "../lib/model";
 import { preferences } from "../prefs";
 import { app, t } from "../state";
 import { CLOUD_URL, Icon, WithCloud } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 
 type Step = "terms" | "uploading" | "error" | "links";
 
@@ -242,5 +243,5 @@ function ShareBody(props: { record: () => NoteRecord | undefined; close: () => v
 
 export function openShare(noteId: string) {
   const record = () => app.records().find((entry) => entry.id === noteId);
-  void prompts.dialog<void>((close) => <ShareBody record={record} close={() => close()} />, { header: false, history: true });
+  void openSheet((close) => <ShareBody record={record} close={() => close()} />);
 }

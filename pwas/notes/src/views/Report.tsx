@@ -1,8 +1,9 @@
-import { Button, Checkbox, prompts } from "@k2b/ui";
+import { Button, Checkbox } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { api, type ReportReason } from "../lib/api";
 import { t } from "../state";
 import { Icon } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 
 const REASONS: { value: ReportReason; label: () => string }[] = [
   { value: "abuse", label: () => t().reasonAbuse },
@@ -176,5 +177,5 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
 }
 
 export function openReport(linkId?: string) {
-  void prompts.dialog<void>((close) => <ReportBody linkId={linkId} close={() => close()} />, { header: false, history: true });
+  void openSheet((close) => <ReportBody linkId={linkId} close={() => close()} />);
 }

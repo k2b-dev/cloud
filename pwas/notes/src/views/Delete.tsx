@@ -1,10 +1,11 @@
-import { Button, prompts, toast } from "@k2b/ui";
+import { Button, toast } from "@k2b/ui";
 import { createSignal, Show, untrack } from "solid-js";
 import { api } from "../lib/api";
 import type { NoteRecord } from "../lib/model";
 import { navigate } from "../router";
 import { app, t } from "../state";
 import { Icon } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 
 /**
  * Removes a note. A shared one goes first on the server; offline or on failure the note stays
@@ -73,8 +74,6 @@ function DeleteBody(props: { record: NoteRecord; close: (deleted: boolean) => vo
 }
 
 export async function openDelete(record: NoteRecord) {
-  const deleted = await prompts.dialog<boolean>((close) => <DeleteBody record={record} close={close} />, {
-    header: false,
-  });
+  const deleted = await openSheet<boolean>((close) => <DeleteBody record={record} close={close} />);
   if (deleted) navigate("/", { replace: true });
 }
