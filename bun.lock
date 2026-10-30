@@ -789,8 +789,10 @@
     "pwas/notes": {
       "name": "@k2b/notes-site",
       "dependencies": {
+        "@fontsource/ibm-plex-sans": "5.3.0",
         "@k2b/cloud": "workspace:*",
         "@k2b/stdlib": "catalog:",
+        "@napi-rs/canvas": "1.0.9",
         "@k2b/ui": "workspace:*",
         "file-type": "21.3.4",
         "hono": "catalog:",

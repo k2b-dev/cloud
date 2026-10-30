@@ -16,8 +16,10 @@
     "y-protocols": "catalog:",
     "lib0": "0.2.117",
     "file-type": "21.3.4",
-    "@k2b/ui": "workspace:*",
     "@k2b/stdlib": "catalog:",
+    "@napi-rs/canvas": "1.0.9",
+    "@fontsource/ibm-plex-sans": "5.3.0",
+    "@k2b/ui": "workspace:*",
     "solid-js": "catalog:"
   },
   "devDependencies": {

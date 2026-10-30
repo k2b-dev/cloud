@@ -21,7 +21,7 @@ and `migrations/`; the SPA owns `src/`, `index.html`, and its build script.
 - [x] Checked image/PDF files in Postgres.
 - [x] Explicit human-open signal and six-month expiry.
 - [ ] Reports, password-protected moderation, and decision log.
-- [ ] Escaped link metadata and a network-free 1200 × 630 preview.
+- [x] Escaped link metadata and a network-free 1200 × 630 preview.
 - [ ] SPA/API/WebSocket image and graceful shutdown.
 
 Run the integration files through the repository test runner with
@@ -52,6 +52,13 @@ At most 50 people join a note and 20 WebSockets use one IP. Beyond the live
 limit, the GET snapshot remains available. Server-owned awareness identities,
 clocks, colors, and unverified names prevent impersonating another socket.
 Readers publish presence without cursors.
+
+`POST /api/presence` accepts `{readIds:string[]}` with at most 200 valid read
+capabilities and returns `{[readId]:[{name,color}]}`. Only connected editors
+with published, sanitized awareness appear; names remain unverified. Unknown,
+closed or inactive rooms return an empty list. Polling creates no room, presence,
+or human-open signal and writes nothing to Postgres. Origin is required; the
+independent IP limit is 50 requests per minute. Split larger lists into batches.
 
 Updates, compaction, deletion, and expiry serialize per note. A database
 advisory lock admits one server instance; each mutation also checks its owner
@@ -92,6 +99,25 @@ inline; PDFs download as attachments. Responses carry checked MIME types, safe
 filenames, nosniff, no-referrer and no-store. Uploads reserve storage before
 commit and serialize with deletion; image resizing belongs to the client.
 
+## Website and link previews
+
+The production entrypoint serves the built SPA from `dist/`, alongside the API
+and WebSocket. Build outputs are enumerated at startup; source maps are not
+served. The service worker uses `Cache-Control: no-cache`; existing hashed
+build assets under `/assets/` use a one-year immutable cache. HTML, API,
+previews and note files retain `private, no-store`. Unknown API or asset paths
+return 404. Shared pages insert escaped
+Open Graph text into the `<!--og-->` marker of the same index file. The
+canonical URL remains the requested link; the image URL always uses the read
+link. Inactive notes serve the SPA error state without stale metadata.
+
+`GET /p/:readId/preview.png` produces a 1200 × 630 PNG from local text and
+numeric chart data from the first 64 KiB of Markdown. The renderer never receives note URLs, HTML, SVG, or image
+bytes. At most one render runs at a time; other notes receive the retryable
+`preview_busy` state. A process cache holds at most `NOTES_MAX_OPEN_PADS` images,
+keyed by content hash. No GET or HEAD writes to Postgres or updates human-open
+dates. HEAD validates access but does not render. Cache hits still check the
+current note status, including deletion and blocking.
 ## Reports and moderation
 
 `POST /api/reports` accepts `{linkId, reason, text, email?, confirmed:true}`.

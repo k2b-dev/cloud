@@ -6,9 +6,13 @@ import { requireOrigin } from "./http";
 import { limits, requestIp } from "./limits";
 import { type Connection, type NotesOptions, NotesService } from "./service";
 import { NotesStore } from "./store";
+import { mountWebsite } from "./website";
 
 type SocketData = { connection: Connection };
-export const serveNotes = async (db: SQL, options: NotesOptions & HttpOptions & { port?: number; hostname?: string }) => {
+export const serveNotes = async (
+  db: SQL,
+  options: NotesOptions & HttpOptions & { port?: number; hostname?: string; staticDirectory?: string },
+) => {
   const service = new NotesService(new NotesStore(db, options.storageBytes), options);
   await service.start();
   let stopping = false;
@@ -17,6 +21,14 @@ export const serveNotes = async (db: SQL, options: NotesOptions & HttpOptions & 
     service,
     options,
   );
+  if (options.staticDirectory) {
+    try {
+      await mountWebsite(app, service, options, options.staticDirectory, options.maxOpenPads);
+    } catch (error) {
+      await service.stop();
+      throw error;
+    }
+  }
   let server: ReturnType<typeof Bun.serve<SocketData>>;
   try {
     server = Bun.serve<SocketData>({
