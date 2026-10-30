@@ -42,6 +42,7 @@ packages/core/src/pages/auth/page.browser.test.ts | 1
 packages/core/src/pages/me/account-pages.browser.test.ts | 4
 packages/core/src/pages/me/app.browser.test.ts | 1
 packages/dashboard/src/frontend/dashboard-home.browser.test.ts | 19
+packages/editor/src/markdown/tables.browser.test.ts | 3
 packages/filesv2/src/frontend/NewFolderDialog.browser.test.ts | 4
 packages/filesv2/src/frontend/StorageOverview.browser.test.ts | 3
 packages/filesv2/src/frontend/UploadPanel.browser.test.ts | 3
@@ -67,8 +68,7 @@ packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browse
 packages/notebooks/src/frontend/[id]/_components/versions/version-history.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/attachment-preview.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/editor/lists.browser.test.ts | 1
-packages/editor/src/markdown/tables.browser.test.ts | 3
-packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts | 8
+packages/notebooks/src/frontend/lib/notebook-charts.browser.test.ts | 5
 packages/notebooks/src/styles/app-host.browser.test.ts | 2
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-colors.browser-suite.ts | 19
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-days.browser-suite.ts | 1

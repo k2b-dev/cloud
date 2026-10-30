@@ -7,7 +7,7 @@ describe("Notebook table routing", () => {
     const html = renderPrettyTableHtml(
       {
         headers: ["Idea"],
-        rows: [["**Build** [Treehouse](note://5ARr8F) #garden"]],
+        rows: [["**Build** [Treehouse](note://5ARr8F) #garden #Garden/Build"]],
       },
       notebookTableOptions("nb1234"),
     );
@@ -15,6 +15,7 @@ describe("Notebook table routing", () => {
     expect(html).toContain("<strong>Build</strong>");
     expect(html).toContain('href="/app/notebooks/nb1234/notes/5ARr8F"');
     expect(html).toContain('href="/app/notebooks/nb1234/tags/garden"');
+    expect(html).toContain('href="/app/notebooks/nb1234/tags/garden%2Fbuild"');
   });
 
   test("note links to a heading open the note at the heading's Book id", () => {
@@ -26,5 +27,12 @@ describe("Notebook table routing", () => {
     expect(html).toContain('href="/app/notebooks/nb1234/notes/5ARr8F#heading-restore"');
     expect(html).toContain('href="/app/notebooks/nb1234/notes/5ARr8F"');
     expect(html).not.toContain("note://");
+  });
+
+  test("without a notebook, note references and the tag fallback remain unchanged", () => {
+    const html = renderPrettyTableHtml({ headers: ["Link"], rows: [["[Treehouse](note://5ARr8F) #Garden/Build"]] }, notebookTableOptions());
+    expect(html).toContain('href="note://5ARr8F"');
+    expect(html).toContain('href="#"');
+    expect(html).not.toContain("/app/notebooks/");
   });
 });

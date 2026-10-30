@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { browserName, launchBrowser } from "../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
 import { renderNotebookBook } from "../../lib/book-renderer";
 
 const longTitle = "Umsatz und Kosten im Vergleich mit einem sehr langen Titel, der auf einem Telefon auf mehrere Zeilen umbricht";
@@ -214,6 +214,7 @@ for (const width of [390, 1200])
           );
         const original = await stable();
         await figure.getByRole("button", { name: "Als Tabelle", exact: true }).click();
+        await settled(page);
         expect(await viewport.locator("table").isVisible()).toBe(true);
         expect(
           await viewport.locator(".notebook-book-chart__table").evaluate((element) => {
@@ -223,9 +224,11 @@ for (const width of [390, 1200])
         ).toEqual(["0px", "0px"]);
         sameBoxes(original, await stable());
         await figure.getByRole("button", { name: "Als Tabelle", exact: true }).click();
+        await settled(page);
         sameBoxes(original, await stable());
       }
       await page.evaluate(() => window.scrollTo(0, 0));
+      await settled(page);
       sameBoxes(before, await boxes(page));
     } finally {
       await page.context().close();
