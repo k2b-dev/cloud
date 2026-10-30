@@ -57,7 +57,9 @@ if (options.tabBar) {
 }
 let resolveSearch;
 let searches = 0;
+const [commandGeneration, setCommandGeneration] = createSignal(0);
 window.fixture = { setHint, setDictation, setDraft,
+  rebuildCommands: () => setCommandGeneration((generation) => generation + 1),
   resolveSearch: (rows) => resolveSearch?.(rows),
   searchCount: () => searches,
 };
@@ -86,14 +88,15 @@ render(
             addOpensCommands: options.add ? true : undefined,
             variant: options.mode === "slash" ? "default" : "conversation",
             commandSections: options.sections ? [{ id: "local", label: "Local commands" }, { id: "remote", label: "Results", searched: true }] : undefined,
-            commands: options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
+            // A host rebuilds its command objects whenever its inputs change; fixture.rebuildCommands does that on demand.
+            get commands() { commandGeneration(); return options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
               { id: "alpha", name: "alpha", label: "Alpha", description: "First local command", keywords: ["q", "qu"] },
               { id: "blocked", name: "blocked", label: "Blocked", description: "Unused", keywords: ["q", "qu"], reason: "Available after the first response" },
               { name: "fail", description: "Reject this action", action: async () => { throw new Error("Please try again"); } },
               { name: "done", description: "Finish this action", action: async () => ({ done: "All done" }) },
               // An action that navigates within the page at once, as an application's router does.
               ...(options.navigate ? [{ name: "go", label: "Go", description: "Open the next page", action: () => { history.pushState({ page: 2 }, "", "#next"); } }] : []),
-            ] : undefined,
+            ] : undefined; },
             searchCommands: options.mode === "slash" ? () => new Promise((resolve) => { searches++; resolveSearch = resolve; }) : undefined,
             get value() {
               return draft();
@@ -160,6 +163,7 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle the C
 const script = await build.outputs[0]!.text();
 
 type Fixture = {
+  rebuildCommands: () => void;
   resolveSearch: (rows: { id?: string; name: string; description: string; section?: string; keywords?: string[] }[]) => void;
   searchCount: () => number;
   setHint: (hint: string | undefined) => void;
@@ -646,6 +650,28 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
         await page.evaluate(() => fixture.resolveSearch([{ id: "replacement", name: "Replacement", description: "New result" }]));
         await page.locator('[role="option"]').filter({ hasText: "New result" }).waitFor();
         expect(await page.locator('[role="option"]').filter({ hasText: "Previous result" }).count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`a press on a command runs it when the host rebuilds its commands before the release at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/done");
+        const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+        await option.waitFor();
+        const id = await option.getAttribute("id");
+        const box = (await option.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        // As a host does when its catalog or state settles: new command objects with the same keys (#2140).
+        await page.evaluate(() => fixture.rebuildCommands());
+        expect(await option.getAttribute("id")).toBe(id);
+        await page.mouse.up();
+        await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').waitFor();
+        expect(await page.locator('[role="listbox"]').count()).toBe(0);
       } finally {
         await page.close();
       }
