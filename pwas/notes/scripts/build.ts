@@ -1,5 +1,5 @@
-import { cp, mkdir, rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { cp, mkdir, readdir, rm } from "node:fs/promises";
+import { basename, resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import type { BunPlugin } from "bun";
 import tailwind from "bun-plugin-tailwind";
@@ -51,13 +51,21 @@ export async function build({ development = false, outdir = dist } = {}) {
   });
   if (!result.success) throw new AggregateError(result.logs, "Notes site build failed");
   const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
-  const css = result.outputs.find((output) => output.path.endsWith(".css"));
-  if (!entry || !css) throw new Error("Missing notes site build output");
+  // One stylesheet: the site styles set the tokens first, CSS that components import (such as the admin page) follows.
+  const isSiteStyles = (path: string) => basename(path).startsWith("styles-");
+  const css = result.outputs
+    .filter((output) => output.path.endsWith(".css"))
+    .sort((a, b) => Number(isSiteStyles(b.path)) - Number(isSiteStyles(a.path)) || a.path.localeCompare(b.path));
+  if (!entry || !css.some((output) => isSiteStyles(output.path))) throw new Error("Missing notes site build output");
   const scripts = await Promise.all(result.outputs.filter((output) => output.path.endsWith(".js")).map((output) => output.text()));
-  const cssText = `${await css.text()}\n${await iconStyles(scripts.join("\n"))}`;
+  const styles = await Promise.all(css.map((output) => output.text()));
+  const cssText = `${styles.join("\n")}\n${await iconStyles(scripts.join("\n"))}`;
   const cssName = `styles-${Bun.hash(cssText).toString(16)}.css`;
-  await rm(css.path);
+  await Promise.all(css.map((output) => rm(output.path)));
   await Bun.write(resolve(outdir, "assets", cssName), cssText);
+  // index.html links one stylesheet; any other CSS file would be styles the page never loads.
+  const stylesheets = (await readdir(resolve(outdir, "assets"))).filter((name) => name.endsWith(".css"));
+  if (stylesheets.length !== 1) throw new Error(`Expected one stylesheet, found ${stylesheets.join(", ")}`);
   await cp(resolve(packageRoot, "public"), outdir, { recursive: true });
   await Bun.write(
     resolve(outdir, "manifest.webmanifest"),
