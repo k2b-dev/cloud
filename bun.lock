@@ -845,6 +845,18 @@
         "typescript": "catalog:",
       },
     },
+    "pwas/notes": {
+      "name": "@k2b/notes-site",
+      "dependencies": {
+        "@k2b/cloud": "workspace:*",
+        "hono": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "pwas/pwa-auth": {
       "name": "@k2b/pwa-auth",
       "version": "0.0.0",
@@ -1243,6 +1255,8 @@
     "@k2b/filegate": ["@k2b/filegate@7.1.0", "", {}, "sha512-wezDCkenZ/s+V0hp4AacUjd4d1Dm+Pyr6+M100LiOeoEGLWp+gMoHE/mHQCsUpxnM+GjhOjn9cxYp2DFWNppqA=="],
 
     "@k2b/nessi": ["@k2b/nessi@0.18.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-U6scx1lwIQIfsJ8cMxu6Kbw7P5HbDbtGpiEF+sfp7zBAYn+SYmDLVdimpP7RuTY59smzQIvD+uJdOCdOXZdH9A=="],
+
+    "@k2b/notes-site": ["@k2b/notes-site@workspace:pwas/notes"],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 

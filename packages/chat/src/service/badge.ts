@@ -25,7 +25,7 @@ export const participantLevelSql = (db: typeof sql, permission = db`grants.permi
     notifyUntil: db`p.notify_until`,
   });
 /** Same bounded counter for navigation, the open tab, and push. Each component caps at 99. */
-export const badgeCount = async (context: ChatContext, db: typeof sql = sql): Promise<number> => {
+export const badgeCount = async (context: ChatContext, db: typeof sql = sql, readerMode?: "cached"): Promise<number> => {
   if (context.accessSubject.type !== "user") return 0;
   const self = subjectPrincipal(context.accessSubject);
   const allowAuthenticated = await discoveryAllowed();
@@ -61,5 +61,5 @@ export const badgeCount = async (context: ChatContext, db: typeof sql = sql): Pr
     if (rows.length < 100) break;
     cursor = rows.at(-1)!.id;
   }
-  return Math.min(all, FOR_YOU_COUNT_CAP) + (await forYouUnread(context, db));
+  return Math.min(all, FOR_YOU_COUNT_CAP) + (await forYouUnread(context, db, readerMode));
 };

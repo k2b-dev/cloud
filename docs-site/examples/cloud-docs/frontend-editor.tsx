@@ -10,6 +10,15 @@ import {
   pointerSelectionMarkdownRefreshExtension,
 } from "@k2b/editor/markdown";
 
+import {
+  basicExtensions,
+  codeFontExtension,
+  initialMarkdownDecorationRefreshExtension,
+  markdownExtension,
+  markupExtension,
+  pointerSelectionMarkdownRefreshExtension,
+} from "@k2b/editor/markdown";
+
 export function NoteEditor(props: { initial: string; locale: string }) {
   const editor = createEditor();
   const actions = markdownActions(editor, props.locale);
