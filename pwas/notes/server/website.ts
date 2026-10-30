@@ -50,7 +50,7 @@ export const mountWebsite = async (
   });
   app.get("*", (c) => {
     const asset = assets.get(c.req.path);
-    if (asset) return new Response(asset);
+    if (asset) return new Response(asset, { headers: { "Content-Type": asset.type } });
     if (c.req.path.startsWith("/api/") || /\.[a-z0-9]+$/i.test(c.req.path)) throw new NotesError("not_found", 404);
     return c.html(index);
   });
