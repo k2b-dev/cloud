@@ -115,6 +115,7 @@ export const messages = i18n.define({
       done: "Done",
       stopSharingFailed: "Sharing could not be stopped.",
       deleteTitle: ({ title }: { title: string }) => `Delete “${title}”?`,
+      tagPillTitle: ({ tag }: { tag: string }) => `Show notes with #${tag}`,
       deleteLead: "The note disappears from this browser.",
       deleteShared: "Also delete the shared version. Both links stop working.",
       deleteAction: "Delete",
@@ -384,6 +385,7 @@ export const messages = i18n.define({
       stopSharingFailed: "Teilen konnte nicht beendet werden.",
       // delete
       deleteTitle: ({ title }: { title: string }) => `„${title}“ löschen?`,
+      tagPillTitle: ({ tag }: { tag: string }) => `Notizen mit #${tag} zeigen`,
       deleteLead: "Die Notiz verschwindet aus diesem Browser.",
       deleteShared: "Auch die geteilte Fassung löschen. Beide Links funktionieren danach nicht mehr.",
       deleteAction: "Löschen",
