@@ -163,14 +163,14 @@
     },
     "packages/cloud": {
       "name": "@k2b/cloud",
-      "version": "0.43.0",
+      "version": "0.45.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
         "@k2b/nessi": "0.18.0",
-        "@k2b/ssr": "0.20.0",
+        "@k2b/ssr": "0.20.1",
         "@k2b/stdlib": "0.30.0",
         "@k2b/sync": "7.0.1",
-        "@k2b/ui": "0.32.0",
+        "@k2b/ui": "0.35.0",
         "@modelcontextprotocol/sdk": "1.32.1",
         "@napi-rs/canvas": "1.0.9",
         "@nats-io/jetstream": "3.4.0",
@@ -226,7 +226,7 @@
     },
     "packages/cloud-cli": {
       "name": "@k2b/cloud-cli",
-      "version": "0.50.0",
+      "version": "0.52.0",
       "bin": {
         "cld": "src/index.ts",
       },
@@ -702,7 +702,7 @@
     },
     "packages/ui": {
       "name": "@k2b/ui",
-      "version": "0.33.0",
+      "version": "0.35.0",
       "dependencies": {
         "@codemirror/commands": "6.10.4",
         "@codemirror/language": "6.12.4",
@@ -722,7 +722,7 @@
       "devDependencies": {
         "@babel/core": "8.0.6",
         "@babel/preset-typescript": "8.0.1",
-        "@k2b/ssr": "0.20.0",
+        "@k2b/ssr": "0.20.1",
         "@maplibre/maplibre-gl-style-spec": "26.4.4",
         "@types/babel__core": "7.20.5",
         "@types/bun": "1.4.2",
@@ -783,6 +783,18 @@
         "@types/bun": "catalog:",
         "bun-plugin-tailwind": "catalog:",
         "playwright": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "pwas/notes": {
+      "name": "@k2b/notes-site",
+      "dependencies": {
+        "@k2b/cloud": "workspace:*",
+        "hono": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1182,6 +1194,8 @@
     "@k2b/filegate": ["@k2b/filegate@7.1.0", "", {}, "sha512-wezDCkenZ/s+V0hp4AacUjd4d1Dm+Pyr6+M100LiOeoEGLWp+gMoHE/mHQCsUpxnM+GjhOjn9cxYp2DFWNppqA=="],
 
     "@k2b/nessi": ["@k2b/nessi@0.18.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-U6scx1lwIQIfsJ8cMxu6Kbw7P5HbDbtGpiEF+sfp7zBAYn+SYmDLVdimpP7RuTY59smzQIvD+uJdOCdOXZdH9A=="],
+
+    "@k2b/notes-site": ["@k2b/notes-site@workspace:pwas/notes"],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 
