@@ -1,4 +1,5 @@
 import { createEffect, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { AdminPage } from "../admin/AdminPage";
 import { isDark } from "./prefs";
 import { linkClick, navigate, route } from "./router";
 import { app, t } from "./state";
@@ -59,16 +60,37 @@ export function App() {
             </Show>
           </Show>
         </Match>
-        <Match when={(() => { const current = route(); return current.name === "note" ? current : undefined; })()} keyed>
+        <Match
+          when={(() => {
+            const current = route();
+            return current.name === "note" ? current : undefined;
+          })()}
+          keyed
+        >
           {(current) => <NotePage mode={{ kind: "local", id: current.id }} />}
+        </Match>
+        <Match when={route().name === "admin"}>
+          <AdminPage />
         </Match>
         <Match when={route().name === "example"}>
           <NotePage mode={{ kind: "example" }} />
         </Match>
-        <Match when={(() => { const current = route(); return current.name === "shared" ? current : undefined; })()} keyed>
+        <Match
+          when={(() => {
+            const current = route();
+            return current.name === "shared" ? current : undefined;
+          })()}
+          keyed
+        >
           {(current) => <SharedLink linkId={current.linkId} />}
         </Match>
-        <Match when={(() => { const current = route(); return current.name === "legal" ? current : undefined; })()} keyed>
+        <Match
+          when={(() => {
+            const current = route();
+            return current.name === "legal" ? current : undefined;
+          })()}
+          keyed
+        >
           {(current) => <Legal page={current.page} />}
         </Match>
         <Match when={route().name === "unknown"}>

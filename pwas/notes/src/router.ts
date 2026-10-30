@@ -5,6 +5,7 @@ export type Route =
   | { name: "note"; id: string }
   | { name: "shared"; linkId: string }
   | { name: "example" }
+  | { name: "admin" }
   | { name: "legal"; page: "datenschutz" | "nutzungsbedingungen" | "impressum" }
   | { name: "unknown" };
 
@@ -12,13 +13,15 @@ const LINK_ID = /^[0-9A-Za-z]{16,32}$/;
 
 export function parseRoute(pathname: string): Route {
   if (pathname === "/" || pathname === "") return { name: "home" };
+  if (pathname === "/admin") return { name: "admin" };
   if (pathname === "/beispiel") return { name: "example" };
   const note = pathname.match(/^\/n\/([0-9A-Za-z_-]{1,64})$/);
   if (note?.[1]) return { name: "note", id: note[1] };
   const shared = pathname.match(/^\/p\/([^/]+)$/);
   if (shared?.[1]) return LINK_ID.test(shared[1]) ? { name: "shared", linkId: shared[1] } : { name: "unknown" };
   const legal = pathname.match(/^\/(datenschutz|nutzungsbedingungen|impressum)$/);
-  if (legal?.[1] === "datenschutz" || legal?.[1] === "nutzungsbedingungen" || legal?.[1] === "impressum") return { name: "legal", page: legal[1] };
+  if (legal?.[1] === "datenschutz" || legal?.[1] === "nutzungsbedingungen" || legal?.[1] === "impressum")
+    return { name: "legal", page: legal[1] };
   return { name: "unknown" };
 }
 

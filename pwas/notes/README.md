@@ -3,7 +3,8 @@
 This standalone Bun/Hono service uses its own Postgres database. It does not
 register with Cloud and needs no Core, gateway, NATS, or Valkey.
 
-Run `bun run --cwd pwas/notes start` with `DATABASE_URL` pointing at the Notes
+Build the SPA with `bun run --cwd pwas/notes build` first, then run
+`bun run --cwd pwas/notes start` with `DATABASE_URL` pointing at the Notes
 database. Startup applies the versioned SQL migrations in one transaction.
 Port 3000 serves `/healthz` for process liveness and `/readyz` for database and
 schema readiness. A readiness failure returns 503 without database details.
@@ -156,3 +157,13 @@ transfers. Admission and edit-link checks happen before reading upload bodies.
 Body reads are cancelled on disconnect or after one 30-second heartbeat interval,
 so stalled uploads release their slots. Excess transfers return 503
 `transfers_full`; clients can retry.
+
+## Image
+
+`docker build -f pwas/notes/Dockerfile -t cloud-notes .` builds the SPA and server
+for the target architecture. The runtime contains only built assets, a bundled
+server, its font and the native canvas package. It runs as the unprivileged Bun
+user and listens on port 3000. It needs only its dedicated Postgres database
+and the Notes configuration above. CI boots it against a fresh database, checks
+readiness and SPA delivery, then creates a note and verifies its 1200 × 630 PNG.
+The release image is `cloud-notes`; this image does not join the Cloud app set.
