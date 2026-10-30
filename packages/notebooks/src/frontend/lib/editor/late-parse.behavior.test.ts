@@ -7,10 +7,9 @@ import type { Tree } from "@lezer/common";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 
-import { tagPillExtension } from "./tag-pill";
-
 // Notebook block scanners load the UI browser export after its DOM globals exist.
 const loading = createDomTestHarness();
+const { tagPillExtension } = await import("./tag-pill");
 const { codeFontExtension, cursorZoneStateField, initialMarkdownDecorationRefreshExtension, markdownExtension, markupExtension } =
   await import("@k2b/editor/markdown");
 const { notebookListOptions, notebookUrlOptions } = await import("./notebook-options");

@@ -5,11 +5,11 @@ import { type DecorationSet, EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { markdownExtension } from "./markdown";
-import { directiveOptions } from "./markdown-options.fixture";
 import { pressMissedEditor } from "./surface-press";
 
 // Notebook block scanners load the UI browser export after its DOM globals exist.
 const loading = createDomTestHarness();
+const { directiveOptions } = await import("./markdown-options.fixture");
 const { listStateField, listsExtension } = await import("./lists");
 loading.cleanup();
 

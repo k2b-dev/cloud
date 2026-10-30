@@ -6,7 +6,11 @@ import { EditorView } from "@codemirror/view";
 
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { tableColumnCompletionSource } from "./table-columns";
+
+// Completion helpers reach the browser extension barrel; install DOM globals first.
+const loading = createDomTestHarness();
+const { tableColumnCompletionSource } = await import("./table-columns");
+loading.cleanup();
 
 describe("Notebook table escaped pipes", () => {
   test("column completion keeps an escaped-pipe header inside its formula cell", () => {

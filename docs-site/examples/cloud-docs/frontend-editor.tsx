@@ -1,8 +1,25 @@
 import { BubbleMenu, createEditor, Editor, markdownActions, SlashMenu, Toolbar } from "@k2b/editor";
 
+import {
+  basicExtensions,
+  codeFontExtension,
+  initialMarkdownDecorationRefreshExtension,
+  markdownExtension,
+  markupExtension,
+  pointerSelectionMarkdownRefreshExtension,
+} from "@k2b/editor/markdown";
+
 export function NoteEditor(props: { initial: string; locale: string }) {
   const editor = createEditor();
   const actions = markdownActions(editor, props.locale);
+  editor.use([
+    basicExtensions(),
+    markdownExtension(),
+    markupExtension(),
+    codeFontExtension(),
+    initialMarkdownDecorationRefreshExtension(),
+    pointerSelectionMarkdownRefreshExtension(),
+  ]);
   return (
     <>
       <Toolbar

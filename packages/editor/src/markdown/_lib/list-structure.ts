@@ -47,7 +47,7 @@ export const listExcludedRanges = Facet.define<NonNullable<MarkdownRangeOptions[
 
 /** Full source scan; callers cache these spans independently of parser progress. */
 export const excludedSpans = (state: EditorState): ExcludedSpan[] =>
-  state.facet(listExcludedRanges).flatMap((ranges) => ranges(state.doc.toString()));
+  state.facet(listExcludedRanges).flatMap((ranges) => ranges(state.doc.toString()).map(({ from, to }) => ({ from, to })));
 
 /** Items outside quotes, data blocks and directives. Optional ranges cover whole top-level list blocks; exclusions are read only when a list exists. */
 export const listStructure = (

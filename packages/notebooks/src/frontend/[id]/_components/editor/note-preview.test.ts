@@ -180,25 +180,30 @@ test("budgeted previews keep the whole parse's lines for fixtures and block boun
   expect(notePreviewLines("```\n$$\n\na\n\n$$\n```\n\nTail", "rich", { lines: 2, characters: 1024 })).toHaveLength(1);
 });
 
-test("budgeted previews keep the whole parse's lines for every docs Markdown file and long prefixes", async () => {
-  const paths = Array.from(new Bun.Glob("docs-site/docs/en/**/*.md").scanSync({ cwd: repositoryRoot })).sort();
-  expect(paths.length).toBeGreaterThan(0);
+const docsPaths = Array.from(new Bun.Glob("docs-site/docs/en/**/*.md").scanSync({ cwd: repositoryRoot })).sort();
+// Each document has its own test budget; the growing docs corpus must not share one 5-second timeout.
+const docsBudgets = [
+  [3, NOTE_PREVIEW_BUDGET.lines],
+  [300, NOTE_PREVIEW_BUDGET.characters],
+] as const;
+
+test.each(docsPaths)("budgeted previews keep the whole parse's lines for %s", async (path) => {
+  const markdown = await Bun.file(resolve(repositoryRoot, path)).text();
+  expectPrefix(markdown, ...docsBudgets);
+  expectPrefix(markdown.slice(frontMatterLength(markdown)), ...docsBudgets);
+});
+
+test("budgeted previews keep the whole parse's lines for long prefixes", async () => {
+  expect(docsPaths.length).toBeGreaterThan(0);
   let longest = "";
-  // Fewer budgets than the fixtures get: these are many and long.
-  const budgets = [
-    [3, NOTE_PREVIEW_BUDGET.lines],
-    [300, NOTE_PREVIEW_BUDGET.characters],
-  ] as const;
-  for (const path of paths) {
+  for (const path of docsPaths) {
     const markdown = await Bun.file(resolve(repositoryRoot, path)).text();
-    expectPrefix(markdown, ...budgets);
     const body = markdown.slice(frontMatterLength(markdown));
-    expectPrefix(body, ...budgets);
     if (body.length > longest.length) longest = body;
   }
   expect(longest.length).toBeGreaterThan(16 * 1024);
   for (const end of [1, 100, 1024, 16 * 1024 - 1, 16 * 1024, 16 * 1024 + 1, Math.floor(longest.length / 2), longest.length - 1]) {
-    expectPrefix(longest.slice(0, end), ...budgets);
+    expectPrefix(longest.slice(0, end), ...docsBudgets);
   }
 });
 

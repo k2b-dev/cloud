@@ -4,10 +4,10 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { directiveOptions } from "./markdown-options.fixture";
 
 // The notebook parsers share the info block grammar of @k2b/ui; its browser build needs the DOM globals before it loads.
 const loading = createDomTestHarness();
+const { directiveOptions } = await import("./markdown-options.fixture");
 const { pointerSelectionHeld, pointerSelectionHoldEffect, refreshMarkdownDecorationsEffect } = await import("./_lib/cursor-zone-field");
 const { applyLigatures, ligaturesExtension } = await import("./ligatures");
 const { markdownExtension } = await import("./markdown");

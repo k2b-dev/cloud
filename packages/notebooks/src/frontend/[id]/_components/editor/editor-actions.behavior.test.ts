@@ -257,9 +257,15 @@ describe("notebook inline formatting", () => {
   test("parses a distant span before toggling without forceParsing", () => {
     const prefix = "Paragraph\n\n".repeat(1000);
     using editor = mount(prefix + "**word**", prefix.length + 2, prefix.length + 6, [], false);
-    editor.press("b");
-    expect(editor.text()).toBe(prefix + "word");
-    expect(editor.selected()).toBe("word");
+    // Exercise the successful parse independently of VM scheduling.
+    const clock = spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 9, 26));
+    try {
+      editor.press("b");
+      expect(editor.text()).toBe(prefix + "word");
+      expect(editor.selected()).toBe("word");
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   test.each([false, true])("Yjs isolates formatting from adjacent typing (type after: %s)", (after) => {

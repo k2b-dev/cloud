@@ -8,10 +8,10 @@ import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { basicExtensions } from "./basic";
 import { markdownExtension } from "./markdown";
-import { directiveOptions } from "./markdown-options.fixture";
 
 // Notebook block scanners load UI browser exports after DOM globals exist.
 const loading = createDomTestHarness();
+const { directiveOptions } = await import("./markdown-options.fixture");
 const { excludedSpans, listStructure } = await import("./_lib/list-structure");
 const { indentListItems, listCommandsExtension, listIndentAvailability, outdentListItems, setListKind, toggleTaskAtCaret } = await import(
   "./list-commands"
@@ -65,6 +65,19 @@ const mount = (doc: string, head = doc.length, tab = true, extensions: Extension
     [Symbol.dispose]() {
       view.destroy();
       dom.cleanup();
+    },
+  };
+};
+
+// Command assertions exercise a successful parse independently of VM scheduling.
+// The separate exhausted-budget test still advances CodeMirror's clock explicitly.
+const parsingClock = () => {
+  const date = spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 9, 26));
+  const timer = spyOn(performance, "now").mockReturnValue(0);
+  return {
+    [Symbol.dispose]() {
+      timer.mockRestore();
+      date.mockRestore();
     },
   };
 };
@@ -196,6 +209,7 @@ describe("notebook structural list commands", () => {
     ["1. a\n2. b\n3. c", "1. b\n2. c\n3. a"],
   ])("selection outside the caret subtree uses the default line move: %s", (doc, expected) => {
     using editor = mount(doc);
+    using _clock = parsingClock();
     editor.view.dispatch({ selection: { anchor: doc.indexOf("b"), head: doc.indexOf("c") + 1 } });
     expect(editor.press("ArrowUp", { altKey: true })).toBe(true);
     expect(editor.text()).toBe(expected);
@@ -438,6 +452,7 @@ describe("notebook structural list commands", () => {
     const prefix = "paragraph\n\n".repeat(3000);
     const doc = prefix + "1. A\n2. B\n3. C";
     using editor = mount(doc, doc.indexOf("B"), true, [], false);
+    using _clock = parsingClock();
     expect(syntaxTreeAvailable(editor.view.state, doc.indexOf("B"))).toBe(false);
     expect(editor.press("ArrowUp", { altKey: true })).toBe(true);
     expect(editor.text()).toBe(prefix + "1. B\n2. A\n3. C");
@@ -447,6 +462,7 @@ describe("notebook structural list commands", () => {
     const lines = Array.from({ length: 500 }, (_, index) => `${index + 1}. item${index + 1}`);
     const doc = lines.join("\n");
     using editor = mount(doc, doc.indexOf("item2"), true, [], false);
+    using _clock = parsingClock();
     expect(syntaxTreeAvailable(editor.view.state, doc.length)).toBe(false);
     expect(editor.press("Tab")).toBe(true);
     expect(editor.text()).toBe(
@@ -588,6 +604,7 @@ describe("notebook structural list commands", () => {
     const doc =
       "1. A\n1. B\n\nseparator\n\n1. X\n1. Y\n\n```\n1. code\n1. code\n```\n\n:::data\n1. data\n1. data\n:::\n\n:::query\n1. query\n1. query\n:::\n\n> 1. quote\n> 1. quote";
     using editor = mount(doc);
+    using _clock = parsingClock();
     editor.view.dispatch({ changes: { from: 5, insert: "1. new\n" }, userEvent: "input.paste" });
     expect(editor.text()).toBe(doc.replace("1. A\n1. B", "1. A\n2. new\n3. B"));
     const untouched = editor.text();
