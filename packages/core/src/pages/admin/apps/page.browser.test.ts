@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -268,6 +268,8 @@ test("a failed details read keeps the access repair of a running app and shows t
     canUse: false,
   });
   const detail = spyOn(services, "appDetails").mockRejectedValue(new Error("Event tables unavailable"));
+  const error = mock(() => {});
+  const log = spyOn(services, "logger").mockReturnValue({ debug: () => {}, info: () => {}, warn: () => {}, error });
   try {
     const response = await new Hono()
       .get("/admin/apps", ...handler)
@@ -277,7 +279,9 @@ test("a failed details read keeps the access repair of a running app and shows t
     expect(html).toContain("Who uses Invoices");
     expect(html).toContain("Events and notifications of this app could not be loaded.");
     expect(html).not.toContain("Hears");
+    expect(error).toHaveBeenCalledWith("Could not load the app details", { appId: "invoices", error: expect.any(Error) });
   } finally {
+    log.mockRestore();
     detail.mockRestore();
     read.mockRestore();
   }

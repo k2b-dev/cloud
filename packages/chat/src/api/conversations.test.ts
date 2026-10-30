@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import { ServiceAccountCredentialSchema, ServiceAccountSchema, UserSchema } from "@k2b/cloud/contracts";
 import * as platform from "@k2b/cloud/services";
-import { redis } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { chatService } from "../service";
 import { ConversationSchema, ReadAllSchema } from "../service/contracts";
 import { chatLive } from "../service/live";
 import chatApi from ".";
+
+useUnitClients();
 
 const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 

@@ -16,6 +16,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
+const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { server } = await import("./shell-focus.browser-harness");
 
@@ -99,6 +100,7 @@ beforeAll(async () => {
   spies.push(
     spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
   );
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet");
