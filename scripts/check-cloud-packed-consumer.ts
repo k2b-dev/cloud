@@ -78,9 +78,9 @@ const releaseAgePolicy = async (): Promise<string> => {
   return `[install]\n${policy.join("\n")}\n`;
 };
 
-const run = async (label: string, cmd: string[], cwd: string): Promise<string> => {
+const run = async (label: string, cmd: string[], cwd: string, env: Record<string, string | undefined> = cleanEnv): Promise<string> => {
   console.log(label);
-  const child = Bun.spawn(cmd, { cwd, env: cleanEnv, stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn(cmd, { cwd, env, stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => child.kill(), 300_000);
   try {
     const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
@@ -294,6 +294,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     "Load the minimal app through the installed preload",
     [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
     consumer,
+    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
   );
   await run("Build with the installed Cloud production script", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   // SSR names island entries with the first 12 hex digits of the relative path's MD5.
@@ -314,6 +315,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     "Load plugin-only config through the installed preload",
     [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
     consumer,
+    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
   );
   await run("Build plugin-only config", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Plugin-only server bundle is empty");

@@ -1,6 +1,9 @@
 // Copied into the fresh consumer: every platform import resolves from its tarball.
 import { strict as assert } from "node:assert";
 import { getApp, startProcessSync } from "@k2b/cloud";
+import { initializePlatform } from "@k2b/cloud/start";
+
+await initializePlatform({ appId: "consumer-observer", source: "env" });
 
 assert.match(await Bun.file("dist/server.js").text(), /Count the shelf inventory using the Inventory application/);
 assert.match(await Bun.file("dist/server.js").text(), /Count each item once and report missing labels/);

@@ -26,7 +26,7 @@ Declared in `packages/cloud/src/config/env.ts`.
 | --- | --- | --- | --- | --- | --- |
 | `NODE_ENV` | string | runtime | unset | no | Release images set `production`; `development` enables development-only behavior such as insecure cookies and HTTP issuers. |
 | `HOSTNAME` | string | runtime | unset | no | Container or host name; the default instance identity in worker leases and gateway registration. |
-| `DATABASE_URL` | string | runtime | unset | no | Postgres connection read by Bun SQL and by application-owned pools. |
+| `DATABASE_URL` | string | runtime | unset | no | Postgres connection read by Bun SQL and by application-owned pools. Aliases: `DATABASEURL`, `TLS_DATABASE_URL`, `POSTGRES_URL`, `PGURL`, `PG_URL`, `TLS_POSTGRES_DATABASE_URL`. |
 | `REDIS_URL` | string | runtime | unset | no | Valkey connection used by Bun Redis for caches and rate limits. Aliases: `VALKEY_URL`. |
 | `NATS_SERVERS` | list | runtime | empty list | no | Comma-separated NATS JetStream bootstrap servers; the client dials all of them. |
 | `SYNC_NAMESPACE` | string | runtime | empty | no | Sync namespace shared by every app of one installation; separates NATS resource names, not access. Use one NATS account per installation. |

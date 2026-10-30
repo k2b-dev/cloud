@@ -24,7 +24,8 @@ and such changes are not treated as breaking until then.
 
 | Entry point | Status | Use |
 | --- | --- | --- |
-| `@k2b/cloud` | Supported | Application declarations and typed notifications |
+| `@k2b/cloud` | Supported, server-only | Application declarations, notifications, native `sql` and `redis`, `createSql`, `createRedis`, `connections`, `lazySync`, and `storage` |
+| `@k2b/cloud/start` | Supported, server-only | `startPlatform`, `initializePlatform`, and `PlatformStartOptions`; [startup contract](/en/docs/build/platform-start) |
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
