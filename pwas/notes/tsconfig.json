@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "lib": ["ESNext", "DOM", "DOM.Iterable"] },
+  "compilerOptions": { "lib": ["ESNext", "DOM", "DOM.Iterable"], "customConditions": ["browser"] },
   "include": ["server", "src", "scripts"],
   "exclude": ["dist", "node_modules"]
 }
