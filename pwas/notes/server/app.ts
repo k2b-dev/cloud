@@ -63,7 +63,7 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
       if (!input.success) throw new NotesError("invalid_pad");
       return c.json(await service.create(snapshotBytes(input.data.snapshot), ip(c)), 201);
     });
-    app.get("/api/pads/:id", async (c) => c.json(await service.read(c.req.param("id"))));
+    app.get("/api/pads/:id", async (c) => c.json(await service.read(c.req.param("id"), ip(c))));
     app.post("/api/pads/:id/opened", async (c) => {
       await service.humanOpen(c.req.param("id"), ip(c));
       return c.body(null, 204);

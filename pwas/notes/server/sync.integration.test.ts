@@ -8,7 +8,7 @@ import { createDisposableDatabase, databaseSuite } from "../../../scripts/fixtur
 import { frame, message, readReply, updateFrame } from "../protocol";
 import { createNotesApp } from "./app";
 import { migrate } from "./database";
-import { limits, RateLimits, requestIp } from "./limits";
+import { limits, RateLimits, rateKey, requestIp } from "./limits";
 import { serveNotes } from "./runtime";
 import { NotesService } from "./service";
 import { costs, NotesStore } from "./store";
@@ -202,8 +202,57 @@ databaseSuite()("Notes durable Yjs sync", () => {
     expect((await service.read(shared.readId)).content).toBe("hello");
     expect(JSON.stringify(logs)).not.toContain(shared.readId);
     expect(JSON.stringify(logs)).not.toContain(shared.editId);
-    await service.receive(writer.connection, updateFrame("retryable", next.update));
+    expect(writer.closed.at(-1)?.reason).toBe("resync_required");
+    const reconnected = await connect(shared.editId);
+    await service.receive(reconnected.connection, updateFrame("retryable", next.update));
     expect((await service.read(shared.readId)).content).toBe("hello next");
+  });
+
+  test("a commit with a lost response reloads before later updates and compaction", async () => {
+    const shared = await pad();
+    const writer = await connect(shared.editId);
+    const first = edit(shared.doc, 12, " committed");
+    const append = service.store.append.bind(service.store);
+    service.store.append = async (...args) => {
+      await append(...args);
+      throw new Error("commit_response_lost");
+    };
+    const original = console.error;
+    console.error = () => {};
+    try {
+      await service.receive(writer.connection, updateFrame("ambiguous", first.update));
+    } finally {
+      service.store.append = append;
+      console.error = original;
+    }
+    expect(writer.closed.at(-1)?.reason).toBe("resync_required");
+    const second = edit(shared.doc, 13, " concurrent");
+    const reconnected = await connect(shared.editId);
+    await service.receive(reconnected.connection, updateFrame("later", second.update));
+    await service.compact(shared.readId);
+    Y.applyUpdate(first.doc, second.update);
+    expect((await service.read(shared.readId)).content).toBe(first.doc.getText("text").toString());
+    const loaded = await service.store.load(shared.readId);
+    expect(loaded.doc.getText("text").toString()).toBe(first.doc.getText("text").toString());
+    loaded.doc.destroy();
+  });
+
+  test("a reader pulls standard sync without receiving a write challenge", async () => {
+    const shared = await pad();
+    const reader = await connect(shared.readId);
+    expect(reader.sent.some((bytes) => decoding.readVarUint(decoding.createDecoder(bytes)) === message.sync)).toBe(false);
+    const doc = new Y.Doc();
+    docs.push(doc);
+    await service.receive(
+      reader.connection,
+      frame(message.sync, (e) => sync.writeSyncStep1(e, doc)),
+    );
+    const response = decoding.createDecoder(reader.sent.at(-1)!);
+    decoding.readVarUint(response);
+    const reply = encoding.createEncoder();
+    sync.readSyncMessage(response, reply, doc, null);
+    expect(doc.getText("text").toString()).toBe("hello");
+    expect(reader.closed).toEqual([]);
   });
 
   test("awareness rewrites identity, color, clock and unverified names; readers cannot publish cursors", async () => {
@@ -399,7 +448,7 @@ databaseSuite()("Notes durable Yjs sync", () => {
       const writer = await open(shared.editId);
       const reader = await open(shared.readId);
       await writer.take(message.sync);
-      await reader.take(message.sync);
+      await reader.take(message.identity);
       const empty = new Y.Doc();
       empty.clientID = 99;
       docs.push(empty);
@@ -516,4 +565,15 @@ test("forwarded addresses are honored only from the configured immediate proxy",
   expect(requestIp("192.0.2.1", "203.0.113.2", "192.0.2.9")).toBe("192.0.2.1");
   expect(requestIp("192.0.2.9", "198.51.100.1, 203.0.113.2", "192.0.2.9")).toBe("203.0.113.2");
   expect(requestIp("192.0.2.9", "invalid", "192.0.2.9")).toBe("192.0.2.9");
+});
+
+test("mapped proxy peers and rotating IPv6 addresses share stable connection keys", () => {
+  expect(requestIp("::ffff:127.0.0.1", "192.0.2.4", "127.0.0.1")).toBe("192.0.2.4");
+  expect(requestIp("127.0.0.1", "192.0.2.4", "::ffff:127.0.0.1")).toBe("192.0.2.4");
+  expect(rateKey("2001:db8:1:2:aaaa:bbbb:cccc:1")).toBe(rateKey("2001:db8:1:2::2"));
+  expect(rateKey("2001:db8:1:3::2")).not.toBe(rateKey("2001:db8:1:2::2"));
+  const rates = new RateLimits(() => 0, 2);
+  rates.take("create", "192.0.2.1", 1, 3600000);
+  rates.take("create", "192.0.2.2", 1, 3600000);
+  expect(() => rates.take("connect", "192.0.2.3", 1, 60000)).not.toThrow();
 });
