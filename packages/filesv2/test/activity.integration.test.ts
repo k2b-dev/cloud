@@ -5,7 +5,7 @@ import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
-import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import { endLingeringTestWork, suiteFor } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import { filesCapabilities } from "../src/capabilities";
 import type { Configuration } from "../src/contracts";
@@ -956,6 +956,34 @@ suite("Files activity with real storage", () => {
       SELECT gen_random_uuid(),'done','folder.create',${config.url},'cloud',true,'expired','system','system',${new Date(now.getTime() - 366 * day)} FROM generate_series(1,10005)`;
     expect(await purgeActivity({ now, retentionDays: 365 })).toEqual({ purged: 10000 });
     expect(await purgeActivity({ now, retentionDays: 365 })).toEqual({ purged: 5 });
+  });
+  test("work an aborted test leaves holding the history table is ended before the next test's cleanup waits on it", async () => {
+    // Like the body of a test that timed out: its transaction keeps the table locked and never finishes (#1797).
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lingering = sql
+      .begin(async (tx) => {
+        await tx`LOCK TABLE filesv2.activity IN ACCESS EXCLUSIVE MODE`;
+        await held;
+      })
+      .catch((error: unknown) => error);
+    const lockedElsewhere = async () => {
+      const [row] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+        WHERE c.relname = 'activity' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.pid <> pg_backend_pid()`;
+      return row!.n > 0;
+    };
+    for (const deadline = performance.now() + 2_000; !(await lockedElsewhere()); )
+      if (performance.now() > deadline) throw new Error("The lock was never taken");
+    // The fixture leaves work alone for its first 250 ms, so a short statement of background work is never touched.
+    await Bun.sleep(300);
+    const reports = await endLingeringTestWork();
+    expect(reports.some((report) => report.includes("idle in transaction") && report.includes("LOCK TABLE filesv2.activity"))).toBe(true);
+    expect(await lingering).toBeInstanceOf(Error);
+    release();
+    expect(await lockedElsewhere()).toBe(false);
+    await sql`TRUNCATE filesv2.activity`;
   });
   test("account deletion removes the person link without deleting history", async () => {
     const userId = Bun.randomUUIDv7();
