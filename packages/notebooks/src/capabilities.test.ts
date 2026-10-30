@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
@@ -7,6 +7,8 @@ import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
+  discussionsIssues,
+  typeViewIssues,
   type User,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
@@ -711,6 +713,7 @@ describe("notebooks capabilities", () => {
       "note.tree",
       "notebook.activity",
       "notebook.browse",
+      "notebook.containers",
       "notebook.list",
       "notebook.read",
       "notebook.search",
@@ -1336,8 +1339,11 @@ for (const [locale, prefix] of [
       if (!result.ok) throw new Error("Expected note");
       expect(capabilityResultSchema(NoteDetailDataSchema).safeParse(result.data).success).toBeTrue();
       expect(result.data.data.container).toMatchObject({ ref: { type: "notebooks.notebook", id: notebook.shortId }, permission: "read" });
+      const view = assertResourceView(result.data, { type: "notebooks.notebook", id: notebook.shortId });
+      expect(view).toMatchObject({ title: note.title, permission: "read" });
       const ref = result.data.refs![0]!;
       if (ref.type !== "notebooks.note") throw new Error("Expected note reference");
+      expect(view.context).toBe(ref.context);
       return ref;
     };
     expect(await read()).toMatchObject({ context: `${prefix} ${notebook.name}` });
@@ -1393,4 +1399,63 @@ test("notebook.activity stops before listing when the owning reader denies the c
   expect(result.ok).toBeFalse();
   if (!result.ok) expect(result.error.status).toBe(404);
   expect(list).not.toHaveBeenCalled();
+});
+
+test("declares compatible discussions and standard reader views", () => {
+  const manifest = compileCapabilityManifest("notebooks", notebooksCapabilities);
+  expect(discussionsIssues(manifest)).toEqual([]);
+  for (const type of ["notebook", "note"]) expect(typeViewIssues(manifest, type)).toEqual([]);
+  expect(manifest.discussions).toEqual({ item: "note", containers: "notebook.containers", activity: "notebook.activity" });
+  expect(manifest.resourceTypes).toContainEqual({ type: "notebook", view: true, readable: true });
+  expect(manifest.resourceTypes).toContainEqual({ type: "note", container: "notebook", view: true, readable: true });
+});
+
+for (const permission of ["read", "write", "admin", "none"] as const) {
+  test(`standard notebook and note views authorize ${permission} access`, async () => {
+    trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue(permission);
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" });
+    const container = await notebooksCapabilities.queries["notebook.read"].run({ id: notebook.shortId }, { ...userContext, locale: "de" });
+    const operation = notebooksCapabilities.queries["note.read"];
+    const item = await operation.run(operation.input.parse({ id: note.shortId }), userContext);
+    expect(container.ok).toBe(permission !== "none");
+    expect(item.ok).toBe(permission !== "none");
+    if (permission === "none") return;
+    if (container.ok) expect(assertResourceView(container.data)).toEqual({ title: notebook.name, context: "Notizbuch", permission });
+    if (item.ok) expect(assertResourceView(item.data, { type: "notebooks.notebook", id: notebook.shortId }).permission).toBe(permission);
+  });
+}
+
+test("activity accepts the shared container and published notebook alias and rejects ambiguity", async () => {
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+  const list = trackedSpy(spyOn(activity, "list")).mockResolvedValue({ items: [], nextCursor: null });
+  const operation = notebooksCapabilities.queries["notebook.activity"];
+  for (const input of [
+    { notebook: notebook.shortId },
+    { container: notebook.shortId },
+    { container: notebook.shortId, notebook: notebook.shortId },
+  ]) {
+    const result = await operation.run(operation.input.parse({ ...input, timeZone: "Europe/Berlin" }), userContext);
+    expect(result.ok && result.data.data).toEqual([]);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ notebookId }));
+  }
+  expect(operation.input.safeParse({}).success).toBeFalse();
+  expect(operation.input.safeParse({ container: "other1", notebook: notebook.shortId }).success).toBeFalse();
+});
+
+test("discussion containers preserve authorized list pagination", async () => {
+  trackedSpy(spyOn(notebookStore, "listWithPermission")).mockResolvedValue({ items: [{ ...notebook, permission: "read" }], total: 2 });
+  const operation = notebooksCapabilities.queries["notebook.containers"];
+  const first = await operation.run(operation.input.parse({ query: "Knowledge", limit: 1 }), userContext);
+  if (!first.ok) throw new Error("Expected containers");
+  expect(operation.data.safeParse(first.data.data).success).toBeTrue();
+  expect(first.data.data).toEqual({
+    items: [{ ref: { type: "notebooks.notebook", id: notebook.shortId }, title: notebook.name }],
+    next: expect.any(String),
+  });
+  const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
+  expect(last.ok && last.data.data.next).toBeNull();
 });
