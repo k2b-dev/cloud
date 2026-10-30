@@ -1,7 +1,7 @@
 import type { EditorView } from "@codemirror/view";
 import { TextEditor, type TextEditorProps } from "@k2b/ui/text-editor";
 import { onCleanup, splitProps } from "solid-js";
-import type { EditorHandle } from "./editor";
+import type { EditorHandle } from "./editor-state";
 
 export type EditorProps = TextEditorProps & {
   /** Shared state from `createEditor()`; toolbars and menus placed elsewhere read and change the same editor. */

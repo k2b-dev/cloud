@@ -1,4 +1,4 @@
-import type { EditorHandle } from "./editor";
+import type { EditorHandle } from "./editor-state";
 import { type SlashMenuOptions, slashMenu } from "./slash-menu";
 
 export type SlashMenuProps = SlashMenuOptions & { editor: EditorHandle };

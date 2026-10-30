@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { SelectionToolbar, Toolbar, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
-import type { EditorAction, EditorHandle } from "./editor";
+import type { EditorAction, EditorHandle } from "./editor-state";
 import { editorMessages } from "./messages";
 import { ToolbarButton } from "./Toolbar";
 

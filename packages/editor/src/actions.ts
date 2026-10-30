@@ -3,7 +3,7 @@ import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { formatShortcut, keyboardPlatform } from "@k2b/ui";
 import { textEditorCommands } from "@k2b/ui/text-editor";
-import type { EditorAction } from "./editor";
+import type { EditorAction } from "./editor-state";
 import { editorMessages } from "./messages";
 
 /** Apple keyboards name the platform modifier Command; everyone else uses Control. */

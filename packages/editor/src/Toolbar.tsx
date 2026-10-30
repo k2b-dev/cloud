@@ -2,7 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { Dropdown, type DropdownPosition, IconButton, Tooltip, Toolbar as UiToolbar, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { ariaShortcut, shortcutLabel } from "./actions";
-import type { EditorAction, EditorHandle } from "./editor";
+import type { EditorAction, EditorHandle } from "./editor-state";
 import { editorMessages } from "./messages";
 
 /** A menu of actions behind one icon trigger, such as "More". */

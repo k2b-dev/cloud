@@ -9,7 +9,7 @@ import {
 import type { Extension } from "@codemirror/state";
 import { type EditorView, ViewPlugin } from "@codemirror/view";
 import { fuzzy } from "@k2b/stdlib";
-import type { EditorAction } from "./editor";
+import type { EditorAction } from "./editor-state";
 
 /** One entry of the slash menu: an editor action reached by typing `/` and its name. */
 export type SlashAction = Omit<EditorAction, "run"> & {
