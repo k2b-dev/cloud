@@ -2,6 +2,7 @@ import { hasRole } from "@k2b/cloud/contracts";
 import { createAllowedNetworkFetch } from "@k2b/cloud/services";
 import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { invalidateSettingsCache, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
+import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
 import { SQL, sql } from "bun";
@@ -27,8 +28,9 @@ import { machineDataRight } from "./machine-authority";
 import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, requireArtifact, user } from "./service";
 
-export const rsqlAllowlist = async () =>
-  parseNetworkAllowlistEnv("assistant.rsql_allowed_targets", await app.settings.get("assistant.rsql_allowed_targets"));
+/** The internal rsql targets in use, or a draft list that a connection test or save checks before storing it. */
+export const rsqlAllowlist = async (draft?: string[]) =>
+  parseNetworkAllowlistEnv("assistant.rsql_allowed_targets", draft ?? (await app.settings.get("assistant.rsql_allowed_targets")));
 
 export class DatabaseError extends Error {
   constructor(
@@ -45,7 +47,12 @@ function admin(identity: ArtifactIdentity) {
 async function config() {
   return { url: await app.settings.get("assistant.rsql_url"), token: await app.settings.get("assistant.rsql_api_token") };
 }
-function connection(c: { url: string; token: string }, signal?: AbortSignal, streaming = false, authorize?: () => Promise<void>) {
+function connection(
+  c: { url: string; token: string; allowedTargets?: string[] },
+  signal?: AbortSignal,
+  streaming = false,
+  authorize?: () => Promise<void>,
+) {
   if (!c.url || !c.token) throw new DatabaseError("DB_NOT_CONFIGURED", 409, "The app database service is not configured.");
   const address = new URL(c.url);
   if (!["http:", "https:"].includes(address.protocol) || address.username || address.password || address.search || address.hash)
@@ -66,7 +73,7 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
         if (input instanceof Request) signals.push(input.signal);
         let response: Response;
         try {
-          response = await createAllowedNetworkFetch(await rsqlAllowlist())(input, {
+          response = await createAllowedNetworkFetch(await rsqlAllowlist(c.allowedTargets))(input, {
             ...init,
             redirect: "error",
             signal: AbortSignal.any(signals),
@@ -358,18 +365,23 @@ export const artifactDatabase = {
     admin(identity);
     const url = await app.settings.read("assistant.rsql_url");
     const token = await app.settings.read("assistant.rsql_api_token");
+    const targets = await app.settings.read("assistant.rsql_allowed_targets");
     return {
       url: url.value,
       tokenSet: token.stored !== "unreadable" && Boolean(token.value),
+      allowedTargets: targets.value,
       unreadable: {
         "assistant.rsql_url": url.stored === "unreadable",
         "assistant.rsql_api_token": token.stored === "unreadable",
+        "assistant.rsql_allowed_targets": targets.stored === "unreadable",
       },
     };
   },
   async configure(input: unknown, identity: ArtifactIdentity, testOnly = false) {
     admin(identity);
     const next = DatabaseSettings.parse(input);
+    const invalidTargets = next.allowedTargets === undefined ? undefined : validateNetworkAllowlist(next.allowedTargets);
+    if (invalidTargets) throw new DatabaseError("DB_TARGETS_INVALID", 400, invalidTargets);
     await sql.begin(async (db) => {
       await db`SELECT pg_advisory_xact_lock(hashtext('assistant-rsql-settings'))`;
       const states = { url: await app.settings.read("assistant.rsql_url"), token: await app.settings.read("assistant.rsql_api_token") };
@@ -384,6 +396,15 @@ export const artifactDatabase = {
         )
           throw new SettingUnreadableError(key);
       }
+      // The list in use applies to a test; only replacing an unreadable stored list needs confirmation.
+      const targets = await app.settings.read("assistant.rsql_allowed_targets");
+      if (
+        !testOnly &&
+        targets.stored === "unreadable" &&
+        next.allowedTargets !== undefined &&
+        !next.replaceUnreadable?.includes("assistant.rsql_allowed_targets")
+      )
+        throw new SettingUnreadableError("assistant.rsql_allowed_targets");
       const current = { url: states.url.value, token: states.token.value },
         url = next.url ?? current.url,
         token = next.token ?? current.token;
@@ -398,7 +419,8 @@ export const artifactDatabase = {
       }
       const knownUrl = next.url !== undefined || states.url.stored !== "unreadable";
       const knownToken = next.token !== undefined || states.token.stored !== "unreadable";
-      if (knownUrl && knownToken && (url || token)) result(await connection({ url, token }).namespaces.list({ limit: 1 }));
+      if (knownUrl && knownToken && (url || token))
+        result(await connection({ url, token, allowedTargets: next.allowedTargets }).namespaces.list({ limit: 1 }));
       if (testOnly) return;
       if (next.url !== undefined)
         await set("assistant.rsql_url", next.url, db, {
@@ -408,11 +430,16 @@ export const artifactDatabase = {
         await set("assistant.rsql_api_token", next.token, db, {
           replaceUnreadable: next.replaceUnreadable?.includes("assistant.rsql_api_token") === true,
         });
+      if (next.allowedTargets !== undefined)
+        await set("assistant.rsql_allowed_targets", next.allowedTargets, db, {
+          replaceUnreadable: next.replaceUnreadable?.includes("assistant.rsql_allowed_targets") === true,
+        });
     });
     if (testOnly) return { connected: true };
     await invalidateSettingsCache([
       ...(next.url !== undefined ? ["assistant.rsql_url"] : []),
       ...(next.token !== undefined ? ["assistant.rsql_api_token"] : []),
+      ...(next.allowedTargets !== undefined ? ["assistant.rsql_allowed_targets"] : []),
     ]);
     return this.settings(identity);
   },

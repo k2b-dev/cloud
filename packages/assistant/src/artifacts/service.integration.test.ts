@@ -3007,7 +3007,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await artifactDatabase.settings(administrator)).toEqual({
         url: upstream.url.origin,
         tokenSet: true,
-        unreadable: { "assistant.rsql_url": false, "assistant.rsql_api_token": false },
+        allowedTargets: targets,
+        unreadable: { "assistant.rsql_url": false, "assistant.rsql_api_token": false, "assistant.rsql_allowed_targets": false },
       });
       expect(await artifactDatabase.configure({ url: upstream.url.origin }, administrator, true)).toEqual({ connected: true });
       expect(writes).not.toHaveBeenCalled();
