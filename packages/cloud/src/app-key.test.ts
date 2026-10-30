@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../scripts/fixtures/app-key-fixtures";
 import {
   appKeyFingerprint,
   deriveAppPublicKey,
@@ -8,7 +9,6 @@ import {
   parseAppKey,
   validateAppKeyAppId,
 } from "./app-key";
-import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "./app-key.test-fixture";
 
 const fixture = APP_KEY_FIXTURES[0];
 const key = { installationId: INSTALLATION_ID, appId: "third-party", keyId: KEY_ID, seed: fixture.seed };

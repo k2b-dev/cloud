@@ -122,7 +122,9 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         expect(await sql`SELECT id FROM pulse.bases`).toHaveLength(0);
         expect(await sql`SELECT id FROM pulse.sources`).toHaveLength(0);
         expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${account}::uuid`).toHaveLength(0);
-        expect(await sql`SELECT * FROM auth.service_account_credentials`).toEqual([{ service_account_id: workload }]);
+        expect(await sql<{ service_account_id: string }[]>`SELECT service_account_id FROM auth.service_account_credentials`).toEqual([
+          { service_account_id: workload },
+        ]);
         expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${workload}::uuid`).toHaveLength(1);
         expect(await sql`SELECT id FROM auth.access WHERE id=${access}::uuid`).toHaveLength(0);
         await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${base}::uuid,'New001','Preserved')`;

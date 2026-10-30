@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { createAdminAppKeyRoutes } from "@k2b/cloud/api";
 import { appKeyFingerprint } from "@k2b/cloud/app-key";
 import type { User } from "@k2b/cloud/contracts/shared";
 import { appKeys, getActiveAppKey, getInstallationId, touchAppKey } from "@k2b/cloud/services/app-keys";
 import { serviceAccountCredentials } from "@k2b/cloud/services/service-account-credentials";
 import { SQL, sql } from "bun";
+import { APP_KEY_FIXTURES } from "../../../scripts/fixtures/app-key-fixtures";
 import { databaseSuite, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
-import { createAdminAppKeyRoutes } from "../../cloud/src/api/admin-app-keys";
-import { APP_KEY_FIXTURES } from "../../cloud/src/app-key.test-fixture";
 import { migrateAppKeys } from "./migrate/core/app-keys";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";

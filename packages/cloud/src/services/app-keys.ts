@@ -118,19 +118,28 @@ export const registerAppKey = async (params: {
   });
   if (!account.ok) return account;
   return sql.begin(async (db) => {
-    // Same account and lock order as workload issuance. The lock also covers the
-    // first enrollment and serializes concurrent creates across Core replicas.
-    const [locked] = await db<
-      { status: AppKeyMetadata["accountStatus"] }[]
-    >`SELECT status FROM auth.service_accounts WHERE id = ${account.data.id}::uuid FOR UPDATE`;
+    // Resource-bound accounts carry no unique index, so concurrent first enrollments can
+    // create more than one account for an app. One transaction lock per app serializes
+    // enrollment across Core replicas; keys count and land on the oldest account, the
+    // same one getByResource returns.
+    await db`SELECT pg_advisory_xact_lock(hashtextextended(${`app_key:${params.appId}`}, 0))`;
+    const [locked] = await db<{ id: string; status: AppKeyMetadata["accountStatus"] }[]>`
+      SELECT id, status FROM auth.service_accounts
+      WHERE kind = 'resource_bound' AND app_id = ${params.appId} AND resource_type = 'cloud.app' AND resource_id = ${params.appId}
+      ORDER BY created_at ASC
+      LIMIT 1
+      FOR UPDATE`;
     if (!locked) return fail(err.notFound("Service account"));
+    const accountId = locked.id;
     const accountStatus = locked.status;
     const installationId = await getInstallationId(db);
     const [existing] = await db<{ id: string; fingerprint: string; status: AppKeyMetadata["status"] }[]>`
-      SELECT id, fingerprint,
-        CASE WHEN status = 'revoked' THEN 'revoked' WHEN expires_at <= now() THEN 'expired' ELSE 'active' END AS status
-      FROM auth.service_account_credentials
-      WHERE service_account_id = ${account.data.id}::uuid AND kind = 'app_key' AND public_key = ${params.publicKey}
+      SELECT c.id, c.fingerprint,
+        CASE WHEN c.status = 'revoked' THEN 'revoked' WHEN c.expires_at <= now() THEN 'expired' ELSE 'active' END AS status
+      FROM auth.service_account_credentials c
+      JOIN auth.service_accounts sa ON sa.id = c.service_account_id
+      WHERE sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app'
+        AND sa.resource_id = ${params.appId} AND c.kind = 'app_key' AND c.public_key = ${params.publicKey}
     `;
     // Revoked/expired keys remain idempotent and are never reactivated.
     if (existing)
@@ -142,16 +151,18 @@ export const registerAppKey = async (params: {
       });
     if (expiresAt && expiresAt.getTime() <= Date.now()) return fail(err.badInput("Expiry must be in the future"));
     const [count] = await db<{ active: number }[]>`
-      SELECT count(*)::int AS active FROM auth.service_account_credentials
-      WHERE service_account_id = ${account.data.id}::uuid AND kind = 'app_key' AND status = 'active'
-        AND (expires_at IS NULL OR expires_at > now())
+      SELECT count(*)::int AS active FROM auth.service_account_credentials c
+      JOIN auth.service_accounts sa ON sa.id = c.service_account_id
+      WHERE sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app'
+        AND sa.resource_id = ${params.appId} AND c.kind = 'app_key' AND c.status = 'active'
+        AND (c.expires_at IS NULL OR c.expires_at > now())
     `;
     if ((count?.active ?? 0) >= 2)
       return fail({ ...err.conflict("App key"), message: "An app can have at most two active keys; revoke an old key first" });
     const [row] = await db<{ id: string }[]>`
       INSERT INTO auth.service_account_credentials
         (service_account_id, name, kind, public_key, fingerprint, created_by, expires_at)
-      VALUES (${account.data.id}::uuid, ${name}, 'app_key', ${params.publicKey}, ${fingerprint}, ${params.actor.id}::uuid, ${expiresAt})
+      VALUES (${accountId}::uuid, ${name}, 'app_key', ${params.publicKey}, ${fingerprint}, ${params.actor.id}::uuid, ${expiresAt})
       RETURNING id
     `;
     if (!row) throw new Error("App key registration returned no key");
@@ -161,7 +172,7 @@ export const registerAppKey = async (params: {
         outcome: "allowed",
         actor: actorForAudit(params.actor),
         target: { type: "service_account_credential", id: row.id, label: name },
-        metadata: { appId: params.appId, serviceAccountId: account.data.id, fingerprint },
+        metadata: { appId: params.appId, serviceAccountId: accountId, fingerprint },
       },
       db,
     );

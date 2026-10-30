@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
-import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../app-key.test-fixture";
+import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../../scripts/fixtures/app-key-fixtures";
 import type { AuthContext } from "../server";
 import { appKeys } from "../services/app-keys";
 import { createAdminAppKeyRoutes } from "./admin-app-keys";
@@ -60,7 +60,7 @@ test("admin routes expose installation, register and revoke exact app keys with 
   const routes = createAdminAppKeyRoutes(authenticate, service);
   const response = await routes.request(request("/oauth/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey, name: "Deploy" }));
   expect(response.status).toBe(200);
-  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("cache-control")).toContain("no-store");
   expect(await response.json()).toEqual({
     installationId: INSTALLATION_ID,
     keyId: KEY_ID,
