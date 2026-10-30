@@ -165,3 +165,7 @@ bytes. At most one render runs at a time; other notes receive the retryable
 keyed by content hash. No GET or HEAD writes to Postgres or updates human-open
 dates. HEAD validates access but does not render. Cache hits still check the
 current note status, including deletion and blocking.
+
+The CSP permits the editor's runtime styles and local inline font subsets.
+Scripts remain restricted to the same origin; inline scripts remain blocked.
+WebSockets may connect only to the configured Notes origin.
