@@ -50,7 +50,8 @@ test("renderer creates a local 1200 by 630 PNG without fetching note URLs", asyn
 });
 
 test("metadata bounds work and XML rendering tolerates control characters and lone surrogates", async () => {
-  for (const token of ["<", "[", "](", "![", " ", "`"]) expect(previewMeta("# Title\n\n" + token.repeat(200_000)).title).toBe("Title");
+  for (const token of ["<", "[", "](", "![", " ", "`", "|---|\n"])
+    expect(previewMeta("# Title\n\n" + token.repeat(Math.ceil(2_097_152 / token.length))).title).toBe("Title");
   const png = await renderPreview("# A\u0000\ud800B\n\nText\uffff");
   expect(Buffer.from(png).subarray(1, 4).toString()).toBe("PNG");
 });
