@@ -44,8 +44,9 @@ const registration = <T extends Function>(fn: T): T => {
   const cached = registrations.get(fn);
   if (cached) return cached as T;
   const wrapped = new Proxy(fn, {
-    get(target, key, receiver) {
-      const value = Reflect.get(target, key, receiver);
+    get(target, key) {
+      // Bun's native modifier getters require the original ScopeFunctions object.
+      const value = Reflect.get(target, key, target);
       return typeof value === "function" ? registration(value) : value;
     },
     apply(target, receiver, args) {
