@@ -24,7 +24,7 @@ export function Editor(props: EditorProps) {
       extensions={[local.editor.extension(), local.extensions ?? []]}
       onReady={(controller, controls) => {
         mounted = controller.view;
-        local.editor.attach(controller, controls);
+        local.editor.attach(controller.view, { controller, controls });
         local.onReady?.(controller, controls);
       }}
     />

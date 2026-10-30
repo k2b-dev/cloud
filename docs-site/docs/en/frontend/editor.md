@@ -53,8 +53,8 @@ export function NoteEditor(props: { initial: string; locale: string }) {
 `<Editor>` accepts every `TextEditor` prop, such as `presentation`, `host`,
 `extensions`, and `onChange`. Pass `toolbar={false}` when you place your own
 `<Toolbar>`. A host that mounts `TextEditor` itself adds `editor.extension()`
-to its `extensions` and calls `editor.attach(controller, controls)` from
-`onReady` and `editor.detach(view)` when it unmounts.
+to its `extensions`, calls `editor.attach(controller.view, { controller, controls })`
+from `onReady`, and calls `editor.detach(view)` when it unmounts.
 
 ## Describe actions as data
 

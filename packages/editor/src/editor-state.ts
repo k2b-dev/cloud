@@ -28,9 +28,7 @@ export type EditorAction = {
  */
 export const asUndoStep = (view: EditorView, run: () => void | Promise<void>) => {
   view.dispatch({ annotations: isolateHistory.of("before") });
-  const close = () => {
-    if (view.dom.isConnected) view.dispatch({ annotations: isolateHistory.of("after") });
-  };
+  const close = () => view.dispatch({ annotations: isolateHistory.of("after") });
   let result: void | Promise<void>;
   try {
     result = run();
@@ -63,8 +61,11 @@ export type EditorHandle = {
   isEnabled: (action: Pick<EditorAction, "isEnabled">) => boolean;
   /** Everything `<Editor>` passes to the view. Hosts mounting `TextEditor` themselves add this to its extensions. */
   extension: () => Extension;
-  /** Hand the mounted editor to the handle; `<Editor>` calls this from `onReady`. */
-  attach: (controller: TextEditorController, controls?: TextEditorControls) => void;
+  /**
+   * Hand a mounted view to the handle; `<Editor>` does this from `onReady`. A host that mounts the view itself also
+   * passes the text editor's controller and table controls when it has them.
+   */
+  attach: (view: EditorView, parts?: { controller?: TextEditorController; controls?: TextEditorControls }) => void;
   /** Forget a view that is being destroyed; a newer attached view stays. */
   detach: (view: EditorView) => void;
 };
@@ -138,12 +139,12 @@ export function createEditor(): EditorHandle {
     isActive,
     isEnabled,
     extension: () => [tracker, [...slots].map((slot) => slot.compartment.of(slot.value))],
-    attach(next, nextControls) {
-      setController(next);
-      setControls(nextControls);
-      setView(next.view);
-      setState(next.view.state);
-      setFocused(next.view.hasFocus);
+    attach(next, parts) {
+      setController(parts?.controller);
+      setControls(parts?.controls);
+      setView(next);
+      setState(next.state);
+      setFocused(next.hasFocus);
     },
     detach(old) {
       if (untrack(view) !== old) return;
