@@ -54,6 +54,6 @@ test("setting repairs require JSON and confirmation and carry explicit replaceme
     },
   ]);
   expect((await invoke(["set", "mail.workflow_ai_body_max_chars"], { value: "12000", app: "mail", yes: true }, {})).requests).toEqual([
-    { path: "/api/admin/core/settings/env/mail/mail.workflow_ai_body_max_chars", body: { value: 12000 } },
+    { path: "/api/admin/core/settings/env/mail/mail.workflow_ai_body_max_chars", body: { value: 12000, replaceUnreadable: false } },
   ]);
 });
