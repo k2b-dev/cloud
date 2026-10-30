@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rootCertificates } from "node:tls";
+import * as settings from "@k2b/cloud/services/settings";
 import { toLegacySettingDefs, validateSettingValue } from "@k2b/cloud/services/settings/defaults";
 import { writeKey } from "@k2b/cloud/services/settings/store";
 import { stubConnections } from "../../../../../scripts/fixtures/platform";
-import { app } from "../../config";
+import "../../config";
 import { natsMetricSamples } from "./metrics";
 import { getNatsClusterDiagnostics, type NatsDiagnosticsDependencies, natsDiagnosticsConfig } from "./service";
 import { credsContentAuthenticator, natsDiagnosticsBootstrap, natsDiagnosticsSettings, systemAccessKind } from "./settings";
@@ -122,12 +123,16 @@ const readConfig = async (
   access = "",
   stored: "none" | "readable" | "unreadable" = "readable",
   servers = ["nats://system"],
+  bindingMismatch = false,
 ) => {
-  const read = spyOn(app.settings, "read");
-  read.mockResolvedValueOnce({ value: servers, stored: "readable" });
-  read.mockResolvedValueOnce({ value: kind, stored: "readable" });
-  read.mockResolvedValueOnce({ value: access, stored });
-  read.mockResolvedValueOnce({ value: "", stored: "none" });
+  const read = spyOn(settings, "readStates").mockResolvedValue(
+    new Map([
+      ["gateway.nats_admin_servers", { value: servers, stored: "readable" }],
+      ["gateway.nats_admin_access_kind", { value: kind, stored: "readable" }],
+      ["gateway.nats_admin_access", { value: access, stored, ...(bindingMismatch ? { bindingMismatch: true as const } : {}) }],
+      ["gateway.nats_admin_tls_ca", { value: "", stored: "none" }],
+    ]),
+  );
   try {
     return await natsDiagnosticsConfig();
   } finally {
@@ -163,7 +168,7 @@ test("without settings cluster diagnostics stay off and never connect", async ()
 });
 
 test("a settings outage marks cluster diagnostics unavailable without connecting", async () => {
-  const read = spyOn(app.settings, "read").mockRejectedValue(new Error("database unavailable"));
+  const read = spyOn(settings, "readStates").mockRejectedValue(new Error("database unavailable"));
   try {
     const config = await natsDiagnosticsConfig();
     expect(config.adminSettingsUnavailable).toBe(true);
@@ -181,4 +186,25 @@ test("a settings outage marks cluster diagnostics unavailable without connecting
 
 test("credentials without a trailing newline remain usable at the transport boundary", () => {
   expect(credsContentAuthenticator(creds)("fixture-nonce")).toMatchObject({ jwt, nkey: publicKey });
+});
+
+test("a configured endpoint without fresh access never dials, and reports re-entry", async () => {
+  const config = await readConfig("nkey", "", "readable", ["nats://changed.example:4222"], true);
+  let calls = 0;
+  const cluster = await getNatsClusterDiagnostics(config, {
+    connect: async () => {
+      calls++;
+      throw new Error("must not dial");
+    },
+  });
+  expect(cluster).toMatchObject({
+    status: "not_configured",
+    issue: "Enter system access for the current server list to enable cluster diagnostics.",
+  });
+  expect(config.admin).not.toHaveProperty("seed");
+  expect(calls).toBe(0);
+});
+
+test("explicitly cleared access retains the anonymous diagnostics mode", async () => {
+  expect((await readConfig("creds", "", "readable")).admin.servers).toEqual(["nats://system"]);
 });

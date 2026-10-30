@@ -298,6 +298,14 @@ suite("history reader SQL and permission projection in a private database", () =
   test("batch candidates have an indexed batch/order access path without sorting the whole activity table", async () => {
     const anchor = candidate();
     await seed(anchor);
+    // The plan follows the table's statistics, so the test sets them: 2,000 history rows of one location in 200
+    // batches, the anchor's among them, then ANALYZE. Statistics an earlier test left behind survive TRUNCATE and chose
+    // another plan in CI (#2180).
+    await sql`INSERT INTO filesv2.activity(id,action,state,server_url,root,base_id,directory,name,actor_kind,actor_user_id,via,batch_id,started_at,finished_at)
+      SELECT gen_random_uuid(),'item.move','done',${anchor.server_url},'cloud',${baseId}::uuid,false,'peer','user',${actorId}::uuid,'web',
+        CASE WHEN n % 200 = 0 THEN ${anchor.batch_id}::uuid ELSE md5('batch-' || (n % 200))::uuid END,
+        '2030-05-01T00:00:00Z'::timestamptz + n * interval '1 minute',NULL FROM generate_series(1,2000) n`;
+    await sql`ANALYZE filesv2.activity`.simple();
     const db = await sql.reserve();
     try {
       await db`BEGIN`;
@@ -306,9 +314,15 @@ suite("history reader SQL and permission projection in a private database", () =
         WHERE batch_id=${anchor.batch_id}::uuid AND id<>${anchor.id}::uuid
           AND (base_id=${baseId}::uuid OR base_after_id=${baseId}::uuid OR (actor_kind='user' AND actor_user_id=${actorId}::uuid))
         ORDER BY coalesce(finished_at,started_at) DESC,id DESC LIMIT 499`;
-      expect(JSON.stringify(plan)).toContain("filesv2_activity_batch_effective");
-      expect(JSON.stringify(plan)).not.toContain('"Node Type":"Sort"');
-      expect(JSON.stringify(plan)).not.toContain('"Node Type":"Seq Scan"');
+      // Every read of the history goes through the batch index, so at most the batch's own rows are sorted.
+      type PlanNode = { "Node Type": string; "Relation Name"?: string; "Index Name"?: string; Plans?: PlanNode[] };
+      const nodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(nodes)];
+      const all = nodes((plan[0] as { "QUERY PLAN": [{ Plan: PlanNode }] })["QUERY PLAN"][0].Plan);
+      const scans = all.filter((node) => node["Node Type"].endsWith("Scan") && node["Node Type"] !== "Bitmap Heap Scan");
+      expect(scans.length).toBeGreaterThan(0);
+      expect(scans.map((node) => `${node["Node Type"]} ${node["Index Name"] ?? node["Relation Name"]}`)).toEqual(
+        scans.map((node) => `${node["Node Type"]} filesv2_activity_batch_effective`),
+      );
     } finally {
       await db`ROLLBACK`;
       db.release();

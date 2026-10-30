@@ -5,7 +5,7 @@ export const appEnv = defineEnv({
     schema: envList,
     default: ["rsql"],
     scope: "runtime",
-    doc: "Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Assistant rsql requests; unset allows public targets and `rsql`, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup.",
+    doc: "Deprecated: bootstraps `assistant.rsql_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Assistant rsql requests; unset allows public targets and `rsql`, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning.",
   },
   CLOUD_CLI_CHROMIUM: {
     schema: envString,

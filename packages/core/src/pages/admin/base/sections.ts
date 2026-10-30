@@ -14,7 +14,7 @@ export const generalSections = (locale: string): RegistryFormSection[] => {
       description: t.groupContactDescription,
       keys: ["app.contact_email", "app.copyright", "app.documentation_url"],
     },
-    { title: t.groupMaintenance, keys: ["app.cleanup_schedule"] },
+    { title: t.groupMaintenance, keys: ["app.cleanup_schedule", "outgoing_mail.allowed_targets", "gateway.trusted_proxies"] },
   ];
 };
 

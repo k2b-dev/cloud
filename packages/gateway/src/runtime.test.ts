@@ -19,6 +19,9 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     let registryVersion = 0;
     let builtVersion = -1;
     let hold: Promise<void> | undefined;
+    let diagnosticsFail = false;
+    let diagnosticsHang = false;
+    let diagnosticsCalls = 0;
     const writes: string[] = [];
     const callbacks: Array<{ run: () => void; interval: number; timer: ReturnType<typeof setInterval> }> = [];
     const interval = globalThis.setInterval;
@@ -62,6 +65,14 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       },
       superviseRuntimeTask: ({ run, signal }: { run: (signal: AbortSignal) => Promise<void>; signal: AbortSignal }) => run(signal),
     }));
+    mock.module("@k2b/cloud/services/settings/env-status", () => ({
+      readEnvSettingsStatus: async () => {
+        diagnosticsCalls++;
+        if (diagnosticsHang) return new Promise(() => {});
+        if (diagnosticsFail) throw new Error("database unavailable");
+        return [];
+      },
+    }));
     const { gatewayRuntime } = await import("./runtime");
     try {
       await gatewayRuntime.setup();
@@ -82,6 +93,25 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       expect(snapshot!.stats.totalRequests).toBe(42);
       expect(listCalls).toBeGreaterThan(1);
       expect(builtVersion).toBe(1);
+
+      // Diagnostics failures must not suppress the gateway's presence lease.
+      diagnosticsFail = true;
+      now += renewal.interval;
+      renewal.run();
+      await Bun.sleep(0);
+      expect(snapshot!.updatedAt).toBe(now);
+
+      diagnosticsHang = true;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        now += renewal.interval;
+        renewal.run();
+        await Bun.sleep(0);
+        expect(snapshot!.updatedAt).toBe(now);
+      }
+      const calls = diagnosticsCalls;
+      renewal.run();
+      await Bun.sleep(0);
+      expect(diagnosticsCalls).toBe(calls); // At most one pending diagnostic query.
 
       const pending = Promise.withResolvers<void>();
       hold = pending.promise;

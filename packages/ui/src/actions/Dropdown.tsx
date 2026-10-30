@@ -5,15 +5,18 @@ import {
   createUniqueId,
   For,
   type JSX,
+  mergeProps,
   onCleanup,
   onMount,
   Show,
   splitProps,
+  untrack,
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { KeyedFor } from "../internal/keyed-for";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
@@ -22,6 +25,9 @@ import { openMenuSheet, prefersMenuSheet } from "./menu-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
 const selectAction = (item: { action?: () => void }) => item.action;
+const closeOnSelectOf = (item: DropdownAction) => ("closeOnSelect" in item ? item.closeOnSelect : undefined);
+const hrefOf = (item: DropdownAction) => ("href" in item ? item.href : undefined);
+const externalOf = (item: DropdownAction) => ("external" in item ? item.external : undefined);
 
 export type DropdownPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left" | "right-start";
 
@@ -410,66 +416,79 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
 
 export function DropdownItems(props: { items: readonly DropdownItem[]; close: (restoreFocus?: boolean) => void }): JSX.Element {
   const messages = useUiMessages();
-  const renderItem = (item: DropdownAction | DropdownChoice): JSX.Element =>
-    "choice" in item ? (
-      <DropdownChoiceItem {...item} />
-    ) : (
+  // Rows read their current item: a host that rebuilds equal items while the menu is open keeps each row element (#2140).
+  const renderItem = (item: () => DropdownAction | DropdownChoice): JSX.Element => {
+    const initial = untrack(item);
+    if ("choice" in initial) return <DropdownChoiceItem {...mergeProps(() => item() as DropdownChoice)} />;
+    const action = () => item() as DropdownAction;
+    return (
       <DropdownItem
-        ariaLabel={item.ariaLabel}
-        closeOnSelect={"closeOnSelect" in item ? item.closeOnSelect : undefined}
-        icon={item.icon}
-        image={item.image}
-        description={item.description}
-        trailing={item.trailing}
-        variant={item.variant}
-        disabled={item.disabled}
-        class={item.class}
-        href={"href" in item ? item.href : undefined}
-        external={"external" in item ? item.external : undefined}
-        onSelect={selectAction(item)}
+        ariaLabel={action().ariaLabel}
+        closeOnSelect={closeOnSelectOf(action())}
+        icon={action().icon}
+        image={action().image}
+        description={action().description}
+        trailing={action().trailing}
+        variant={action().variant}
+        disabled={action().disabled}
+        class={action().class}
+        href={hrefOf(action())}
+        external={externalOf(action())}
+        onSelect={selectAction(action())}
       >
-        {item.label}
+        {action().label}
       </DropdownItem>
     );
+  };
 
   return (
     <MenuContext.Provider value={{ close: props.close }}>
-      <For each={props.items}>
-        {(item, index) => (
-          <Show when={"items" in item} fallback={renderItem(item as DropdownAction | DropdownChoice)}>
-            <div
-              class="k2b-dropdown__section"
-              data-divided={index() > 0 ? "true" : undefined}
-              role="group"
-              // A row of choices is no set of actions: without a label it stays unnamed rather than misnamed.
-              aria-label={
-                (item as DropdownSection).sectionLabel ?? ((item as DropdownSection).layout === "row" ? undefined : messages().actions)
-              }
-            >
-              <Show when={(item as DropdownSection).sectionLabel}>
-                {(label) => (
-                  <Show when={(item as DropdownSection).labelAction} fallback={<div class="k2b-dropdown__label">{label()}</div>}>
-                    {(action) => (
-                      <div class="k2b-dropdown__label k2b-dropdown__label--action">
-                        <span>{label()}</span>
-                        <DropdownSecondaryButton {...action()} class="k2b-dropdown__label-action" />
-                      </div>
-                    )}
-                  </Show>
-                )}
-              </Show>
-              <Show
-                when={(item as DropdownSection).layout === "row"}
-                fallback={<For each={(item as DropdownSection).items}>{renderItem}</For>}
+      <KeyedFor each={props.items} by={(item) => ("items" in item ? `section:${item.sectionLabel ?? ""}` : `item:${item.label}`)}>
+        {(current, index) => {
+          const item = current();
+          return (
+            <Show when={"items" in item} fallback={renderItem(current as () => DropdownAction | DropdownChoice)}>
+              <div
+                class="k2b-dropdown__section"
+                data-divided={index() > 0 ? "true" : undefined}
+                role="group"
+                // A row of choices is no set of actions: without a label it stays unnamed rather than misnamed.
+                aria-label={
+                  (current() as DropdownSection).sectionLabel ??
+                  ((current() as DropdownSection).layout === "row" ? undefined : messages().actions)
+                }
               >
-                <div class="k2b-dropdown__row">
-                  <For each={(item as DropdownSection).items}>{renderItem}</For>
-                </div>
-              </Show>
-            </div>
-          </Show>
-        )}
-      </For>
+                <Show when={(current() as DropdownSection).sectionLabel}>
+                  {(label) => (
+                    <Show when={(current() as DropdownSection).labelAction} fallback={<div class="k2b-dropdown__label">{label()}</div>}>
+                      {(action) => (
+                        <div class="k2b-dropdown__label k2b-dropdown__label--action">
+                          <span>{label()}</span>
+                          <DropdownSecondaryButton {...action()} class="k2b-dropdown__label-action" />
+                        </div>
+                      )}
+                    </Show>
+                  )}
+                </Show>
+                <Show
+                  when={(current() as DropdownSection).layout === "row"}
+                  fallback={
+                    <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
+                      {renderItem}
+                    </KeyedFor>
+                  }
+                >
+                  <div class="k2b-dropdown__row">
+                    <KeyedFor each={(current() as DropdownSection).items} by={(row) => row.label}>
+                      {renderItem}
+                    </KeyedFor>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+          );
+        }}
+      </KeyedFor>
     </MenuContext.Provider>
   );
 }

@@ -7,7 +7,6 @@ import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
 import { SQL, sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
-import { appEnv } from "../env";
 import { LIMITS } from "./contracts";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
 import { databaseConfigLock } from "./database-lock";
@@ -28,7 +27,8 @@ import { machineDataRight } from "./machine-authority";
 import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, requireArtifact, user } from "./service";
 
-export const rsqlAllowlist = () => parseNetworkAllowlistEnv("ASSISTANT_RSQL_ALLOWED_TARGETS", appEnv.ASSISTANT_RSQL_ALLOWED_TARGETS);
+export const rsqlAllowlist = async () =>
+  parseNetworkAllowlistEnv("assistant.rsql_allowed_targets", await app.settings.get("assistant.rsql_allowed_targets"));
 
 export class DatabaseError extends Error {
   constructor(
@@ -66,7 +66,7 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
         if (input instanceof Request) signals.push(input.signal);
         let response: Response;
         try {
-          response = await createAllowedNetworkFetch(rsqlAllowlist())(input, {
+          response = await createAllowedNetworkFetch(await rsqlAllowlist())(input, {
             ...init,
             redirect: "error",
             signal: AbortSignal.any(signals),
@@ -77,7 +77,7 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
             throw new DatabaseError(
               "DB_TARGET_BLOCKED",
               502,
-              "The rsql server address is on an internal network. An operator can allow it with ASSISTANT_RSQL_ALLOWED_TARGETS.",
+              "The rsql server address is on an internal network. An operator can allow it with assistant.rsql_allowed_targets.",
             );
           throw new DatabaseError(timeout.aborted ? "DB_TIMEOUT" : "DB_UNREACHABLE", 502);
         } finally {

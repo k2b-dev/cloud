@@ -29,6 +29,7 @@ import { metricsCommands } from "./metrics";
 import { natsCommands } from "./nats";
 import { notificationCommands } from "./notifications";
 import { outgoingMailCommands } from "./outgoing-mail";
+import { settingsCommands } from "./settings";
 import { syncCommands } from "./sync";
 import { telemetryCommands } from "./telemetry";
 import { webhookCommands } from "./webhooks";
@@ -73,6 +74,7 @@ export default defineCliCommands({
     postgres: "Inspect Postgres diagnostics.",
     redis: "Inspect Valkey diagnostics.",
     routes: "Inspect gateway routes.",
+    settings: "Inspect environment migration and change administrator settings.",
     sync: "Inspect Sync resources, schedules, and dead letters.",
     "sync dead-letters": "Inspect, replay, requeue, or remove dead letters.",
     "sync resources": "List Sync resource declarations.",
@@ -118,5 +120,6 @@ export default defineCliCommands({
     ...metricsCommands,
     ...natsCommands,
     ...syncCommands,
+    ...settingsCommands,
   ],
 });

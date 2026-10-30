@@ -23,6 +23,7 @@ for (const token of [undefined, ""]) {
         "assistant.storage_total_mib": 250,
         "assistant.rsql_url": "https://saved.test",
         "assistant.rsql_api_token": "",
+        "assistant.rsql_allowed_targets": ["rsql"],
       }[key],
     }));
     const write = spyOn(settings, "set").mockResolvedValue();
