@@ -32,7 +32,11 @@ export default function HealthCheckForm(props: { values: HealthCheckValues; unre
     locale,
     validate: (value): Record<string, string> => (value.schedule.trim() ? {} : { schedule: t().scheduleRequired }),
     pending: () => keys.some(confirmed),
-    onDiscard: () => setRefused({}),
+    // Discard also drops a confirmed replacement, so a later save cannot overwrite an unreadable value it no longer shows.
+    onDiscard: () => {
+      setRefused({});
+      setReplace({});
+    },
     save: async (value, commit) => {
       setRefused({});
       const next = { ...value, schedule: value.schedule.trim() };

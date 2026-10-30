@@ -120,6 +120,10 @@ test("an empty schedule is invalid at its field and blocks Save; an unreadable v
   await page.getByRole("checkbox", { name: "Replace stored value: Check schedule" }).check();
   // The displayed fallback can be saved as it is once the replacement is confirmed.
   expect(await visible("Save").isDisabled()).toBe(false);
+  // Discard also takes back the confirmation.
+  await visible("Discard").click();
+  expect(await page.getByRole("checkbox", { name: "Replace stored value: Check schedule" }).isChecked()).toBe(false);
+  expect(await visible("Save").isDisabled()).toBe(true);
 
   await goto("/admin/observability/retention?state=unreadable");
   expect(await page.getByText("Stored settings cannot be read").isVisible()).toBe(true);
