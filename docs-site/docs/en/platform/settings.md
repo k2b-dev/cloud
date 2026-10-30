@@ -167,6 +167,11 @@ controls for newly unreadable keys; never silently retry with replacement enable
 `remove()` deletes the stored override. The next read uses the fallback or
 default.
 
+For legacy environment migrations, administrators can run `cld admin settings status --env`
+and repair whole values with `cld admin settings set`. See the
+[operator migration guide](/en/docs/operations/deprecations-and-migrations) for
+output fields, exit codes, ownership, and when changes take effect.
+
 The server API validates writes against the declaration. It rejects unknown
 keys and values of the wrong type.
 

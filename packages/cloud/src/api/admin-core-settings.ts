@@ -27,6 +27,7 @@ import { SETTINGS_MAP, validateSettingValue } from "../services/settings/default
 import { assertGeoBudgetPair, GeoBudgetSettingError } from "../services/settings/geo-budget";
 import { invalidateSettingsCacheForAdmin } from "../services/settings/store";
 import { assertSettingVersions } from "../services/settings/versions";
+import { adminSettingsEnvRoutes } from "./admin-settings-env";
 
 const BulkUpdatesSchema = z
   .object({
@@ -72,6 +73,7 @@ const invalidateCommittedSettings = async (keys: readonly string[]): Promise<voi
 const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app.settingKeys ?? [])]);
 
 const app = new Hono<AuthContext>()
+  .route("/env", adminSettingsEnvRoutes)
   .get("/web-vitals", auth.requireRole("admin"), async (c) =>
     c.json({ enabled: (await settings.get("observability.web_vitals.enabled")) === true }),
   )

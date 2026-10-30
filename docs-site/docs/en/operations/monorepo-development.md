@@ -605,8 +605,8 @@ enforce their own authorization. See [Universal search](/en/docs/platform/search
 
 ## Workflow inference budgets
 
-Workflow AI uses `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` and
-`WORKFLOW_AI_QUEUE_TIMEOUT_MS` (both 60,000 ms by default). Keep these budgets
+Workflow AI uses `ai.workflow_attempt_timeout_ms` and
+`ai.workflow_queue_timeout_ms` (both 60,000 ms by default). Keep these budgets
 consistent across workers. Queue overload rejects new work; failed run details
 provide the recovery path after capacity recovers. The queue deadline includes
 application downtime: pending tasks older than the queue budget fail visibly on
@@ -623,15 +623,15 @@ expire healthy legacy attempts. Then remove the legacy
 retain its diagnostics until every associated Postgres task is terminal. Do not
 delete pending domain tasks to clear a queue.
 
-`MAIL_WORKFLOW_AI_BODY_MAX_CHARS` defaults to 20,000, the long-input pilot budget.
+`mail.workflow_ai_body_max_chars` defaults to 20,000, the long-input pilot budget.
 The complete request still has to fit the existing 100,000-byte JSONB limit.
 Increasing the body allowance does not bypass that storage constraint. Oversize
 messages require narrower workflow input or manual inspection, followed by retry;
 the stored mail remains intact.
 
-`WORKFLOW_AI_BUDGET` is one JSON registry entry. Its default is
+`ai.workflow_budget` is an admin text setting containing JSON. Its default is
 `{"maxStepsPerSource":2,"tasksPerMinute":10,"burst":20,"sourcesPer24Hours":2000,"scopeConcurrent":1,"globalConcurrent":4}`.
-Deploy the same value to all Mail workers. Postgres serializes short admission
+Restart all AI workers after changing `globalConcurrent`; other budget fields apply to new work. Postgres serializes short admission
 transactions across replicas; reservations count queued and running work.
 Capacity and rate admission rejections use bounded workflow retries; source and
 daily limits are terminal. Exhaustion remains visible in run details. The rolling ledger

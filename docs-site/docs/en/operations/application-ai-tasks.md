@@ -22,8 +22,8 @@ application result retention. Existing workflow rows
 and their cache identities remain unchanged. No new service or environment
 variable is required.
 
-Application-owned tasks share `WORKFLOW_AI_BUDGET`,
-`WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` and `WORKFLOW_AI_QUEUE_TIMEOUT_MS` with workflow
+Application-owned tasks share `ai.workflow_budget`,
+`ai.workflow_attempt_timeout_ms` and `ai.workflow_queue_timeout_ms` with workflow
 inference. Capacity and rate admission remain atomic across replicas; cached
 successes do not consume another admission. The shared worker recovers queued
 jobs and marks expired deliveries visibly failed. Durable task requests contain

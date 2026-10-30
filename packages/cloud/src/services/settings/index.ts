@@ -70,7 +70,7 @@ const shouldBootstrapValue = (def: SettingDef, value: unknown): boolean => {
       return typeof value === "number" && Number.isFinite(value);
     case "string_list":
     case "number_list":
-      return Array.isArray(value) && value.length > 0;
+      return Array.isArray(value) && (value.length > 0 || def.envVariable !== undefined);
     default:
       return typeof value === "string" && value.trim().length > 0;
   }

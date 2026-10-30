@@ -1,4 +1,5 @@
-import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { coreSettings } from "../services/settings/api";
 import { WorkflowAiAdmissionError } from "../workflows/ai/policy";
 import * as runtime from "../workflows/ai/runtime";
 import * as store from "../workflows/ai/store";
@@ -6,6 +7,12 @@ import type { WorkflowAiTask } from "../workflows/ai/types";
 import { type ApplicationAiTaskInput, deleteApplicationAiTasks, releaseApplicationAiTask, runApplicationAiTask } from "./application-tasks";
 import * as model from "./task-model";
 import type { AiResolvedModel } from "./types";
+
+let settingsGet: ReturnType<typeof spyOn<typeof coreSettings, "get">>;
+beforeEach(() => {
+  settingsGet = spyOn(coreSettings, "get").mockResolvedValue(60_000);
+});
+afterEach(() => settingsGet.mockRestore());
 
 const resolved: AiResolvedModel = {
   model: { id: "pinned" },

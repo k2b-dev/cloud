@@ -61,7 +61,7 @@ gets one bounded refresh attempt; a removed or emergency-revoked known key can
 remain usable only until that local cache expires, at most five minutes.
 
 Every application must be able to reach Core's JWKS before JWT issuance is
-enabled. Set `CLOUD_IDENTITY_JWKS_ORIGIN` to the private Core service origin so
+enabled. Set `CLOUD_CORE_INTERNAL_ORIGIN` to the private Core service origin so
 a cold start or unknown `kid` does not depend on public DNS, ingress, or
 hairpin routing. The token issuer remains the public HTTPS Cloud origin; only
 the public-key transport uses the private address. A warm verifier can tolerate
