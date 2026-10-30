@@ -1,4 +1,4 @@
-import { env } from "@k2b/cloud/config";
+import { connections } from "@k2b/cloud";
 import type { DslQueryPreviewResponse, Field, GridRecord, RecordDisplayConfig } from "../contracts";
 import type { BackgroundDocumentState } from "../custom-apps/background-state";
 import type { CustomAppCapabilities, CustomAppDefinition, CustomAppPage, CustomAppRowNavigation } from "../custom-apps/contracts";
@@ -106,7 +106,7 @@ export const executePublishedCustomAppRecords = async (input: {
   if (displayFieldIds.size !== publicDisplayFieldIds.length) return null;
 
   const search = block.searchable ? input.search?.trim().slice(0, 200) || undefined : undefined;
-  const cursorSigningKey = env.APP_SECRET;
+  const cursorSigningKey = connections().appSecret.current;
   if (!cursorSigningKey) throw new Error("APP_SECRET is required for Custom App Records pagination");
   const cursorFingerprint = gqlResultFingerprint({
     baseId: input.baseId,
@@ -343,7 +343,7 @@ export const executePublishedCustomAppRecords = async (input: {
         fieldIds: [imageFieldId],
       })
     : {};
-  const secret = env.APP_SECRET;
+  const secret = connections().appSecret.current;
   if (imageFieldId && !secret) throw new Error("APP_SECRET is required for Custom App file previews");
   const filePreviews = Object.fromEntries(
     Object.entries(previews).map(([recordId, byField]) => [

@@ -1,5 +1,5 @@
 import { RedisClient } from "bun";
-import { env } from "../config/env";
+import { connections } from "../runtime/connections";
 
 // Cache commands must not queue across a disconnect: delayed fills/invalidations
 // are not useful, and reads must be able to fall back to Postgres. Keep this
@@ -10,7 +10,7 @@ let reconnecting: Promise<void> | undefined;
 
 export const requestCacheRedis = async (): Promise<RedisClient> => {
   if (!client) {
-    client = new RedisClient(env.REDIS_URL, { enableOfflineQueue: false });
+    client = new RedisClient(connections().valkey.url, { enableOfflineQueue: false });
     // The first operation waits for normal connection establishment (Bun's
     // connection timeout applies). Later disconnected operations fail promptly.
     initialConnection = client.connect().catch(() => {});

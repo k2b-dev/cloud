@@ -16,6 +16,8 @@ const input = z
   .parse(await Bun.stdin.json());
 assertRunUrl(process.env.DATABASE_URL ?? "", input.postgresPort, "postgresql:", "cloud_perf_test");
 assertRunUrl(process.env.REDIS_URL ?? "", input.valkeyPort, "redis:");
+const { initializePlatform } = await import("@k2b/cloud/start");
+await initializePlatform({ appId: "mail", source: "env" });
 const { ingestEnvelope } = await import("../../src/service/sync-runtime");
 let enqueuedAt = 0;
 try {

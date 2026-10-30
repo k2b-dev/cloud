@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { secrets } from "@k2b/cloud/services";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
 import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
 
 // Unlock grants are encrypted with the settings key; pin a test-only APP_SECRET instead of inheriting the shell's or CI's.
-const originalSecret = process.env.APP_SECRET;
+let secretStub: ReturnType<typeof stubConnections> | undefined;
 beforeAll(() => {
-  process.env.APP_SECRET = "filesv2-share-password-test-secret";
+  secretStub = stubConnections({ appSecret: { current: "filesv2-share-password-test-secret" } });
 });
 afterAll(() => {
-  if (originalSecret === undefined) delete process.env.APP_SECRET;
-  else process.env.APP_SECRET = originalSecret;
+  secretStub?.mockRestore();
 });
 
 test("Argon2id salts equal passwords independently and verifies exact bytes", async () => {

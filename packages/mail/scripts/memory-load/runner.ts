@@ -144,6 +144,8 @@ export async function run(options: Options): Promise<void> {
     process.env.DATABASE_URL = database.url;
     const namespace = `test-mail-memory-${crypto.randomUUID()}`;
     process.env.SYNC_NAMESPACE = namespace;
+    const { initializeTestPlatform } = await import("../../../../scripts/fixtures/platform");
+    await initializeTestPlatform("mail");
     memoryBudget = await import("../../src/service/processing-memory-budget");
     const { deleteTestNamespace } = await import("../../../../scripts/fixtures/test-sync");
     cleanup.push(() => redis.close());

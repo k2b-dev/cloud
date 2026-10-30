@@ -1,4 +1,4 @@
-import { env } from "@k2b/cloud/config";
+import { connections } from "@k2b/cloud";
 import { RedisClient } from "bun";
 
 // One minute of burst capacity, continuous refill. Redis TIME keeps replicas on one clock.
@@ -41,7 +41,7 @@ export const createIngestQuota = (url?: string): IngestQuota => {
     consume: async (input) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        client ??= new RedisClient(url ?? env.REDIS_URL, { enableOfflineQueue: false, connectionTimeout: 1000 });
+        client ??= new RedisClient(url ?? connections().valkey.url, { enableOfflineQueue: false, connectionTimeout: 1000 });
         const current = client;
         const operation = async () => {
           if (!current.connected) {

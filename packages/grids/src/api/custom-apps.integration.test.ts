@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { connections } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
@@ -6,6 +7,7 @@ import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { DslQueryPreviewResponse } from "../contracts";
 import { CustomAppCapabilitiesSchema, type CustomAppDefinition, type CustomAppReferencedRecordsBlock } from "../custom-apps/contracts";
@@ -867,50 +869,52 @@ describe("Grids App Form runtime", () => {
           INSERT INTO grids.file_attachments (file_id, record_id, field_id, position)
           VALUES (${fileId}::uuid, ${recordId}::uuid, ${imageFieldId}::uuid, 0)
         `;
-        const previousAppSecret = process.env.APP_SECRET;
-        process.env.APP_SECRET = "custom-app-file-test-secret";
+        const secretStub = stubConnections({ ...connections(), appSecret: { current: "custom-app-file-test-secret" } });
+        try {
+          const cardsResponse = await publicApi.request(`/apps/runtime/${applied.data.shortId}/home/requests/records`, {
+            headers: { "x-forwarded-for": `custom-app-cards-${baseId}` },
+          });
+          expect(cardsResponse.status).toBe(200);
+          const cardsBody = (await cardsResponse.json()) as {
+            presentation?: { fields: Array<{ id: string; type: string }> };
+            cards?: { displayConfig: { mode: string }; records: Array<{ id: string; data: Record<string, unknown> }> };
+          };
+          expect(cardsBody.cards?.displayConfig.mode).toBe("cards");
+          expect(cardsBody.presentation?.fields).toContainEqual(expect.objectContaining({ id: fieldPublicId, type: "text" }));
+          expect(cardsBody.cards?.records.find((item) => item.id === body.recordId)?.data).toEqual({
+            [suppliedFieldPublicId]: "App portal",
+          });
 
-        const cardsResponse = await publicApi.request(`/apps/runtime/${applied.data.shortId}/home/requests/records`, {
-          headers: { "x-forwarded-for": `custom-app-cards-${baseId}` },
-        });
-        expect(cardsResponse.status).toBe(200);
-        const cardsBody = (await cardsResponse.json()) as {
-          presentation?: { fields: Array<{ id: string; type: string }> };
-          cards?: { displayConfig: { mode: string }; records: Array<{ id: string; data: Record<string, unknown> }> };
-        };
-        expect(cardsBody.cards?.displayConfig.mode).toBe("cards");
-        expect(cardsBody.presentation?.fields).toContainEqual(expect.objectContaining({ id: fieldPublicId, type: "text" }));
-        expect(cardsBody.cards?.records.find((item) => item.id === body.recordId)?.data).toEqual({ [suppliedFieldPublicId]: "App portal" });
-
-        const searchedCardsResponse = await publicApi.request(
-          `/apps/runtime/${applied.data.shortId}/home/requests/records?_search=App%20portal`,
-          { headers: { "x-forwarded-for": `custom-app-card-search-${baseId}` } },
-        );
-        expect(searchedCardsResponse.status).toBe(200);
-        const searchedCardsBody = (await searchedCardsResponse.json()) as {
-          rows: Array<{ recordId?: string }>;
-          cards?: { filePreviews: Record<string, Record<string, { contentToken: string }>> };
-        };
-        expect(searchedCardsBody.rows.some((item) => item.recordId === body.recordId)).toBe(true);
-        const contentToken = searchedCardsBody.cards?.filePreviews[body.recordId]?.[imageFieldPublicId]?.contentToken;
-        expect(contentToken).toBeString();
-        const filePath = `/apps/runtime/${applied.data.shortId}/home/requests/files/${encodeURIComponent(contentToken!)}`;
-        const fileResponse = await publicApi.request(`${filePath}?_search=App%20portal`);
-        expect(fileResponse.status).toBe(200);
-        expect(fileResponse.headers.get("content-type")).toBe("image/png");
-        await sql`
+          const searchedCardsResponse = await publicApi.request(
+            `/apps/runtime/${applied.data.shortId}/home/requests/records?_search=App%20portal`,
+            { headers: { "x-forwarded-for": `custom-app-card-search-${baseId}` } },
+          );
+          expect(searchedCardsResponse.status).toBe(200);
+          const searchedCardsBody = (await searchedCardsResponse.json()) as {
+            rows: Array<{ recordId?: string }>;
+            cards?: { filePreviews: Record<string, Record<string, { contentToken: string }>> };
+          };
+          expect(searchedCardsBody.rows.some((item) => item.recordId === body.recordId)).toBe(true);
+          const contentToken = searchedCardsBody.cards?.filePreviews[body.recordId]?.[imageFieldPublicId]?.contentToken;
+          expect(contentToken).toBeString();
+          const filePath = `/apps/runtime/${applied.data.shortId}/home/requests/files/${encodeURIComponent(contentToken!)}`;
+          const fileResponse = await publicApi.request(`${filePath}?_search=App%20portal`);
+          expect(fileResponse.status).toBe(200);
+          expect(fileResponse.headers.get("content-type")).toBe("image/png");
+          await sql`
           UPDATE grids.records
           SET data = jsonb_set(data, ARRAY[${suppliedFieldId}], to_jsonb('No longer searchable'::text))
           WHERE id = ${recordId}::uuid
         `;
-        expect((await publicApi.request(`${filePath}?_search=App%20portal`)).status).toBe(404);
-        await sql`
+          expect((await publicApi.request(`${filePath}?_search=App%20portal`)).status).toBe(404);
+          await sql`
           UPDATE grids.records
           SET data = jsonb_set(data, ARRAY[${suppliedFieldId}], to_jsonb('App portal'::text))
           WHERE id = ${recordId}::uuid
         `;
-        if (previousAppSecret === undefined) delete process.env.APP_SECRET;
-        else process.env.APP_SECRET = previousAppSecret;
+        } finally {
+          secretStub.mockRestore();
+        }
 
         const sidebarResponse = await publicApi.request(`/apps/runtime/${applied.data.shortId}/sidebar/forms/new-request/submit`, {
           method: "POST",

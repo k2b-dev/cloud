@@ -11,6 +11,7 @@ import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
 import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import { auth, type RequestAuthority } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { signInvocationToken } from "../services/identity/invocation-token";
@@ -22,7 +23,7 @@ import {
   dispatchCapability as performDispatch,
 } from "./capabilities";
 
-Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only", configurable: true });
+stubConnections({ appSecret: { current: "capability-stream-tests-only" } });
 
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.

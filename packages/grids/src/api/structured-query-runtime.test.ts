@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import type { Context } from "hono";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
 import type { Table } from "../contracts";
 import * as parser from "../query-dsl/parser";
 import * as preview from "../query-dsl/preview";
@@ -51,15 +52,14 @@ const context = {
   req: { raw: new Request("http://localhost/api/grids/query") },
 } as unknown as Context<AuthContext>;
 const restores: Array<() => void> = [];
-const originalSecret = process.env.APP_SECRET;
+let secretStub: ReturnType<typeof stubConnections> | undefined;
 afterEach(() => {
   for (const restore of restores.splice(0)) restore();
-  if (originalSecret === undefined) delete process.env.APP_SECRET;
-  else process.env.APP_SECRET = originalSecret;
+  secretStub?.mockRestore();
 });
 
 const setup = (allowed = true) => {
-  process.env.APP_SECRET = "structured-query-runtime-test";
+  secretStub = stubConnections({ appSecret: { current: "structured-query-runtime-test" } });
   const tables = spyOn(gridsService.table, "listByBase").mockResolvedValue([table]);
   const grants = spyOn(gridsService.permission, "loadBaseGrantsForSubject").mockResolvedValue(
     allowed ? [{ resourceType: "base", resourceId: baseId, principalTier: "public", level: "read" }] : [],
@@ -121,7 +121,10 @@ describe("structured query shared runtime", () => {
 
   test("rejects a correctly signed cursor belonging to a different query before execution", async () => {
     const { run, options } = setup();
-    const cursor = encodeDslResultCursor({ fingerprint: "another-query", pageSize: 10, start: 10, values: [] }, process.env.APP_SECRET!);
+    const cursor = encodeDslResultCursor(
+      { fingerprint: "another-query", pageSize: 10, start: 10, values: [] },
+      "structured-query-runtime-test",
+    );
     const result = await executeRecordQuery(context, baseId, { currentTableId: tableId, query: {}, cursor }, options);
     expect(result.response).toMatchObject({ ok: false, diagnostics: [{ code: "gql.cursor" }] });
     expect(run).not.toHaveBeenCalled();
