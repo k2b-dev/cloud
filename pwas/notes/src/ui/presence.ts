@@ -13,9 +13,13 @@ export const presence = createRoot(() => {
   const [people, setPeople] = createSignal<Record<string, Person[]>>({});
   let watchers = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let polling = false;
 
+  // One loop at most: a remount while a request is in flight must not start a second one.
   const poll = async () => {
     timer = undefined;
+    if (polling) return;
+    polling = true;
     const shared = app.records().flatMap((record) => (record.share ? [{ id: record.id, readId: record.share.readId }] : []));
     if (shared.length > 0 && app.online() && document.visibilityState === "visible") {
       try {
@@ -36,7 +40,8 @@ export const presence = createRoot(() => {
         // Live marks are a hint; without them the cards show their date as usual.
       }
     }
-    if (watchers > 0) timer = setTimeout(() => void poll(), POLL_MS);
+    polling = false;
+    if (watchers > 0 && !timer) timer = setTimeout(() => void poll(), POLL_MS);
   };
 
   return {
@@ -44,10 +49,13 @@ export const presence = createRoot(() => {
     /** Call inside a component that shows live marks; polling stops when the last one unmounts. */
     watch() {
       watchers += 1;
-      if (watchers === 1) void poll();
+      if (watchers === 1 && !timer && !polling) void poll();
       onCleanup(() => {
         watchers -= 1;
-        if (watchers === 0 && timer) clearTimeout(timer);
+        if (watchers === 0 && timer) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
       });
     },
   };
