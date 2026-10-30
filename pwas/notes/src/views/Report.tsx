@@ -29,7 +29,9 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
   const linkId = () => props.linkId ?? linkIdFrom(link());
   const errors = () => ({
     link: !linkId() ? t().reportLinkRequired : undefined,
-    text: text().trim().length < 3 ? t().reportTextRequired : undefined,
+    // The server takes a reason of at least 10 characters and a valid address, so both are checked here first.
+    text: text().trim().length < 10 ? t().reportTextRequired : undefined,
+    email: email().trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email().trim()) ? t().reportEmailInvalid : undefined,
     confirmed: !confirmed() ? t().reportConfirmRequired : undefined,
   });
 
@@ -37,7 +39,7 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
     setSubmitted(true);
     const current = errors();
     const id = linkId();
-    if (current.link || current.text || current.confirmed || !id) return;
+    if (current.link || current.text || current.email || current.confirmed || !id) return;
     setSending(true);
     setFailed(false);
     try {
@@ -128,6 +130,7 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
                 onInput={(event) => setEmail(event.currentTarget.value)}
               />
               <span class="n-help">{t().reportEmailHelp}</span>
+              <span class="n-error-text">{submitted() ? (errors().email ?? "") : ""}</span>
             </div>
             <Checkbox
               class="n-field"
