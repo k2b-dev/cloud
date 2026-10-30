@@ -44,7 +44,8 @@ export const mountWebsite = async (
     } catch (error) {
       // The SPA renders its actionable gone/blocked/offline states. Do not expose stale metadata.
       if (error instanceof NotesError) return c.html(index, error.status);
-      throw error;
+      console.error("[notes] page_failed");
+      return c.html(index, 500);
     }
   });
   app.get("*", (c) => {
