@@ -235,6 +235,27 @@ Valkey admission, paid calls are refused with `GEO_BUSY`; there is no
 unlimited fallback. Availability checks remain free. Cache failures alone do
 not fail a request that admission accepts.
 
+## Treat the gateway as a trusted platform service
+
+Like application services, Core and the gateway hold the installation's
+infrastructure credentials in their environment. The gateway needs `DATABASE_URL` and `APP_SECRET` to read
+and decrypt the storage settings for `/public/storage`, `REDIS_URL` to enforce
+its request budgets, and NATS access for discovery and telemetry. It reads
+only the storage configuration and the public-storage rate-limit setting for
+that delivery path. These narrow reads do not restrict what its credentials
+can access.
+
+The gateway shares the installation database role and encryption secret.
+A gateway compromise is an installation compromise, as with Core: an attacker
+can access the shared database and decrypt settings and credentials. Cloud
+does not isolate applications with separate database roles or infrastructure
+credentials. Install only trusted applications and protect the gateway host,
+container environment and private service network accordingly.
+
+Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
+of the gateway. Their absence does not make it a separate trust boundary.
+See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |
