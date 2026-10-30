@@ -17,8 +17,8 @@ import {
 } from "@k2b/cloud/services";
 import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { AdminLayout, getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
-import { readAppStatusDetail, readAppStatusSummaries } from "../../../app-status";
-import { listAppListing } from "../../../known-apps";
+import { createAppStatusReader } from "../../../app-status";
+import { listAppListing, rememberAppStatusReports } from "../../../known-apps";
 import { ssr } from "../../../config";
 import { settingsDocumentationHref } from "../settings/documentation";
 import { appsFormat } from "./format";
@@ -90,12 +90,14 @@ export default ssr<AuthContext>(async (c) => {
   const signal = c.req.raw.signal;
   const user = c.get("user");
   const localized = new Map(getLocalizedRuntimeContext(c).apps.map((app) => [app.id, app]));
+  // One reader per render: discovery and every provider call share one budget (1.5 s, 512 KB, 4 at a time).
+  const status = createAppStatusReader();
 
   // Level 1: every app the registry, Core or a provider knows. The registry failing is the list failing; the apps run on.
   let list: AppsViewData["list"] = { state: "failed" };
   let entries: ReturnType<typeof deriveApp>[] = [];
   let live: AppRegistryDetail[] = [];
-  let summaries: Awaited<ReturnType<typeof readAppStatusSummaries>> | null = null;
+  let summaries: Awaited<ReturnType<typeof status.readAppStatusSummaries>> | null = null;
   try {
     const [snapshot, detailed, router] = await Promise.all([
       readAppRegistrySnapshot(),
@@ -105,7 +107,9 @@ export default ssr<AuthContext>(async (c) => {
     live = detailed.filter((app) => !HIDDEN.has(app.id));
     const known = (await listAppListing({ liveApps: live })).filter((entry) => !HIDDEN.has(entry.id));
     const ids = known.map((entry) => entry.id).sort();
-    summaries = await readAppStatusSummaries({ authority, appIds: ids.slice(0, SUMMARY_LIMIT), window: "24h", locale, signal });
+    summaries = await status.readAppStatusSummaries({ authority, appIds: ids.slice(0, SUMMARY_LIMIT), window: "24h", locale, signal });
+    // Removing an app later must reach every provider that reported it, also one that is down by then.
+    await rememberAppStatusReports(summaries).catch((error: unknown) => log.warn("Could not record app-status reports", { error }));
     const listing = summaries.otherApps.length
       ? (await listAppListing({ liveApps: live, otherApps: summaries.otherApps })).filter((entry) => !HIDDEN.has(entry.id))
       : known;
@@ -253,7 +257,7 @@ export default ssr<AuthContext>(async (c) => {
       case "errors": {
         const window: AppStatusWindow = query.view === "routes" ? query.window : "24h";
         const [statusDetail, router] = await Promise.all([
-          readAppStatusDetail({ authority, appId: entry.id, window, locale, signal }),
+          status.readAppStatusDetail({ authority, appId: entry.id, window, locale, signal }),
           latestGatewayRouteSnapshot().catch(() => null),
         ]);
         const providers = statusDetail.results.map((result) => result.provider.name);
