@@ -874,6 +874,16 @@ its own private database calls `ownTestDatabase(name)`, as Filesv2's does.
 The shared test database is never touched this way, because other processes
 may use it at the same time.
 
+With a database target configured, the preload observes test and per-test hook
+callbacks before they are registered, including parameterized tests. If the
+guard cancels or terminates work after a callback timed out, its late database
+rejection is reported as a guard warning instead of an unhandled error between
+tests. The original timeout still fails. SQL errors and cancellation during a
+running callback still fail normally. Private-database suites run serially;
+concurrent tests must not share a database that the guard owns.
+`tests/integration/test-infra-cancellation.integration.test.ts` checks active
+statements, timed-out hooks, idle transactions, and recovery of the next test.
+
 Templates are keyed by a content hash of workspace runtime sources and assets,
 the lockfile, workspace definition, and migration fixture code. Runtime inputs
 are hashed conservatively because migrations import shared helpers and assets;
