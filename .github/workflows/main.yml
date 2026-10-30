@@ -67,6 +67,7 @@ jobs:
       npm_cloud_released: ${{ steps.context.outputs.npm_cloud_released }}
       npm_ui_released: ${{ steps.context.outputs.npm_ui_released }}
       npm_ssr_released: ${{ steps.context.outputs.npm_ssr_released }}
+      npm_editor_released: ${{ steps.context.outputs.npm_editor_released }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,17 +90,19 @@ jobs:
           NPM_CLOUD_RELEASED: ${{ steps.release.outputs['packages/cloud--release_created'] == 'true' }}
           NPM_UI_RELEASED: ${{ steps.release.outputs['packages/ui--release_created'] == 'true' }}
           NPM_SSR_RELEASED: ${{ steps.release.outputs['packages/ssr--release_created'] == 'true' }}
+          NPM_EDITOR_RELEASED: ${{ steps.release.outputs['packages/editor--release_created'] == 'true' }}
           REDO_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           sha=$(git rev-parse HEAD)
-          cloud_released="$RELEASED"; npm_cloud_released="$NPM_CLOUD_RELEASED"; npm_ui_released="$NPM_UI_RELEASED"; npm_ssr_released="$NPM_SSR_RELEASED"
+          cloud_released="$RELEASED"; npm_cloud_released="$NPM_CLOUD_RELEASED"; npm_ui_released="$NPM_UI_RELEASED"; npm_ssr_released="$NPM_SSR_RELEASED"; npm_editor_released="$NPM_EDITOR_RELEASED"
           if [[ -n "$REDO_VERSION" ]]; then
             # Finish an existing release again (HEAD is cloud-v$REDO_VERSION): every component whose tag points here is released.
             cloud_released=true
             npm_cloud_released=$(git ls-remote --tags origin "npm-cloud-v$(jq -r .version packages/cloud/package.json)" | grep -q "$sha" && echo true || echo false)
             npm_ui_released=$(git ls-remote --tags origin "npm-ui-v$(jq -r .version packages/ui/package.json)" | grep -q "$sha" && echo true || echo false)
             npm_ssr_released=$(git ls-remote --tags origin "npm-ssr-v$(jq -r .version packages/ssr/package.json)" | grep -q "$sha" && echo true || echo false)
+            npm_editor_released=$(git ls-remote --tags origin "npm-editor-v$(jq -r .version packages/editor/package.json)" | grep -q "$sha" && echo true || echo false)
             RELEASED=true; RELEASE_VERSION="$REDO_VERSION"
           fi
           if [[ "$RELEASED" == "true" ]]; then
@@ -118,6 +121,7 @@ jobs:
             echo "npm_cloud_released=$npm_cloud_released"
             echo "npm_ui_released=$npm_ui_released"
             echo "npm_ssr_released=$npm_ssr_released"
+            echo "npm_editor_released=$npm_editor_released"
           } | tee -a "$GITHUB_OUTPUT"
 
   images:
@@ -141,7 +145,8 @@ jobs:
       needs.release-please.outputs.cloud_released == 'true' ||
       needs.release-please.outputs.npm_cloud_released == 'true' ||
       needs.release-please.outputs.npm_ui_released == 'true' ||
-      needs.release-please.outputs.npm_ssr_released == 'true'
+      needs.release-please.outputs.npm_ssr_released == 'true' ||
+      needs.release-please.outputs.npm_editor_released == 'true'
     uses: ./.github/workflows/release.yml
     permissions:
       contents: write
@@ -156,3 +161,4 @@ jobs:
       npm_cloud_released: ${{ needs.release-please.outputs.npm_cloud_released == 'true' }}
       npm_ui_released: ${{ needs.release-please.outputs.npm_ui_released == 'true' }}
       npm_ssr_released: ${{ needs.release-please.outputs.npm_ssr_released == 'true' }}
+      npm_editor_released: ${{ needs.release-please.outputs.npm_editor_released == 'true' }}
