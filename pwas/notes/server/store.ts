@@ -25,7 +25,7 @@ export class NotesStore {
   private uncertain = false;
   private recovery?: Promise<void>;
   private readonly inflight = new Set<Promise<unknown>>();
-  private readonly releases = new Map<Transaction, number>();
+  private readonly releases = new Map<Transaction, { positive: number; negative: number }>();
   private lease?: Awaited<ReturnType<SQL["reserve"]>>;
   constructor(
     readonly db: SQL,
@@ -87,13 +87,16 @@ export class NotesStore {
       await this.reconcile();
     } while (this.uncertain);
     if (!this.lease) throw new NotesError("unavailable", 503);
+    let completed = false;
+    const reservation = { positive: 0, negative: 0 };
     const pending = this.db.begin(async (tx) => {
       const [row] = await tx<{ owner_id: string }[]>`SELECT owner_id FROM notes_storage WHERE singleton FOR SHARE`;
       if (row?.owner_id !== this.owner) throw new NotesError("unavailable", 503);
-      this.releases.set(tx, 0);
+      this.releases.set(tx, reservation);
       try {
         const result = await run(tx);
-        return { result, release: this.releases.get(tx)! };
+        completed = true;
+        return { result, release: reservation.negative };
       } finally {
         this.releases.delete(tx);
       }
@@ -105,7 +108,8 @@ export class NotesStore {
       return result;
     } catch (error) {
       // Even a rejected COMMIT can have reached Postgres. Recount after all active writes.
-      this.uncertain = true;
+      if (completed) this.uncertain = true;
+      else this.usedBytes -= reservation.positive;
       throw error;
     } finally {
       this.inflight.delete(pending);
@@ -114,8 +118,12 @@ export class NotesStore {
   async reserve(tx: Transaction, delta: number, kind: "new" | "existing" = "existing"): Promise<void> {
     const threshold = kind === "new" ? Math.floor(this.storageBytes * 0.9) : this.storageBytes;
     if (delta > 0 && this.usedBytes + delta > threshold) throw new NotesError("storage_full", 507);
-    if (delta > 0) this.usedBytes += delta;
-    else this.releases.set(tx, (this.releases.get(tx) ?? 0) - delta);
+    const reservation = this.releases.get(tx);
+    if (!reservation) throw new Error("reservation_outside_transaction");
+    if (delta > 0) {
+      this.usedBytes += delta;
+      reservation.positive += delta;
+    } else reservation.negative -= delta;
   }
   async status(): Promise<{ usedBytes: number; capacityBytes: number; sharingPaused: boolean; full: boolean }> {
     await this.reconcile();
@@ -157,7 +165,7 @@ export class NotesStore {
       doc.destroy();
     }
   }
-  async load(readId: string): Promise<{ doc: Y.Doc; through: string; updates: number }> {
+  async load(readId: string): Promise<{ doc: Y.Doc; through: string; updates: number; logBytes: number }> {
     return this.db.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
       const [row] = await tx<
         PadRow[]
@@ -169,7 +177,12 @@ export class NotesStore {
           { id: string; update: Uint8Array }[]
         >`SELECT id::text,update FROM pad_updates WHERE read_id=${readId} AND id>${row!.applied_through} ORDER BY id`;
         for (const update of updates) Y.applyUpdate(doc, update.update);
-        return { doc, through: updates.at(-1)?.id ?? row!.applied_through, updates: updates.length };
+        return {
+          doc,
+          through: updates.at(-1)?.id ?? row!.applied_through,
+          updates: updates.length,
+          logBytes: updates.reduce((sum, update) => sum + update.update.byteLength, 0),
+        };
       } catch (error) {
         doc.destroy();
         throw error;

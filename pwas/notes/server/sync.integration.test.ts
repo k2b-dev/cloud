@@ -208,6 +208,55 @@ databaseSuite()("Notes durable Yjs sync", () => {
     expect((await service.read(shared.readId)).content).toBe("hello next");
   });
 
+  test("oversized and malformed state vectors are rejected without a persistence error", async () => {
+    const shared = await pad();
+    const original = console.error;
+    const logs: unknown[] = [];
+    console.error = (entry) => {
+      logs.push(entry);
+    };
+    try {
+      for (const vector of [new Uint8Array(limits.vectorBytes + 1), new Uint8Array([128])]) {
+        const reader = await connect(shared.readId);
+        await service.receive(
+          reader.connection,
+          frame(message.sync, (e) => {
+            encoding.writeVarUint(e, sync.messageYjsSyncStep1);
+            encoding.writeVarUint8Array(e, vector);
+          }),
+        );
+        expect(reader.closed.at(-1)?.reason).toBe("invalid_frame");
+      }
+      expect(logs).toEqual([]);
+    } finally {
+      console.error = original;
+    }
+  });
+
+  test("log byte limits compact insert-delete updates before the next append", async () => {
+    const shared = await pad();
+    let writer = await connect(shared.editId);
+    const doc = new Y.Doc();
+    doc.clientID = 999;
+    docs.push(doc);
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(shared.doc));
+    for (let i = 0; i < 18; i++) {
+      if (i === 9) {
+        service.disconnect(writer.connection);
+        writer = await connect(shared.editId);
+      }
+      const vector = Y.encodeStateVector(doc);
+      doc.getText("text").insert(5, "x".repeat(1_000_000));
+      doc.getText("text").delete(5, 1_000_000);
+      await service.receive(writer.connection, updateFrame(`discard_${i}`, Y.encodeStateAsUpdate(doc, vector)));
+    }
+    const [row] = await db<
+      { bytes: string }[]
+    >`SELECT COALESCE(SUM(octet_length(update)),0)::text AS bytes FROM pad_updates WHERE read_id=${shared.readId}`;
+    expect(Number(row!.bytes)).toBeLessThanOrEqual(limits.stateBytes);
+    expect((await service.read(shared.readId)).content).toBe("hello");
+  });
+
   test("a commit with a lost response reloads before later updates and compaction", async () => {
     const shared = await pad();
     const writer = await connect(shared.editId);
