@@ -283,8 +283,15 @@ For remote lifecycle requests, use `sendAppRequest` from
 `@k2b/cloud/services/identity` with the final `Request` and `{ appId }`.
 Call it again for every safe retry. It signs the exact method, path including
 query, and body with a fresh proof and disables redirects. Without an app key,
-it uses the legacy workload credential. It never retries an uncertain
-transmission on its own.
+it uses the legacy workload credential. It sets `X-Cloud-App-Id` in both modes
+and rejects a conflicting caller-supplied app identity before sending.
+It never retries an uncertain transmission on its own.
+
+Signed request body reads have an absolute 10-second deadline, including
+uploads that continue to send data. Core returns `DEADLINE_EXCEEDED` (HTTP 504)
+when that deadline expires. Admission returns `RATE_LIMITED` (HTTP 429) with
+`Retry-After`; authentication failures retain their HTTP 401 or 403 status.
+All these failures include the capability error fields `code` and `message`.
 
 Lifecycle request bodies are limited to 256 KiB, including streamed requests
 without a reliable `Content-Length`. Oversized bodies return HTTP 413. Missing

@@ -4,7 +4,14 @@ import { getConnInfo } from "hono/bun";
 import { CAPABILITY_MAX_REQUEST_BYTES } from "../contracts/capabilities";
 import { clientIpBucket } from "../server/client-ip";
 import { type RateLimitResult, ratelimit } from "../server/ratelimit";
-import { authenticateAppProof, BootstrapProofError, bootstrapRateLimit, consumeBootstrapProof } from "../services/app-bootstrap";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
+import {
+  authenticateAppProof,
+  BootstrapProofError,
+  bootstrapRateLimit,
+  consumeBootstrapProof,
+  inspectAppProof,
+} from "../services/app-bootstrap";
 import { touchAppKey } from "../services/app-keys";
 import type { AuthenticatedWorkload } from "../services/identity/workload-auth";
 
@@ -23,10 +30,12 @@ export const authenticateSignedAppRequest = async (
   dependencies: Dependencies = {},
 ): Promise<AuthenticatedWorkload | Response> => {
   c.header("Cache-Control", "no-store");
-  const reject = (status: 401 | 403 | 413 | 429 | 503, code: string) => c.json({ code }, status);
+  const deadline = AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_SECONDS * 1000);
+  const signal = AbortSignal.any([c.req.raw.signal, deadline]);
+  const reject = (status: 401 | 403 | 413 | 429 | 503 | 504, code: string, message: string) => c.json({ code, message }, status);
   const limited = (rate: RateLimitResult) => {
     c.header("Retry-After", String(Math.max(1, Math.ceil(rate.resetIn / 1000))));
-    return reject(429, "app_proof_rate_limited");
+    return reject(429, "RATE_LIMITED", "App request admission limit reached");
   };
   try {
     let peer = "unknown";
@@ -38,26 +47,44 @@ export const authenticateSignedAppRequest = async (
     const ingress = await (dependencies.ingress ?? ((id) => admission("ingress", id)))(clientIpBucket(peer));
     if (ingress.limited) return limited(ingress);
     const header = c.req.header("Authorization") ?? "";
-    if (!header.startsWith("Bearer ")) return reject(401, "invalid_proof");
-    if (Number(c.req.header("Content-Length")) > CAPABILITY_MAX_REQUEST_BYTES) return reject(413, "body_too_large");
+    if (!header.startsWith("Bearer ")) return reject(401, "invalid_proof", "A valid app proof is required");
+    inspectAppProof(header.slice(7));
+    const tooLarge = () => reject(413, "body_too_large", "App request exceeds the byte limit");
+    if (Number(c.req.header("Content-Length")) > CAPABILITY_MAX_REQUEST_BYTES) {
+      void c.req.raw.body?.cancel().catch(() => undefined);
+      return tooLarge();
+    }
+    signal.throwIfAborted();
     const copy = c.req.raw.clone();
     const reader = copy.body?.getReader();
     const bytes = new Uint8Array(CAPABILITY_MAX_REQUEST_BYTES);
     let total = 0;
     if (reader) {
+      const cancel = () => {
+        // A tee cancels its source only after both branches cancel. Never await a stalled source.
+        void reader.cancel(signal.reason).catch(() => undefined);
+        void c.req.raw.body?.cancel(signal.reason).catch(() => undefined);
+      };
+      signal.addEventListener("abort", cancel, { once: true });
       try {
+        signal.throwIfAborted();
         while (true) {
           const chunk = await reader.read();
           if (chunk.done) break;
           if (total + chunk.value.byteLength > bytes.byteLength) {
-            void reader.cancel().catch(() => undefined);
-            void c.req.raw.body?.cancel().catch(() => undefined);
-            return reject(413, "body_too_large");
+            cancel();
+            return tooLarge();
           }
           bytes.set(chunk.value, total);
           total += chunk.value.byteLength;
         }
+        signal.throwIfAborted();
+      } catch (error) {
+        cancel();
+        if (signal.aborted) throw signal.reason;
+        throw error;
       } finally {
+        signal.removeEventListener("abort", cancel);
         reader.releaseLock();
       }
     }
@@ -68,13 +95,14 @@ export const authenticateSignedAppRequest = async (
       dependencies.db,
     );
     // App-key capabilities are policy, not mutable copies of service-account grants.
-    if (scope === "oauth:issue" && verified.identity.appId !== "oauth") return reject(403, "scope_not_permitted");
+    if (scope === "oauth:issue" && verified.identity.appId !== "oauth")
+      return reject(403, "scope_not_permitted", "App is not permitted to issue OAuth credentials");
     const declaredApp = c.req.header("X-Cloud-App-Id");
-    if (declaredApp && declaredApp !== verified.identity.appId) return reject(403, "wrong_app");
+    if (declaredApp && declaredApp !== verified.identity.appId) return reject(403, "wrong_app", "App identity does not match the proof");
     const rate = await (dependencies.admit ?? ((id) => admission("key", id)))(verified.identity.keyId);
     if (rate.limited) return limited(rate);
     if (!(await consumeBootstrapProof(verified.identity.keyId, verified.jti, verified.exp, dependencies.db)))
-      return reject(403, "replayed_proof");
+      return reject(403, "replayed_proof", "App proof has already been used");
     await touchAppKey(verified.identity, dependencies.db);
     return {
       appId: verified.identity.appId,
@@ -83,8 +111,18 @@ export const authenticateSignedAppRequest = async (
       scope: "identity:invoke",
     };
   } catch (error) {
-    if (error instanceof BootstrapProofError) return reject(error.code === "invalid_proof" ? 401 : 403, error.code);
+    if (signal.aborted && error === signal.reason) {
+      void c.req.raw.body?.cancel(signal.reason).catch(() => undefined);
+      return c.req.raw.signal.aborted
+        ? Response.json(
+            { code: "REQUEST_CANCELLED", message: "App request was cancelled" },
+            { status: 499, headers: { "Cache-Control": "no-store" } },
+          )
+        : reject(504, "DEADLINE_EXCEEDED", "App request body deadline exceeded");
+    }
+    if (error instanceof BootstrapProofError)
+      return reject(error.code === "invalid_proof" ? 401 : 403, error.code, "App proof was rejected");
     c.header("Retry-After", "1");
-    return reject(503, "app_proof_unavailable");
+    return reject(503, "app_proof_unavailable", "App request authentication is temporarily unavailable");
   }
 };

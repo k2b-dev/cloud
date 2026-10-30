@@ -1,6 +1,6 @@
 import { type SQL, sql } from "bun";
 import { decodeJwt, decodeProtectedHeader, type JWTPayload, jwtVerify } from "jose";
-import { importAppPublicKey } from "../app-key";
+import { importAppPublicKey, validateAppKeyAppId } from "../app-key";
 import {
   BOOTSTRAP_PATH,
   BOOTSTRAP_PROOF_BYTES,
@@ -8,6 +8,7 @@ import {
   BOOTSTRAP_REPLAY_RETENTION_SECONDS,
   BOOTSTRAP_TYPE,
   type BootstrapIdentity,
+  BootstrapIdentitySchema,
   bootstrapBodyDigest,
 } from "../runtime/bootstrap-protocol";
 import { getActiveAppKey, getInstallationId } from "./app-keys";
@@ -72,14 +73,10 @@ export const cleanupBootstrapProofs = async (
   return { deleted, remaining: backlog?.count ?? 0 };
 };
 
-/** No caches: every HTTP transmission rechecks revocation, expiry and account state in Postgres. */
-export const authenticateAppProof = async (
-  proof: string,
-  request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
-  db: SQL = sql,
-  now = Date.now(),
-): Promise<{ identity: BootstrapIdentity; key: NonNullable<Awaited<ReturnType<typeof getActiveAppKey>>>; jti: string; exp: number }> => {
-  if (Buffer.byteLength(proof) > BOOTSTRAP_PROOF_BYTES) throw invalid();
+/** Reject malformed or expired envelopes before allocating or reading a signed request body. Not authentication. */
+export const inspectAppProof = (proof: string, now = Date.now()): { appId: string; keyId: string } => {
+  if (Buffer.byteLength(proof) > BOOTSTRAP_PROOF_BYTES || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{86}$/.test(proof))
+    throw invalid();
   let appId: string;
   let keyId: string;
   try {
@@ -87,11 +84,34 @@ export const authenticateAppProof = async (
     const claims = decodeJwt(proof);
     if (header.alg !== "EdDSA" || header.typ !== BOOTSTRAP_TYPE || typeof header.kid !== "string" || typeof claims.iss !== "string")
       throw invalid();
+    validateAppKeyAppId(claims.iss);
+    if (!BootstrapIdentitySchema.shape.keyId.safeParse(header.kid).success) throw invalid();
+    const seconds = Math.floor(now / 1000);
+    if (
+      !Number.isSafeInteger(claims.iat) ||
+      !Number.isSafeInteger(claims.exp) ||
+      claims.iat! > seconds + 2 ||
+      claims.exp! <= seconds ||
+      claims.exp! <= claims.iat! ||
+      claims.exp! - claims.iat! > BOOTSTRAP_PROOF_SECONDS
+    )
+      throw invalid();
     appId = claims.iss;
     keyId = header.kid;
   } catch {
     throw invalid();
   }
+  return { appId, keyId };
+};
+
+/** No caches: every HTTP transmission rechecks revocation, expiry and account state in Postgres. */
+export const authenticateAppProof = async (
+  proof: string,
+  request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
+  db: SQL = sql,
+  now = Date.now(),
+): Promise<{ identity: BootstrapIdentity; key: NonNullable<Awaited<ReturnType<typeof getActiveAppKey>>>; jti: string; exp: number }> => {
+  const { appId, keyId } = inspectAppProof(proof, now);
   // Only validated IDs reach SQL, and the app identity must own this active credential.
   const key = await getActiveAppKey({ appId, keyId }, db);
   if (!key) throw invalid();
@@ -107,13 +127,7 @@ export const authenticateAppProof = async (
   } catch {
     throw invalid();
   }
-  const seconds = Math.floor(now / 1000);
   if (
-    !Number.isSafeInteger(claims.iat) ||
-    !Number.isSafeInteger(claims.exp) ||
-    claims.iat! > seconds + 2 ||
-    claims.exp! <= claims.iat! ||
-    claims.exp! - claims.iat! > BOOTSTRAP_PROOF_SECONDS ||
     typeof claims.jti !== "string" ||
     claims.jti.length === 0 ||
     claims.jti.length > 64 ||

@@ -1,6 +1,7 @@
 import { getAppWorkloadCredential } from "../../_internal/workload-credential";
 import { parseAppKey } from "../../app-key";
 import { env } from "../../config/env";
+import { CapabilityAppIdSchema } from "../../contracts/capabilities";
 import { signAppProof } from "../../runtime/bootstrap-protocol";
 
 /** Send only to Core. Call for every transmission, including safe caller-owned retries. */
@@ -13,7 +14,11 @@ export const sendAppRequest = async (
     bearer?: () => string | undefined;
   },
 ): Promise<Response> => {
+  const appId = CapabilityAppIdSchema.parse(options.appId);
   const headers = new Headers(request.headers);
+  const declaredApp = headers.get("X-Cloud-App-Id");
+  if (declaredApp !== null && declaredApp !== appId) throw new Error("App identity header does not match the calling application");
+  headers.set("X-Cloud-App-Id", appId);
   const keyValue = env.CLOUD_APP_KEY;
   if (keyValue) {
     const key = parseAppKey(keyValue);

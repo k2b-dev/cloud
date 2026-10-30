@@ -123,7 +123,7 @@ suiteFor(
     const denied = await signed(key, "{}", "POST", target);
     const response = await routes[0].request(target, denied.init);
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ code: "scope_not_permitted" });
+    expect(await response.json()).toEqual({ code: "scope_not_permitted", message: "App is not permitted to issue OAuth credentials" });
     const allowed = await signed(oauthKey, "{}", "POST", target);
     expect((await routes[0].request(target, allowed.init)).status).toBe(200);
   });
