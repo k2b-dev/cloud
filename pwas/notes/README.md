@@ -85,6 +85,9 @@ state; `/readyz` fails when the budget is full.
 Focused integration tests cover real WebSockets, concurrent offline edits,
 read-only rejection, awareness identity, storage/connection/document limits,
 failed persistence, and SIGKILL during compaction and after commit before ACK.
+The browser-provider integration connects independent real browsers to the
+Postgres-backed server, merges offline edits, restarts the server while the
+browsers stay open, and verifies that a read link cannot persist changes.
 
 ## Files
 
