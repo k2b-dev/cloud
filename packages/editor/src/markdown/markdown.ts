@@ -1,17 +1,5 @@
-import { cpp } from "@codemirror/lang-cpp";
-import { css } from "@codemirror/lang-css";
-import { go } from "@codemirror/lang-go";
-import { java } from "@codemirror/lang-java";
-// Static imports — ensures these land in the bundle
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
+// Code languages load on first use, so hosts that never show a fenced block of a language never download its parser.
 import { markdown as markdownExt, markdownLanguage } from "@codemirror/lang-markdown";
-import { php } from "@codemirror/lang-php";
-import { python } from "@codemirror/lang-python";
-import { rust } from "@codemirror/lang-rust";
-import { sql } from "@codemirror/lang-sql";
-import { xml } from "@codemirror/lang-xml";
-import { yaml } from "@codemirror/lang-yaml";
 import { LanguageDescription } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { sizedImageSyntax } from "./image-syntax";
@@ -20,16 +8,16 @@ const codeLanguages = [
   LanguageDescription.of({
     name: "JavaScript",
     alias: ["js", "jsx", "ts", "tsx", "typescript"],
-    load: async () => javascript({ jsx: true, typescript: true }),
+    load: async () => (await import("@codemirror/lang-javascript")).javascript({ jsx: true, typescript: true }),
   }),
   LanguageDescription.of({
     name: "Python",
     alias: ["py"],
-    load: async () => python(),
+    load: async () => (await import("@codemirror/lang-python")).python(),
   }),
   LanguageDescription.of({
     name: "SQL",
-    load: async () => sql(),
+    load: async () => (await import("@codemirror/lang-sql")).sql(),
   }),
   LanguageDescription.of({
     name: "HTML",
@@ -41,44 +29,44 @@ const codeLanguages = [
   }),
   LanguageDescription.of({
     name: "CSS",
-    load: async () => css(),
+    load: async () => (await import("@codemirror/lang-css")).css(),
   }),
   LanguageDescription.of({
     name: "JSON",
-    load: async () => json(),
+    load: async () => (await import("@codemirror/lang-json")).json(),
   }),
   LanguageDescription.of({
     name: "Go",
     alias: ["golang"],
-    load: async () => go(),
+    load: async () => (await import("@codemirror/lang-go")).go(),
   }),
   LanguageDescription.of({
     name: "Java",
-    load: async () => java(),
+    load: async () => (await import("@codemirror/lang-java")).java(),
   }),
   LanguageDescription.of({
     name: "XML",
     alias: ["svg"],
-    load: async () => xml(),
+    load: async () => (await import("@codemirror/lang-xml")).xml(),
   }),
   LanguageDescription.of({
     name: "YAML",
     alias: ["yml"],
-    load: async () => yaml(),
+    load: async () => (await import("@codemirror/lang-yaml")).yaml(),
   }),
   LanguageDescription.of({
     name: "Rust",
     alias: ["rs"],
-    load: async () => rust(),
+    load: async () => (await import("@codemirror/lang-rust")).rust(),
   }),
   LanguageDescription.of({
     name: "C++",
     alias: ["cpp", "c", "h", "hpp"],
-    load: async () => cpp(),
+    load: async () => (await import("@codemirror/lang-cpp")).cpp(),
   }),
   LanguageDescription.of({
     name: "PHP",
-    load: async () => php(),
+    load: async () => (await import("@codemirror/lang-php")).php(),
   }),
 ];
 

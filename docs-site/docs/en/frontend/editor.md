@@ -168,7 +168,10 @@ utilities and the completion palette are included:
 ```
 
 Import optional Markdown extensions from `@k2b/editor/markdown`. Add them to
-`editor.use()` or the CodeMirror view that the application already owns:
+`editor.use()` or the CodeMirror view that the application already owns. The
+package has no import side effects apart from its stylesheet, so a bundler
+leaves out what the host does not import, such as Mermaid or KaTeX. Code
+languages in fenced blocks load when a block of that language first appears:
 
 ```ts
 import {
