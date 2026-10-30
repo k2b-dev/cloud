@@ -684,6 +684,7 @@ jobs:
             --env NOTES_STORAGE_BYTES=1073741824 --env NOTES_MAX_CONNECTIONS=50 \
             --env NOTES_MAX_OPEN_PADS=10 cloud-notes:ci
           timeout 60s docker exec notes bun -e 'for(;;){try{if((await fetch("http://127.0.0.1:3000/readyz")).ok)break}catch{}await Bun.sleep(1000)}'
+          docker exec notes bun -e 'for(const method of ["GET","HEAD"])for(const path of ["/admin","/admin/","/api/admin/session"]){if((await fetch("http://127.0.0.1:3000"+path,{method})).status!==404)throw new Error("admin_not_disabled")}'
           docker exec notes bun -e 'if(process.getuid()===0)throw new Error("root");const r=await fetch("http://127.0.0.1:3000/");if(!r.ok||!(await r.text()).includes("id=\"root\""))throw new Error("missing_spa")'
           docker exec notes bun -e '
             const root="http://127.0.0.1:3000";
