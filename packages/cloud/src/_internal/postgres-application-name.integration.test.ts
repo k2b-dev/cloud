@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { initializeTestPlatform, requireDatabaseUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { createSql, sql } from "../runtime/clients";
-import { connections } from "../runtime/connections";
+import { connections, hasConnections } from "../runtime/connections";
 
 const suite = suiteFor("database");
 suite("platform Postgres connection identity", () => {
   for (const operator of [false, true]) {
     test(`names every native pool connection (operator URL: ${operator})`, async () => {
-      const previousAppId = connections().appId;
+      const previousAppId = hasConnections() ? connections().appId : "integration-test";
       const url = new URL(requireDatabaseUrl());
       if (operator) url.searchParams.set("application_name", "operator-owned");
       process.env.DATABASE_URL = url.toString();

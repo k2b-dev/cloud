@@ -1,7 +1,7 @@
 ---
 title: Platform start and connections
 navTitle: Platform start
-section: Build
+section: Build an app
 order: 125
 description: Use native database and cache clients after Cloud initializes the application.
 tags: [startup, connections, sql, redis]
