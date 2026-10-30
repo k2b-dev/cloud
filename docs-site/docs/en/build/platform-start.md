@@ -78,7 +78,13 @@ bun scripts/codemods/platform-clients.ts packages/my-app
 The command prints changed-file and converted-pool counts. It preserves aliases
 and unrelated Bun imports; running it again leaves migrated files unchanged.
 Review explicit Redis URLs, constructor spies, and subprocess startup manually.
-Test-owned native constructors remain available for isolated fixtures.
+The `platform-clients` repository check also catches native module aliases,
+computed literal keys, and constructor values passed to other functions.
+Type-only constructor use stays allowed. Native constructors and direct target
+reads remain available in `tests/`, `scripts/fixtures/`, package-root `test/`
+and `bench/` directories, test files, and explicitly listed fixture files.
+A `fixtures/` or `tests/` directory inside application source does not grant
+an exemption.
 
 ## Start a custom data process
 

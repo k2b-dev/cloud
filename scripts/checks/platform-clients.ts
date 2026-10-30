@@ -118,6 +118,9 @@ export const baseline: Readonly<Record<string, readonly string[]>> = {
     'const servers = env.NATS_SERVERS.length ? env.NATS_SERVERS : ["nats://127.0.0.1:4222"];',
     "const sync = createSync({ connection, namespace, application: APPLICATION, defaults: { replicas: env.SYNC_REPLICAS } });",
   ],
+  "packages/cloud/src/workflows/store/actions.ts": [
+    'if (error instanceof SQL.PostgresError && (error.errno === "40001" || error.errno === "40P01"))',
+  ],
   "packages/contacts/src/api/access-last-manager.integration.test.ts": ['import { sql } from "bun";'],
   "packages/contacts/src/api/agent-access.integration.test.ts": ['import { sql } from "bun";'],
   "packages/contacts/src/api/app-session.integration.test.ts": ['import { sql } from "bun";'],
@@ -580,7 +583,10 @@ export const baseline: Readonly<Record<string, readonly string[]>> = {
   "packages/grids/src/service/workflow-history.integration.test.ts": ['import { sql } from "bun";'],
   "packages/grids/src/service/workflow-launcher-invocations.ts": ['import { sql } from "bun";'],
   "packages/grids/src/service/workflow-launchers.ts": ['import { sql } from "bun";'],
-  "packages/grids/src/service/workflow-machine-authority.ts": ['import { SQL, sql } from "bun";'],
+  "packages/grids/src/service/workflow-machine-authority.ts": [
+    'import { SQL, sql } from "bun";',
+    'if (error instanceof SQL.PostgresError && error.errno === "55P03")',
+  ],
   "packages/grids/src/service/workflow-query-binding.ts": ['import { sql } from "bun";'],
   "packages/grids/src/service/workflow-query-data.integration.test.ts": ['import { sql } from "bun";'],
   "packages/grids/src/service/workflow-query-data.ts": ['import { sql } from "bun";'],
@@ -856,7 +862,10 @@ export const baseline: Readonly<Record<string, readonly string[]>> = {
   "packages/notebooks/src/service/activity.ts": ['import { type SQL, sql } from "bun";'],
   "packages/notebooks/src/service/annotation-count.ts": ['import { sql } from "bun";'],
   "packages/notebooks/src/service/annotations.integration.test.ts": ['import { SQL, sql } from "bun";'],
-  "packages/notebooks/src/service/annotations.ts": ['import { SQL, sql, type TransactionSQL } from "bun";'],
+  "packages/notebooks/src/service/annotations.ts": [
+    'import { SQL, sql, type TransactionSQL } from "bun";',
+    'if (error instanceof SQL.PostgresError && error.errno === "55P03") return conflict(words(context).busy, { retryable: true });',
+  ],
   "packages/notebooks/src/service/app-events.integration.test.ts": ['import { sql } from "bun";'],
   "packages/notebooks/src/service/attachments.ts": ['import { sql } from "bun";'],
   "packages/notebooks/src/service/backup.integration.test.ts": ['import { sql } from "bun";'],
@@ -1167,7 +1176,11 @@ const delivered = new Set([
 ]);
 // Test targets and native mock objects intentionally need constructors and env.
 // Client value imports still go through the platform in these files.
-const fixture = (file: string) => /(?:\.(?:test|spec|test-fixture)\.[cm]?[jt]sx?$|(?:^|\/)(?:test|tests|fixtures|bench)\/)/.test(file);
+const fixtureFiles = new Set(["packages/cloud/scripts/platform-start.test-fixture.ts", "pwas/pwa-auth/test/server.ts"]);
+const fixture = (file: string) =>
+  /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file) ||
+  /^(?:scripts\/fixtures\/|tests\/|packages\/[^/]+\/(?:test|bench)\/)/.test(file) ||
+  fixtureFiles.has(file);
 const resolver = "packages/cloud/src/runtime/resolve-connections.ts";
 
 export const checkSource = (file: string, source: string): Finding[] => {
@@ -1175,6 +1188,7 @@ export const checkSource = (file: string, source: string): Finding[] => {
   const findings: Finding[] = [];
   const namespaces = new Set(["Bun"]);
   const constructors = new Set(["SQL", "RedisClient"]);
+  const importedConstructors = new Set<string>();
   const environments = new Set(["env"]);
   const report = (node: ts.Node, message: string) =>
     findings.push({ file, line: ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1, message });
@@ -1194,16 +1208,30 @@ export const checkSource = (file: string, source: string): Finding[] => {
           if (item.isTypeOnly) continue;
           const name = item.propertyName?.text ?? item.name.text;
           if (name === "sql" || name === "redis") report(item, clientMessage);
-          if (name === "SQL" || name === "RedisClient") constructors.add(item.name.text);
+          if (name === "SQL" || name === "RedisClient") {
+            constructors.add(item.name.text);
+            importedConstructors.add(item.name.text);
+          }
         }
     }
     if (names && ts.isNamedImports(names))
       for (const item of names.elements) if ((item.propertyName?.text ?? item.name.text) === "env") environments.add(item.name.text);
   }
+  const staticKey = (node: ts.Node): string | undefined => {
+    if (ts.isComputedPropertyName(node)) return staticKey(node.expression);
+    if (ts.isParenthesizedExpression(node)) return staticKey(node.expression);
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  };
+  const bindingKey = (node: ts.BindingElement) => {
+    const key = node.propertyName ?? node.name;
+    return ts.isIdentifier(key) ? key.text : staticKey(key);
+  };
   const member = (node: ts.Node): { object: ts.Expression; name: string } | undefined => {
     if (ts.isPropertyAccessExpression(node)) return { object: node.expression, name: node.name.text };
-    if (ts.isElementAccessExpression(node) && ts.isStringLiteral(node.argumentExpression))
-      return { object: node.expression, name: node.argumentExpression.text };
+    if (ts.isElementAccessExpression(node)) {
+      const name = staticKey(node.argumentExpression);
+      if (name !== undefined) return { object: node.expression, name };
+    }
   };
   const isEnv = (node: ts.Expression): boolean => {
     if (ts.isIdentifier(node)) return environments.has(node.text);
@@ -1226,31 +1254,74 @@ export const checkSource = (file: string, source: string): Finding[] => {
       node.arguments[0].text === "bun"
     );
   };
+  // Only track direct module assignments; this remains a syntactic regression guard.
+  const collectAliases = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isBun(node.initializer))
+      namespaces.add(node.name.text);
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left) &&
+      isBun(node.right)
+    )
+      namespaces.add(node.left.text);
+    ts.forEachChild(node, collectAliases);
+  };
+  collectAliases(ast);
+  const isTypeUse = (node: ts.Node): boolean => {
+    for (let parent = node.parent; parent; parent = parent.parent) {
+      // A class extends expression executes; interface extends and implements do not.
+      if (
+        ts.isExpressionWithTypeArguments(parent) &&
+        ts.isHeritageClause(parent.parent) &&
+        parent.parent.token === ts.SyntaxKind.ExtendsKeyword &&
+        (ts.isClassDeclaration(parent.parent.parent) || ts.isClassExpression(parent.parent.parent))
+      )
+        continue;
+      if (ts.isTypeNode(parent)) return true;
+      if (ts.isStatement(parent)) break;
+    }
+    return false;
+  };
+  const isConstructorValue = (node: ts.Identifier): boolean => {
+    const parent = node.parent;
+    if (isTypeUse(node) || ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent)) return false;
+    if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
+    if (ts.isExportSpecifier(parent))
+      return node === (parent.propertyName ?? parent.name) && !parent.isTypeOnly && !parent.parent.parent.isTypeOnly;
+    return ts.isShorthandPropertyAssignment(parent) || !("name" in parent && parent.name === node);
+  };
   const nativeAllowed = fixture(file) || file.startsWith("packages/cloud/src/runtime/");
   const envAllowed = fixture(file) || file === resolver;
   const visit = (node: ts.Node) => {
     const property = member(node);
     if (property && isBun(property.object) && ["sql", "redis"].includes(property.name)) report(node, clientMessage);
+    if (!nativeAllowed && property && isBun(property.object) && ["SQL", "RedisClient"].includes(property.name) && !isTypeUse(node))
+      report(node, poolMessage);
+    if (
+      !nativeAllowed &&
+      ts.isIdentifier(node) &&
+      importedConstructors.has(node.text) &&
+      isConstructorValue(node) &&
+      !(ts.isNewExpression(node.parent) && node.parent.expression === node)
+    )
+      report(node, poolMessage);
     if (ts.isNewExpression(node) && !nativeAllowed) {
       const expression = node.expression;
-      const property = member(expression);
-      if (
-        (ts.isIdentifier(expression) && constructors.has(expression.text)) ||
-        (property && isBun(property.object) && ["SQL", "RedisClient"].includes(property.name))
-      )
-        report(node, poolMessage);
+      if (ts.isIdentifier(expression) && constructors.has(expression.text)) report(node, poolMessage);
     }
     if (!envAllowed && property && delivered.has(property.name) && isEnv(property.object) && !isWrite(node)) report(node, envMessage);
     if (ts.isVariableDeclaration(node) && node.initializer && ts.isObjectBindingPattern(node.name)) {
       if (isEnv(node.initializer) && !envAllowed)
         for (const item of node.name.elements) {
-          const name = item.propertyName ?? item.name;
-          if (ts.isIdentifier(name) && delivered.has(name.text)) report(item, envMessage);
+          const name = bindingKey(item);
+          if (name && delivered.has(name)) report(item, envMessage);
         }
       if (isBun(node.initializer))
         for (const item of node.name.elements) {
-          const name = item.propertyName ?? item.name;
-          if (ts.isIdentifier(name) && ["sql", "redis"].includes(name.text)) report(item, clientMessage);
+          const name = bindingKey(item);
+          if (name && ["sql", "redis"].includes(name)) report(item, clientMessage);
+          if (!nativeAllowed && name && ["SQL", "RedisClient"].includes(name)) report(item, poolMessage);
         }
     }
     if (
@@ -1262,8 +1333,12 @@ export const checkSource = (file: string, source: string): Finding[] => {
       node.exportClause &&
       ts.isNamedExports(node.exportClause)
     )
-      for (const item of node.exportClause.elements)
-        if (!item.isTypeOnly && ["sql", "redis"].includes(item.propertyName?.text ?? item.name.text)) report(item, clientMessage);
+      for (const item of node.exportClause.elements) {
+        if (item.isTypeOnly) continue;
+        const name = item.propertyName?.text ?? item.name.text;
+        if (["sql", "redis"].includes(name)) report(item, clientMessage);
+        if (!nativeAllowed && ["SQL", "RedisClient"].includes(name)) report(item, poolMessage);
+      }
     ts.forEachChild(node, visit);
   };
   visit(ast);
