@@ -7,6 +7,7 @@ import { ackFrame, frame, message, rejectFrame } from "../protocol";
 import { SocketAwareness } from "./awareness";
 import { validateDocument } from "./document";
 import { NotesError } from "./errors";
+import type { CheckedFile } from "./files";
 import { limits, RateLimits } from "./limits";
 import type { NotesStore } from "./store";
 import { hash } from "./tokens";
@@ -145,6 +146,12 @@ export class NotesService {
       this.reading--;
       loaded?.doc.destroy();
     }
+  }
+  async upload(token: string, file: CheckedFile): Promise<{ key: string }> {
+    if (this.stopping) throw new NotesError("unavailable", 503);
+    const access = await this.store.resolve(token);
+    if (access.access !== "edit") throw new NotesError("read_only", 403);
+    return this.enqueue(access.readId, () => this.store.putFile(access.readId, file));
   }
   async humanOpen(token: string, ip: string): Promise<void> {
     this.rates.take("open", ip, limits.createPerHour * limits.peersPerIp, 3_600_000);
