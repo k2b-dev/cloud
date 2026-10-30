@@ -171,6 +171,8 @@ export function NoteEditor(props: {
       md.infoBlocksExtension(preferences.locale()),
       md.imageExtension(urls),
       md.linksExtension(urls),
+      // `@name` above a table or list shows as a quiet label while the caret is elsewhere, as in Notebooks.
+      md.namedBlocksExtension(),
       md.markupExtension(),
       md.markExtension(),
       md.ligaturesExtension(),
