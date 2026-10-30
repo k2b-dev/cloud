@@ -356,34 +356,47 @@ jobs:
       - name: Install the Playwright browser used by the Assistant code host
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
       # Grids certification runs in its own sharded job below.
-      - name: Run integration tests and sample Postgres storage
+      - name: Start Postgres storage sampler
         env:
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: |
-          set -euo pipefail
           docker exec "$POSTGRES_CONTAINER" sh -ec 'test "$(stat -f -c %T "$PGDATA")" = tmpfs'
           docker exec "$POSTGRES_CONTAINER" psql -U cloud -d cloud_ci_test \
             -c 'SHOW fsync' -c 'SHOW synchronous_commit' -c 'SHOW full_page_writes'
-          # Sample the whole cluster, including WAL and temporary databases that
-          # suites remove before the end-of-job measurement.
-          (
+          # Run inside the disposable container so the sampler survives the
+          # step boundary. The always-step below stops it and prints its log.
+          docker exec -d "$POSTGRES_CONTAINER" sh -ec '
+            exec > /tmp/cloud-pg-storage-sampler.log 2>&1
+            echo "$$" > /tmp/cloud-pg-storage-sampler.pid
             storage_sleep=
-            trap 'if [[ -n "$storage_sleep" ]]; then kill "$storage_sleep" 2>/dev/null || true; wait "$storage_sleep" || true; fi; exit 0' TERM INT
+            stop_sampler() {
+              if [ -n "$storage_sleep" ]; then
+                kill "$storage_sleep" 2>/dev/null || true
+                wait "$storage_sleep" || true
+              fi
+              exit 0
+            }
+            trap stop_sampler TERM INT
             while true; do
-              docker exec "$POSTGRES_CONTAINER" sh -c 'df -k "$PGDATA"' || exit
+              df -k "$PGDATA"
               sleep 30 &
               storage_sleep=$!
               wait "$storage_sleep"
             done
-          ) &
-          storage_sampler=$!
-          stop_storage_sampler() {
-            kill "$storage_sampler" 2>/dev/null || true
-            wait "$storage_sampler" || true
-            docker exec "$POSTGRES_CONTAINER" sh -c 'df -k "$PGDATA"' || true
-          }
-          trap stop_storage_sampler EXIT
-          bun run test --integration --exclude grids --shard ${{ matrix.shard }}/4 --max-minutes 20
+          '
+      - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/4 --max-minutes 20
+      - name: Stop Postgres storage sampler and print samples
+        if: always()
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" sh -ec '
+            if [ -f /tmp/cloud-pg-storage-sampler.pid ]; then
+              kill "$(cat /tmp/cloud-pg-storage-sampler.pid)" 2>/dev/null || true
+            fi
+            cat /tmp/cloud-pg-storage-sampler.log
+            df -k "$PGDATA"
+          '
       - if: always()
         run: |
           docker compose -f compose.test-s3.yml logs

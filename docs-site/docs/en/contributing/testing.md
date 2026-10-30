@@ -735,8 +735,8 @@ Disposable PostgreSQL containers in CI, nightly, release smoke checks, and the l
 a tmpfs capped at 4 GiB, with `fsync`, `synchronous_commit`, and
 `full_page_writes` disabled. Their data is lost when the container stops; they
 do not exercise crash durability. These settings reduce storage work during
-tests but do not establish the cause of sporadic slow statements. The CI
-integration step samples the whole cluster's tmpfs usage every 30 seconds,
+tests but do not establish the cause of sporadic slow statements. CI
+samples the whole cluster's tmpfs usage every 30 seconds during integration tests,
 including WAL, to check capacity. Keep these settings confined to disposable
 containers: a test database name does not make a shared development server
 safe to reconfigure.
