@@ -82,6 +82,7 @@ Declared in `packages/gateway/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
+| `GATEWAY_INGRESS_PORT` | number | runtime | `3001` | no | Private ingress provider listener for Traefik HTTP discovery and Caddy certificate admission. Keep this port off public ingress and publish no host port. |
 | `GATEWAY_INSTANCE_ID` | string | runtime | unset | no | Deprecated: remove to use a random per-process gateway identity. An explicit value is still honored for this release. |
 
 ## Application: mail

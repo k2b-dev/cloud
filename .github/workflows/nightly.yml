@@ -270,6 +270,8 @@ jobs:
         run: |
           set -euo pipefail
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:17-alpine valkey/valkey:8-alpine
+          # Public gateway requests use its configured internal service host.
+          echo "127.0.0.1 gateway" | sudo tee -a /etc/hosts
           docker network create cloud-smoke
           # Mail seeds its mailbox and Chat cleans up its chat through the published Postgres port.
           docker run --detach --name postgres --network cloud-smoke --publish 127.0.0.1:5432:5432 \
@@ -306,7 +308,7 @@ jobs:
           for _attempt in {1..90}; do
             routed=0
             for spec in /api/openapi.json /api/accounts/openapi.json /api/chat/openapi.json /api/grids/openapi.json /api/mail/openapi.json; do
-              curl --silent --fail --output /dev/null "http://127.0.0.1:3000$spec" && routed=$((routed + 1))
+              curl --silent --fail --output /dev/null "http://gateway:3000$spec" && routed=$((routed + 1))
             done
             if [[ "$routed" -eq 5 ]]; then exit 0; fi
             sleep 2
@@ -322,11 +324,11 @@ jobs:
           set -euo pipefail
           printf 'nightly-admin\n' > "$RUNNER_TEMP/admin-token"
           # A first sign-in stays pending until the account accepts the legal documents, as in the release smoke.
-          token=$(curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/admin-login \
+          token=$(curl --silent --fail-with-body -X POST http://gateway:3000/api/auth/admin-login \
             -H 'content-type: application/json' --data '{"token":"nightly-admin"}' | jq -r .session_token)
-          version=$(curl --silent --show-error --fail-with-body -H "cookie: session_token=$token" http://127.0.0.1:3000/auth/continue \
+          version=$(curl --silent --show-error --fail-with-body -H "cookie: session_token=$token" http://gateway:3000/auth/continue \
             | grep -oE 'data-legal-version="[a-f0-9]{64}"' | grep -oE '[a-f0-9]{64}') || { echo "::error::Could not read data-legal-version from /auth/continue." >&2; exit 1; }
-          curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/legal-consent \
+          curl --silent --fail-with-body -X POST http://gateway:3000/api/auth/legal-consent \
             -H "authorization: Bearer $token" -H "origin: $APP_URL" -H 'content-type: application/json' \
             --data "{\"accepted\":true,\"version\":\"$version\"}"
           failed=()
@@ -339,7 +341,7 @@ jobs:
             if [[ "$app" == chat ]]; then
               extra+=(--webkit-endpoint ws://127.0.0.1:3333/)
             fi
-            bun "packages/$app/scripts/browser-smoke.ts" --base-url http://127.0.0.1:3000 --admin-token-file "$RUNNER_TEMP/admin-token" "${extra[@]}" || failed+=("$app")
+            bun "packages/$app/scripts/browser-smoke.ts" --base-url http://gateway:3000 --admin-token-file "$RUNNER_TEMP/admin-token" "${extra[@]}" || failed+=("$app")
             echo "::endgroup::"
           done
           [[ ${#failed[@]} -eq 0 ]] || { echo "::error::Browser smoke failed for: ${failed[*]}"; exit 1; }

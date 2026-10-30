@@ -1,4 +1,6 @@
 import { buildRuntimeFromRegistry, type ProcessSync, readAppRegistrySnapshot, startProcessSync, watchAppRegistry } from "@k2b/cloud";
+import { env } from "@k2b/cloud/config";
+import { readAppDomains } from "@k2b/cloud/contracts/app-domains";
 import type { EnvSettingStatus } from "@k2b/cloud/contracts/settings-env";
 import {
   buildGatewayRouteSnapshot,
@@ -7,13 +9,21 @@ import {
   removeGatewayRouteSnapshot,
   superviseRuntimeTask,
 } from "@k2b/cloud/services";
+import { get } from "@k2b/cloud/services/settings";
 import { readEnvSettingsStatus } from "@k2b/cloud/services/settings/env-status";
+import { sql } from "bun";
+import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { gatewayRouter } from "./config";
 import { type AppRouteWarning, buildAppRoutesDetailed } from "./routes";
 import { getRouteTable, setRouteTable, stats } from "./stats";
 import { buildRouteTable } from "./trie";
 
 const log = logger("gateway");
+
+let domainSnapshot: DomainSnapshot = { cloudHosts: new Set(), domains: new Map(), apps: new Map(), development: env.IS_DEVELOPMENT };
+let certResolver = "le";
+export const getDomainSnapshot = (): DomainSnapshot => domainSnapshot;
+export const getIngressCertResolver = (): string => certResolver;
 
 let currentRuntime = buildRuntimeFromRegistry([]);
 let lastRouteHash = "";
@@ -73,8 +83,20 @@ export const refreshRoutes = async (): Promise<void> => {
   try {
     // A confirmed invalid snapshot closes its routes, even when every record was rejected.
     // Transport failures still retain the last table through the catch below.
-    const { apps } = await readAppRegistrySnapshot();
+    const [{ apps }, domains, publicUrl, resolver] = await Promise.all([
+      readAppRegistrySnapshot(),
+      readAppDomains(sql),
+      get<string>("app.url"),
+      get<string>("gateway.ingress_cert_resolver"),
+    ]);
     if (generation !== refreshGeneration) return;
+    domainSnapshot = {
+      cloudHosts: cloudHostSet(publicUrl, [gatewayRouter.baseUrl], env.IS_DEVELOPMENT),
+      domains: new Map(domains.map((domain) => [domain.host, domain])),
+      apps: new Map(apps.map((app) => [app.id, app])),
+      development: env.IS_DEVELOPMENT,
+    };
+    certResolver = resolver;
     const { routes: appRoutes, warnings } = buildAppRoutesDetailed(apps);
     const routeHash = JSON.stringify(
       appRoutes.map((r) => [r.prefix, r.appId, r.baseUrl, r.installable]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),

@@ -54,6 +54,8 @@ services:
       NATS_TLS_CA_FILE: ${NATS_TLS_CA_FILE:-}
       # Unset trusts loopback and private networks, which covers Traefik here.
       GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
+    # Private HTTP provider/Caddy ask listener; never publish a host port or route it through Traefik.
+    expose: ["3001"]
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.cloud.rule=Host(`${CLOUD_HOST}`)"

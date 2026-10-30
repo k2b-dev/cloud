@@ -1,9 +1,12 @@
 import { PWA_SERVICE_WORKER_PATH, PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
+import { DOMAIN_CHECK_PATH_PREFIX, PUBLIC_HOST_HEADER, PUBLIC_SURFACE_PREFIX } from "@k2b/cloud/contracts/app-domains";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
+import type { PublicTarget } from "./app-domains";
 import type { ClientAddress } from "./client-address";
 import { compressBody } from "./compression";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
+import { publicResponseHeaders, stripCloudCookies, stripPublicHeaders } from "./public-protections";
 import { isInternalPath, upstreamUrl } from "./request-boundary";
 import type { RouteTable } from "./trie";
 import { matchRoute } from "./trie";
@@ -107,13 +110,15 @@ export const proxyRequest = async (
   log: (msg: string, meta?: Record<string, unknown>) => void,
   client: ClientAddress | null,
   timeout: (req: Request, seconds: number) => void,
+  publicTarget?: PublicTarget,
 ): Promise<Response> => {
   const url = new URL(req.url);
-  if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
+  if (isInternalPath(url.pathname) && !(publicTarget && url.pathname.startsWith(DOMAIN_CHECK_PATH_PREFIX)))
+    return new Response("Not found", { status: 404 });
   const start = performance.now();
   stats.totalRequests++;
 
-  const match = matchRoute(table, url.pathname);
+  const match = publicTarget ? { ...publicTarget, matchedPrefix: "/" } : matchRoute(table, url.pathname);
 
   if (!match) {
     stats.noRouteCount++;
@@ -137,6 +142,7 @@ export const proxyRequest = async (
   // worker there could take over the shell's scope: a script at a bare part
   // root such as /pwa/<id> may claim /pwa/ without Service-Worker-Allowed.
   if (
+    !publicTarget &&
     req.headers.get("Service-Worker") === "script" &&
     isPwaPath(url.pathname) &&
     (match.appId !== PWA_SHELL_APP_ID || url.pathname !== PWA_SERVICE_WORKER_PATH || !!url.search)
@@ -144,7 +150,7 @@ export const proxyRequest = async (
     return new Response("Forbidden — only the mobile app serves a service worker below /pwa", { status: 403 });
   }
 
-  if (req.headers.get("Service-Worker") === "script" && !isPwaPath(url.pathname)) {
+  if (!publicTarget && req.headers.get("Service-Worker") === "script" && !isPwaPath(url.pathname)) {
     // A script at an ancestor or at a bare surface root could control the installation without a widened header.
     // Keep Core's existing push worker; every App-PWA permits only its generated worker at its exact path.
     const generated = table.installables.some(
@@ -165,12 +171,18 @@ export const proxyRequest = async (
 
   try {
     const targetUrl = upstreamUrl(match.baseUrl, url);
+    if (publicTarget) targetUrl.pathname = PUBLIC_SURFACE_PREFIX + url.pathname;
 
     // Forward the request — fix Host header for upstream
     const fwdHeaders = new Headers(req.headers);
+    stripPublicHeaders(fwdHeaders);
+    if (publicTarget) {
+      stripCloudCookies(fwdHeaders);
+      fwdHeaders.set(PUBLIC_HOST_HEADER, publicTarget.authority);
+    }
     fwdHeaders.set("Host", targetUrl.host);
-    fwdHeaders.set("X-Forwarded-Host", url.host);
-    fwdHeaders.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
+    fwdHeaders.set("X-Forwarded-Host", publicTarget?.authority ?? url.host);
+    fwdHeaders.set("X-Forwarded-Proto", publicTarget?.scheme ?? url.protocol.replace(":", ""));
     // Apps read the client from these headers; only the gateway may set them.
     fwdHeaders.delete("CF-Connecting-IP");
     fwdHeaders.delete("Forwarded");
@@ -233,11 +245,15 @@ export const proxyRequest = async (
     // Only Core may widen a service worker's scope (its root push worker). A
     // worker from any other app stays inside its script's directory, so no app
     // outside /pwa can register a worker for the mobile app's scope.
-    if (match.appId !== "core" || url.pathname !== "/service-worker.js" || url.search) headers.delete("Service-Worker-Allowed");
-    headers.set("X-Gateway-App", match.appId);
-    headers.set("X-Gateway-Ms", ms.toFixed(1));
+    if (!publicTarget && (match.appId !== "core" || url.pathname !== "/service-worker.js" || url.search))
+      headers.delete("Service-Worker-Allowed");
+    if (publicTarget) publicResponseHeaders(headers);
+    else {
+      headers.set("X-Gateway-App", match.appId);
+      headers.set("X-Gateway-Ms", ms.toFixed(1));
+    }
 
-    return new Response(compressBody(req, proxyRes, headers), {
+    return new Response(compressBody(req, proxyRes, headers, !!publicTarget && !fwdHeaders.has("Cookie"), !!publicTarget), {
       status: proxyRes.status,
       statusText: proxyRes.statusText,
       headers,
@@ -257,7 +273,7 @@ export const proxyRequest = async (
       // No response to read a template off — the request died in flight.
       pathTemplate,
       method: req.method,
-      status: disconnected ? 499 : 502,
+      status: disconnected ? 499 : publicTarget ? 503 : 502,
       durationMs: ms,
       errorKind: disconnected ? null : "upstream_unavailable",
     });
@@ -275,7 +291,7 @@ export const proxyRequest = async (
     }
 
     return new Response("Bad Gateway — upstream unavailable", {
-      status: 502,
+      status: publicTarget ? 503 : 502,
       headers: { "Retry-After": "3" },
     });
   }

@@ -5,17 +5,18 @@
  * matching, HTTP/WS proxying, minimal health, and telemetry publication.
  */
 
-import { APP_READINESS_PATH } from "@k2b/cloud";
 import { servePublicStorage } from "@k2b/cloud/server/public-storage.ts";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { logger } from "@k2b/cloud/services";
 import { resolveClientAddress } from "./client-address";
 import { gatewayRouter } from "./config";
-import { proxyRequest } from "./proxy";
-import { gatewayRuntime } from "./runtime";
+import { appEnv } from "./env";
+import { createGatewayHandler } from "./handler";
+import { createIngressHandler } from "./ingress";
+import { gatewayRuntime, getDomainSnapshot, getIngressCertResolver } from "./runtime";
 import { getRouteTable, stats } from "./stats";
 import { loadTrustedProxies } from "./trusted-proxies";
-import { tryUpgradeWebSocket, websocketHandlers } from "./ws-proxy";
+import { websocketHandlers } from "./ws-proxy";
 
 const log = logger("gateway");
 
@@ -27,6 +28,7 @@ log.info(`Gateway router started on port ${gatewayRouter.port}`);
 
 const shutdown = async () => {
   log.info("Shutting down gateway router");
+  await ingressServer.stop(true);
   await gatewayRuntime.stop();
   process.exit(0);
 };
@@ -53,6 +55,20 @@ const health = (): Response => {
   });
 };
 
+const handleRequest = createGatewayHandler({
+  snapshot: getDomainSnapshot,
+  table: getRouteTable,
+  stats,
+  log: (message, meta) => log.info(message, meta),
+  health,
+  storage: servePublicStorage,
+});
+const ingressServer = Bun.serve({
+  port: appEnv.GATEWAY_INGRESS_PORT,
+  fetch: createIngressHandler(getDomainSnapshot, gatewayRouter.baseUrl, getIngressCertResolver),
+});
+log.info(`Private ingress provider started on port ${ingressServer.port}`);
+
 export default {
   port: gatewayRouter.port,
   idleTimeout: REQUEST_IDLE_TIMEOUT_SECONDS,
@@ -64,33 +80,12 @@ export default {
       timeout: (req: Request, seconds: number) => void;
     },
   ): Promise<Response | undefined> {
-    const url = new URL(req.url);
     const client = resolveClientAddress(
       req.headers.get("x-forwarded-for"),
       server.requestIP(req)?.address ?? null,
       gatewayRouter.trustedProxies,
     );
-
-    // Reserve public storage before registry-driven proxying.
-    if (/^https?:\/\/[^/]+\/public\/storage(?:\/|[?#]|$)/.test(req.url)) return servePublicStorage(req, client?.address ?? "unknown");
-
-    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      return tryUpgradeWebSocket(req, server, getRouteTable(), (msg, meta) => log.info(msg, meta), client);
-    }
-
-    if (url.pathname === "/health") return health();
-    if (url.pathname === APP_READINESS_PATH) return Response.json({ status: "ready", appId: "gateway" });
-
-    return proxyRequest(
-      req,
-      getRouteTable(),
-      stats,
-      (msg, meta) => {
-        log.info(msg, meta);
-      },
-      client,
-      server.timeout.bind(server),
-    );
+    return handleRequest(req, server, client);
   },
   websocket: websocketHandlers,
 };

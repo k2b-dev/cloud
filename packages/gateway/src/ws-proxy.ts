@@ -13,10 +13,14 @@
  * arrive before the upstream socket is open so the initial Yjs sync packet
  * isn't lost during connection setup.
  */
+
+import { PUBLIC_HOST_HEADER, PUBLIC_SURFACE_PREFIX } from "@k2b/cloud/contracts/app-domains";
 import type { ServerWebSocket } from "bun";
+import type { PublicTarget } from "./app-domains";
 import type { ClientAddress } from "./client-address";
 import { derivePathTemplate } from "./path-template";
 import { transportErrorFields } from "./proxy";
+import { stripCloudCookies } from "./public-protections";
 import { isInternalPath, upstreamUrl } from "./request-boundary";
 import { matchRoute, type RouteTable } from "./trie";
 
@@ -107,31 +111,36 @@ export const tryUpgradeWebSocket = (
   table: RouteTable,
   logFn: (msg: string, meta?: Record<string, unknown>) => void,
   client: ClientAddress | null = null,
+  publicTarget?: PublicTarget,
 ): Response | undefined => {
   const url = new URL(req.url);
   if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
-  const match = matchRoute(table, url.pathname);
+  const match = publicTarget ? { ...publicTarget, matchedPrefix: "/" } : matchRoute(table, url.pathname);
   if (!match) {
     return new Response("WebSocket: no app registered for this path", { status: 502 });
   }
 
   const upstream = upstreamUrl(match.baseUrl, url);
-  upstream.protocol = "ws:";
+  if (publicTarget) upstream.pathname = PUBLIC_SURFACE_PREFIX + url.pathname;
+  upstream.protocol = publicTarget && upstream.protocol === "https:" ? "wss:" : "ws:";
 
   // Forward auth-relevant headers and the resolved client address so the
   // upstream's auth and rate-limit middleware see the same request. Bun's
   // WebSocket constructor only honours `headers` in the options bag (its
   // built-in client variant).
   const forwardedHeaders: Record<string, string> = {};
-  const cookie = req.headers.get("cookie");
+  const credentials = new Headers(req.headers);
+  if (publicTarget) stripCloudCookies(credentials);
+  const cookie = credentials.get("cookie");
   if (cookie) forwardedHeaders.Cookie = cookie;
   const auth = req.headers.get("authorization");
   if (auth) forwardedHeaders.Authorization = auth;
   // Applications refuse a session-authenticated socket from another origin.
   const origin = req.headers.get("origin");
   if (origin) forwardedHeaders.Origin = origin;
-  forwardedHeaders["X-Forwarded-Host"] = url.host;
-  forwardedHeaders["X-Forwarded-Proto"] = url.protocol.replace(":", "");
+  if (publicTarget) forwardedHeaders[PUBLIC_HOST_HEADER] = publicTarget.authority;
+  forwardedHeaders["X-Forwarded-Host"] = publicTarget?.authority ?? url.host;
+  forwardedHeaders["X-Forwarded-Proto"] = publicTarget?.scheme ?? url.protocol.replace(":", "");
   // Same client address as the HTTP proxy, so the application keys rate
   // limits of bearer and anonymous sockets per client; the client's own
   // headers never pass.

@@ -268,6 +268,8 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-images.yml"
           done
+          # Public gateway requests use its configured internal service host.
+          echo "127.0.0.1 gateway" | sudo tee -a /etc/hosts
           docker network create cloud-smoke
           docker run --detach --name postgres --network cloud-smoke \
             --tmpfs /var/lib/postgresql/data:rw,size=4g \
@@ -298,7 +300,7 @@ jobs:
           for _attempt in {1..90}; do
             core=$(curl --silent --fail http://127.0.0.1:3001/_cloud/ready || true)
             faq=$(curl --silent --fail http://127.0.0.1:3002/_cloud/ready || true)
-            routes=$(curl --silent --fail http://127.0.0.1:3000/health | jq -r '.routeTable.routeCount // 0' || echo 0)
+            routes=$(curl --silent --fail http://gateway:3000/health | jq -r '.routeTable.routeCount // 0' || echo 0)
             if [[ -n "$core" && -n "$faq" && "$routes" -ge 2 ]]; then
               echo "core: $core"; echo "faq: $faq"; echo "gateway routes: $routes"
               for ready in "$core" "$faq"; do
@@ -334,18 +336,18 @@ jobs:
           set -euo pipefail
           cld="$RUNNER_TEMP/cld-bin/cld"
           # The stack has no OAuth app; the recovery admin session acts as the bearer token.
-          token=$(curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/admin-login \
+          token=$(curl --silent --fail-with-body -X POST http://gateway:3000/api/auth/admin-login \
             -H 'content-type: application/json' --data '{"token":"release-smoke"}' | jq -r .session_token)
           # A first sign-in stays pending until the account accepts the legal documents, as in the browser.
-          version=$(curl --silent --show-error --fail-with-body -H "cookie: session_token=$token" http://127.0.0.1:3000/auth/continue \
+          version=$(curl --silent --show-error --fail-with-body -H "cookie: session_token=$token" http://gateway:3000/auth/continue \
             | grep -oE 'data-legal-version="[a-f0-9]{64}"' | grep -oE '[a-f0-9]{64}') || { echo "::error::Could not read data-legal-version from /auth/continue." >&2; exit 1; }
-          curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/legal-consent \
+          curl --silent --fail-with-body -X POST http://gateway:3000/api/auth/legal-consent \
             -H "authorization: Bearer $token" -H "origin: $APP_URL" -H 'content-type: application/json' \
             --data "{\"accepted\":true,\"version\":\"$version\"}"
-          "$cld" --server http://127.0.0.1:3000 --token "$token" plugins list --json | jq -e '.plugins | map(.name) | index("faq") and index("apps")'
-          "$cld" --server http://127.0.0.1:3000 --token "$token" plugins install --all
-          "$cld" --server http://127.0.0.1:3000 --token "$token" apps list --json | jq -e '.items | type == "array"'
-          "$cld" --server http://127.0.0.1:3000 --token "$token" faq list --json | jq -e 'type == "array"'
+          "$cld" --server http://gateway:3000 --token "$token" plugins list --json | jq -e '.plugins | map(.name) | index("faq") and index("apps")'
+          "$cld" --server http://gateway:3000 --token "$token" plugins install --all
+          "$cld" --server http://gateway:3000 --token "$token" apps list --json | jq -e '.items | type == "array"'
+          "$cld" --server http://gateway:3000 --token "$token" faq list --json | jq -e 'type == "array"'
           "$cld" faq reference | grep -q '^# '
           # Installing plugins rewrote the skill: the table names the profile and the module's reference folder exists.
           grep -F "| default | faq | $VERSION |" "$RUNNER_TEMP/cld-skills/cloud-cli/SKILL.md"

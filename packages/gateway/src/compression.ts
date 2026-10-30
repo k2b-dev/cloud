@@ -26,11 +26,21 @@ const hasNoTransform = (headers: Headers): boolean =>
     (directive) => directive.split("=", 1)[0]?.trim().toLowerCase() === "no-transform",
   );
 
-export const isCompressionEligible = (method: string, status: number, hasBody: boolean, headers: Headers): boolean => {
+export const isCompressionEligible = (
+  method: string,
+  status: number,
+  hasBody: boolean,
+  headers: Headers,
+  publicWithoutCookies = false,
+): boolean => {
   if (method === "HEAD" || status < 200 || [204, 206, 304].includes(status) || !hasBody) return false;
   if (headers.has("Content-Range") || headers.has("Content-Encoding") || hasNoTransform(headers)) return false;
   const type = headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-  if (type !== "text/html" && type !== "application/json" && !/^application\/[^\s/;]+\+json$/.test(type)) return false;
+  const publicText =
+    publicWithoutCookies &&
+    (/^text\//.test(type) ||
+      /^(?:application\/(?:javascript|x-javascript|ecmascript|xml|[^\s/;]+\+(?:json|xml))|image\/svg\+xml)$/.test(type));
+  if (!publicText && type !== "text/html" && type !== "application/json" && !/^application\/[^\s/;]+\+json$/.test(type)) return false;
   return !headers.has("Content-Length") || Number(headers.get("Content-Length")) >= MIN_COMPRESSION_BYTES;
 };
 
@@ -120,11 +130,15 @@ export const encodeStream = (
 };
 
 /** The encoding depends on these request headers, so caches must key on all of them. */
-const mergeVary = (headers: Headers) => {
+const mergeVary = (headers: Headers, publicDomain = false) => {
   const vary = headers.get("Vary");
   const tokens = vary?.split(",").map((token) => token.trim().toLowerCase()) ?? [];
   if (tokens.includes("*")) return;
-  const missing = ["Accept-Encoding", "Sec-Fetch-Site", "Sec-Fetch-Dest"].filter((name) => !tokens.includes(name.toLowerCase()));
+  const missing = (
+    publicDomain
+      ? ["Accept-Encoding", "Cookie", "Sec-Fetch-Site", "Sec-Fetch-Dest"]
+      : ["Accept-Encoding", "Sec-Fetch-Site", "Sec-Fetch-Dest"]
+  ).filter((name) => !tokens.includes(name.toLowerCase()));
   if (missing.length > 0) headers.set("Vary", [vary, ...missing].filter(Boolean).join(", "));
 };
 
@@ -132,12 +146,18 @@ const mergeVary = (headers: Headers) => {
  * Compress an eligible HTML or JSON body for a same-origin, direct, or non-browser
  * request. Mutates only the copied client headers; any other body stays byte-identical.
  */
-export const compressBody = (req: Request, response: Response, headers: Headers): ReadableStream<Uint8Array> | null => {
+export const compressBody = (
+  req: Request,
+  response: Response,
+  headers: Headers,
+  publicWithoutCookies = false,
+  publicDomain = publicWithoutCookies,
+): ReadableStream<Uint8Array> | null => {
   const body = response.body;
   if (response.status === 304) {
     // A cache replaces the stored Vary and ETag with the ones on a 304. Keep the
     // gateway's keys, and keep the weak tag of a compressed copy the client holds.
-    if (headers.has("Vary")) mergeVary(headers);
+    if (headers.has("Vary")) mergeVary(headers, publicDomain);
     const etag = headers.get("ETag");
     const held =
       req.headers
@@ -146,8 +166,8 @@ export const compressBody = (req: Request, response: Response, headers: Headers)
         .map((tag) => tag.trim()) ?? [];
     if (etag?.startsWith('"') && held.includes(`W/${etag}`)) headers.set("ETag", `W/${etag}`);
   }
-  if (!body || !isCompressionEligible(req.method, response.status, true, headers)) return body;
-  mergeVary(headers);
+  if (!body || !isCompressionEligible(req.method, response.status, true, headers, publicWithoutCookies)) return body;
+  mergeVary(headers, publicDomain);
   // The client's own no-transform asks intermediaries to leave the content unchanged.
   if (hasNoTransform(req.headers)) return body;
   // BREACH needs credentialed requests whose input the attacker chooses. Session
@@ -157,12 +177,16 @@ export const compressBody = (req: Request, response: Response, headers: Headers)
   // cannot show where a request came from, so it stays identity too; a browser's
   // own cache always sees the same User-Agent, so Vary does not need it.
   const site = req.headers.get("Sec-Fetch-Site");
-  if (site === null ? req.headers.get("User-Agent")?.startsWith("Mozilla/") : site !== "same-origin" && site !== "none") return body;
+  if (
+    !publicWithoutCookies &&
+    (site === null ? req.headers.get("User-Agent")?.startsWith("Mozilla/") : site !== "same-origin" && site !== "none")
+  )
+    return body;
   // Stored Markdown can embed same-origin images with a chosen URL, and pages echo
   // their path and query. Only documents and fetch/XHR get a compressed body;
   // HTML and JSON loaded as an image, style, script or frame gain nothing from it.
   const dest = req.headers.get("Sec-Fetch-Dest");
-  if (dest !== null && dest !== "document" && dest !== "empty") return body;
+  if (!publicWithoutCookies && dest !== null && dest !== "document" && dest !== "empty") return body;
   const encoding = chooseEncoding(req.headers.get("Accept-Encoding"));
   if (!encoding) return body;
   const length = headers.has("Content-Length") ? Number(headers.get("Content-Length")) : undefined;
