@@ -26,6 +26,8 @@ control.
 | `placeholder` | No | Input hint for string-like, number, and list settings |
 | `envFallback` | No | Server-side function that returns a fallback value |
 | `envBootstrap` | No | Server-side function that can create the initial persisted value |
+| `envVariable` | No | Environment variable name shown in migration diagnostics |
+| `validate` | No | Server-side function returning an error string for an invalid normalized value, or `undefined` |
 
 `template` also accepts `templateVars`. `enum` requires `options`, an array of
 `{ value, label }`. `number` accepts `min` and `max`.
@@ -78,8 +80,11 @@ At startup, `envBootstrap` writes a custom value only when no stored row exists.
 Unreadable and invalid rows stay unchanged. It runs again after the row is
 removed. Use it only to import an existing deployment value into Cloud.
 While a stored row is unreadable or invalid, reads use `envFallback` or the
-default, never `envBootstrap`. Declare both when the environment value should
-apply in that case, as `app.url` and `gotenberg.url` do.
+default, never `envBootstrap`. Invalid bootstrap values, including resolver errors, are ignored with a warning.
+The [network and AI migration](/en/docs/operations/deprecations-and-migrations)
+uses bootstrap only, without read-time environment fallbacks.
+Declare both when the environment value should
+apply in that case, as `app.url` does.
 See [Keep the encryption key stable](/en/docs/data/secrets-and-persistent-state#keep-the-encryption-key-stable)
 before changing `APP_SECRET`.
 

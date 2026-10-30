@@ -26,6 +26,14 @@ over automatic delivery. Existing admin UI, API and CLI creation and revocation
 paths remain available. See [runtime configuration](/en/docs/operations/runtime-configuration)
 for credential lifetimes, recovery after revocation, and the shared-infrastructure trust limit.
 
+## Network and AI environment values become administrator settings
+
+This release imports nine network and AI values at startup, without replacing
+stored rows. `GOTENBERG_URL` is bootstrap-only; `CLOUD_IDENTITY_JWKS_ORIGIN`
+is replaced by `CLOUD_CORE_INTERNAL_ORIGIN`, and `GATEWAY_INSTANCE_ID` defaults
+to a random per-process ID. Run `cld admin settings status --env` before
+removing legacy variables. Follow the [operator migration steps](/en/docs/operations/deprecations-and-migrations).
+
 ## Personal Linux groups in exports
 
 Accounts group and entity exports and OAuth/OIDC group claims exclude personal

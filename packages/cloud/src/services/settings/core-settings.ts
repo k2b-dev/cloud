@@ -1,5 +1,7 @@
 import { env } from "../../config/env";
+import { DEFAULT_WORKFLOW_AI_BUDGET, validateWorkflowAiBudget } from "../../config/workflow-ai";
 import { GEO_MAX_CREDITS, GEO_MAX_RPS } from "../../contracts/geo-admin";
+import { DEFAULT_TRUSTED_PROXIES, validateNetworkAllowlist, validateTrustedProxies } from "./validation";
 
 /**
  * Platform-owned settings, declared in the `defineApp({ settings: ... })` shape.
@@ -30,6 +32,101 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 ] as const;
 
 export const CORE_SETTINGS = {
+  "outgoing_mail.allowed_targets": {
+    kind: "string_list",
+    default: [],
+    label: "Outgoing mail allowed targets",
+    description: "Exact internal SMTP and IMAP hosts, IPs or CIDRs. Changes apply to new connections.",
+    envVariable: "OUTGOING_MAIL_ALLOWED_TARGETS",
+    envBootstrap: () => env.$readPresent("OUTGOING_MAIL_ALLOWED_TARGETS"),
+    validate: validateNetworkAllowlist,
+    presentation: {
+      translations: {
+        de: {
+          label: "Erlaubte Ziele für ausgehende E-Mails",
+          description: "Exakte interne SMTP- und IMAP-Hosts, IPs oder CIDRs. Änderungen gelten für neue Verbindungen.",
+        },
+      },
+    },
+  },
+  "gateway.trusted_proxies": {
+    kind: "string_list",
+    default: DEFAULT_TRUSTED_PROXIES,
+    label: "Trusted gateway proxies",
+    description: "IP addresses or CIDRs allowed to supply forwarded client addresses. Changes take effect after gateway restart.",
+    envVariable: "GATEWAY_TRUSTED_PROXIES",
+    envBootstrap: () => env.$readPresent("GATEWAY_TRUSTED_PROXIES"),
+    validate: validateTrustedProxies,
+    presentation: {
+      translations: {
+        de: {
+          label: "Vertrauenswürdige Gateway-Proxys",
+          description:
+            "IP-Adressen oder CIDRs, die weitergeleitete Client-Adressen liefern dürfen. Änderungen wirken nach einem Gateway-Neustart.",
+        },
+      },
+    },
+  },
+  "ai.workflow_budget": {
+    kind: "text",
+    default: JSON.stringify(DEFAULT_WORKFLOW_AI_BUDGET),
+    label: "Workflow AI budget",
+    description:
+      "JSON limits for source, rate and concurrency admission. Changes apply to new work; globalConcurrent also sets worker capacity and requires restarting all AI workers.",
+    envVariable: "WORKFLOW_AI_BUDGET",
+    envBootstrap: () => {
+      const value = env.$readPresent("WORKFLOW_AI_BUDGET");
+      return value === undefined ? undefined : JSON.stringify(value);
+    },
+    validate: validateWorkflowAiBudget,
+    presentation: {
+      translations: {
+        de: {
+          label: "KI-Workflow-Budget",
+          description:
+            "JSON-Grenzen für Quellen, Rate und gleichzeitige Arbeit. Änderungen gelten für neue Arbeit; globalConcurrent bestimmt auch die Worker-Kapazität und erfordert den Neustart aller KI-Worker.",
+        },
+      },
+    },
+  },
+  "ai.workflow_attempt_timeout_ms": {
+    kind: "number",
+    default: 60000,
+    label: "Workflow AI attempt timeout (ms)",
+    description: "Absolute attempt deadline including admission and repair. Changes apply to new attempts.",
+    envVariable: "WORKFLOW_AI_ATTEMPT_TIMEOUT_MS",
+    envBootstrap: () => env.$readPresent("WORKFLOW_AI_ATTEMPT_TIMEOUT_MS"),
+    integer: true,
+    min: 1,
+    presentation: {
+      translations: {
+        de: {
+          label: "Zeitlimit je KI-Workflow-Versuch (ms)",
+          description: "Absolute Frist einschließlich Zulassung und Reparatur. Änderungen gelten für neue Versuche.",
+        },
+      },
+    },
+  },
+  "ai.workflow_queue_timeout_ms": {
+    kind: "number",
+    default: 60000,
+    label: "Workflow AI queue timeout (ms)",
+    description: "Maximum queue wait before visible failure. Changes apply to new requests and the next recovery scan.",
+    envVariable: "WORKFLOW_AI_QUEUE_TIMEOUT_MS",
+    envBootstrap: () => env.$readPresent("WORKFLOW_AI_QUEUE_TIMEOUT_MS"),
+    integer: true,
+    min: 1,
+    presentation: {
+      translations: {
+        de: {
+          label: "Wartezeitlimit für KI-Workflows (ms)",
+          description:
+            "Maximale Wartezeit bis zum sichtbaren Fehler. Änderungen gelten für neue Anfragen und den nächsten Wiederherstellungslauf.",
+        },
+      },
+    },
+  },
+
   "storage.endpoint": {
     kind: "url",
     label: "Garage S3 endpoint",
@@ -228,6 +325,7 @@ export const CORE_SETTINGS = {
     placeholder: "e.g. https://cloud.example.org",
     envFallback: () => env.APP_URL,
     envBootstrap: () => env.APP_URL,
+    envVariable: "APP_URL",
   },
   "app.home_path": {
     kind: "string",
@@ -494,8 +592,8 @@ export const CORE_SETTINGS = {
     default: "",
     description: "Internal base URL of the Gotenberg service used for HTML-to-PDF rendering.",
     placeholder: "e.g. http://gotenberg:3000",
-    envFallback: () => env.GOTENBERG_URL,
     envBootstrap: () => env.GOTENBERG_URL,
+    envVariable: "GOTENBERG_URL",
   },
   "gotenberg.username": {
     kind: "string",

@@ -286,6 +286,18 @@
         "Domain writes, attempt recording and completion use the supplied transaction; a lost response is reconciled before announcing success.",
         "Uses a neutral start and offline page, restart-only worker updates, and clears private display state and unfinished signatures when hidden or offline."
       ]
+    },
+    {
+      "id": 25,
+      "prompt": "Move a Cloud application network allowlist from environment configuration into an administrator setting with one-time environment bootstrap.",
+      "expected_output": "Keeps the allowlist in its owning application, validates writes through the existing settings contract, preserves stored values during bootstrap, restricts changes to administrators, and retains the checked network transport.",
+      "files": [],
+      "expectations": [
+        "The administrator setting rejects malformed host, IP, CIDR and port entries.",
+        "A stored value wins over environment bootstrap, including an unreadable stored row.",
+        "Ordinary application users cannot widen the allowlist.",
+        "Requests still use createAllowedNetworkFetch or resolveAllowedNetworkAddresses."
+      ]
     }
   ]
 }

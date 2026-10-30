@@ -1,5 +1,20 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as ai from "@k2b/cloud/ai";
+import { DEFAULT_WORKFLOW_AI_BUDGET } from "@k2b/cloud/config/workflow-ai";
+import { coreSettings } from "@k2b/cloud/services";
+import { app } from "../config";
+
+let appGet: ReturnType<typeof spyOn<typeof app.settings, "get">>;
+let coreGet: ReturnType<typeof spyOn<typeof coreSettings, "get">>;
+beforeEach(() => {
+  appGet = spyOn(app.settings, "get").mockResolvedValue(20_000);
+  coreGet = spyOn(coreSettings, "get").mockResolvedValue(JSON.stringify(DEFAULT_WORKFLOW_AI_BUDGET));
+});
+afterEach(() => {
+  appGet.mockRestore();
+  coreGet.mockRestore();
+});
+
 import {
   assertConversationSummaryAiAllowance,
   conversationSummarySourceText,

@@ -1,4 +1,5 @@
 import { lazySync } from "../_internal/process-sync";
+import type { EnvSettingStatus } from "../contracts/settings-env";
 import { logger } from "./logging";
 
 /** Written by the gateway router, read by gateway-ops: one owner, one declaration. */
@@ -24,6 +25,8 @@ export type GatewayRouteWarning = {
 
 export type GatewayRouteSnapshotInput = {
   instanceId: string;
+  /** Sanitized migration diagnostics; omitted by pre-migration gateways. */
+  envSettings?: EnvSettingStatus[];
   baseUrl: string;
   startedAt: number;
   routeHash: string;
@@ -44,6 +47,8 @@ export type GatewayRouteSnapshotInput = {
 
 export type GatewayRouteSnapshot = {
   instanceId: string;
+  /** Sanitized migration diagnostics; omitted by pre-migration gateways. */
+  envSettings?: EnvSettingStatus[];
   baseUrl: string;
   startedAt: number;
   updatedAt: number;
@@ -97,6 +102,7 @@ const snapshots = lazySync((sync) =>
 
 export const buildGatewayRouteSnapshot = (input: GatewayRouteSnapshotInput): GatewayRouteSnapshot => ({
   instanceId: input.instanceId,
+  ...(input.envSettings ? { envSettings: input.envSettings } : {}),
   baseUrl: input.baseUrl,
   startedAt: input.startedAt,
   updatedAt: Date.now(),

@@ -685,3 +685,13 @@ marks data older than about six months. Postgres stores one upload per type,
 which stays active until reset. Other Core instances pick up changes within
 about a minute of lookups. `reset asn --yes` resets ASN; `reset --yes` resets
 both types. Status includes DB-IP attribution while DB-IP data is active.
+
+## Environment-backed settings
+
+Run `cld admin settings status --env --json` after an upgrade. Exit 0 means no
+reported process needs attention; nonzero means a conflict, invalid env value,
+unreadable row, pending import, or unavailable process. Values are never
+printed. Resolve the problem before removing deprecated environment entries.
+Use `cld admin settings set <key> --value '<JSON>' --yes`, adding `--app <id>`
+for application-owned keys. Use `--replace-unreadable` only for an explicit
+whole replacement.

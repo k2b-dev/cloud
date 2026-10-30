@@ -67,9 +67,9 @@ Profile and sender names are limited to 120 characters, sender addresses and
 SMTP usernames to 320, SMTP hosts to 253, and SMTP passwords to 16384.
 
 SMTP and bounce IMAP allow only public targets by default; the operator can
-allow internal hosts with `OUTGOING_MAIL_ALLOWED_TARGETS` in the Core container
+allow internal hosts with the `outgoing_mail.allowed_targets` admin setting
 (exact host names, IPs or CIDRs; an explicit value replaces the empty default).
-Invalid entries including `/0` stop Core at startup. A blocked SMTP attempt
+Invalid entries including `/0` are rejected on write; changes apply to new SMTP/IMAP connections. A blocked SMTP attempt
 records `smtp_failed` and retries until its deadline; test sends report the same
 operator-facing reason. Bounce collection records `target_blocked`.
 
@@ -212,7 +212,7 @@ first check. Errors are stable codes, cleared by a successful check:
 | Code | What to check |
 | --- | --- |
 | `open_failed` | Credentials, folder, TLS certificate, required STARTTLS, Core's IMAP egress, or a UIDVALIDITY change during reconnection |
-| `target_blocked` | The IMAP host resolves to an internal network address that `OUTGOING_MAIL_ALLOWED_TARGETS` does not allow; add the host, address or range, then restart Core |
+| `target_blocked` | The IMAP host resolves to an internal network address that `outgoing_mail.allowed_targets` does not allow; add the host, address or range, then open a new connection |
 | `search_failed` | IMAP server availability and UID search support |
 | `apply_failed` | Database availability while recording a report |
 | `save_failed` | Database availability while saving progress and check status |

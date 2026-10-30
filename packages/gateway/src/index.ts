@@ -14,10 +14,12 @@ import { gatewayRouter } from "./config";
 import { proxyRequest } from "./proxy";
 import { gatewayRuntime } from "./runtime";
 import { getRouteTable, stats } from "./stats";
+import { loadTrustedProxies } from "./trusted-proxies";
 import { tryUpgradeWebSocket, websocketHandlers } from "./ws-proxy";
 
 const log = logger("gateway");
 
+gatewayRouter.trustedProxies = await loadTrustedProxies();
 await gatewayRuntime.setup();
 await gatewayRuntime.start();
 

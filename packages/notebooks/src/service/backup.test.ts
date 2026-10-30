@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   buildNotebookBackupPaths,
   checkSnapshotTarget,
@@ -150,14 +150,13 @@ test("snapshot save checks refuse known internal targets with a stable code", as
   expect(checked).toBe(false);
 });
 
-test("snapshot allowlist validates operator configuration with its variable name", () => {
-  const original = process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
+test("snapshot allowlist validates current admin settings", async () => {
+  const { app } = await import("../config");
+  const get = spyOn(app.settings, "get").mockResolvedValue(["0.0.0.0/0"]);
   try {
-    process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = "0.0.0.0/0";
-    expect(snapshotAllowlist).toThrow("NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS: Invalid network allowlist entry");
+    await expect(snapshotAllowlist()).rejects.toThrow("notebooks.snapshot_allowed_targets");
   } finally {
-    if (original === undefined) delete process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
-    else process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = original;
+    get.mockRestore();
   }
 });
 

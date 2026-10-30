@@ -52,20 +52,28 @@ export const readIdentityGroupsAdmin = async (db: SQL): Promise<readonly string[
   return Object.freeze(normalizeGroups(groups));
 };
 
-const resolveCoreJwksUrl = (issuer: string, path: string, transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN): URL => {
+const resolveCoreJwksUrl = (
+  issuer: string,
+  path: string,
+  transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN ?? env.CLOUD_CORE_INTERNAL_ORIGIN,
+): URL => {
   if (!transportOrigin) return new URL(path, issuer);
   const origin = new URL(transportOrigin);
   if (origin.protocol !== "http:" && origin.protocol !== "https:") {
-    throw new Error("CLOUD_IDENTITY_JWKS_ORIGIN must use http or https");
+    throw new Error("Core JWKS origin (CLOUD_CORE_INTERNAL_ORIGIN or legacy CLOUD_IDENTITY_JWKS_ORIGIN) must use http or https");
   }
   return new URL(path, origin);
 };
 
-export const resolveSessionJwksUrl = (issuer: string, transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN): URL =>
-  resolveCoreJwksUrl(issuer, CLOUD_SESSION_JWKS_PATH, transportOrigin);
+export const resolveSessionJwksUrl = (
+  issuer: string,
+  transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN ?? env.CLOUD_CORE_INTERNAL_ORIGIN,
+): URL => resolveCoreJwksUrl(issuer, CLOUD_SESSION_JWKS_PATH, transportOrigin);
 
-export const resolveInvocationJwksUrl = (issuer: string, transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN): URL =>
-  resolveCoreJwksUrl(issuer, CLOUD_INVOCATION_JWKS_PATH, transportOrigin);
+export const resolveInvocationJwksUrl = (
+  issuer: string,
+  transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN ?? env.CLOUD_CORE_INTERNAL_ORIGIN,
+): URL => resolveCoreJwksUrl(issuer, CLOUD_INVOCATION_JWKS_PATH, transportOrigin);
 
 export const resolveOAuthJwksUrl = (issuer: string, transportOrigin = env.CLOUD_OAUTH_JWKS_ORIGIN): URL => {
   if (!transportOrigin) return new URL(CLOUD_OAUTH_JWKS_PATH, issuer);

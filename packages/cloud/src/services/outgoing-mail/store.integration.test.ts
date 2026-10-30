@@ -7,10 +7,12 @@ import { migrate } from "../../../../core/src/migrate/core/outgoing-mail";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../_internal/process-identity";
 import * as registry from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
+import { parseNetworkAllowlist } from "../../shared/network-address";
 import { audit } from "../audit";
 import * as settings from "../settings";
 import { decryptValue } from "../settings/crypto";
 import { mail } from "./index";
+import * as mailNetwork from "./resolve-host";
 import { listImapMailProfiles, outgoingMailStore, resolveImapMailCredentials, resolveMailCredentials, saveImapMailCheck } from "./store";
 import { outgoingMailTest } from "./test-send";
 
@@ -37,15 +39,13 @@ const app = (id: string, declared = true): AppRegistryEntry => ({
   platformPermissions: declared ? ["mail:send"] : [],
 });
 suiteFor("database", "valkey")("outgoing mail store and delivery", () => {
-  let originalTargets: string | undefined;
+  let targets: string[] = [];
+  let network: ReturnType<typeof spyOn<typeof mailNetwork, "outgoingMailAllowlist">>;
   beforeEach(() => {
-    originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+    targets = ["127.0.0.1"];
+    network = spyOn(mailNetwork, "outgoingMailAllowlist").mockImplementation(async () => parseNetworkAllowlist(targets));
   });
-  afterEach(() => {
-    if (originalTargets === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-    else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalTargets;
-  });
+  afterEach(() => network.mockRestore());
 
   const prefix = `test-${crypto.randomUUID().slice(0, 8)}`;
   const a = `${prefix}-a`,

@@ -42,6 +42,8 @@ type EnvValue<S extends EnvSpec<unknown>> = S extends { default: unknown } | { r
 export type EnvRegistry<S extends EnvSpecs> = { readonly [K in keyof S]: EnvValue<S[K]> } & {
   readonly $specs: S;
   readonly $keys: readonly string[];
+  /** Read only an explicitly supplied value, without the code default. */
+  readonly $readPresent: <K extends keyof S & string>(key: K) => z.output<S[K]["schema"]> | undefined;
 };
 
 const rawValue = (key: string, aliases: string[] = []): string | undefined => {
@@ -71,7 +73,15 @@ export const readEnv = <T>(key: string, spec: EnvSpec<T>): T | undefined => {
 
 export const defineEnv = <S extends EnvSpecs>(specs: S): EnvRegistry<S> => {
   const keys = Object.freeze(Object.keys(specs));
-  const registry: Record<string, unknown> = { $specs: specs, $keys: keys };
+  const registry: Record<string, unknown> = {
+    $specs: specs,
+    $keys: keys,
+    $readPresent: (key: string) => {
+      const spec = specs[key];
+      if (!spec) throw new Error(`Unknown environment variable: ${key}`);
+      return readEnv(key, { ...spec, default: undefined, required: false });
+    },
+  };
   for (const key of keys) {
     Object.defineProperty(registry, key, { enumerable: true, configurable: true, get: () => readEnv(key, specs[key]!) });
   }
