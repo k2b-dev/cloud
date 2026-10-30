@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
+import { appStatusIssues } from "../contracts/app-status";
 import { calendarSourceIssues } from "../contracts/calendar-source";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import { discussionsIssues } from "../contracts/discussions";
@@ -243,6 +244,7 @@ const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void
   });
   if (groups.calendarSource !== undefined && !manifest.calendarSource) leftOut.push("calendarSource");
   if (groups.fileProvider !== undefined && !manifest.fileProvider) leftOut.push("fileProvider");
+  if (groups.appStatus !== undefined && !manifest.appStatus) leftOut.push("appStatus");
   if (groups.discussions !== undefined && !manifest.discussions) leftOut.push("discussions");
   if (leftOut.length === 0) return;
   console.warn(
@@ -353,6 +355,32 @@ const withValidDiscussions = (manifest: CapabilityManifest): CapabilityManifest 
   return rest;
 };
 
+const checkedAppStatus = new Map<string, { manifestHash: string; valid: boolean }>();
+const withValidAppStatus = (manifest: CapabilityManifest): CapabilityManifest => {
+  if (!manifest.appStatus) return manifest;
+  const checked = checkedAppStatus.get(manifest.appId);
+  let valid = checked?.manifestHash === manifest.manifestHash ? checked.valid : undefined;
+  if (valid === undefined) {
+    const issues = appStatusIssues(manifest);
+    valid = issues.length === 0;
+    checkedAppStatus.set(manifest.appId, { manifestHash: manifest.manifestHash, valid });
+    if (!valid)
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "capability-registry",
+          message: "Ignored an incompatible appStatus provider",
+          appId: manifest.appId,
+          manifestHash: manifest.manifestHash,
+          issues,
+        }),
+      );
+  }
+  if (valid) return manifest;
+  const { appStatus: _ignored, ...rest } = manifest;
+  return rest;
+};
+
 /** Ignores record fields from a newer release; the endpoint always comes from the live app registry. */
 export const resolveLiveCapabilityRegistryEntry = (
   key: string,
@@ -367,7 +395,7 @@ export const resolveLiveCapabilityRegistryEntry = (
   if (!endpoint) return null;
   try {
     const read = parseCapabilityManifest(record.manifest, app.id);
-    const supported = withValidDiscussions(withValidCalendarSource(withValidFileProvider(read)));
+    const supported = withValidAppStatus(withValidDiscussions(withValidCalendarSource(withValidFileProvider(read))));
     const manifest = supported.resourcePages
       ? {
           ...supported,
