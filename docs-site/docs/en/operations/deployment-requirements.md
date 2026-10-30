@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-28
+updated: 2026-10-30
 ---
 
 # Deployment requirements
@@ -26,6 +26,23 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Applications start with a key file and Core address
+
+The release containing the complete platform-client and signed-request
+migration supplies a Compose template that gives ordinary apps only
+`CLOUD_APP_KEY_FILE` and `CLOUD_CORE_INTERNAL_ORIGIN`. Core and Gateway keep
+their infrastructure environment. Core must migrate and become ready before
+applications bootstrap. An unavailable Core blocks startup for up to five
+minutes, after which the process exits and the deployment restart policy
+applies. Existing running processes retain their connections during a Core
+outage; new starts still need Core.
+
+Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+for the required settings check, enrollment, file permissions, strict inventory
+check, Kubernetes mount example and three rollback boundaries. Keep legacy
+configuration until the checks and background/OAuth verification pass.
+Environment overrides remain supported per value for third-party apps.
 
 ## Resource reader checks and discussions
 

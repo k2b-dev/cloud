@@ -45,11 +45,12 @@ formats are:
 | `--format` | File | Contents |
 | --- | --- | --- |
 | `env` | `<app>.env` | `CLOUD_APP_KEY=<private key>` |
-| `compose` | `<app>.compose.yaml` | A service environment fragment with `CLOUD_APP_KEY` |
-| `k8s-secret` | `<app>.secret.yaml` | A Kubernetes Secret with `stringData.CLOUD_APP_KEY` |
+| `compose` | `<app>.compose.yaml` and `<app>.key` | An override for service `app-<app>` with a Docker secret mount and the Core origin; the companion key path is absolute |
+| `k8s-secret` | `<app>.secret.yaml` | A Kubernetes Secret with `stringData.app.key` (mount as a file) |
 
 These files use the deployment names `CLOUD_APP_KEY` and `CLOUD_APP_KEY_FILE`;
-they do not replace the existing runtime configuration in this release.
+use the [upgrade guide](/en/docs/operations/app-key-upgrade) before replacing
+an existing runtime environment block.
 The Kubernetes Secret is named `<app>-app-key`; long app IDs use a shortened
 name with a stable hash suffix. Secret files, including YAML, are private
 material. Keep them out of Git and deployment logs.
@@ -83,11 +84,11 @@ so the application user can read it. Do not supply both key sources: that
 stops startup. The key's app ID must match the built or development app ID.
 Core and Gateway keep their infrastructure environment values and refuse keys.
 
-**Keep infrastructure environment values until the platform-client import
-migration is complete.** Key-only production operation is not yet supported;
-remaining Bun-global SQL/Redis imports still read `DATABASE_URL` and
-`REDIS_URL` from the environment. The bootstrap initializer itself supports a
-key and Core origin, but that does not migrate application imports.
+Key-only operation requires the release containing the complete platform-client
+and signed-request migration. Retain infrastructure values on older releases
+and for third-party apps with old Bun-global clients. Use the
+[checked upgrade path](/en/docs/operations/app-key-upgrade) to change an
+existing installation.
 
 The platform requests its connections once before loading application code.
 Explicit environment values win per value; Core supplies missing values.
@@ -255,3 +256,9 @@ same public key is what makes lost responses safe. Core-owned consumers read
 `getInstallationId`, `getActiveAppKey`, and `touchAppKey` from
 `@k2b/cloud/services/app-keys`; the active-key read goes directly to Postgres
 and checks account status, revocation, and expiry without a cache.
+
+Key metadata keeps its stored lifecycle `status` and reports `usable` separately.
+A key is usable only while it and its account are active and the runtime accepts
+its public key. Restored public development fixtures therefore report
+`usable: false` outside development and are excluded from the app overview’s
+`activeKeys` count.

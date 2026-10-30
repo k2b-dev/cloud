@@ -6,6 +6,7 @@ import { validateAppKeyAppId } from "../app-key";
 import { type AuthContext, auth, respond, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 import { appKeys } from "../services/app-keys";
+import { readAppMigrationStatus } from "../services/app-migration";
 
 const appId = z.string().refine((value) => {
   try {
@@ -27,6 +28,7 @@ const input = z
 export const createAdminAppKeyRoutes = (
   authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin"),
   service: typeof appKeys = appKeys,
+  migration: typeof readAppMigrationStatus = readAppMigrationStatus,
 ) =>
   new Hono<AuthContext>()
     .use("*", noTransform())
@@ -36,6 +38,21 @@ export const createAdminAppKeyRoutes = (
       if (["POST", "DELETE"].includes(c.req.method)) return auth.requireOAuthScope("write", "admin")(c, next);
       return next();
     })
+    .get(
+      "/status",
+      describeRoute({ tags: ["App keys"], summary: "Check all expected apps and per-instance bootstrap sources" }),
+      v(
+        "query",
+        z
+          .object({ expect: z.string().optional(), allowEnv: z.string().optional() })
+          .transform((q) => ({
+            expect: (q.expect ?? "").split(/[\s,]+/).filter(Boolean),
+            allowEnv: (q.allowEnv ?? "").split(/[\s,]+/).filter(Boolean),
+          }))
+          .pipe(z.object({ expect: z.array(appId), allowEnv: z.array(appId) })),
+      ),
+      (c) => respond(c, () => migration({ actor: c.get("user"), ...c.req.valid("query") })),
+    )
     .get(
       "/keys",
       describeRoute({ tags: ["App keys"], summary: "List apps with enrolled keys and the installation ID" }),

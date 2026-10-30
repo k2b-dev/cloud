@@ -16,6 +16,7 @@ import { aiUsageCommands } from "./ai-usage";
 import { appCredentialCommands } from "./app-credentials";
 import { appKeyCommands } from "./app-keys";
 import { appSignInCommands } from "./app-sign-in";
+import { appStatusCommands } from "./app-status";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
 import { gatewayCommands } from "./gateway";
@@ -95,6 +96,7 @@ export default defineCliCommands({
   commands: [
     ...appCredentialCommands,
     ...appKeyCommands,
+    ...appStatusCommands,
     ...agentCommands,
     ...documentationCommands,
     ...appSignInCommands,

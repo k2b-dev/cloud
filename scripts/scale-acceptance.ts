@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 /** Cross-replica acceptance against an isolated, disposable production Compose stack. */
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { SQL } from "bun";
+import { enrollAppKey } from "../packages/cloud/src/cli/admin/app-keys";
 // Reuse Notebooks' installed Yjs dependency; this harness adds no package dependency.
 import * as Y from "../packages/notebooks/node_modules/yjs";
 import type { SmtpSinkMessage } from "./fixtures/smtp-sink";
@@ -85,6 +86,13 @@ export const envFileContents = (env: Record<string, string>): string =>
   Object.entries(env)
     .map(([key, value]) => `${key}=${value}\n`)
     .join("");
+
+/** Only this run's selected services receive ephemeral key files; no checkout secrets are used. */
+export const scaleKeySecrets = (directory: string) => ({
+  secrets: Object.fromEntries(
+    SCALED_APPS.filter((app) => app !== "core").map((app) => [`${app}-app-key`, { file: join(directory, `${app}.key`) }]),
+  ),
+});
 
 export type Replica = { id: string; ip: string; url: string; number: number };
 export type ReplicaEvidence = { a: Replica; b: Replica; served: Set<string> };
@@ -233,6 +241,8 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
   const tag = options.imageTag ?? `scale-${runId}`;
   const env = composeEnvironment(tag, runId);
   const envPath = join(directory, "compose.env");
+  const keyDirectory = join(directory, "keys");
+  const keyOverlayPath = join(directory, "app-keys.json");
   const childEnv = dockerEnvironment(process.env);
   const builtTags: string[] = [];
   const children = new Set<ReturnType<typeof Bun.spawn>>();
@@ -276,6 +286,8 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     "compose.prod.yml",
     "-f",
     "compose.scale-test.yml",
+    "-f",
+    keyOverlayPath,
     // Chat is unreleased in production. Without its profile, `down` and `logs` would skip its containers.
     "--profile",
     "unreleased",
@@ -460,6 +472,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
   };
   try {
     await writeFile(envPath, envFileContents(env), { mode: 0o600 });
+    await writeFile(keyOverlayPath, JSON.stringify(scaleKeySecrets(keyDirectory)), { mode: 0o600 });
     const config: { networks: Record<string, { external?: boolean }> } = JSON.parse(await compose(["config", "--format", "json"], 60_000));
     check(
       Object.values(config.networks).every((network) => !network.external),
@@ -509,7 +522,45 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
     await compose(["up", "-d", "--wait", ...infrastructure]);
     // All Core replicas migrate shared schemas before the other applications start.
     await compose(["up", "-d", "--wait", "--scale", `${devServiceName("core")}=${options.replicas}`, "gateway", devServiceName("core")]);
+    const [gatewayContainer] = await containers(devServiceName("gateway"));
+    check(gatewayContainer, "Gateway container missing");
+    const gateway = port(gatewayContainer, 3000);
+    await poll("Core admin route", async () => {
+      await http(gateway, "/api/openapi.json");
+      return true;
+    });
+    const login = async () => {
+      const response = await http(gateway, "/api/auth/admin-login", "POST", { token: env.ADMIN_LOGIN_TOKEN });
+      const signedIn: { session_token: string; user: { id: string } } = await response.json();
+      check(signedIn.session_token && signedIn.user.id, "Admin sign-in returned no session");
+      const continued = await fetch(`${gateway}/auth/continue`, {
+        headers: { cookie: `session_token=${signedIn.session_token}` },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "manual",
+      });
+      if (continued.ok) {
+        const version = (await continued.text()).match(/data-legal-version="([a-f0-9]{64})"/)?.[1];
+        check(version, "Cannot read data-legal-version from /auth/continue");
+        await http(gateway, "/api/auth/legal-consent", "POST", { accepted: true, version }, signedIn.session_token);
+      } else check(continued.status === 302 || continued.status === 303, `Unexpected /auth/continue status: ${continued.status}`);
+      return signedIn;
+    };
+    const admin = await login(),
+      token = admin.session_token;
     const applications = SCALED_APPS.filter((app) => app !== "core");
+    for (const appId of applications) {
+      const enrolled = await enrollAppKey({
+        appId,
+        server: ORIGIN,
+        outDir: keyDirectory,
+        format: "file",
+        register: async (body) => (await http(gateway, `/api/admin/apps/${appId}/keys`, "POST", body, token)).json(),
+      });
+      // Disposable credentials in a host directory with mode 0700. File-backed
+      // Compose secrets must be readable by the unprivileged image user.
+      await chmod(enrolled.file, 0o644);
+    }
+
     await compose([
       "up",
       "-d",
@@ -545,12 +596,10 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
           180_000,
         );
     }
-    const [gatewayContainer] = await containers(devServiceName("gateway"));
     const [sinkContainer] = await containers("sinks");
     const [postgresContainer] = await containers("postgres");
     check(gatewayContainer && sinkContainer && postgresContainer, "Infrastructure container missing");
-    const gateway = port(gatewayContainer, 3000),
-      sink = port(sinkContainer, 8025);
+    const sink = port(sinkContainer, 8025);
     for (const app of SCALED_APPS)
       await poll(
         `${app} gateway route`,
@@ -568,24 +617,6 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
       }
     }
     phase("ready", { project, replicas: Object.fromEntries([...evidence].map(([app, value]) => [app, { a: value.a, b: value.b }])) });
-    const login = async () => {
-      const response = await http(gateway, "/api/auth/admin-login", "POST", { token: env.ADMIN_LOGIN_TOKEN });
-      const signedIn: { session_token: string; user: { id: string } } = await response.json();
-      check(signedIn.session_token && signedIn.user.id, "Admin sign-in returned no session");
-      const continued = await fetch(`${gateway}/auth/continue`, {
-        headers: { cookie: `session_token=${signedIn.session_token}` },
-        signal: AbortSignal.timeout(10_000),
-        redirect: "manual",
-      });
-      if (continued.ok) {
-        const version = (await continued.text()).match(/data-legal-version="([a-f0-9]{64})"/)?.[1];
-        check(version, "Cannot read data-legal-version from /auth/continue");
-        await http(gateway, "/api/auth/legal-consent", "POST", { accepted: true, version }, signedIn.session_token);
-      } else check(continued.status === 302 || continued.status === 303, `Unexpected /auth/continue status: ${continued.status}`);
-      return signedIn;
-    };
-    const admin = await login(),
-      token = admin.session_token;
     const postgresPort = new URL(port(postgresContainer, 5432)).port;
     database = new SQL(`postgres://${env.POSTGRES_USER}:${env.POSTGRES_PASSWORD}@127.0.0.1:${postgresPort}/${env.POSTGRES_DB}`, {
       max: 2,

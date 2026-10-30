@@ -18,6 +18,12 @@ const registry = defineEnv({
     schema: z.string(),
     doc: "Release images set `production`; `development` enables development-only behavior such as insecure cookies and HTTP issuers.",
   },
+  CLOUD_DEV_APP_KEYS: {
+    schema: envBoolean,
+    default: false,
+    scope: "development",
+    doc: "Isolated Compose development installation only: enroll the public development fixture keys after Core migrations. Refused outside NODE_ENV=development.",
+  },
   HOSTNAME: {
     schema: z.string(),
     doc: "Container or host name; the default instance identity in worker leases and gateway registration.",

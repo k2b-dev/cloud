@@ -45,11 +45,12 @@ Applications can authenticate at startup with `CLOUD_APP_KEY` or
 query, fragment or embedded credentials. The public gateway blocks this
 internal route.
 
-**Keep the application's infrastructure environment values for now.**
-Key-only production operation is not supported until the platform-client import
-migration is complete: remaining Bun-global SQL and Redis consumers still read
-those values from the environment. Enrollment and bootstrap do not complete
-that migration. See [Use the key at start](/en/docs/operations/app-keys#use-the-key-at-start).
+For the release containing the complete platform-client and signed-request
+migration, follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+before removing app infrastructure values. Use the Compose template from that
+release; Core and Gateway retain their infrastructure environment. A
+third-party app with old Bun-global clients needs an explicit environment
+exception until its author migrates it.
 
 A present key must have the `cloud-app-key-v1` format and match the app ID
 embedded by the build or selected by the development preload. Invalid,

@@ -10,6 +10,21 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## Application deployment moves to key files
+
+The release containing the complete platform-client and signed-request
+migration replaces ordinary apps' shared infrastructure environment block
+with an app key file and Core address. Core and Gateway retain infrastructure
+values. Existing environment mode remains supported during the parallel
+release; environment overrides also remain supported afterward.
+
+Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+for settings checks, resumable enrollment, expected-app and replica checks,
+file permissions and the three rollback boundaries. Use the Compose template
+from that release. Do not remove legacy workload or OAuth credentials until
+the verification steps pass. Removing those authentication paths is a later
+breaking release, separate from this configuration migration.
+
 ## NATS diagnostics access moves to settings
 
 The four Gateway Ops `NATS_ADMIN_*` inputs are deprecated. During this release,

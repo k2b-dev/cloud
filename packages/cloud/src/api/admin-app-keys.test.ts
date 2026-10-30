@@ -125,3 +125,20 @@ test("OAuth read scope cannot mutate app keys even with an admin role", async ()
   expect((await routes.request(request(`/oauth/keys/${KEY_ID}`, "DELETE"))).status).toBe(403);
   expect(calls.length).toBe(before);
 });
+
+test("migration status validates the explicit inventory, keeps an admin actor, and disables response caching", async () => {
+  const input: unknown[] = [];
+  const result = { needsAttention: true, apps: [], registryIssues: [] };
+  const routes = createAdminAppKeyRoutes(authenticate, service, async (params) => {
+    input.push(params);
+    return ok(result);
+  });
+  const response = await routes.request("/status?expect=mail,inventory&allowEnv=inventory");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toContain("no-store");
+  expect(await response.json()).toEqual(result);
+  expect(input).toEqual([{ actor, expect: ["mail", "inventory"], allowEnv: ["inventory"] }]);
+  for (const query of ["expect=core", "allowEnv=../bad", "expect=gateway"])
+    expect((await routes.request(`/status?${query}`)).status).toBe(400);
+  expect(input.length).toBe(1);
+});
