@@ -67,19 +67,34 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
       return c.json(await service.create(snapshotBytes(input.data.snapshot), ip(c)), 201);
     });
     app.get("/api/pads/:id", async (c) => c.json(await service.read(c.req.param("id"), ip(c))));
-    app.post("/api/pads/:id/files", async (c) => {
-      service.rates.take("upload", ip(c), limits.uploadPerHour, 3_600_000);
-      return c.json(await service.upload(c.req.param("id"), await readUpload(c.req.raw)), 201);
-    });
-    app.get("/api/pads/:id/files/:key", async (c) => {
-      service.rates.take("download", ip(c), limits.files * limits.peersPerPad, 3_600_000);
-      const key = fileKey.safeParse(c.req.param("key"));
-      if (!key.success) throw new NotesError("not_found", 404);
-      const file = await service.store.getFile(c.req.param("id"), key.data);
-      return new Response(Uint8Array.from(file.bytes).buffer, {
-        headers: { "Content-Type": file.type, "Content-Disposition": fileDisposition(file) },
-      });
-    });
+    let transferring = 0;
+    const transfer = async <T>(run: () => Promise<T>): Promise<T> => {
+      if (transferring >= service.options.maxOpenPads) throw new NotesError("transfers_full", 503);
+      transferring++;
+      try {
+        return await run();
+      } finally {
+        transferring--;
+      }
+    };
+    app.post("/api/pads/:id/files", async (c) =>
+      transfer(async () => {
+        service.rates.take("upload", ip(c), limits.uploadPerHour, 3_600_000);
+        await service.store.editablePad(c.req.param("id"));
+        return c.json(await service.upload(c.req.param("id"), await readUpload(c.req.raw)), 201);
+      }),
+    );
+    app.get("/api/pads/:id/files/:key", async (c) =>
+      transfer(async () => {
+        service.rates.take("download", ip(c), limits.files * limits.peersPerPad, 3_600_000);
+        const key = fileKey.safeParse(c.req.param("key"));
+        if (!key.success) throw new NotesError("not_found", 404);
+        const file = await service.store.getFile(c.req.param("id"), key.data);
+        return new Response(file.bytes, {
+          headers: { "Content-Type": file.type, "Content-Disposition": fileDisposition(file) },
+        });
+      }),
+    );
     app.post("/api/pads/:id/opened", async (c) => {
       await service.humanOpen(c.req.param("id"), ip(c));
       return c.body(null, 204);
