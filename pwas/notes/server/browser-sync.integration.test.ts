@@ -4,8 +4,10 @@ import type { Browser, BrowserContext, Page } from "playwright";
 import * as Y from "yjs";
 import { launchBrowser, pageErrors } from "../../../packages/ui/test/browser";
 import { createDisposableDatabase, databaseSuite } from "../../../scripts/fixtures/test-infra";
+import { updateFrame } from "../protocol";
 import { migrate } from "./database";
 import { serveNotes } from "./runtime";
+import { NotesStore } from "./store";
 
 const NOW = new Date("2026-10-30T12:00:00Z");
 
@@ -100,6 +102,7 @@ databaseSuite()("Notes browser provider against durable server", () => {
       bob.page.evaluate(() => window.notesClient.insert(" Bob")),
     ]);
     await live(bob.page);
+    expect((await runtime.service.read(shared.readId)).content).not.toContain("Alice");
     await alice.context.setOffline(false);
     await Promise.all([has(alice.page, ["Alice", "Bob"]), has(bob.page, ["Alice", "Bob"])]);
     await Promise.all([live(alice.page), live(bob.page)]);
@@ -108,6 +111,22 @@ databaseSuite()("Notes browser provider against durable server", () => {
     expect((await runtime.service.read(shared.readId)).content).toBe(merged);
 
     await runtime.stop();
+    await Promise.all([
+      alice.page.waitForFunction(() => window.notesClient.status() === "offline"),
+      bob.page.waitForFunction(() => window.notesClient.status() === "offline"),
+    ]);
+    // Verify Postgres before either browser can repopulate an empty successor.
+    const durable = new SQL(database.url);
+    try {
+      const restored = await new NotesStore(durable, options.storageBytes).load(shared.readId);
+      try {
+        expect(restored.doc.getText("text").toString()).toBe(merged);
+      } finally {
+        restored.doc.destroy();
+      }
+    } finally {
+      await durable.close();
+    }
     await start();
     await Promise.all([live(alice.page), live(bob.page)]);
     await bob.page.evaluate(() => window.notesClient.insert(" after restart"));
@@ -120,6 +139,19 @@ databaseSuite()("Notes browser provider against durable server", () => {
     await has(reader.page, ["Alice", "Bob", "after restart"]);
     await reader.page.evaluate(() => window.notesClient.insert(" private reader edit"));
     expect(await reader.page.evaluate(() => window.notesClient.pending())).toBe(0);
+    // Bypass the provider's client-side gate and wait for the server's refusal.
+    const bytes = Array.from(updateFrame("readonly-probe", new Uint8Array(await reader.page.evaluate(() => window.notesClient.state()))));
+    const closed = await reader.page.evaluate(
+      ({ link, bytes }) =>
+        new Promise<{ code: number; reason: string }>((resolve, reject) => {
+          const socket = new WebSocket(`${location.origin.replace(/^http/, "ws")}/api/pads/${link}/ws`);
+          socket.addEventListener("open", () => socket.send(new Uint8Array(bytes)), { once: true });
+          socket.addEventListener("close", (event) => resolve({ code: event.code, reason: event.reason }), { once: true });
+          socket.addEventListener("error", () => reject(new Error("read-only probe socket failed")), { once: true });
+        }),
+      { link: shared.readId, bytes },
+    );
+    expect(closed).toEqual({ code: 1008, reason: "read_only" });
     expect((await runtime.service.read(shared.readId)).content).toBe(saved);
     expect(await bob.page.evaluate(() => window.notesClient.text())).toBe(saved);
     expect(errors.flat()).toEqual([]);

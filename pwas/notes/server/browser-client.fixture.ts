@@ -7,6 +7,7 @@ export type NotesBrowserClient = {
   insert: (value: string) => void;
   status: () => string;
   pending: () => number;
+  state: () => number[];
 };
 declare global {
   interface Window {
@@ -25,6 +26,7 @@ window.notesClient = {
   insert: (value) => doc.getText("text").insert(doc.getText("text").length, value),
   status: session.status,
   pending: session.pending,
+  state: () => Array.from(Y.encodeStateAsUpdate(doc)),
 };
 window.addEventListener(
   "pagehide",
