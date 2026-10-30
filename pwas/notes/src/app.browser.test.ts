@@ -270,6 +270,37 @@ describe("k2b notes · Produktions-SPA", () => {
     expect(await cloud.count()).toBe(0);
   }, 25_000);
 
+  test("Geteilte Notiz: jede Eingabe erreicht das Dokument, kein Editor-Plugin fällt aus", async () => {
+    // Writing the record on each keystroke once reconfigured the editor inside its own update; CodeMirror then switched
+    // the Yjs binding off and later typing never reached the note.
+    const crashes: string[] = [];
+    page.on("console", (message) => {
+      if (message.text().includes("plugin crashed")) crashes.push(message.text());
+    });
+    await page.route("**/api/pads", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await route.fulfill({ status: 201, json: { readId: READ_ID, editId: EDIT_ID } });
+    });
+    await createNote("Geteilt");
+    await page.getByRole("button", { name: "Teilen", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("checkbox", { name: /Ich halte mich an die Nutzungsbedingungen/ }).check();
+    await dialog.getByRole("checkbox", { name: /Ich habe die Datenschutzhinweise gelesen/ }).check();
+    await dialog.getByRole("button", { name: "Links erstellen", exact: true }).click();
+    await dialog.getByRole("button", { name: "Fertig", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await editor().click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" eins");
+    await page.keyboard.type(" zwei");
+    // The title is derived from the note's Yjs text, so it only changes when typing reached the document.
+    await page.waitForFunction(() => document.querySelector('[role="textbox"]')?.getAttribute("aria-label") === "Geteilt eins zwei");
+    await page.reload();
+    await editor().waitFor();
+    await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent?.includes("zwei"), undefined, { timeout: 5_000 });
+    expect(crashes).toEqual([]);
+  }, 25_000);
+
   test("Löschen einer geteilten Notiz: mit Server weg, ohne Server ausstehend, ohne Wiederholungsschleife", async () => {
     await importNotes();
     let deletes = 0;
