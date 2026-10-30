@@ -83,8 +83,10 @@ export function createEditor(): EditorHandle {
   const [controller, setController] = createSignal<TextEditorController>();
   const [controls, setControls] = createSignal<TextEditorControls>();
   const slots = new Set<{ compartment: Compartment; value: Extension }>();
+  // Listeners run inside the dispatch of whoever changed the view, maybe a host effect. They only write signals: a
+  // read here would subscribe that effect to every editor update, and its next dispatch would run it again.
   const tracker = EditorView.updateListener.of((update) => {
-    if (update.state !== state()) setState(update.state);
+    setState(update.state);
     if (update.focusChanged) setFocused(update.view.hasFocus);
   });
 
@@ -103,7 +105,12 @@ export function createEditor(): EditorHandle {
     if (getOwner())
       onCleanup(() => {
         slots.delete(slot);
-        untrack(() => view()?.dispatch({ effects: slot.compartment.reconfigure([]) }));
+        // A whole editor that unmounts disposes its places in the same pass; a view torn down meanwhile keeps its
+        // configuration, so no listener reads a field that just left. A place that leaves a living editor goes.
+        const current = untrack(view);
+        queueMicrotask(() => {
+          if (current?.dom.isConnected) current.dispatch({ effects: slot.compartment.reconfigure([]) });
+        });
       });
   };
 

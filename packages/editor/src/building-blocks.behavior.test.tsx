@@ -115,8 +115,30 @@ describe("@k2b/editor building blocks", () => {
     page.view().dispatch({ changes: { from: 4, insert: "!" } });
     expect(seen.at(-1)).toBe(5);
     dispose();
+    await Promise.resolve();
     page.view().dispatch({ changes: { from: 5, insert: "?" } });
     expect(seen.at(-1)).toBe(5);
+  });
+
+  test("a host effect that dispatches to the view does not run again on every editor update", async () => {
+    const { createEffect, createSignal } = await import("solid-js");
+    const { StateEffect } = await import("@codemirror/state");
+    using page = mount("text");
+    await Promise.resolve();
+    const ping = StateEffect.define<number>();
+    const [value, setValue] = createSignal(0);
+    let runs = 0;
+    const dispose = createRoot((dispose) => {
+      createEffect(() => {
+        runs++;
+        page.editor.view()?.dispatch({ effects: ping.of(value()) });
+      });
+      return dispose;
+    });
+    setValue(1);
+    page.view().dispatch({ changes: { from: 4, insert: "!" } });
+    expect(runs).toBe(2);
+    dispose();
   });
 });
 
