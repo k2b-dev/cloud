@@ -69,7 +69,14 @@ Configure FreeIPA and its administrator group mapping in the settings. Cloud has
 
 ## Rotate an app credential {icon="key"}
 
-**App credentials** lists the existing credentials in a table.
+Core issues and rotates app credentials automatically. **App credentials** lists
+them as `Runtime <instance>` and lets you revoke them. Revoking an automatic
+credential disables background access for every instance of that app, including
+after a restart. To restore it, choose **Enable app workload access** in the same
+table. The app then obtains a new credential automatically. A host-run override
+still needs manual replacement if its token was revoked.
+
+The following steps create an optional override for an app running on the host.
 
 :::steps
 1. In **App credentials**, choose **Create credential**.

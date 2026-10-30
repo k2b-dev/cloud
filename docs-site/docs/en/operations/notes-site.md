@@ -1,5 +1,6 @@
 ---
 title: Notes website
+navTitle: Notes
 section: Operations
 order: 125
 description: Run the standalone Notes server with a dedicated Postgres database and check its readiness.

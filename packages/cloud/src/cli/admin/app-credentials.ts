@@ -10,6 +10,7 @@ const metadata = z.object({
   status: z.string(),
   tokenPrefix: z.string(),
   expiresAt: z.string().nullable(),
+  serviceAccount: z.object({ status: z.string() }).optional(),
 });
 
 export const appCredentialCommands = [
@@ -33,12 +34,15 @@ export const appCredentialCommands = [
         .object({ items: z.array(metadata), page: z.number(), perPage: z.number(), total: z.number(), hasNext: z.boolean() })
         .parse(await apiGet(ctx, `${path(args.app)}?page=${flags.page}&perPage=${flags.perPage}`));
       if (!printStructured(ctx, listing))
-        ctx.table(listing.items, [
-          { key: "id", label: "ID" },
-          { key: "name", label: "Name" },
-          { key: "status", label: "Status" },
-          { key: "expiresAt", label: "Expires" },
-        ]);
+        ctx.table(
+          listing.items.map((item) => ({ ...item, status: item.serviceAccount?.status === "disabled" ? "disabled" : item.status })),
+          [
+            { key: "id", label: "ID" },
+            { key: "name", label: "Name" },
+            { key: "status", label: "Status" },
+            { key: "expiresAt", label: "Expires" },
+          ],
+        );
     },
   }),
   command("app-credentials create", {
@@ -62,8 +66,29 @@ export const appCredentialCommands = [
       if (!printStructured(ctx, result)) ctx.print(result.token);
     },
   }),
+  ...(["enable", "disable"] as const).map((action) =>
+    command(`app-credentials ${action}`, {
+      summary: `${action === "enable" ? "Enable" : "Disable"} workload issuance and calls for every instance of an app`,
+      args: { app: arg.required({ valueLabel: "app" }) },
+      flags: { yes: confirmFlag(`${action} this app's workload access`) },
+      async run({ ctx, args, flags }) {
+        if (!flags.yes)
+          throw new Error(
+            cliText(ctx, {
+              en: "Changing app workload access requires --yes.",
+              de: "App-Hintergrundzugriff ändern erfordert --yes.",
+            }),
+          );
+        const result = await apiJson(ctx, "PATCH", `${root}/${encodeURIComponent(args.app)}`, {
+          status: action === "enable" ? "active" : "disabled",
+        });
+        if (!printStructured(ctx, result))
+          ctx.print(cliText(ctx, { en: "App workload access updated.", de: "App-Hintergrundzugriff aktualisiert." }));
+      },
+    }),
+  ),
   command("app-credentials revoke", {
-    summary: "Revoke one exact app credential; its background calls will stop",
+    summary: "Revoke an app credential; runtime credentials also disable app-wide workload access",
     args: { app: arg.required({ valueLabel: "app" }), credential: arg.required({ valueLabel: "credential" }) },
     flags: { yes: confirmFlag("Revoke this app credential") },
     async run({ ctx, args, flags }) {

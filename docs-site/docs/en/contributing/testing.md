@@ -862,6 +862,18 @@ runtime. Ordinary file setup must not replay Core setup after cloning.
 `createDisposableDatabase()` and `useFreshDatabase()` still create empty
 databases for schema migration tests and suites that build stand-in tables.
 
+Bun cannot stop the body of a test that timed out: its statements keep
+running, or its transaction keeps holding locks, and every later hook would
+wait on them. In a private database that the process owns, nothing else runs,
+so after each test the fixture ends that leftover work: a statement still
+running for more than 250 ms is cancelled, and a transaction left open is
+ended. It logs each with its statement and blocking processes, so the report
+also names what held the timed-out test. `useFreshDatabase()` and
+`useMigratedDatabase()` mark their database as owned; a preload that binds
+its own private database calls `ownTestDatabase(name)`, as Filesv2's does.
+The shared test database is never touched this way, because other processes
+may use it at the same time.
+
 Templates are keyed by a content hash of workspace runtime sources and assets,
 the lockfile, workspace definition, and migration fixture code. Runtime inputs
 are hashed conservatively because migrations import shared helpers and assets;

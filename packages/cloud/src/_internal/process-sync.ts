@@ -19,6 +19,13 @@ import { withSyncBudgets } from "./sync-budget";
 
 let current: Sync | undefined;
 let starting = false;
+let processNats: NatsConnection | undefined;
+
+/** Existing non-retained NATS transport, owned and drained by the process lifecycle. */
+export const getProcessNats = (): NatsConnection => {
+  if (!processNats) throw new Error("NATS is not available before app.start()");
+  return processNats;
+};
 
 /** Bind the process instance. `startProcessSync()` does this; tests may bind their own. */
 export const bindProcessSync = (sync: Sync): void => {
@@ -173,6 +180,7 @@ export const startProcessSync = async ({ application }: { application: string })
   starting = true;
   try {
     const { sync: active, connection } = await waitForNats(() => connectReadySync(application), { application });
+    processNats = connection;
     let stopPromise: Promise<void> | undefined;
     return {
       sync: active,
@@ -185,6 +193,7 @@ export const startProcessSync = async ({ application }: { application: string })
               await flushSyncTraceEvents();
             } finally {
               if (current === active) unbindProcessSync();
+              if (processNats === connection) processNats = undefined;
               await connection.drain();
             }
           }

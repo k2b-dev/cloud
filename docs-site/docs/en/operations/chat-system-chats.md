@@ -160,8 +160,9 @@ outage or malformed activity response returns HTTP 200 with
 Denied conversation, thread, or activity access returns 404.
 
 The owning queries are `spaces:space.activity` and
-`notebooks:notebook.activity`. They take `space` or `notebook` (container short
-ID), optional `item` (item short ID), `after`, `before`, `cursor`, and `limit`
+`notebooks:notebook.activity`. They accept `container`, with `space` or
+`notebook` retained as aliases (container short ID). At least one is required;
+when both are present their IDs must match. They also take optional `item` (item short ID), `after`, `before`, `cursor`, and `limit`
 (default 50, maximum 100). Spaces also accepts an optional IANA `timeZone`,
 falling back to the installation zone. Each query returns a data array of
 `{ id, at, ref, actor: { type, id, name }, icon, sentence, count, href? }` and its
@@ -431,7 +432,9 @@ without counting the edit as a new message.
 
 `spaces.item.read` and `notebooks.note.read` return a `container` object with
 the owning container's `ref`, `name`, and the caller's resolved `permission`
-(`read`, `write`, or `admin`). This context comes from the same authorized
+(`read`, `write`, or `admin`). Both readers also return the shared
+[resource view](/en/docs/platform/resource-types-and-discussions), including
+localized context and the container title. This context comes from the same authorized
 read as the item itself. A consuming capability must use a fresh nested
 reader under the incoming authority; this metadata never grants access to
 other items or replaces credential scope and resource binding checks.
