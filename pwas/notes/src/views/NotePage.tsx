@@ -246,13 +246,12 @@ export function NotePage(props: { mode: NoteMode }) {
     );
   });
 
+  // A memo compares by value, so writing openedAt (which renews the record) does not run this again.
+  const recordId = createMemo(() => record()?.id);
   createEffect(
-    on(
-      () => record()?.id,
-      (id) => {
-        if (id) void app.store()?.update(id, { openedAt: Date.now() });
-      },
-    ),
+    on(recordId, (id) => {
+      if (id) void app.store()?.update(id, { openedAt: Date.now() });
+    }),
   );
 
   const keepCopy = async () => {
