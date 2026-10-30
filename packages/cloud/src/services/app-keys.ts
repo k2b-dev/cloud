@@ -159,10 +159,11 @@ export const registerAppKey = async (params: {
     `;
     if ((count?.active ?? 0) >= 2)
       return fail({ ...err.conflict("App key"), message: "An app can have at most two active keys; revoke an old key first" });
+    // Initial enrollment seeds the built-in issuer; authorization reads only the stored grant.
     const [row] = await db<{ id: string }[]>`
       INSERT INTO auth.service_account_credentials
-        (service_account_id, name, kind, public_key, fingerprint, created_by, expires_at)
-      VALUES (${accountId}::uuid, ${name}, 'app_key', ${params.publicKey}, ${fingerprint}, ${params.actor.id}::uuid, ${expiresAt})
+        (service_account_id, name, kind, public_key, fingerprint, created_by, expires_at, oauth_issue_allowed)
+      VALUES (${accountId}::uuid, ${name}, 'app_key', ${params.publicKey}, ${fingerprint}, ${params.actor.id}::uuid, ${expiresAt}, ${params.appId === "oauth"})
       RETURNING id
     `;
     if (!row) throw new Error("App key registration returned no key");
@@ -272,7 +273,7 @@ export const revokeAppKey = async (params: { actor: AdminActor; appId: string; k
 export const getActiveAppKey = async (
   params: { appId: string; keyId: string },
   db: SQL = sql,
-): Promise<(AppKeyMetadata & { connectionsAllowed: boolean }) | null> => {
+): Promise<(AppKeyMetadata & { connectionsAllowed: boolean; oauthIssueAllowed: boolean }) | null> => {
   try {
     validateAppKeyAppId(params.appId);
   } catch {
@@ -280,14 +281,14 @@ export const getActiveAppKey = async (
   }
   if (params.keyId.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(params.keyId))
     return null;
-  const [row] = await db<(Row & { connections_allowed: boolean })[]>`
+  const [row] = await db<(Row & { connections_allowed: boolean; oauth_issue_allowed: boolean })[]>`
     SELECT ${db.unsafe(columns)} FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     WHERE c.kind = 'app_key' AND c.id = ${params.keyId}::uuid AND c.status = 'active'
       AND (c.expires_at IS NULL OR c.expires_at > now()) AND sa.status = 'active'
       AND sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app' AND sa.resource_id = ${params.appId}
   `;
-  return row ? { ...map(row), connectionsAllowed: row.connections_allowed } : null;
+  return row ? { ...map(row), connectionsAllowed: row.connections_allowed, oauthIssueAllowed: row.oauth_issue_allowed } : null;
 };
 
 /** Call only after successful authentication; a late touch cannot revive a key. */

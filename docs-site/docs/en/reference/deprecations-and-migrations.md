@@ -13,8 +13,10 @@ updated: 2026-10-30
 ## App keys authenticate background work and OAuth
 
 Applications with `CLOUD_APP_KEY` or `CLOUD_APP_KEY_FILE` now sign each request
-to Core. The same key authenticates background capability calls and, for the
-`oauth` app, OAuth issuance. Keep `CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core.
+to Core. The same key authenticates background capability calls and, with the
+operator-owned `oauth:issue` grant, OAuth issuance. Built-in `oauth` keys receive
+the grant by default; third-party app keys can hold it too. Keep
+`CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core.
 Mandates, current grants, and domain idempotency still apply.
 
 `CLOUD_APP_CREDENTIAL` and `CLOUD_OAUTH_BROKER_SECRET` are deprecated. During

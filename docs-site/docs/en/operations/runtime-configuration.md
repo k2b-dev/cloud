@@ -276,9 +276,12 @@ Core reads the active app key directly, so revocation or account disabling
 rejects the next request on every replica. A configured invalid or rejected key
 never falls back to a bearer credential.
 
-All app keys carry `identity:invoke` by app-ID policy. Only keys belonging to
-`oauth` additionally carry `oauth:issue`; no administrator grant or key-supplied
-claim can add that capability. Mandates and OAuth grant checks stay unchanged.
+All app keys carry `identity:invoke`. OAuth issuance also requires the
+operator-owned `oauth_issue_allowed` credential grant, checked directly on
+every request regardless of app ID. Setup and migration grant built-in `oauth`
+keys permission by default; operators can assign it to third-party app keys.
+See [App keys](/en/docs/operations/app-keys#background-and-oauth-authority) for
+grant storage and administration. Mandates and OAuth grant checks stay unchanged.
 `connections_allowed=false` prevents startup connection delivery but still
 permits signed requests from a runner that does not need those connections.
 

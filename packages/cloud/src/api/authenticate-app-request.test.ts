@@ -171,6 +171,7 @@ test("signed admission errors retain their envelope and Retry-After through the 
         revokedBy: null,
         lastUsedAt: null,
         connectionsAllowed: false,
+        oauthIssueAllowed: false,
       },
       jti: "nonce",
       exp: NOW / 1000 + 30,

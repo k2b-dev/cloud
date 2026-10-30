@@ -94,8 +94,8 @@ export const authenticateSignedAppRequest = async (
       { method: c.req.method, path: url.pathname + url.search, body: bytes.slice(0, total) },
       dependencies.db,
     );
-    // App-key capabilities are policy, not mutable copies of service-account grants.
-    if (scope === "oauth:issue" && verified.identity.appId !== "oauth")
+    // Recheck the operator-owned key grant on every transmission.
+    if (scope === "oauth:issue" && !verified.key.oauthIssueAllowed)
       return reject(403, "scope_not_permitted", "App is not permitted to issue OAuth credentials");
     const declaredApp = c.req.header("X-Cloud-App-Id");
     if (declaredApp && declaredApp !== verified.identity.appId) return reject(403, "wrong_app", "App identity does not match the proof");

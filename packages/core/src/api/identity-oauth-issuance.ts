@@ -401,7 +401,7 @@ export const authenticateOAuthBroker = (token: string | null): boolean => {
   return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
 };
 
-/** Signed OAuth calls additionally require the oauth app-ID policy capability. */
+/** Signed OAuth calls additionally require the operator-owned oauth:issue key grant. */
 export const authorizeOAuthRequest = async (
   c: Context,
   legacyAuthenticate: Dependencies["authenticate"] = authenticateOAuthBroker,

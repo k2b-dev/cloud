@@ -106,10 +106,21 @@ already established database or NATS connections or recall delivered secrets.
 ## Background and OAuth authority
 
 The platform signs final requests to Core with the configured app key.
-Every key has `identity:invoke`; keys for the `oauth` app additionally have
-`oauth:issue`. These capabilities follow the app ID, not an editable grant
-or a claim chosen by the caller. Mandates and current OAuth grants still
-limit each operation.
+Every key has `identity:invoke`. OAuth issuance additionally requires the
+operator-owned `oauth:issue` grant, stored as `oauth_issue_allowed` on
+`auth.service_account_credentials`, beside `connections_allowed`. Core reads
+the grant directly on each request; any app, including a third-party app, can
+hold it. Mandates and current OAuth grants still limit each operation.
+
+Setup grants newly enrolled built-in `oauth` keys this permission by default.
+The migration grants existing built-in keys once; repeated setup preserves
+operator changes. Other app keys default to no issuance permission. Operators
+can assign or revoke it on the credential row. Like `connections_allowed`,
+this grant has no administration UI, API, or `cld` command yet.
+
+Core owns the issuer and OAuth signing keys. Every granted app uses the same
+Core issuance endpoint and internal JWKS; changing the granted app leaves the
+public issuer and JWKS unchanged.
 
 Keys with `connections_allowed=false` can sign requests but cannot retrieve
 startup connections. Revoking a key rejects its next bootstrap or background

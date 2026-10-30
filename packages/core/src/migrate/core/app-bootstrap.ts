@@ -9,6 +9,15 @@ export const migrateAppBootstrap = async (): Promise<void> => {
         AND attname = 'connections_allowed' AND NOT attisdropped) THEN
         ALTER TABLE auth.service_account_credentials ADD COLUMN connections_allowed BOOLEAN NOT NULL DEFAULT true;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'auth.service_account_credentials'::regclass
+        AND attname = 'oauth_issue_allowed' AND NOT attisdropped) THEN
+        ALTER TABLE auth.service_account_credentials ADD COLUMN oauth_issue_allowed BOOLEAN NOT NULL DEFAULT false;
+        UPDATE auth.service_account_credentials c SET oauth_issue_allowed = true
+        FROM auth.service_accounts sa
+        WHERE c.service_account_id = sa.id AND c.kind = 'app_key'
+          AND sa.kind = 'resource_bound' AND sa.app_id = 'oauth'
+          AND sa.resource_type = 'cloud.app' AND sa.resource_id = sa.app_id;
+      END IF;
     END $$`.simple();
   });
   await sql`

@@ -3,10 +3,10 @@ import { authenticateSignedAppRequest } from "@k2b/cloud/api";
 import type { AppKey } from "@k2b/cloud/app-key";
 import { mandates } from "@k2b/cloud/services";
 import { authenticateBootstrap } from "@k2b/cloud/services/app-bootstrap";
-import { appKeys } from "@k2b/cloud/services/app-keys";
+import { appKeys, getActiveAppKey } from "@k2b/cloud/services/app-keys";
 import { SQL, sql } from "bun";
 import { Hono } from "hono";
-import { decodeJwt, generateKeyPair } from "jose";
+import { createLocalJWKSet, decodeJwt, exportJWK, generateKeyPair, jwtVerify } from "jose";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { requireInfra, suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { createIdentityInvocationRoutes } from "../../../core/src/api/identity-invocation";
@@ -36,6 +36,7 @@ suiteFor(
   let replicas: [SQL, SQL];
   let key: AppKey;
   let oauthKey: AppKey;
+  let thirdPartyKey: AppKey;
   let routes: [Hono, Hono];
   const admitted = async () => ({ limited: false, remaining: 1, resetIn: 1000 });
   beforeAll(async () => {
@@ -53,6 +54,7 @@ suiteFor(
     };
     key = await enroll("mail");
     oauthKey = await enroll("oauth", APP_KEY_FIXTURES[1]);
+    thirdPartyKey = await enroll("acme-oauth");
     replicas = [new SQL(database.url), new SQL(database.url)];
     const makeRoutes = (db: SQL) =>
       new Hono().all("*", async (c) => {
@@ -118,14 +120,137 @@ suiteFor(
     }
   });
 
-  test("only oauth keys carry oauth:issue", async () => {
+  test("migration grants the built-in default once and preserves operator changes on repeated setup", async () => {
+    expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(true);
+    expect((await getActiveAppKey(thirdPartyKey))?.oauthIssueAllowed).toBe(false);
+    // Recreate the pre-grant schema on this private database to exercise an existing installation.
+    await sql`ALTER TABLE auth.service_account_credentials DROP COLUMN oauth_issue_allowed`.simple();
+    await migrateAppBootstrap();
+    expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(true);
+    expect((await getActiveAppKey(key))?.oauthIssueAllowed).toBe(false);
+    expect((await getActiveAppKey(thirdPartyKey))?.oauthIssueAllowed).toBe(false);
+    await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = (id = ${thirdPartyKey.keyId}::uuid)
+      WHERE id IN (${oauthKey.keyId}::uuid, ${thirdPartyKey.keyId}::uuid)`;
+    try {
+      await migrateAppBootstrap();
+      const enrolled = await appKeys.register({ actor, appId: "oauth", publicKey: APP_KEY_FIXTURES[1].publicKey });
+      expect(enrolled.ok).toBe(true);
+      expect((await getActiveAppKey(oauthKey))?.oauthIssueAllowed).toBe(false);
+      expect((await getActiveAppKey(thirdPartyKey))?.oauthIssueAllowed).toBe(true);
+    } finally {
+      await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = (id = ${oauthKey.keyId}::uuid)
+        WHERE id IN (${oauthKey.keyId}::uuid, ${thirdPartyKey.keyId}::uuid)`;
+    }
+  });
+
+  test("only apps with the grant carry oauth:issue, independent of app ID", async () => {
     const target = "/api/_internal/identity/v1/oauth/token";
-    const denied = await signed(key, "{}", "POST", target);
-    const response = await routes[0].request(target, denied.init);
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ code: "scope_not_permitted", message: "App is not permitted to issue OAuth credentials" });
+    for (const appKey of [key, thirdPartyKey]) {
+      const denied = await signed(appKey, "{}", "POST", target);
+      const response = await routes[0].request(target, denied.init);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ code: "scope_not_permitted", message: "App is not permitted to issue OAuth credentials" });
+    }
     const allowed = await signed(oauthKey, "{}", "POST", target);
     expect((await routes[0].request(target, allowed.init)).status).toBe(200);
+    await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = (id = ${thirdPartyKey.keyId}::uuid)
+      WHERE id IN (${oauthKey.keyId}::uuid, ${thirdPartyKey.keyId}::uuid)`;
+    try {
+      const thirdParty = await signed(thirdPartyKey, "{}", "POST", target);
+      expect((await routes[1].request(target, thirdParty.init)).status).toBe(200);
+      const denied = await signed(oauthKey, "{}", "POST", target);
+      for (const route of routes) expect((await route.request(target, denied.init)).status).toBe(403);
+    } finally {
+      await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = (id = ${oauthKey.keyId}::uuid)
+        WHERE id IN (${oauthKey.keyId}::uuid, ${thirdPartyKey.keyId}::uuid)`;
+    }
+  });
+
+  test("a granted third-party app issues tokens with the same Core issuer and OAuth JWKS", async () => {
+    const { privateKey, publicKey } = await generateKeyPair("RS256");
+    const issuer = "https://cloud.test";
+    const kid = "third-party-issuer-test";
+    const { createIdentityPublicRoutes } = await import("../../src/services/identity/routes");
+    const keyRing = await import("../../src/services/identity/key-ring");
+    const jwks = jest.spyOn(keyRing, "listIdentityJwks").mockImplementation(async (purpose) => {
+      expect(purpose).toBe("oauth"); // Signing purpose, never an application ID.
+      return { keys: [{ ...(await exportJWK(publicKey)), kid, alg: "RS256" }], etag: '"third-party"' };
+    });
+    const issuance = new Hono().route("/", createIdentityPublicRoutes()).route(
+      "/api/_internal/identity/v1",
+      createIdentityOAuthIssuanceRoutes({
+        authenticate: () => {
+          throw new Error("Signed issuance must not use legacy authentication");
+        },
+        issuer: async () => issuer,
+        now: () => NOW / 1000,
+        withActiveSigner: async (purpose, use) => {
+          expect(purpose).toBe("oauth");
+          return use({ kid, key: privateKey, signUntil: new Date(NOW + 60_000), issuer }, sql);
+        },
+        resolve: async () => ({
+          authEpoch: 0,
+          clientId: "test-client",
+          clientScopes: ["read"],
+          clientAudiences: ["cloud"],
+          clientServiceAccountId: "44444444-4444-4444-8444-444444444444",
+          registrationKind: "managed",
+          allowedProfiles: [],
+          accessMode: "profiles",
+          specificAccess: false,
+          grantedScopes: ["read"],
+          grantedAudiences: ["cloud"],
+          resource: null,
+          nonce: null,
+          notAfter: null,
+          user: null,
+          serviceAccount: {
+            id: "44444444-4444-4444-8444-444444444444",
+            kind: "standalone",
+            status: "active",
+            delegatedUserId: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+          },
+        }),
+      }),
+    );
+    const target = "/api/_internal/identity/v1/oauth/token";
+    const body = JSON.stringify({
+      tokens: [
+        {
+          kind: "service_access",
+          expiresIn: 60,
+          grant: {
+            kind: "client_credentials",
+            grantId: "55555555-5555-4555-8555-555555555555",
+            nonce: "66666666-6666-4666-8666-666666666666",
+          },
+        },
+      ],
+    });
+    await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = true WHERE id = ${thirdPartyKey.keyId}::uuid`;
+    try {
+      const request = await signed(thirdPartyKey, body, "POST", target);
+      const response = await issuance.request(target, request.init);
+      expect(response.status).toBe(200);
+      const { tokens } = await response.json();
+      const keys = await issuance.request("/api/_internal/identity/v1/oauth/jwks");
+      expect(keys.status).toBe(200);
+      const verified = await jwtVerify(tokens[0], createLocalJWKSet(await keys.json()), {
+        issuer,
+        audience: "cloud",
+        currentDate: new Date(NOW),
+      });
+      expect(verified.payload).toMatchObject({ token_use: "access", principal_type: "service_account", scope: "read" });
+      await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = false WHERE id = ${thirdPartyKey.keyId}::uuid`;
+      const denied = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, denied.init)).status).toBe(403);
+    } finally {
+      jwks.mockRestore();
+      await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = false WHERE id = ${thirdPartyKey.keyId}::uuid`;
+    }
   });
 
   test("Core OAuth, invocation and mandate routes accept signed requests without legacy credentials", async () => {
