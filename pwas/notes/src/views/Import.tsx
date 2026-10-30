@@ -1,5 +1,5 @@
-import { Button, prompts, toast } from "@k2b/ui";
 import { files as browserFiles } from "@k2b/stdlib/browser";
+import { Button, prompts, toast } from "@k2b/ui";
 import { createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import { applyImport, type ImportPreview, readImport } from "../lib/transfer";
 import { app, t } from "../state";
@@ -58,7 +58,8 @@ function ImportBody(props: { close: () => void; initial?: File[] }) {
     try {
       const result = await applyImport(current, store, mode());
       props.close();
-      if (result.skipped > 0) toast.success(t().importedSkipped({ count: result.skipped }), { title: t().imported({ count: result.imported }) });
+      if (result.skipped > 0)
+        toast.success(t().importedSkipped({ count: result.skipped }), { title: t().imported({ count: result.imported }) });
       else toast.success(t().imported({ count: result.imported }));
     } catch (failure) {
       setError(errorText(failure));
@@ -111,6 +112,7 @@ function ImportBody(props: { close: () => void; initial?: File[] }) {
         </Match>
         <Match when={!preview()}>
           <p class="n-lead">{t().importLead}</p>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: a drop area for pointers; "Datei wählen" inside is the keyboard path. */}
           <div
             class="n-drop"
             data-over={over() ? "" : undefined}

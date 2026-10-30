@@ -28,7 +28,8 @@ export const presence = createRoot(() => {
         if (response.ok) {
           const body: unknown = await response.json();
           const next: Record<string, Person[]> = {};
-          for (const entry of shared) next[entry.id] = parsePeople(body && typeof body === "object" ? Reflect.get(body, entry.readId) : undefined);
+          for (const entry of shared)
+            next[entry.id] = parsePeople(body && typeof body === "object" ? Reflect.get(body, entry.readId) : undefined);
           setPeople(next);
         }
       } catch {
@@ -59,7 +60,8 @@ function parsePeople(value: unknown): Person[] {
     if (!entry || typeof entry !== "object") continue;
     const name: unknown = Reflect.get(entry, "name");
     const color: unknown = Reflect.get(entry, "color");
-    if (typeof name === "string" && typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color)) result.push({ name: name.slice(0, 32), color });
+    if (typeof name === "string" && typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color))
+      result.push({ name: name.slice(0, 32), color });
   }
   return result.slice(0, 8);
 }

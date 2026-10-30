@@ -207,7 +207,12 @@ test("an export with links brings the links back, but never onto a second copy",
     await applyImport(preview, target, "skip");
     expect(target.records()[0]?.share).toEqual(share);
     await applyImport(await readImport([await exported(source, true)], target), target, "both");
-    expect(target.records().filter((record) => record.id !== id).map((record) => record.share)).toEqual([null]);
+    expect(
+      target
+        .records()
+        .filter((record) => record.id !== id)
+        .map((record) => record.share),
+    ).toEqual([null]);
   } finally {
     await source.close();
     await target.close();

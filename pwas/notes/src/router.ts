@@ -18,7 +18,8 @@ export function parseRoute(pathname: string): Route {
   const shared = pathname.match(/^\/p\/([^/]+)$/);
   if (shared?.[1]) return LINK_ID.test(shared[1]) ? { name: "shared", linkId: shared[1] } : { name: "unknown" };
   const legal = pathname.match(/^\/(datenschutz|nutzungsbedingungen|impressum)$/);
-  if (legal?.[1] === "datenschutz" || legal?.[1] === "nutzungsbedingungen" || legal?.[1] === "impressum") return { name: "legal", page: legal[1] };
+  if (legal?.[1] === "datenschutz" || legal?.[1] === "nutzungsbedingungen" || legal?.[1] === "impressum")
+    return { name: "legal", page: legal[1] };
   return { name: "unknown" };
 }
 

@@ -64,12 +64,29 @@ afterAll(async () => {
   }
 });
 
+/** Only Date moves to the fixed instant; timers and animation frames keep running for real. */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 beforeEach(async () => {
   context = await browser.newContext({ locale: "de-DE", viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
   context.setDefaultTimeout(5_000);
   context.setDefaultNavigationTimeout(10_000);
+  await context.addInitScript(pinPageClock, NOW);
   page = await context.newPage();
-  await page.clock.setFixedTime(new Date(NOW));
   errors = pageErrors(page);
 });
 

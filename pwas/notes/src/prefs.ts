@@ -8,8 +8,42 @@ type Stored = { name?: string; theme?: ThemeChoice; locale?: AppLocale; firstSha
 const KEY = "k2b-notes.preferences";
 
 const GUEST_NAMES: Record<AppLocale, string[]> = {
-  de: ["Otter", "Dachs", "Fuchs", "Eule", "Igel", "Luchs", "Biber", "Kranich", "Specht", "Möwe", "Hase", "Wal", "Elch", "Robbe", "Falke", "Lachs"],
-  en: ["Otter", "Badger", "Fox", "Owl", "Hedgehog", "Lynx", "Beaver", "Crane", "Woodpecker", "Gull", "Hare", "Whale", "Moose", "Seal", "Falcon", "Salmon"],
+  de: [
+    "Otter",
+    "Dachs",
+    "Fuchs",
+    "Eule",
+    "Igel",
+    "Luchs",
+    "Biber",
+    "Kranich",
+    "Specht",
+    "Möwe",
+    "Hase",
+    "Wal",
+    "Elch",
+    "Robbe",
+    "Falke",
+    "Lachs",
+  ],
+  en: [
+    "Otter",
+    "Badger",
+    "Fox",
+    "Owl",
+    "Hedgehog",
+    "Lynx",
+    "Beaver",
+    "Crane",
+    "Woodpecker",
+    "Gull",
+    "Hare",
+    "Whale",
+    "Moose",
+    "Seal",
+    "Falcon",
+    "Salmon",
+  ],
 };
 
 const read = (): Stored => {

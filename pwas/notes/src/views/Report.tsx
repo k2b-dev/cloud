@@ -41,7 +41,13 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
     setSending(true);
     setFailed(false);
     try {
-      const result = await api.report({ linkId: id, reason: reason(), text: text().trim(), email: email().trim() || undefined, confirmed: true });
+      const result = await api.report({
+        linkId: id,
+        reason: reason(),
+        text: text().trim(),
+        email: email().trim() || undefined,
+        confirmed: true,
+      });
       setNumber(result.number);
     } catch {
       setFailed(true);
@@ -63,7 +69,13 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
                 <label class="n-l" for="n-report-link">
                   {t().linkRead} / {t().linkEdit}
                 </label>
-                <input id="n-report-link" type="text" value={link()} onInput={(event) => setLink(event.currentTarget.value)} placeholder="…/p/…" />
+                <input
+                  id="n-report-link"
+                  type="text"
+                  value={link()}
+                  onInput={(event) => setLink(event.currentTarget.value)}
+                  placeholder="…/p/…"
+                />
                 <span class="n-error-text">{submitted() ? (errors().link ?? "") : ""}</span>
               </div>
             </Show>
@@ -75,7 +87,12 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
                 <For each={REASONS}>
                   {(entry) => (
                     <label>
-                      <input type="radio" name="n-report-reason" checked={reason() === entry.value} onChange={() => setReason(entry.value)} />
+                      <input
+                        type="radio"
+                        name="n-report-reason"
+                        checked={reason() === entry.value}
+                        onChange={() => setReason(entry.value)}
+                      />
                       {entry.label()}
                     </label>
                   )}
@@ -103,7 +120,13 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
               <label class="n-l" for="n-report-email">
                 {t().reportEmail}
               </label>
-              <input id="n-report-email" type="email" placeholder="name@example.org" value={email()} onInput={(event) => setEmail(event.currentTarget.value)} />
+              <input
+                id="n-report-email"
+                type="email"
+                placeholder="name@example.org"
+                value={email()}
+                onInput={(event) => setEmail(event.currentTarget.value)}
+              />
               <span class="n-help">{t().reportEmailHelp}</span>
             </div>
             <Checkbox

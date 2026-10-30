@@ -79,7 +79,8 @@ const text = (value: unknown): string => {
   return value;
 };
 
-const field = (body: unknown, key: string): unknown => (body && typeof body === "object" && key in body ? Reflect.get(body, key) : undefined);
+const field = (body: unknown, key: string): unknown =>
+  body && typeof body === "object" && key in body ? Reflect.get(body, key) : undefined;
 
 export type LinkInfo = { role: "read" | "edit"; readId: string; title: string; snapshot: Uint8Array | null; liveAvailable: boolean };
 
@@ -138,7 +139,13 @@ export const api = {
 
   fileUrl: (readId: string, key: string) => `/api/pads/${encodeURIComponent(readId)}/files/${encodeURIComponent(key)}`,
 
-  async report(input: { linkId: string; reason: ReportReason; text: string; email?: string; confirmed: true }): Promise<{ number: string }> {
+  async report(input: {
+    linkId: string;
+    reason: ReportReason;
+    text: string;
+    email?: string;
+    confirmed: true;
+  }): Promise<{ number: string }> {
     const response = await request("/api/reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

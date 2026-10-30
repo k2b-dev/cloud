@@ -1,7 +1,7 @@
 import { toast } from "@k2b/ui";
 import { createMemo, createRoot, createSignal } from "solid-js";
 import { messages } from "./i18n";
-import { openNotesStore, type NotesStore } from "./lib/local";
+import { type NotesStore, openNotesStore } from "./lib/local";
 import type { NoteRecord, StoreErrorCode } from "./lib/model";
 import { preferences } from "./prefs";
 import { navigate } from "./router";

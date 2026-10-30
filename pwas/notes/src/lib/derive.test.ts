@@ -45,7 +45,8 @@ test("chart fences must be actual fences; German grouped integers are numeric", 
 });
 
 test("Notebooks chart blocks give the preview and stay out of the excerpt", () => {
-  const markdown = "# Kaffee\n\nVorher.\n\n:::chart\ntype: line\ntitle: Tassen\ncolumns: [Monat, Tassen]\nrows:\n  - [Juli, 48]\n  - [August, 61]\n:::\n\n:::note\nNur ein Hinweis.\n:::\n";
+  const markdown =
+    "# Kaffee\n\nVorher.\n\n:::chart\ntype: line\ntitle: Tassen\ncolumns: [Monat, Tassen]\nrows:\n  - [Juli, 48]\n  - [August, 61]\n:::\n\n:::note\nNur ein Hinweis.\n:::\n";
   const meta = deriveMeta(markdown);
   expect(meta.chart).toEqual({ kind: "line", values: [48, 61] });
   expect(meta.excerpt).toBe("Vorher. Nur ein Hinweis.");

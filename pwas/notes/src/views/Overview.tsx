@@ -69,10 +69,10 @@ function ShareMark(props: { record: NoteRecord }) {
         <span class="n-sr">{t().shared}</span>
       </Match>
       <Match when={props.record.share?.kind === "foreign" && props.record.share.role === "edit"}>
-        <i class="ti ti-users n-share-mark" title={t().fromLinkEdit} aria-label={t().fromLinkEdit} />
+        <i class="ti ti-users n-share-mark" role="img" title={t().fromLinkEdit} aria-label={t().fromLinkEdit} />
       </Match>
       <Match when={props.record.share?.kind === "foreign"}>
-        <i class="ti ti-eye n-share-mark" title={t().fromLinkRead} aria-label={t().fromLinkRead} />
+        <i class="ti ti-eye n-share-mark" role="img" title={t().fromLinkRead} aria-label={t().fromLinkRead} />
       </Match>
     </Switch>
   );
@@ -119,7 +119,11 @@ function NoteCard(props: { record: NoteRecord }) {
       </span>
       <span class="n-cfoot">
         <For each={meta().tags.slice(0, 3)}>{(tag) => <span class="n-dot" style={{ "--c": tagColor(tag) }} />}</For>
-        <span class="n-tagtxt">{meta().tags.map((tag) => `#${tag}`).join(" ")}</span>
+        <span class="n-tagtxt">
+          {meta()
+            .tags.map((tag) => `#${tag}`)
+            .join(" ")}
+        </span>
         <span class="n-spacer" />
         <Show
           when={live().length > 0}
@@ -159,7 +163,11 @@ function HeroCard(props: { record: NoteRecord }) {
       </span>
       <span class="n-cfoot">
         <For each={meta().tags.slice(0, 3)}>{(tag) => <span class="n-dot" style={{ "--c": tagColor(tag) }} />}</For>
-        <span class="n-tagtxt">{meta().tags.map((tag) => `#${tag}`).join(" ")}</span>
+        <span class="n-tagtxt">
+          {meta()
+            .tags.map((tag) => `#${tag}`)
+            .join(" ")}
+        </span>
       </span>
     </a>
   );

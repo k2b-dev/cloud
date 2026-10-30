@@ -18,7 +18,13 @@ export const mockupNotes = (now: number) => {
     {
       id: id("verein"),
       updatedAt: days(1) - 3_600_000,
-      share: { kind: "foreign" as const, role: "edit" as const, linkId: id("g8Kd2LmQ4xWn7ZtR1bYc5H"), readId: id("h2Pq9VnC3sLm8KxT4dWz6J"), addedAt: days(9) },
+      share: {
+        kind: "foreign" as const,
+        role: "edit" as const,
+        linkId: id("g8Kd2LmQ4xWn7ZtR1bYc5H"),
+        readId: id("h2Pq9VnC3sLm8KxT4dWz6J"),
+        addedAt: days(9),
+      },
       text: "# Gartenverein – Treffen 4. November\n#verein\n\nTagesordnung: Wasseruhren, Laubsammlung, neue Beete hinten links.\n\n## Tagesordnung\n\n- Wasseruhren ablesen bis Ende November\n- Laubsammlung am Samstag, Container steht am Tor\n",
     },
     {
@@ -39,7 +45,13 @@ export const mockupNotes = (now: number) => {
     {
       id: id("satzung"),
       updatedAt: days(12),
-      share: { kind: "foreign" as const, role: "read" as const, linkId: id("s5Tn1QwE8rYu3IoP6aSd9F"), readId: id("s5Tn1QwE8rYu3IoP6aSd9F"), addedAt: days(12) },
+      share: {
+        kind: "foreign" as const,
+        role: "read" as const,
+        linkId: id("s5Tn1QwE8rYu3IoP6aSd9F"),
+        readId: id("s5Tn1QwE8rYu3IoP6aSd9F"),
+        addedAt: days(12),
+      },
       text: "# Satzungsentwurf\n#verein\n\n## § 3 Mitgliedschaft\n\nMitglied kann jede natürliche Person werden, die die Ziele des Vereins unterstützt.\n",
     },
     {
