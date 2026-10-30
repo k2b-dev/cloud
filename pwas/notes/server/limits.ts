@@ -8,6 +8,8 @@ export const limits = {
   fileBytes: 5_242_880,
   files: 20,
   peersPerPad: 50,
+  presencePads: 200,
+  presencePerMinute: 50,
   peersPerIp: 20,
   createPerHour: 20,
   uploadPerHour: 10,

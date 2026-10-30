@@ -67,7 +67,11 @@ image. PNG rendering uses a bundled font and local numeric chart data without
 network requests. The in-memory image cache is bounded by the configured open
 note budget and expires when content changes. GET and HEAD never write durable
 data; HEAD does not invoke the rasterizer. Preserve the no-referrer, noindex and
-no-store response headers at the proxy, and disable path logging for this host.
+no-store response headers for note data at the proxy, and disable path logging
+for this host. The service worker revalidates (`no-cache`); hashed static build
+assets use a one-year immutable cache. The read-only `POST /api/presence` polls
+existing editor awareness without opening notes, writing data, or extending
+retention; it accepts 200 read links and 50 requests per minute per IP.
 ## Moderation duty
 
 Administration is disabled until `NOTES_ADMIN_PASSWORD_HASH` contains an

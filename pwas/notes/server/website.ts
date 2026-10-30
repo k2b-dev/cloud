@@ -51,7 +51,15 @@ export const mountWebsite = async (
   app.get("*", (c) => {
     if (!options.adminPasswordHash && (c.req.path === "/admin" || c.req.path.startsWith("/admin/"))) throw new NotesError("not_found", 404);
     const asset = assets.get(c.req.path);
-    if (asset) return new Response(asset, { headers: { "Content-Type": asset.type } });
+    if (asset) {
+      const cache =
+        c.req.path === "/sw.js"
+          ? "no-cache"
+          : /^\/assets\/[^/]+-[a-z0-9]{8,}\.(?:js|css|woff2?|png|svg|webp|avif)$/i.test(c.req.path)
+            ? "public, max-age=31536000, immutable"
+            : "private, no-store";
+      return new Response(asset, { headers: { "Content-Type": asset.type, "Cache-Control": cache } });
+    }
     if (c.req.path.startsWith("/api/") || /\.[a-z0-9]+$/i.test(c.req.path)) throw new NotesError("not_found", 404);
     return c.html(index);
   });
