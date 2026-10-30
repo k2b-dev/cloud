@@ -2,7 +2,7 @@
 title: Migrate environment-backed settings
 navTitle: Environment migrations
 section: Operations
-order: 1250
+order: 1251
 description: Import legacy network and AI environment values into administrator settings and verify the upgrade.
 tags: [operations, configuration, migrations]
 updated: 2026-10-30
