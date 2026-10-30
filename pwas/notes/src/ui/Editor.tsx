@@ -1,9 +1,10 @@
+import { type Extension, Prec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, type SlashAction, SlashMenu } from "@k2b/editor";
 import type { MarkdownUrlOptions } from "@k2b/editor/markdown";
 import { files as browserFiles } from "@k2b/stdlib/browser";
 import type { TextEditorController } from "@k2b/ui/text-editor";
-import { createSignal, onCleanup } from "solid-js";
+import { createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
 import { yCollab } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -11,17 +12,20 @@ import { MAX_NOTE_LENGTH } from "../lib/model";
 import { preferences } from "../prefs";
 import { navigate } from "../router";
 import { t } from "../state";
+import { blockDiagnostic, blockPreviewMessages } from "./block-messages";
 import { tagPills } from "./tag-pills";
 
-type Presentation = typeof import("@k2b/editor/markdown");
+type Presentation = { md: typeof import("@k2b/editor/markdown"); charts: typeof import("@k2b/editor/charts") };
 let presentationModule: Promise<Presentation> | undefined;
 /** The rendered presentation is large, so it loads in its own chunk once, after the first editor appears. */
 const loadPresentation = () =>
-  (presentationModule ??= import("@k2b/editor/markdown").catch((error: unknown) => {
-    // Offline before the chunk was cached: notes stay plain Markdown, and the next editor tries again.
-    presentationModule = undefined;
-    throw error;
-  }));
+  (presentationModule ??= Promise.all([import("@k2b/editor/markdown"), import("@k2b/editor/charts")])
+    .then(([md, charts]) => ({ md, charts }))
+    .catch((error: unknown) => {
+      // Offline before the chunk was cached: notes stay plain Markdown, and the next editor tries again.
+      presentationModule = undefined;
+      throw error;
+    }));
 
 /** Puts a block on its own lines at the caret and leaves the caret at `caret` characters into it. */
 const insertBlock = (view: EditorView, block: string, caret: number) => {
@@ -122,14 +126,36 @@ export function NoteEditor(props: {
     { ...md().heading2, name: "ueberschrift", aliases: ["h2", "heading"], label: t().fmtHeading },
   ];
   // The Notebooks presentation: rendered lists, notices, images, links, formulas and diagrams; editing a block shows its source.
-  const [presentation, setPresentation] = createSignal<Presentation>();
+  type Loaded = { md: Presentation["md"]; previews: { extension: Extension; listener: Extension } };
+  const [presentation, setPresentation] = createSignal<Loaded>();
+  const owner = getOwner();
   loadPresentation().then(
-    (module) => setPresentation(() => module),
+    ({ md, charts }) =>
+      runWithOwner(owner, () => {
+        // Charts in a note are drawn from its own tables and `:::chart` blocks, in the browser; nothing goes to a server.
+        const options = { maxBlocks: 20, maxSeries: 8, maxValues: 480, schema: charts.chartSchema() };
+        const previews = md.createBlockPreviews({
+          source: () => "note",
+          readOnly: props.readOnly ?? false,
+          initialMarkdown: props.text.toString(),
+          view: () => editor.view(),
+          enabled: () => true,
+          locale: () => preferences.locale(),
+          charts: options,
+          messages: blockPreviewMessages,
+          load: async (markdown) =>
+            md.localChartPreviews(markdown ?? props.text.toString(), preferences.locale(), options, (diagnostic) =>
+              blockDiagnostic(preferences.locale(), diagnostic),
+            ),
+        });
+        setPresentation(() => ({ md, previews }));
+      }),
     () => {},
   );
   editor.use(() => {
-    const md = presentation();
-    if (!md) return [];
+    const loaded = presentation();
+    if (!loaded) return [];
+    const md = loaded.md;
     const files = props.files ?? {};
     const remote = props.remoteFile;
     const urls: MarkdownUrlOptions = {
@@ -137,7 +163,8 @@ export function NoteEditor(props: {
       foreignImagesAsLinks: true,
     };
     return [
-      md.listsExtension(),
+      // Above the base editor's own list bullets, so checklists show their boxes as in Notebooks.
+      Prec.high(md.listsExtension()),
       props.readOnly ? [] : md.listCommandsExtension(),
       md.infoBlocksExtension(preferences.locale()),
       md.imageExtension(urls),
@@ -147,6 +174,8 @@ export function NoteEditor(props: {
       md.ligaturesExtension(),
       md.initialMarkdownDecorationRefreshExtension(),
       md.pointerSelectionMarkdownRefreshExtension(),
+      loaded.previews.extension,
+      loaded.previews.listener,
       tagPills(md, {
         open: (tag) => navigate(`/?tag=${encodeURIComponent(tag)}`),
         label: (tag) => t().tagPillTitle({ tag }),

@@ -217,6 +217,9 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.getByRole("status").filter({ hasText: "Beispiel · nichts wird gespeichert" }).waitFor();
     // The Notebooks presentation renders the example's notice instead of its `:::note` source.
     await page.locator(".cm-notice-card-widget").first().waitFor();
+    // The `:::chart` block is drawn in the browser, and the checklist shows boxes.
+    await page.locator(".cm-query-block-preview svg").first().waitFor();
+    expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
     await editor().fill("Diese Beispieländerung darf nicht gespeichert werden");
     await back().click();
     await page.getByText("9 Notizen in diesem Browser", { exact: true }).waitFor();
