@@ -7,7 +7,7 @@ import * as Y from "yjs";
 import { createDisposableDatabase, databaseSuite } from "../../../scripts/fixtures/test-infra";
 import { createNotesApp } from "./app";
 import { migrate } from "./database";
-import { linkMetadata, renderPreview } from "./preview";
+import { linkMetadata, previewMeta, renderPreview } from "./preview";
 import { NotesService } from "./service";
 import { NotesStore } from "./store";
 import { mountWebsite } from "./website";
@@ -47,6 +47,12 @@ test("renderer creates a local 1200 by 630 PNG without fetching note URLs", asyn
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("metadata bounds work and XML rendering tolerates control characters and lone surrogates", async () => {
+  for (const token of ["<", "[", "](", "![", " ", "`"]) expect(previewMeta("# Title\n\n" + token.repeat(200_000)).title).toBe("Title");
+  const png = await renderPreview("# A\u0000\ud800B\n\nText\uffff");
+  expect(Buffer.from(png).subarray(1, 4).toString()).toBe("PNG");
 });
 
 databaseSuite()("Notes static website and previews", () => {

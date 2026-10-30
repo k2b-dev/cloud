@@ -43,7 +43,7 @@ export const mountWebsite = async (
       return c.html(linkMetadata(index, id, current.readId, options.origin, current.content));
     } catch (error) {
       // The SPA renders its actionable gone/blocked/offline states. Do not expose stale metadata.
-      if (error instanceof NotesError && [404, 410, 451].includes(error.status)) return c.html(index, error.status);
+      if (error instanceof NotesError) return c.html(index, error.status);
       throw error;
     }
   });

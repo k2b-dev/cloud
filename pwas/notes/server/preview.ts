@@ -6,10 +6,15 @@ import { deriveMeta } from "../shared/metadata";
 import { NotesError } from "./errors";
 import { hash } from "./tokens";
 
+// Metadata is a bounded excerpt; full note content never enters XML or the rasterizer.
+export const previewMeta = (content: string) => deriveMeta(content.slice(0, 65_536));
 const escape = (value: string) =>
-  value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+  value
+    .toWellFormed()
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g, " ")
+    .replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 export const linkMetadata = (html: string, token: string, readId: string, origin: string, content: string): string => {
-  const meta = deriveMeta(content);
+  const meta = previewMeta(content);
   const title = meta.title.slice(0, 200) || "k2b notes";
   const description = meta.excerpt.slice(0, 240);
   const tags = `<title>${escape(title)}</title>\n<meta property="og:type" content="article">\n<meta property="og:title" content="${escape(title)}">\n<meta property="og:description" content="${escape(description)}">\n<meta property="og:url" content="${escape(`${origin}/p/${token}`)}">\n<meta property="og:image" content="${escape(`${origin}/p/${readId}/preview.png`)}">\n<meta property="og:image:width" content="1200">\n<meta property="og:image:height" content="630">`;
@@ -32,7 +37,7 @@ export const renderPreview = async (content: string): Promise<Uint8Array> => {
     if (!GlobalFonts.registerFromPath(resolve(import.meta.dir, fontPath), "Notes Preview")) throw new Error("preview_font_failed");
     fontReady = true;
   }
-  const meta = deriveMeta(content);
+  const meta = previewMeta(content);
   const title = lines(meta.title || "k2b notes", meta.chart ? 24 : 42, 3);
   const excerpt = lines(meta.excerpt, meta.chart ? 38 : 72, 4);
   let diagram = "";
