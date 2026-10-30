@@ -1,3 +1,5 @@
+import { dates } from "@k2b/stdlib";
+import { markdownLinkReference, renderMarkdownLink } from "@k2b/ui";
 import {
   type EvalError,
   type EvalResult,
@@ -9,11 +11,8 @@ import {
   isTotalRow,
   type ProgressValue,
   parseProgressValue,
-} from "@k2b/cloud/shared";
-import { anchorHash, parseNoteLink } from "@k2b/editor/markdown/lib/heading-anchors";
-import { dates } from "@k2b/stdlib";
-import { markdownLinkReference, renderMarkdownLink } from "@k2b/ui";
-import { notebookWorkspaceMessages } from "../[id]/messages";
+} from "../formula";
+import { parseNoteLink } from "./lib/heading-anchors";
 import { prettyTableMessages } from "./pretty-table-messages";
 
 export type PrettyTableAlign = "left" | "right" | "center" | null;
@@ -51,9 +50,6 @@ const alignClass = (align: PrettyTableAlign): string => {
   return "";
 };
 
-const tagHref = (notebookId: string | undefined, tag: string): string =>
-  notebookId ? `/app/notebooks/${notebookId}/tags/${encodeURIComponent(tag.toLowerCase())}` : "#";
-
 const renderIsoDateTime = (raw: string, locale?: string): string | null => {
   const value = raw.trim();
   if (!ISO_DATE_TIME_RE.test(value)) return null;
@@ -78,7 +74,7 @@ const renderInlineFormatting = (html: string): string =>
     .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
     .replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
 
-const renderInlineMarkdown = (raw: string, notebookId?: string, locale?: string): string => {
+const renderInlineMarkdown = (raw: string, options: PrettyTableOptions, locale?: string): string => {
   const formattedDateTime = renderIsoDateTime(raw, locale);
   if (formattedDateTime) return formattedDateTime;
 
@@ -87,7 +83,7 @@ const renderInlineMarkdown = (raw: string, notebookId?: string, locale?: string)
     .replace(NOTE_LINK_RE, (match, label: string, link: string) => {
       const note = parseNoteLink(link);
       if (!note) return match;
-      const href = notebookId ? `/app/notebooks/${notebookId}/notes/${note.noteId}${anchorHash(note.anchor)}` : link;
+      const href = options.resolveUrl?.("note", link) ?? link;
       const reference = { kind: note.anchor ? ("heading" as const) : ("note" as const) };
       return stashHtml(renderMarkdownLink({ href, html: escapeHtml(label), text: label, reference, locale }), placeholders);
     })
@@ -101,8 +97,8 @@ const renderInlineMarkdown = (raw: string, notebookId?: string, locale?: string)
   const escaped = escapeHtml(withProtectedLinks);
   const formatted = renderInlineFormatting(escaped);
   const withTags = formatted.replace(TAG_RE, (_match, prefix: string, tag: string) => {
-    const href = tagHref(notebookId, tag);
-    const title = notebookWorkspaceMessages.resolve(locale ? [locale] : []).t.showNotesWithTag({ tag: tag.toLowerCase() });
+    const href = options.resolveUrl?.("tag", tag.toLowerCase()) ?? "#";
+    const title = prettyTableMessages.resolve(locale ? [locale] : []).t.showNotesWithTag({ tag: tag.toLowerCase() });
     return `${prefix}<a href="${escapeHtml(href)}" class="cm-tag-pill inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline align-baseline font-medium" title="${escapeHtml(title)}">#${escapeHtml(tag)}</a>`;
   });
 
@@ -161,12 +157,12 @@ const renderBodyCellContent = (
   cell: string,
   alignCls: string,
   result: EvalResult,
-  notebookId?: string,
+  options: PrettyTableOptions,
   locale?: string,
   renderInline?: (raw: string) => string,
 ): string => {
   if (!isFormula(cell) || (renderInline && /^==[^=\n]+==$/.test(cell))) {
-    const content = renderInline ? (renderIsoDateTime(cell, locale) ?? renderInline(cell)) : renderInlineMarkdown(cell, notebookId, locale);
+    const content = renderInline ? (renderIsoDateTime(cell, locale) ?? renderInline(cell)) : renderInlineMarkdown(cell, options, locale);
     return `<span class="md-table-cell${alignCls}">${content}</span>`;
   }
   if (result.kind === "ok") {
@@ -178,7 +174,12 @@ const renderBodyCellContent = (
   return `<span class="md-table-cell md-formula-error${alignCls}" title="${escapeHtml(tooltip)}">⚠ ${escapeHtml(cell)}</span>`;
 };
 
-export type PrettyTableOptions = { notebookId?: string; locale?: string; renderInline?: (raw: string) => string };
+export type PrettyTableOptions = {
+  locale?: string;
+  renderInline?: (raw: string) => string;
+  /** Note references and lower-case tags belong to the host's routing. */
+  resolveUrl?: (kind: "note" | "tag", ref: string) => string;
+};
 
 /** One evaluated snapshot shared by full-table and editable-grid presentation.
  * Row indexes refer to body rows; all returned HTML is view-only. */
@@ -195,7 +196,7 @@ export const createPrettyTablePresentation = (data: PrettyTableData, options: Pr
     cellHtml: (row: number, column: number): string => {
       const cell = rows[row]?.cells[column];
       return cell
-        ? renderBodyCellContent(cell.raw, alignClass(align[column] ?? null), cell.result, options.notebookId, locale, options.renderInline)
+        ? renderBodyCellContent(cell.raw, alignClass(align[column] ?? null), cell.result, options, locale, options.renderInline)
         : "";
     },
   };

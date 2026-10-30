@@ -62,3 +62,7 @@ export function SharedNoteEditor(props: CollabOptions & { undoManager: NonNullab
     />
   );
 }
+
+export { chartRenderOptions, chartRows, chartSchema, chartTable } from "@k2b/editor/charts";
+export { evaluateFormula, evaluateTableCell } from "@k2b/editor/formula";
+export { createBlockPreviews, createNotebookTablePresentation, localChartPreviews, tablesExtension } from "@k2b/editor/markdown";

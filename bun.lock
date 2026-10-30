@@ -167,6 +167,7 @@
       "version": "0.46.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
+        "@k2b/editor": "0.1.0",
         "@k2b/nessi": "0.18.0",
         "@k2b/ssr": "0.20.1",
         "@k2b/stdlib": "0.30.0",
@@ -343,18 +344,21 @@
       },
       "devDependencies": {
         "@types/bun": "1.4.2",
+        "bun-plugin-tailwind": "0.1.2",
         "playwright": "1.64.1",
         "solid-js": "1.9.17",
         "typescript": "7.0.2",
         "y-codemirror.next": "0.3.6",
         "y-protocols": "1.0.7",
         "yjs": "13.6.33",
+        "zod": "4.6.5",
       },
       "peerDependencies": {
         "solid-js": "^1.9.10",
         "y-codemirror.next": "^0.3.6",
         "y-protocols": "^1.0.7",
         "yjs": "^13.6.33",
+        "zod": "^4.3.4",
       },
       "optionalPeers": [
         "y-codemirror.next",

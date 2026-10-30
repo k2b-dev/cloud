@@ -20,8 +20,17 @@
  * NULL/datetime cell-formatting, no zebra columns. If you need any of
  * those, you're rendering data not prose; use the Grids app.
  */
+
+import {
+  type EvalContext,
+  evaluateFormula,
+  formatValue,
+  isFormula,
+  isTotalRow,
+  type ProgressValue,
+  parseProgressValue,
+} from "@k2b/editor/formula";
 import type { MarkedExtension, Tokens } from "marked";
-import { type EvalContext, evaluateFormula, formatValue, isFormula, isTotalRow, type ProgressValue, parseProgressValue } from "../formula";
 import { escapeHtml } from "../shared";
 
 type Align = "left" | "right" | "center" | null;

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { parseNotebookChartBlocks } from "@k2b/editor/markdown/lib/chart-blocks";
 import { parseNamedDataBlockResult } from "@k2b/editor/markdown/lib/named-blocks";
-import { parseNotebookChartBlocks } from "./chart-blocks";
+import { notebookChartOptions } from "./chart-options";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./query-blocks";
 
 test("the shipped Assistant skill uses executable data, query, TOC and chart examples", async () => {
@@ -21,7 +22,7 @@ test("the shipped Assistant skill uses executable data, query, TOC and chart exa
   const charts = examples.filter((example) => example.includes(":::chart"));
   expect(charts).toHaveLength(2);
   for (const example of charts) {
-    const parsed = parseNotebookChartBlocks(example);
+    const parsed = parseNotebookChartBlocks(example, notebookChartOptions);
     expect(parsed.diagnostics, example).toEqual([]);
     expect(parsed.blocks, example).toHaveLength(1);
   }

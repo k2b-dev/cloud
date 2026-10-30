@@ -55,20 +55,14 @@
 import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Extension, Prec, type Range, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
-import { type EvalContext, type EvalResult, evaluateFormula, isFormula } from "@k2b/cloud/shared";
-import {
-  applyLigatures,
-  holdsDecorations,
-  refreshMarkdownDecorationsEffect,
-  selectionIntersectsRange,
-  splitTableLineCells,
-  tableCellText,
-  treeOrDocChanged,
-} from "@k2b/editor/markdown";
-import { isNamedBlockHandle } from "@k2b/editor/markdown/lib/named-blocks";
 import { i18n } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
-import { formatFormulaError, formatFormulaValue, renderPrettyTableHtml } from "../pretty-table";
+import { type EvalContext, type EvalResult, evaluateFormula, isFormula } from "../formula";
+import { holdsDecorations, refreshMarkdownDecorationsEffect, selectionIntersectsRange, treeOrDocChanged } from "./_lib/cursor-zone-field";
+import { splitTableLineCells, tableCellText } from "./_lib/table-cell";
+import { isNamedBlockHandle } from "./lib/named-blocks";
+import { applyLigatures } from "./ligatures";
+import { formatFormulaError, formatFormulaValue, type PrettyTableOptions, renderPrettyTableHtml } from "./pretty-table";
 
 type Align = "left" | "right" | "center" | null;
 
@@ -114,7 +108,7 @@ const parseTable = (text: string): TableData | null => {
   return { headers, rows: normalizedRows, align: align.slice(0, cols) };
 };
 
-const renderTable = (data: TableData, notebookId: string): string => renderPrettyTableHtml(data, { notebookId });
+const renderTable = (data: TableData, presentation: PrettyTableOptions): string => renderPrettyTableHtml(data, presentation);
 
 const sameArray = <T>(left: T[], right: T[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index]);
@@ -300,7 +294,7 @@ class TableWidget extends WidgetType {
   constructor(
     private data: TableData,
     private fromPos: number,
-    private notebookId: string,
+    private presentation: PrettyTableOptions,
   ) {
     super();
   }
@@ -309,7 +303,7 @@ class TableWidget extends WidgetType {
     const container = document.createElement("div");
     container.className = "cm-table-widget";
     container.setAttribute("contenteditable", "false");
-    container.innerHTML = renderTable(this.data, this.notebookId);
+    container.innerHTML = renderTable(this.data, this.presentation);
     applyLigatures(container);
     container.onmousedown = (event) => {
       const wrap = event.target;
@@ -350,7 +344,7 @@ class TableWidget extends WidgetType {
     return (
       other instanceof TableWidget &&
       other.fromPos === this.fromPos &&
-      other.notebookId === this.notebookId &&
+      other.presentation === this.presentation &&
       sameTableData(this.data, other.data)
     );
   }
@@ -446,7 +440,7 @@ const cursorTableKey = (state: EditorState, ranges: TableRange[]): string | null
  *
  *  Returns the full StateField value — both decoration sets and the
  *  list of table ranges. */
-const scanTables = (state: EditorState, notebookId: string): TablesState => {
+const scanTables = (state: EditorState, presentation: PrettyTableOptions): TablesState => {
   const decorations: Range<Decoration>[] = [];
   const blockWidgetDecorations: Range<Decoration>[] = [];
   const tableRanges: TableRange[] = [];
@@ -489,7 +483,7 @@ const scanTables = (state: EditorState, notebookId: string): TablesState => {
       }
 
       const blockDeco = Decoration.replace({
-        widget: new TableWidget(data, node.from, notebookId),
+        widget: new TableWidget(data, node.from, presentation),
         block: true,
       }).range(rangeFrom, node.to);
       decorations.push(blockDeco);
@@ -504,19 +498,19 @@ const scanTables = (state: EditorState, notebookId: string): TablesState => {
   };
 };
 
-export const tablesExtension = (notebookId: string): Extension => {
+export const tablesExtension = (presentation: PrettyTableOptions = {}): Extension => {
   const stateField = StateField.define<TablesState>({
     create(state) {
-      return scanTables(state, notebookId);
+      return scanTables(state, presentation);
     },
     update(value, tr) {
       if (tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) {
-        return scanTables(tr.state, notebookId);
+        return scanTables(tr.state, presentation);
       }
       // Doc or syntax tree changed → tables may have appeared /
       // disappeared / shifted positions. Full rescan.
       if (treeOrDocChanged(tr)) {
-        return scanTables(tr.state, notebookId);
+        return scanTables(tr.state, presentation);
       }
       if (holdsDecorations(tr)) return value;
       // Selection unchanged AND doc unchanged → nothing to do.
@@ -545,7 +539,7 @@ export const tablesExtension = (notebookId: string): Extension => {
       // Cursor crossed INTO or OUT OF a table (or moved between two
       // different tables) — the widget vs source-visible decision
       // for at least one table flipped. Rebuild.
-      return scanTables(tr.state, notebookId);
+      return scanTables(tr.state, presentation);
     },
     provide(field) {
       return [

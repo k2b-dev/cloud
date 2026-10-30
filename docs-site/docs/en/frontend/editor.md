@@ -216,3 +216,34 @@ The preview helpers `inline-syntax`, `math-syntax`, `fade-scroll-margins`,
 `mermaid-render`, `mermaid-viewport`, and `urls` also have direct imports
 under `@k2b/editor/markdown/` to keep read-only previews and print independent
 of the full extension set.
+
+## Formulas and charts
+
+`@k2b/editor/formula` exports the dependency-free table formula evaluator,
+including `evaluateFormula`, `evaluateTableCell`, and their context and result
+types. It reads the table's header and cell strings; the caller owns presentation.
+
+`@k2b/editor/charts` exports portable chart types, `chartSchema`, and rendering
+helpers such as `chartRenderOptions`, `chartRows`, and `chartTable`. Install the
+`zod` peer dependency alongside the package. The schema
+accepts application chart data without AI size limits. Cloud keeps its AI
+validation and limits and continues to export its existing formula and chart APIs.
+
+```ts
+import { evaluateFormula } from "@k2b/editor/formula";
+import { chartSchema, chartTable } from "@k2b/editor/charts";
+
+const result = evaluateFormula("=SUM(Value)", {
+  headers: ["Value"], rows: [["2"], ["3"], ["=SUM(Value)"]], currentRow: 2, currentCol: 0,
+});
+const chart = chartSchema().parse({ kind: "stat", title: "Total", value: 5 });
+const table = chartTable(chart, "en");
+```
+
+For CodeMirror table presentation, use `tablesExtension` or
+`createNotebookTablePresentation` from `@k2b/editor/markdown`. Supply
+`resolveUrl(kind, ref)` for host note and tag routes. `createBlockPreviews`
+uses a host `load` callback for previews; `localChartPreviews` can implement that
+callback for charts over named tables in the same document, including formulas,
+without a server. Pass the chart schema, limits, locale, and diagnostic messages
+from the host. Cross-document queries and subscriptions remain host-owned.
