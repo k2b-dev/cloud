@@ -51,7 +51,8 @@ jobs:
           POSTGRES_DB: cloud_nightly_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U cloud -d cloud_nightly_test"
+          --tmpfs /var/lib/postgresql/data:rw,size=4g
+          --health-cmd "pg_isready -h 127.0.0.1 -U cloud -d cloud_nightly_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
       valkey:
         image: &valkey-image ghcr.io/k2b-dev/mirror/valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
@@ -74,6 +75,17 @@ jobs:
       CLOUD_TEST_S3_SECRET_ACCESS_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       CLOUD_TEST_S3_REGION: garage
     steps:
+      # PostgreSQL 15 initdb has no -c option. Configure both matrix versions
+      # after startup; reload finishes long before the integration step.
+      - name: Configure disposable Postgres
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U cloud -d cloud_nightly_test \
+            -c 'ALTER SYSTEM SET fsync = off' \
+            -c 'ALTER SYSTEM SET synchronous_commit = off' \
+            -c 'ALTER SYSTEM SET full_page_writes = off' \
+            -c 'SELECT pg_reload_conf()'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -125,8 +137,10 @@ jobs:
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:15-alpine
           "$GITHUB_WORKSPACE/.github/poppler.sh" install
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
+            --tmpfs /var/lib/postgresql/data:rw,size=4g \
             --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
-            postgres:15-alpine -c max_connections=300
+            postgres:15-alpine -c max_connections=300 \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
           docker run --detach --name grids-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           timeout 60s bash -c 'until docker exec grids-postgres pg_isready -U grids_test -d grids_test; do sleep 1; done'
       - uses: ./.github/actions/install
@@ -259,7 +273,9 @@ jobs:
           docker network create cloud-smoke
           # Mail seeds its mailbox and Chat cleans up its chat through the published Postgres port.
           docker run --detach --name postgres --network cloud-smoke --publish 127.0.0.1:5432:5432 \
-            --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine
+            --tmpfs /var/lib/postgresql/data:rw,size=4g \
+            --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
           docker run --detach --name nats --network cloud-smoke --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           docker run --detach --name valkey --network cloud-smoke valkey/valkey:8-alpine
           timeout 60s bash -c 'until docker exec postgres pg_isready -U ipa -d ipa; do sleep 1; done'
