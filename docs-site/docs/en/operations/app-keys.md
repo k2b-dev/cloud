@@ -103,6 +103,19 @@ response was lost. Successful bootstrap updates `lastUsedAt`. Revocation blocks
 new bootstrap requests on every Core replica immediately; it does not close
 already established database or NATS connections or recall delivered secrets.
 
+## Background and OAuth authority
+
+The platform signs final requests to Core with the configured app key.
+Every key has `identity:invoke`; keys for the `oauth` app additionally have
+`oauth:issue`. These capabilities follow the app ID, not an editable grant
+or a claim chosen by the caller. Mandates and current OAuth grants still
+limit each operation.
+
+Keys with `connections_allowed=false` can sign requests but cannot retrieve
+startup connections. Revoking a key rejects its next bootstrap or background
+request on every Core replica. An invocation already admitted keeps its
+existing short lifetime. See [background mandates](/en/docs/identity/background-mandates).
+
 ## Inspect and revoke keys
 
 ```bash

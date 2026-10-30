@@ -171,7 +171,7 @@
       "expectations": [
         "The response retrieves Deployment requirements through the current documentation contract or explicitly uses reduced documentation mode.",
         "It distinguishes Core/OAuth readiness from mailbox connectivity, AI provider readiness and optional notebook S3 snapshots.",
-        "Only Core receives the identity KEK; Core and OAuth share the broker secret without an OAuth workload-credential provisioning step.",
+        "Only Core receives the identity KEK; OAuth prefers its app key for signed Core requests, retaining the deprecated broker secret only without a key during this release.",
         "It does not require Filegate or S3 for the baseline Mail or Notebooks storage, and does not treat an installed Assistant as configured AI.",
         "It identifies administrator bootstrap and production secret configuration rather than recommending development credentials.",
         "It proposes per-feature verification and makes no deployment or credential changes."
@@ -310,6 +310,19 @@
         "Imports sql, redis, lazySync and storage from @k2b/cloud; Bun supplies native types only.",
         "Uses createSql for the separate pool and closes it when work ends.",
         "Does not write connection values into process.env or add a second startup call to a standard application entrypoint."
+      ]
+    },
+    {
+      "id": 27,
+      "prompt": "Implement a durable background worker that invokes a Mail capability with an enrolled app key. The first response can be lost. Should the worker store a workload token or reuse its signed request?",
+      "expected_output": "Reads Background mandates, persists only the mandate and domain state, and lets the platform sign each final transmission with a fresh proof while preserving domain idempotency.",
+      "files": [],
+      "expectations": [
+        "Reads the canonical background mandate guide before selecting the worker transport.",
+        "Supplies mandate coordinates and context to invokeCapability without acquiring or storing a reusable credential.",
+        "Uses a fresh proof for each safe retry and preserves the domain idempotency key.",
+        "Reconciles an unknown non-idempotent Action outcome instead of retrying blindly.",
+        "Retains the legacy workload path only for apps without keys during this release and never falls back after app-key rejection."
       ]
     }
   ]

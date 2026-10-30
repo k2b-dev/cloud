@@ -2557,10 +2557,10 @@ suite("OAuth account epochs", () => {
           let familyId: string | undefined;
           const observed: { grants: unknown[]; reservation: unknown; authEpoch: number }[] = [];
           globalThis.fetch = Object.assign(
-            async (_input: RequestInfo | URL, init?: RequestInit) => {
+            async (input: RequestInfo | URL, init?: RequestInit) => {
               const body = z
                 .object({ tokens: z.array(z.object({ grant: z.object({ familyId: z.uuid() }).passthrough() })).length(2) })
-                .parse(JSON.parse(String(init?.body)));
+                .parse(await new Request(input, init).json());
               familyId = body.tokens[0]!.grant.familyId;
               const [reserved] = await sql<{ status: string; auth_epoch: string | number; generation: number; token_status: string }[]>`
                 SELECT family.status, family.auth_epoch, token.generation, token.status AS token_status

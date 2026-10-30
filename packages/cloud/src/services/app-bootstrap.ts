@@ -73,12 +73,12 @@ export const cleanupBootstrapProofs = async (
 };
 
 /** No caches: every HTTP transmission rechecks revocation, expiry and account state in Postgres. */
-export const authenticateBootstrap = async (
+export const authenticateAppProof = async (
   proof: string,
   request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
   db: SQL = sql,
   now = Date.now(),
-): Promise<{ identity: BootstrapIdentity; jti: string; exp: number }> => {
+): Promise<{ identity: BootstrapIdentity; key: NonNullable<Awaited<ReturnType<typeof getActiveAppKey>>>; jti: string; exp: number }> => {
   if (Buffer.byteLength(proof) > BOOTSTRAP_PROOF_BYTES) throw invalid();
   let appId: string;
   let keyId: string;
@@ -118,8 +118,6 @@ export const authenticateBootstrap = async (
     claims.jti.length === 0 ||
     claims.jti.length > 64 ||
     claims.jti.includes("\0") ||
-    request.method !== "POST" ||
-    request.path !== BOOTSTRAP_PATH ||
     claims.htm !== request.method ||
     claims.htu !== request.path ||
     claims.bdh !== (await bootstrapBodyDigest(request.body))
@@ -128,7 +126,20 @@ export const authenticateBootstrap = async (
   if (claims.iss !== key.appId || claims.sub !== key.appId) throw new BootstrapProofError("wrong_app");
   const installationId = await getInstallationId(db);
   if (claims.aud !== `cloud-core:${installationId}`) throw new BootstrapProofError("wrong_installation");
-  if (!key.connectionsAllowed) throw new BootstrapProofError("connections_not_permitted");
   // Admission must succeed before the route atomically consumes this verified nonce.
-  return { identity: { installationId, appId, keyId }, jti: claims.jti, exp: claims.exp! };
+  return { identity: { installationId, appId, keyId }, key, jti: claims.jti, exp: claims.exp! };
+};
+
+/** Only connection delivery requires connections_allowed; runners can still sign requests. */
+export const authenticateBootstrap = async (
+  proof: string,
+  request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
+  db: SQL = sql,
+  now = Date.now(),
+): Promise<{ identity: BootstrapIdentity; jti: string; exp: number }> => {
+  const verified = await authenticateAppProof(proof, request, db, now);
+  if (request.method !== "POST" || request.path !== BOOTSTRAP_PATH) throw invalid();
+  if (!verified.key.connectionsAllowed) throw new BootstrapProofError("connections_not_permitted");
+  const { identity, jti, exp } = verified;
+  return { identity, jti, exp };
 };

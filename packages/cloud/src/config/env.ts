@@ -164,13 +164,13 @@ const registry = defineEnv({
     schema: z.string(),
     scope: "secret",
     secretFile: true,
-    doc: "Core and OAuth only: 64-hex secret that lets the OAuth app request token signatures from Core; generate independently with `openssl rand -hex 32`.",
+    doc: "Deprecated: Core and OAuth legacy 64-hex broker secret, used only when OAuth has no app key. Configure an OAuth app key instead; retained for this release.",
   },
   CLOUD_APP_KEY: {
     schema: z.string(),
     scope: "secret",
     secretFile: true,
-    doc: "App Ed25519 private key for startup connection bootstrap; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Keep infrastructure env until the platform-client import migration is complete.",
+    doc: "App Ed25519 private key for startup bootstrap, background calls and OAuth issuance; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Keep infrastructure env until the platform-client import migration is complete.",
   },
   CLOUD_CORE_INTERNAL_ORIGIN: {
     schema: z.string(),
@@ -180,7 +180,7 @@ const registry = defineEnv({
     schema: z.string(),
     scope: "secret",
     secretFile: true,
-    doc: "Optional host-run app override for the automatically delivered app workload credential; provision through Core's admin workload API with `identity:invoke`.",
+    doc: "Deprecated: host-run override for the automatically delivered workload credential when no app key is configured; use CLOUD_APP_KEY or CLOUD_APP_KEY_FILE instead. Retained for this release.",
   },
   CLOUD_IDENTITY_JWKS_ORIGIN: {
     schema: z.string(),
@@ -188,7 +188,7 @@ const registry = defineEnv({
   },
   CLOUD_OAUTH_JWKS_ORIGIN: {
     schema: z.string(),
-    doc: "Optional private origin of the OAuth listener for OAuth JWKS; unset fetches keys from the public issuer origin.",
+    doc: "Deprecated: explicit legacy OAuth JWKS origin, honored for this release. Unset uses Core internal OAuth JWKS through CLOUD_CORE_INTERNAL_ORIGIN, then the public issuer origin.",
   },
 
   // Build and standalone development
