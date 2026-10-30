@@ -1528,3 +1528,71 @@ body.k2b-ui {
     padding-top: calc(2.5rem - 24px);
   }
 }
+
+/* ---------- `/` menu (mockup v4) ---------- */
+.n-editor .cm-tooltip.cm-tooltip-autocomplete {
+  width: 290px;
+  padding: 0.3rem;
+  border: 0;
+  border-radius: 12px;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  font-family: var(--k2b-font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+.n-editor .cm-tooltip-autocomplete > ul {
+  max-height: 22rem;
+  font-family: inherit;
+}
+.n-editor .cm-tooltip-autocomplete > ul > li {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.65rem;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  color: var(--k2b-text);
+}
+.n-editor .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--ink-fill);
+  color: var(--k2b-text);
+}
+.n-editor .cm-tooltip-autocomplete .cm-slash-icon {
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-secondary);
+  font-size: 17px;
+}
+.n-editor .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-slash-icon {
+  background: var(--k2b-surface);
+  color: var(--ink);
+}
+.n-editor .cm-tooltip-autocomplete .cm-completionLabel {
+  grid-column: 2;
+}
+.n-editor .cm-tooltip-autocomplete .cm-completionMatchedText {
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 600;
+}
+.n-editor .cm-tooltip-autocomplete .cm-completion-detail {
+  grid-column: 2;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.n-editor .cm-tooltip-autocomplete .cm-completionDetail,
+.n-editor .cm-tooltip-autocomplete .cm-completionSectionLabel,
+.n-editor .cm-tooltip-autocomplete completion-section,
+.n-editor .cm-tooltip.cm-completionInfo {
+  display: none;
+}
