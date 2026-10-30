@@ -307,6 +307,7 @@ suiteFor(
     const proof = await signBootstrapProof(key);
     await routes[0].request(BOOTSTRAP_PATH, request(proof));
     const jti = decodeJwt(proof).jti!;
+    await sql`UPDATE auth.app_proof_replays SET retain_until = now() + interval '1 minute' WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`;
     await cleanupBootstrapProofs();
     expect((await sql`SELECT jti FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`).length).toBe(1);
     await sql`UPDATE auth.app_proof_replays SET retain_until = now() - interval '1 minute' WHERE key_id = ${key.keyId}::uuid AND jti = ${jti}`;
@@ -321,6 +322,7 @@ suiteFor(
         SELECT ${key.keyId}::uuid, 'cleanup-' || n::text, now() - interval '1 minute' FROM generate_series(1, ${count}::int) AS n`;
     };
     try {
+      await sql`DELETE FROM auth.app_proof_replays`;
       await seedExpired(350);
       expect(await cleanupBootstrapProofs()).toEqual({ deleted: 350, remaining: 0 });
       await setSetting("security.rate_limit_per_second", 1);
@@ -338,6 +340,50 @@ suiteFor(
       await sql`DELETE FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti LIKE 'cleanup-%'`;
     }
   });
+
+  test("nonce cleanup stops before the next batch when maintenance is cancelled", async () => {
+    await sql`INSERT INTO auth.app_proof_replays (key_id, jti, retain_until)
+      SELECT ${key.keyId}::uuid, 'cancel-' || n::text, now() - interval '1 minute' FROM generate_series(1, 350) AS n`;
+    const lock = await replicas[0].reserve();
+    const controller = new AbortController();
+    let pending: Promise<boolean> | undefined;
+    let released = false;
+    try {
+      await lock`BEGIN`;
+      await lock`LOCK TABLE auth.app_proof_replays IN ACCESS EXCLUSIVE MODE`;
+      pending = cleanupBootstrapProofs(replicas[1], { signal: controller.signal }).then(
+        () => false,
+        () => true,
+      );
+      let waiting = false;
+      const deadline = performance.now() + 3000;
+      while (!waiting && performance.now() < deadline) {
+        const [row] = await sql`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
+          AND query LIKE '%WITH batch AS MATERIALIZED%'
+        ) AS waiting`;
+        waiting = row?.waiting === true;
+        if (!waiting) await Bun.sleep(10);
+      }
+      expect(waiting).toBe(true);
+      controller.abort();
+      // Cancellation is cooperative between bounded batches; release the current statement's table lock.
+      await lock`ROLLBACK`;
+      lock.release();
+      released = true;
+      expect(await pending).toBe(true);
+      const [rows] = await sql`SELECT count(*)::int AS n FROM auth.app_proof_replays WHERE jti LIKE 'cancel-%'`;
+      expect(rows?.n).toBeGreaterThanOrEqual(250);
+    } finally {
+      controller.abort();
+      if (!released) {
+        await lock`ROLLBACK`;
+        lock.release();
+      }
+      await pending;
+      await sql`DELETE FROM auth.app_proof_replays WHERE jti LIKE 'cancel-%'`;
+    }
+  }, 10_000);
 
   test("revocation is immediately effective on both replicas, including a proof signed before revocation", async () => {
     const proofs = await Promise.all([signBootstrapProof(key), signBootstrapProof(key)]);

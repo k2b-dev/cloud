@@ -146,8 +146,9 @@ signature and identities, checks the key's connection permission and Valkey
 budget, then consumes `(keyId, jti)` atomically across replicas. Admission
 failures leave the nonce unused. Replay evidence remains until at least
 `exp + 5 minutes`. Core's existing minute maintenance drains expired records in
-100-row batches, with cancellation and a per-run cap of two minutes of
-per-key admission capacity across all stored app keys. Remaining expired
+100-row batches, with cooperative cancellation between batches and a per-run
+cap of two minutes of per-key admission capacity across all stored app keys.
+Remaining expired
 records are reported as a cleanup backlog and continued on the next run.
 The existing ingress budget also applies to invalid proofs. Authenticated keys
 have a separate budget using `security.rate_limit_per_second`.
