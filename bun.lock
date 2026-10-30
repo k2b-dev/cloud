@@ -524,6 +524,7 @@
         "@codemirror/state": "catalog:",
         "@codemirror/view": "catalog:",
         "@k2b/cloud": "workspace:*",
+        "@k2b/editor": "workspace:*",
         "@k2b/ssr": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/sync": "catalog:",
