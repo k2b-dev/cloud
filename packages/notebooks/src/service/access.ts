@@ -1,3 +1,4 @@
+import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
@@ -7,6 +8,7 @@ import {
   deleteAccess,
   ensureManagerRemains,
   getEffectivePermission,
+  getEffectivePermissions,
   type PermissionLevel,
   type Principal,
   type RequestActor,
@@ -19,6 +21,7 @@ import {
   serviceAccountCredentials,
   serviceAccounts,
 } from "@k2b/cloud/services";
+import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
 import { resolveNotebookApiKeyPermission } from "./api-key-permissions";
@@ -501,4 +504,29 @@ export const listNotebookApiKeys = async (notebookId: string): Promise<NotebookA
     const { serviceAccount: _serviceAccount, owner: _owner, ...credential } = item;
     return { ...credential, permission };
   });
+};
+
+/** Current account grants and resource binding, independent of credential scopes. */
+export const getResourceNotebookPermissions = async (
+  notebookId: string,
+  readers: readonly ResourceReader[],
+): Promise<PermissionLevel[]> => {
+  const granted = await getEffectivePermissions({
+    accessIds: sql`SELECT access_id FROM notebooks.notebook_access WHERE notebook_id = ${notebookId}::uuid`,
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers.map(({ binding }, index) =>
+    binding && (binding.appId !== NOTEBOOKS_APP_ID || binding.resourceType !== NOTEBOOK_RESOURCE_TYPE || binding.resourceId !== notebookId)
+      ? "none"
+      : (granted[index] ?? "none"),
+  );
+};
+
+export const readableNotebookPrincipals = async (
+  notebookId: string,
+  principals: readonly ResourcePrincipal[],
+): Promise<ResourcePrincipal[]> => {
+  const readers = await resolveResourceReaders(principals);
+  const permissions = await getResourceNotebookPermissions(notebookId, readers);
+  return readers.filter((_, index) => permissions[index] !== "none").map((reader) => reader.principal);
 };

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.36.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.35.0...npm-ui-v0.36.0) (2026-10-30)
+
+
+### Features
+
+* **chat:** notification settings and unread marks in Chat ([#2077](https://github.com/k2b-dev/cloud/issues/2077)) ([5a6aca9](https://github.com/k2b-dev/cloud/commit/5a6aca99752a1da767075e8facaeee56e7e7ef9a))
+* **cloud:** save and edit maps across Assistant, Contacts and Notebooks ([#1848](https://github.com/k2b-dev/cloud/issues/1848)) ([0831cd2](https://github.com/k2b-dev/cloud/commit/0831cd22824819e86c06df16b37a34ccb5cf2616))
+
+
+### Bug Fixes
+
+* **ui:** keep the same space inside both edges of every workspace column ([#2107](https://github.com/k2b-dev/cloud/issues/2107)) ([e71ac10](https://github.com/k2b-dev/cloud/commit/e71ac1020f6d36b65242fb540ebbaab0b2eef2e8))
+
 ## [0.35.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.34.0...npm-ui-v0.35.0) (2026-10-29)
 
 

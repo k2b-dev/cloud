@@ -62,6 +62,37 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "space.containers": {
+          title: "Diskussionsorte auflisten",
+          description: "Lesbare Spaces mit Fortsetzung auflisten.",
+          input: {
+            query: "Optionaler Suchtext für Orte.",
+            cursor: "Fortsetzung der vorherigen Seite.",
+            limit: "Höchstens so viele Orte auf dieser Seite.",
+          },
+        },
+        "space.readable": {
+          title: "Leser für Space prüfen",
+          description: "Prüfen, welche aktuellen Konten diesen Space lesen dürfen; ohne Grenzen einzelner Anmeldedaten.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
+        "item.readable": {
+          title: "Leser für Aufgabe oder Termin prüfen",
+          description: "Prüfen, welche aktuellen Konten den Eintrag im erwarteten Container lesen dürfen; ohne Inhaltszugriff.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort der Ressource.",
+            "container.type": "Deklarierter Typ des Orts.",
+            "container.id": "Öffentliche ID des Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
         "calendar.list": {
           title: "Kalender auflisten",
           description:
@@ -88,7 +119,8 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Berechtigte Änderungen an Aufgaben und Terminen eines Space lesen, neueste zuerst. Optional auf ein Element begrenzen. Kommentare und gelöschte Elemente werden ausgelassen. Dem Cursor folgen.",
           input: {
-            space: "Öffentliche ID des Space.",
+            container: "Öffentliche ID des Space; die bisherige Eingabe space bleibt möglich.",
+            space: "Bisherige Eingabe für container; beide IDs müssen übereinstimmen.",
             item: "Optional auf ein Element in diesem Space begrenzen.",
             timeZone: "IANA-Zeitzone für die Datumsanzeige; ohne Angabe gilt die Zeitzone der Installation.",
             before: "Nur Ereignisse, deren letztes Auftreten vor diesem ISO-Zeitpunkt liegt.",

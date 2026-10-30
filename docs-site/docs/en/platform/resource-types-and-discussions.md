@@ -101,6 +101,7 @@ containers the current caller can read. Reuse these contracts from
   1–100 and defaults to 50.
 - `DiscussionContainersDataSchema`: `{ items, next }`. Each item has
   `{ ref, title }`; `next` is an opaque cursor or `null` on the last page.
+  Changing `limit` between pages continues after the last returned item.
 - Optional `DiscussionActivityInputSchema`: `{ container, item?, timeZone?,
   before?, after?, cursor?, limit? }`. `container` and `item` are opaque
   resource IDs of the role's declared Types. Limit is 1–100, default 50;
@@ -150,7 +151,7 @@ The platform generates `<typeLocalId>.readable`, with fixed
 generated input requires `container`, fixes its Type to the declared local
 container Type, and leaves its ID opaque. Do not declare this Query yourself;
 a name collision fails startup. Before calling application code, the platform
-filters candidates in one database query: users must exist, be unexpired,
+filters candidates through the shared current-account resolver: users must exist, be unexpired,
 and belong to an enabled account category; service accounts must exist and
 have active status. A `user_delegated` service account's user must also pass
 these user checks. Disabled, expired, and deleted accounts never reach the
@@ -170,6 +171,19 @@ Implement the callback with current principal rights:
   cannot exercise; this check concerns the account.
 - Return only input principals that can currently read. Return no content,
   title, or permission details. The result never grants content access.
+
+Providers can use `resolveResourceReaders(principals)` from
+`@k2b/cloud/services/identity`. It returns current accounts as
+`ResourceReader` values with the original `principal`, effective `subject`,
+and nullable resource `binding` (`appId`, `resourceType`, `resourceId`).
+Delegated service accounts resolve to their current user's subject. Expired
+users, disabled account categories, disabled service accounts, and missing
+accounts are omitted. UUID matching ignores letter case while the returned
+principal preserves the input spelling. Only category `enabled` settings affect
+this check; presentation settings such as `visible` and `login.label` do not.
+Use the subjects with `getEffectivePermissions()` from
+`@k2b/cloud/server`, then enforce each non-null binding against the resource.
+The helper creates no session and supplies no credential scope ceiling.
 
 The callback receives `CapabilityAppExecutionContext`: app actor,
 `accessSubject: { type: "none" }`, `user: null`, locale, request ID, origin,
@@ -211,3 +225,27 @@ and, when supplied, the exact expected container ref. Cover every permission
 level and locale your reader supports, account status, group rights, service
 accounts without credential scope ceilings, and moved items with a stale
 expected container.
+
+## Built-in providers
+
+Spaces declares `item` inside `space`; Notebooks declares `note` inside
+`notebook`. Both Types in each pair expose `access.readable` and a standard
+reader view. Spaces task views include the current column or localized Done
+status, completion flag, and a due date when relevant. Event views include the
+localized schedule and completion flag. Notebook and note views describe
+their resource without a task status or completion flag.
+
+The roles use `space.containers` and `notebook.containers` for the standard
+`{ items, next }` container list. The published `space.list` and `notebook.list`
+array results remain available. Activity uses `space.activity` and
+`notebook.activity`: send `container`, or retain the published `space` or
+`notebook` field. At least one is required; if both are present, their IDs must
+match. Both accept `timeZone`; notebook activity has no date presentation
+that changes with that option.
+
+Readers preserve their existing domain fields, including the item's
+`container: { ref, name, permission }`, beside `view`. Ordinary readers and
+activity still enforce the caller's credential limits. The generated
+`readable` checks concern account rights, so a service account with a
+credential lacking read scope can still be reported as readable. Resource
+bindings, current account status, and current grants remain mandatory.

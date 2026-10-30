@@ -37,6 +37,14 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
   rewrap: async () => 0,
   revoke: async () => false,
   serviceAccounts: {
+    getByResource: async ({ appId, resourceType, resourceId }) => ({
+      ...standaloneAccount(),
+      id: SERVICE_ACCOUNT_ID,
+      kind: "resource_bound",
+      appId,
+      resourceType,
+      resourceId,
+    }),
     getOrCreateResourceBound: async ({ name, appId, resourceType, resourceId, createdBy }) =>
       ok({
         id: SERVICE_ACCOUNT_ID,
@@ -140,6 +148,7 @@ describe("identity key administration", () => {
           ["PATCH", `/service-accounts/${STANDALONE_ID}`],
           ["POST", `/service-accounts/${STANDALONE_ID}/api-keys`],
           ["POST", "/workloads/grids/credentials"],
+          ["PATCH", "/workloads/grids"],
           ["DELETE", `/workloads/grids/credentials/${CREDENTIAL_ID}`],
           ["POST", `/keys/${CREDENTIAL_ID}/revoke`],
         ])
@@ -554,4 +563,34 @@ describe("standalone service accounts", () => {
     expect(key.status).toBe(201);
     expect(await key.json()).toMatchObject({ credential: { serviceAccountId: STANDALONE_ID, scopes: [] }, token: expect.any(String) });
   });
+});
+
+test("admin can restore the exact app workload account without issuing a token", async () => {
+  const base = dependencies();
+  const writes: unknown[] = [];
+  const routes = createAdminIdentityRoutes(
+    authenticateAdmin,
+    dependencies({
+      serviceAccounts: {
+        ...base.serviceAccounts,
+        setStatus: async (input) => {
+          writes.push(input);
+          return ok();
+        },
+      },
+    }),
+  );
+  for (const status of ["disabled", "active"]) {
+    const response = await routes.request("/workloads/inventory", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ appId: "inventory", status });
+  }
+  expect(writes).toEqual([
+    { id: SERVICE_ACCOUNT_ID, status: "disabled" },
+    { id: SERVICE_ACCOUNT_ID, status: "active" },
+  ]);
 });
