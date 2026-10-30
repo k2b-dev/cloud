@@ -119,6 +119,7 @@ import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versioned
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
 import { WEB_VITALS_ASSET_HREF } from "./web-vitals-asset";
 import { compileWidgetDeclarations } from "./widget-declarations";
+import { createAppWorkloadCredential } from "./workload-credential";
 
 /** Only development links use this start stamp to pick up rebuilds. */
 const developmentStamp = Date.now();
@@ -864,6 +865,7 @@ export const defineApp = <
         await capabilityHeartbeat?.stop();
       });
       cleanup.push(() => heartbeat.stop());
+      cleanup.push(() => membership.leave());
 
       // Runtime context — start the registry watcher so middleware.runtime() and
       // the lifecycle context below see populated cluster state. Idempotent: the
@@ -1145,6 +1147,8 @@ export const defineApp = <
 
       let stopNotificationRegistration: (() => void) | undefined;
       cleanup.push(() => stopNotificationRegistration?.());
+      let workloadCredential: ReturnType<typeof createAppWorkloadCredential> | undefined;
+      cleanup.push(() => workloadCredential?.stop());
       const stopLifecycle = startOpts.lifecycle?.stop;
       if (stopLifecycle) cleanup.push(() => stopLifecycle(cloudCtx));
 
@@ -1168,6 +1172,23 @@ export const defineApp = <
       stopNotificationRegistration = await startNotificationDefinitionRegistration(meta.id, notifications);
 
       await loadSettingsCache();
+
+      // The instance can obtain its credential before workers run; routes remain undiscoverable.
+      await membership.register();
+      workloadCredential = createAppWorkloadCredential({
+        appId: meta.id,
+        instanceId: membership.instanceId,
+        onRecovered: () => log.info("App workload credential refresh recovered", { appId: meta.id }),
+        onUnavailable: (reason) => {
+          if (reason === "release_unavailable") {
+            log.warn("Workload credential release was not confirmed; Core will reconcile after removal", { appId: meta.id });
+          } else {
+            log.error("App workload credential unavailable; background invocation is disabled", { appId: meta.id, reason });
+          }
+        },
+      });
+      // The NATS request has a five-second timeout; an outage leaves workers fail-closed.
+      await workloadCredential.start();
 
       if (startOpts.lifecycle?.start) {
         log.info(`Start: ${meta.id}`);

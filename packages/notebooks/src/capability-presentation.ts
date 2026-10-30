@@ -89,6 +89,37 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "notebook.containers": {
+          title: "Diskussionsorte auflisten",
+          description: "Lesbare Notizbücher mit Fortsetzung auflisten.",
+          input: {
+            query: "Optionaler Suchtext für Orte.",
+            cursor: "Fortsetzung der vorherigen Seite.",
+            limit: "Höchstens so viele Orte auf dieser Seite.",
+          },
+        },
+        "notebook.readable": {
+          title: "Leser für Notizbuch prüfen",
+          description: "Prüfen, welche aktuellen Konten dieses Notizbuch lesen dürfen; ohne Grenzen einzelner Anmeldedaten.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
+        "note.readable": {
+          title: "Leser für Notiz prüfen",
+          description: "Prüfen, welche aktuellen Konten den Eintrag im erwarteten Container lesen dürfen; ohne Inhaltszugriff.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort der Ressource.",
+            "container.type": "Deklarierter Typ des Orts.",
+            "container.id": "Öffentliche ID des Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
         "annotation.list": {
           title: "Kommentare zum Text auflisten",
           description:
@@ -124,8 +155,10 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Berechtigte Änderungen an Notizen eines Notizbuchs lesen, neueste zuerst. Optional auf eine Notiz begrenzen. Kommentare und gelöschte Notizen werden ausgelassen. Dem Cursor folgen.",
           input: {
-            notebook: "Öffentliche ID des Notizbuchs.",
+            container: "Öffentliche ID des Notizbuchs; die bisherige Eingabe notebook bleibt möglich.",
+            notebook: "Bisherige Eingabe für container; beide IDs müssen übereinstimmen.",
             item: "Optional auf eine Notiz in diesem Notizbuch begrenzen.",
+            timeZone: "IANA-Zeitzone für die Datumsanzeige; ohne Angabe gilt die Zeitzone der Installation.",
             before: "Nur Ereignisse, deren letztes Auftreten vor diesem ISO-Zeitpunkt liegt.",
             after: "Nur Ereignisse, deren letztes Auftreten nach diesem ISO-Zeitpunkt liegt.",
             cursor: "Cursor der vorherigen Seite.",

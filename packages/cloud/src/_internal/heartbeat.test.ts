@@ -606,6 +606,35 @@ describe("replica membership", () => {
     return { apps, capabilities, instances, lock, contended, process, keys, values };
   };
 
+  test("pre-worker membership registers only process identity and is removable before advertisement", async () => {
+    const f = fixture();
+    const replica = f.process("0123456789abcdef");
+    await replica.membership.register();
+    expect(await f.keys(f.apps, "apps/")).toEqual([]);
+    expect(await f.keys(f.capabilities)).toEqual([]);
+    expect(await f.keys(f.instances, "instances/")).toHaveLength(1);
+    await replica.membership.leave();
+    expect(await f.keys(f.instances, "instances/")).toEqual([]);
+  });
+
+  test("pre-worker registration has a deadline and removes a late instance write after stop", async () => {
+    const f = fixture();
+    const pending = Promise.withResolvers<void>();
+    const upsert = f.instances.upsert;
+    f.instances.upsert = async (input) => {
+      await pending.promise;
+      return upsert(input);
+    };
+    const replica = f.process("0123456789abcdef", 10);
+    await expect(replica.membership.register()).rejects.toThrow("Instance registration timed out");
+    await replica.membership.leave();
+    pending.resolve();
+    await pending.promise;
+    await replica.membership.leave();
+    expect(await f.keys(f.instances, "instances/")).toEqual([]);
+    expect(await f.keys(f.apps, "apps/")).toEqual([]);
+  });
+
   test("capability repair gates both shared entries on app publication after registry recreation", async () => {
     const f = fixture();
     let fail = false;

@@ -1,3 +1,4 @@
+export { getAppWorkloadCredential } from "../../_internal/workload-credential";
 export {
   CLOUD_INVOCATION_JWKS_PATH,
   CLOUD_INVOCATION_PROTOCOL_VERSION,
@@ -37,6 +38,7 @@ export {
 } from "./key-ring";
 export { identityMetrics } from "./metrics";
 export { isNestedSourceCurrent, type NestedInvocationLease, nestedInvocationLeases } from "./nested-invocation";
+export { type ResourceReader, resolveResourceReaders } from "./resource-readers";
 export { createIdentityPublicRoutes } from "./routes";
 export {
   type CloudSessionClaims,
@@ -51,3 +53,4 @@ export {
   WORKLOAD_SCOPES,
   type WorkloadScope,
 } from "./workload-auth";
+export { startAppWorkloadBroker } from "./workload-runtime";

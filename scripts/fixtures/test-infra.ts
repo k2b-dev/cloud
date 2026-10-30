@@ -42,7 +42,7 @@
  *   CLOUD_TEST_S3_ACCESS_KEY_ID / CLOUD_TEST_S3_SECRET_ACCESS_KEY / CLOUD_TEST_S3_REGION
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
-import { afterAll, beforeAll, describe, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, test } from "bun:test";
 import { S3Client, SQL, sql } from "bun";
 import {
   applyTestRuntimeEnv,
@@ -280,6 +280,7 @@ export const useMigratedDatabase = async (prefix: string) => bindDefaultDatabase
 
 const bindDefaultDatabase = async (prefix: string, database: Awaited<ReturnType<typeof createDisposableDatabase>>) => {
   process.env.DATABASE_URL = database.url;
+  ownTestDatabase(database.name);
   const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
   if (row?.name !== database.name) {
     await database.drop();
@@ -329,6 +330,58 @@ try {
   });
 } catch {
   // Bootstrap scripts outside bun test close their lease explicitly.
+}
+
+// Private databases this process owns: nothing else runs in them, so work that outlives a test belongs to this process.
+const ownedDatabases = new Set<string>();
+
+/** Marks a private database of this process, so work an aborted test leaves running there ends after each test. */
+export const ownTestDatabase = (name: string): void => {
+  ownedDatabases.add(name);
+};
+
+/**
+ * Ends work that outlives its test in this process's private databases. Bun cannot stop the body of a test that timed
+ * out, so its statements keep running, or its transaction keeps holding locks, and every later hook waits on them.
+ * Statements still running are cancelled and transactions left open are ended; each is reported with its blockers.
+ */
+export const endLingeringTestWork = async (): Promise<string[]> => {
+  if (ownedDatabases.size === 0) return [];
+  const admin = new SQL(requireDatabaseUrl(), { max: 1 });
+  try {
+    type Lingering = { pid: number; database: string; state: string; ms: number; query: string; blockers: number[] };
+    const rows: Lingering[] = [];
+    for (const database of ownedDatabases)
+      rows.push(
+        ...(await admin<Lingering[]>`
+          SELECT pid, datname AS database, state, (extract(epoch FROM now() - state_change) * 1000)::int AS ms,
+            left(query, 300) AS query, pg_blocking_pids(pid) AS blockers
+          FROM pg_stat_activity
+          WHERE datname = ${database} AND pid <> pg_backend_pid()
+            AND (state = 'active' OR state LIKE 'idle in transaction%') AND state_change < now() - interval '250 milliseconds'`),
+      );
+    const reports: string[] = [];
+    for (const row of rows) {
+      const action = row.state === "active" ? "cancelled" : "ended";
+      if (row.state === "active") await admin`SELECT pg_cancel_backend(${row.pid})`;
+      else await admin`SELECT pg_terminate_backend(${row.pid})`;
+      reports.push(
+        `${action} ${row.state} work in ${row.database} after ${row.ms} ms (pid ${row.pid}, blocked by ${row.blockers.join(", ") || "nothing"}): ${row.query}`,
+      );
+    }
+    for (const report of reports) console.warn(`[test-infra] work outlived its test and was ${report}`);
+    return reports;
+  } finally {
+    await admin.close();
+  }
+};
+
+try {
+  afterEach(async () => {
+    await endLingeringTestWork();
+  });
+} catch {
+  // Loaded by a script outside bun test, which runs no tests.
 }
 
 /** The configured target for one infrastructure kind; throws when it is not set. */
