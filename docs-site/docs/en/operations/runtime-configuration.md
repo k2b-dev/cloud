@@ -67,10 +67,10 @@ environment variables. Applications using the shared HTTP transports supply
 | `NATS_CREDS_FILE` | Optional mounted NATS credentials file |
 | `NATS_TLS_CA_FILE` | Optional trusted CA file for NATS TLS |
 | `NATS_IGNORE_CLUSTER_UPDATES` | Keep reachable seed addresses when advertised Docker hostnames are inaccessible |
-| `NATS_ADMIN_SERVERS` | Gateway Ops only: separate system-account connection for NATS cluster diagnostics |
-| `NATS_ADMIN_CREDS_FILE` | Gateway Ops only: mounted system-account credentials file |
-| `NATS_ADMIN_NKEY_SEED_FILE` | Gateway Ops only: alternative static system-account user seed; mutually exclusive with `NATS_ADMIN_CREDS_FILE` |
-| `NATS_ADMIN_TLS_CA_FILE` | Gateway Ops only: trusted CA for the separate system connection |
+| `NATS_ADMIN_SERVERS` | Deprecated; Gateway Ops imports URLs into `gateway.nats_admin_servers` at startup |
+| `NATS_ADMIN_CREDS_FILE` | Deprecated; Gateway Ops imports .creds **contents** into the secret `gateway.nats_admin_access` |
+| `NATS_ADMIN_NKEY_SEED_FILE` | Deprecated; imports user seed **contents** and selects `nkey`; mutually exclusive with `NATS_ADMIN_CREDS_FILE` |
+| `NATS_ADMIN_TLS_CA_FILE` | Deprecated; Gateway Ops imports CA PEM **contents** into `gateway.nats_admin_tls_ca` |
 | `APP_SECRET` | Encrypts settings and credentials |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | Core-only KEK for private platform signing keys; exactly 64 hexadecimal characters |
 | `CLOUD_IDENTITY_NEXT_KEY` | Temporary next Core KEK, distributed before promotion |
@@ -82,6 +82,13 @@ environment variables. Applications using the shared HTTP transports supply
 | `CLOUD_APP_CREDENTIAL` | Optional host-run app override for the automatically delivered workload credential; not used by OAuth |
 | `NODE_ENV` | Set to `production` by built-in images; development tooling supplies its own mode |
 | `ADMIN_LOGIN_TOKEN` | Core-only temporary first-access or recovery token; no production default |
+
+Configure new installations through **Administration → Observability → NATS → Diagnostics access**.
+The NATS diagnostics settings belong to Gateway Ops and apply to its next
+diagnostics connection. Existing settings are never overwritten by environment
+imports. Cluster diagnostics remain off when the server list is empty. See
+[NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for formats, failed imports, and removal of the deprecated inputs.
 
 `APP_ID` selects the application for Cloud's build and development scripts. It
 is not application runtime configuration. Runtime identity comes from the app declaration.

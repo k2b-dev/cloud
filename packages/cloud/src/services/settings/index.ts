@@ -32,7 +32,13 @@ const REDIS_KEY = (key: string) => `settings:${key}`;
 const isEqual = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
 const resolveEnvValue = (def: SettingDef | undefined, mode: "fallback" | "bootstrap"): unknown => {
-  const raw = mode === "fallback" ? def?.envFallback?.() : def?.envBootstrap?.();
+  let raw: unknown;
+  try {
+    raw = mode === "fallback" ? def?.envFallback?.() : def?.envBootstrap?.();
+  } catch {
+    console.warn(`[settings] ignoring invalid ${mode} value for "${def?.key}"`);
+    return undefined;
+  }
   if (!def || raw === undefined) return undefined;
 
   const validated = validateSettingValue(def, raw);

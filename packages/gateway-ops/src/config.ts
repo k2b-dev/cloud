@@ -1,4 +1,5 @@
 import { appAccess, defineApp } from "@k2b/cloud";
+import { natsDiagnosticsSettings } from "./observability/nats/settings";
 
 const port = 3000;
 
@@ -88,6 +89,7 @@ export const app = defineApp({
   ],
   nav: { href: "", section: "hidden", requiresRoles: ["admin"] },
   settings: {
+    ...natsDiagnosticsSettings,
     "gateway.health_check_schedule": {
       kind: "cron",
       label: "Health Check Schedule",
