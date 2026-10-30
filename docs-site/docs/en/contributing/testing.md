@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-29
+updated: 2026-10-30
 ---
 
 # Testing
@@ -729,6 +729,17 @@ integration suite evaluates its static imports, so it can trigger this failure.
 The `module-mocks` check also rejects these import-time spies in shared suites.
 
 ## Run integration tests
+
+Disposable PostgreSQL containers in CI, nightly, release smoke checks, and the local
+`compose.sync-test.yml` and `compose.scale-test.yml` fixtures keep their data on
+a tmpfs capped at 4 GiB, with `fsync`, `synchronous_commit`, and
+`full_page_writes` disabled. Their data is lost when the container stops; they
+do not exercise crash durability. These settings reduce storage work during
+tests but do not establish the cause of sporadic slow statements. The CI
+integration step samples the whole cluster's tmpfs usage every 30 seconds,
+including WAL, to check capacity. Keep these settings confined to disposable
+containers: a test database name does not make a shared development server
+safe to reconfigure.
 
 Integration tests gate themselves on `CLOUD_TEST_*` variables through
 `scripts/fixtures/test-infra.ts`, which is loaded as a `bun test` preload:
