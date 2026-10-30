@@ -19,6 +19,7 @@ import {
 import { mockDiscussionCatalog, providerApp } from "../service/discussions.test-fixture";
 import { appendMessage } from "../service/message-store";
 import { accessKey, readResource, resourceReaderDependencies } from "../service/resource-access";
+import { systemNotificationDependencies } from "../service/system-notification-access";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -35,10 +36,13 @@ suite("mentions and For you", () => {
   const extraGrants: string[] = [];
   const extraAccounts: string[] = [];
   let reader: Mock<typeof resourceReaderDependencies.invoke> | undefined;
+  let principalReader: Mock<typeof systemNotificationDependencies.read> | undefined;
   afterEach(async () => {
     catalog.mockRestore();
     reader?.mockRestore();
     reader = undefined;
+    principalReader?.mockRestore();
+    principalReader = undefined;
     if (keys.size) await redis.send("DEL", [...keys]);
     keys.clear();
     for (const id of extraGrants.splice(0)) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
@@ -386,6 +390,17 @@ suite("mentions and For you", () => {
       const space = crypto.randomUUID(),
         item = crypto.randomUUID();
       let denyMara = false;
+      principalReader = spyOn(systemNotificationDependencies, "read").mockImplementation(async (input) => ({
+        state: "checked",
+        readable: input.principals.filter(
+          (principal) =>
+            principal.type === "user" &&
+            principal.userId !== denied.id &&
+            !(denyMara && input.ref.type === itemType && principal.userId === mara.id),
+        ),
+      }));
+      const countKey = `chat:system-reader:v2:${mara.id}:${JSON.stringify([containerType, space, itemType, item])}`;
+      keys.add(countKey);
       reader = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (_app, capability, _input, caller) => {
         if (capability === `${containerType.split(".")[1]}.read`)
           return { data: { view: { title: "Project", permission: "write" } }, links: [{ rel: "open", href: `/app/inventory/${space}` }] };
@@ -519,6 +534,7 @@ suite("mentions and For you", () => {
       expect((await loadChatView(mara.context, {})).sidebar.forYouUnread).toBe(1);
       denyMara = true;
       await redis.del(accessKey(`user:${mara.id}`, { type: itemType, id: item }));
+      await redis.del(countKey);
       page = await feed(mara);
       expect(page.items).toEqual([]);
       expect((await loadChatView(mara.context, {})).sidebar.forYouUnread).toBe(0);

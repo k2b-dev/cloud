@@ -424,7 +424,13 @@ Resource checks inside these capabilities use the parent invocation's query
 authority and bypass the HTTP decision cache. They do not forward the person's
 cookie or token.
 
-This API stores preferences and follows. It does not send notifications yet.
+Followed item discussions, mentions, and replies can send push notifications
+when the provider's reader check allows the recipient. Chat checks the item
+against this conversation's expected container, using its automatic workload
+credential through Core. Failed checks omit counts and retry delivery; missing
+setup suppresses push and appears in Chat administration. See
+[Chat notifications](/en/docs/operations/chat-notifications#enable-resource-discussion-notifications-after-the-upgrade)
+for rollout, timing, count budgets and troubleshooting.
 
 ## Edit or delete a message
 

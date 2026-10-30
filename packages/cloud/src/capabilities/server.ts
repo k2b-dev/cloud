@@ -182,7 +182,7 @@ export {
   readCalendarEvents,
 } from "./calendar-sources";
 export { type DiscussionProvider, discussionProviders } from "./discussion-providers";
-export { type ResourceReadersResult, readResourcePrincipals } from "./resource-readers";
+export { ResourceReaderRateLimited, type ResourceReadersResult, readResourcePrincipals } from "./resource-readers";
 export {
   actionReview,
   type CapabilityReviewForms,
