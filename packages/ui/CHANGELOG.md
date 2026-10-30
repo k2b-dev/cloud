@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.37.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.36.0...npm-ui-v0.37.0) (2026-10-30)
+
+
+### Features
+
+* **chat:** Assistant and MCP take part in item discussions ([#2138](https://github.com/k2b-dev/cloud/issues/2138)) ([20d6804](https://github.com/k2b-dev/cloud/commit/20d6804bf3afab12ceb0599b09f22d8df8dd8601))
+* **ui:** search prompt results take an optional id, so a newer answer keeps a pressed row ([#2179](https://github.com/k2b-dev/cloud/issues/2179)) ([7a9fab4](https://github.com/k2b-dev/cloud/commit/7a9fab49a9b7a15224c875d2279658aef759e73d))
+
+
+### Bug Fixes
+
+* **ui:** a click on a chat command runs it even when the host rebuilds its commands during the press ([#2154](https://github.com/k2b-dev/cloud/issues/2154)) ([26ed213](https://github.com/k2b-dev/cloud/commit/26ed213fab3e52488fa8bc9814db4acfdb3bebae))
+* **ui:** a click on an option in RichSelect, Combobox or Cloud search lands even when the data is rebuilt during the press ([#2164](https://github.com/k2b-dev/cloud/issues/2164)) ([6f9fdc9](https://github.com/k2b-dev/cloud/commit/6f9fdc9d517334828ecde02499846ae45b5d33da))
+* **ui:** a pressed chat command runs on release even when the whole command menu was rebuilt in between ([#2176](https://github.com/k2b-dev/cloud/issues/2176)) ([c1e9f9a](https://github.com/k2b-dev/cloud/commit/c1e9f9a3e6bf0981f32650e41dab712230fef39f))
+* **ui:** menus and tabs keep their rows when the host rebuilds equal items, so a click in progress lands ([#2170](https://github.com/k2b-dev/cloud/issues/2170)) ([1d21662](https://github.com/k2b-dev/cloud/commit/1d21662d573f0f3527f887866f2dcc87097b8b3e))
+* **ui:** rename the text editor without dispatching, also during a view update ([#2159](https://github.com/k2b-dev/cloud/issues/2159)) ([e1a3fea](https://github.com/k2b-dev/cloud/commit/e1a3fead3626c1bf70ae62eee7308fa0b53934fd))
+* **ui:** text editor headings are no longer underlined ([#2147](https://github.com/k2b-dev/cloud/issues/2147)) ([34a06d5](https://github.com/k2b-dev/cloud/commit/34a06d51179280bcf57163c5053403565dd9b3e4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.20.1 to 0.20.2
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 to ^0.20.2
+
 ## [0.36.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.35.0...npm-ui-v0.36.0) (2026-10-30)
 
 

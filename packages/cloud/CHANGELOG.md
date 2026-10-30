@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.47.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.46.0...npm-cloud-v0.47.0) (2026-10-30)
+
+
+### Features
+
+* **chat:** Assistant and MCP take part in item discussions ([#2138](https://github.com/k2b-dev/cloud/issues/2138)) ([20d6804](https://github.com/k2b-dev/cloud/commit/20d6804bf3afab12ceb0599b09f22d8df8dd8601))
+* **chat:** discussions come from any app that offers them ([#2119](https://github.com/k2b-dev/cloud/issues/2119)) ([f499372](https://github.com/k2b-dev/cloud/commit/f49937218dfce6cfa4a5d2b9d279160bb9a383e6))
+* **chat:** discussions on items notify like other chats ([#2137](https://github.com/k2b-dev/cloud/issues/2137)) ([7dc3506](https://github.com/k2b-dev/cloud/commit/7dc35060f23ff276309b3a94af3fbdc497985b42))
+* **cloud:** initialize native clients before loading applications ([#2172](https://github.com/k2b-dev/cloud/issues/2172)) ([bf2041c](https://github.com/k2b-dev/cloud/commit/bf2041c0330bd320c8ea45c90edc65c83a0e89f9))
+* **cloud:** manage network lists and AI limits as admin settings ([#2174](https://github.com/k2b-dev/cloud/issues/2174)) ([70c27f5](https://github.com/k2b-dev/cloud/commit/70c27f50ab9d742269368c97125b47cd1f1d8be5))
+* **cloud:** read secret environment values from *_FILE files ([#2128](https://github.com/k2b-dev/cloud/issues/2128)) ([6df1a66](https://github.com/k2b-dev/cloud/commit/6df1a6662660125306c7777183391184bba4c03f))
+* **core:** register Ed25519 keys per app ([#2157](https://github.com/k2b-dev/cloud/issues/2157)) ([477ade7](https://github.com/k2b-dev/cloud/commit/477ade7132b1b70c3132935c301e6de605ffcb83))
+* **discussions:** Spaces and Notebooks offer their items for discussions ([#2113](https://github.com/k2b-dev/cloud/issues/2113)) ([c3f7dca](https://github.com/k2b-dev/cloud/commit/c3f7dca2b751ed311de4565479aa11b9d4396734))
+* **editor:** move formulas, charts and tables into @k2b/editor; @k2b/cloud keeps its exports ([#2146](https://github.com/k2b-dev/cloud/issues/2146)) ([85d5b6c](https://github.com/k2b-dev/cloud/commit/85d5b6cf35ef05a5bd36b2d0bb2310f659fcd058))
+* **gateway-ops:** configure NATS diagnostics access in Administration ([#2161](https://github.com/k2b-dev/cloud/issues/2161)) ([ba718c2](https://github.com/k2b-dev/cloud/commit/ba718c29eb163b07158cba55d17b5f12a5dea68a))
+* **identity:** Core provides app workload credentials automatically ([#2112](https://github.com/k2b-dev/cloud/issues/2112)) ([d907f48](https://github.com/k2b-dev/cloud/commit/d907f48882427f004e7f124edf16ee2b29a32935))
+
+
+### Bug Fixes
+
+* **gateway-ops:** ask for NATS diagnostics access again after the servers change ([#2177](https://github.com/k2b-dev/cloud/issues/2177)) ([ed2b731](https://github.com/k2b-dev/cloud/commit/ed2b731038c0cd8255d9aba7a8dcf6d324df2104))
+* **ui:** a click on an option in RichSelect, Combobox or Cloud search lands even when the data is rebuilt during the press ([#2164](https://github.com/k2b-dev/cloud/issues/2164)) ([6f9fdc9](https://github.com/k2b-dev/cloud/commit/6f9fdc9d517334828ecde02499846ae45b5d33da))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.20.1 to 0.20.2
+    * @k2b/ui bumped from 0.36.0 to 0.37.0
+
 ## [0.46.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.45.0...npm-cloud-v0.46.0) (2026-10-30)
 
 
