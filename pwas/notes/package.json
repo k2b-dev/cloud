@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",
+    "@k2b/editor": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",

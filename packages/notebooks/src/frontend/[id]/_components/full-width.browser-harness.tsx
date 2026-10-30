@@ -7,6 +7,7 @@ import { fadeScrollMarginsExtension, fadeScrollPadding, listCommandsExtension } 
 import { AppWorkspace, DetailPanel, LocaleProvider, ScrollArea, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
+import { notebookTableOptions } from "../../../lib/table-options";
 import { editor } from "../../lib/editor";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "../../lib/editor/notebook-options";
 import { notebookWorkspaceMessages } from "../messages";
@@ -48,7 +49,7 @@ function Harness() {
             editor.noteScroller,
             editor.customLightInit(),
             listCommandsExtension(notebookListOptions),
-            editor.tablesExtension("book01"),
+            editor.tablesExtension(notebookTableOptions("book01")),
             editor.imageExtension(notebookUrlOptions("book01")),
             editor.listsExtension(notebookListOptions),
             editor.infoBlocksExtension("de"),

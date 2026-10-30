@@ -13,6 +13,7 @@ import { createComponent, render } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { notebookTableOptions } from "../../../lib/table-options";
 import { editor } from "./index";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "./notebook-options";
 
@@ -65,7 +66,7 @@ const view = new EditorView({
       fadeScrollMarginsExtension(() => port),
       editor.customLightInit(),
       editor.noteScroller,
-      editor.tablesExtension("n1"),
+      editor.tablesExtension(notebookTableOptions("n1")),
       editor.imageExtension(notebookUrlOptions("n1")),
       editor.listsExtension(notebookListOptions),
       editor.infoBlocksExtension("en"),

@@ -2,9 +2,9 @@ import { describe, expect, mock, test } from "bun:test";
 import { resolvePackedConsumerPins } from "./packed-consumer-pins";
 
 const fixture = {
-  pins: { "@k2b/ui": "0.25.0", "@k2b/ssr": "0.16.0" },
-  workspaceVersions: { "@k2b/ui": "0.26.0", "@k2b/ssr": "0.16.0" },
-  archives: { "@k2b/ui": "/tmp/ui.tgz", "@k2b/ssr": "/tmp/ssr.tgz" },
+  pins: { "@k2b/ui": "0.25.0", "@k2b/ssr": "0.16.0", "@k2b/editor": "0.2.0" },
+  workspaceVersions: { "@k2b/ui": "0.26.0", "@k2b/ssr": "0.16.0", "@k2b/editor": "0.2.0" },
+  archives: { "@k2b/ui": "/tmp/ui.tgz", "@k2b/ssr": "/tmp/ssr.tgz", "@k2b/editor": "/tmp/editor.tgz" },
 };
 
 describe("packed consumer sibling pins", () => {
@@ -14,6 +14,7 @@ describe("packed consumer sibling pins", () => {
     expect(result).toEqual({
       "@k2b/ui": { pin: "0.25.0", spec: "/tmp/ui.tgz", source: "packed" },
       "@k2b/ssr": { pin: "0.16.0", spec: "/tmp/ssr.tgz", source: "packed" },
+      "@k2b/editor": { pin: "0.2.0", spec: "/tmp/editor.tgz", source: "packed" },
     });
     expect(isPublished).not.toHaveBeenCalled();
   });
@@ -24,10 +25,12 @@ describe("packed consumer sibling pins", () => {
     expect(result).toEqual({
       "@k2b/ui": { pin: "0.25.0", spec: "0.25.0", source: "npm" },
       "@k2b/ssr": { pin: "0.16.0", spec: "/tmp/ssr.tgz", source: "packed" },
+      "@k2b/editor": { pin: "0.2.0", spec: "/tmp/editor.tgz", source: "packed" },
     });
     expect(isPublished.mock.calls).toEqual([
       ["@k2b/ui", "0.25.0"],
       ["@k2b/ssr", "0.16.0"],
+      ["@k2b/editor", "0.2.0"],
     ]);
   });
 
@@ -48,7 +51,7 @@ describe("packed consumer sibling pins", () => {
     expect(Object.values(result).every((pin) => pin.source === "packed")).toBe(true);
   });
 
-  for (const name of ["@k2b/ui", "@k2b/ssr"] as const) {
+  for (const name of ["@k2b/ui", "@k2b/ssr", "@k2b/editor"] as const) {
     test(`rejects an unpublished ${name} pin that this release does not publish`, async () => {
       await expect(
         resolvePackedConsumerPins({

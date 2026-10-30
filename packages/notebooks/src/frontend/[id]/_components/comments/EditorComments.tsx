@@ -1,5 +1,6 @@
 import { type ChangeSet, EditorSelection, Prec, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { asUndoStep } from "@k2b/editor";
 import { announce, Button, personColor, SelectionToolbar, Toolbar, useLocale } from "@k2b/ui";
 import { type Accessor, batch, createEffect, createMemo, createSignal, type JSX, on, onCleanup, untrack } from "solid-js";
 import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
@@ -12,7 +13,6 @@ import {
   setAnnotationPreview,
   setAnnotations,
 } from "../../../lib/editor/annotations";
-import { asUndoStep } from "../../../lib/yjs/history";
 import { changesBetween } from "../../../lib/yjs/lazy-collab";
 import { insertLink, toggleInlineMark } from "../editor/editor-actions";
 import { CommentMargin } from "./CommentMargin";

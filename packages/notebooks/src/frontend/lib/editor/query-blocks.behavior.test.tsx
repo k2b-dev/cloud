@@ -10,6 +10,8 @@ import type { BlockPreviewResult } from "./query-blocks";
 
 // The notebook parsers share the info block grammar of @k2b/ui; its browser build needs the DOM globals before it loads.
 const loading = createDomTestHarness();
+const { createQueryBlockPreviews } = await import("./query-blocks");
+const { notebookChartOptions } = await import("../../../lib/chart-options");
 const { extractNotebookDirectiveRanges } = await import("../../../lib/query-blocks");
 loading.cleanup();
 
@@ -38,7 +40,6 @@ describe("query block previews", () => {
     readOnly = false,
   ) => {
     const dom = createDomTestHarness();
-    const { createQueryBlockPreviews } = await import("./query-blocks");
     let editor: EditorView;
     const dispose = render(() => {
       const host = document.createElement("div");
@@ -167,8 +168,8 @@ describe("query block previews", () => {
       "# Chart\n\n:::chart\ntype: bar\ntitle: Umsatz\ncolumns: [Monat, Umsatz]\nrows:\n  - [Januar, 1200]\nx: Monat\ny: Umsatz\ntooltip:\n  label: Betrag\n  format: EUR\n:::";
     let serverHtml = "";
     const app = await mount(async () => {
-      const { parseNotebookChartBlocks, renderNotebookChartFigure } = await import("../../../lib/chart-blocks");
-      const parsed = parseNotebookChartBlocks(markdown);
+      const { parseNotebookChartBlocks, renderNotebookChartFigure } = await import("@k2b/editor/markdown/lib/chart-blocks");
+      const parsed = parseNotebookChartBlocks(markdown, notebookChartOptions);
       expect(parsed.diagnostics).toEqual([]);
       serverHtml = renderNotebookChartFigure(parsed.blocks[0]!.input, "de")!;
       return { markdown, blocks: [{ line: 3, html: serverHtml }], diagnostics: [], headings: [] };
@@ -217,7 +218,9 @@ describe("query block previews", () => {
     }));
     try {
       const style = document.createElement("style");
-      style.textContent = readFileSync(new URL("../../../styles/app.css", import.meta.url), "utf8");
+      style.textContent =
+        readFileSync(new URL("../../../../../editor/src/styles.css", import.meta.url), "utf8") +
+        readFileSync(new URL("../../../styles/app.css", import.meta.url), "utf8");
       document.head.append(style);
       await Bun.sleep(30);
       const preview = app.dom.root.querySelector<HTMLElement>(".cm-query-block-preview")!;

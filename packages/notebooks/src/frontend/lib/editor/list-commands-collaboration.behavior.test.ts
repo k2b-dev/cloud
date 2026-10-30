@@ -2,12 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { forceParsing } from "@codemirror/language";
 import { EditorState, type Extension, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-
+import { isolateYjsHistory } from "@k2b/editor/collab";
 import { isServer } from "solid-js/web";
 import { YSyncConfig, yCollab, ySyncAnnotation } from "y-codemirror.next";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { isolateYjsHistory } from "../yjs/history";
 
 // Notebook block scanners load UI browser exports after DOM globals exist.
 const loading = createDomTestHarness();

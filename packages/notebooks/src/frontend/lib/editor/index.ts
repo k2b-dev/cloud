@@ -22,8 +22,8 @@ import {
   rawLightInit,
   searchTheme,
   subSupExtension,
+  tablesExtension,
 } from "@k2b/editor/markdown";
-import { tablesExtension } from "./tables";
 import { tagPillExtension } from "./tag-pill";
 
 export {

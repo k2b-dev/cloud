@@ -1124,14 +1124,14 @@ One third of the job limit stays in reserve because setup and GitHub's job
 finalization count against it. Finalization took up to about 5 minutes during
 a GitHub Actions incident.
 
-The `packed` job packs `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with
+The `packed` job packs `@k2b/cloud`, `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` with
 `npm pack`, using the same file list as `npm publish`. It installs them in a
 fresh project outside the workspace, typechecks the public source, builds a
 page with an island using the installed production build script, and starts
 the app against disposable services. Normal pull requests use the workspace
 tarballs. On a release pull request, whose diff changes
 `.release-please-manifest.json`, it runs with `--release`, also in the merge
-queue: each pinned `@k2b/ui` and `@k2b/ssr` version already on npm comes from
+queue: each pinned `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` version already on npm comes from
 npm; only a version this release publishes comes from its tarball. The check
 fails when npm cannot be reached. Run it locally with Docker and npm available:
 

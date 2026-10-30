@@ -1,14 +1,15 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { cloudAiChartTable } from "@k2b/cloud/ai/browser";
 import { markdown } from "@k2b/cloud/shared";
+import * as chartBlocks from "@k2b/editor/markdown/lib/chart-blocks";
+import { notebookChartTableHtml, parseNotebookChartBlocks, renderNotebookChartFigure } from "@k2b/editor/markdown/lib/chart-blocks";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
 import katex from "katex";
 import { DOCUMENTED_IMAGE_FORMS } from "../../../editor/src/markdown/lib/markdown-image.fixtures";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook, sanitizeNotebookBookHtml } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
-import * as chartBlocks from "./chart-blocks";
-import { notebookChartTableHtml, parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
+import { notebookChartOptions } from "./chart-options";
 
 const render = (markdown: string, locale = "en", queryResults?: ReadonlyMap<number, NoteQueryResult>) =>
   renderNotebookBook({ markdown, notebookId: "ABC123", locale, queryResults });
@@ -850,7 +851,7 @@ test("version source previews still draw charts from their own text", () => {
 });
 
 test("Book and editor preserve chart payloads; print keeps only the drawing and shared data table", () => {
-  const parsed = parseNotebookChartBlocks(chartMarkdown).blocks[0]!.input;
+  const parsed = parseNotebookChartBlocks(chartMarkdown, notebookChartOptions).blocks[0]!.input;
   const figure = renderNotebookChartFigure(parsed, "de")!;
   const book = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "de" });
   expect(book.html).toContain(figure);
@@ -892,7 +893,7 @@ describe("typed PDF omissions", () => {
   test("chart drawing failure reports one omission after a successful parse", () => {
     // Parsing already rejects known drawing failures. Exercise a later renderer failure separately.
     const markdown = ":::chart\ntype: bar\ntitle: Sales\ncolumns: [Month, Revenue]\nrows:\n  - [Jan, 12]\nx: Month\ny: Revenue\n:::";
-    expect(parseNotebookChartBlocks(markdown).blocks).toHaveLength(1);
+    expect(parseNotebookChartBlocks(markdown, notebookChartOptions).blocks).toHaveLength(1);
     const figure = spyOn(chartBlocks, "renderNotebookChartFigure").mockReturnValue(null);
     try {
       const document = render(markdown);

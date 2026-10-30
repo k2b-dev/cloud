@@ -383,6 +383,9 @@ Assistant tab holds one of the browser's six connections to the host; over
 HTTP/2 the streams share one connection. A proxy in front of Cloud must not
 buffer `text/event-stream` responses.
 
+The portable chart helpers come from `@k2b/editor/charts`. Their existing Cloud
+exports remain available; Cloud owns AI validation and size limits.
+
 An open SSE stream re-checks its credential and the conversation every 5
 seconds. A revoked session or API key, an expired account, or a conversation
 that is archived or no longer the caller's ends the stream. The next
