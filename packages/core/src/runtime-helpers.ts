@@ -150,7 +150,7 @@ export const startCoreServices = async (
   aiNotifications: ReturnType<typeof createAiNotificationService>,
 ): Promise<void> => {
   void getGeoIp().refresh();
-  outgoingMailAllowlist();
+  await outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();
     stopAppWorkloadBroker = await startAppWorkloadBroker();

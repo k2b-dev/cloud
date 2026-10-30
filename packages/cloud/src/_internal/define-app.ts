@@ -2,6 +2,7 @@ import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, valid
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
 import { createResourceAppAccessRoutes } from "../api/app-resource-access";
+import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/settings-ops";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
@@ -693,6 +694,10 @@ export const defineApp = <
   // ── 3. start() — builds and boots the Hono server ────────────────────
   const start = async (startOpts: StartOptions): Promise<StartResult> => {
     const port = startOpts.port ?? 3000;
+    if (env.GOTENBERG_URL)
+      console.warn("[deprecation] GOTENBERG_URL only bootstraps gotenberg.url; remove it after cld admin settings status --env succeeds.");
+    if (env.CLOUD_IDENTITY_JWKS_ORIGIN)
+      console.warn("[deprecation] CLOUD_IDENTITY_JWKS_ORIGIN is deprecated; use CLOUD_CORE_INTERNAL_ORIGIN instead.");
     const baseUrl = opts.baseUrl;
     const log = logger("app");
     const http = createHttpDrain();
@@ -913,6 +918,18 @@ export const defineApp = <
           if (!c.get("user")?.roles.includes("admin")) return c.json({ message: "Insufficient permissions" }, 403);
           return next();
         })
+        .use(
+          "/_internal/settings/*",
+          requireInvocation(
+            (c) => ({
+              targetAppId: meta.id,
+              operation: settingsInvocationOperation(c.req.method, new URL(c.req.url).pathname.slice("/_internal/settings/".length)),
+              schemaHash: null,
+            }),
+            invocationApp,
+          ),
+        )
+        .route("/_internal/settings", createSettingsOpsRoutes(Object.keys(opts.settings ?? {})))
         .route("/_internal/sync", createSyncOpsRoutes(getProcessSync));
 
       if (installable) server.route("/", createInstallableRoutes(meta.id, installable));

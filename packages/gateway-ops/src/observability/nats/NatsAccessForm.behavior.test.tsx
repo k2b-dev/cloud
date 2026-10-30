@@ -135,4 +135,66 @@ describe("NATS diagnostics access form", () => {
       dom.cleanup();
     }
   });
+  test("changing servers requires re-entry and saves the endpoint before replacement access", async () => {
+    const dom = createDomTestHarness();
+    const { default: NatsAccessForm } = await import("./NatsAccessForm.island");
+    const requests: { url: string; body: unknown }[] = [];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+          return Response.json({ success: true });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const dispose = render(() => createComponent(NatsAccessForm, props), dom.root);
+    try {
+      const servers = dom.root.querySelector<HTMLInputElement>('input:not([type="checkbox"])')!;
+      servers.value = "nats://replacement";
+      servers.dispatchEvent(new Event("input", { bubbles: true }));
+      servers.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(
+        Array.from(dom.root.querySelectorAll('span[aria-hidden="false"]')).some((node) =>
+          node.textContent?.includes("Enter system access for the current server list."),
+        ),
+      ).toBe(true);
+      settingsSaveControls()?.save();
+      await settled();
+      expect(requests).toHaveLength(0);
+      const access = dom.root.querySelectorAll("textarea")[0]!;
+      access.value = "replacement access";
+      access.dispatchEvent(new Event("input", { bubbles: true }));
+      settingsSaveControls()?.save();
+      await settled();
+      expect(requests.map((request) => request.url)).toEqual([
+        "/api/gateway/settings/gateway.nats_admin_servers",
+        "/api/gateway/settings/gateway.nats_admin_access",
+      ]);
+      expect(requests[0]?.body).toEqual({ value: ["nats://replacement"], replaceUnreadable: false });
+      expect(requests[1]?.body).toEqual({ value: "replacement access", replaceUnreadable: false });
+      expect(access.value).toBe("");
+    } finally {
+      dispose();
+      fetch.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("access re-entry remains visible after reloading a changed endpoint", async () => {
+    const dom = createDomTestHarness();
+    const { default: NatsAccessForm } = await import("./NatsAccessForm.island");
+    const dispose = render(() => createComponent(NatsAccessForm, { ...props, accessRequired: true }), dom.root);
+    try {
+      expect(
+        Array.from(dom.root.querySelectorAll('span[aria-hidden="false"]')).some((node) =>
+          node.textContent?.includes("Enter system access for the current server list."),
+        ),
+      ).toBe(true);
+      expect(dom.root.querySelectorAll("textarea")[0]!.value).toBe("");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
 });

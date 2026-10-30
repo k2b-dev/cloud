@@ -3,6 +3,61 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.54.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.53.0...cloud-v0.54.0) (2026-10-30)
+
+
+### Features
+
+* **chat:** Assistant and MCP take part in item discussions ([#2138](https://github.com/k2b-dev/cloud/issues/2138)) ([20d6804](https://github.com/k2b-dev/cloud/commit/20d6804bf3afab12ceb0599b09f22d8df8dd8601))
+* **chat:** discussions come from any app that offers them ([#2119](https://github.com/k2b-dev/cloud/issues/2119)) ([f499372](https://github.com/k2b-dev/cloud/commit/f49937218dfce6cfa4a5d2b9d279160bb9a383e6))
+* **chat:** discussions on items notify like other chats ([#2137](https://github.com/k2b-dev/cloud/issues/2137)) ([7dc3506](https://github.com/k2b-dev/cloud/commit/7dc35060f23ff276309b3a94af3fbdc497985b42))
+* **cloud:** initialize native clients before loading applications ([#2172](https://github.com/k2b-dev/cloud/issues/2172)) ([bf2041c](https://github.com/k2b-dev/cloud/commit/bf2041c0330bd320c8ea45c90edc65c83a0e89f9))
+* **cloud:** manage network lists and AI limits as admin settings ([#2174](https://github.com/k2b-dev/cloud/issues/2174)) ([70c27f5](https://github.com/k2b-dev/cloud/commit/70c27f50ab9d742269368c97125b47cd1f1d8be5))
+* **cloud:** read secret environment values from *_FILE files ([#2128](https://github.com/k2b-dev/cloud/issues/2128)) ([6df1a66](https://github.com/k2b-dev/cloud/commit/6df1a6662660125306c7777183391184bba4c03f))
+* **core:** register Ed25519 keys per app ([#2157](https://github.com/k2b-dev/cloud/issues/2157)) ([477ade7](https://github.com/k2b-dev/cloud/commit/477ade7132b1b70c3132935c301e6de605ffcb83))
+* **discussions:** Spaces and Notebooks offer their items for discussions ([#2113](https://github.com/k2b-dev/cloud/issues/2113)) ([c3f7dca](https://github.com/k2b-dev/cloud/commit/c3f7dca2b751ed311de4565479aa11b9d4396734))
+* **editor:** add @k2b/editor with editor, toolbar, bubble and slash menu on one shared state ([#2123](https://github.com/k2b-dev/cloud/issues/2123)) ([3a70b08](https://github.com/k2b-dev/cloud/commit/3a70b08a86b0e3225f262818c216f53a6c48b976))
+* **editor:** add the @k2b/editor/collab add-on and use it in Notebooks and Mail ([#2143](https://github.com/k2b-dev/cloud/issues/2143)) ([4421675](https://github.com/k2b-dev/cloud/commit/4421675758c698e76ce4448bfe730639f5eb5ce7))
+* **editor:** move formulas, charts and tables into @k2b/editor; @k2b/cloud keeps its exports ([#2146](https://github.com/k2b-dev/cloud/issues/2146)) ([85d5b6c](https://github.com/k2b-dev/cloud/commit/85d5b6cf35ef05a5bd36b2d0bb2310f659fcd058))
+* **editor:** move the Notebooks Markdown presentation into @k2b/editor/markdown ([#2142](https://github.com/k2b-dev/cloud/issues/2142)) ([24bf06c](https://github.com/k2b-dev/cloud/commit/24bf06c50b1425b641a5b0fd6aad64fc121a21cf))
+* **editor:** show images a host resolves to blob: URLs ([#2165](https://github.com/k2b-dev/cloud/issues/2165)) ([4787ef9](https://github.com/k2b-dev/cloud/commit/4787ef99e75fb11c1c2ea24c02695ceb434e060d))
+* **gateway-ops:** configure NATS diagnostics access in Administration ([#2161](https://github.com/k2b-dev/cloud/issues/2161)) ([ba718c2](https://github.com/k2b-dev/cloud/commit/ba718c29eb163b07158cba55d17b5f12a5dea68a))
+* **identity:** Core provides app workload credentials automatically ([#2112](https://github.com/k2b-dev/cloud/issues/2112)) ([d907f48](https://github.com/k2b-dev/cloud/commit/d907f48882427f004e7f124edf16ee2b29a32935))
+* **notebooks:** build the note toolbar and slash menu from @k2b/editor ([#2134](https://github.com/k2b-dev/cloud/issues/2134)) ([4b855eb](https://github.com/k2b-dev/cloud/commit/4b855ebbacb72351fcc07d555d8d1185c2ca75e7))
+* **notes-site:** add standalone Notes server and database readiness ([#2120](https://github.com/k2b-dev/cloud/issues/2120)) ([4728e0b](https://github.com/k2b-dev/cloud/commit/4728e0b556b84fafaa86cbae50a7670fc344fcf9))
+* **notes-site:** live cards ask about shared notes in batches of 200 ([#2148](https://github.com/k2b-dev/cloud/issues/2148)) ([631e799](https://github.com/k2b-dev/cloud/commit/631e799e9bc2acbaadcf52c31911affdb643ba84))
+* **notes-site:** local-first notes site with sharing and live editing ([#2125](https://github.com/k2b-dev/cloud/issues/2125)) ([3719045](https://github.com/k2b-dev/cloud/commit/37190458680ddf883225d3bfb12e35996a4350a5))
+* **notes-site:** notes render notices, lists, links, images and tags like Notebooks ([#2151](https://github.com/k2b-dev/cloud/issues/2151)) ([d5b097c](https://github.com/k2b-dev/cloud/commit/d5b097c570e6fe357fb505a92683a72209a4d3ef))
+* **notes-site:** the site build bundles every stylesheet into one ([#2160](https://github.com/k2b-dev/cloud/issues/2160)) ([e50a9e0](https://github.com/k2b-dev/cloud/commit/e50a9e0d3e98cd6a02fcbd6ede500f169835d72a))
+* **notes-site:** write with @k2b/editor, its bubble menu and the / menu ([#2145](https://github.com/k2b-dev/cloud/issues/2145)) ([c787563](https://github.com/k2b-dev/cloud/commit/c7875636d915dcffab97101bff6b133ff67d28f3))
+* **ui:** search prompt results take an optional id, so a newer answer keeps a pressed row ([#2179](https://github.com/k2b-dev/cloud/issues/2179)) ([7a9fab4](https://github.com/k2b-dev/cloud/commit/7a9fab49a9b7a15224c875d2279658aef759e73d))
+
+
+### Bug Fixes
+
+* **chat:** the info link does what was clicked, and an info toggle during a chat open runs once the open ends ([#2168](https://github.com/k2b-dev/cloud/issues/2168)) ([5280ec0](https://github.com/k2b-dev/cloud/commit/5280ec00d84cf6dce95b7f633f599abc41dd193e))
+* **chat:** the panel catalog test waits for the first read only once the panel is ready, and reports where a dialog is ([#2144](https://github.com/k2b-dev/cloud/issues/2144)) ([775e02a](https://github.com/k2b-dev/cloud/commit/775e02a4ff6325cecd70edcc7f8b0a900c6b1586))
+* **editor:** reconfigure reactive extensions after the editor update, never during it ([#2182](https://github.com/k2b-dev/cloud/issues/2182)) ([884964f](https://github.com/k2b-dev/cloud/commit/884964f34776a49bad2e71901a5d8db42d7fb9bf))
+* **files:** the batch plan test sets its own data and statistics and checks that only the batch is read ([#2181](https://github.com/k2b-dev/cloud/issues/2181)) ([1cbc3f3](https://github.com/k2b-dev/cloud/commit/1cbc3f30fac58c976987633ffb838686069fc14b))
+* **files:** the retention test checks its batch bound with 105 rows, and the test watchdog names what ended work waited on ([#2156](https://github.com/k2b-dev/cloud/issues/2156)) ([adc9b36](https://github.com/k2b-dev/cloud/commit/adc9b36dae19cf4b12b494ee1d56deb4c0926f10))
+* **gateway-ops:** ask for NATS diagnostics access again after the servers change ([#2177](https://github.com/k2b-dev/cloud/issues/2177)) ([ed2b731](https://github.com/k2b-dev/cloud/commit/ed2b731038c0cd8255d9aba7a8dcf6d324df2104))
+* **mail:** assert lease fairness without runner timing ([#2141](https://github.com/k2b-dev/cloud/issues/2141)) ([d848d66](https://github.com/k2b-dev/cloud/commit/d848d669403a7df2a5eb263c891729059e45dfea))
+* **notes-site:** plain-text titles and previews keep no tag ([#2150](https://github.com/k2b-dev/cloud/issues/2150)) ([6e39ea0](https://github.com/k2b-dev/cloud/commit/6e39ea0af7724a38725ee1649b047f507e0e68e6))
+* **ssr:** a view transition that has not reached its update within 200 ms is skipped ([#2126](https://github.com/k2b-dev/cloud/issues/2126)) ([4f3d7c2](https://github.com/k2b-dev/cloud/commit/4f3d7c2cdc6d2e46732b95b39e2cf1afaf64b11d))
+* **test:** end work a timed-out integration test leaves in its private database, so later hooks do not wait on it ([#2130](https://github.com/k2b-dev/cloud/issues/2130)) ([083296a](https://github.com/k2b-dev/cloud/commit/083296a4546076674b26ffe572cf197ed66d75ed))
+* **test:** handle database cancellation after callback timeouts ([#2169](https://github.com/k2b-dev/cloud/issues/2169)) ([1a75e65](https://github.com/k2b-dev/cloud/commit/1a75e65ca23e377b27da613da1bc717690f3aa62))
+* **ui:** a click on a chat command runs it even when the host rebuilds its commands during the press ([#2154](https://github.com/k2b-dev/cloud/issues/2154)) ([26ed213](https://github.com/k2b-dev/cloud/commit/26ed213fab3e52488fa8bc9814db4acfdb3bebae))
+* **ui:** a click on an option in RichSelect, Combobox or Cloud search lands even when the data is rebuilt during the press ([#2164](https://github.com/k2b-dev/cloud/issues/2164)) ([6f9fdc9](https://github.com/k2b-dev/cloud/commit/6f9fdc9d517334828ecde02499846ae45b5d33da))
+* **ui:** a pressed chat command runs on release even when the whole command menu was rebuilt in between ([#2176](https://github.com/k2b-dev/cloud/issues/2176)) ([c1e9f9a](https://github.com/k2b-dev/cloud/commit/c1e9f9a3e6bf0981f32650e41dab712230fef39f))
+* **ui:** menus and tabs keep their rows when the host rebuilds equal items, so a click in progress lands ([#2170](https://github.com/k2b-dev/cloud/issues/2170)) ([1d21662](https://github.com/k2b-dev/cloud/commit/1d21662d573f0f3527f887866f2dcc87097b8b3e))
+* **ui:** rename the text editor without dispatching, also during a view update ([#2159](https://github.com/k2b-dev/cloud/issues/2159)) ([e1a3fea](https://github.com/k2b-dev/cloud/commit/e1a3fead3626c1bf70ae62eee7308fa0b53934fd))
+* **ui:** text editor headings are no longer underlined ([#2147](https://github.com/k2b-dev/cloud/issues/2147)) ([34a06d5](https://github.com/k2b-dev/cloud/commit/34a06d51179280bcf57163c5053403565dd9b3e4))
+
+
+### Performance Improvements
+
+* **editor:** load Mermaid, KaTeX and code languages only when a host uses them ([#2166](https://github.com/k2b-dev/cloud/issues/2166)) ([d50a731](https://github.com/k2b-dev/cloud/commit/d50a731deb9b906e2b2ed012505f50a562827402))
+
 ## [0.53.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.52.0...cloud-v0.53.0) (2026-10-30)
 
 

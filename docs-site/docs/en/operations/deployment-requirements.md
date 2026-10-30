@@ -269,6 +269,27 @@ adds the bootstrap protocol, not the operator migration. See
 [Runtime configuration](/en/docs/operations/runtime-configuration#bootstrap-application-connections-from-core)
 and [App keys](/en/docs/operations/app-keys#use-the-key-at-start).
 
+## Treat the gateway as a trusted platform service
+
+Like application services, Core and the gateway hold the installation's
+infrastructure credentials in their environment. The gateway needs `DATABASE_URL` and `APP_SECRET` to read
+and decrypt the storage settings for `/public/storage`, `REDIS_URL` to enforce
+its request budgets, and NATS access for discovery and telemetry. It reads
+only the storage configuration and the public-storage rate-limit setting for
+that delivery path. These narrow reads do not restrict what its credentials
+can access.
+
+The gateway shares the installation database role and encryption secret.
+A gateway compromise is an installation compromise, as with Core: an attacker
+can access the shared database and decrypt settings and credentials. Cloud
+does not isolate applications with separate database roles or infrastructure
+credentials. Install only trusted applications and protect the gateway host,
+container environment and private service network accordingly.
+
+Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
+of the gateway. Their absence does not make it a separate trust boundary.
+See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |
@@ -432,7 +453,7 @@ sign-in and device pairing. Behind a reverse proxy such as Traefik, the gateway
 only sees the proxy's address, so the proxy must name the client in
 `X-Forwarded-For`, and the gateway must trust the proxy to do so.
 
-`GATEWAY_TRUSTED_PROXIES` lists the IP addresses or CIDR ranges of trusted
+The `gateway.trusted_proxies` admin setting lists the IP addresses or CIDR ranges of trusted
 proxies. The gateway reads `X-Forwarded-For` from right to left, skips every
 trusted proxy, and takes the first other address as the client. It forwards
 that address as `X-Real-IP` and as the first entry of `X-Forwarded-For`,
@@ -454,7 +475,7 @@ name any address and escape per-client limits whenever its own
 directly, or when the proxy appends to the client's header instead of
 replacing it, as nginx does with `$proxy_add_x_forwarded_for`. If clients can
 connect from private or IPv6 unique local addresses in such a setup, set
-`GATEWAY_TRUSTED_PROXIES` to the proxy's exact address or subnet.
+`gateway.trusted_proxies` to the proxy's exact address or subnet.
 
 | Setup | Value |
 | --- | --- |
@@ -470,12 +491,14 @@ header through unchanged. Traefik replaces it by default; do not enable
 limits and audit entries must show different addresses, not the proxy's.
 
 A public proxy or CDN in front of the gateway that is absent from
-`GATEWAY_TRUSTED_PROXIES`, such as Cloudflare, makes Core see the proxy's
+`gateway.trusted_proxies`, such as Cloudflare, makes Core see the proxy's
 address. Sign-in places and network names will then describe the proxy instead
 of the person when those details are used; see
 [Sign-in locations](/en/docs/operations/sign-in-locations). Private-network
 proxy addresses are ignored by the place lookup, but those proxies still need
 to be trusted for rate limits.
+
+Changes to `gateway.trusted_proxies` take effect after restarting each gateway. Invalid stored lists stop gateway startup with a CLI repair hint. The deprecated `GATEWAY_TRUSTED_PROXIES` variable only bootstraps an absent setting.
 
 ## Assign configuration to the correct service
 
@@ -486,12 +509,12 @@ environment fallback.
 
 | Configuration | Recipient | When required |
 | --- | --- | --- |
-| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway receives Postgres for logging and NATS for discovery; it does not receive Valkey, `APP_SECRET`, or identity credentials. |
+| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | **Core only** | Core identity issuance; generate an independent 32-byte key as 64 hex characters. `CLOUD_IDENTITY_NEXT_KEY` / `CLOUD_IDENTITY_PREVIOUS_KEY` are temporary rotation inputs, also Core-only. |
 | `CLOUD_OAUTH_BROKER_SECRET` | **Core and OAuth only** | Running OAuth. Generate an independent 32-byte secret as 64 hex characters. No admin credential provisioning is needed. Dev Compose provides a development-only default; production requires an explicit value. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | OAuth, background broker callers, resource-derived app discovery, and managed Assistant code hosts | Direct private Core origin, not the gateway. Compose supplies it. Code hosts use it for turn-bound capability callbacks and binary streams. |
 | `CLOUD_APP_CREDENTIAL` | Optional host-run app override | Core automatically issues and rotates app-bound `identity:invoke` credentials over NATS. No per-app Compose secret is needed. An explicit override wins; OAuth does not use it. See [runtime configuration](/en/docs/operations/runtime-configuration#shared-infrastructure-trust-limit) for the shared-infrastructure trust limit. |
-| `CLOUD_IDENTITY_JWKS_ORIGIN`, `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Optional private transport origins for Core and OAuth public keys. If omitted, verification retrieves keys through the public issuer origin. Neither value grants signing authority. |
+| `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Optional private transport origin for OAuth public keys. Core identity keys use `CLOUD_CORE_INTERNAL_ORIGIN`; the deprecated `CLOUD_IDENTITY_JWKS_ORIGIN` override is still honored this release. Neither value grants signing authority. |
 | `APP_URL` | Application services | Initial public URL; saved `app.url` takes precedence. Built-in images run in production mode on port 3000. |
 | `GOTENBERG_URL` | Application services | Optional initial Gotenberg URL for PDF rendering; saved `gotenberg.url` takes precedence. Dev Compose sets `http://gotenberg:3000`. |
 | `ADMIN_LOGIN_TOKEN` | **Core only** | Temporary first administrator access on a fresh installation; no production default. Remove after configuring and verifying normal administrator sign-in. |
@@ -571,7 +594,7 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes. The gateway compresses HTML and JSON itself with Brotli or gzip according to `Accept-Encoding`, while preserving streaming. Ingress compression of these responses is not needed. Proxies and ingress must pass `Cache-Control: no-transform` responses through without compression or any other transformation. Ingress must pass `Content-Encoding` through, preserve WebSockets, and must not buffer or compress SSE or NDJSON streams, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| Gateway (`gateway`) | Postgres, Valkey, NATS JetStream, `APP_SECRET` and private reachability to advertised app addresses | Upstream apps provide the routes. The gateway compresses HTML and JSON itself with Brotli or gzip according to `Accept-Encoding`, while preserving streaming. Ingress compression of these responses is not needed. Proxies and ingress must pass `Cache-Control: no-transform` responses through without compression or any other transformation. Ingress must pass `Content-Encoding` through, preserve WebSockets, and must not buffer or compress SSE or NDJSON streams, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Each process gets a random replica ID; the deprecated `GATEWAY_INSTANCE_ID` override is still honored this release. `gateway.trusted_proxies` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/observability/gateway` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
@@ -637,16 +660,17 @@ address it embeds, so IPv6-only servers with DNS64 still reach public IPv4
 hosts. To test an internal service, use an address that is public from the
 server.
 
-Operators can allow internal administrator-configured endpoints with
-`GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` in `app-gateway-ops` (default empty,
+Administrators can allow internal administrator-configured endpoints with the settings
+`gateway.webhook_allowed_targets` owned by Gateway operations (default empty,
 public targets only),
-`ASSISTANT_RSQL_ALLOWED_TARGETS` in `app-assistant` (default `rsql`), and
-`OUTGOING_MAIL_ALLOWED_TARGETS` in `app-core` (default empty, covering both SMTP
-and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs.
+`assistant.rsql_allowed_targets` owned by Assistant (default `rsql`), and
+`outgoing_mail.allowed_targets` owned by the platform (default empty, covering both SMTP
+and bounce IMAP). Administrators edit them under **Observability → Health
+check**, in **Database settings** on the Studio administration page, and under
+**Base settings**. Each accepts exact host names, IP addresses and CIDRs.
 `host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
 leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
-include a port. An explicit value replaces the default. Empty Compose passthrough values use the
-default. Invalid entries, including `/0`, stop the owning process at startup.
+include a port. A saved list replaces the default and applies to new requests or connections. Invalid entries, including `/0`, are rejected on write. The deprecated environment variables bootstrap absent settings once; invalid bootstrap input is ignored with a warning.
 The HTTP transports for these endpoints never follow redirects; health
 webhooks previously followed them. They request identity encoding and reject
 compressed responses. IMAP tries every validated address. SMTP connects to one
@@ -659,7 +683,7 @@ certificate verification.
 **After this update:** Existing installations whose health webhooks, outgoing
 mail SMTP/IMAP profiles or rsql URL point at internal hosts other than
 the defaults fail with a clear reason until the operator sets the corresponding
-variable. Stored configuration stays. Mail delivery policy refusals remain retryable
+setting. Stored configuration stays. Mail delivery policy refusals remain retryable
 until the message deadline. Use narrow entries and retain `rsql` in an
 explicit list if the shipped containers must stay reachable.
 
@@ -673,10 +697,11 @@ scrape and every redirect (at most three) and pins each connection. Revocation
 takes effect on the next scrape. Responses must be uncompressed.
 
 Notebooks operators can allow internal S3-compatible storage with
-`NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` in the Notebooks container environment.
+the `notebooks.snapshot_allowed_targets` admin setting, under **Settings** on
+`/admin/notebooks`.
 Use the narrowest entry: an exact host name, one IP address, or the smallest
 required CIDR range. Host entries trust all validated addresses for that exact
-name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries stop Notebooks at startup.
+name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries are rejected on write. Changes apply to new snapshot requests.
 Failed and empty lookups still refuse an upload, even for listed names.
 
 After this update, existing snapshot configurations that point at internal

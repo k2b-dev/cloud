@@ -1,4 +1,5 @@
 import { buildRuntimeFromRegistry, type ProcessSync, readAppRegistrySnapshot, startProcessSync, watchAppRegistry } from "@k2b/cloud";
+import type { EnvSettingStatus } from "@k2b/cloud/contracts/settings-env";
 import {
   buildGatewayRouteSnapshot,
   logger,
@@ -6,6 +7,7 @@ import {
   removeGatewayRouteSnapshot,
   superviseRuntimeTask,
 } from "@k2b/cloud/services";
+import { readEnvSettingsStatus } from "@k2b/cloud/services/settings/env-status";
 import { gatewayRouter } from "./config";
 import { type AppRouteWarning, buildAppRoutesDetailed } from "./routes";
 import { getRouteTable, setRouteTable, stats } from "./stats";
@@ -31,10 +33,31 @@ const startedAt = Date.now();
 
 export const getCurrentRuntime = () => currentRuntime;
 
+let envDiagnostics: EnvSettingStatus[] | undefined;
+let envDiagnosticsTask: Promise<void> | null = null;
+const refreshEnvDiagnostics = (): void => {
+  if (envDiagnosticsTask) return;
+  envDiagnostics = undefined;
+  envDiagnosticsTask = readEnvSettingsStatus()
+    .then(
+      (status) => {
+        envDiagnostics = status;
+      },
+      () => {
+        envDiagnostics = undefined;
+      },
+    )
+    .finally(() => {
+      envDiagnosticsTask = null;
+    });
+};
 const publishSnapshot = async (routeHash: string, routeWarnings: AppRouteWarning[]): Promise<void> => {
+  const currentDiagnostics = envDiagnostics;
+  refreshEnvDiagnostics();
   await publishGatewayRouteSnapshot(
     buildGatewayRouteSnapshot({
       instanceId: gatewayRouter.id,
+      envSettings: currentDiagnostics,
       baseUrl: gatewayRouter.baseUrl,
       startedAt,
       routeHash,

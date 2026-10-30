@@ -219,6 +219,7 @@ export function machineIntegrationCases(owner: ArtifactIdentity) {
               "assistant.storage_file_mib": 50,
               "assistant.rsql_url": testInfra.rsql!,
               "assistant.rsql_api_token": "artifact-test-only",
+              "assistant.rsql_allowed_targets": testInfra.rsql ? [new URL(testInfra.rsql).hostname] : ["rsql"],
             })[key],
         );
         try {
@@ -343,6 +344,7 @@ export function machineIntegrationCases(owner: ArtifactIdentity) {
               "assistant.storage_file_mib": 50,
               "assistant.rsql_url": testInfra.rsql!,
               "assistant.rsql_api_token": "artifact-test-only",
+              "assistant.rsql_allowed_targets": testInfra.rsql ? [new URL(testInfra.rsql).hostname] : ["rsql"],
             })[key],
         );
         const app = await artifacts.create({ title: "Request cancellation", source }, owner);

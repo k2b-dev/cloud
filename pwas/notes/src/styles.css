@@ -1,4 +1,9 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
 @import "@k2b/ui/styles.css";
+@import "@k2b/editor/styles.css";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
 
 /* Site ink: the colour of selection and of this site, like an app colour in Cloud. Tag colours come from the tag. */
 :root,
@@ -1607,4 +1612,24 @@ body.k2b-ui {
   .n-sheet .n-linkbox .n-host {
     display: none;
   }
+}
+
+/* `#tag` in a note: the pill of mockup v4, sized to the text line so a caret entering it does not move lines. */
+.n-editor .n-tagpill {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) var(--tile), transparent);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Checklist boxes take the site ink, as in mockup v4. */
+.n-editor .custom-list-task-marker {
+  accent-color: var(--ink);
 }

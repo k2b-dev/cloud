@@ -58,6 +58,7 @@ export const notebooksAdminMessages = i18n.define({
       savedCount: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: `${count} setting was saved.`, other: `${count} settings were saved.` }),
       reindexJob: "Reindex job",
+      checkMarkedField: "Check the marked field.",
       cancel: "Cancel",
       saving: "Saving",
       save: "Save",
@@ -120,6 +121,7 @@ export const notebooksAdminMessages = i18n.define({
       savedCount: ({ count }) =>
         i18n.plural(count, "de", { one: `${count} Einstellung wurde gespeichert.`, other: `${count} Einstellungen wurden gespeichert.` }),
       reindexJob: "Index neu aufbauen",
+      checkMarkedField: "Prüfe das markierte Feld.",
       cancel: "Abbrechen",
       saving: "Wird gespeichert",
       save: "Speichern",

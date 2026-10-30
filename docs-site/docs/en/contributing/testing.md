@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-29
+updated: 2026-10-30
 ---
 
 # Testing
@@ -730,6 +730,17 @@ The `module-mocks` check also rejects these import-time spies in shared suites.
 
 ## Run integration tests
 
+Disposable PostgreSQL containers in CI, nightly, release smoke checks, and the local
+`compose.sync-test.yml` and `compose.scale-test.yml` fixtures keep their data on
+a tmpfs capped at 4 GiB, with `fsync`, `synchronous_commit`, and
+`full_page_writes` disabled. Their data is lost when the container stops; they
+do not exercise crash durability. These settings reduce storage work during
+tests but do not establish the cause of sporadic slow statements. CI
+samples the whole cluster's tmpfs usage every 30 seconds during integration tests,
+including WAL, to check capacity. Keep these settings confined to disposable
+containers: a test database name does not make a shared development server
+safe to reconfigure.
+
 Integration tests gate themselves on `CLOUD_TEST_*` variables through
 `scripts/fixtures/test-infra.ts`, which is loaded as a `bun test` preload:
 
@@ -873,6 +884,16 @@ also names what held the timed-out test. `useFreshDatabase()` and
 its own private database calls `ownTestDatabase(name)`, as Filesv2's does.
 The shared test database is never touched this way, because other processes
 may use it at the same time.
+
+With a database target configured, the preload observes test and per-test hook
+callbacks before they are registered, including parameterized tests. If the
+guard cancels or terminates work after a callback timed out, its late database
+rejection is reported as a guard warning instead of an unhandled error between
+tests. The original timeout still fails. SQL errors and cancellation during a
+running callback still fail normally. Private-database suites run serially;
+concurrent tests must not share a database that the guard owns.
+`tests/integration/test-infra-cancellation.integration.test.ts` checks active
+statements, timed-out hooks, idle transactions, and recovery of the next test.
 
 Templates are keyed by a content hash of workspace runtime sources and assets,
 the lockfile, workspace definition, and migration fixture code. Runtime inputs

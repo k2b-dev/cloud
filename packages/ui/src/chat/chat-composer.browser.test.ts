@@ -58,8 +58,18 @@ if (options.tabBar) {
 let resolveSearch;
 let searches = 0;
 const [commandGeneration, setCommandGeneration] = createSignal(0);
+// While hidden, the host offers nothing, so the composer removes its whole menu; it then rebuilds it with new objects.
+const [menuHidden, setMenuHidden] = createSignal(false);
+const searchSlash = () => new Promise((resolve) => { searches++; resolveSearch = resolve; });
 window.fixture = { setHint, setDictation, setDraft,
   rebuildCommands: () => setCommandGeneration((generation) => generation + 1),
+  rebuildMenu: () => {
+    setMenuHidden(true);
+    setTimeout(() => {
+      setMenuHidden(false);
+      setCommandGeneration((generation) => generation + 1);
+    });
+  },
   resolveSearch: (rows) => resolveSearch?.(rows),
   searchCount: () => searches,
 };
@@ -89,7 +99,7 @@ render(
             variant: options.mode === "slash" ? "default" : "conversation",
             commandSections: options.sections ? [{ id: "local", label: "Local commands" }, { id: "remote", label: "Results", searched: true }] : undefined,
             // A host rebuilds its command objects whenever its inputs change; fixture.rebuildCommands does that on demand.
-            get commands() { commandGeneration(); return options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
+            get commands() { commandGeneration(); if (menuHidden()) return []; return options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
               { id: "alpha", name: "alpha", label: "Alpha", description: "First local command", keywords: ["q", "qu"] },
               { id: "blocked", name: "blocked", label: "Blocked", description: "Unused", keywords: ["q", "qu"], reason: "Available after the first response" },
               { name: "fail", description: "Reject this action", action: async () => { throw new Error("Please try again"); } },
@@ -97,7 +107,7 @@ render(
               // An action that navigates within the page at once, as an application's router does.
               ...(options.navigate ? [{ name: "go", label: "Go", description: "Open the next page", action: () => { history.pushState({ page: 2 }, "", "#next"); } }] : []),
             ] : undefined; },
-            searchCommands: options.mode === "slash" ? () => new Promise((resolve) => { searches++; resolveSearch = resolve; }) : undefined,
+            get searchCommands() { return options.mode === "slash" && !menuHidden() ? searchSlash : undefined; },
             get value() {
               return draft();
             },
@@ -164,6 +174,7 @@ const script = await build.outputs[0]!.text();
 
 type Fixture = {
   rebuildCommands: () => void;
+  rebuildMenu: () => void;
   resolveSearch: (rows: { id?: string; name: string; description: string; section?: string; keywords?: string[] }[]) => void;
   searchCount: () => number;
   setHint: (hint: string | undefined) => void;
@@ -650,6 +661,28 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
         await page.evaluate(() => fixture.resolveSearch([{ id: "replacement", name: "Replacement", description: "New result" }]));
         await page.locator('[role="option"]').filter({ hasText: "New result" }).waitFor();
         expect(await page.locator('[role="option"]').filter({ hasText: "Previous result" }).count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`a press on a command runs it when the host rebuilds the whole menu before the release at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/done");
+        const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+        await option.waitFor();
+        const listbox = await page.locator('[role="listbox"]').elementHandle();
+        const box = (await option.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        // As in the Assistant's empty page in CI: the menu goes and comes back, rebuilt, while the button is down (#2140).
+        await page.evaluate(() => fixture.rebuildMenu());
+        await page.waitForFunction((old) => !old?.isConnected && document.querySelector('[role="listbox"]') !== null, listbox);
+        await option.waitFor();
+        await page.mouse.up();
+        await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').waitFor();
       } finally {
         await page.close();
       }

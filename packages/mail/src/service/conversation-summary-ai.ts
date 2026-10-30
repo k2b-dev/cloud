@@ -1,10 +1,10 @@
 import { getAiChatQuotas, personalAiModelPolicy, resolveAiModel, runApplicationAiTask, selectAssistantAiModel } from "@k2b/cloud/ai";
-import { env } from "@k2b/cloud/config";
 import type { AccessSubject } from "@k2b/cloud/server";
+import { getWorkflowAiBudget } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
 import { convert } from "html-to-text";
 import { z } from "zod";
-import { appEnv } from "../env";
+import { app } from "../config";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 
 export type GenerateConversationSummaryAiInput = {
@@ -33,7 +33,7 @@ export type ConversationSummaryAiAllowance = { unlimited: boolean; usedPercent: 
 
 const OUTPUT_CHARS = { short: 1_000, bullets: 3_000, detailed: 6_000 } as const;
 // Message source shares #1950's operator ceiling, with the summary contract's 20k maximum.
-const sourceBudget = () => Math.min(20_000, appEnv.MAIL_WORKFLOW_AI_BODY_MAX_CHARS);
+const sourceBudget = async () => Math.min(20_000, await app.settings.get("mail.workflow_ai_body_max_chars"));
 
 /** Mail bodies and earlier summaries are untrusted data, including apparent instructions. */
 const summaryPrompt = (input: Pick<GenerateConversationSummaryAiInput, "style" | "mode">) =>
@@ -117,7 +117,7 @@ export const prepareConversationSummarySource = (input: {
   mode: "rolling" | "replace";
   budget?: number;
 }) => {
-  const budget = input.budget ?? sourceBudget();
+  const budget = input.budget ?? 20_000;
   const previousSummary = input.mode === "rolling" ? input.previousSummary : null;
   const messages: Array<{ date: string; subject: string; text: string }> = [];
   // Keep a bounded prior summary while leaving at least half the budget for newest evidence.
@@ -172,7 +172,7 @@ const summaryOutput = (style: GenerateConversationSummaryAiInput["style"]) =>
     .strict();
 
 const loadConversationSummaryAiSource = async (input: GenerateConversationSummaryAiInput) => {
-  const budget = sourceBudget();
+  const budget = await sourceBudget();
   // Window the IDs before fetching bodies. The running raw-text budget bounds decompression and rows;
   // one additional boundary message supports a clipped newest message and visible truncation.
   return sql<(SourceMessage & { total: number })[]>`
@@ -214,6 +214,7 @@ export const generateConversationSummaryAi = async (
   const rows = await (dependencies.loadSource ?? loadConversationSummaryAiSource)(input);
   if (!rows.length) throw Object.assign(new Error("No conversation source is available."), { code: "WORKFLOW_AI_SOURCE_UNAVAILABLE" });
   const source = prepareConversationSummarySource({
+    budget: await sourceBudget(),
     messages: rows,
     totalMessageCount: rows[0]!.total,
     previousSummary: input.previousSummary,
@@ -230,7 +231,7 @@ export const generateConversationSummaryAi = async (
       // Each explicit personal request is a source; automatic work shares the message snapshot cap.
       sourceId: conversationSummaryAiSourceId(input),
       sourceRevision: input.sourceRevision,
-      budget: env.WORKFLOW_AI_BUDGET,
+      budget: await getWorkflowAiBudget(),
     },
     request: {
       kind: "extract_data",
