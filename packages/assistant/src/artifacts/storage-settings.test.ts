@@ -36,6 +36,7 @@ test("only instance administrators configure validated storage settings", async 
       "assistant.storage_total_mib": 250,
       "assistant.rsql_url": "",
       "assistant.rsql_api_token": "",
+      "assistant.rsql_allowed_targets": ["rsql"],
     }[key],
   }));
   const write = spyOn(settings, "set").mockResolvedValue();
@@ -75,6 +76,7 @@ test("storage shows unreadable per key and preflights a full save before writing
       "assistant.storage_total_mib": 250,
       "assistant.rsql_url": "",
       "assistant.rsql_api_token": "",
+      "assistant.rsql_allowed_targets": ["rsql"],
     }[key],
     stored: key === "assistant.storage_total_mib" ? "unreadable" : "readable",
   }));

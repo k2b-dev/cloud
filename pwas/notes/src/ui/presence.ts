@@ -1,4 +1,5 @@
 import { createRoot, createSignal, onCleanup } from "solid-js";
+import { presenceBatches } from "../lib/presence";
 import { app } from "../state";
 
 export type Person = { name: string; color: string };
@@ -20,25 +21,29 @@ export const presence = createRoot(() => {
     timer = undefined;
     if (polling) return;
     polling = true;
-    const shared = app.records().flatMap((record) => (record.share ? [{ id: record.id, readId: record.share.readId }] : []));
-    if (shared.length > 0 && app.online() && document.visibilityState === "visible") {
-      try {
-        const response = await fetch("/api/presence", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ readIds: shared.map((entry) => entry.readId) }),
-          credentials: "omit",
-        });
-        if (response.ok) {
+    const batches = presenceBatches(app.records());
+    if (batches.length > 0 && app.online() && document.visibilityState === "visible") {
+      const previous = people();
+      const next: Record<string, Person[]> = {};
+      for (const batch of batches) {
+        // A batch that gets no answer keeps its last marks instead of flickering off.
+        for (const entry of batch) next[entry.id] = previous[entry.id] ?? [];
+        try {
+          const response = await fetch("/api/presence", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ readIds: batch.map((entry) => entry.readId) }),
+            credentials: "omit",
+          });
+          if (!response.ok) continue;
           const body: unknown = await response.json();
-          const next: Record<string, Person[]> = {};
-          for (const entry of shared)
+          for (const entry of batch)
             next[entry.id] = parsePeople(body && typeof body === "object" ? Reflect.get(body, entry.readId) : undefined);
-          setPeople(next);
+        } catch {
+          // Live marks are a hint; without them the cards show their date as usual.
         }
-      } catch {
-        // Live marks are a hint; without them the cards show their date as usual.
       }
+      setPeople(next);
     }
     polling = false;
     if (watchers > 0 && !timer) timer = setTimeout(() => void poll(), POLL_MS);

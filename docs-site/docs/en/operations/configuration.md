@@ -34,21 +34,22 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `NATS_CREDS_FILE` | string | runtime | unset | no | Path to a mounted NATS `.creds` file (JWT and NKey); unset means server-side no-auth. |
 | `NATS_TLS_CA_FILE` | string | runtime | unset | no | Path to a mounted CA certificate that enables TLS to NATS; unset means plain TCP. |
 | `NATS_IGNORE_CLUSTER_UPDATES` | boolean | runtime | `true` | no | Only dial the listed servers and ignore cluster-advertised peer addresses; set to `false` when every advertised address is reachable. |
-| `WORKFLOW_AI_BUDGET` | JSON | runtime | `{"maxStepsPerSource":2,"tasksPerMinute":10,"burst":20,"sourcesPer24Hours":2000,"scopeConcurrent":1,"globalConcurrent":4}` | no | JSON scoped workflow inference budget: active or successful logical requests per source/24h, token-bucket admission per minute and burst, distinct sources per rolling 24h, outstanding tasks per scope and globally; capacity/rate overload uses bounded workflow retries, daily/source limits fail visibly, and cache hits consume no reservation. |
-| `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` | number | runtime | `60000` | no | Absolute workflow AI attempt budget in milliseconds, including admission and repair; expiry aborts the provider and follows the bounded retry policy. |
-| `WORKFLOW_AI_QUEUE_TIMEOUT_MS` | number | runtime | `60000` | no | Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow. |
+| `WORKFLOW_AI_BUDGET` | JSON | runtime | `{"maxStepsPerSource":2,"tasksPerMinute":10,"burst":20,"sourcesPer24Hours":2000,"scopeConcurrent":1,"globalConcurrent":4}` | no | Deprecated: bootstraps `ai.workflow_budget` once when no stored value exists; remove after `cld admin settings status --env` succeeds. JSON scoped workflow inference budget: active or successful logical requests per source/24h, token-bucket admission per minute and burst, distinct sources per rolling 24h, outstanding tasks per scope and globally; capacity/rate overload uses bounded workflow retries, daily/source limits fail visibly, and cache hits consume no reservation. |
+| `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` | number | runtime | `60000` | no | Deprecated: bootstraps `ai.workflow_attempt_timeout_ms` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Absolute workflow AI attempt budget in milliseconds, including admission and repair; expiry aborts the provider and follows the bounded retry policy. |
+| `WORKFLOW_AI_QUEUE_TIMEOUT_MS` | number | runtime | `60000` | no | Deprecated: bootstraps `ai.workflow_queue_timeout_ms` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow. |
 | `APP_URL` | string | runtime | unset | no | Public Cloud URL used to bootstrap the `app.url` setting; the stored setting wins once written. |
-| `GOTENBERG_URL` | string | runtime | unset | no | Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written. |
+| `GOTENBERG_URL` | string | runtime | unset | no | Deprecated: env only bootstraps `gotenberg.url`; remove after `cld admin settings status --env` succeeds. Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written. |
 | `APP_SECRET` | string | secret | empty | no | Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written. File alternative: `APP_SECRET_FILE`. |
 | `ADMIN_LOGIN_TOKEN` | string | secret | empty | no | Core only: temporary first-administrator or recovery login token; remove it after normal administrator sign-in works. File alternative: `ADMIN_LOGIN_TOKEN_FILE`. |
-| `OUTGOING_MAIL_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for outgoing mail SMTP and bounce IMAP connections; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
+| `GATEWAY_TRUSTED_PROXIES` | list | runtime | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` | no | Deprecated: bootstraps `gateway.trusted_proxies` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated IP addresses or CIDR ranges of the reverse proxies allowed to name the client in `X-Forwarded-For`; the default trusts loopback and private networks, which covers Traefik on a Docker network. Set the proxy's exact address or subnet when clients on private networks reach the gateway directly or through a proxy that appends to their `X-Forwarded-For`. Invalid bootstrap input with no stored row and invalid stored proxy lists stop gateway startup. |
+| `OUTGOING_MAIL_ALLOWED_TARGETS` | list | runtime | empty list | no | Deprecated: bootstraps `outgoing_mail.allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for outgoing mail SMTP and bounce IMAP connections; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | string | secret | unset | no | Core only: 64-hex KEK for platform identity signing keys stored in Postgres; generate once with `openssl rand -hex 32` and never distribute it to other apps. File alternative: `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY_FILE`. |
 | `CLOUD_IDENTITY_NEXT_KEY` | string | secret | unset | no | Core only: pre-distributed next KEK before promoting it to current; cannot be combined with `CLOUD_IDENTITY_PREVIOUS_KEY`. File alternative: `CLOUD_IDENTITY_NEXT_KEY_FILE`. |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | string | secret | unset | no | Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed. File alternative: `CLOUD_IDENTITY_PREVIOUS_KEY_FILE`. |
 | `CLOUD_OAUTH_BROKER_SECRET` | string | secret | unset | no | Core and OAuth only: 64-hex secret that lets the OAuth app request token signatures from Core; generate independently with `openssl rand -hex 32`. File alternative: `CLOUD_OAUTH_BROKER_SECRET_FILE`. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | string | runtime | unset | no | Direct Core listener origin for OAuth issuance, mandate-backed background work and internal callbacks; host-run callers use the Core port, not the gateway. |
 | `CLOUD_APP_CREDENTIAL` | string | secret | unset | no | Optional host-run app override for the automatically delivered app workload credential; provision through Core's admin workload API with `identity:invoke`. File alternative: `CLOUD_APP_CREDENTIAL_FILE`. |
-| `CLOUD_IDENTITY_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the Core listener for session and invocation JWKS; unset fetches keys from the public issuer origin. |
+| `CLOUD_IDENTITY_JWKS_ORIGIN` | string | runtime | unset | no | Deprecated: use `CLOUD_CORE_INTERNAL_ORIGIN`; the explicit old origin remains honored for this release. Optional private origin of the Core listener for session and invocation JWKS; unset uses `CLOUD_CORE_INTERNAL_ORIGIN`, then the public issuer origin. |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the OAuth listener for OAuth JWKS; unset fetches keys from the public issuer origin. |
 | `APP_DIR` | string | development | unset | no | Application directory for standalone consumers running `@k2b/cloud/scripts/build.ts` or the SSR dev server outside the monorepo; defaults to the package directory. |
 | `CLOUD_DESKTOP_SQLITE_PATH` | string | development | unset | no | SQLite file used by `desktop.sql` in the Bun desktop process; defaults to `.local/desktop.sqlite` in the working directory. |
@@ -59,7 +60,7 @@ Declared in `packages/assistant/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `ASSISTANT_RSQL_ALLOWED_TARGETS` | list | runtime | `rsql` | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Assistant rsql requests; unset allows public targets and `rsql`, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
+| `ASSISTANT_RSQL_ALLOWED_TARGETS` | list | runtime | `rsql` | no | Deprecated: bootstraps `assistant.rsql_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Assistant rsql requests; unset allows public targets and `rsql`, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning. |
 | `CLOUD_CLI_CHROMIUM` | string | runtime | unset | no | Path to a Chromium executable for Assistant code mode when Playwright's bundled browser is unavailable; the assistant image sets `/usr/bin/chromium`. |
 
 ## Application: gateway-ops
@@ -68,11 +69,11 @@ Declared in `packages/gateway-ops/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for health webhooks; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
-| `NATS_ADMIN_SERVERS` | list | runtime | empty list | no | Optional comma-separated NATS system-account servers used only for Gateway Ops cluster diagnostics. |
-| `NATS_ADMIN_CREDS_FILE` | string | runtime | unset | no | Path to the mounted system-account `.creds` file for NATS diagnostics; do not combine with the NKey seed file. |
-| `NATS_ADMIN_NKEY_SEED_FILE` | string | runtime | unset | no | Path to a static system-account NKey seed file for NATS diagnostics; an alternative to the `.creds` file. |
-| `NATS_ADMIN_TLS_CA_FILE` | string | runtime | unset | no | Path to the CA certificate that enables TLS for the NATS diagnostics connection. |
+| `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` | list | runtime | empty list | no | Deprecated: bootstraps `gateway.webhook_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for health webhooks; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning. |
+| `NATS_ADMIN_SERVERS` | list | runtime | empty list | no | Deprecated: bootstraps gateway.nats_admin_servers once; configure NATS diagnostics in Administration instead. |
+| `NATS_ADMIN_CREDS_FILE` | string | runtime | unset | no | Deprecated: imports system-account .creds file contents into gateway.nats_admin_access at startup; do not combine with NATS_ADMIN_NKEY_SEED_FILE. |
+| `NATS_ADMIN_NKEY_SEED_FILE` | string | runtime | unset | no | Deprecated: imports the user NKey seed contents into gateway.nats_admin_access and selects the nkey format at startup. |
+| `NATS_ADMIN_TLS_CA_FILE` | string | runtime | unset | no | Deprecated: imports CA PEM contents into gateway.nats_admin_tls_ca at startup; no file path is stored. |
 
 ## Application: gateway
 
@@ -80,8 +81,7 @@ Declared in `packages/gateway/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `GATEWAY_INSTANCE_ID` | string | runtime | unset | no | Stable identity of this gateway router instance in the registry; defaults to `HOSTNAME`, then `gateway-router`. |
-| `GATEWAY_TRUSTED_PROXIES` | list | runtime | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` | no | Comma-separated IP addresses or CIDR ranges of the reverse proxies allowed to name the client in `X-Forwarded-For`; the default trusts loopback and private networks, which covers Traefik on a Docker network. Set the proxy's exact address or subnet when clients on private networks reach the gateway directly or through a proxy that appends to their `X-Forwarded-For`. An invalid entry stops the gateway at startup. |
+| `GATEWAY_INSTANCE_ID` | string | runtime | unset | no | Deprecated: remove to use a random per-process gateway identity. An explicit value is still honored for this release. |
 
 ## Application: mail
 
@@ -89,7 +89,7 @@ Declared in `packages/mail/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | number | runtime | `20000` | no | Maximum Mail body characters loaded for an AI workflow step; the pilot budget rejects larger bodies visibly without truncation and preserves the original for manual inspection. |
+| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | number | runtime | `20000` | no | Deprecated: bootstraps `mail.workflow_ai_body_max_chars` once; remove after `cld admin settings status --env` succeeds. Maximum Mail body characters loaded for an AI workflow step; the pilot budget rejects larger bodies visibly without truncation and preserves the original for manual inspection. |
 
 ## Application: notebooks
 
@@ -97,7 +97,7 @@ Declared in `packages/notebooks/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks that notebook S3 snapshots may upload to, for example `minio,10.20.0.0/16`; unset allows only public storage. Bare entries cover every port; host:port and [ipv6]:port restrict a host or IP to one port; `/0` entries and other invalid entries stop Notebooks at startup. |
+| `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | list | runtime | empty list | no | Deprecated: bootstraps `notebooks.snapshot_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks that notebook S3 snapshots may upload to, for example `minio,10.20.0.0/16`; unset allows only public storage. Bare entries cover every port; host:port and [ipv6]:port restrict a host or IP to one port; `/0` entries and other invalid entries are ignored with a bootstrap warning. |
 
 ## Application: pwa-auth
 

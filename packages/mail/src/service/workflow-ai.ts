@@ -1,5 +1,5 @@
-import { env } from "@k2b/cloud/config";
 import type { WorkflowActionContext, WorkflowAiScope } from "@k2b/cloud/workflows";
+import { getWorkflowAiBudget } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
 
 /** Current authorization is checked by Mail's action port before this callback. */
@@ -19,7 +19,7 @@ export const mailWorkflowAiScope = async (ctx: Pick<WorkflowActionContext, "runI
   return {
     sourceId: source.id ?? `run:${source.run_id}`,
     sourceRevision: source.revision ?? source.run_id,
-    budget: env.WORKFLOW_AI_BUDGET,
+    budget: await getWorkflowAiBudget(),
     recompute: ctx.invocation.context?.recomputeAi === true,
   };
 };

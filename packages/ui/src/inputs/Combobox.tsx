@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, type JSX, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
@@ -57,6 +57,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   const popover = createChoicePopover(() => Boolean(props.disabled || props.readOnly));
   // A host notice or an error replaces the results; hidden results are never selectable.
   const options = () => (props.status || loader.error() ? [] : loader.options());
+  const optionsById = createMemo(() => new Map(options().map((option) => [option.value, option])));
   const focusedOption = () => options()[focusedIndex()];
   const searchable = (value: string) => value.trim().length >= (props.minQueryLength ?? 0);
   const focus = (index: number) => {
@@ -193,8 +194,10 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                 </div>
               )}
             </Show>
+            {/* Keyed by option ID, not object: each fetch returns new objects, and a row replaced between press and release
+                would swallow the click. */}
             <For
-              each={options()}
+              each={options().map((option) => option.value)}
               fallback={
                 <Show when={!props.status && !loader.error()}>
                   <Show
@@ -221,26 +224,30 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                 </Show>
               }
             >
-              {(option, index) => (
-                <button
-                  ref={(element) => (optionRefs[index()] = element)}
-                  type="button"
-                  id={`${listboxId}-${index()}`}
-                  class="k2b-choice-option"
-                  role="option"
-                  aria-selected={index() === focusedIndex()}
-                  data-focused={index() === focusedIndex() ? "true" : undefined}
-                  onPointerMove={() => focus(index())}
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => select(option)}
-                >
-                  <Show when={option.icon}>{(icon) => <i class={iconClass(icon())} aria-hidden="true" />}</Show>
-                  <span>
-                    <strong>{option.label}</strong>
-                    <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
-                  </span>
-                </button>
-              )}
+              {(id, index) => {
+                const first = optionsById().get(id)!;
+                const option = () => optionsById().get(id) ?? first;
+                return (
+                  <button
+                    ref={(element) => (optionRefs[index()] = element)}
+                    type="button"
+                    id={`${listboxId}-${index()}`}
+                    class="k2b-choice-option"
+                    role="option"
+                    aria-selected={index() === focusedIndex()}
+                    data-focused={index() === focusedIndex() ? "true" : undefined}
+                    onPointerMove={() => focus(index())}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => select(option())}
+                  >
+                    <Show when={option().icon}>{(icon) => <i class={iconClass(icon())} aria-hidden="true" />}</Show>
+                    <span>
+                      <strong>{option().label}</strong>
+                      <Show when={option().description}>{(description) => <small>{description()}</small>}</Show>
+                    </span>
+                  </button>
+                );
+              }}
             </For>
           </div>
           <Show when={props.footer}>{(footer) => <div class="k2b-choice-footer">{footer()}</div>}</Show>

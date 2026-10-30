@@ -534,7 +534,7 @@ export const listForDelegatedUser = async (params: { userId: string }): Promise<
       c.last_used_at, c.created_by, c.created_at, c.revoked_at, c.revoked_by
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
-    WHERE sa.kind = 'user_delegated'
+    WHERE c.kind = 'api_token' AND sa.kind = 'user_delegated'
       AND sa.delegated_user_id = ${params.userId}::uuid
       AND c.status = 'active'
     ORDER BY c.created_at DESC
@@ -572,7 +572,7 @@ export const listOverview = async (config?: {
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
-    WHERE (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
+    WHERE c.kind = 'api_token' AND (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
       AND (${credentialStatus}::text IS NULL OR c.status = ${credentialStatus})
       AND (${userId}::uuid IS NULL OR sa.delegated_user_id = ${userId}::uuid)
       AND (${serviceAccountId}::uuid IS NULL OR sa.id = ${serviceAccountId}::uuid)
@@ -624,7 +624,7 @@ export const listOverview = async (config?: {
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
-    WHERE (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
+    WHERE c.kind = 'api_token' AND (${serviceAccountKind}::text IS NULL OR sa.kind = ${serviceAccountKind})
       AND (${credentialStatus}::text IS NULL OR c.status = ${credentialStatus})
       AND (${userId}::uuid IS NULL OR sa.delegated_user_id = ${userId}::uuid)
       AND (${serviceAccountId}::uuid IS NULL OR sa.id = ${serviceAccountId}::uuid)
@@ -691,7 +691,7 @@ export const getOverview = async (params: { id: string }): Promise<ServiceAccoun
     FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     LEFT JOIN auth.users du ON du.id = sa.delegated_user_id
-    WHERE c.id = ${params.id}::uuid
+    WHERE c.kind = 'api_token' AND c.id = ${params.id}::uuid
     LIMIT 1
   `;
   return row ? mapCredentialOverview(row) : null;
@@ -742,7 +742,7 @@ export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL 
         revoked_at = now(),
         revoked_by = ${params.actor?.id ?? null}::uuid
       WHERE id = ${credentialId}::uuid
-        AND status = 'active'
+        AND status = 'active' AND kind = 'api_token'
       RETURNING id, service_account_id, name, kind, status, token_prefix, scopes, expires_at,
         last_used_at, created_by, created_at, revoked_at, revoked_by
     `;
@@ -753,7 +753,7 @@ export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL 
           SELECT id, service_account_id, name, kind, status, token_prefix, scopes, expires_at,
             last_used_at, created_by, created_at, revoked_at, revoked_by
           FROM auth.service_account_credentials
-          WHERE id = ${credentialId}::uuid
+          WHERE id = ${credentialId}::uuid AND kind = 'api_token'
           LIMIT 1
         `;
     const result = row || existing?.status === "revoked" ? ok() : fail(err.notFound("API key"));

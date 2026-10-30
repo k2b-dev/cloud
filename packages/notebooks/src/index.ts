@@ -33,7 +33,7 @@ const result = await app.start({
       await migrate();
     },
     start: async () => {
-      snapshotAllowlist();
+      await snapshotAllowlist();
       await yjsSnapshotWorker.start();
       try {
         await reindexRuntime.start();

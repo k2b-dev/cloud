@@ -74,6 +74,14 @@ values retain their source. Source detection resolves configured files with
 the same cache and throws for unreadable files or conflicting sources; it does not validate the value's
 schema. Read the registry property to obtain the validated value.
 
+## Enroll application public keys
+
+Core now accepts locally generated Ed25519 public keys through administrator
+APIs and `cld admin apps keys`. The installation ID lives in Core’s database.
+Enrollment alone does not change application startup or remove any existing
+environment values. See [App keys](/en/docs/operations/app-keys) for creation,
+resumable CLI output, rotation, and revocation.
+
 ## Replace the legacy Weather geo configuration
 
 Upgrade Core and configure its secret `geo.api_key` and credit budgets before
@@ -122,29 +130,47 @@ environment variables. Applications using the shared HTTP transports supply
 | `NATS_CREDS_FILE` | Optional mounted NATS credentials file |
 | `NATS_TLS_CA_FILE` | Optional trusted CA file for NATS TLS |
 | `NATS_IGNORE_CLUSTER_UPDATES` | Keep reachable seed addresses when advertised Docker hostnames are inaccessible |
-| `NATS_ADMIN_SERVERS` | Gateway Ops only: separate system-account connection for NATS cluster diagnostics |
-| `NATS_ADMIN_CREDS_FILE` | Gateway Ops only: mounted system-account credentials file |
-| `NATS_ADMIN_NKEY_SEED_FILE` | Gateway Ops only: alternative static system-account user seed; mutually exclusive with `NATS_ADMIN_CREDS_FILE` |
-| `NATS_ADMIN_TLS_CA_FILE` | Gateway Ops only: trusted CA for the separate system connection |
+| `NATS_ADMIN_SERVERS` | Deprecated; Gateway Ops imports URLs into `gateway.nats_admin_servers` at startup |
+| `NATS_ADMIN_CREDS_FILE` | Deprecated; Gateway Ops imports .creds **contents** into the secret `gateway.nats_admin_access` |
+| `NATS_ADMIN_NKEY_SEED_FILE` | Deprecated; imports user seed **contents** and selects `nkey`; mutually exclusive with `NATS_ADMIN_CREDS_FILE` |
+| `NATS_ADMIN_TLS_CA_FILE` | Deprecated; Gateway Ops imports CA PEM **contents** into `gateway.nats_admin_tls_ca` |
 | `APP_SECRET` | Encrypts settings and credentials |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | Core-only KEK for private platform signing keys; exactly 64 hexadecimal characters |
 | `CLOUD_IDENTITY_NEXT_KEY` | Temporary next Core KEK, distributed before promotion |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | Temporary previous Core KEK during a rolling rewrap |
 | `CLOUD_OAUTH_BROKER_SECRET` | Shared only by Core and OAuth to authenticate OAuth issuance; exactly 64 hexadecimal characters; required when running OAuth |
-| `CLOUD_IDENTITY_JWKS_ORIGIN` | Optional private transport origin for loading Core's public identity JWKS; does not change the public issuer |
+| `CLOUD_IDENTITY_JWKS_ORIGIN` | Deprecated; use `CLOUD_CORE_INTERNAL_ORIGIN` for Core identity JWKS |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's public JWKS; does not change the public issuer |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for OAuth issuance and workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
 | `CLOUD_APP_CREDENTIAL` | Optional host-run app override for the automatically delivered workload credential; not used by OAuth |
 | `NODE_ENV` | Set to `production` by built-in images; development tooling supplies its own mode |
 | `ADMIN_LOGIN_TOKEN` | Core-only temporary first-access or recovery token; no production default |
 
+Configure new installations through **Administration → Observability → NATS → Diagnostics access**.
+The NATS diagnostics settings belong to Gateway Ops and apply to its next
+diagnostics connection. Existing settings are never overwritten by environment
+imports. Cluster diagnostics remain off when the server list is empty. See
+[NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for formats, failed imports, and removal of the deprecated inputs.
+
 `APP_ID` selects the application for Cloud's build and development scripts. It
 is not application runtime configuration. Runtime identity comes from the app declaration.
 Built-in services listen on port 3000 and ignore `PORT`; application authors can
 select an explicit port with `app.start({ port })` for standalone deployments.
 
-Every application container must use the same `APP_SECRET`.
-It remains the data/settings encryption input; it never signs or verifies a
+Core, the gateway and application containers use the same installation
+`APP_SECRET` and shared infrastructure credentials. The gateway receives
+`DATABASE_URL` for logging and storage configuration, `APP_SECRET` to decrypt
+that configuration, `REDIS_URL` for public-storage request budgets, and NATS
+access for discovery and telemetry. It serves `/public/storage` itself.
+
+Treat a gateway compromise as an installation compromise, just as for Core:
+its shared database role and encryption secret allow access beyond the
+settings its normal delivery path reads. Protect its environment and host as
+installation-wide credentials. It does not receive Core's identity KEKs or
+the Core/OAuth broker secret.
+
+`APP_SECRET` remains the data/settings encryption input; it never signs or verifies a
 session, invocation, or OAuth token.
 
 Only Core receives `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`. Other applications
@@ -152,12 +178,12 @@ verify browser and invocation JWTs with public keys and must never receive this
 secret. Generate it with `openssl rand -hex 32` and keep it independent from
 `APP_SECRET`.
 
-Set `CLOUD_IDENTITY_JWKS_ORIGIN` to Core's private service origin when the
-deployment network provides one, for example `http://app-core:3000`. Tokens
-still use the public `app.url` origin as `iss`; this variable changes only the
-network path used to fetch the purpose-specific session and invocation public
-keys. Without it, applications load those JWKS endpoints from the public issuer
-origin.
+Set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin, for example
+`http://app-core:3000`. Session and invocation JWKS use that origin while
+tokens retain the public `app.url` issuer. The deprecated
+`CLOUD_IDENTITY_JWKS_ORIGIN` remains honored when explicitly set for this
+release and logs a startup warning. Without either value, JWKS use the public
+issuer origin.
 
 Set `CLOUD_OAUTH_JWKS_ORIGIN` to the OAuth application's private service
 origin, for example `http://app-oauth:3000`. Access-token verification then
@@ -421,7 +447,7 @@ Check configuration in this order:
 
 1. the container received the expected variables;
 2. Postgres, Valkey and NATS names resolve on the private network;
-3. application containers share `APP_SECRET`; the gateway does not receive it;
+3. application containers and the gateway share the same `APP_SECRET`;
 4. only Core has the current identity KEK;
 5. only Core and OAuth share the OAuth broker secret, and background callers
    have only their own scoped workload credentials;
@@ -457,3 +483,28 @@ also bounds each device and visit; a Valkey outage refuses the query. Usage
 appears in the Geo ledger and `app_pwa.core.query` audit entries, rather than
 Core's capability execution log. See [App-PWA sessions](/en/docs/identity/app-pwa-sessions#offer-address-suggestions)
 for the request and error contracts.
+
+## Move network and AI values into settings
+
+The following variables are deprecated bootstrap sources for administrator
+settings. A stored row wins; an invalid environment value is ignored with a
+warning. For trusted proxies, an invalid bootstrap value with no stored row
+stops gateway startup. Run `cld admin settings status --env` after the upgrade, resolve any
+reported problems, then remove the legacy environment entries. Follow the
+[operator migration procedure](/en/docs/operations/deprecations-and-migrations).
+
+| Environment variable | Administrator setting |
+| --- | --- |
+| `OUTGOING_MAIL_ALLOWED_TARGETS` | `outgoing_mail.allowed_targets` |
+| `GATEWAY_TRUSTED_PROXIES` | `gateway.trusted_proxies` |
+| `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` | `gateway.webhook_allowed_targets` |
+| `ASSISTANT_RSQL_ALLOWED_TARGETS` | `assistant.rsql_allowed_targets` |
+| `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | `notebooks.snapshot_allowed_targets` |
+| `WORKFLOW_AI_BUDGET` | `ai.workflow_budget` |
+| `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` | `ai.workflow_attempt_timeout_ms` |
+| `WORKFLOW_AI_QUEUE_TIMEOUT_MS` | `ai.workflow_queue_timeout_ms` |
+| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | `mail.workflow_ai_body_max_chars` |
+| `GOTENBERG_URL` | `gotenberg.url` (bootstrap only) |
+
+Remove `GATEWAY_INSTANCE_ID` to use a random per-process identity. An explicit
+legacy value is still honored for this release and logs a startup warning.

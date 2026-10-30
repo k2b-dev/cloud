@@ -1666,6 +1666,46 @@ describe("Chat info reopening", () => {
     test(`info stays reachable after X and preserves Back on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 8, end: harness.now() });
       const { page, errors } = await load(options, { chat });
+      // What the page did around each press, for the failure report (#2116): input targets, history, and view transitions.
+      await page.evaluate(() => {
+        const trace: string[] = [];
+        const at = () => Math.round(performance.now());
+        const name = (target: EventTarget | null) =>
+          target instanceof Element
+            ? `${target.tagName}${target.getAttribute("aria-label") ? `[${target.getAttribute("aria-label")}]` : ""}`
+            : String(target);
+        Object.assign(window, { chatInfoTrace: trace });
+        for (const type of ["pointerdown", "click"])
+          addEventListener(
+            type,
+            (event) => trace.push(`${at()} ${type} ${name((event.target as Element).closest("a, button") ?? event.target)}`),
+            true,
+          );
+        addEventListener("popstate", () => trace.push(`${at()} popstate ${location.pathname}${location.search}`));
+        for (const method of ["pushState", "replaceState"] as const) {
+          const original = history[method].bind(history);
+          history[method] = (state, unused, url) => {
+            trace.push(`${at()} ${method} ${String(url)}`);
+            original(state, unused, url);
+          };
+        }
+        const back = history.back.bind(history);
+        history.back = () => {
+          trace.push(`${at()} back`);
+          back();
+        };
+        const start = document.startViewTransition?.bind(document);
+        if (start)
+          document.startViewTransition = ((update: () => unknown) => {
+            trace.push(`${at()} view transition starts`);
+            const transition = start(() => {
+              trace.push(`${at()} view transition update`);
+              return update();
+            });
+            void transition.finished.then(() => trace.push(`${at()} view transition finished`));
+            return transition;
+          }) as typeof document.startViewTransition;
+      });
       try {
         const toggle = page.locator('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]');
         expect(await toggle.isVisible()).toBe(true);
@@ -1698,6 +1738,13 @@ describe("Chat info reopening", () => {
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.isEnabled()).toBe(true);
         expect(errors).toEqual([]);
+      } catch (error) {
+        const trace = await Promise.race([
+          page.evaluate(() => (window as Window & { chatInfoTrace?: string[] }).chatInfoTrace ?? []),
+          Bun.sleep(1_000).then(() => ["no answer within 1 s"]),
+        ]).catch((reason: unknown) => [`unreadable: ${String(reason)}`]);
+        console.error(`Chat info trace (ms since page start):\n${trace.join("\n")}`);
+        throw error;
       } finally {
         await page.context().close();
       }

@@ -36,6 +36,12 @@ type CommonDef = {
   presentation?: AppSettingPresentation;
   envBootstrap?: EnvResolver;
   envFallback?: EnvResolver;
+  /** Environment name for migration diagnostics; values are never returned. */
+  envVariable?: string;
+  /** Discard these stored settings when this normalized value changes. */
+  resetOnChange?: readonly string[];
+  /** Additional server-side validation after kind normalization. */
+  validate?: (value: unknown) => string | undefined;
 };
 
 type StringLikeKind = "string" | "text" | "email" | "url" | "secret" | "image" | "cron" | "timezone" | "template";

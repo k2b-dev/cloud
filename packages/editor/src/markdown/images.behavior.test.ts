@@ -14,7 +14,7 @@ describe("editor images", () => {
     return;
   }
 
-  const mount = async (markdown: string) => {
+  const mount = async (markdown: string, resolveUrl = (_kind: string, ref: string) => ref.replace("attach://", "/images/")) => {
     const dom = createDomTestHarness();
     const { imageExtension } = await import("./images");
     const doc = `${markdown}\n\n\nEnd`;
@@ -23,7 +23,7 @@ describe("editor images", () => {
       state: EditorState.create({
         doc,
         selection: { anchor: doc.length },
-        extensions: [markdownExtension(), imageExtension({ resolveUrl: (_kind, ref) => ref.replace("attach://", "/images/") })],
+        extensions: [markdownExtension(), imageExtension({ resolveUrl })],
       }),
     });
     forceParsing(view, doc.length, 5000);
@@ -85,6 +85,23 @@ describe("editor images", () => {
       expect(dom.root.querySelector(".cm-image-widget")).toBeNull();
     } finally {
       cleanup();
+    }
+  });
+
+  test("a host-resolved blob: image renders, while a blob: URL typed into the text stays source", async () => {
+    const local = await mount("![Plan](file:K1)", (_kind, ref) => (ref === "file:K1" ? "blob:http://localhost/1f0e" : ref));
+    try {
+      expect(local.dom.root.querySelector<HTMLImageElement>(".cm-image-widget img")?.getAttribute("src")).toBe(
+        "blob:http://localhost/1f0e",
+      );
+    } finally {
+      local.cleanup();
+    }
+    const typed = await mount("![Plan](blob:http://localhost/1f0e)");
+    try {
+      expect(typed.dom.root.querySelector(".cm-image-widget")).toBeNull();
+    } finally {
+      typed.cleanup();
     }
   });
 

@@ -1458,6 +1458,30 @@ for (const { embedded, width } of [
   test(`catalog and resource recovery in real ${embedded ? "panel" : "fullview"} at ${width}px`, async () => {
     fixture.assistant.reset();
     const context = await newContext({ viewport: { width, height: 900 } });
+    // What each frame saw, for the failure report (#2140): input targets, focus, keys, history, and when the command
+    // list showed or went. #2169 showed the list closed between press and release with "/notes" kept.
+    await context.addInitScript(() => {
+      const presses: string[] = [];
+      Object.assign(window, { presses });
+      const at = () => Math.round(performance.now());
+      const name = (target: EventTarget | null) => {
+        const element = target instanceof Element ? (target.closest('[role="option"], button') ?? target) : null;
+        return element ? `${element.tagName}#${element.id} ${(element.textContent ?? "").trim().slice(0, 30)}` : String(target);
+      };
+      for (const type of ["pointerdown", "pointerup", "click", "focusin", "focusout", "keydown"])
+        addEventListener(
+          type,
+          (event) => presses.push(`${at()} ${type} ${type === "keydown" ? (event as KeyboardEvent).key : name(event.target)}`),
+          true,
+        );
+      addEventListener("popstate", () => presses.push(`${at()} popstate ${location.pathname}${location.search}`));
+      let listed = false;
+      new MutationObserver(() => {
+        const shown = document.querySelector('[role="listbox"]') !== null;
+        if (shown !== listed) presses.push(`${at()} command list ${shown ? "shown" : "gone"}`);
+        listed = shown;
+      }).observe(document, { subtree: true, childList: true });
+    });
     const page = await context.newPage();
     let documents = 0;
     page.on("request", (request) => {
@@ -1610,10 +1634,11 @@ for (const { embedded, width } of [
             return {
               url: location.pathname + location.search,
               dialogs: Array.from(document.querySelectorAll('[role="dialog"], dialog[open]')).map((element) =>
-                `${element.tagName}${element.hasAttribute("open") ? "[open]" : ""} ${element.className}`.trim(),
+                `${element.tagName}${element.hasAttribute("open") ? "[open]" : ""} ${element.checkVisibility() ? "visible" : "hidden"} ${element.className}`.trim(),
               ),
               listbox: Boolean(document.querySelector('[role="listbox"]')),
               composer: area ? { value: area.value, readOnly: area.readOnly, disabled: area.disabled } : null,
+              presses: ((window as Window & { presses?: string[] }).presses ?? []).slice(-24),
               active: document.activeElement
                 ? `${document.activeElement.tagName}.${String(document.activeElement.className).slice(0, 40)}`
                 : null,

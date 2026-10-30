@@ -5,23 +5,23 @@ export const appEnv = defineEnv({
     schema: envList,
     default: [],
     scope: "runtime",
-    doc: "Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for health webhooks; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup.",
+    doc: "Deprecated: bootstraps `gateway.webhook_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for health webhooks; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning.",
   },
   NATS_ADMIN_SERVERS: {
     schema: envList,
     default: [],
-    doc: "Optional comma-separated NATS system-account servers used only for Gateway Ops cluster diagnostics.",
+    doc: "Deprecated: bootstraps gateway.nats_admin_servers once; configure NATS diagnostics in Administration instead.",
   },
   NATS_ADMIN_CREDS_FILE: {
     schema: envString,
-    doc: "Path to the mounted system-account `.creds` file for NATS diagnostics; do not combine with the NKey seed file.",
+    doc: "Deprecated: imports system-account .creds file contents into gateway.nats_admin_access at startup; do not combine with NATS_ADMIN_NKEY_SEED_FILE.",
   },
   NATS_ADMIN_NKEY_SEED_FILE: {
     schema: envString,
-    doc: "Path to a static system-account NKey seed file for NATS diagnostics; an alternative to the `.creds` file.",
+    doc: "Deprecated: imports the user NKey seed contents into gateway.nats_admin_access and selects the nkey format at startup.",
   },
   NATS_ADMIN_TLS_CA_FILE: {
     schema: envString,
-    doc: "Path to the CA certificate that enables TLS for the NATS diagnostics connection.",
+    doc: "Deprecated: imports CA PEM contents into gateway.nats_admin_tls_ca at startup; no file path is stored.",
   },
 });

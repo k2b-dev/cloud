@@ -150,7 +150,10 @@ const findMarkdownImages = (state: EditorState, options: MarkdownUrlOptions): Cu
       const width = sized?.width == null ? null : String(sized.width);
       const height = sized?.height == null ? null : String(sized.height);
       const resolvedUrl = options.resolveUrl?.("image", href) ?? href;
-      if (!isSafeMarkdownUrl(resolvedUrl)) return false;
+      // Only script of this document can create a blob: URL, so a host may hand one over for a locally stored image;
+      // the same URL typed into the text stays source.
+      const hostBlob = resolvedUrl !== href && resolvedUrl.startsWith("blob:");
+      if (!hostBlob && !isSafeMarkdownUrl(resolvedUrl)) return false;
       const imageDecoration = Decoration.replace({
         widget: new ImageWidget(resolvedUrl, alt, width, height, title, options),
         block: true,
