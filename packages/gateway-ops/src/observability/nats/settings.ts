@@ -153,11 +153,12 @@ export const natsDiagnosticsSettings = {
   },
   // Enable connections only after the other bootstrap entries have been stored.
   "gateway.nats_admin_servers": {
+    resetOnChange: ["gateway.nats_admin_access"],
     kind: "string_list",
     default: [],
     label: "NATS diagnostics servers",
     description:
-      "System-account server URLs. Leave empty to disable cluster diagnostics. Changes apply to the next diagnostics connection.",
+      "System-account server URLs. Changing the server list discards saved system access; enter it again. Leave empty to disable cluster diagnostics.",
     envVariable: "NATS_ADMIN_SERVERS",
     envBootstrap: () => natsDiagnosticsBootstrap().servers,
     presentation: {
@@ -165,7 +166,7 @@ export const natsDiagnosticsSettings = {
         de: {
           label: "NATS-Diagnoseserver",
           description:
-            "Server-URLs für das Systemkonto. Leer lassen, um die Clusterdiagnose abzuschalten. Änderungen gelten ab der nächsten Diagnoseverbindung.",
+            "Server-URLs für das Systemkonto. Eine Änderung der Serverliste verwirft den gespeicherten Systemzugang; gib ihn erneut ein. Leer lassen, um die Clusterdiagnose abzuschalten.",
         },
       },
     },

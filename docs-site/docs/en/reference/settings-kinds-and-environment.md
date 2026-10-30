@@ -5,7 +5,7 @@ section: Reference
 order: 1230
 description: Look up supported setting kinds, defaults, validation, and environment behavior.
 tags: [settings, environment, validation]
-updated: 2026-10-16
+updated: 2026-10-30
 ---
 
 # Settings kinds and environment
@@ -27,6 +27,7 @@ control.
 | `envFallback` | No | Server-side function that returns a fallback value |
 | `envBootstrap` | No | Server-side function that can create the initial persisted value |
 | `envVariable` | No | Environment variable name shown in migration diagnostics |
+| `resetOnChange` | No | Related setting keys to discard when this normalized value changes; see [Settings](/en/docs/platform/settings) |
 | `validate` | No | Server-side function returning an error string for an invalid normalized value, or `undefined` |
 
 `template` also accepts `templateVars`. `enum` requires `options`, an array of
