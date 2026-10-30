@@ -200,6 +200,7 @@ jobs:
             --arg cloud "$(jq -r .version ../packages/cloud/package.json)" \
             --arg ui "$(jq -r .version ../packages/ui/package.json)" \
             --arg ssr "$(jq -r .version ../packages/ssr/package.json)" \
+            --arg editor "$(jq -r .version ../packages/editor/package.json)" \
             --slurpfile images release-images.json \
             --rawfile checksums checksums.txt \
             '{
@@ -209,7 +210,7 @@ jobs:
               registry: $registry,
               images: $images[0],
               cli: ($checksums | split("\n") | map(select(length > 0) | split("  ") | {asset: .[1], sha256: .[0]})),
-              npm: {"@k2b/cloud": $cloud, "@k2b/ui": $ui, "@k2b/ssr": $ssr}
+              npm: {"@k2b/cloud": $cloud, "@k2b/ui": $ui, "@k2b/ssr": $ssr, "@k2b/editor": $editor}
             }' > release.json
           jq . release.json
       - name: Upload assets to the GitHub release
@@ -350,15 +351,16 @@ jobs:
       - if: always()
         run: docker rm --force app-core app-faq gateway postgres nats valkey || true
 
-  # @k2b/cloud pins exact @k2b/ui and @k2b/ssr versions, so it publishes only
-  # after npm-ui and npm-ssr finished (or were not part of this release) and
-  # both pinned versions are installable.
+  # @k2b/cloud pins exact @k2b/ui, @k2b/ssr and @k2b/editor versions, so it publishes only
+  # after npm-ui, npm-ssr and npm-editor finished (or were not part of this release) and
+  # all pinned versions are installable.
   npm-cloud:
-    needs: [npm-ui, npm-ssr]
+    needs: [npm-ui, npm-ssr, npm-editor]
     if: >-
       ${{ !cancelled() && inputs.npm_cloud_released &&
       (needs.npm-ui.result == 'success' || needs.npm-ui.result == 'skipped') &&
-      (needs.npm-ssr.result == 'success' || needs.npm-ssr.result == 'skipped') }}
+      (needs.npm-ssr.result == 'success' || needs.npm-ssr.result == 'skipped') &&
+      (needs.npm-editor.result == 'success' || needs.npm-editor.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:
@@ -389,10 +391,11 @@ jobs:
           git fetch --quiet origin "refs/tags/npm-cloud-v$version:refs/tags/npm-cloud-v$version"
           [[ "$(git rev-list -n1 "npm-cloud-v$version")" == "$SHA" ]] || { echo "npm-cloud-v$version is not at $SHA." >&2; exit 1; }
           echo "NPM_TAG=$([[ "$version" == *-* ]] && echo next || echo latest)" >> "$GITHUB_ENV"
-      - name: Wait until the pinned @k2b/ui and @k2b/ssr are installable from npm
+      - name: Wait until the pinned @k2b/ui, @k2b/ssr and @k2b/editor are installable from npm
         env:
           UI_RELEASED: ${{ inputs.npm_ui_released }}
           SSR_RELEASED: ${{ inputs.npm_ssr_released }}
+          EDITOR_RELEASED: ${{ inputs.npm_editor_released }}
         run: |
           set -euo pipefail
           cloud=$(jq -r .version packages/cloud/package.json)
@@ -404,12 +407,16 @@ jobs:
               curl -fsS --max-time 60 -H 'Accept: application/vnd.npm.install-v1+json' "https://registry.npmjs.org/${name/\//%2f}" | jq -e --arg v "$version" '.versions[$v]' >/dev/null &&
               curl -fsS --max-time 120 -o /dev/null "$tarball"
           }
-          # Both budgets count from the same start, so the waits together stay within the job timeout.
+          # All budgets count from the same start, so the waits together stay within the job timeout.
           start=$SECONDS
-          for name in @k2b/ui @k2b/ssr; do
+          for name in @k2b/ui @k2b/ssr @k2b/editor; do
             version=$(jq -r --arg name "$name" '.dependencies[$name]' packages/cloud/package.json)
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "@k2b/cloud must pin an exact $name version, found '$version'." >&2; exit 1; }
-            released=$([[ "$name" == "@k2b/ui" ]] && echo "$UI_RELEASED" || echo "$SSR_RELEASED")
+            case "$name" in
+              @k2b/ui) released=$UI_RELEASED ;;
+              @k2b/ssr) released=$SSR_RELEASED ;;
+              @k2b/editor) released=$EDITOR_RELEASED ;;
+            esac
             # A version published by this run may take minutes to become installable; an older pin must be installable already.
             budget=$([[ "$released" == "true" ]] && echo 1200 || echo 60)
             deadline=$((start + budget))

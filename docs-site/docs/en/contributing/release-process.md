@@ -101,8 +101,8 @@ release-please runs on every push to `main`:
    tag, `release.yml` publishes `@k2b/cloud`, `@k2b/ui`, `@k2b/ssr`, or
    `@k2b/editor` with npm provenance. A prerelease version such as `0.8.0-rc.1` publishes under the
    `next` dist-tag; a stable version publishes under `latest`. `@k2b/cloud`
-   pins exact `@k2b/ui` and `@k2b/ssr` versions, so it publishes only after
-   both are installable from npm. When the same release publishes either of
+   pins exact `@k2b/ui`, `@k2b/ssr`, and `@k2b/editor` versions, so it publishes only after
+   all three are installable from npm. When the same release publishes any of
    them, the workflow waits up to 20 minutes in total; otherwise the pinned
    version must already be on npm, or `@k2b/cloud` stays unpublished and the
    release fails. `@k2b/editor` pins an exact `@k2b/ui` version and waits for

@@ -331,6 +331,7 @@ Import `evaluateTableCell(row, column, context)` and `EvalResult` from
 `@k2b/cloud/shared` when a chart or another derived view must use the same
 values as a Markdown table. Row and column indices are zero-based. The context
 contains `headers`, raw `rows`, `currentRow`, and `currentCol`.
+These exports use the formula engine from `@k2b/editor/formula`.
 
 ```ts
 import { evaluateTableCell } from "@k2b/cloud/shared";
@@ -368,6 +369,10 @@ become `NaN`, which the renderer leaves out.
 Server integrations save run results with `createAiConversationView` and receive
 `AiViewInvalidError` for invalid specs. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals) for validation and groups.
+
+The portable chart schemas and rendering helpers are implemented in
+`@k2b/editor/charts`; the existing Cloud exports remain available. Cloud owns
+AI validation and size limits.
 
 Custom chart hosts use browser exports `cloudAiChartRenderOptions`,
 `cloudAiChartLegend`, `cloudAiChartRows`, `cloudAiChartTable`, `cloudAiChartTooltip`,
