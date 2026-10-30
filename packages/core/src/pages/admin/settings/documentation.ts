@@ -9,6 +9,7 @@ export const settingsDocumentation: Readonly<Record<string, string>> = {
   linux: "operations/linux-identities",
   "account-operations": "accounts/lifecycle",
   cli: "operations/runtime-configuration#control-cli-plugin-access",
+  "app-keys": "operations/app-keys",
   "app.identity": "accounts/documentation",
   "user.login": "operations/account-categories",
   "user.registration": "accounts/registration",

@@ -428,6 +428,12 @@ export type AppWorkspaceSidebarItemProps = {
   contextMeta?: JSX.Element;
   /** Passive second line; keep controls in actions or preview. */
   description?: JSX.Element;
+  /**
+   * A third line with the one fact about the row that needs attention, such as "3 deliveries failed". `noteTone`
+   * colours it; the words carry the meaning, the colour only repeats it.
+   */
+  note?: JSX.Element;
+  noteTone?: "neutral" | "warning" | "danger";
   /** Interactive details, also reachable through a dedicated button. */
   preview?: {
     label: string;
@@ -1731,6 +1737,11 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
         </span>
         <Show when={props.description}>
           <span class="k2b-app-workspace__sidebar-item-description k2b-truncate-fade">{props.description}</span>
+        </Show>
+        <Show when={props.note}>
+          <span class="k2b-app-workspace__sidebar-item-note k2b-truncate-fade" data-tone={props.noteTone ?? "neutral"}>
+            {props.note}
+          </span>
         </Show>
       </span>
       <Show when={hasMeta()}>
