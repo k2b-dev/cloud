@@ -3,7 +3,8 @@ import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { ItemEventsPageSchema } from "../service/contracts";
-import { accessKey, resourceReaderDependencies } from "../service/resource-access";
+import { mockDiscussionCatalog, standardData } from "../service/discussions.test-fixture";
+import { accessKey, authorizationKey, resourceReaderDependencies } from "../service/resource-access";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -22,7 +23,9 @@ suite("system chat item events", () => {
   let events: unknown[] = [];
   let unavailable = false;
   let denied = false;
+  let catalog: ReturnType<typeof mockDiscussionCatalog>;
   beforeEach(() => {
+    catalog = mockDiscussionCatalog();
     grants.clear();
     calls.length = 0;
     events = [];
@@ -36,10 +39,13 @@ suite("system chat item events", () => {
         return { data: events, page: { nextCursor: "owner-cursor" } };
       }
       const data = grants.get(`${caller.cookie?.split(";")[0]}:${app}.${capability.split(".")[0]}:${input.id}`);
-      return data ? { data: { id: input.id, ...data }, links: [{ rel: "open", href: "/app/resource" }] } : null;
+      return data
+        ? { data: standardData(`${app}.${capability.split(".")[0]}`, data), links: [{ rel: "open", href: "/app/resource" }] }
+        : null;
     });
   });
   afterEach(async () => {
+    catalog.mockRestore();
     invocation.mockRestore();
     if (keys.size) await redis.send("DEL", [...keys]);
     keys.clear();
@@ -47,6 +53,7 @@ suite("system chat item events", () => {
   const grant = (person: Person, type: string, id: string, data: Record<string, unknown>) => {
     grants.set(`${person.headers.cookie}:${type}:${id}`, data);
     keys.add(accessKey(`user:${person.id}`, { type, id }));
+    keys.add(authorizationKey(`user:${person.id}`, { type, id }));
   };
   const system = async (person: Person, type = "spaces.space") => {
     const resource = testShortId(),
@@ -91,6 +98,7 @@ suite("system chat item events", () => {
       thread = testShortId();
     grant(person, "spaces.item", ref, { title: "Current task title", kind: "task", spaceId: chat.resource });
     await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id) VALUES (${thread}, ${chat.id}::uuid, 'Stale title', 'spaces.item', ${ref}, 'user', ${person.id}::uuid)`;
+    grant(person, "spaces.item", missing, { title: "Unthreaded", kind: "task", spaceId: chat.resource });
     const href = "/app/spaces/Spc001/items/Itm001";
     events = [
       { ...event(ref), href },
@@ -113,7 +121,7 @@ suite("system chat item events", () => {
     expect(call).toMatchObject({
       app: "spaces",
       locale: "de",
-      input: { space: chat.resource, cursor: "previous", limit: 100, timeZone: "America/New_York" },
+      input: { container: chat.resource, cursor: "previous", limit: 57, timeZone: "America/New_York" },
     });
     expect(call.cookie).toContain(person.headers.cookie!);
     const selected = await f.request(person.headers, `/${chat.shortId}/events?thread=${thread}&after=2026-10-22T00:00:00Z`);
@@ -134,7 +142,7 @@ suite("system chat item events", () => {
     const response = await f.request(person.headers, `/${chat.shortId}/events`);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ items: [], nextCursor: null, unavailable: true });
-    expect(calls.at(-1)).toMatchObject({ app: "notebooks", capability: "notebook.activity", input: { notebook: chat.resource } });
+    expect(calls.at(-1)).toMatchObject({ app: "notebooks", capability: "notebook.activity", input: { container: chat.resource } });
     unavailable = false;
     events = [{ malformed: true }];
     expect(await (await f.request(person.headers, `/${chat.shortId}/events`)).json()).toEqual({
@@ -142,10 +150,12 @@ suite("system chat item events", () => {
       nextCursor: null,
       unavailable: true,
     });
-    events = [event(testShortId(), "notebooks.note")];
+    const note = testShortId();
+    grant(person, "notebooks.note", note, { title: "Note", notebookId: chat.resource });
+    events = [event(note, "notebooks.note")];
     expect(ItemEventsPageSchema.parse(await (await f.request(person.headers, `/${chat.shortId}/events`)).json()).items).toHaveLength(1);
     for (const href of ["https://example.invalid", "//example.invalid", "javascript:alert(1)"]) {
-      events = [{ ...event(testShortId(), "notebooks.note"), href }];
+      events = [{ ...event(note, "notebooks.note"), href }];
       expect(await (await f.request(person.headers, `/${chat.shortId}/events`)).json()).toEqual({
         items: [],
         nextCursor: null,
@@ -153,7 +163,7 @@ suite("system chat item events", () => {
       });
     }
     const href = "/open/notebooks.annotation/~11111111-1111-4111-8111-111111111111";
-    events = [{ ...event(testShortId(), "notebooks.note"), href }];
+    events = [{ ...event(note, "notebooks.note"), href }];
     expect(ItemEventsPageSchema.parse(await (await f.request(person.headers, `/${chat.shortId}/events`)).json()).items[0]?.href).toBe(href);
     expect((await f.request(person.headers, `/${chat.shortId}/events?limit=101`)).status).toBe(400);
   });

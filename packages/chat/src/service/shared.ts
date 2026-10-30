@@ -12,6 +12,7 @@ import {
   SharedQuerySchema,
 } from "./contracts";
 import { type MessageRow, messageViews } from "./message-store";
+import { discussionIncomplete, discussionStopped } from "./resource-access";
 import { visibleMessages } from "./thread-access";
 import { findThread, threadNotFound } from "./threads";
 
@@ -40,8 +41,8 @@ const list = async (
   const parsed = SharedQuerySchema.safeParse(input.query ?? {});
   if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
   const query = parsed.data;
-  const cursor = query.cursor === undefined ? null : decodeCursor(query.cursor);
-  if (query.cursor !== undefined && !cursor) return fail(err.badInput(messages(input).invalidInput));
+  const cursor = query.cursor ? decodeCursor(query.cursor) : null;
+  if (query.cursor && !cursor) return fail(err.badInput(messages(input).invalidInput));
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
@@ -96,9 +97,11 @@ const list = async (
     const page = remaining.slice(0, SHARED_PAGE_SIZE);
     const last = page.at(-1);
     return ok({
+      ...(discussionIncomplete(input) ? { incomplete: true as const } : {}),
       items: page.map(({ item }) => item),
-      nextCursor:
-        remaining.length > SHARED_PAGE_SIZE && last
+      nextCursor: discussionStopped(input)
+        ? (query.cursor ?? "")
+        : remaining.length > SHARED_PAGE_SIZE && last
           ? Buffer.from(JSON.stringify({ v: 1, seq: last.item.seq, position: last.position })).toString("base64url")
           : scanned.length === SHARED_PAGE_SIZE + 2
             ? Buffer.from(

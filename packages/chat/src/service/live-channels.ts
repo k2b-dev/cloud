@@ -33,7 +33,10 @@ const chatReaders = async (key: string, viewers: readonly LiveViewer[]): Promise
     const decisions = await readerBatch(viewers, async (viewer) => {
       const container = await cachedResource(viewer.id, { type: conversation.resource_type, id: conversation.resource_id });
       if (!container || !hasPermission(conversationPermission(shortId, container.permission, viewer.actor), "read")) return null;
-      if (thread && !(await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id }))) return null;
+      if (thread) {
+        const item = await cachedResource(viewer.id, { type: thread.resource_type, id: thread.resource_id });
+        if (item?.container?.ref.type !== conversation.resource_type || item.container.ref.id !== conversation.resource_id) return null;
+      }
       return viewer.id;
     });
     return new Set(decisions.filter((id): id is string => id !== null));

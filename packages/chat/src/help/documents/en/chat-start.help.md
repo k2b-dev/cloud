@@ -36,9 +36,9 @@ Reloading after the form opens does not reopen it.
 2. Choose a hit to open it.
 :::
 
-The search finds your chats and channels, the chats of Spaces and notebooks you can open, and threads by name.
-Each thread hit says where it is, for example **Thread in IT** or **Task in Spring fair**. You see at most eight hits.
-If Spaces or Notebooks do not answer, you still see the other hits, and **Try again** asks again.
+The search finds your chats and channels, resource discussions you can open, and threads by name.
+Each thread hit says where it is, for example **Thread in IT** or **Thread in Spring fair**. You see at most eight hits.
+If a resource provider does not answer, you still see the other hits, and **Try again** asks again.
 Press `Escape` or empty the field to see the list again.
 
 ## Discover channels {icon="compass"}

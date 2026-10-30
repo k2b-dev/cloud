@@ -15,7 +15,7 @@ import {
 import { FOR_YOU_COUNT_CAP, FOR_YOU_PAGE_SIZE, type ForYouPageSchema, ForYouQuerySchema } from "./contracts";
 import { titles } from "./conversation-titles";
 import { type MessageRow, messageViews } from "./message-store";
-import { RESOURCE_PAGE_SIZE, readerBatch, readResource } from "./resource-access";
+import { discussionIncomplete, discussionStopped, RESOURCE_PAGE_SIZE, readerBatch, readResource } from "./resource-access";
 import { visibleMessages } from "./thread-access";
 import type { ThreadRow } from "./threads";
 
@@ -78,7 +78,7 @@ const visible = async (db: typeof sql, context: ChatContext, rows: Candidate[]) 
       if (allowed.data.kind === "system" && allowed.data.resource_type && allowed.data.resource_id) {
         const resource = await readResource(context, { type: allowed.data.resource_type, id: allowed.data.resource_id });
         if (!resource) return null;
-        allowed.data.name = resource.name;
+        allowed.data.name = resource.title;
       }
       return {
         conversation: allowed.data,
@@ -104,8 +104,8 @@ const list = async (context: ChatContext & { query?: unknown }): Promise<Result<
   if (!allowedPersonal(context)) return fail(err.forbidden(messages(context).forbidden));
   const parsed = ForYouQuerySchema.safeParse(context.query ?? {});
   if (!parsed.success) return fail(err.badInput(messages(context).invalidInput));
-  const cursor = parsed.data.cursor === undefined ? null : decodeForYouCursor(parsed.data.cursor);
-  if (parsed.data.cursor !== undefined && !cursor) return fail(err.badInput(messages(context).invalidInput));
+  const cursor = parsed.data.cursor ? decodeForYouCursor(parsed.data.cursor) : null;
+  if (parsed.data.cursor && !cursor) return fail(err.badInput(messages(context).invalidInput));
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const scanned = await candidates(db, context, FOR_YOU_PAGE_SIZE + 1, cursor);
     const page = scanned.slice(0, FOR_YOU_PAGE_SIZE);
@@ -133,7 +133,7 @@ const list = async (context: ChatContext & { query?: unknown }): Promise<Result<
             thread.resource_type && thread.resource_id
               ? await readResource(context, { type: thread.resource_type, id: thread.resource_id })
               : null;
-          return [thread.id, thread.resource_type ? (resource?.name ?? null) : thread.name] as const;
+          return [thread.id, thread.resource_type ? (resource?.title ?? null) : thread.name] as const;
         },
         context.caller?.signal,
       ),
@@ -158,7 +158,15 @@ const list = async (context: ChatContext & { query?: unknown }): Promise<Result<
         unread: row.unread,
       });
     }
-    return ok({ items, nextCursor: scanned.length > FOR_YOU_PAGE_SIZE ? encode(position(page.at(-1)!)) : null });
+    return ok({
+      items,
+      ...(discussionIncomplete(context) ? { incomplete: true as const } : {}),
+      nextCursor: discussionStopped(context)
+        ? (parsed.data.cursor ?? "")
+        : scanned.length > FOR_YOU_PAGE_SIZE
+          ? encode(position(page.at(-1)!))
+          : null,
+    });
   });
 };
 /**

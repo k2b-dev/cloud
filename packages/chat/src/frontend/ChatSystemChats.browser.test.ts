@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { SystemChatPageSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -94,13 +95,14 @@ const seed = (permission: "admin" | "write" | "read" = "admin") => {
     });
     harness.resourceThread(chat, thread, {
       ref: { type: "spaces.item", id: `Item0${index}` },
-      kind: index === 1 ? "event" : "task",
+      title: name,
+      permission: "read",
+      typeTitle: "Item",
+      icon: "ti ti-package",
       status: index === 0 ? "Erledigt" : "Offen",
       done: index === 0,
-      deadline: index === 1 ? null : "2026-10-24T00:00:00.000Z",
-      deadlineAllDay: true,
-      assignees: ["Nora"],
-      ...(index === 1 ? { startsAt: "2026-10-24T09:00:00.000Z", endsAt: "2026-10-24T10:00:00.000Z", allDay: false } : {}),
+
+      ...(index === 1 ? { context: "24. Oktober, 09:00–10:00" } : {}),
       href: `/app/spaces/items/Item0${index}`,
     });
     return thread;
@@ -152,7 +154,7 @@ for (const [name, options, mobile] of [
       const { page, errors } = await load(options);
       try {
         await until(() => harness.systemRequests.some((request) => request.path === "/api/chat/system-chats"));
-        const section = list(page, mobile).getByRole("button", { name: /Spaces und Notebooks/ });
+        const section = list(page, mobile).getByRole("button", { name: /Diskussionen/ });
         expect(await section.getAttribute("aria-expanded")).toBe("false");
         await settled(page);
         const before = await section.boundingBox();
@@ -202,18 +204,16 @@ for (const [name, options, mobile] of [
       });
       try {
         const section = list(page, mobile).locator(".chat-system-chats");
-        const button = section.getByRole("button", { name: /Spaces und Notebooks/ });
+        const button = section.getByRole("button", { name: /Diskussionen/ });
         await button.click();
         expect(await section.locator(".chat-system-chats__skeleton").count()).toBe(3);
         await settled(page);
         const before = await button.boundingBox();
         release();
-        await section.getByText("Spaces und Notebooks konnten nicht geladen werden.", { exact: false }).waitFor();
+        await section.getByText("Diskussionen konnten nicht geladen werden.", { exact: false }).waitFor();
         await page.unroute("**/api/chat/system-chats");
         await section.getByRole("button", { name: "Erneut versuchen" }).click();
-        await section
-          .getByText("Noch keine. Sobald jemand an einer Aufgabe, einem Termin oder einer Notiz schreibt, erscheint der Chat hier.")
-          .waitFor();
+        await section.getByText("Noch keine. Sobald jemand über eine Ressource schreibt, erscheint ihr Chat hier.").waitFor();
         await settled(page);
         expect(await button.boundingBox()).toEqual(before);
       } finally {
@@ -230,7 +230,7 @@ for (const [name, options, mobile] of [
           expect(
             await page
               .locator(".k2b-app-workspace__sidebar .chat-system-chats")
-              .getByRole("button", { name: /Spaces und Notebooks/ })
+              .getByRole("button", { name: /Diskussionen/ })
               .getAttribute("aria-expanded"),
           ).toBe("true");
         await page
@@ -239,13 +239,13 @@ for (const [name, options, mobile] of [
           .waitFor();
         const metadata = page.locator(mobile ? ".chat-resource-head__mobile" : ".chat-conversation__header");
         await metadata.getByText("Erledigt", { exact: true }).waitFor();
-        expect(await metadata.getByRole("link", { name: "Zur Aufgabe ↗", exact: true }).getAttribute("href")).toBe(
+        expect(await metadata.getByRole("link", { name: "In Item öffnen ↗", exact: true }).getAttribute("href")).toBe(
           "/app/spaces/items/Item00",
         );
         expect(await page.getByRole("button", { name: "Personen hinzufügen", exact: true }).count()).toBe(0);
         if (mobile) expect(await page.locator(".chat-resource-head__icon").getByRole("link").isVisible()).toBe(true);
         await page.getByRole("link", { name: "Chat-Info", exact: true }).click();
-        await page.getByText("Mitglieder: alle mit Zugriff auf den Space. Zugriff änderst du dort.").waitFor();
+        await page.getByText("Mitglieder: alle mit Zugriff auf diesen Bereich. Zugriff änderst du dort.").waitFor();
         expect(await page.getByRole("button", { name: "Mitglieder suchen", exact: true }).count()).toBe(0);
         expect(await page.getByText("Chat verlassen", { exact: true }).count()).toBe(0);
         if (mobile) {
@@ -256,7 +256,7 @@ for (const [name, options, mobile] of [
           await page.waitForURL("**/app/chat");
           expect(
             await list(page, true)
-              .getByRole("button", { name: /Spaces und Notebooks/ })
+              .getByRole("button", { name: /Diskussionen/ })
               .getAttribute("aria-expanded"),
           ).toBe("true");
         }
@@ -398,8 +398,7 @@ test("2000 px column shows All first, server controls, activity and reader descr
     await column.getByRole("searchbox", { name: "Threads suchen" }).waitFor();
     await column.getByRole("link", { name: /Einladung freigeben/ }).waitFor();
     expect(await column.locator("[data-thread]").first().textContent()).toContain("Alle Threads");
-    expect(await column.getByText("Zugewiesen an: Nora", { exact: true }).count()).toBeGreaterThan(0);
-    expect(await column.locator('time[datetime^="2026-10-24"]').count()).toBeGreaterThan(0);
+    expect(await column.getByText("24. Oktober, 09:00–10:00", { exact: true }).count()).toBeGreaterThan(0);
     expect(await column.getByRole("link", { name: "Allgemein", exact: true }).count()).toBe(0);
     for (const theme of ["light", "dark"]) {
       await page.evaluate((theme) => {
@@ -529,7 +528,7 @@ test("a Notebook writer picks only its notes and opens their resource thread", a
     await page.getByRole("option", { name: /Ideen/ }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Hinzufügen", exact: true }).click();
     await page.waitForURL(`**/c/${chat}/t/*`);
-    await page.locator(".chat-resource-head__mobile").getByRole("link", { name: "Zur Notiz ↗" }).waitFor();
+    await page.locator(".chat-resource-head__mobile").getByRole("link", { name: "In Note öffnen ↗" }).waitFor();
     expect(
       harness.systemRequests.some(
         (request) =>
@@ -548,17 +547,20 @@ test("notebook rows and note heads use their own icon, link and membership; read
   const note = harness.addThread(chat, { name: "Ideen", count: 1 });
   harness.resourceThread(chat, note, {
     ref: { type: "notebooks.note", id: "Note01" },
-    kind: "note",
-    status: null,
+    title: "Ideen",
+    permission: "read",
+    typeTitle: "Note",
+    icon: "ti ti-note",
+    status: undefined,
     done: false,
     href: "/app/notebooks/notes/Note01",
   });
   const { page } = await load(phone, { chat, thread: note, panel: "info" });
   try {
-    await page.getByText("Mitglieder: alle mit Zugriff auf das Notebook. Zugriff änderst du dort.").waitFor();
-    expect(await page.locator(".chat-system-chats .ti-notebook").count()).toBeGreaterThan(0);
+    await page.getByText("Mitglieder: alle mit Zugriff auf diesen Bereich. Zugriff änderst du dort.").waitFor();
+    expect(await page.locator(".chat-system-chats .ti-box").count()).toBeGreaterThan(0);
     expect(await page.getByRole("button", { name: "Über ein Element sprechen", exact: true }).count()).toBe(0);
-    expect(await page.locator(".chat-resource-head__mobile").getByRole("link", { name: "Zur Notiz ↗" }).getAttribute("href")).toBe(
+    expect(await page.locator(".chat-resource-head__mobile").getByRole("link", { name: "In Note öffnen ↗" }).getAttribute("href")).toBe(
       "/app/notebooks/notes/Note01",
     );
     expect(await page.locator(".chat-resource-head__mobile").getByText("Offen", { exact: true }).count()).toBe(0);
@@ -586,7 +588,7 @@ test("system item directory and info keep their links inside the universal panel
     expect(await info.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/t/${threads[0]}?panel=info`);
     expect(await page.locator(".chat-conversation__back a").getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/threads`);
     await info.click();
-    await page.getByText("Mitglieder: alle mit Zugriff auf den Space. Zugriff änderst du dort.").waitFor();
+    await page.getByText("Mitglieder: alle mit Zugriff auf diesen Bereich. Zugriff änderst du dort.").waitFor();
     expect(errors).toEqual([]);
   } finally {
     await page.context().close();
@@ -599,17 +601,23 @@ test("discovery advances each provider independently after one source is exhaust
     await page.route("**/api/chat/system-chats*", async (route) => {
       const query = Object.fromEntries(new URL(route.request().url()).searchParams);
       queries.push(query);
+      const { cursors } = SystemChatPageSchema.parse({ items: [], cursors: JSON.parse(query.cursors ?? "{}"), skipped: [] });
+      const notebook = cursors["notebooks.notebook"];
       await route.fulfill({
         json: {
           items: [],
-          spacesCursor: query.spacesCursor === undefined ? "Space2" : null,
-          notebooksCursor: query.notebooksCursor === undefined ? "Book02" : query.notebooksCursor === "Book02" ? "Book03" : null,
+          cursors: {
+            "spaces.space": cursors["spaces.space"] === undefined ? { cursor: "Space2" } : "",
+            "notebooks.notebook":
+              notebook === undefined ? { cursor: "Book02" } : notebook && notebook.cursor === "Book02" ? { cursor: "Book03" } : "",
+          },
+          skipped: [],
         },
       });
     });
   });
   try {
-    await page.getByRole("button", { name: /Spaces und Notebooks/ }).click();
+    await page.getByRole("button", { name: /Diskussionen/ }).click();
     const more = page.locator(".chat-system-chats").getByRole("button", { name: "Weitere Chats anzeigen" });
     await more.click();
     await until(() => queries.length === 2);
@@ -617,7 +625,7 @@ test("discovery advances each provider independently after one source is exhaust
     await more.click();
     await until(() => queries.length === 3);
     await more.waitFor({ state: "detached" });
-    expect(queries[2]?.spacesCursor).toBe("");
+    expect(JSON.parse(queries[2]?.cursors ?? "{}")["spaces.space"]).toBe("");
     expect(await more.count()).toBe(0);
   } finally {
     await page.context().close();
