@@ -14,6 +14,8 @@ import { SharedLink } from "./views/SharedLink";
 export function App() {
   createEffect(() => {
     document.body.dataset.theme = isDark() ? "dark" : "light";
+    // The editor stylesheet keys its dark rules on the `dark` class, like Cloud.
+    document.documentElement.classList.toggle("dark", isDark());
     const color = isDark() ? "#11151b" : "#ffffff";
     for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
       meta.removeAttribute("media");

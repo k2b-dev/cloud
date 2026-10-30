@@ -176,8 +176,19 @@ is not application runtime configuration. Runtime identity comes from the app de
 Built-in services listen on port 3000 and ignore `PORT`; application authors can
 select an explicit port with `app.start({ port })` for standalone deployments.
 
-Every application container must use the same `APP_SECRET`.
-It remains the data/settings encryption input; it never signs or verifies a
+Core, the gateway and application containers use the same installation
+`APP_SECRET` and shared infrastructure credentials. The gateway receives
+`DATABASE_URL` for logging and storage configuration, `APP_SECRET` to decrypt
+that configuration, `REDIS_URL` for public-storage request budgets, and NATS
+access for discovery and telemetry. It serves `/public/storage` itself.
+
+Treat a gateway compromise as an installation compromise, just as for Core:
+its shared database role and encryption secret allow access beyond the
+settings its normal delivery path reads. Protect its environment and host as
+installation-wide credentials. It does not receive Core's identity KEKs or
+the Core/OAuth broker secret.
+
+`APP_SECRET` remains the data/settings encryption input; it never signs or verifies a
 session, invocation, or OAuth token.
 
 Only Core receives `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`. Other applications
@@ -454,7 +465,7 @@ Check configuration in this order:
 
 1. the container received the expected variables;
 2. Postgres, Valkey and NATS names resolve on the private network;
-3. application containers share `APP_SECRET`; the gateway does not receive it;
+3. application containers and the gateway share the same `APP_SECRET`;
 4. only Core has the current identity KEK;
 5. only Core and OAuth share the OAuth broker secret, and background callers
    have only their own scoped workload credentials;
