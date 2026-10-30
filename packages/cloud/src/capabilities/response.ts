@@ -23,10 +23,13 @@ export const readCapabilityResponse = async <T>(
   const body = parsedBody.ok ? parsedBody.data : null;
   if (!response.ok) {
     const error = CapabilityErrorSchema.safeParse(body);
+    const retryAfter = response.headers.get("Retry-After");
+    const retryAfterMs =
+      retryAfter === null ? NaN : /^\d+$/.test(retryAfter.trim()) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now();
     return {
       ok: false,
       error: error.success
-        ? { ...error.data, status: response.status }
+        ? { ...error.data, status: response.status, ...(Number.isSafeInteger(retryAfterMs) && retryAfterMs > 0 ? { retryAfterMs } : {}) }
         : { code: "INVALID_APP_RESPONSE", message: "Cloud returned an invalid capability error", status: response.status },
     };
   }

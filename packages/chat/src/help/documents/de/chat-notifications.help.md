@@ -8,7 +8,7 @@ order: 125
 
 Jeder Chat hat eine von 3 Stufen: **Alle Nachrichten**, **Nur Erwähnungen** oder **Aus**. Cloud zeigt auf einem Gerät höchstens 1 Benachrichtigung pro Chat. Eine neue Nachricht ersetzt die alte, zum Beispiel „Nora: Passt, danke! (+5 weitere)“.
 
-Bei Diskussionen über Einträge entfällt die Anzahl weiterer Nachrichten. Auch Nachrichten in Diskussionen, denen du folgst, können dich benachrichtigen. Du musst den Eintrag weiterhin ansehen dürfen. Kann die zuständige App das gerade nicht prüfen, wird bis zur erfolgreichen Prüfung kein Inhalt gesendet.
+Bei Diskussionen über Einträge entfällt die Anzahl weiterer Nachrichten. Auch Nachrichten in Diskussionen, denen du folgst, können dich benachrichtigen. Du musst den Eintrag und seine Sammlung weiterhin ansehen dürfen. Kann die zuständige App das gerade nicht prüfen, versucht Chat es begrenzt erneut. Danach entfällt die Benachrichtigung. Fehlgeschlagene Zustellungen sind über die Chat-Administration einsehbar.
 
 ## Stufe wählen {icon="bell"}
 

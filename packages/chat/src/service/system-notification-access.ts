@@ -1,4 +1,4 @@
-import { readResourcePrincipals } from "@k2b/cloud/capabilities/server";
+import { ResourceReaderRateLimited, readResourcePrincipals } from "@k2b/cloud/capabilities/server";
 import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { ratelimit } from "@k2b/cloud/server";
 import { logger, toPgUuidArray } from "@k2b/cloud/services";
@@ -9,41 +9,67 @@ import { ACCESS_TTL_SECONDS, RESOURCE_PAGE_SIZE } from "./resource-access";
 const log = logger("chat:system-notifications");
 /** Only the platform owns workload authentication and admission. */
 export const systemNotificationDependencies = { read: readResourcePrincipals };
-// One display page (100 elements) per person, at most one full 5-page scan across all interactive traffic.
+// Two platform requests per element. Half a display page per person, at most 250 pairs across interactive traffic.
 // Both precede Core admission, reserving 1,001 of Core's 1,501 requests for background checks.
-export const INTERACTIVE_READER_PERSON_LIMIT = RESOURCE_PAGE_SIZE;
-export const INTERACTIVE_READER_APP_LIMIT = RESOURCE_PAGE_SIZE * 5;
+export const INTERACTIVE_READER_PERSON_LIMIT = RESOURCE_PAGE_SIZE / 2;
+export const INTERACTIVE_READER_APP_LIMIT = INTERACTIVE_READER_PERSON_LIMIT * 5;
 const personLimit = ratelimit({ id: "chat:reader-person", limit: INTERACTIVE_READER_PERSON_LIMIT, windowSecs: ACCESS_TTL_SECONDS });
 const interactiveLimit = ratelimit({ id: "chat:reader-interactive", limit: INTERACTIVE_READER_APP_LIMIT, windowSecs: ACCESS_TTL_SECONDS });
-export const SYSTEM_READER_HEALTH_KEY = "chat:system-reader:health:v2";
-const CheckSchema = z.object({
+export const SYSTEM_READER_HEALTH_KEY = "chat:system-reader:health:v3";
+// The admin snapshot fits one resource display page. Overflow is visible, never a silent eviction.
+export const SYSTEM_READER_HEALTH_LIMIT = RESOURCE_PAGE_SIZE;
+export const SystemReaderCheckSchema = z.object({
   status: z.enum(["ok", "failing", "not_configured"]),
   reason: z.string().nullable(),
   resourceType: z.string(),
   checkedAt: z.string(),
 });
-const recordCheck = async (resourceType: string, status: z.infer<typeof CheckSchema>["status"], reason: string | null) => {
+export const recordSystemReaderCheck = async (
+  resourceType: string,
+  status: z.infer<typeof SystemReaderCheckSchema>["status"],
+  reason: string | null,
+) => {
   try {
-    await redis.set(SYSTEM_READER_HEALTH_KEY, JSON.stringify({ status, reason, resourceType, checkedAt: new Date().toISOString() }));
+    await redis.send("EVAL", [
+      'if redis.call("HEXISTS", KEYS[1], ARGV[1]) == 1 or redis.call("HLEN", KEYS[1]) < tonumber(ARGV[3]) then return redis.call("HSET", KEYS[1], ARGV[1], ARGV[2]) end return redis.call("HSET", KEYS[1], "_overflow", "1")',
+      "1",
+      SYSTEM_READER_HEALTH_KEY,
+      resourceType,
+      JSON.stringify({ status, reason, resourceType, checkedAt: new Date().toISOString() }),
+      String(SYSTEM_READER_HEALTH_LIMIT),
+    ]);
   } catch {
     log.warn("System chat reader health could not be stored");
   }
 };
-/** Report the last real platform check, without inferring readiness from configuration. */
+/** Only delivery outcomes update health; interactive counts cannot mask a failed provider. */
 export const systemNotificationHealth = async () => {
+  const unchecked = { status: "unchecked" as const, reason: null, resourceType: null, checkedAt: null };
   try {
-    const value = await redis.get(SYSTEM_READER_HEALTH_KEY);
-    return value === null
-      ? { status: "unchecked" as const, reason: null, resourceType: null, checkedAt: null }
-      : CheckSchema.parse(JSON.parse(value));
+    const fields = z.record(z.string(), z.string()).parse(await redis.send("HGETALL", [SYSTEM_READER_HEALTH_KEY]));
+    const providers: z.infer<typeof SystemReaderCheckSchema>[] = [];
+    let overflow = false;
+    for (const [type, value] of Object.entries(fields)) {
+      if (type === "_overflow") overflow = true;
+      else providers.push(SystemReaderCheckSchema.parse(JSON.parse(value)));
+    }
+    providers.sort((a, b) => a.resourceType.localeCompare(b.resourceType));
+    const worst =
+      providers.find((p) => p.status === "failing") ?? providers.find((p) => p.status === "not_configured") ?? providers[0] ?? unchecked;
+    return { ...worst, ...(overflow ? { status: "failing" as const, reason: "health_capacity" } : {}), providers };
   } catch {
-    return { status: "failing" as const, reason: "health_unavailable", resourceType: null, checkedAt: null };
+    return { ...unchecked, status: "failing" as const, reason: "health_unavailable", providers: [] };
   }
 };
 
 type ReaderResource = { resource_type: string; resource_id: string; container_type: string; container_id: string };
 export const SYSTEM_READER_VALIDITY_MS = 3_000;
-export type SystemReaderDecision = { resource: ReaderResource | null; readable: Set<string>; deadline: number };
+export type SystemReaderDecision = {
+  resource: ReaderResource | null;
+  readable: Set<string>;
+  deadline: number;
+  check?: { status: "ok" | "not_configured"; reason: string | null };
+};
 const readerResource = async (db: typeof sql, conversationId: string, threadId: string | null): Promise<ReaderResource | null> => {
   if (!threadId) return null;
   const [resource] = await db<ReaderResource[]>`
@@ -109,7 +135,6 @@ export const resolveSystemRecipients = async (
   const misses: string[] = [];
   const reserved: string[] = [];
   const reservation = crypto.randomUUID();
-  let attempted = false;
   try {
     for (const { id } of candidates) {
       if (mode === "background") {
@@ -146,7 +171,6 @@ export const resolveSystemRecipients = async (
       misses.push(id);
     }
     if (!misses.length) return { resource, readable, deadline };
-    attempted = true;
     const signal =
       mode === "background"
         ? AbortSignal.any([
@@ -154,7 +178,7 @@ export const resolveSystemRecipients = async (
             ...(options.signal ? [options.signal] : []),
           ])
         : options.signal;
-    const result = await systemNotificationDependencies.read({
+    const item = await systemNotificationDependencies.read({
       ...options,
       signal,
       ref: { type: resource.resource_type, id: resource.resource_id },
@@ -163,12 +187,19 @@ export const resolveSystemRecipients = async (
     });
     signal?.throwIfAborted();
     if (mode === "background" && performance.now() >= deadline) throw new Error("System chat reader decision expired");
-    if (result.state === "not_configured") {
-      await recordCheck(resource.resource_type, "not_configured", result.reason);
-      return empty;
-    }
-    await recordCheck(resource.resource_type, "ok", null);
-    const allowed = new Set(result.readable.flatMap((principal) => (principal.type === "user" ? [principal.userId] : [])));
+    if (item.state === "not_configured") return { ...empty, check: { status: "not_configured", reason: item.reason } };
+    // The container name is part of push content. Its own rights are independent of item sharing.
+    const container = await systemNotificationDependencies.read({
+      ...options,
+      signal,
+      ref: { type: resource.container_type, id: resource.container_id },
+      principals: misses.map((userId) => ({ type: "user", userId })),
+    });
+    signal?.throwIfAborted();
+    if (mode === "background" && performance.now() >= deadline) throw new Error("System chat reader decision expired");
+    if (container.state === "not_configured") return { ...empty, check: { status: "not_configured", reason: container.reason } };
+    const containerReaders = new Set(container.readable.flatMap((p) => (p.type === "user" ? [p.userId] : [])));
+    const allowed = new Set(item.readable.flatMap((p) => (p.type === "user" && containerReaders.has(p.userId) ? [p.userId] : [])));
     for (const id of misses) {
       if (allowed.has(id)) readable.add(id);
       if (mode === "interactive")
@@ -180,8 +211,8 @@ export const resolveSystemRecipients = async (
           allowed.has(id) ? "1" : "0",
         ]);
     }
-    return { resource, readable, deadline };
-  } catch {
+    return { resource, readable, deadline, check: { status: "ok", reason: null } };
+  } catch (error) {
     // Cancellation releases only this request's reservations; a later request can try again.
     if (mode === "interactive") {
       try {
@@ -198,10 +229,22 @@ export const resolveSystemRecipients = async (
     }
     const cancelled =
       options.signal?.aborted && options.signal.reason instanceof DOMException && options.signal.reason.name === "AbortError";
-    if (attempted && !cancelled) await recordCheck(resource.resource_type, "failing", "check_unavailable");
+    if (mode === "background" && !cancelled)
+      await recordSystemReaderCheck(
+        resource.resource_type,
+        "failing",
+        error instanceof ResourceReaderRateLimited
+          ? "rate_limited"
+          : error instanceof Error && error.message.includes("decision expired")
+            ? "decision_expired"
+            : "check_unavailable",
+      );
     // No exception detail: provider errors and credentials never enter logs or health text.
     log.warn("System chat reader check failed", { resourceType: resource.resource_type, mode });
-    if (mode === "background") throw new Error("System chat reader check unavailable");
+    if (mode === "background") {
+      if (error instanceof ResourceReaderRateLimited) throw error;
+      throw new Error("System chat reader check unavailable");
+    }
     return empty;
   }
 };

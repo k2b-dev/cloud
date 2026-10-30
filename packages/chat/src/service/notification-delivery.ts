@@ -1,4 +1,5 @@
 import { lazySync } from "@k2b/cloud";
+import { ResourceReaderRateLimited } from "@k2b/cloud/capabilities/server";
 import { getEffectivePermissions, type PermissionLevel } from "@k2b/cloud/server";
 import { accounts, coreSettings, logger, notifications } from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
@@ -14,6 +15,7 @@ import type { MessageRow } from "./message-store";
 import { type NotificationChoice, resolveNotifications } from "./notification-levels";
 import {
   recheckSystemRecipients,
+  recordSystemReaderCheck,
   resolveSystemRecipients,
   SYSTEM_READER_VALIDITY_MS,
   type SystemReaderDecision,
@@ -23,8 +25,9 @@ export const DELIVERY_BATCH = 500;
 export const PUSH_DELAY_MS = 3_000;
 export const ALERT_WINDOW_SECONDS = 10;
 const log = logger("chat:notifications");
-const MessageInput = z.object({ messageId: z.uuid() });
-const PushInput = z.object({ userId: z.uuid(), conversationId: z.uuid(), addedMessageId: z.uuid().optional() });
+const RetryInput = z.object({ deferrals: z.number().int().min(0).max(5).optional(), retryUntil: z.number().finite().optional() });
+const MessageInput = RetryInput.extend({ messageId: z.uuid() });
+const PushInput = RetryInput.extend({ userId: z.uuid(), conversationId: z.uuid(), addedMessageId: z.uuid().optional() });
 // Sync's documented defaults bound each stream to seven days / 256 maximum-size messages.
 // JetStream evicts oldest pending work; sync.controls() exposes depth and dead letters in admin.
 export const deliveryJob = lazySync((sync) => sync.job<z.infer<typeof MessageInput>>({ id: "chat:delivery" }));
@@ -114,6 +117,25 @@ const addedCandidates = (db: typeof sql, message: DeliveryMessage, conversation:
     AND (u.account_expires IS NULL OR u.account_expires > now())
     AND ${message.notification_cursor ? db`u.id > ${message.notification_cursor}::uuid` : db`true`} ORDER BY u.id LIMIT ${DELIVERY_BATCH}`;
 
+const recordCompletedDecision = async (decision: SystemReaderDecision | null) => {
+  if (decision?.resource && decision.check)
+    await recordSystemReaderCheck(decision.resource.resource_type, decision.check.status, decision.check.reason);
+};
+const isLockTimeout = (error: unknown) =>
+  z.union([z.object({ errno: z.literal("55P03") }), z.object({ code: z.literal("55P03") })]).safeParse(error).success;
+const recordFailedDecision = async (decision: SystemReaderDecision, error: unknown) => {
+  if (decision.resource)
+    await recordSystemReaderCheck(
+      decision.resource.resource_type,
+      "failing",
+      error instanceof Error && error.message.includes("decision expired")
+        ? "decision_expired"
+        : isLockTimeout(error)
+          ? "lock_timeout"
+          : "handoff_failed",
+    );
+};
+
 /** One durable cursor update and all recipient aggregates commit together; redelivery never adds a message twice. */
 export const deliverMessage = async (messageId: string, signal?: AbortSignal): Promise<boolean> => {
   const [preparedMessage] = await sql<DeliveryMessage[]>`SELECT * FROM chat.messages WHERE id = ${messageId}::uuid`;
@@ -140,62 +162,63 @@ export const deliverMessage = async (messageId: string, signal?: AbortSignal): P
   const access = system
     ? new Map([...system.readable].map((id) => [id, "read" as const]))
     : await permissions(preparedConversation, preparedCandidates);
-  const queued = await sql.begin(async (db) => {
-    if (system) await db`SET LOCAL lock_timeout = '1s'`;
-    const [message] = await db<DeliveryMessage[]>`SELECT * FROM chat.messages WHERE id = ${messageId}::uuid FOR UPDATE`;
-    if (!message || message.notification_done) return false;
-    const [conversation] = await db<ConversationRow[]>`SELECT * FROM chat.conversations WHERE id = ${message.conversation_id}::uuid`;
-    if (!conversation) return false;
-    const candidates =
-      message.kind === "text" ? await messageCandidates(db, message, conversation) : await addedCandidates(db, message, conversation);
-    // A concurrent delivery or resource change invalidates preparation; retry from the durable cursor.
-    if (
-      message.notification_cursor !== preparedMessage.notification_cursor ||
-      message.thread_id !== preparedMessage.thread_id ||
-      conversation.kind !== preparedConversation.kind ||
-      conversation.resource_type !== preparedConversation.resource_type ||
-      conversation.resource_id !== preparedConversation.resource_id ||
-      candidates.some((person) => !preparedCandidates.some((prepared) => prepared.id === person.id))
-    )
-      return true;
-    if (system?.readable.size && performance.now() >= system.deadline) throw new Error("System chat reader decision expired");
-    if (system) {
-      const current = await recheckSystemRecipients(system, conversation.id, message.thread_id, db);
-      for (const id of access.keys()) if (!current.has(id)) access.delete(id);
-    }
-    const [flags] = await db<{ channel: boolean; now: Date }[]>`SELECT clock_timestamp() AS now,
-      EXISTS(SELECT 1 FROM chat.conversation_access WHERE conversation_id = ${conversation.id}::uuid AND role = 'discoverable') AS channel`;
-    for (const person of candidates) {
-      const permission = access.get(person.id) ?? "none";
-      if (permission === "none") continue;
-      const level = resolveNotifications(
-        {
-          kind: conversation.kind,
-          channel: flags!.channel,
-          permission,
-          memberCount: conversation.member_count,
-          notify: person.notify,
-          notifyUntil: person.notify_until,
-        },
-        flags!.now,
-      ).level;
-      const reason =
-        message.kind === "system" ? "added" : person.mention ? "mention" : person.reply ? "reply" : person.follow ? "follow" : "message";
-      if (level === "none" || (reason === "message" && level !== "all")) continue;
-      if (reason === "added") {
-        await db`INSERT INTO chat.notification_outbox (message_id, conversation_id, user_id, ordering_key, due_at)
-          VALUES (${message.id}::uuid, ${conversation.id}::uuid, ${person.id}::uuid, ${pushKey(person.id, conversation.id)}, ${message.created_at}::timestamptz + interval '3 seconds') ON CONFLICT DO NOTHING`;
-        continue;
+  const queued = await sql
+    .begin(async (db) => {
+      if (system) await db`SET LOCAL lock_timeout = '1s'`;
+      const [message] = await db<DeliveryMessage[]>`SELECT * FROM chat.messages WHERE id = ${messageId}::uuid FOR UPDATE`;
+      if (!message || message.notification_done) return false;
+      const [conversation] = await db<ConversationRow[]>`SELECT * FROM chat.conversations WHERE id = ${message.conversation_id}::uuid`;
+      if (!conversation) return false;
+      const candidates =
+        message.kind === "text" ? await messageCandidates(db, message, conversation) : await addedCandidates(db, message, conversation);
+      // A concurrent delivery or resource change invalidates preparation; retry from the durable cursor.
+      if (
+        message.notification_cursor !== preparedMessage.notification_cursor ||
+        message.thread_id !== preparedMessage.thread_id ||
+        conversation.kind !== preparedConversation.kind ||
+        conversation.resource_type !== preparedConversation.resource_type ||
+        conversation.resource_id !== preparedConversation.resource_id ||
+        candidates.some((person) => !preparedCandidates.some((prepared) => prepared.id === person.id))
+      )
+        return true;
+      if (system?.readable.size && performance.now() >= system.deadline) throw new Error("System chat reader decision expired");
+      if (system) {
+        const current = await recheckSystemRecipients(system, conversation.id, message.thread_id, db);
+        for (const id of access.keys()) if (!current.has(id)) access.delete(id);
       }
-      await db`INSERT INTO chat.notification_push_state (user_id, conversation_id)
+      const [flags] = await db<{ channel: boolean; now: Date }[]>`SELECT clock_timestamp() AS now,
+      EXISTS(SELECT 1 FROM chat.conversation_access WHERE conversation_id = ${conversation.id}::uuid AND role = 'discoverable') AS channel`;
+      for (const person of candidates) {
+        const permission = access.get(person.id) ?? "none";
+        if (permission === "none") continue;
+        const level = resolveNotifications(
+          {
+            kind: conversation.kind,
+            channel: flags!.channel,
+            permission,
+            memberCount: conversation.member_count,
+            notify: person.notify,
+            notifyUntil: person.notify_until,
+          },
+          flags!.now,
+        ).level;
+        const reason =
+          message.kind === "system" ? "added" : person.mention ? "mention" : person.reply ? "reply" : person.follow ? "follow" : "message";
+        if (level === "none" || (reason === "message" && level !== "all")) continue;
+        if (reason === "added") {
+          await db`INSERT INTO chat.notification_outbox (message_id, conversation_id, user_id, ordering_key, due_at)
+          VALUES (${message.id}::uuid, ${conversation.id}::uuid, ${person.id}::uuid, ${pushKey(person.id, conversation.id)}, ${message.created_at}::timestamptz + interval '3 seconds') ON CONFLICT DO NOTHING`;
+          continue;
+        }
+        await db`INSERT INTO chat.notification_push_state (user_id, conversation_id)
         VALUES (${person.id}::uuid, ${conversation.id}::uuid) ON CONFLICT DO NOTHING`;
-      const [pushed] = await db<{ last_seq: string }[]>`SELECT last_seq FROM chat.notification_push_state
+        const [pushed] = await db<{ last_seq: string }[]>`SELECT last_seq FROM chat.notification_push_state
         WHERE user_id = ${person.id}::uuid AND conversation_id = ${conversation.id}::uuid FOR UPDATE`;
-      if (pushed && Number(pushed.last_seq) >= Number(message.seq)) continue;
-      const personal = reason === "mention" || reason === "reply" || reason === "follow";
-      const [row] = await db<
-        Pending[]
-      >`INSERT INTO chat.notification_pending AS pending (user_id, conversation_id, message_id, personal_message_id, reason)
+        if (pushed && Number(pushed.last_seq) >= Number(message.seq)) continue;
+        const personal = reason === "mention" || reason === "reply" || reason === "follow";
+        const [row] = await db<
+          Pending[]
+        >`INSERT INTO chat.notification_pending AS pending (user_id, conversation_id, message_id, personal_message_id, reason)
         VALUES (${person.id}::uuid, ${conversation.id}::uuid, ${message.id}::uuid, ${personal ? message.id : null}::uuid, ${reason})
         ON CONFLICT (user_id, conversation_id) DO UPDATE SET
           message_id = CASE WHEN (SELECT seq FROM chat.messages WHERE id = pending.message_id) < ${message.seq} THEN EXCLUDED.message_id ELSE pending.message_id END,
@@ -207,19 +230,24 @@ export const deliverMessage = async (messageId: string, signal?: AbortSignal): P
             THEN EXCLUDED.reason ELSE pending.reason END,
           message_count = LEAST(pending.message_count::bigint + 1, 2147483647)::int
         RETURNING *`;
-      if (row) {
-        await db`INSERT INTO chat.notification_outbox (message_id, conversation_id, user_id, ordering_key, due_at)
+        if (row) {
+          await db`INSERT INTO chat.notification_outbox (message_id, conversation_id, user_id, ordering_key, due_at)
           VALUES (${message.id}::uuid, ${conversation.id}::uuid, ${person.id}::uuid, ${pushKey(person.id, conversation.id)}, ${row.due_at})
           ON CONFLICT DO NOTHING`;
+        }
       }
-    }
-    // Roll back every aggregate if local work outlived its prepared owner decision.
-    if (system?.readable.size && performance.now() >= system.deadline) throw new Error("System chat reader decision expired");
-    const more = candidates.length === DELIVERY_BATCH;
-    await db`UPDATE chat.messages SET notification_cursor = ${candidates.at(-1)?.id ?? message.notification_cursor}::uuid,
+      // Roll back every aggregate if local work outlived its prepared owner decision.
+      if (system?.readable.size && performance.now() >= system.deadline) throw new Error("System chat reader decision expired");
+      const more = candidates.length === DELIVERY_BATCH;
+      await db`UPDATE chat.messages SET notification_cursor = ${candidates.at(-1)?.id ?? message.notification_cursor}::uuid,
       notification_done = ${!more} WHERE id = ${message.id}::uuid`;
-    return more;
-  });
+      return more;
+    })
+    .catch(async (error: unknown) => {
+      if (system) await recordFailedDecision(system, error);
+      throw error;
+    });
+  if (!queued) await recordCompletedDecision(system);
   return queued;
 };
 
@@ -436,75 +464,104 @@ export const sendPush = async (
       });
       if (!decision.readable.has(userId)) {
         await clear();
+        await recordCompletedDecision(decision);
         return null;
       }
       decisions.set(threadId, decision);
     }
   }
-  return sql.begin(async (transaction) => {
-    // Overlapping workers serialize only local validation and the idempotent platform enqueue.
-    if (readerDeadline !== null) await transaction`SET LOCAL lock_timeout = '1s'`;
-    const [currentState] = await transaction<{ last_seq: string }[]>`SELECT last_seq FROM chat.notification_push_state
+  const result = await sql
+    .begin(async (transaction) => {
+      // Overlapping workers serialize only local validation and the idempotent platform enqueue.
+      if (readerDeadline !== null) await transaction`SET LOCAL lock_timeout = '1s'`;
+      const [currentState] = await transaction<{ last_seq: string }[]>`SELECT last_seq FROM chat.notification_push_state
         WHERE user_id = ${userId}::uuid AND conversation_id = ${conversationId}::uuid FOR UPDATE`;
-    if (!currentState || String(currentState.last_seq) !== String(state.last_seq)) return PUSH_DELAY_MS;
-    if (!addedMessageId) {
-      const [current] = await transaction<Pending[]>`SELECT * FROM chat.notification_pending
+      if (!currentState || String(currentState.last_seq) !== String(state.last_seq)) return PUSH_DELAY_MS;
+      if (!addedMessageId) {
+        const [current] = await transaction<Pending[]>`SELECT * FROM chat.notification_pending
           WHERE user_id = ${userId}::uuid AND conversation_id = ${conversationId}::uuid FOR UPDATE`;
-      if (!current) return null;
-      // New delivery may grow this aggregate while the owner answers. It must not starve this send.
-      const [stillPending] = await transaction`SELECT 1 FROM chat.messages current, chat.messages prepared
+        if (!current) return null;
+        // New delivery may grow this aggregate while the owner answers. It must not starve this send.
+        const [stillPending] = await transaction`SELECT 1 FROM chat.messages current, chat.messages prepared
           WHERE current.id = ${current.message_id}::uuid AND prepared.id = ${pendingSnapshot.message_id}::uuid
             AND current.seq >= prepared.seq`;
-      if (!stillPending) return PUSH_DELAY_MS;
-    }
-    for (const [threadId, decision] of decisions)
-      if (!(await recheckSystemRecipients(decision, conversation.id, threadId, transaction)).has(userId)) {
+        if (!stillPending) return PUSH_DELAY_MS;
+      }
+      for (const [threadId, decision] of decisions)
+        if (!(await recheckSystemRecipients(decision, conversation.id, threadId, transaction)).has(userId)) {
+          await clear(transaction);
+          return null;
+        }
+      // Local reads/mutes/expiry can change while the owner is answering. Discard preparation and retry.
+      const currentParticipant = await pushParticipant(transaction, userId, conversationId, latest.thread_id, state.last_seq);
+      if (JSON.stringify(currentParticipant) !== JSON.stringify(participant)) return PUSH_DELAY_MS;
+      if (conversation.kind !== "system" && (await permissions(conversation, [person])).get(userId) === "none") {
         await clear(transaction);
         return null;
       }
-    // Local reads/mutes/expiry can change while the owner is answering. Discard preparation and retry.
-    const currentParticipant = await pushParticipant(transaction, userId, conversationId, latest.thread_id, state.last_seq);
-    if (JSON.stringify(currentParticipant) !== JSON.stringify(participant)) return PUSH_DELAY_MS;
-    if (conversation.kind !== "system" && (await permissions(conversation, [person])).get(userId) === "none") {
-      await clear(transaction);
-      return null;
-    }
-    const [unchanged] = await transaction`SELECT 1 FROM chat.conversations c JOIN auth.users u ON u.id = ${userId}::uuid
+      const [unchanged] = await transaction`SELECT 1 FROM chat.conversations c JOIN auth.users u ON u.id = ${userId}::uuid
         WHERE c.id = ${conversationId}::uuid
           AND c.kind = ${conversation.kind} AND c.resource_type IS NOT DISTINCT FROM ${conversation.resource_type}
           AND c.resource_id IS NOT DISTINCT FROM ${conversation.resource_id}
           AND (u.account_expires IS NULL OR u.account_expires > now())`;
-    if (!unchanged) return PUSH_DELAY_MS;
-    for (const message of [chosen, latest]) {
-      const [unchangedMessage] = await transaction`SELECT 1 FROM chat.messages
+      if (!unchanged) return PUSH_DELAY_MS;
+      for (const message of [chosen, latest]) {
+        const [unchangedMessage] = await transaction`SELECT 1 FROM chat.messages
           WHERE id = ${message.id}::uuid AND conversation_id = ${conversationId}::uuid AND deleted_at IS NULL
             AND thread_id IS NOT DISTINCT FROM ${message.thread_id}::uuid
             AND content_rev IS NOT DISTINCT FROM ${message.content_rev ?? null}::bigint`;
-      if (!unchangedMessage) return PUSH_DELAY_MS;
-    }
-    if (readerDeadline !== null && performance.now() >= readerDeadline) throw new Error("System chat reader decision expired");
-    const result = await notifications.send(definition, {
-      recipient: { userId },
-      data,
-      locale: context.locale,
-      idempotencyKey: `${conversation.short_id}:${latest.short_id}`,
-    });
-    if (result.status === "error") throw new Error("Chat notification preparation failed");
-    await transaction`UPDATE chat.notification_push_state SET last_seq = GREATEST(last_seq, ${latest.seq}), last_push_at = clock_timestamp()
+        if (!unchangedMessage) return PUSH_DELAY_MS;
+      }
+      if (readerDeadline !== null && performance.now() >= readerDeadline) throw new Error("System chat reader decision expired");
+      const result = await notifications.send(definition, {
+        recipient: { userId },
+        data,
+        locale: context.locale,
+        idempotencyKey: `${conversation.short_id}:${latest.short_id}`,
+      });
+      if (result.status === "error") throw new Error("Chat notification preparation failed");
+      await transaction`UPDATE chat.notification_push_state SET last_seq = GREATEST(last_seq, ${latest.seq}), last_push_at = clock_timestamp()
     WHERE user_id = ${userId}::uuid AND conversation_id = ${conversationId}::uuid`;
-    if (!addedMessageId) {
-      // Consume this snapshot while retaining any newer delivery and its personal reason.
-      await transaction`DELETE FROM chat.notification_pending WHERE user_id = ${userId}::uuid
+      if (!addedMessageId) {
+        // Consume this snapshot while retaining any newer delivery and its personal reason.
+        await transaction`DELETE FROM chat.notification_pending WHERE user_id = ${userId}::uuid
           AND conversation_id = ${conversationId}::uuid AND message_id = ${pendingSnapshot.message_id}::uuid`;
-      await transaction`UPDATE chat.notification_pending SET
+        await transaction`UPDATE chat.notification_pending SET
           due_at = GREATEST(due_at, clock_timestamp() + interval '3 seconds'),
           message_count = GREATEST(1, message_count - ${pendingSnapshot.message_count}),
           reason = CASE WHEN personal_message_id IS NOT DISTINCT FROM ${pendingSnapshot.personal_message_id}::uuid THEN 'message' ELSE reason END,
           personal_message_id = CASE WHEN personal_message_id IS NOT DISTINCT FROM ${pendingSnapshot.personal_message_id}::uuid THEN NULL ELSE personal_message_id END
           WHERE user_id = ${userId}::uuid AND conversation_id = ${conversationId}::uuid`;
-    }
-    return null;
-  });
+      }
+      return null;
+    })
+    .catch(async (error: unknown) => {
+      for (const decision of decisions.values()) await recordFailedDecision(decision, error);
+      throw error;
+    });
+  if (result === null) for (const decision of decisions.values()) await recordCompletedDecision(decision);
+  return result;
+};
+
+// Five continuations within five minutes cover transient contention and Core's 60-second admission window.
+// Bounds survive batch continuations to cap the whole job; every run prepares a new reader decision.
+export const NOTIFICATION_DEFERRAL_LIMIT = 5;
+export const NOTIFICATION_RETRY_WINDOW_MS = 5 * 60_000;
+export const runNotificationAttempt = async <T extends z.infer<typeof RetryInput>>(
+  context: { input: T; resubmit(options: { delayMs: number; input: T }): void },
+  run: () => Promise<void>,
+) => {
+  try {
+    await run();
+  } catch (error) {
+    const delayMs = error instanceof ResourceReaderRateLimited ? error.retryAfterMs : isLockTimeout(error) ? PUSH_DELAY_MS : null;
+    if (delayMs === null) throw error;
+    const retryUntil = context.input.retryUntil ?? Date.now() + NOTIFICATION_RETRY_WINDOW_MS;
+    const deferrals = context.input.deferrals ?? 0;
+    if (!Number.isSafeInteger(delayMs) || delayMs <= 0 || deferrals >= NOTIFICATION_DEFERRAL_LIMIT || Date.now() + delayMs > retryUntil)
+      throw error;
+    context.resubmit({ delayMs, input: { ...context.input, deferrals: deferrals + 1, retryUntil } });
+  }
 };
 
 let deliveryWorker: Awaited<ReturnType<ReturnType<typeof deliveryJob>["process"]>> | undefined;
@@ -514,14 +571,18 @@ export const notificationLifecycle = {
     deliveryWorker = await deliveryJob().process({ concurrency: 1 }, async (context) => {
       context.signal.throwIfAborted();
       const input = MessageInput.parse(context.input);
-      if (await deliverMessage(input.messageId, context.signal)) context.resubmit();
-      await context.heartbeat();
+      await runNotificationAttempt({ input, resubmit: (options) => context.resubmit(options) }, async () => {
+        if (await deliverMessage(input.messageId, context.signal)) context.resubmit();
+        await context.heartbeat();
+      });
     });
     pushWorker = await pushJob().process({ concurrency: 1 }, async (context) => {
       context.signal.throwIfAborted();
       const input = PushInput.parse(context.input);
-      const delayMs = await sendPush(input.userId, input.conversationId, input.addedMessageId, context.signal);
-      if (delayMs !== null) context.resubmit({ delayMs });
+      await runNotificationAttempt({ input, resubmit: (options) => context.resubmit(options) }, async () => {
+        const delayMs = await sendPush(input.userId, input.conversationId, input.addedMessageId, context.signal);
+        if (delayMs !== null) context.resubmit({ delayMs });
+      });
     });
     notificationOutbox.start();
     log.info("Chat notification workers started", { deliveryBatch: DELIVERY_BATCH, pushDelayMs: PUSH_DELAY_MS, retention: "sync-default" });

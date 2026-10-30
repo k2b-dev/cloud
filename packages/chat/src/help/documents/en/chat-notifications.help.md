@@ -56,7 +56,7 @@ A collection chat defaults to **Mentions only**. When you write in an item discu
 - When you read a chat on one device, the other devices remove its notification when you open Cloud there.
 :::
 
-Discussion notifications require current access to the item. If its owning app cannot check access, no content is sent until the check succeeds.
+Discussion notifications require current access to both the item and its collection. If the owning app cannot check access, Chat retries a limited number of times. After those retries, the notification is dropped. An administrator can inspect failed deliveries from Chat administration.
 
 ## Turn on notifications on a device {icon="device-mobile"}
 

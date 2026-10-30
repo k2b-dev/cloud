@@ -15,7 +15,7 @@ import { readState } from "./read-state";
 import { search } from "./search";
 import { shared } from "./shared";
 import { systemChats } from "./system-chats";
-import { systemNotificationHealth } from "./system-notification-access";
+import { SystemReaderCheckSchema, systemNotificationHealth } from "./system-notification-access";
 import { threadFollows } from "./thread-follows";
 import { threads } from "./threads";
 
@@ -26,6 +26,7 @@ export const ChatHealthSchema = z.object({
   status: z.enum(["ok", "unavailable"]),
   observedAt: z.string(),
   systemNotifications: z.object({
+    providers: z.array(SystemReaderCheckSchema),
     status: z.enum(["unchecked", "ok", "failing", "not_configured"]),
     reason: z.string().nullable(),
     resourceType: z.string().nullable(),

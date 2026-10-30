@@ -102,17 +102,19 @@ suite("chat skeleton", () => {
     expect(englishHtml).toContain("Checked at");
     expect(englishHtml).toContain("Not checked yet");
 
-    await redis.set(
+    await redis.send("HSET", [
       SYSTEM_READER_HEALTH_KEY,
+      "inventory.item",
       JSON.stringify({
         status: "not_configured",
         reason: "not_admitted",
         resourceType: "inventory.item",
         checkedAt: "2026-10-29T12:00:00Z",
       }),
-    );
+    ]);
     const checked = await request("/api/chat/admin/health", { cookie });
     expect(ChatHealthSchema.parse(await checked.json()).systemNotifications).toEqual({
+      providers: [{ status: "not_configured", reason: "not_admitted", resourceType: "inventory.item", checkedAt: "2026-10-29T12:00:00Z" }],
       status: "not_configured",
       reason: "not_admitted",
       resourceType: "inventory.item",
@@ -127,5 +129,20 @@ suite("chat skeleton", () => {
     expect(germanHtml).toContain("Nicht eingerichtet");
     expect(germanHtml).toContain("Core hat Chats Plattformrecht");
     expect(germanHtml).toContain("inventory.item");
+    for (const check of [
+      { resourceType: "archive.record", status: "not_configured", reason: "no_credential" },
+      { resourceType: "healthy.entry", status: "ok", reason: null },
+    ])
+      await redis.send("HSET", [
+        SYSTEM_READER_HEALTH_KEY,
+        check.resourceType,
+        JSON.stringify({ ...check, checkedAt: "2026-10-29T12:00:00Z" }),
+      ]);
+    const providersHtml = await (await request("/admin/chat", { cookie, "accept-language": "en" })).text();
+    expect(providersHtml).toContain("inventory.item");
+    expect(providersHtml).toContain("archive.record");
+    expect(providersHtml).toContain("Core has not admitted");
+    expect(providersHtml).toContain("app credential is unavailable");
+    expect(providersHtml).not.toContain("Reader checks working");
   });
 });

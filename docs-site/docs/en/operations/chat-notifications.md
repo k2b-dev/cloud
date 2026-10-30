@@ -5,7 +5,7 @@ section: Operations
 order: 1076
 description: Configure Chat push content and inspect delivery workers and badge counts.
 tags: [chat, notifications, browser, operations]
-updated: 2026-10-29
+updated: 2026-10-30
 ---
 
 # Chat notifications
@@ -65,19 +65,21 @@ sequence and time survive process restarts. No environment variable is added.
 
 ## Enable resource discussion notifications after the upgrade
 
-Update Core first, then deploy Chat and the discussion providers. Chat declares
+Update Core first to the release with automatic app credentials (PR #2112),
+then deploy Chat and the discussion providers. Chat declares
 `platformPermissions: ["resources:readers"]` and receives its workload credential
-automatically. There is no Chat credential to create or environment variable to
-add. Deployment of Chat's declaration admits the reader checks, as described in
+automatically from Core. There is no Chat credential to create or environment
+variable to add. Deployment of Chat's declaration admits the reader checks, as described in
 [App-to-app reader checks](/en/docs/platform/app-to-app-queries).
 
-A provider offers the `discussions` role and `access.readable` on its resource
-Types. The same path works for built-in and third-party providers. Following an
+A provider offers the `discussions` role and `access.readable` on both its item
+and container Types. The same path works for built-in and third-party providers. Following an
 item discussion selects its incoming messages for push; mentions and replies
 also qualify. The conversation's notification level still applies.
 
-Chat asks the platform about the item and its expected container, using only
-current participants of that conversation or followers of that thread. An item
+Chat checks the item with its expected container and checks the container
+separately. Only the intersection of both readable subsets can receive push.
+It uses only current participants of that conversation or followers of that thread. An item
 moved to another container is no longer readable through the old conversation.
 Chat checks during recipient preparation and again before the final send.
 Every prepared decision expires after three seconds; lock waits are bounded.
@@ -86,11 +88,23 @@ Owner checks run outside Chat database transactions.
 - A checked result keeps only the readable recipients. A rejection drops the
   recipient without retrying.
 - A temporary failure omits the item from counts and retries delivery through
-  the existing job. An earlier positive decision cannot authorize the push.
+  the existing job, with at most five short failure attempts between
+  continuations. Rate limits and lock timeouts
+  allow at most five delayed continuations within five minutes across all
+  batches of a job; each retry
+  checks access freshly. Core’s `Retry-After` delay is respected (60 seconds
+  when absent). After the retry budget is exhausted, the push is dropped and
+  the dead letter is visible in the administrative Sync controls.
+  **Administration → Chat** shows the last delivery failure for each provider.
+  An earlier positive decision cannot authorize the push.
 - `not_configured` suppresses push until setup is complete. **Administration →
-  Chat** shows the last actual check's state, resource type, time and reason,
+  Chat** shows each recorded provider item type's delivery state, time and reason,
   such as a missing reader function, automatic credential or Core admission.
-  Before any check it says **Not checked yet**.
+  Before any delivery check it says **Not checked yet**. Interactive count
+  checks do not update delivery health. Successful checks become healthy only
+  after hand-off succeeds; expired decisions report a failure. The snapshot
+  holds 100 provider item types; overflow is reported rather than hiding a
+  recorded failure.
 
 System-chat pushes never include a “+n more” count, because coalesced messages
 can belong to different resources. Chat checks both the chosen personal message
@@ -106,9 +120,10 @@ with effective **All messages** and unread content to the existing unread
 mentions/replies count. Each component is capped at 99; permission checks and
 bounded candidate scans can undercount inaccessible or very large collections.
 Service-account credentials receive zero. System-chat mention and reply
-counts use the same item reader check. Interactive decisions, including denials,
-may be reused for at most 60 seconds. Each person can trigger at most 100 new
-checks per 60 seconds, and all interactive traffic shares a limit of 500.
+counts use the same item and container reader checks. Interactive decisions, including denials,
+may be reused for at most 60 seconds. Each person can trigger at most 50 new
+item/container pairs per 60 seconds, and all interactive traffic shares a limit
+of 250 pairs (500 platform requests).
 Overlapping requests share a cache reservation. These limits leave at least
 1,001 of Core's 1,501 reader requests per minute outside interactive traffic;
 delivery always checks freshly. Push jobs reuse only cached count decisions,

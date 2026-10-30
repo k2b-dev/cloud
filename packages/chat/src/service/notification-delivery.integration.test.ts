@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, setSystemTime, spyOn, test } from "bun:test";
+import { ResourceReaderRateLimited } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { browserNotifications, notifications, serviceAccountCredentials, toPgUuidArray } from "@k2b/cloud/services";
 import { processNotificationDelivery } from "@k2b/cloud/services/notifications/dispatcher";
@@ -16,14 +17,24 @@ import { badgeCount } from "./badge";
 import { conversations } from "./conversations";
 import { mockDiscussionCatalog, providerApp } from "./discussions.test-fixture";
 import { forYou, forYouUnread } from "./for-you";
-import { alertKey, allowAlert, deliverMessage, notificationLifecycle, notificationOutbox, sendPush } from "./notification-delivery";
+import {
+  alertKey,
+  allowAlert,
+  deliverMessage,
+  notificationLifecycle,
+  notificationOutbox,
+  runNotificationAttempt,
+  sendPush,
+} from "./notification-delivery";
 import { resourceReaderDependencies } from "./resource-access";
 import * as systemReaderAccess from "./system-notification-access";
 import {
   INTERACTIVE_READER_APP_LIMIT,
   INTERACTIVE_READER_PERSON_LIMIT,
   readableSystemRecipients,
+  recordSystemReaderCheck,
   SYSTEM_READER_HEALTH_KEY,
+  SYSTEM_READER_HEALTH_LIMIT,
   systemNotificationDependencies,
   systemNotificationHealth,
 } from "./system-notification-access";
@@ -459,7 +470,7 @@ suiteFor(
     const threadId = await asSystem(chat.id, author.id, [message.uuid], recipient.id);
     // A follow selects the personal notification reason; it never authorizes content itself.
     reader = spyOn(systemNotificationDependencies, "read").mockImplementation(async (input) => {
-      expect(input.ref.type).toBe("inventory.item");
+      expect(["inventory.item", "inventory.collection"]).toContain(input.ref.type);
       expect(input.principals).not.toContainEqual({ type: "user", userId: outsider.id });
       return { state: "checked", readable: [...input.principals] };
     });
@@ -485,7 +496,7 @@ suiteFor(
       readable: readable ? [...input.principals] : [],
     }));
     expect(await badgeCount(recipient.context)).toBe(2);
-    expect(reader.mock.calls).toHaveLength(1); // Two messages on one element share one owner decision.
+    expect(reader.mock.calls).toHaveLength(2); // One item/container pair shared by both messages.
     await deliverMessage(first.uuid);
     await due(chat.id);
     await sendPush(recipient.id, chat.id);
@@ -577,7 +588,8 @@ suiteFor(
     expect(sent[0]!.data.reason).toBe("reply");
     reader.mockResolvedValue({ state: "not_configured", reason: "no_credential" });
     expect(await readableSystemRecipients(chat.id, threadId, [recipient.id])).toEqual(new Set());
-    expect(await systemNotificationHealth()).toMatchObject({ status: "not_configured", reason: "no_credential" });
+    // Preparation alone cannot change completed delivery health.
+    expect(await systemNotificationHealth()).toMatchObject({ status: "ok" });
   });
   test("system reader input binds delivery, counts and final sends to the conversation container", async () => {
     const { author, recipient, chat } = await setup();
@@ -592,8 +604,15 @@ suiteFor(
     const original = conversation!.resource_id;
     let currentContainer = original;
     reader = spyOn(systemNotificationDependencies, "read").mockImplementation(async (input) => {
-      expect(input.container).toEqual({ type: "inventory.collection", id: original });
-      return { state: "checked", readable: input.container?.id === currentContainer ? [...input.principals] : [] };
+      if (input.ref.type === "inventory.item") expect(input.container).toEqual({ type: "inventory.collection", id: original });
+      else {
+        expect(input.ref).toEqual({ type: "inventory.collection", id: original });
+        expect(input.container).toBeUndefined();
+      }
+      return {
+        state: "checked",
+        readable: input.ref.type === "inventory.collection" || input.container?.id === currentContainer ? [...input.principals] : [],
+      };
     });
     await deliverMessage(first.uuid);
     currentContainer = crypto.randomUUID();
@@ -616,18 +635,20 @@ suiteFor(
       expect(await badgeCount(recipient.context)).toBe(0);
       expect(await forYouUnread(recipient.context)).toBe(0);
       expect(await conversations.list(recipient.context)).toMatchObject({ ok: true, data: { forYouUnread: 0 } });
+      expect(await systemNotificationHealth()).toMatchObject({ status: "unchecked", providers: [] });
+      await expect(deliverMessage(message.uuid)).rejects.toThrow("reader check unavailable");
       expect(await systemNotificationHealth()).toMatchObject({
         status: "failing",
         reason: "check_unavailable",
         resourceType: "inventory.item",
       });
       expect((await systemNotificationHealth()).checkedAt).not.toBeNull();
-      await expect(deliverMessage(message.uuid)).rejects.toThrow("reader check unavailable");
       expect(await sql`SELECT 1 FROM chat.messages WHERE id = ${message.uuid}::uuid AND notification_done`).toHaveLength(0);
       reader.mockImplementation(async (input) => ({ state: "checked", readable: [...input.principals] }));
       expect(await readableSystemRecipients(chat.id, threadId, [recipient.id])).toEqual(new Set([recipient.id]));
-      expect((await systemNotificationHealth()).status).toBe("ok");
+      expect((await systemNotificationHealth()).status).toBe("failing");
       await deliverMessage(message.uuid);
+      expect((await systemNotificationHealth()).status).toBe("ok");
       await due(chat.id);
       reader.mockRejectedValue(new Error(`Reader unavailable: ${status}`));
       await expect(sendPush(recipient.id, chat.id)).rejects.toThrow("reader check unavailable");
@@ -654,6 +675,166 @@ suiteFor(
       expect(sent).toHaveLength(0);
     });
   }
+  for (const containerState of ["denied", "no_readable"] as const) {
+    test(`inventory item access with container ${containerState} never pushes its name`, async () => {
+      const { author, recipient, chat } = await setup();
+      const message = await post(author, chat.shortId);
+      await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+      reader!.mockImplementation(async (input) =>
+        input.ref.type === "inventory.collection"
+          ? containerState === "no_readable"
+            ? { state: "not_configured", reason: "no_readable" }
+            : { state: "checked", readable: [] }
+          : { state: "checked", readable: [...input.principals] },
+      );
+      await deliverMessage(message.uuid);
+      expect(reader!.mock.calls.map(([input]) => input.ref.type)).toEqual(["inventory.item", "inventory.collection"]);
+      expect(reader!.mock.calls[1]![0].principals).toEqual(reader!.mock.calls[0]![0].principals);
+      expect(await sql`SELECT 1 FROM chat.notification_pending WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(0);
+      expect(await systemNotificationHealth()).toMatchObject(
+        containerState === "no_readable" ? { status: "not_configured", reason: "no_readable" } : { status: "ok" },
+      );
+      expect(sent).toHaveLength(0);
+    });
+  }
+  test("provider health retains each failed provider and ignores interactive outcomes", async () => {
+    await recordSystemReaderCheck("inventory.item", "not_configured", "no_readable");
+    await recordSystemReaderCheck("archive.record", "failing", "check_unavailable");
+    await recordSystemReaderCheck("healthy.entry", "ok", null);
+    const before = await systemNotificationHealth();
+    expect(before.providers).toMatchObject([
+      { resourceType: "archive.record", status: "failing", reason: "check_unavailable" },
+      { resourceType: "healthy.entry", status: "ok" },
+      { resourceType: "inventory.item", status: "not_configured", reason: "no_readable" },
+    ]);
+    const { author, recipient, chat } = await setup();
+    const message = await post(author, chat.shortId);
+    const threadId = await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+    reader!.mockRejectedValue(new Error("Interactive timeout"));
+    await readableSystemRecipients(chat.id, threadId, [recipient.id], sql, "interactive");
+    expect(await systemNotificationHealth()).toEqual(before);
+    reader!.mockImplementation(async (input) => ({ state: "checked", readable: [...input.principals] }));
+    await readableSystemRecipients(chat.id, threadId, [recipient.id], sql, "interactive");
+    expect(await systemNotificationHealth()).toEqual(before);
+    for (let i = 0; i < SYSTEM_READER_HEALTH_LIMIT; i++) await recordSystemReaderCheck(`provider${i}.item`, "ok", null);
+    const full = await systemNotificationHealth();
+    expect(full.providers).toHaveLength(SYSTEM_READER_HEALTH_LIMIT);
+    expect(full).toMatchObject({ status: "failing", reason: "health_capacity" });
+    expect(full.providers).toContainEqual(expect.objectContaining({ resourceType: "archive.record", status: "failing" }));
+  });
+  test("rate and lock continuations have durable count and time bounds", async () => {
+    for (const error of [new ResourceReaderRateLimited(60_000), Object.assign(new Error("lock timeout"), { code: "55P03" })]) {
+      for (const input of [{ deferrals: 5 }, { retryUntil: testInstant.getTime() }, { retryUntil: testInstant.getTime() + 1_000 }]) {
+        await expect(
+          runNotificationAttempt(
+            {
+              input,
+              resubmit: () => {
+                throw new Error("Unexpected resubmit");
+              },
+            },
+            async () => {
+              throw error;
+            },
+          ),
+        ).rejects.toBe(error);
+      }
+    }
+    for (const delay of [NaN, -1, Infinity, 300_001]) {
+      const error = new ResourceReaderRateLimited(delay);
+      await expect(
+        runNotificationAttempt(
+          {
+            input: {},
+            resubmit: () => {
+              throw new Error("Unexpected resubmit");
+            },
+          },
+          async () => {
+            throw error;
+          },
+        ),
+      ).rejects.toBe(error);
+    }
+  });
+  test("failed notification hand-off reports failure after a successful reader check", async () => {
+    const { author, recipient, chat } = await setup();
+    const message = await post(author, chat.shortId);
+    await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+    reader!.mockImplementation(async (input) => ({ state: "checked", readable: [...input.principals] }));
+    await deliverMessage(message.uuid);
+    await due(chat.id);
+    send!.mockRejectedValue(new Error("Notification unavailable"));
+    await expect(sendPush(recipient.id, chat.id)).rejects.toThrow("Notification unavailable");
+    expect(await systemNotificationHealth()).toMatchObject({ status: "failing", reason: "handoff_failed" });
+    expect(await sql`SELECT 1 FROM chat.notification_pending WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(1);
+  });
+  test("rate admission at final push schedules a fresh check without consuming pending content", async () => {
+    const { author, recipient, chat } = await setup();
+    const message = await post(author, chat.shortId);
+    await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+    reader!.mockImplementation(async (input) => ({ state: "checked", readable: [...input.principals] }));
+    await deliverMessage(message.uuid);
+    await due(chat.id);
+    reader!.mockRejectedValue(new ResourceReaderRateLimited(90_000));
+    const delays: number[] = [];
+    await runNotificationAttempt(
+      {
+        input: {},
+        resubmit: ({ delayMs }) => {
+          delays.push(delayMs);
+        },
+      },
+      async () => {
+        await sendPush(recipient.id, chat.id);
+      },
+    );
+    expect(delays).toEqual([90_000]);
+    expect(sent).toHaveLength(0);
+    expect(await sql`SELECT 1 FROM chat.notification_pending WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(1);
+    expect(await systemNotificationHealth()).toMatchObject({ status: "failing", reason: "rate_limited" });
+  });
+  test("rate admission resubmits without a short failure and rechecks both resources freshly", async () => {
+    const { author, recipient, chat } = await setup();
+    const message = await post(author, chat.shortId);
+    await asSystem(chat.id, author.id, [message.uuid], recipient.id);
+    reader!.mockRejectedValue(new ResourceReaderRateLimited(60_000));
+    const resubmits: { delayMs: number; input: { messageId: string; deferrals?: number; retryUntil?: number } }[] = [];
+    await runNotificationAttempt<{ messageId: string; deferrals?: number; retryUntil?: number }>(
+      {
+        input: { messageId: message.uuid },
+        resubmit: (options) => {
+          resubmits.push(options);
+        },
+      },
+      async () => {
+        await deliverMessage(message.uuid);
+      },
+    );
+    expect(resubmits).toEqual([
+      { delayMs: 60_000, input: { messageId: message.uuid, deferrals: 1, retryUntil: testInstant.getTime() + 300_000 } },
+    ]);
+    expect(await systemNotificationHealth()).toMatchObject({ status: "failing", reason: "rate_limited" });
+    expect(await sql`SELECT 1 FROM chat.messages WHERE id = ${message.uuid}::uuid AND notification_done`).toHaveLength(0);
+    setSystemTime(new Date(testInstant.getTime() + 60_000));
+    reader!.mockClear();
+    reader!.mockImplementation(async (input) => ({ state: "checked", readable: [...input.principals] }));
+    await runNotificationAttempt(
+      {
+        input: resubmits[0]!.input,
+        resubmit: () => {
+          throw new Error("Unexpected resubmit");
+        },
+      },
+      async () => {
+        await deliverMessage(message.uuid);
+      },
+    );
+    expect(reader!.mock.calls.map(([input]) => input.ref.type)).toEqual(["inventory.item", "inventory.collection"]);
+    await due(chat.id);
+    await sendPush(recipient.id, chat.id);
+    expect(sent).toHaveLength(1);
+  });
   test("checked rejection drops the recipient without retrying or reporting a failed check", async () => {
     const { author, recipient, chat } = await setup();
     const message = await post(author, chat.shortId);
@@ -736,7 +917,7 @@ suiteFor(
     ]);
     try {
       for (let request = 0; request < 12; request++) expect(await badgeCount(recipient.context)).toBe(0);
-      expect(reader.mock.calls).toHaveLength(INTERACTIVE_READER_PERSON_LIMIT);
+      expect(reader.mock.calls).toHaveLength(INTERACTIVE_READER_PERSON_LIMIT * 2);
       const interactive = await redis.get(rateKeys[3]!);
       // Only admitted person checks spend the shared interactive budget; denied traffic never reaches Core.
       expect(Number(interactive ?? 0)).toBeLessThanOrEqual(INTERACTIVE_READER_PERSON_LIMIT);
@@ -746,7 +927,7 @@ suiteFor(
       expect(sent).toHaveLength(1);
       expect(
         reader.mock.calls
-          .slice(INTERACTIVE_READER_PERSON_LIMIT)
+          .slice(INTERACTIVE_READER_PERSON_LIMIT * 2)
           .some((call) => call[0].principals.some((principal) => principal.type === "user" && principal.userId === other.id)),
       ).toBe(true);
     } finally {
@@ -800,7 +981,7 @@ suiteFor(
         await redis.del(...keys);
         if (scope !== "replaced") {
           expect(await readableSystemRecipients(chat.id, threadId, [recipient.id], sql, "interactive")).toEqual(new Set([recipient.id]));
-          expect(reader.mock.calls).toHaveLength(1);
+          expect(reader.mock.calls).toHaveLength(2);
           expect(await redis.get(key)).toBe("1");
         }
       } finally {
@@ -834,8 +1015,22 @@ suiteFor(
       const safetyRelease = setTimeout(() => release.resolve(), 5_000);
       try {
         await locked.promise;
-        await expect(stage === "push" ? sendPush(recipient.id, chat.id) : deliverMessage(message.uuid)).rejects.toThrow("lock timeout");
+        const resubmits: { delayMs: number; input: { deferrals?: number; retryUntil?: number } }[] = [];
+        await runNotificationAttempt(
+          {
+            input: {},
+            resubmit: (options) => {
+              resubmits.push(options);
+            },
+          },
+          async () => {
+            if (stage === "push") await sendPush(recipient.id, chat.id);
+            else await deliverMessage(message.uuid);
+          },
+        );
+        expect(resubmits).toEqual([{ delayMs: 3_000, input: { deferrals: 1, retryUntil: testInstant.getTime() + 300_000 } }]);
         expect(sent).toHaveLength(0);
+        expect(await systemNotificationHealth()).toMatchObject({ status: "failing", reason: "lock_timeout" });
         if (stage === "push")
           expect(await sql`SELECT 1 FROM chat.notification_pending WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(1);
         else {
@@ -881,6 +1076,7 @@ suiteFor(
       try {
         await expect(stage === "push" ? sendPush(recipient.id, chat.id) : deliverMessage(message.uuid)).rejects.toThrow("decision expired");
         expect(sent).toHaveLength(0);
+        expect(await systemNotificationHealth()).toMatchObject({ status: "failing", reason: "decision_expired" });
         if (stage === "push")
           expect(await sql`SELECT 1 FROM chat.notification_pending WHERE conversation_id = ${chat.id}::uuid`).toHaveLength(1);
         else {
@@ -941,7 +1137,7 @@ suiteFor(
     });
     try {
       await expect(deliverMessage(message.uuid)).rejects.toThrow("reader check unavailable");
-      expect(await systemNotificationHealth()).toMatchObject({ status: "failing", reason: "check_unavailable" });
+      expect(await systemNotificationHealth()).toMatchObject({ status: "failing", reason: "decision_expired" });
       const [row] = await sql<
         { notification_done: boolean }[]
       >`SELECT notification_done FROM chat.messages WHERE id = ${message.uuid}::uuid`;

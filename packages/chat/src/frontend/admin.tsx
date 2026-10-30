@@ -11,7 +11,7 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = chatMessages.resolve([getLocale(c)]);
   const health = await chatService.health();
   const check = health.systemNotifications;
-  const reason = new Map([
+  const reasons = new Map([
     ["no_readable", t.readerNoReadable],
     ["no_credential", t.readerNoCredential],
     ["no_internal_origin", t.readerNoOrigin],
@@ -19,7 +19,13 @@ export default ssr<AuthContext>(async (c) => {
     ["not_admitted", t.readerNotAdmitted],
     ["check_unavailable", t.readerUnavailable],
     ["health_unavailable", t.readerHealthUnavailable],
-  ]).get(check.reason ?? "");
+    ["health_capacity", t.readerHealthCapacity],
+    ["decision_expired", t.readerDecisionExpired],
+    ["rate_limited", t.readerRateLimited],
+    ["lock_timeout", t.readerLockTimeout],
+    ["handoff_failed", t.readerUnavailable],
+  ]);
+  const reason = reasons.get(check.reason ?? "");
   const checkDetail = [
     reason ?? (check.status === "unchecked" ? t.systemNotificationsSetup : null),
     check.resourceType,
@@ -58,7 +64,26 @@ export default ssr<AuthContext>(async (c) => {
                     ? t.systemNotificationsFailing
                     : t.systemNotificationsNotConfigured
             }
-            sub={checkDetail || undefined}
+            sub={
+              [
+                ...check.providers
+                  .filter((provider) => provider.status !== "ok")
+                  .map((provider) =>
+                    [
+                      provider.resourceType,
+                      reasons.get(provider.reason ?? ""),
+                      t.observed({ time: dates.formatTime(provider.checkedAt, getDateConfig(c)) }),
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                  ),
+                ...(check.reason === "health_capacity" || check.reason === "health_unavailable" || !check.providers.length
+                  ? [checkDetail]
+                  : []),
+              ].join("; ") ||
+              checkDetail ||
+              undefined
+            }
           />
         </StatGrid>
       </div>
