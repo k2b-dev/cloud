@@ -5,6 +5,7 @@ import { z } from "zod";
 import { hasIntegrationTarget } from "./fixtures/test-infra-env";
 import {
   behaviorIgnore,
+  browserWarmUp,
   discoverTestSuites,
   parseArgs,
   planShards,
@@ -427,6 +428,17 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
 }
+
+test("a browser run warms the browser with a script that exists and is no test file of its own", async () => {
+  const warmUp = browserWarmUp(workspaceRoot);
+  const script = warmUp.command.at(-1)!;
+  expect(await Bun.file(script).exists()).toBeTrue();
+  const suites = await discoverTestSuites(workspaceRoot, { integration: false, browser: true });
+  expect(suites.some((suite) => suite.command.some((part) => part.includes("browser-warm-up")))).toBeFalse();
+  const help = Bun.spawnSync(["bun", script, "--help"], { cwd: warmUp.cwd });
+  expect(help.exitCode).toBe(0);
+  expect(help.stdout.toString()).toContain("Usage:");
+});
 
 test("integration --list prints the exact selection without a target, heavy slot or bootstrap", async () => {
   const args = ["--integration", "--exclude", "grids", "--shard", "2/3", "--list"];
