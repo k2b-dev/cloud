@@ -262,6 +262,14 @@ const de = {
   fmtTag: "Tag",
   fmtImage: "Bild oder PDF",
   fmtLink: "Link",
+  slashChart: "Diagramm",
+  slashChartHint: "Linie, Daten zum Anpassen",
+  slashBar: "Diagramm: Balken",
+  slashTable: "Tabelle",
+  slashNote: "Hinweis",
+  slashNoteHint: "farbige Box für Wichtiges",
+  slashImage: "Bild",
+  slashImageHint: "wird automatisch verkleinert",
 };
 
 type Messages = { [K in keyof typeof de]: (typeof de)[K] };
@@ -508,6 +516,14 @@ const en: Messages = {
   fmtTag: "Tag",
   fmtImage: "Image or PDF",
   fmtLink: "Link",
+  slashChart: "Chart",
+  slashChartHint: "Line, data to adjust",
+  slashBar: "Chart: bars",
+  slashTable: "Table",
+  slashNote: "Callout",
+  slashNoteHint: "coloured box for what matters",
+  slashImage: "Image",
+  slashImageHint: "is shrunk automatically",
 };
 
 export const messages = i18n.define({ baseLocale: "de", messages: { de, en } });

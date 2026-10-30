@@ -305,6 +305,27 @@
         "typescript": "catalog:",
       },
     },
+    "packages/editor": {
+      "name": "@k2b/editor",
+      "version": "0.1.0",
+      "dependencies": {
+        "@codemirror/autocomplete": "6.20.3",
+        "@codemirror/commands": "6.10.4",
+        "@codemirror/language": "6.12.4",
+        "@codemirror/state": "6.7.1",
+        "@codemirror/view": "6.43.7",
+        "@k2b/stdlib": "0.30.0",
+        "@k2b/ui": "0.35.0",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.2",
+        "solid-js": "1.9.17",
+        "typescript": "7.0.2",
+      },
+      "peerDependencies": {
+        "solid-js": "^1.9.10",
+      },
+    },
     "packages/faq": {
       "name": "@k2b/cloud-app-faq",
       "version": "0.0.0",
@@ -791,6 +812,7 @@
       "dependencies": {
         "@fontsource/ibm-plex-sans": "5.3.0",
         "@k2b/cloud": "workspace:*",
+        "@k2b/editor": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
         "@napi-rs/canvas": "1.0.9",
@@ -1207,6 +1229,8 @@
     "@k2b/cloud-cli": ["@k2b/cloud-cli@workspace:packages/cloud-cli"],
 
     "@k2b/cloud-docs": ["@k2b/cloud-docs@workspace:docs-site"],
+
+    "@k2b/editor": ["@k2b/editor@workspace:packages/editor"],
 
     "@k2b/fibel": ["@k2b/fibel@0.7.6", "", { "dependencies": { "@k2b/nessi": "^0.12.0", "@k2b/stdlib": "^0.25.0", "@modelcontextprotocol/sdk": "1.30.0", "bun-plugin-tailwind": "^0.1.2", "marked": "^18.0.12", "tailwindcss": "^4.3.3", "zod": "^4.6.1" }, "peerDependencies": { "@k2b/ssr": "^0.12.0", "solid-js": "^1.9.0" }, "optionalPeers": ["@k2b/ssr", "solid-js"], "bin": { "fibel": "src/cli.ts" } }, "sha512-Bp2WrNMu05p0pMan8pjTzn5lq3Aqt3m4VtcE2AuJA9tAOvKd6Aqffy5qJygz3uEsZ0/MqficfY2iZ/o92Vbu+A=="],
 

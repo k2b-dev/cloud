@@ -23,7 +23,8 @@
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@k2b/ui": "workspace:*",
     "solid-js": "catalog:",
-    "y-codemirror.next": "catalog:"
+    "y-codemirror.next": "catalog:",
+    "@k2b/editor": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
