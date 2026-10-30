@@ -12,12 +12,29 @@ const entry = resolve(import.meta.dir, "rebuilt-rows.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { Dropdown, Tabs } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Dropdown, prompts, Tabs } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const [generation, setGeneration] = createSignal(0);
 const [tab, setTab] = createSignal("first");
 window.chosen = [];
 window.rebuild = () => setGeneration((value) => value + 1);
+// A search answers at once, or holds its answer until the test releases it, with new objects for the same results.
+window.openSearch = () =>
+  void prompts
+    .search(
+      () => {
+        const answer = () => [
+          { id: "ada", label: "Ada", value: "ada" },
+          { id: "grace", label: "Grace", value: "grace" },
+        ];
+        if (!window.holdSearch) return answer();
+        return new Promise((resolve) => {
+          window.releaseSearch = () => resolve(answer());
+        });
+      },
+      { title: "Find people", debounceMs: 0 },
+    )
+    .then((item) => item?.value && window.chosen.push(item.value));
 const root = document.getElementById("root");
 render(
   () => [
@@ -62,6 +79,9 @@ declare global {
   interface Window {
     chosen: string[];
     rebuild: () => void;
+    openSearch: () => void;
+    holdSearch?: boolean;
+    releaseSearch?: () => void;
   }
 }
 
@@ -104,6 +124,28 @@ describe(`rows survive a host rebuild between press and release in ${browserName
     try {
       await pressAcrossRebuild(page, page.getByRole("tab", { name: "Second", exact: true }), rebuild(page));
       await page.waitForFunction(() => window.chosen.includes("second"), undefined, { timeout: 2_000 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a search result is chosen when a newer answer with the same result lands", async () => {
+    const page = await open();
+    try {
+      await page.evaluate(() => window.openSearch());
+      const row = page.getByRole("option", { name: "Grace", exact: true });
+      await row.waitFor();
+      await page.evaluate(() => {
+        window.holdSearch = true;
+      });
+      await page.getByRole("combobox").press("e");
+      await page.waitForFunction(() => window.releaseSearch !== undefined, undefined, { timeout: 2_000 });
+      await pressAcrossRebuild(page, row, async () => {
+        await page.evaluate(() => window.releaseSearch?.());
+        // A new answer makes its first row active again.
+        await page.locator('[role="option"][data-active="true"]').filter({ hasText: "Ada" }).waitFor({ timeout: 2_000 });
+      });
+      await page.waitForFunction(() => window.chosen.includes("grace"), undefined, { timeout: 2_000 });
     } finally {
       await page.close();
     }
