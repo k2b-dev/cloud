@@ -11,12 +11,12 @@ export type NoteMeta = {
 
 export function plainText(text: string): string {
   return text
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/<[^>]*>/g, "")
+    .replace(/!\[([^[\]]*)\]\([^()]*\)/g, "$1")
+    .replace(/\[([^[\]]+)\]\([^()]*\)/g, "$1")
+    .replace(/<[^<>]*>/g, "")
     .replace(/[`*_~]/g, "")
     .replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-+*]\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s+)/, "")
-    .replace(/\s+#+\s*$/, "")
+    .replace(/(?<!\s)\s+#+\s*$/, "")
     .trim();
 }
 
@@ -92,11 +92,13 @@ function tableValues(lines: string[]): number[] | null {
     const header = lines[i - 1] ?? "";
     if (!header.includes("|")) continue;
     const rows: string[][] = [];
-    for (let j = i + 1; j < lines.length && lines[j]?.includes("|"); j++) rows.push(cells(lines[j] ?? ""));
+    let j = i + 1;
+    for (; j < lines.length && lines[j]?.includes("|"); j++) rows.push(cells(lines[j] ?? ""));
     for (let col = 0; col < cells(header).length; col++) {
       const values = rows.map((row) => numberCell(row[col] ?? ""));
       if (values.length && values.every((value): value is number => value !== null)) return values;
     }
+    i = j;
   }
   return null;
 }
@@ -111,10 +113,10 @@ export function deriveMeta(markdown: string): NoteMeta {
   const prose: string[] = [];
   let image: string | null = null;
   for (const [index, line] of lines.entries()) {
-    const outsideCode = line.replace(/(`+).*?\1/g, "").replace(/\]\([^)]*\)/g, "]");
+    const outsideCode = line.replace(/(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g, "").replace(/\]\([^()]*\)/g, "]");
     for (const match of outsideCode.matchAll(/(?:^|[\s([{])#([\p{L}\p{N}_][\p{L}\p{N}_-]*)/gu))
       if (match[1]) tags.add(match[1].toLowerCase());
-    image ??= /!\[[^\]]*\]\(file:([A-Za-z0-9]+)\)/.exec(line.replace(/(`+).*?\1/g, ""))?.[1] ?? null;
+    image ??= /!\[[^[\]]*\]\(file:([A-Za-z0-9]+)\)/.exec(line.replace(/(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g, ""))?.[1] ?? null;
     if (/^\s{0,3}#{1,6}\s+/.test(line)) {
       if (index !== titleIndex) headings.push(plainText(line));
       continue;

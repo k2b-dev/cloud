@@ -102,7 +102,7 @@ canonical URL remains the requested link; the image URL always uses the read
 link. Inactive notes serve the SPA error state without stale metadata.
 
 `GET /p/:readId/preview.png` produces a 1200 × 630 PNG from local text and
-numeric chart data. The renderer never receives note URLs, HTML, SVG, or image
+numeric chart data from the first 64 KiB of Markdown. The renderer never receives note URLs, HTML, SVG, or image
 bytes. At most one render runs at a time; other notes receive the retryable
 `preview_busy` state. A process cache holds at most `NOTES_MAX_OPEN_PADS` images,
 keyed by content hash. No GET or HEAD writes to Postgres or updates human-open
@@ -149,6 +149,7 @@ Administrative sessions, decisions and removal audits remain available when the
 application budget is full. Their bounded records are still accounted for and
 may exceed the application threshold so the operator can free storage. Public
 note creation, uploads, reports and updates remain subject to their thresholds.
+
 
 File requests share a process concurrency budget of `NOTES_MAX_OPEN_PADS`
 transfers. Admission and edit-link checks happen before reading upload bodies.
