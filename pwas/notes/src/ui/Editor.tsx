@@ -1,11 +1,11 @@
 import { type Extension, Prec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, type SlashAction, SlashMenu } from "@k2b/editor";
+import { collab } from "@k2b/editor/collab";
 import type { MarkdownUrlOptions } from "@k2b/editor/markdown";
 import { files as browserFiles } from "@k2b/stdlib/browser";
 import type { TextEditorController } from "@k2b/ui/text-editor";
 import { createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
-import { yCollab } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { MAX_NOTE_LENGTH } from "../lib/model";
@@ -42,7 +42,7 @@ const chartBlock = (type: "line" | "bar", title: string) =>
 
 /**
  * The note editor: @k2b/editor on the note's Y.Text, with the compact bubble menu and the `/` menu of mockup v4.
- * The Yjs binding, its history and the remote cursors come in as extensions; the transport stays in the app.
+ * `@k2b/editor/collab` binds the Yjs text, its undo history and the other writers' cursors; the transport stays in the app.
  */
 export function NoteEditor(props: {
   text: Y.Text;
@@ -199,7 +199,7 @@ export function NoteEditor(props: {
           redo: () => undoManager.redo() !== null,
           boundary: () => undoManager.stopCapturing(),
         }}
-        extensions={[yCollab(props.text, props.awareness, { undoManager })]}
+        extensions={collab({ text: props.text, undoManager, awareness: props.awareness })}
         onReady={(controller) => {
           props.onReady?.(controller, () => void undoManager.undo());
           const view = controller.view;
