@@ -13,7 +13,7 @@ export const readUpload = async (request: Request): Promise<CheckedFile> => {
   const bytes = await boundedBody(request, limits.fileBytes + 16_384);
   let form: FormData;
   try {
-    form = await new Response(Uint8Array.from(bytes).buffer, { headers: { "content-type": contentType } }).formData();
+    form = await new Response(bytes, { headers: { "content-type": contentType } }).formData();
   } catch {
     throw new NotesError("invalid_file");
   }

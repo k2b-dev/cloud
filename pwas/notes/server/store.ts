@@ -144,6 +144,13 @@ export class NotesStore {
     if (!row) throw new NotesError("not_found", 404);
     return { readId: row.read_id, access: row.can_edit ? "edit" : "read" };
   }
+  async editablePad(token: string): Promise<PadAccess> {
+    const access = await this.resolve(token);
+    if (access.access !== "edit") throw new NotesError("read_only", 403);
+    const [row] = await this.db<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${access.readId}`;
+    this.assertActive(row);
+    return access;
+  }
   assertActive(row: Pick<PadRow, "blocked_at" | "deleted_at" | "status_reason"> | undefined): void {
     if (!row) throw new NotesError("not_found", 404);
     if (row.blocked_at) throw new NotesError("blocked", 451, row.status_reason ?? undefined);
@@ -251,13 +258,13 @@ export class NotesStore {
       return { key: file.key };
     });
   }
-  async getFile(token: string, key: string): Promise<{ bytes: Uint8Array; name: string; type: string }> {
+  async getFile(token: string, key: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; name: string; type: string }> {
     const access = await this.resolve(token);
     return this.db.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
       const [pad] = await tx<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${access.readId}`;
       this.assertActive(pad);
       const [file] = await tx<
-        { bytes: Uint8Array; name: string; type: string }[]
+        { bytes: Uint8Array<ArrayBuffer>; name: string; type: string }[]
       >`SELECT bytes,name,checked_type AS type FROM pad_files WHERE read_id=${access.readId} AND key=${key}`;
       if (!file) throw new NotesError("not_found", 404);
       return file;
