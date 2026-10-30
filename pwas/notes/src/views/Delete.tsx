@@ -1,5 +1,5 @@
 import { Button, prompts, toast } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { createSignal, Show, untrack } from "solid-js";
 import { api } from "../lib/api";
 import type { NoteRecord } from "../lib/model";
 import { navigate } from "../router";
@@ -14,7 +14,7 @@ export async function deleteNote(record: NoteRecord, alsoShared: boolean) {
   const store = app.store();
   if (!store) return;
   if (alsoShared && record.share?.kind === "own") {
-    await store.update(record.id, { pendingDelete: true });
+    if (!record.pendingDelete) await store.update(record.id, { pendingDelete: true });
     try {
       await api.deletePad(record.share.editId);
     } catch {
@@ -25,9 +25,16 @@ export async function deleteNote(record: NoteRecord, alsoShared: boolean) {
   await store.remove(record.id);
 }
 
-/** Pending deletions retry whenever the page starts or the browser comes back online. */
+let finishing = false;
+/** Pending deletions retry whenever the page starts or the browser comes back online; one run at a time. */
 export async function finishPendingDeletes() {
-  for (const record of app.records()) if (record.pendingDelete) await deleteNote(record, true);
+  if (finishing) return;
+  finishing = true;
+  try {
+    for (const record of untrack(app.records)) if (record.pendingDelete) await deleteNote(record, true);
+  } finally {
+    finishing = false;
+  }
 }
 
 function DeleteBody(props: { record: NoteRecord; close: (deleted: boolean) => void }) {

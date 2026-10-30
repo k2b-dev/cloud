@@ -259,6 +259,37 @@ describe("k2b notes · Produktions-SPA", () => {
     expect(await cloud.count()).toBe(0);
   }, 25_000);
 
+  test("Löschen einer geteilten Notiz: mit Server weg, ohne Server ausstehend, ohne Wiederholungsschleife", async () => {
+    await importNotes();
+    let deletes = 0;
+    let serverUp = false;
+    await page.route("**/api/pads/*", (route) => {
+      if (route.request().method() !== "DELETE") return route.fallback();
+      deletes += 1;
+      return serverUp ? route.fulfill({ status: 204 }) : route.fulfill({ status: 503, json: { code: "unavailable" } });
+    });
+    const remove = async () => {
+      await cards().filter({ hasText: "Lissabon im März" }).first().click();
+      await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Notiz löschen", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      expect(await dialog.getByRole("checkbox", { name: /Auch die geteilte Fassung löschen/ }).isChecked()).toBe(true);
+      await dialog.getByRole("button", { name: "Löschen", exact: true }).click();
+      await page.getByRole("heading", { name: "Notizen", exact: true }).waitFor();
+    };
+    // Without the server the note stays as a pending deletion, and nothing retries in a loop.
+    await remove();
+    await page.getByText(/Löschen ausstehend/).first().waitFor();
+    await page.waitForTimeout(1_500);
+    expect(deletes).toBe(1);
+    expect(await cards().filter({ hasText: "Lissabon im März" }).count()).toBe(1);
+    // Back online, the retry deletes it once.
+    serverUp = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await cards().filter({ hasText: "Lissabon im März" }).first().waitFor({ state: "detached" });
+    expect(deletes).toBe(2);
+  }, 25_000);
+
   test("Notizwechsel: Statusbreite und Teilen-Knopf bleiben an ihrem Platz", async () => {
     await importNotes();
     const measurements = [];

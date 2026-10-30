@@ -187,7 +187,10 @@ export function NotePage(props: { mode: NoteMode }) {
               }),
             );
           },
-          onGone: () => navigate(`/p/${linkId}`, { replace: true }),
+          // A deletion started here also closes the socket; only someone else's deletion explains itself on /p/….
+          onGone: () => {
+            if (!untrack(record)?.pendingDelete) navigate(`/p/${linkId}`, { replace: true });
+          },
         });
         setLive(session);
         void api.opened(linkId).catch(() => {});
