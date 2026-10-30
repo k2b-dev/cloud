@@ -26,6 +26,7 @@ import adminAiProjectsRoutes from "./admin-ai-projects";
 import adminAiQuotaRoutes from "./admin-ai-quotas";
 import adminAiSkillsRoutes from "./admin-ai-skills";
 import adminAiUsageRoutes from "./admin-ai-usage";
+import adminAppKeyRoutes from "./admin-app-keys";
 import adminCoreSettingsRoutes from "./admin-core-settings";
 import adminDirectorySharesRoutes from "./admin-directory-shares";
 import adminGeoRoutes from "./admin-geo";
@@ -106,6 +107,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/geo", adminGeoRoutes)
     .route("/admin/identity/directory-shares", adminDirectorySharesRoutes)
     .route("/admin/identity", adminIdentityRoutes)
+    .route("/admin/apps", adminAppKeyRoutes)
     .route("/admin/sync", createSyncOpsProxyRoutes())
     .route("/admin/lifecycle", adminLifecycleRoutes)
     .route("/ai/approval-preferences", approvalPreferenceRoutes)
@@ -133,6 +135,7 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
   return { api };
 };
 
+export { createAdminAppKeyRoutes } from "./admin-app-keys";
 export { createAppAccessRoutes } from "./app-access";
 export {
   CLOUD_MCP_PATH,

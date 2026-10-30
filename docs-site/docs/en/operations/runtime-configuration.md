@@ -74,6 +74,14 @@ values retain their source. Source detection resolves configured files with
 the same cache and throws for unreadable files or conflicting sources; it does not validate the value's
 schema. Read the registry property to obtain the validated value.
 
+## Enroll application public keys
+
+Core now accepts locally generated Ed25519 public keys through administrator
+APIs and `cld admin apps keys`. The installation ID lives in Core’s database.
+Enrollment alone does not change application startup or remove any existing
+environment values. See [App keys](/en/docs/operations/app-keys) for creation,
+resumable CLI output, rotation, and revocation.
+
 ## Replace the legacy Weather geo configuration
 
 Upgrade Core and configure its secret `geo.api_key` and credit budgets before

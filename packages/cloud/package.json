@@ -25,6 +25,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./app-key": "./src/app-key.ts",
     "./desktop": "./src/desktop/index.ts",
     "./desktop/solid": "./src/desktop/solid.tsx",
     "./server": "./src/server/index.ts",
