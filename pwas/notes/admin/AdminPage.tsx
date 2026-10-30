@@ -7,7 +7,7 @@ import "./admin.css";
 const reportSchema = z.object({
   id: z.string(),
   read_id: z.string(),
-  reason: z.string(),
+  reason: z.enum(["abuse", "illegal", "copyright", "privacy", "fraud"]),
   text: z.string(),
   email: z.string().nullable(),
   state: z.enum(["open", "decided"]),
@@ -210,7 +210,7 @@ export const AdminPage = () => {
                 {t().report} {report.id} · {report.state === "open" ? t().open : t().decided}
               </h2>
               <p>
-                {t().reason}: {report.reason}
+                {t().reason}: {t()[report.reason]}
               </p>
               <p class="notes-admin-prose">{report.text}</p>
               <a href={`/p/${report.read_id}`} target="_blank" rel="noopener noreferrer">
