@@ -1,6 +1,6 @@
 import { RedisClient, type RedisOptions, SQL } from "bun";
 import { postgresApplicationOptions } from "../_internal/postgres-application-name";
-import { connections, hasConnections } from "./connections";
+import { connections } from "./connections";
 
 export type SqlPoolOptions = SQL.PostgresOrMySQLOptions;
 
@@ -28,6 +28,8 @@ const notStarted = <T>(name: string): T => {
 
 export let sql: SQL = notStarted("sql");
 export let redis: RedisClient = notStarted("redis");
+// Whether `sql` and `redis` hold native clients; teardown must not touch the placeholders.
+let live = false;
 
 /** Own pool and lifecycle; defaults to the installation URL and application name. */
 export const createSql = (options: SqlPoolOptions = {}): SQL => {
@@ -55,6 +57,7 @@ export const initializeClients = async (): Promise<void> => {
     const valkey = createRedis();
     sql = database;
     redis = valkey;
+    live = true;
   } catch {
     await database.close();
     throw new Error("Valkey client configuration is invalid; check REDIS_URL and native Redis options");
@@ -63,7 +66,8 @@ export const initializeClients = async (): Promise<void> => {
 
 /** Internal test-target teardown, before a fixture selects a different database. */
 export const closePlatformClients = async (): Promise<void> => {
-  if (hasConnections()) {
+  if (live) {
+    live = false;
     await sql.close();
     redis.close();
   }
