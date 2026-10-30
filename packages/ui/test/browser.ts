@@ -26,6 +26,9 @@ export const browserName: "chromium" | "webkit" = (() => {
 // which leaves 1 s for the rest of the hook; a launch still pending after 4 s reports before the hook fails (#1473).
 const gracefulCloseMs = 2000;
 const killWaitMs = 2000;
+// Once its process group is gone, the browser is closed; Playwright then only removes the profile, which can take
+// seconds on a busy runner. That cleanup finishes in the background instead of using up the hook's last second.
+const profileWaitMs = 250;
 const slowLaunchMs = 4000;
 const processPollMs = 25;
 
@@ -91,7 +94,7 @@ const processGroupAlive = (pid: number): boolean => {
 };
 
 /** Kills the browser's process group and waits until no process of it is left; its leader exiting alone is not enough (#1473). */
-const killProcessGroup = async (browserProcess: BrowserProcess, gracefulMs: number): Promise<number> => {
+export const killProcessGroup = async (browserProcess: BrowserProcess, gracefulMs: number): Promise<number> => {
   const { pid } = browserProcess;
   const started = Date.now();
   // Playwright's kill() also removes the profile, but it signals nothing once the leader has exited, so signal the
@@ -108,7 +111,7 @@ const killProcessGroup = async (browserProcess: BrowserProcess, gracefulMs: numb
       `launchBrowser: ${browserName} process group ${pid} still alive after the kill; graceful wait ${gracefulMs} ms, kill wait ${Date.now() - started} ms`,
     );
   }
-  await within(killing, Math.max(0, killWaitMs - (Date.now() - started)));
+  await within(killing, Math.min(profileWaitMs, Math.max(0, killWaitMs - (Date.now() - started))));
   return Date.now() - started;
 };
 
