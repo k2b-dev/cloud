@@ -42,6 +42,8 @@ export const asUndoStep = (view: EditorView, run: () => void | Promise<void>) =>
   close();
 };
 
+type Slot = { compartment: Compartment; value: Extension; joined: boolean };
+
 export type EditorHandle = {
   /** The mounted view; `undefined` before `<Editor>` mounted and after it unmounted. */
   view: Accessor<EditorView | undefined>;
@@ -54,7 +56,8 @@ export type EditorHandle = {
   controller: Accessor<TextEditorController | undefined>;
   /**
    * Add an extension to the view, also before it mounts. A function is tracked: its later values reconfigure only
-   * its own slot. The slot leaves the view again when the calling owner is disposed.
+   * its own slot. The slot leaves the view again when the calling owner is disposed. Changes reach a mounted view one
+   * microtask later, so a factory may read signals that change during an editor update.
    */
   use: (extension: Extension | (() => Extension)) => void;
   /** Run an action apart from surrounding edits in the undo history and keep focus in the editor; disabled actions do nothing. */
@@ -82,7 +85,28 @@ export function createEditor(): EditorHandle {
   const [focused, setFocused] = createSignal(false);
   const [controller, setController] = createSignal<TextEditorController>();
   const [controls, setControls] = createSignal<TextEditorControls>();
-  const slots = new Set<{ compartment: Compartment; value: Extension }>();
+  const slots = new Set<Slot>();
+  // CodeMirror refuses a dispatch while it updates the view, and a plugin that throws there is switched off for good,
+  // such as the Yjs binding. A slot's factory may run inside such an update when it reads a signal that a plugin or
+  // listener wrote, so slots reach the view one microtask later, together, after the update finished.
+  const pending = new Set<Slot>();
+  const flush = () => {
+    const current = untrack(view);
+    if (!current) return;
+    const ready = [...pending];
+    pending.clear();
+    if (!current.dom.isConnected) return;
+    const effects = ready.map((slot) => {
+      if (slot.joined) return slot.compartment.reconfigure(slot.value);
+      slot.joined = true;
+      return StateEffect.appendConfig.of(slot.compartment.of(slot.value));
+    });
+    if (effects.length) current.dispatch({ effects });
+  };
+  const schedule = (slot: Slot) => {
+    if (!pending.size) queueMicrotask(flush);
+    pending.add(slot);
+  };
   // Listeners run inside the dispatch of whoever changed the view, maybe a host effect. They only write signals: a
   // read here would subscribe that effect to every editor update, and its next dispatch would run it again.
   const tracker = EditorView.updateListener.of((update) => {
@@ -91,26 +115,26 @@ export function createEditor(): EditorHandle {
   });
 
   const use = (extension: Extension | (() => Extension)) => {
-    const slot = { compartment: new Compartment(), value: [] as Extension };
+    const slot: Slot = { compartment: new Compartment(), value: [], joined: false };
     slots.add(slot);
-    const mounted = untrack(view);
-    if (typeof extension === "function") {
+    if (typeof extension === "function")
       createEffect(() => {
         slot.value = extension();
-        untrack(() => view()?.dispatch({ effects: slot.compartment.reconfigure(slot.value) }));
+        schedule(slot);
       });
-    } else slot.value = extension;
-    // A place added after the view mounted joins its configuration.
-    mounted?.dispatch({ effects: StateEffect.appendConfig.of(slot.compartment.of(slot.value)) });
+    else {
+      slot.value = extension;
+      // A place added after the view mounted joins its configuration.
+      if (untrack(view)) schedule(slot);
+    }
     if (getOwner())
       onCleanup(() => {
         slots.delete(slot);
         // A whole editor that unmounts disposes its places in the same pass; a view torn down meanwhile keeps its
         // configuration, so no listener reads a field that just left. A place that leaves a living editor goes.
-        const current = untrack(view);
-        queueMicrotask(() => {
-          if (current?.dom.isConnected) current.dispatch({ effects: slot.compartment.reconfigure([]) });
-        });
+        slot.value = [];
+        if (slot.joined) schedule(slot);
+        else pending.delete(slot);
       });
   };
 
@@ -148,13 +172,21 @@ export function createEditor(): EditorHandle {
     run,
     isActive,
     isEnabled,
-    extension: () => [tracker, [...slots].map((slot) => slot.compartment.of(slot.value))],
+    extension: () => [
+      tracker,
+      [...slots].map((slot) => {
+        slot.joined = true;
+        return slot.compartment.of(slot.value);
+      }),
+    ],
     attach(next, parts) {
       setController(parts?.controller);
       setControls(parts?.controls);
       setView(next);
       setState(next.state);
       setFocused(next.hasFocus);
+      // Values that changed before the view existed reach it now.
+      if (pending.size) queueMicrotask(flush);
     },
     detach(old) {
       if (untrack(view) !== old) return;

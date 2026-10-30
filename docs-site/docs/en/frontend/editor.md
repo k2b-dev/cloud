@@ -112,7 +112,9 @@ source that throws drops only its own options.
 
 `editor.use(extension)` adds an extension to the view, also before it mounts.
 A function is tracked: when its value changes, only its own slot is
-reconfigured. The slot leaves the view when the calling owner is disposed. The
+reconfigured, one microtask later. A factory may therefore read signals that
+change while the editor updates, such as a document store written by the Yjs
+binding. The slot leaves the view when the calling owner is disposed. The
 building blocks use the same mechanism, so a menu that unmounts takes its
 extension with it.
 
