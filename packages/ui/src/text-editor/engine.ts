@@ -1,7 +1,8 @@
 import { standardKeymap } from "@codemirror/commands";
-import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension, Prec, Text } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder, runScopeHandlers } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
 import { clipboardLoading } from "./clipboard-loading";
 import { commands } from "./format";
 import { formattedView } from "./formatted";
@@ -31,9 +32,12 @@ export type TextEditorOptions = {
   onDroppedImages?: (count: number, files: File[]) => void;
 };
 
+// CodeMirror's default style underlines headings; heading lines carry their own size and weight instead.
+const highlightStyle = HighlightStyle.define(defaultHighlightStyle.specs.filter((spec) => spec.tag !== tags.heading));
+
 const builtInPresentation = (mode: Exclude<TextEditorMode, "plain">): Extension => [
   markdown(),
-  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  syntaxHighlighting(highlightStyle, { fallback: true }),
   mode === "formatted" ? formattedView : EditorView.contentAttributes.of({ class: "k2b-ste-source" }),
   keymap.of([
     { key: "Mod-b", run: commands.bold },
