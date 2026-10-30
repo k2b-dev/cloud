@@ -1,8 +1,9 @@
-import { Button, prompts } from "@k2b/ui";
+import { Button } from "@k2b/ui";
 import { BRAND } from "../brand";
 import { preferences } from "../prefs";
 import { t } from "../state";
 import { CLOUD_URL, WithCloud } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 
 const BODY = {
   de: [
@@ -16,26 +17,23 @@ const BODY = {
 };
 
 export function openWhatIs() {
-  void prompts.dialog<void>(
-    (close) => (
-      <div class="n-dialog">
-        <h2>{t().whatIs}</h2>
-        {BODY[preferences.locale()].map((line) => (
-          <p class="n-lead">{line}</p>
-        ))}
-        <a class="n-more" href={CLOUD_URL} target="_blank" rel="noopener">
-          <img src="/cloud-logo.svg" alt="" />
-          <span>
-            {BRAND} <WithCloud text={t().builtWith} />
-          </span>
-        </a>
-        <div class="n-dialog-acts">
-          <Button variant="primary" onClick={() => close()}>
-            {t().close}
-          </Button>
-        </div>
+  void openSheet((close) => (
+    <div class="n-dialog">
+      <h2>{t().whatIs}</h2>
+      {BODY[preferences.locale()].map((line) => (
+        <p class="n-lead">{line}</p>
+      ))}
+      <a class="n-more" href={CLOUD_URL} target="_blank" rel="noopener">
+        <img src="/cloud-logo.svg" alt="" />
+        <span>
+          {BRAND} <WithCloud text={t().builtWith} />
+        </span>
+      </a>
+      <div class="n-dialog-acts">
+        <Button variant="primary" onClick={() => close()}>
+          {t().close}
+        </Button>
       </div>
-    ),
-    { header: false },
-  );
+    </div>
+  ));
 }

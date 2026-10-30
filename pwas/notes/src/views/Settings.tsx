@@ -1,10 +1,11 @@
-import { Button, ProgressBar, prompts, SegmentedControl, Switch, TextInput } from "@k2b/ui";
+import { Button, Checkbox, ProgressBar, prompts, SegmentedControl, Switch, TextInput } from "@k2b/ui";
 import { createResource, createSignal, Show } from "solid-js";
 import type { AppLocale } from "../i18n";
 import { preferences, type ThemeChoice } from "../prefs";
 import { navigate } from "../router";
 import { app, t } from "../state";
 import { Icon } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 import { openImport } from "./Import";
 import { runExport } from "./menus";
 
@@ -19,6 +20,7 @@ function SettingsBody(props: { close: () => void }) {
   const [usage, { refetch }] = createResource(async () => (await app.store()?.usage()) ?? null);
   const [persistDenied, setPersistDenied] = createSignal(false);
   const [name, setName] = createSignal(preferences.name());
+  const [includeLinks, setIncludeLinks] = createSignal(false);
 
   const togglePersist = async (next: boolean) => {
     if (!next) return;
@@ -104,7 +106,7 @@ function SettingsBody(props: { close: () => void }) {
         <span class="n-v">{t().storageSummary({ notes: usage()?.notes ?? app.records().length, files: usage()?.files ?? 0 })}</span>
       </div>
       <div class="n-set-buttons">
-        <Button variant="secondary" onClick={() => void runExport()}>
+        <Button variant="secondary" onClick={() => void runExport({ includeLinks: includeLinks() })}>
           <Icon name="ti-download" />
           {t().exportShort}
         </Button>
@@ -119,6 +121,13 @@ function SettingsBody(props: { close: () => void }) {
           {t().importShort}
         </Button>
       </div>
+      <Checkbox
+        class="n-field"
+        label={t().includeLinks}
+        description={t().includeLinksHelp}
+        value={includeLinks}
+        onValueChange={setIncludeLinks}
+      />
       <div class="n-set">
         <button type="button" class="n-textlink" onClick={() => void clearAll()}>
           {t().clearAll}
@@ -137,5 +146,5 @@ function SettingsBody(props: { close: () => void }) {
 }
 
 export function openSettings() {
-  void prompts.dialog<void>((close) => <SettingsBody close={() => close()} />, { header: false, history: true });
+  void openSheet((close) => <SettingsBody close={() => close()} />);
 }

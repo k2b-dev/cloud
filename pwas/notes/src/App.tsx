@@ -1,4 +1,4 @@
-import { createEffect, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { AdminPage } from "../admin/AdminPage";
 import { isDark } from "./prefs";
 import { linkClick, navigate, route } from "./router";
@@ -44,9 +44,12 @@ export function App() {
       window.removeEventListener("online", online);
     });
   });
-  createEffect(() => {
-    if (app.ready() && app.online()) void finishPendingDeletes();
-  });
+  // Only readiness and the network start a retry; the deletions themselves change the index.
+  createEffect(
+    on([app.ready, app.online], ([ready, online]) => {
+      if (ready && online) void finishPendingDeletes();
+    }),
+  );
 
   const dragging = usePageDrop(() => route().name === "home" && app.records().length > 0);
 

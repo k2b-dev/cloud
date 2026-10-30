@@ -22,6 +22,7 @@ export type MergeReport = { remoteChanges: number; writers: number[] };
 export const LIVE_ORIGIN = Symbol("notes-live");
 
 const RECONNECT_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
+const UNCONFIRMED_MS = 2_000;
 const NO_RETRY_REASONS = new Set(["blocked", "expired", "deleted", "read_only"]);
 
 const updateId = () => {
@@ -47,7 +48,11 @@ export function connectLive(options: {
   let attempt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
+  /** Deleted, expired, blocked or read-only: this link will not work again, so nothing reconnects. */
+  let terminal = false;
   let synced = false;
+  /** Set once this socket sent the server what it was missing; later edits go one by one. */
+  let answered = false;
   let wasOffline = false;
   let editedOffline = false;
   /** Remote awareness lives beside the editor's own state; the server's echo of ours is dropped by identity. */
@@ -87,9 +92,20 @@ export function connectLive(options: {
     setPeople(list);
     // Remote cursors render from the editor's awareness: mirror the trusted remote states there.
     const states = awareness.getStates();
-    for (const id of [...states.keys()]) if (id !== doc.clientID && !remoteStates.has(id)) states.delete(id);
-    for (const [id, entry] of remoteStates) if (entry.state) states.set(id, entry.state);
-    awareness.emit("change", [{ added: [], updated: [...remoteStates.keys()], removed: [] }, "remote"]);
+    const removed: number[] = [];
+    const added: number[] = [];
+    for (const id of [...states.keys()])
+      if (id !== doc.clientID && !remoteStates.has(id)) {
+        states.delete(id);
+        removed.push(id);
+      }
+    for (const [id, entry] of remoteStates)
+      if (entry.state) {
+        if (!states.has(id)) added.push(id);
+        states.set(id, entry.state);
+      }
+    // Remote cursors redraw from this event; a person who left must be named in `removed`.
+    awareness.emit("change", [{ added, updated: [...remoteStates.keys()].filter((id) => !added.includes(id)), removed }, "remote"]);
   };
   const applyRemoteAwareness = (update: Uint8Array) => {
     const decoder = decoding.createDecoder(update);
@@ -109,11 +125,19 @@ export function connectLive(options: {
 
   const onDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === LIVE_ORIGIN || !options.canEdit) return;
+    if (!answered) {
+      // Offline or before the handshake: the reconnect diff carries this change, one frame for all of them.
+      editedOffline = true;
+      return;
+    }
     const id = updateId();
     pending.set(id, update);
     setPendingCount(pending.size);
-    if (!synced) editedOffline = true;
     sendUpdate(id, update);
+    // A change the server has not confirmed after a moment shows as "Verbindet …", not as saved.
+    setTimeout(() => {
+      if (pending.has(id) && status() === "live") setStatus("connecting");
+    }, UNCONFIRMED_MS);
   };
   const onAwarenessUpdate = ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
     if (origin === "remote") return;
@@ -133,14 +157,17 @@ export function connectLive(options: {
         // The server's state vector: answer with everything it is missing, as an acknowledged update.
         const vector = decoding.readVarUint8Array(decoder);
         if (options.canEdit) {
+          // Everything the server lacks, unconfirmed updates included, goes as one update. Many offline edits must
+          // not turn into a burst of frames that the server's per-socket rate limit would refuse.
+          pending.clear();
           const diff = Y.encodeStateAsUpdate(doc, vector);
           if (diff.byteLength > 2) {
             const id = updateId();
             pending.set(id, diff);
-            setPendingCount(pending.size);
+            sendUpdate(id, diff);
           }
-          // Everything not yet confirmed goes again; the server ignores ids it already stored.
-          for (const [id, update] of pending) sendUpdate(id, update);
+          setPendingCount(pending.size);
+          answered = true;
         }
         return;
       }
@@ -185,13 +212,14 @@ export function connectLive(options: {
   };
 
   const connect = () => {
-    if (closed) return;
+    if (closed || terminal) return;
     if (!navigator.onLine) {
       setStatus("offline");
       wasOffline = true;
       return;
     }
     synced = false;
+    answered = false;
     setStatus((current) => (current === "offline" ? "offline" : "connecting"));
     const ws = new WebSocket(api.socketUrl(options.linkId));
     ws.binaryType = "arraybuffer";
@@ -210,10 +238,13 @@ export function connectLive(options: {
     ws.onclose = (event) => {
       if (socket !== ws) return;
       socket = undefined;
+      answered = false;
+      synced = false;
       remoteStates.clear();
       refreshPeople();
       if (closed) return;
       if (NO_RETRY_REASONS.has(event.reason)) {
+        terminal = true;
         if (event.reason !== "read_only") {
           setStatus("gone");
           options.onGone?.(event.reason === "blocked" ? "blocked" : event.reason === "expired" ? "expired" : "deleted");
@@ -235,6 +266,7 @@ export function connectLive(options: {
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
       if (code === "not_found" || code === "gone" || code === "blocked") {
+        terminal = true;
         setStatus("gone");
         options.onGone?.(code === "blocked" ? "blocked" : code === "gone" ? "expired" : "not_found");
         return true;
@@ -252,6 +284,7 @@ export function connectLive(options: {
     }, delay);
   };
   const online = () => {
+    if (terminal) return;
     if (timer) clearTimeout(timer);
     timer = undefined;
     attempt = 0;

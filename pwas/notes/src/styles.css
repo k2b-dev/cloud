@@ -1462,20 +1462,7 @@ body.k2b-ui {
   .n-notfound {
     padding-top: 3.5rem;
   }
-  .n-linkbox .n-host,
-  .n-qr {
-    display: none;
-  }
-  .n-dialog .n-dialog-acts {
-    flex-direction: column-reverse;
-  }
-  .n-dialog .n-dialog-acts .k2b-button {
-    justify-content: center;
-    min-height: 44px;
-  }
-  .n-dialog-acts .n-left {
-    margin-right: 0;
-  }
+
   .n-accessory[data-on] {
     display: flex;
     position: fixed;
@@ -1595,4 +1582,29 @@ body.k2b-ui {
 .n-editor .cm-tooltip-autocomplete completion-section,
 .n-editor .cm-tooltip.cm-completionInfo {
   display: none;
+}
+
+/* Mockup v4 dialog padding; on phones the sheet's handle already gives the top space. */
+.n-sheet {
+  padding: 1.4rem 1.5rem 1.25rem;
+}
+/* Sheets on phones (mockup v4): actions stack, the main one on top, each a full-width touch target. */
+@media (max-width: 47.99rem) {
+  .n-sheet {
+    padding: 0 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+  }
+  .n-sheet .n-dialog-acts {
+    flex-direction: column-reverse;
+  }
+  .n-sheet .n-dialog-acts .k2b-button {
+    justify-content: center;
+    min-height: 44px;
+  }
+  .n-sheet .n-dialog-acts .n-left {
+    margin-right: 0;
+  }
+  .n-sheet .n-qr,
+  .n-sheet .n-linkbox .n-host {
+    display: none;
+  }
 }

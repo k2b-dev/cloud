@@ -1,8 +1,9 @@
-import { Button, Checkbox, prompts } from "@k2b/ui";
+import { Button, Checkbox } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { api, type ReportReason } from "../lib/api";
 import { t } from "../state";
 import { Icon } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 
 const REASONS: { value: ReportReason; label: () => string }[] = [
   { value: "abuse", label: () => t().reasonAbuse },
@@ -29,7 +30,9 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
   const linkId = () => props.linkId ?? linkIdFrom(link());
   const errors = () => ({
     link: !linkId() ? t().reportLinkRequired : undefined,
-    text: text().trim().length < 3 ? t().reportTextRequired : undefined,
+    // The server takes a reason of at least 10 characters and a valid address, so both are checked here first.
+    text: text().trim().length < 10 ? t().reportTextRequired : undefined,
+    email: email().trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email().trim()) ? t().reportEmailInvalid : undefined,
     confirmed: !confirmed() ? t().reportConfirmRequired : undefined,
   });
 
@@ -37,7 +40,7 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
     setSubmitted(true);
     const current = errors();
     const id = linkId();
-    if (current.link || current.text || current.confirmed || !id) return;
+    if (current.link || current.text || current.email || current.confirmed || !id) return;
     setSending(true);
     setFailed(false);
     try {
@@ -105,7 +108,7 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
               </label>
               <textarea
                 id="n-report-text"
-                maxLength={4000}
+                maxLength={10_000}
                 placeholder={t().reportTextPlaceholder}
                 value={text()}
                 onInput={(event) => setText(event.currentTarget.value)}
@@ -128,6 +131,7 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
                 onInput={(event) => setEmail(event.currentTarget.value)}
               />
               <span class="n-help">{t().reportEmailHelp}</span>
+              <span class="n-error-text">{submitted() ? (errors().email ?? "") : ""}</span>
             </div>
             <Checkbox
               class="n-field"
@@ -173,5 +177,5 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
 }
 
 export function openReport(linkId?: string) {
-  void prompts.dialog<void>((close) => <ReportBody linkId={linkId} close={() => close()} />, { header: false, history: true });
+  void openSheet((close) => <ReportBody linkId={linkId} close={() => close()} />);
 }

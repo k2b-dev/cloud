@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, type SlashAction, slashMenu } from "@k2b/editor";
+import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, type SlashAction, SlashMenu } from "@k2b/editor";
 import { files as browserFiles } from "@k2b/stdlib/browser";
 import type { TextEditorController } from "@k2b/ui/text-editor";
 import { onCleanup } from "solid-js";
@@ -40,7 +40,7 @@ export function NoteEditor(props: {
   const undoManager = new Y.UndoManager(props.text);
   onCleanup(() => undoManager.destroy());
   const editor = createEditor();
-  const md = () => markdownActions(preferences.locale());
+  const md = () => markdownActions(editor, preferences.locale());
 
   const tag: EditorAction = {
     id: "tag",
@@ -104,8 +104,6 @@ export function NoteEditor(props: {
     },
     { ...md().heading2, name: "ueberschrift", aliases: ["h2", "heading"], label: t().fmtHeading },
   ];
-  editor.use(() => slashMenu({ actions: slash() }));
-
   return (
     <>
       <Editor
@@ -146,6 +144,7 @@ export function NoteEditor(props: {
         }}
       />
       <BubbleMenu editor={editor} groups={[[md().bold, md().italic, md().strikethrough, md().code, md().link], [tag]]} />
+      <SlashMenu editor={editor} actions={slash()} />
     </>
   );
 }

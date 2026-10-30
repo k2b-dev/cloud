@@ -1,10 +1,11 @@
-import { Button, prompts, toast } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { Button, toast } from "@k2b/ui";
+import { createSignal, Show, untrack } from "solid-js";
 import { api } from "../lib/api";
 import type { NoteRecord } from "../lib/model";
 import { navigate } from "../router";
 import { app, t } from "../state";
 import { Icon } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 
 /**
  * Removes a note. A shared one goes first on the server; offline or on failure the note stays
@@ -14,7 +15,7 @@ export async function deleteNote(record: NoteRecord, alsoShared: boolean) {
   const store = app.store();
   if (!store) return;
   if (alsoShared && record.share?.kind === "own") {
-    await store.update(record.id, { pendingDelete: true });
+    if (!record.pendingDelete) await store.update(record.id, { pendingDelete: true });
     try {
       await api.deletePad(record.share.editId);
     } catch {
@@ -25,9 +26,16 @@ export async function deleteNote(record: NoteRecord, alsoShared: boolean) {
   await store.remove(record.id);
 }
 
-/** Pending deletions retry whenever the page starts or the browser comes back online. */
+let finishing = false;
+/** Pending deletions retry whenever the page starts or the browser comes back online; one run at a time. */
 export async function finishPendingDeletes() {
-  for (const record of app.records()) if (record.pendingDelete) await deleteNote(record, true);
+  if (finishing) return;
+  finishing = true;
+  try {
+    for (const record of untrack(app.records)) if (record.pendingDelete) await deleteNote(record, true);
+  } finally {
+    finishing = false;
+  }
 }
 
 function DeleteBody(props: { record: NoteRecord; close: (deleted: boolean) => void }) {
@@ -66,8 +74,6 @@ function DeleteBody(props: { record: NoteRecord; close: (deleted: boolean) => vo
 }
 
 export async function openDelete(record: NoteRecord) {
-  const deleted = await prompts.dialog<boolean>((close) => <DeleteBody record={record} close={close} />, {
-    header: false,
-  });
+  const deleted = await openSheet<boolean>((close) => <DeleteBody record={record} close={close} />);
   if (deleted) navigate("/", { replace: true });
 }

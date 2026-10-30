@@ -1,9 +1,10 @@
 import { files as browserFiles } from "@k2b/stdlib/browser";
-import { Button, prompts, toast } from "@k2b/ui";
+import { Button, toast } from "@k2b/ui";
 import { createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import { applyImport, type ImportPreview, readImport } from "../lib/transfer";
 import { app, t } from "../state";
 import { Icon } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 
 type Mode = "skip" | "replace" | "both";
 
@@ -112,6 +113,7 @@ function ImportBody(props: { close: () => void; initial?: File[] }) {
         </Match>
         <Match when={!preview()}>
           <p class="n-lead">{t().importLead}</p>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: a drop area for pointers; "Datei wählen" inside is the keyboard path. */}
           <div
             class="n-drop"
             role="group"
@@ -158,7 +160,7 @@ function ImportBody(props: { close: () => void; initial?: File[] }) {
 }
 
 export function openImport(initial?: File[]) {
-  void prompts.dialog<void>((close) => <ImportBody close={() => close()} initial={initial} />, { header: false, history: true });
+  void openSheet((close) => <ImportBody close={() => close()} initial={initial} />);
 }
 
 /** Files dragged anywhere onto the page start an import; the overlay names what happens on release. */

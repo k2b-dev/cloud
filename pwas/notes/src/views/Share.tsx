@@ -1,11 +1,12 @@
 import { qr } from "@k2b/stdlib/qr";
-import { Button, CopyButton, prompts, toast } from "@k2b/ui";
-import { createSignal, Match, Show, Switch } from "solid-js";
+import { Button, CopyButton, toast } from "@k2b/ui";
+import { createResource, createSignal, Match, Show, Switch } from "solid-js";
 import { ApiError, api, shareUrl } from "../lib/api";
 import type { NoteRecord } from "../lib/model";
 import { preferences } from "../prefs";
 import { app, t } from "../state";
 import { CLOUD_URL, Icon, WithCloud } from "../ui/common";
+import { openSheet } from "../ui/sheet";
 
 type Step = "terms" | "uploading" | "error" | "links";
 
@@ -76,6 +77,11 @@ function ShareBody(props: { record: () => NoteRecord | undefined; close: () => v
   const [failure, setFailure] = createSignal("");
   const firstShare = !preferences.firstShareSeen();
   const [stopping, setStopping] = createSignal(false);
+  // Known before the first try: a full site says so here instead of after an upload that cannot succeed.
+  const [paused] = createResource(
+    () => step() === "terms",
+    () => api.sharingPaused().catch(() => false),
+  );
 
   const create = async () => {
     const record = props.record();
@@ -102,10 +108,20 @@ function ShareBody(props: { record: () => NoteRecord | undefined; close: () => v
         <Match when={step() === "terms" || step() === "uploading"}>
           <h2>{t().shareTitle}</h2>
           <p class="n-lead">{t().shareLead}</p>
-          <div class="n-lockline">
-            <Icon name="ti-link" />
-            <div>{t().shareLinksSafe}</div>
-          </div>
+          <Show
+            when={paused()}
+            fallback={
+              <div class="n-lockline">
+                <Icon name="ti-link" />
+                <div>{t().shareLinksSafe}</div>
+              </div>
+            }
+          >
+            <div class="n-lockline" data-tone="danger" role="status">
+              <Icon name="ti-player-pause" />
+              <div>{t().sharePaused}</div>
+            </div>
+          </Show>
           <label class="n-check">
             <input type="checkbox" checked={terms()} onChange={(event) => setTerms(event.currentTarget.checked)} />
             <span>
@@ -133,7 +149,7 @@ function ShareBody(props: { record: () => NoteRecord | undefined; close: () => v
             </Button>
             <Button
               variant="primary"
-              disabled={!terms() || !privacy() || !app.online()}
+              disabled={!terms() || !privacy() || !app.online() || paused() === true}
               loading={step() === "uploading"}
               loadingLabel={t().creatingLinks}
               onClick={() => void create()}
@@ -227,5 +243,5 @@ function ShareBody(props: { record: () => NoteRecord | undefined; close: () => v
 
 export function openShare(noteId: string) {
   const record = () => app.records().find((entry) => entry.id === noteId);
-  void prompts.dialog<void>((close) => <ShareBody record={record} close={() => close()} />, { header: false, history: true });
+  void openSheet((close) => <ShareBody record={record} close={() => close()} />);
 }

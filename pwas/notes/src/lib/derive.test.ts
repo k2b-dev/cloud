@@ -51,3 +51,13 @@ test("Notebooks chart blocks give the preview and stay out of the excerpt", () =
   expect(meta.chart).toEqual({ kind: "line", values: [48, 61] });
   expect(meta.excerpt).toBe("Vorher. Nur ein Hinweis.");
 });
+
+test("long runs of Markdown punctuation derive in linear time", () => {
+  // Shared notes come from strangers, so a pattern that backtracks would freeze the overview of whoever opens one.
+  const n = 200_000;
+  for (const text of ["`".repeat(n), `a${" ".repeat(n)}x`, "[".repeat(n), "](".repeat(n), "<".repeat(n), "![".repeat(n)]) {
+    const start = performance.now();
+    deriveMeta(text);
+    expect(performance.now() - start).toBeLessThan(1_000);
+  }
+});

@@ -135,7 +135,8 @@ export const messages = i18n.define({
       reportConfirm: "I believe my information is correct and complete.",
       reportSend: "Send report",
       reportSending: "Sending …",
-      reportTextRequired: "Please describe briefly what is illegal.",
+      reportTextRequired: "Please describe in a sentence what is illegal.",
+      reportEmailInvalid: "Please enter a valid email address or leave the field empty.",
       reportConfirmRequired: "Please confirm your information.",
       reportLinkRequired: "Open the note you want to report and report it there.",
       reportFailed: "The report could not be sent. Your input stays here.",
@@ -166,6 +167,7 @@ export const messages = i18n.define({
         count === 1 ? "1 note as Markdown, with images." : `${count} notes as Markdown, with images.`,
       exportFailed: "The export did not work.",
       includeLinks: "Include links",
+      includeLinksHelp: "Only for your own backup: whoever has the file can open the shared notes.",
       importLead: `Choose an export from ${BRAND} or individual Markdown files.`,
       dropHere: "Drag a file here",
       pickFile: "Choose file",
@@ -403,7 +405,8 @@ export const messages = i18n.define({
       reportConfirm: "Ich bin überzeugt, dass meine Angaben richtig und vollständig sind.",
       reportSend: "Meldung senden",
       reportSending: "Wird gesendet …",
-      reportTextRequired: "Bitte beschreib kurz, was rechtswidrig ist.",
+      reportTextRequired: "Bitte beschreib in einem Satz, was rechtswidrig ist.",
+      reportEmailInvalid: "Bitte gib eine gültige E-Mail-Adresse an oder lass das Feld leer.",
       reportConfirmRequired: "Bitte bestätige deine Angaben.",
       reportLinkRequired: "Öffne die Notiz, die du melden willst, und melde sie dort.",
       reportFailed: "Die Meldung konnte nicht gesendet werden. Deine Angaben bleiben hier.",
@@ -436,6 +439,7 @@ export const messages = i18n.define({
         count === 1 ? "1 Notiz als Markdown, mit Bildern." : `${count} Notizen als Markdown, mit Bildern.`,
       exportFailed: "Der Export hat nicht geklappt.",
       includeLinks: "Links mitnehmen",
+      includeLinksHelp: "Nur für deine eigene Sicherung: Wer die Datei hat, kann die geteilten Notizen öffnen.",
       importLead: `Wähl einen Export von ${BRAND} oder einzelne Markdown-Dateien.`,
       dropHere: "Datei hierher ziehen",
       pickFile: "Datei wählen",
@@ -543,4 +547,5 @@ export const messages = i18n.define({
 });
 
 export type AppLocale = "de" | "en";
+
 export type T = ReturnType<typeof messages.resolve>["t"];
