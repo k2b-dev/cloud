@@ -2,14 +2,13 @@
 import { type EditorState, type Extension, type Range, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin } from "@codemirror/view";
 import { isFormula } from "@k2b/cloud/shared";
+import { applyLigatures, refreshMarkdownDecorationsEffect } from "@k2b/editor/markdown";
+import { extractNamedBlocks } from "@k2b/editor/markdown/lib/named-blocks";
 import { i18n } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import type { TableHost } from "@k2b/ui/text-editor";
 import { displayCell, findTables, type Table } from "@k2b/ui/text-editor/model";
-import { extractNamedBlocks } from "../../../lib/named-blocks";
 import { createPrettyTablePresentation, formatFormulaValue, type PrettyTableData } from "../pretty-table";
-import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
-import { applyLigatures } from "./ligatures";
 import { formulaPreviewWidget } from "./tables";
 
 type PresentationOptions = {

@@ -8,6 +8,7 @@ import { createEditor } from "@k2b/editor";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { createSharedTextActionHistory } from "@k2b/cloud/browser/shared-text";
+import { listCommandsExtension } from "@k2b/editor/markdown";
 import { encoding } from "@k2b/stdlib";
 import { Button, LocaleProvider, NoticeCard, ScrollArea } from "@k2b/ui";
 import { TextEditor, type TextEditorControls } from "@k2b/ui/text-editor";
@@ -18,7 +19,7 @@ import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protoc
 import * as Y from "yjs";
 import type { NoteTableActionRequest } from "../../../../lib/table-actions";
 import { editor } from "../../../lib/editor";
-import { listCommandsExtension } from "../../../lib/editor/list-commands";
+import { notebookListOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
 import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import {
   caretIntoTableCell,
@@ -179,7 +180,7 @@ function Harness() {
     readOnly()
       ? []
       : [
-          listCommandsExtension(),
+          listCommandsExtension(notebookListOptions),
           EditorView.updateListener.of((update) => {
             if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
           }),
@@ -198,16 +199,16 @@ function Harness() {
           presentation.extension,
           caretIntoTableCell,
           tableCellCompletions,
-          editor.imageExtension("Book01"),
-          editor.listsExtension(),
+          editor.imageExtension(notebookUrlOptions("Book01")),
+          editor.listsExtension(notebookListOptions),
           editor.infoBlocksExtension(locale),
           editor.dataBlocksExtension(),
           editor.namedBlocksExtension(),
-          editor.linksExtension("Book01"),
+          editor.linksExtension(notebookUrlOptions("Book01")),
           editor.markupExtension(),
           editor.markExtension(),
           editor.subSupExtension(),
-          editor.ligaturesExtension(),
+          editor.ligaturesExtension(notebookListOptions),
           editor.initialMarkdownDecorationRefreshExtension(),
           editor.pointerSelectionMarkdownRefreshExtension(),
           editor.katexExtension(),

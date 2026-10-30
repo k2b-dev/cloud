@@ -15,13 +15,19 @@ import {
   cloudAiChartTooltip,
 } from "@k2b/cloud/ai/browser";
 import { type EvalResult, evaluateTableCell, isFormula, isTotalRow } from "@k2b/cloud/shared";
+import {
+  extractNamedBlocks,
+  isNamedBlockHandle,
+  type NamedDataEntry,
+  namedBlockBody,
+  parseNamedDataBlockResult,
+} from "@k2b/editor/markdown/lib/named-blocks";
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
 import { barChartLayout } from "@k2b/ui/charts";
 import { Lexer, type Tokens } from "marked";
 import { evaluatePrettyTable } from "../frontend/lib/pretty-table";
 import { bookRendererMessages } from "./book-renderer-messages";
-import { extractNamedBlocks, isNamedBlockHandle, type NamedDataEntry, namedBlockBody, parseNamedDataBlockResult } from "./named-blocks";
 import {
   directives,
   type NotebookBlockDiagnostic,

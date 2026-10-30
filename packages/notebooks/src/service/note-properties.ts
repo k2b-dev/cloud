@@ -1,5 +1,5 @@
+import { extractNamedDataProperties, type NamedDataProperties } from "@k2b/editor/markdown/lib/named-blocks";
 import { sql } from "bun";
-import { extractNamedDataProperties, type NamedDataProperties } from "../lib/named-blocks";
 
 export const dataPropertiesForContent = (contentMd: string | null | undefined): NamedDataProperties =>
   extractNamedDataProperties(contentMd).properties;

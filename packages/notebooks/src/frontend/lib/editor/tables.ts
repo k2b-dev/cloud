@@ -56,13 +56,19 @@ import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Extension, Prec, type Range, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
 import { type EvalContext, type EvalResult, evaluateFormula, isFormula } from "@k2b/cloud/shared";
+import {
+  applyLigatures,
+  holdsDecorations,
+  refreshMarkdownDecorationsEffect,
+  selectionIntersectsRange,
+  splitTableLineCells,
+  tableCellText,
+  treeOrDocChanged,
+} from "@k2b/editor/markdown";
+import { isNamedBlockHandle } from "@k2b/editor/markdown/lib/named-blocks";
 import { i18n } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
-import { isNamedBlockHandle } from "../../../lib/named-blocks";
 import { formatFormulaError, formatFormulaValue, renderPrettyTableHtml } from "../pretty-table";
-import { holdsDecorations, refreshMarkdownDecorationsEffect, selectionIntersectsRange, treeOrDocChanged } from "./_lib/cursor-zone-field";
-import { splitTableLineCells, tableCellText } from "./_lib/table-cell";
-import { applyLigatures } from "./ligatures";
 
 type Align = "left" | "right" | "center" | null;
 

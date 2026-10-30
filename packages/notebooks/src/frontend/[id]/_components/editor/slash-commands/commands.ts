@@ -1,8 +1,8 @@
 import { startCompletion } from "@codemirror/autocomplete";
 import { serializeGeoDocument } from "@k2b/cloud/geo/document";
+import { setListKind } from "@k2b/editor/markdown";
 import { crypto as stdCrypto } from "@k2b/stdlib";
 import { notebookMapMessages } from "../../../../../lib/map-messages";
-import { setListKind } from "../../../../lib/editor/list-commands";
 import { openNoteSearchPrompt } from "../../search/openNoteSearchPrompt";
 import { openAttachmentPicker } from "../AttachmentPicker";
 import {

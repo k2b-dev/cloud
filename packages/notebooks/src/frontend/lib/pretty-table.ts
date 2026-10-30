@@ -10,9 +10,9 @@ import {
   type ProgressValue,
   parseProgressValue,
 } from "@k2b/cloud/shared";
+import { anchorHash, parseNoteLink } from "@k2b/editor/markdown/lib/heading-anchors";
 import { dates } from "@k2b/stdlib";
 import { markdownLinkReference, renderMarkdownLink } from "@k2b/ui";
-import { anchorHash, parseNoteLink } from "../../lib/heading-anchors";
 import { notebookWorkspaceMessages } from "../[id]/messages";
 import { prettyTableMessages } from "./pretty-table-messages";
 

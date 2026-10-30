@@ -4,6 +4,8 @@ import { EditorView, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { createEditor } from "@k2b/editor";
+import { fadeScrollMarginsExtension, fadeScrollPadding, listCommandsExtension, pressMissedEditor } from "@k2b/editor/markdown";
+import { extractNamedBlockSummaries, type NamedBlockSummary } from "@k2b/editor/markdown/lib/named-blocks";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
 import { Button, FileDropTarget, NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
@@ -15,7 +17,6 @@ import * as Y from "yjs";
 import { apiClient } from "@/api/client";
 import type { NoteAuthors } from "../../../../lib/activity-actions";
 import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
-import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
 import { extractHeadingLines, headingAtLine } from "../../../../lib/note-insights";
 import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
@@ -23,8 +24,7 @@ import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
 import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
-import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
-import { listCommandsExtension } from "../../../lib/editor/list-commands";
+import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import { remoteCursors } from "../../../lib/editor/remote-cursors";
@@ -36,7 +36,6 @@ import {
   tableCellSearch,
 } from "../../../lib/editor/shared-editor";
 import { createNotebookTablePresentation, notebookSourceFormulasExtension } from "../../../lib/editor/shared-tables";
-import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
@@ -712,7 +711,7 @@ function EditorInstance(
     props.readOnly
       ? []
       : [
-          listCommandsExtension(),
+          listCommandsExtension(notebookListOptions),
           EditorView.updateListener.of((update) => {
             if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
           }),
@@ -740,20 +739,20 @@ function EditorInstance(
           tablePresentation.extension,
           caretIntoTableCell,
           tableCellCompletions,
-          editor.imageExtension(props.notebookId),
-          editor.listsExtension(),
+          editor.imageExtension(notebookUrlOptions(props.notebookId)),
+          editor.listsExtension(notebookListOptions),
           editor.infoBlocksExtension(locale()),
           editor.dataBlocksExtension(),
           blockPreviews.extension,
           editor.namedBlocksExtension(),
-          editor.linksExtension(props.notebookId),
+          editor.linksExtension(notebookUrlOptions(props.notebookId)),
           editor.markupExtension(),
           editor.markExtension(),
           editor.subSupExtension(),
-          editor.ligaturesExtension(),
+          editor.ligaturesExtension(notebookListOptions),
           editor.initialMarkdownDecorationRefreshExtension(),
           editor.pointerSelectionMarkdownRefreshExtension(),
-          editor.mermaidExtension(),
+          editor.mermaidExtension(notebookMermaidOptions),
           editor.katexExtension(),
           editor.codeFontExtension(),
           editor.tagPillExtension(props.notebookId),
