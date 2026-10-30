@@ -539,6 +539,25 @@ export const launchBrowser = async ({
 };
 
 /**
+ * Presses the middle of `target`, runs `rebuild` while the button is down, and releases at the same point.
+ * Use it for every list whose host can rebuild equal items: a row replaced between press and release swallows
+ * the click (#2140). `rebuild` gives the page new objects with the same identity, as a host does on any change.
+ */
+export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: () => Promise<unknown>): Promise<void> => {
+  await target.waitFor();
+  await settled(page);
+  const box = await target.boundingBox();
+  if (!box) throw new Error("pressAcrossRebuild: the target has no box");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  try {
+    await rebuild();
+  } finally {
+    await page.mouse.up();
+  }
+};
+
+/**
  * Guards against state sampled before it settled (#1476, #1499).
  * Waits for fonts, running finite document-timeline animations, then two frames.
  * Infinite, scroll-driven, and paused animations are not waited for. A page that
