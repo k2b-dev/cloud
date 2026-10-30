@@ -1,4 +1,9 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
 @import "@k2b/ui/styles.css";
+@import "@k2b/editor/styles.css";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
 
 /* Site ink: the colour of selection and of this site, like an app colour in Cloud. Tag colours come from the tag. */
 :root,

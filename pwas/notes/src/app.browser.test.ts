@@ -215,6 +215,8 @@ describe("k2b notes · Produktions-SPA", () => {
     const previousCount = await cards().count();
     await page.goto(`${origin}/beispiel`);
     await page.getByRole("status").filter({ hasText: "Beispiel · nichts wird gespeichert" }).waitFor();
+    // The Notebooks presentation renders the example's notice instead of its `:::note` source.
+    await page.locator(".cm-notice-card-widget").first().waitFor();
     await editor().fill("Diese Beispieländerung darf nicht gespeichert werden");
     await back().click();
     await page.getByText("9 Notizen in diesem Browser", { exact: true }).waitFor();
@@ -338,6 +340,9 @@ describe("k2b notes · Produktions-SPA", () => {
       for (const title of ["Lauftraining Herbst", "Lissabon im März", "Sauerteig – Notizen"]) {
         expect(await cards().filter({ hasText: title }).first().isVisible()).toBe(true);
       }
+      // The editor presentation is part of the offline app, not only the plain editor.
+      await page.goto(`${origin}/beispiel`);
+      await page.locator(".cm-notice-card-widget").first().waitFor();
     } finally {
       await context.setOffline(false);
     }

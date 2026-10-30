@@ -32,8 +32,10 @@
     "@types/bun": "catalog:",
     "@types/subset-font": "2.3.0",
     "babel-preset-solid": "1.9.15",
+    "bun-plugin-tailwind": "catalog:",
     "playwright": "catalog:",
     "subset-font": "2.9.0",
+    "tailwindcss": "catalog:",
     "typescript": "catalog:"
   }
 }

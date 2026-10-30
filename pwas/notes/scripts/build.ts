@@ -2,6 +2,7 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import type { BunPlugin } from "bun";
+import tailwind from "bun-plugin-tailwind";
 import { BRAND } from "../src/brand";
 import { iconStyles } from "./icons";
 import { writeServiceWorker } from "./service-worker";
@@ -39,7 +40,7 @@ export async function build({ development = false, outdir = dist } = {}) {
     target: "browser",
     splitting: true,
     conditions: ["browser"],
-    plugins: [solid],
+    plugins: [solid, tailwind],
     minify: !development,
     sourcemap: development ? "linked" : "none",
     naming: "[name]-[hash].[ext]",

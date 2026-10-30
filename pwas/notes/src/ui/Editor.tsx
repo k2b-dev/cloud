@@ -1,14 +1,25 @@
 import type { EditorView } from "@codemirror/view";
 import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, type SlashAction, SlashMenu } from "@k2b/editor";
+import type { MarkdownUrlOptions } from "@k2b/editor/markdown";
 import { files as browserFiles } from "@k2b/stdlib/browser";
 import type { TextEditorController } from "@k2b/ui/text-editor";
-import { onCleanup } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 import { yCollab } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { MAX_NOTE_LENGTH } from "../lib/model";
 import { preferences } from "../prefs";
 import { t } from "../state";
+
+type Presentation = typeof import("@k2b/editor/markdown");
+let presentationModule: Promise<Presentation> | undefined;
+/** The rendered presentation is large, so it loads in its own chunk once, after the first editor appears. */
+const loadPresentation = () =>
+  (presentationModule ??= import("@k2b/editor/markdown").catch((error: unknown) => {
+    // Offline before the chunk was cached: notes stay plain Markdown, and the next editor tries again.
+    presentationModule = undefined;
+    throw error;
+  }));
 
 /** Puts a block on its own lines at the caret and leaves the caret at `caret` characters into it. */
 const insertBlock = (view: EditorView, block: string, caret: number) => {
@@ -36,6 +47,10 @@ export function NoteEditor(props: {
   autofocus?: "end" | "start";
   onReady?: (editor: TextEditorController, undo: () => void) => void;
   onFiles?: (files: File[]) => void;
+  /** URLs of the note's files by key, for `file:KEY` references; a new object re-renders them. */
+  files?: Record<string, string>;
+  /** Server URL of a file the note does not hold locally, for shared notes. */
+  remoteFile?: (key: string) => string;
 }) {
   const undoManager = new Y.UndoManager(props.text);
   onCleanup(() => undoManager.destroy());
@@ -104,6 +119,35 @@ export function NoteEditor(props: {
     },
     { ...md().heading2, name: "ueberschrift", aliases: ["h2", "heading"], label: t().fmtHeading },
   ];
+  // The Notebooks presentation: rendered lists, notices, images, links, formulas and diagrams; editing a block shows its source.
+  const [presentation, setPresentation] = createSignal<Presentation>();
+  loadPresentation().then(
+    (module) => setPresentation(() => module),
+    () => {},
+  );
+  editor.use(() => {
+    const md = presentation();
+    if (!md) return [];
+    const files = props.files ?? {};
+    const remote = props.remoteFile;
+    const urls: MarkdownUrlOptions = {
+      resolveUrl: (_kind, ref) => (ref.startsWith("file:") ? (files[ref.slice(5)] ?? remote?.(ref.slice(5)) ?? ref) : ref),
+      foreignImagesAsLinks: true,
+    };
+    return [
+      md.listsExtension(),
+      props.readOnly ? [] : md.listCommandsExtension(),
+      md.infoBlocksExtension(preferences.locale()),
+      md.imageExtension(urls),
+      md.linksExtension(urls),
+      md.markupExtension(),
+      md.markExtension(),
+      md.ligaturesExtension(),
+      md.initialMarkdownDecorationRefreshExtension(),
+      md.pointerSelectionMarkdownRefreshExtension(),
+    ];
+  });
+
   return (
     <>
       <Editor
