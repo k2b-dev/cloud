@@ -53,6 +53,13 @@ limit, the GET snapshot remains available. Server-owned awareness identities,
 clocks, colors, and unverified names prevent impersonating another socket.
 Readers publish presence without cursors.
 
+`POST /api/presence` accepts `{readIds:string[]}` with at most 200 valid read
+capabilities and returns `{[readId]:[{name,color}]}`. Only connected editors
+with published, sanitized awareness appear; names remain unverified. Unknown,
+closed or inactive rooms return an empty list. Polling creates no room, presence,
+or human-open signal and writes nothing to Postgres. Origin is required; the
+independent IP limit is 50 requests per minute. Split larger lists into batches.
+
 Updates, compaction, deletion, and expiry serialize per note. A database
 advisory lock admits one server instance; each mutation also checks its owner
 fence. An update becomes visible only after its log row commits. Snapshot and
@@ -143,7 +150,10 @@ note creation, uploads, reports and updates remain subject to their thresholds.
 
 The production entrypoint serves the built SPA from `dist/`, alongside the API
 and WebSocket. Build outputs are enumerated at startup; source maps are not
-served. Unknown API or asset paths return 404. Shared pages insert escaped
+served. The service worker uses `Cache-Control: no-cache`; existing hashed
+build assets under `/assets/` use a one-year immutable cache. HTML, API,
+previews and note files retain `private, no-store`. Unknown API or asset paths
+return 404. Shared pages insert escaped
 Open Graph text into the `<!--og-->` marker of the same index file. The
 canonical URL remains the requested link; the image URL always uses the read
 link. Inactive notes serve the SPA error state without stale metadata.

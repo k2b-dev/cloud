@@ -70,6 +70,10 @@ databaseSuite()("Notes static website and previews", () => {
     directory = await mkdtemp(join(tmpdir(), "notes-preview-"));
     await Bun.write(join(directory, "index.html"), index);
     await Bun.write(join(directory, "app.js"), "export const app = true;");
+    await Bun.write(join(directory, "sw.js"), "self.addEventListener('fetch', () => {});");
+    await Bun.write(join(directory, "assets", "main-01234567.js"), "export const built = true;");
+    await Bun.write(join(directory, "assets", "styles-abcdef0123456789.css"), "body { color: black; }");
+    await Bun.write(join(directory, "assets", "unhashed.js"), "export const unhashed = true;");
     await Bun.write(join(directory, "private.map"), "source map");
   });
   beforeEach(async () => {
@@ -119,6 +123,37 @@ databaseSuite()("Notes static website and previews", () => {
     expect((await app.request("/private.map")).status).toBe(404);
     expect((await app.request("/api/unknown")).status).toBe(404);
     expect((await app.request("/missing.js")).status).toBe(404);
+  });
+  test("only existing hashed build assets are immutable and the service worker revalidates", async () => {
+    await service.upload(links.editId, {
+      key: "fixture",
+      name: "fixture.pdf",
+      bytes: new TextEncoder().encode("%PDF-1.7\n"),
+      type: "application/pdf",
+      declaredType: "application/pdf",
+    });
+    for (const method of ["GET", "HEAD"])
+      for (const [path, cache] of [
+        ["/sw.js", "no-cache"],
+        ["/assets/main-01234567.js", "public, max-age=31536000, immutable"],
+        ["/assets/styles-abcdef0123456789.css", "public, max-age=31536000, immutable"],
+        ["/assets/unhashed.js", "private, no-store"],
+        ["/assets/missing-01234567.js", "private, no-store"],
+        ["/app.js", "private, no-store"],
+        ["/", "private, no-store"],
+        [`/p/${links.readId}`, "private, no-store"],
+        [`/p/${links.readId}/preview.png`, "private, no-store"],
+        [`/api/pads/${links.readId}`, "private, no-store"],
+        [`/api/pads/${links.readId}/files/fixture`, "private, no-store"],
+        ["/api/admin/session", "private, no-store"],
+      ]) {
+        const response = await app.request(path!, { method });
+        expect(response.headers.get("Cache-Control")).toBe(cache!);
+        expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+        expect(response.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+        expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(response.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+      }
   });
   test("administrator HTML and APIs are disabled without an operator password", async () => {
     for (const method of ["GET", "HEAD"])

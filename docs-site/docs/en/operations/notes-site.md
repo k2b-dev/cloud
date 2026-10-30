@@ -61,6 +61,17 @@ Backup retention can outlast deletion from the running database. Keep capability
 paths out of access, error, tracing, and telemetry logs at every proxy layer;
 the application emits only fixed diagnostic codes.
 
+The Notes process serves the SPA, API and WebSocket together. Shared HTML carries
+escaped Open Graph metadata; both capabilities use the same read-link preview
+image. PNG rendering uses a bundled font and local numeric chart data without
+network requests. The in-memory image cache is bounded by the configured open
+note budget and expires when content changes. GET and HEAD never write durable
+data; HEAD does not invoke the rasterizer. Preserve the no-referrer, noindex and
+no-store response headers for note data at the proxy, and disable path logging
+for this host. The service worker revalidates (`no-cache`); hashed static build
+assets use a one-year immutable cache. The read-only `POST /api/presence` polls
+existing editor awareness without opening notes, writing data, or extending
+retention; it accepts 200 read links and 50 requests per minute per IP.
 ## Moderation duty
 
 Administration is disabled until `NOTES_ADMIN_PASSWORD_HASH` contains an
@@ -78,10 +89,3 @@ Storage and automatic-maintenance failures remain visible in the admin view
 and fixed-code application logs. Reserve Postgres disk outside the application
 budget for WAL, indexes, backups and transaction/compaction headroom.
 
-The Notes process serves the SPA, API and WebSocket together. Shared HTML carries
-escaped Open Graph metadata; both capabilities use the same read-link preview
-image. PNG rendering uses a bundled font and local numeric chart data without
-network requests. The in-memory image cache is bounded by the configured open
-note budget and expires when content changes. GET and HEAD never write durable
-data; HEAD does not invoke the rasterizer. Preserve the no-referrer, noindex and
-no-store response headers at the proxy, and disable path logging for this host.
