@@ -43,3 +43,10 @@ test("chart fences must be actual fences; German grouped integers are numeric", 
   expect(deriveMeta(table).chart?.values).toEqual([1234567, 1000]);
   expect(deriveMeta(table + "````md\n```chart\ntype: line\n```\n````").chart?.kind).toBe("bar");
 });
+
+test("Notebooks chart blocks give the preview and stay out of the excerpt", () => {
+  const markdown = "# Kaffee\n\nVorher.\n\n:::chart\ntype: line\ntitle: Tassen\ncolumns: [Monat, Tassen]\nrows:\n  - [Juli, 48]\n  - [August, 61]\n:::\n\n:::note\nNur ein Hinweis.\n:::\n";
+  const meta = deriveMeta(markdown);
+  expect(meta.chart).toEqual({ kind: "line", values: [48, 61] });
+  expect(meta.excerpt).toBe("Vorher. Nur ein Hinweis.");
+});

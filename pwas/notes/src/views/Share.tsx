@@ -225,5 +225,5 @@ function ShareBody(props: { record: () => NoteRecord | undefined; close: () => v
 
 export function openShare(noteId: string) {
   const record = () => app.records().find((entry) => entry.id === noteId);
-  void prompts.dialog<void>((close) => <ShareBody record={record} close={() => close()} />, { size: "small", header: false, history: true });
+  void prompts.dialog<void>((close) => <ShareBody record={record} close={() => close()} />, { header: false, history: true });
 }

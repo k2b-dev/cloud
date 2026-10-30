@@ -11,10 +11,38 @@ export function plainText(text: string): string {
     .trim();
 }
 
-function scan(markdown: string): { lines: string[]; lineChart: boolean } {
+/** Notebooks blocks such as `:::chart` or `:::note`; data blocks hold settings, notices hold prose. */
+const DATA_DIRECTIVES = new Set(["chart", "data", "query", "toc"]);
+
+function scan(markdown: string): { lines: string[]; lineChart: boolean; chartRows: number[] } {
   let fence: { char: string; length: number; chart: boolean } | undefined;
+  let directive: string | undefined;
   let lineChart = false;
+  const chartRows: number[] = [];
+  let firstChartDone = false;
   const lines = markdown.split(/\r?\n/).map((line) => {
+    if (!fence) {
+      const open = /^\s{0,3}:::\s*([a-z]+)\b/i.exec(line);
+      if (!directive && open) {
+        directive = open[1]?.toLowerCase();
+        return "";
+      }
+      if (directive && /^\s{0,3}:::\s*$/.test(line)) {
+        if (directive === "chart") firstChartDone = true;
+        directive = undefined;
+        return "";
+      }
+      if (directive === "chart") {
+        if (!firstChartDone && /^\s*type\s*:\s*(?:line|area)\s*$/i.test(line)) lineChart = true;
+        const row = /^\s*-\s*\[(.*)\]\s*$/.exec(line);
+        const last = row?.[1]?.split(",").at(-1)?.trim();
+        if (!firstChartDone && last !== undefined) {
+          const value = numberCell(last);
+          if (value !== null) chartRows.push(value);
+        }
+      }
+      if (directive && DATA_DIRECTIVES.has(directive)) return "";
+    }
     const marker = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (marker) {
       const run = marker[1] ?? "";
@@ -26,7 +54,7 @@ function scan(markdown: string): { lines: string[]; lineChart: boolean } {
     if (fence || /^(?: {4}|\t)/.test(line)) return "";
     return line;
   });
-  return { lines, lineChart };
+  return { lines, lineChart, chartRows };
 }
 
 /** Searchable prose, headings and tasks, in document order; code is excluded. */
@@ -65,7 +93,7 @@ function tableValues(lines: string[]): number[] | null {
 }
 
 export function deriveMeta(markdown: string): NoteMeta {
-  const { lines, lineChart } = scan(markdown);
+  const { lines, lineChart, chartRows } = scan(markdown);
   const titleIndex = lines.findIndex((line) => line.trim());
   const title = plainText(lines[titleIndex] ?? "");
   const tags = new Set<string>();
@@ -100,7 +128,7 @@ export function deriveMeta(markdown: string): NoteMeta {
       .trim();
     if (clean) prose.push(clean);
   }
-  const values = tableValues(lines);
+  const values = chartRows.length > 0 ? chartRows : tableValues(lines);
   return {
     title,
     tags: [...tags],

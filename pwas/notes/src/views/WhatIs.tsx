@@ -36,6 +36,6 @@ export function openWhatIs() {
         </div>
       </div>
     ),
-    { size: "small", header: false },
+    { header: false },
   );
 }

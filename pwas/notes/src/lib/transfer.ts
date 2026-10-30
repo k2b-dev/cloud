@@ -24,6 +24,16 @@ export class ImportError extends Error {
 }
 const identifier = z.string().regex(/^[A-Za-z0-9]{22}$/);
 const attachmentSchema = z.object({ key: identifier, name: z.string(), path: z.string(), type: z.string() });
+const shareSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("own"), readId: identifier, editId: identifier, sharedAt: z.number().finite().nonnegative() }),
+  z.object({
+    kind: z.literal("foreign"),
+    role: z.enum(["read", "edit"]),
+    linkId: identifier,
+    readId: identifier,
+    addedAt: z.number().finite().nonnegative(),
+  }),
+]);
 const manifestSchema = z.object({
   version: z.literal(1),
   app: z.literal("k2b-notes"),
@@ -37,6 +47,7 @@ const manifestSchema = z.object({
       updatedAt: z.number().finite().nonnegative(),
       file: z.string(),
       files: z.array(attachmentSchema),
+      share: shareSchema.optional(),
     }),
   ),
 });
@@ -46,6 +57,8 @@ export type ImportEntry = {
   createdAt: number;
   updatedAt: number;
   files: { key: string; name: string; blob: Blob }[];
+  /** Present only when the export was made with "Links mitnehmen". */
+  share?: NoteShare;
 };
 export type ImportPreview = { name: string; notes: number; images: number; duplicates: string[]; entries: ImportEntry[] };
 export type ExportManifest = {
@@ -314,7 +327,7 @@ export async function readImport(input: File[], store: NotesStore): Promise<Impo
         }
         const text = rewriteImages(decoder.decode(markdown), (target) => paths.get(target) ?? target);
         if (text.length > MAX_NOTE_LENGTH) throw new ImportError("too_large");
-        entries.push({ id: note.id, text, createdAt: note.createdAt, updatedAt: note.updatedAt, files: attached });
+        entries.push({ id: note.id, text, createdAt: note.createdAt, updatedAt: note.updatedAt, files: attached, share: note.share });
       }
     }
   } catch (error) {
@@ -330,7 +343,7 @@ export async function readImport(input: File[], store: NotesStore): Promise<Impo
     entries,
   };
 }
-/** Rechecks duplicates at apply time. Imported notes are independent local copies, with no share state. */
+/** Rechecks duplicates at apply time. Imported notes are local copies; links return only from an export that took them. */
 export async function applyImport(
   preview: ImportPreview,
   store: NotesStore,
@@ -358,7 +371,14 @@ export async function applyImport(
       }
       const importedKeys = new Set(entry.files.map((file) => file.key));
       for (const file of await store.listFiles(id)) if (!importedKeys.has(file.key)) await store.removeFile(id, file.key);
-    } else await store.create(entry.text, { id, createdAt: entry.createdAt, updatedAt: entry.updatedAt });
+    } else
+      await store.create(entry.text, {
+        id,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+        // A second copy beside an existing one never shares its links.
+        ...(entry.share && !duplicate ? { share: entry.share } : {}),
+      });
     for (const attachment of entry.files) await store.putFile(id, attachment.blob, attachment.name, { key: attachment.key });
     imported++;
   }

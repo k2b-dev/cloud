@@ -19,6 +19,8 @@ let rebuilding: Promise<void> | undefined;
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port,
+  // A rebuild on a busy machine can take longer than the default ten seconds.
+  idleTimeout: 120,
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) {

@@ -150,7 +150,7 @@ body.k2b-ui {
 .n-back .ti {
   font-size: 18px;
 }
-.n-phone-only {
+.n-topbar .n-phone-only.n-phone-only {
   display: none;
 }
 
@@ -372,6 +372,13 @@ body.k2b-ui {
   overflow-wrap: anywhere;
   -webkit-mask-image: linear-gradient(#000 70%, transparent);
   mask-image: linear-gradient(#000 70%, transparent);
+}
+/* With a chart or picture, the text keeps two lines so the preview stays in view. */
+.n-card .n-ex[data-short] {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .n-card .n-mini {
   width: 100%;
@@ -1128,6 +1135,7 @@ body.k2b-ui {
 
 /* ---------- search everywhere ---------- */
 .n-pal {
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   width: min(100vw - 2rem, 40rem);
@@ -1348,8 +1356,11 @@ body.k2b-ui {
   .n-desk-only {
     display: none;
   }
-  .n-phone-only {
+  .n-topbar .n-phone-only.n-phone-only {
     display: inline-flex;
+  }
+  .n-topbar .n-desk-only.n-desk-only {
+    display: none;
   }
   .n-ov {
     padding-top: 1.25rem;

@@ -150,5 +150,5 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
 }
 
 export function openReport(linkId?: string) {
-  void prompts.dialog<void>((close) => <ReportBody linkId={linkId} close={() => close()} />, { size: "small", header: false, history: true });
+  void prompts.dialog<void>((close) => <ReportBody linkId={linkId} close={() => close()} />, { header: false, history: true });
 }

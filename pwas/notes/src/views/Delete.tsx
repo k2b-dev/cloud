@@ -67,7 +67,7 @@ function DeleteBody(props: { record: NoteRecord; close: (deleted: boolean) => vo
 
 export async function openDelete(record: NoteRecord) {
   const deleted = await prompts.dialog<boolean>((close) => <DeleteBody record={record} close={close} />, {
-    size: "small",
+    
     header: false,
   });
   if (deleted) navigate("/", { replace: true });

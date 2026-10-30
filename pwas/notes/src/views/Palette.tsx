@@ -159,7 +159,7 @@ function PaletteBody(props: { close: () => void; initialTag?: (tag: string) => v
   const scrollActive = () => body?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
 
   return (
-    <div class="n-pal" role="dialog" aria-modal="true" aria-label={t().searchEverywhere}>
+    <div class="n-pal">
       <div class="n-pal-in">
         <Icon name="ti-search" />
         <input
@@ -258,7 +258,13 @@ export function openPalette() {
   if (open) return;
   open = true;
   void prompts
-    .dialog<void>((close) => <PaletteBody close={() => close()} />, { surface: "bare", header: false, history: true, size: "wide" })
+    .dialog<void>((close) => <PaletteBody close={() => close()} />, {
+      surface: "bare",
+      header: false,
+      history: true,
+      size: "large",
+      ariaLabel: t().searchEverywhere,
+    })
     .finally(() => {
       open = false;
     });

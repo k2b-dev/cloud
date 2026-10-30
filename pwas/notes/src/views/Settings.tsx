@@ -135,5 +135,5 @@ function SettingsBody(props: { close: () => void }) {
 }
 
 export function openSettings() {
-  void prompts.dialog<void>((close) => <SettingsBody close={() => close()} />, { size: "small", header: false, history: true });
+  void prompts.dialog<void>((close) => <SettingsBody close={() => close()} />, { header: false, history: true });
 }

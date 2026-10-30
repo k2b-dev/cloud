@@ -197,3 +197,19 @@ test("manifest paths cannot be reused to multiply imported notes or files", asyn
     await store.close();
   }
 });
+test("an export with links brings the links back, but never onto a second copy", async () => {
+  const source = await makeStore();
+  const target = await makeStore();
+  try {
+    const share = { kind: "own" as const, readId: "R".repeat(22), editId: "E".repeat(22), sharedAt: NOW };
+    const id = await source.create("# Geteilt", { share });
+    const preview = await readImport([await exported(source, true)], target);
+    await applyImport(preview, target, "skip");
+    expect(target.records()[0]?.share).toEqual(share);
+    await applyImport(await readImport([await exported(source, true)], target), target, "both");
+    expect(target.records().filter((record) => record.id !== id).map((record) => record.share)).toEqual([null]);
+  } finally {
+    await source.close();
+    await target.close();
+  }
+});

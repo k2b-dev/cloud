@@ -45,7 +45,11 @@ export function TopBarOverview(props: { menuOnly?: boolean }) {
 }
 
 function Streak() {
-  const strip = createMemo(() => monthStrip(new Date()));
+  // Recounted whenever a note changes; the count itself lives only in this browser.
+  const strip = createMemo(() => {
+    app.records();
+    return monthStrip(new Date());
+  });
   const month = () => new Intl.DateTimeFormat(preferences.locale(), { month: "long" }).format(new Date());
   return (
     <div class="n-streak" title={t().streakHint}>
@@ -107,7 +111,9 @@ function NoteCard(props: { record: NoteRecord }) {
     <a class="n-card" href={`/n/${props.record.id}`}>
       <span class="n-t">{meta().title || t().untitled}</span>
       <span class="n-p">
-        {meta().excerpt}
+        <span class="n-ex" data-short={meta().chart || meta().image ? "" : undefined}>
+          {meta().excerpt}
+        </span>
         <Show when={meta().chart}>{(chart) => <MiniChart chart={chart()} />}</Show>
         <Show when={!meta().chart && meta().image}>{(image) => <Thumb record={props.record} image={image()} />}</Show>
       </span>

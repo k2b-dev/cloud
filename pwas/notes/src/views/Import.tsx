@@ -155,7 +155,7 @@ function ImportBody(props: { close: () => void; initial?: File[] }) {
 }
 
 export function openImport(initial?: File[]) {
-  void prompts.dialog<void>((close) => <ImportBody close={() => close()} initial={initial} />, { size: "small", header: false, history: true });
+  void prompts.dialog<void>((close) => <ImportBody close={() => close()} initial={initial} />, { header: false, history: true });
 }
 
 /** Files dragged anywhere onto the page start an import; the overlay names what happens on release. */
