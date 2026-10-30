@@ -14,7 +14,7 @@ import {
 import { type SQLQuery, sql } from "bun";
 import { app } from "../config";
 import { chatMessages } from "../messages";
-import { readResource } from "./resource-access";
+import { type ResourceDecision, type ResourceRef, readResource } from "./resource-access";
 
 export type ChatContext = {
   actor: RequestActor;
@@ -25,6 +25,9 @@ export type ChatContext = {
   capabilityQuery?: CapabilityExecutionContext["query"];
   credentialPrincipal?: string;
   credentialScopes?: readonly string[];
+  /** Exact decisions from this invocation’s fresh owner queries; never cached. */
+  authorizedResources?: readonly { ref: ResourceRef; decision: ResourceDecision }[];
+  via?: "assistant" | "mcp" | null;
 };
 export type ConversationRow = {
   kind: "chat" | "system";

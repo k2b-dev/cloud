@@ -79,15 +79,16 @@ export const visibleMessages = async <T extends { thread_id: string | null }>(
   rows: T[],
   backward = false,
 ) => {
-  const ids = [...new Set(rows.flatMap((row) => (row.thread_id ? [row.thread_id] : [])))];
+  const ordered = backward ? [...rows].reverse() : rows;
+  const ids = [...new Set(ordered.flatMap((row) => (row.thread_id ? [row.thread_id] : [])))];
   if (!ids.length) return rows;
   const threads = await db<
     ThreadReferenceRow[]
   >`SELECT t.id, t.resource_type, t.resource_id, c.resource_type AS container_type, c.resource_id AS container_id
-  FROM chat.threads t JOIN chat.conversations c ON c.id = t.conversation_id WHERE t.id = ANY(${toPgUuidArray(ids)}::uuid[])`;
+  FROM chat.threads t JOIN chat.conversations c ON c.id = t.conversation_id WHERE t.id = ANY(${toPgUuidArray(ids)}::uuid[])
+  ORDER BY array_position(${toPgUuidArray(ids)}::uuid[], t.id)`;
   const visible = new Set((await visibleThreadPage(context, threads, false)).map(({ row }) => row.id));
   const deferred = new Set(threads.filter((row) => threadDeferred(context, row)).map((row) => row.id));
-  const ordered = backward ? [...rows].reverse() : rows;
   const boundary = ordered.findIndex((row) => row.thread_id !== null && deferred.has(row.thread_id));
   if (boundary >= 0) {
     if (backward) rows.splice(0, rows.length - boundary);

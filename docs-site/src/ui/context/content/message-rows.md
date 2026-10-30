@@ -67,7 +67,8 @@ or more than five minutes passed. Also start a group where the feed shows a
 separator, such as a new day. A row depends only on the row before it, so
 appending a message never changes an existing row.
 
-`badge` is shown next to the name, for example the kind of account. Keep it
+`badge` is shown next to the name, or next to the time on the reader's own
+messages, for example the kind of account or calling surface. Keep it
 one line high.
 
 ### Text

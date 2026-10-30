@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to resource providers.
-updated: 2026-10-29
+updated: 2026-10-30
 ---
 
 # Chat system conversations
@@ -16,6 +16,14 @@ third-party providers use the same contract. Chat lists these conversations
 under **Discussions**. Item directories and message links work in the full
 page and below `/app/chat/panel`. Providers can also offer an activity feed.
 Existing comments stay in their owning application.
+
+The [item discussion capabilities](/en/docs/platform/chat-discussions) expose
+only provider-backed item threads. Keep the item and container types' declared
+readers available under the incoming authority alongside the Chat operation;
+missing current owner context fails closed. Chat stores the calling surface on capability posts
+and edits; direct edits retain an existing mark. The additive nullable message
+column does not backfill old messages. Comments and the `unreleased` Compose
+profile remain until their separately coordinated release.
 
 ## Open a conversation
 

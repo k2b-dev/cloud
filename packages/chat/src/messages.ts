@@ -4,6 +4,8 @@ export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      viaAssistant: "via Assistant",
+      viaMcp: "via MCP",
       notificationMembershipRequired: "Open the chat before changing notifications or following a discussion.",
       notificationsLabel: "Notifications",
       notificationsAll: "All messages",
@@ -63,6 +65,8 @@ export const chatMessages = i18n.define({
       deleteMessage: "Delete message",
       messageMutationExpired: "You can only edit or delete your own messages within ten minutes.",
       messageChanged: "This message changed. Close this dialog and open the current message again.",
+      messageReplayConflict:
+        "This discussion post cannot be replayed with this idempotency key. Check the discussion or use a new key for a new message.",
       deleteMessageHint: "Delete this message for everyone? This cannot be undone.",
       saveMessage: "Save",
       mutationFailed: "The message could not be saved. Try again.",
@@ -497,6 +501,8 @@ export const chatMessages = i18n.define({
       logs: "Logs",
     },
     de: {
+      viaAssistant: "über Assistant",
+      viaMcp: "über MCP",
       notificationMembershipRequired: "Öffne den Chat, bevor du Benachrichtigungen änderst oder einer Diskussion folgst.",
       notificationsLabel: "Benachrichtigungen",
       notificationsAll: "Alle Nachrichten",
@@ -557,6 +563,8 @@ export const chatMessages = i18n.define({
       deleteMessage: "Nachricht löschen",
       messageMutationExpired: "Du kannst eigene Nachrichten nur in den ersten zehn Minuten bearbeiten oder löschen.",
       messageChanged: "Die Nachricht wurde geändert. Schließe diesen Dialog und öffne die aktuelle Nachricht erneut.",
+      messageReplayConflict:
+        "Dieser Diskussionsbeitrag kann mit diesem Idempotenzschlüssel nicht wiederholt werden. Prüfe die Diskussion oder nutze einen neuen Schlüssel für eine neue Nachricht.",
       deleteMessageHint: "Diese Nachricht für alle löschen? Das lässt sich nicht rückgängig machen.",
       saveMessage: "Speichern",
       mutationFailed: "Die Nachricht konnte nicht gespeichert werden. Versuche es erneut.",
