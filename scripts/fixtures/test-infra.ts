@@ -349,13 +349,14 @@ export const endLingeringTestWork = async (): Promise<string[]> => {
   if (ownedDatabases.size === 0) return [];
   const admin = new SQL(requireDatabaseUrl(), { max: 1 });
   try {
-    type Lingering = { pid: number; database: string; state: string; ms: number; query: string; blockers: number[] };
+    type Lingering = { pid: number; database: string; state: string; ms: number; query: string; blockers: number[]; wait: string };
     const rows: Lingering[] = [];
     for (const database of ownedDatabases)
       rows.push(
         ...(await admin<Lingering[]>`
           SELECT pid, datname AS database, state, (extract(epoch FROM now() - state_change) * 1000)::int AS ms,
-            left(query, 300) AS query, pg_blocking_pids(pid) AS blockers
+            left(query, 300) AS query, pg_blocking_pids(pid) AS blockers,
+            coalesce(wait_event_type || ':' || wait_event, 'running') AS wait
           FROM pg_stat_activity
           WHERE datname = ${database} AND pid <> pg_backend_pid()
             AND (state = 'active' OR state LIKE 'idle in transaction%') AND state_change < now() - interval '250 milliseconds'`),
@@ -366,7 +367,7 @@ export const endLingeringTestWork = async (): Promise<string[]> => {
       if (row.state === "active") await admin`SELECT pg_cancel_backend(${row.pid})`;
       else await admin`SELECT pg_terminate_backend(${row.pid})`;
       reports.push(
-        `${action} ${row.state} work in ${row.database} after ${row.ms} ms (pid ${row.pid}, blocked by ${row.blockers.join(", ") || "nothing"}): ${row.query}`,
+        `${action} ${row.state} work in ${row.database} after ${row.ms} ms (pid ${row.pid}, blocked by ${row.blockers.join(", ") || "nothing"}, waiting on ${row.wait}): ${row.query}`,
       );
     }
     for (const report of reports) console.warn(`[test-infra] work outlived its test and was ${report}`);
