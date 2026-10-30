@@ -59,7 +59,16 @@ for (const token of [undefined, ""]) {
 test("database unreadable URL and token are independent and implicit replacement fails before writes", async () => {
   const identity = testIdentity("00000000-0000-4000-8000-000000000001");
   identity.user.roles = ["admin"];
-  const read = spyOn(app.settings, "read").mockResolvedValue({ value: "", stored: "unreadable" });
+  const read = spyOn(app.settings, "read").mockImplementation(async (key) => ({
+    stored: "unreadable" as const,
+    value: {
+      "assistant.storage_file_mib": 50,
+      "assistant.storage_total_mib": 250,
+      "assistant.rsql_url": "",
+      "assistant.rsql_api_token": "",
+      "assistant.rsql_allowed_targets": ["rsql"],
+    }[key],
+  }));
   const write = spyOn(settings, "set").mockResolvedValue();
   const client = Object.assign(new SQL("postgres://localhost/unused_test"), {
     savepoint: () => {
@@ -79,15 +88,40 @@ test("database unreadable URL and token are independent and implicit replacement
     expect(await artifactDatabase.settings(identity)).toEqual({
       url: "",
       tokenSet: false,
-      unreadable: { "assistant.rsql_url": true, "assistant.rsql_api_token": true },
+      allowedTargets: ["rsql"],
+      unreadable: { "assistant.rsql_url": true, "assistant.rsql_api_token": true, "assistant.rsql_allowed_targets": true },
     });
     await expect(artifactDatabase.configure({ url: "", token: "" }, identity)).rejects.toMatchObject({ code: "setting_unreadable" });
     expect(write).not.toHaveBeenCalled();
     await expect(artifactDatabase.configure({}, identity, true)).rejects.toMatchObject({ code: "setting_unreadable" });
     await artifactDatabase.configure({ token: "", replaceUnreadable: ["assistant.rsql_api_token"] }, identity);
     expect(write.mock.calls).toEqual([["assistant.rsql_api_token", "", tx, { replaceUnreadable: true }]]);
+    // An unreadable stored list is replaced only after confirming it.
+    write.mockClear();
+    await expect(
+      artifactDatabase.configure({ allowedTargets: ["rsql"], replaceUnreadable: ["assistant.rsql_api_token"] }, identity),
+    ).rejects.toMatchObject({ code: "setting_unreadable" });
+    expect(write).not.toHaveBeenCalled();
   } finally {
     for (const spy of [read, write, begin]) spy.mockRestore();
     await client.close();
+  }
+});
+
+test("database configuration refuses an invalid allowed-targets list before it tests or stores anything", async () => {
+  const identity = testIdentity("00000000-0000-4000-8000-000000000001");
+  identity.user.roles = ["admin"];
+  const write = spyOn(settings, "set").mockResolvedValue();
+  const begin = spyOn(sql, "begin");
+  try {
+    for (const testOnly of [false, true])
+      await expect(artifactDatabase.configure({ allowedTargets: ["rsql", "0.0.0.0/0"] }, identity, testOnly)).rejects.toMatchObject({
+        code: "DB_TARGETS_INVALID",
+        status: 400,
+      });
+    expect(begin).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  } finally {
+    for (const spy of [write, begin]) spy.mockRestore();
   }
 });

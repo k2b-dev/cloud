@@ -298,6 +298,19 @@
         "Ordinary application users cannot widen the allowlist.",
         "Requests still use createAllowedNetworkFetch or resolveAllowedNetworkAddresses."
       ]
+    },
+    {
+      "id": 26,
+      "prompt": "Add a separate data worker to a Cloud application. It needs SQL, Valkey, Sync and object storage, plus a SQL pool limited to four connections.",
+      "expected_output": "Uses the platform startup entry before importing domain code, imports native sql and redis handles plus lazySync and storage from @k2b/cloud, and creates and closes its own SQL pool through createSql({ max: 4 }).",
+      "files": [],
+      "expectations": [
+        "Reads the platform start and connections guide through current documentation.",
+        "Initializes through @k2b/cloud/start before loading code that uses connections.",
+        "Imports sql, redis, lazySync and storage from @k2b/cloud; Bun supplies native types only.",
+        "Uses createSql for the separate pool and closes it when work ends.",
+        "Does not write connection values into process.env or add a second startup call to a standard application entrypoint."
+      ]
     }
   ]
 }

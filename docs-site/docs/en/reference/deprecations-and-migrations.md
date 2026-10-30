@@ -40,6 +40,12 @@ over automatic delivery. Existing admin UI, API and CLI creation and revocation
 paths remain available. See [runtime configuration](/en/docs/operations/runtime-configuration)
 for credential lifetimes, recovery after revocation, and the shared-infrastructure trust limit.
 
+## Storage import
+
+Import `storage` from `@k2b/cloud`. The former `@k2b/cloud/services` export
+remains available for this release and is deprecated. Its behavior and saved
+storage configuration are unchanged. See [Object store](/en/docs/platform/object-store).
+
 ## Network and AI environment values become administrator settings
 
 This release imports nine network and AI values at startup, without replacing

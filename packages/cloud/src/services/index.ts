@@ -282,7 +282,9 @@ export {
   type AppAccessSnapshot,
 } from "./app-access-management";
 
-export { storage } from "./object-store";
+import { storage as platformStorage } from "./object-store";
+/** @deprecated Import storage from @k2b/cloud. */
+export const storage = platformStorage;
 export type {
   ObjectStoreFile,
   ObjectVisibility,

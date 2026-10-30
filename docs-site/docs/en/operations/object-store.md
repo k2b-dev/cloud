@@ -40,13 +40,18 @@ Save these settings in the Storage area:
 Gateways now need the installation's `DATABASE_URL`, `APP_SECRET` and
 `REDIS_URL` as well as access to Garage. The production Compose template supplies
 them. Apply these dependencies to custom deployments before enabling public
-delivery. The gateway decrypts the same settings as applications; it therefore
-holds the installation secret. Request budgets are shared in Valkey using the
+delivery. The gateway decrypts the storage settings with the installation
+`APP_SECRET`. Request budgets are shared in Valkey using the
 existing **Requests Per Second** value with a separate public-storage budget,
 keyed by the gateway-resolved client address (IPv6 /64). People behind one IPv4
 NAT share that budget; image-heavy pages may need a CDN or a higher limit.
 An exceeded budget returns 429 with Retry-After; unavailable
 Valkey returns 503 before touching Garage.
+
+The gateway is a trusted platform service: its shared database role and
+encryption secret make a gateway compromise an installation compromise, as
+with Core. Its public-delivery path reads only storage configuration and the
+rate-limit setting; that is not credential isolation.
 
 The credentials use Core's encrypted secret fields. They are not environment
 variables. Require TLS outside a trusted internal network. Do not let

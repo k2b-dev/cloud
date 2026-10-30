@@ -1,6 +1,8 @@
+import { initializePlatform } from "../start";
 import { defineApp } from "./define-app";
 
 const mode = process.argv[2];
+await initializePlatform({ appId: `drain-${mode}`, source: "env" });
 const report = (event: string, details = {}) => console.log(JSON.stringify({ event, ...details }));
 let finish: () => void = () => {};
 const held = new Promise<void>((resolve) => {

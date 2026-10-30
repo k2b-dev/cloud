@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { configurePostgresApplicationName } from "./postgres-application-name";
+import { configurePostgresApplicationName, postgresApplicationOptions } from "./postgres-application-name";
 
 const connectionUrl = "postgresql://fixture:fixture@localhost:5432/fixture?sslmode=require&connect_timeout=5";
 const variables = ["DATABASE_URL", "DATABASEURL", "TLS_DATABASE_URL", "POSTGRES_URL", "PGURL", "PG_URL", "TLS_POSTGRES_DATABASE_URL"];
@@ -60,5 +60,22 @@ describe("Postgres application names", () => {
     configurePostgresApplicationName("mail", environment);
     configurePostgresApplicationName("another-app", environment);
     expect(new URL(environment.DATABASE_URL).searchParams.get("application_name")).toBe("cloud:mail");
+  });
+});
+
+describe("Postgres application names", () => {
+  test("names connections without rewriting the operator URL", () => {
+    expect(postgresApplicationOptions("mail", connectionUrl)).toEqual({ application_name: "cloud:mail" });
+  });
+  test("preserves operator names, empty names and startup options", () => {
+    for (const parameter of [
+      "application_name=operator",
+      "application_name=",
+      "APPLICATION_NAME=operator",
+      "options=-c%20application_name%3Doperator",
+      "options=-c%20statement_timeout%3D1000",
+    ]) {
+      expect(postgresApplicationOptions("mail", `${connectionUrl}&${parameter}`)).toEqual({});
+    }
   });
 });

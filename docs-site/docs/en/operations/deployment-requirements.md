@@ -235,6 +235,27 @@ Valkey admission, paid calls are refused with `GEO_BUSY`; there is no
 unlimited fallback. Availability checks remain free. Cache failures alone do
 not fail a request that admission accepts.
 
+## Treat the gateway as a trusted platform service
+
+Like application services, Core and the gateway hold the installation's
+infrastructure credentials in their environment. The gateway needs `DATABASE_URL` and `APP_SECRET` to read
+and decrypt the storage settings for `/public/storage`, `REDIS_URL` to enforce
+its request budgets, and NATS access for discovery and telemetry. It reads
+only the storage configuration and the public-storage rate-limit setting for
+that delivery path. These narrow reads do not restrict what its credentials
+can access.
+
+The gateway shares the installation database role and encryption secret.
+A gateway compromise is an installation compromise, as with Core: an attacker
+can access the shared database and decrypt settings and credentials. Cloud
+does not isolate applications with separate database roles or infrastructure
+credentials. Install only trusted applications and protect the gateway host,
+container environment and private service network accordingly.
+
+Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
+of the gateway. Their absence does not make it a separate trust boundary.
+See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |
@@ -610,7 +631,9 @@ Administrators can allow internal administrator-configured endpoints with the se
 public targets only),
 `assistant.rsql_allowed_targets` owned by Assistant (default `rsql`), and
 `outgoing_mail.allowed_targets` owned by the platform (default empty, covering both SMTP
-and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs.
+and bounce IMAP). Administrators edit them under **Observability → Health
+check**, in **Database settings** on the Studio administration page, and under
+**Base settings**. Each accepts exact host names, IP addresses and CIDRs.
 `host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
 leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
 include a port. A saved list replaces the default and applies to new requests or connections. Invalid entries, including `/0`, are rejected on write. The deprecated environment variables bootstrap absent settings once; invalid bootstrap input is ignored with a warning.
@@ -640,7 +663,8 @@ scrape and every redirect (at most three) and pins each connection. Revocation
 takes effect on the next scrape. Responses must be uncompressed.
 
 Notebooks operators can allow internal S3-compatible storage with
-the `notebooks.snapshot_allowed_targets` admin setting.
+the `notebooks.snapshot_allowed_targets` admin setting, under **Settings** on
+`/admin/notebooks`.
 Use the narrowest entry: an exact host name, one IP address, or the smallest
 required CIDR range. Host entries trust all validated addresses for that exact
 name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries are rejected on write. Changes apply to new snapshot requests.

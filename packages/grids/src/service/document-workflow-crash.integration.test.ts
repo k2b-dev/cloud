@@ -157,7 +157,14 @@ async function runAcceptance() {
     const child = Bun.spawn(
       [process.execPath, join(import.meta.dir, "document-workflow-crash.worker.ts"), runId, checkpoint, namespace, String(receiver.port)],
       {
-        env: { ...process.env, DATABASE_URL: childUrl.toString(), NATS_SERVERS: nats.toString(), GOTENBERG_URL: gotenberg.toString() },
+        env: {
+          ...process.env,
+          BUN_OPTIONS: `${process.env.BUN_OPTIONS ?? "--no-env-file"} --preload=${join(import.meta.dir, "../../../../scripts/fixtures/test-infra.ts")}`,
+          CLOUD_TEST_DATABASE_URL: childUrl.toString(),
+          DATABASE_URL: childUrl.toString(),
+          NATS_SERVERS: nats.toString(),
+          GOTENBERG_URL: gotenberg.toString(),
+        },
         stdout: fd,
         stderr: fd,
         ipc: (message) => {

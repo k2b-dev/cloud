@@ -122,6 +122,7 @@ describe("@k2b/editor building blocks", () => {
       editor.attach(view);
       expect(view.state.facet(marker)).toEqual(["static", "rich"]);
       setMode("source");
+      await Promise.resolve();
       expect(view.state.facet(marker)).toEqual(["static", "source"]);
     } finally {
       dispose();
@@ -139,12 +140,54 @@ describe("@k2b/editor building blocks", () => {
       page.editor.use(EditorView.updateListener.of((update) => seen.push(update.state.doc.length)));
       return dispose;
     });
+    await Promise.resolve();
     page.view().dispatch({ changes: { from: 4, insert: "!" } });
     expect(seen.at(-1)).toBe(5);
     dispose();
     await Promise.resolve();
     page.view().dispatch({ changes: { from: 5, insert: "?" } });
     expect(seen.at(-1)).toBe(5);
+  });
+
+  test("a factory that reads a signal written during an editor update leaves the writing plugin running", async () => {
+    const { createSignal } = await import("solid-js");
+    const { Facet } = await import("@codemirror/state");
+    const { ViewPlugin } = await import("@codemirror/view");
+    using page = mount("text");
+    await Promise.resolve();
+    const marker = Facet.define<number, number[]>();
+    const [length, setLength] = createSignal(4);
+    let updates = 0;
+    const errors: unknown[] = [];
+    const logged = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    const dispose = createRoot((dispose) => {
+      // Like a Yjs binding whose document store a host reads: the plugin writes a signal while the view updates.
+      page.editor.use(
+        ViewPlugin.define(() => ({
+          update(update) {
+            updates++;
+            if (update.docChanged) setLength(update.state.doc.length);
+          },
+        })),
+      );
+      page.editor.use(() => marker.of(length()));
+      return dispose;
+    });
+    try {
+      await Promise.resolve();
+      const view = page.view();
+      view.dispatch({ changes: { from: 4, insert: "!" } });
+      view.dispatch({ changes: { from: 5, insert: "?" } });
+      await Promise.resolve();
+      expect(errors).toEqual([]);
+      // CodeMirror switches off a plugin that crashed; this one saw both edits and the reconfiguration after them.
+      expect(updates).toBeGreaterThanOrEqual(3);
+      expect(view.state.facet(marker)).toEqual([6]);
+    } finally {
+      console.error = logged;
+      dispose();
+    }
   });
 
   test("a host effect that dispatches to the view does not run again on every editor update", async () => {
