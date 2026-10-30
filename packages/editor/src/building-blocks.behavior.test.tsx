@@ -13,10 +13,10 @@ loading.cleanup();
 /** One editor with a toolbar outside it, as a host places them. */
 const mount = (doc: string, slash: import("./index").SlashAction[] = []) => {
   const dom = createDomTestHarness();
-  const actions = markdownActions("en");
   let editor!: ReturnType<typeof createEditor>;
   const dispose = render(() => {
     editor = createEditor();
+    const actions = markdownActions(editor, "en");
     return (
       <LocaleProvider locale="en">
         <Toolbar editor={editor} groups={[{ items: [actions.bold, actions.italic] }, { items: [actions.bulletList] }]} />
@@ -56,12 +56,17 @@ describe("@k2b/editor building blocks", () => {
     return;
   }
 
-  test("a toolbar placed outside the editor formats the selection as one undo step", async () => {
+  test("a toolbar placed outside the editor formats the selection apart from the typing before it", async () => {
+    const { undo } = await import("@codemirror/commands");
     using page = mount("word here");
     await Promise.resolve();
+    const view = page.view();
+    view.dispatch({ changes: { from: 9, insert: "!" }, selection: { anchor: 10 }, userEvent: "input.type" });
     page.select(0, 4);
     page.button("Bold").click();
-    expect(page.view().state.doc.toString()).toBe("**word** here");
+    expect(view.state.doc.toString()).toBe("**word** here!");
+    undo(view);
+    expect(view.state.doc.toString()).toBe("word here!");
   });
 
   test("the pressed state follows the caret through the shared state", async () => {
@@ -71,6 +76,21 @@ describe("@k2b/editor building blocks", () => {
     expect(page.button("Bold").getAttribute("aria-pressed")).toBe("true");
     page.select(11, 11);
     expect(page.button("Bold").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("a read-only editor ignores an action without its own enabled check", async () => {
+    using page = mount("word");
+    await Promise.resolve();
+    page.editor.controller()?.setReadOnly(true);
+    const action: import("./index").EditorAction = {
+      id: "insert",
+      icon: "ti-plus",
+      label: "Insert",
+      run: (view: import("@codemirror/view").EditorView) => view.dispatch({ changes: { from: 0, insert: "x" } }),
+    };
+    expect(page.editor.isEnabled(action)).toBe(false);
+    page.editor.run(action);
+    expect(page.view().state.doc.toString()).toBe("word");
   });
 
   test("a read-only editor disables the actions and ignores presses", async () => {

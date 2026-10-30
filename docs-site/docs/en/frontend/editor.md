@@ -32,7 +32,7 @@ import { BubbleMenu, Editor, SlashMenu, Toolbar, createEditor, markdownActions }
 
 export function NoteEditor(props: { initial: string; locale: string }) {
   const editor = createEditor();
-  const actions = markdownActions(props.locale);
+  const actions = markdownActions(editor, props.locale);
   return (
     <>
       <Toolbar
@@ -71,14 +71,17 @@ An action is a plain object:
 | `isEnabled(state)` | `false` greys the action out and ignores presses. |
 
 Each place has its own list, so the toolbar can show more than the bubble menu.
-`markdownActions(locale)` returns ready actions for bold, italic,
+`markdownActions(editor, locale)` returns ready actions for bold, italic,
 strikethrough, inline code, link, headings, lists, quote, code block, and table.
-Applications add their own actions next to them.
+In a focused table cell, the inline formats apply to the cell and the block
+formats are off. Applications add their own actions next to them.
 
-`editor.run(action)` runs an action as one undo step, also when it waits for a
-picker, and returns focus to the editor. Disabled actions and read-only editors
-do nothing. `asUndoStep(view, run)` gives the same boundary to commands that run
-outside a place, such as a keymap.
+`editor.run(action)` keeps an action's edits apart from the surrounding typing
+in the undo history, also when it waits for a picker, and returns focus to the
+editor. An action that should undo at once dispatches one transaction. Disabled
+actions do nothing, and every action is off in a read-only editor.
+`asUndoStep(view, run)` gives the same boundary to commands that run outside a
+place, such as a keymap.
 
 ## Add the toolbar and the menus
 
@@ -91,7 +94,8 @@ sync status. Pressing a control keeps focus and selection in the editor. With
 the editor has focus.
 
 `<BubbleMenu>` opens at a selection once it settles, not while a pointer still
-drags it. Escape, a collapsed selection, or leaving the editor closes it. On
+drags it. It stays open while focus moves between the text and the menu. Escape,
+a collapsed selection, or leaving both closes it. On
 touch screens it sits below the selection, where the system's own menu does not
 cover it. Children after the actions hold extra controls, such as **Comment**.
 

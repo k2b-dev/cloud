@@ -8,7 +8,7 @@ want and describe their actions as data.
 import { Editor, Toolbar, createEditor, markdownActions } from "@k2b/editor";
 
 const editor = createEditor();
-const actions = markdownActions("en");
+const actions = markdownActions(editor, "en");
 
 <Toolbar editor={editor} groups={[{ items: [actions.bold, actions.italic] }]} />
 <Editor editor={editor} label="Note" maxLength={100_000} toolbar={false} />

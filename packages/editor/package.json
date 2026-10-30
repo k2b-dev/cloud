@@ -7,7 +7,6 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' packages/editor/src",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "peerDependencies": {

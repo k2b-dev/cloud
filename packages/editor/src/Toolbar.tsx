@@ -106,7 +106,7 @@ function ToolbarMenuButton(props: { editor: EditorHandle; menu: ToolbarMenu; coa
 
 /**
  * A formatting toolbar for the shared editor, placed wherever the host wants it. Pressing a control keeps focus and
- * selection in the editor; every action is one undo step.
+ * selection in the editor; every action stays apart from the surrounding typing in the undo history.
  */
 export function Toolbar(props: ToolbarProps) {
   const locale = useLocale();
