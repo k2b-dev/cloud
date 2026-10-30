@@ -15,7 +15,10 @@
     "yjs": "catalog:",
     "y-protocols": "catalog:",
     "lib0": "0.2.117",
-    "file-type": "21.3.4"
+    "file-type": "21.3.4",
+    "@k2b/ui": "workspace:*",
+    "@k2b/stdlib": "catalog:",
+    "solid-js": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

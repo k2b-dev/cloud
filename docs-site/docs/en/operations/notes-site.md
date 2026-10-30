@@ -59,3 +59,19 @@ verify a restore, and measure an RPO of at most 24 hours and an RTO of 4 hours.
 Backup retention can outlast deletion from the running database. Keep capability
 paths out of access, error, tracing, and telemetry logs at every proxy layer;
 the application emits only fixed diagnostic codes.
+
+## Moderation duty
+
+Administration is disabled until `NOTES_ADMIN_PASSWORD_HASH` contains an
+Argon2id password hash. Serve `/admin` through the same HTTPS origin as the SPA.
+Sessions expire after 12 hours; changing the hash invalidates them all. Every
+mutation checks Origin and CSRF, including login. Never cache admin responses.
+
+Assign a moderator and deputy before public launch. Reports receive an intake
+number. The admin view records the decision and reason, removes blocked/deleted
+content, and shows pending reporter notifications. Send the prepared decision
+email in the operator's mail application, then confirm it in the admin view.
+This explicit delivery step needs no additional Notes mail configuration.
+Storage and automatic-maintenance failures remain visible in the admin view
+and fixed-code application logs. Reserve Postgres disk outside the application
+budget for WAL, indexes, backups and transaction/compaction headroom.

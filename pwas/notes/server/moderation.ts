@@ -24,7 +24,7 @@ const reportInput = z.strictObject({
   confirmed: z.literal(true),
 });
 const decisionInput = z.strictObject({ action: z.enum(["keep", "block", "delete"]), reason: z.string().trim().min(10).max(10_000) });
-const numberId = z.string().regex(/^[1-9][0-9]{0,18}$/);
+const numberId = z.string().regex(/^[1-9][0-9]{0,17}$/);
 export type Report = {
   id: string;
   read_id: string;
@@ -96,9 +96,9 @@ export const mountModeration = (
   });
   app.post("/api/admin/login", async (c) => {
     available();
-    service.rates.take("admin_login", ip(c), limits.loginPerQuarterHour, 900_000);
     const csrf = getCookie(c, PREAUTH) ?? "";
     if (!validId(csrf) || !equal(c.req.header("x-csrf-token") ?? "", csrf)) throw new NotesError("csrf_forbidden", 403);
+    service.rates.take("admin_login", ip(c), limits.loginPerQuarterHour, 900_000);
     const input = z.strictObject({ password: z.string().min(1).max(1024) }).safeParse(await boundedJson(c.req.raw, 8192));
     if (!input.success || !(await Bun.password.verify(input.data.password, options.adminPasswordHash!)))
       throw new NotesError("unauthorized", 401);
@@ -114,7 +114,7 @@ export const mountModeration = (
         >`DELETE FROM admin_sessions WHERE id_hash=${hash(previous)} RETURNING storage_bytes::text`;
         released = rows.reduce((sum, row) => sum + Number(row.storage_bytes), 0);
       }
-      await store.reserve(tx, costs.session - released);
+      await store.reserve(tx, costs.session - released, "admin");
       await tx`INSERT INTO admin_sessions(id_hash,csrf_hash,expires_at,password_fingerprint,storage_bytes) VALUES(${hash(id)},${hash(token)},${new Date(Date.now() + sessionMs)},${fingerprint},${costs.session})`;
     });
     setCookie(c, COOKIE, `${id}.${token}`, { ...cookieOptions, maxAge: sessionMs / 1000 });
@@ -157,28 +157,37 @@ export const mountModeration = (
     if (!report) throw new NotesError("not_found", 404);
     const data = input.data;
     await service.enqueue(report.read_id, async () => {
-      await store.transaction(async (tx) => {
-        const [row] = await tx<Report[]>`SELECT * FROM reports WHERE id=${id.data} FOR UPDATE`;
-        if (!row) throw new NotesError("not_found", 404);
-        if (row.state !== "open") {
-          if (row.decision === data.action && row.reason_text === data.reason) return;
-          throw new NotesError("already_decided", 409);
-        }
-        const [pad] = await tx<{ size_bytes: string }[]>`SELECT size_bytes::text FROM pads WHERE read_id=${report.read_id} FOR UPDATE`;
-        const reportDelta = textBytes(data.reason);
-        const auditBytes = costs.decision + textBytes(data.reason);
-        const cleanupDelta = data.action === "keep" ? 0 : costs.pad - Number(pad!.size_bytes);
-        await store.reserve(tx, reportDelta + auditBytes + cleanupDelta);
-        await tx`UPDATE reports SET state='decided',decision=${data.action},reason_text=${data.reason},decided_at=${new Date()},storage_bytes=storage_bytes+${reportDelta},notification_state=CASE WHEN email IS NULL THEN 'none' ELSE 'pending' END WHERE id=${id.data}`;
-        await tx`INSERT INTO moderation_log(read_id,report_id,action,reason,storage_bytes) VALUES(${report.read_id},${id.data},${data.action},${data.reason},${auditBytes})`;
-        if (data.action !== "keep") {
-          await tx`UPDATE pads SET blocked_at=CASE WHEN ${data.action}='block' THEN COALESCE(blocked_at,${new Date()}) ELSE blocked_at END,deleted_at=CASE WHEN ${data.action}='delete' THEN COALESCE(deleted_at,${new Date()}) ELSE deleted_at END,status_reason=COALESCE(status_reason,${data.reason}),snapshot=''::bytea,content_md='',size_bytes=${costs.pad} WHERE read_id=${report.read_id}`;
-          await tx`DELETE FROM pad_updates WHERE read_id=${report.read_id}`;
-          await tx`DELETE FROM pad_files WHERE read_id=${report.read_id}`;
-          await tx`DELETE FROM pad_previews WHERE read_id=${report.read_id}`;
-        }
-      });
-      if (data.action !== "keep") service.invalidate(report.read_id, data.action === "block" ? "blocked" : "deleted");
+      let committed = false;
+      try {
+        await store.transaction(async (tx) => {
+          const [row] = await tx<Report[]>`SELECT * FROM reports WHERE id=${id.data} FOR UPDATE`;
+          if (!row) throw new NotesError("not_found", 404);
+          if (row.state !== "open") {
+            if (row.decision === data.action && row.reason_text === data.reason) return;
+            throw new NotesError("already_decided", 409);
+          }
+          const [pad] = await tx<
+            { size_bytes: string; status_reason: string | null }[]
+          >`SELECT size_bytes::text,status_reason FROM pads WHERE read_id=${report.read_id} FOR UPDATE`;
+          const reportDelta = textBytes(data.reason);
+          const auditBytes = costs.decision + textBytes(data.reason);
+          const tombstoneBytes = costs.tombstone + textBytes(pad!.status_reason ?? data.reason);
+          const cleanupDelta = data.action === "keep" ? 0 : tombstoneBytes - Number(pad!.size_bytes);
+          await store.reserve(tx, reportDelta + auditBytes + cleanupDelta, "admin");
+          await tx`UPDATE reports SET state='decided',decision=${data.action},reason_text=${data.reason},decided_at=${new Date()},storage_bytes=storage_bytes+${reportDelta},notification_state=CASE WHEN email IS NULL THEN 'none' ELSE 'pending' END WHERE id=${id.data}`;
+          await tx`INSERT INTO moderation_log(read_id,report_id,action,reason,storage_bytes) VALUES(${report.read_id},${id.data},${data.action},${data.reason},${auditBytes})`;
+          if (data.action !== "keep") {
+            await tx`UPDATE pads SET blocked_at=CASE WHEN ${data.action}='block' THEN COALESCE(blocked_at,${new Date()}) ELSE blocked_at END,deleted_at=CASE WHEN ${data.action}='delete' THEN COALESCE(deleted_at,${new Date()}) ELSE deleted_at END,status_reason=COALESCE(status_reason,${data.reason}),snapshot=''::bytea,content_md='',size_bytes=${tombstoneBytes} WHERE read_id=${report.read_id}`;
+            await tx`DELETE FROM pad_updates WHERE read_id=${report.read_id}`;
+            await tx`DELETE FROM pad_files WHERE read_id=${report.read_id}`;
+            await tx`DELETE FROM pad_previews WHERE read_id=${report.read_id}`;
+          }
+        });
+        committed = true;
+      } finally {
+        if (data.action !== "keep")
+          service.invalidate(report.read_id, committed ? (data.action === "block" ? "blocked" : "deleted") : "resync_required");
+      }
     });
     return c.json({ number: id.data, state: "decided" });
   });
@@ -188,7 +197,7 @@ export const mountModeration = (
     if (!id.success) throw new NotesError("invalid_report");
     const rows = await store.transaction(
       (tx) =>
-        tx`UPDATE reports SET notification_state='sent',notification_sent_at=${new Date()} WHERE id=${id.data} AND state='decided' AND notification_state='pending' RETURNING id`,
+        tx`UPDATE reports SET notification_state='sent',notification_sent_at=${new Date()} WHERE id=${id.data} AND state='decided' AND notification_state IN ('pending','sent') RETURNING id`,
     );
     if (!rows.length) throw new NotesError("not_found", 404);
     return c.body(null, 204);
