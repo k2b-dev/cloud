@@ -196,7 +196,7 @@ const de = {
   offlineBody: `Schreib ruhig weiter. Sobald du online bist, führt ${BRAND} deine und fremde Änderungen zusammen.`,
   mergedTitle: "Wieder online.",
   mergedBody: ({ count, names }: { count: number; names: string }) =>
-    count > 0 ? `Deine Änderungen und ${count} von ${names} sind zusammengeführt.` : "Deine Änderungen sind zusammengeführt.",
+    count > 0 && names ? `Deine Änderungen und ${count} von ${names} sind zusammengeführt.` : "Deine Änderungen sind zusammengeführt.",
   guestTitle: ({ name }: { name: string }) => `Du schreibst hier als „${name}“.`,
   guestBody: ({ names }: { names: string }) => (names ? `${names} sehen den Namen an deinem Cursor.` : "Andere sehen den Namen an deinem Cursor."),
   changeName: "Namen ändern",
@@ -447,7 +447,7 @@ const en: Messages = {
   offlineTitle: "Offline.",
   offlineBody: `Keep writing. Once you are online, ${BRAND} merges your changes and everyone else's.`,
   mergedTitle: "Back online.",
-  mergedBody: ({ count, names }) => (count > 0 ? `Your changes and ${count} from ${names} are merged.` : "Your changes are merged."),
+  mergedBody: ({ count, names }) => (count > 0 && names ? `Your changes and ${count} from ${names} are merged.` : "Your changes are merged."),
   guestTitle: ({ name }) => `You write here as “${name}”.`,
   guestBody: ({ names }) => (names ? `${names} see the name at your cursor.` : "Others see the name at your cursor."),
   changeName: "Change name",

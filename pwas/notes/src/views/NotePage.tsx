@@ -26,6 +26,9 @@ type Status = "local" | "shared" | "syncing" | "offline" | "read" | "example" | 
 
 /** A draft opened on the first visit hands its text over to the store on the first keystroke. */
 let focusNext: string | null = null;
+/** True from the first keystroke of the draft until its note is open, so the overview does not replace it early. */
+const [handingOff, setHandingOff] = createSignal(false);
+export { handingOff };
 
 function StatusLabel(props: { status: Status }) {
   const view = () => {
@@ -129,12 +132,17 @@ export function NotePage(props: { mode: NoteMode }) {
     const handoff = async () => {
       if (handing) return;
       handing = true;
-      const id = await store.create("");
-      await store.applyUpdate(id, Y.encodeStateAsUpdate(current.doc));
-      const forward = (update: Uint8Array) => void store.applyUpdate(id, update);
-      current.doc.on("update", forward);
-      focusNext = id;
-      navigate(`/n/${id}`, { replace: true });
+      setHandingOff(true);
+      try {
+        const id = await store.create("");
+        await store.applyUpdate(id, Y.encodeStateAsUpdate(current.doc));
+        // Keystrokes between the first one and the switch to /n/:id follow the same way.
+        current.doc.on("update", (update: Uint8Array) => void store.applyUpdate(id, update));
+        focusNext = id;
+        navigate(`/n/${id}`, { replace: true });
+      } finally {
+        setHandingOff(false);
+      }
     };
     current.doc.on("update", () => void handoff());
   });
@@ -163,7 +171,7 @@ export function NotePage(props: { mode: NoteMode }) {
           onMerged: (report) => {
             const names = session.people().filter((person) => person.writerId !== null && report.writers.includes(person.writerId));
             notice(
-              toast.success(t().mergedBody({ count: report.remoteChanges, names: names.map((person) => person.name).join(", ") || "…" }), {
+              toast.success(t().mergedBody({ count: report.remoteChanges, names: names.map((person) => person.name).join(", ") }), {
                 title: t().mergedTitle,
                 iconClass: "ti ti-arrows-join",
               }),
@@ -187,7 +195,8 @@ export function NotePage(props: { mode: NoteMode }) {
     if (current?.pendingDelete) return "pendingDelete";
     if (app.storeError() === "quota") return "unsaved";
     const session = live();
-    if (!current?.share || !session) return "local";
+    if (!current?.share) return "local";
+    if (!session) return "syncing";
     const state = session.status();
     if (state === "offline") return "offline";
     if (state === "unsaved" || state === "full") return "unsaved";

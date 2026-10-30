@@ -6,7 +6,7 @@ import { Icon } from "./ui/common";
 import { finishPendingDeletes } from "./views/Delete";
 import { usePageDrop } from "./views/Import";
 import { Legal } from "./views/Legal";
-import { NotePage } from "./views/NotePage";
+import { handingOff, NotePage } from "./views/NotePage";
 import { Overview } from "./views/Overview";
 import { openPalette } from "./views/Palette";
 import { SharedLink } from "./views/SharedLink";
@@ -54,7 +54,7 @@ export function App() {
       <Switch>
         <Match when={route().name === "home"}>
           <Show when={app.ready()} fallback={<Overview />}>
-            <Show when={app.records().length > 0} fallback={<NotePage mode={{ kind: "draft" }} />}>
+            <Show when={app.records().length > 0 && !handingOff()} fallback={<NotePage mode={{ kind: "draft" }} />}>
               <Overview />
             </Show>
           </Show>
