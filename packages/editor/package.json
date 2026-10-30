@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Configurable Markdown editor for SolidJS: editor, toolbar, bubble menu, and slash menu on one shared state.",
   "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./markdown": "./src/markdown/index.ts",
