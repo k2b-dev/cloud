@@ -132,3 +132,9 @@ Administrative sessions, decisions and removal audits remain available when the
 application budget is full. Their bounded records are still accounted for and
 may exceed the application threshold so the operator can free storage. Public
 note creation, uploads, reports and updates remain subject to their thresholds.
+
+File requests share a process concurrency budget of `NOTES_MAX_OPEN_PADS`
+transfers. Admission and edit-link checks happen before reading upload bodies.
+Body reads are cancelled on disconnect or after one 30-second heartbeat interval,
+so stalled uploads release their slots. Excess transfers return 503
+`transfers_full`; clients can retry.
