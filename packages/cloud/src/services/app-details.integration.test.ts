@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
-import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { initializeTestPlatform, suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppEvents } from "../../../core/src/migrate/core/app-events";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
@@ -50,7 +50,10 @@ const capabilities: CapabilityRegistryEntry = {
   presentation: { baseLocale: "en", translations: { de: { events: { changed: { title: "Geändert", description: "Eintrag geändert" } } } } },
 };
 let online = true;
-let details: ReturnType<typeof createAppDetailsService>;
+const details = createAppDetailsService({
+  getApp: async (appId) => (online && appId === app.id ? app : null),
+  capabilities: async () => (online ? [capabilities] : []),
+});
 const authenticate =
   (requestAuthority: RequestAuthority): MiddlewareHandler<AuthContext> =>
   async (c, next) => {
@@ -70,10 +73,6 @@ beforeAll(async () => {
   await migrateEvents();
   await migrateAppEvents();
   await migrateNotifications();
-  details = createAppDetailsService({
-    getApp: async (appId) => (online && appId === app.id ? app : null),
-    capabilities: async () => (online ? [capabilities] : []),
-  });
 }, 30_000);
 afterAll(async () => {
   if (database) {
@@ -104,6 +103,13 @@ suiteFor("database")("app administration detail", () => {
         '{"baseLocale":"en","translations":{"de":{"label":"Nachricht","description":"Beschreibung","excludedReason":"Keine SMS für diese Meldung."}}}',
         'user', '{browser}', '{email}', '{sms}', 'No SMS for this notification.')
     `;
+  });
+
+  test("a service created before startup follows a replacement platform client", async () => {
+    const previous = sql;
+    await initializeTestPlatform();
+    expect(sql).not.toBe(previous);
+    expect((await details("demo", { authority: authority() }))?.app.id).toBe("demo");
   });
 
   test("online detail shares localized declarations, notification policy and real inherited grant counts", async () => {

@@ -29,7 +29,7 @@ type BrokerDependencies = {
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
 
 export const createAppEventBroker = (dependencies: BrokerDependencies = {}) => {
-  const db = dependencies.db ?? sql;
+  const db = () => dependencies.db ?? sql;
   const registry = dependencies.registry ?? listCapabilities;
   const declarations = createDeclarationSync(db, registry);
   const admin = createEventAdministration(db, {

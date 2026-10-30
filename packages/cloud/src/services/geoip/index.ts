@@ -79,11 +79,11 @@ const serialized = <T>(write: () => Promise<T>): Promise<T> => {
   return run;
 };
 export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; bundled?: () => ReturnType<GeoIp["status"]> } = {}) => {
-  const db = options.db ?? sql;
+  const db = () => options.db ?? sql;
   const reader = () => options.reader ?? getGeoIp();
   const status = async (actor: Actor, config: { now?: () => number } = {}): Promise<GeoIpAdminStatus> => {
     requireAdmin(actor);
-    const rows = await db<GeoIpUploadInfo[]>`
+    const rows = await db()<GeoIpUploadInfo[]>`
       SELECT d.kind, d.sha256, (d.metadata->>'size')::int AS size, d.database_type, d.build_epoch,
         d.metadata->'description'->>'en' AS description, d.uploaded_at, d.uploaded_by,
         COALESCE(NULLIF(u.display_name, ''), u.uid) AS uploader_name
@@ -103,7 +103,7 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
         database.info.sha256 = sha256;
         config.signal?.throwIfAborted();
         await serialized(async () => {
-          await db.begin(async (tx) => {
+          await db().begin(async (tx) => {
             await tx`
               INSERT INTO geoip.databases (kind, data, sha256, database_type, build_epoch, metadata, uploaded_by)
               VALUES (${kind}, ${bytes}, ${sha256}, ${metadata.databaseType}, ${metadata.buildEpoch}::timestamptz,
@@ -132,7 +132,7 @@ export const createGeoIpService = (options: { db?: typeof sql; reader?: GeoIp; b
     async reset(actor: Actor, kind: GeoIpKind) {
       requireAdmin(actor);
       const changed = await serialized(async () => {
-        const deleted = await db.begin(async (tx) => {
+        const deleted = await db().begin(async (tx) => {
           const [row] = await tx<{ sha256: string; database_type: string; build_epoch: Date; size: number }[]>`
           DELETE FROM geoip.databases WHERE kind = ${kind}
           RETURNING sha256, database_type, build_epoch, octet_length(data) AS size`;

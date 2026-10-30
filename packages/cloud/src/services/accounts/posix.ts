@@ -128,8 +128,9 @@ const candidate = (row: IdentityRow): PosixCandidate => {
 };
 
 // Database injection is used by isolated integration tests; production uses the shared pool.
-export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdRanges) => {
-  const readConfig = async (connection = db): Promise<LinuxIdentityConfiguration> => {
+export const createPosixRuntime = (injectedDb?: typeof sql, readRanges = readIpaIdRanges) => {
+  const db = () => injectedDb ?? sql;
+  const readConfig = async (connection = db()): Promise<LinuxIdentityConfiguration> => {
     // Provisioning must not use a stale cache after an operator disables or changes the range.
     const [row] = await connection<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${CONFIG_KEY}`;
     try {
@@ -256,7 +257,7 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
     actor?: AuditActor,
   ): Promise<MutationResult<{ id: string }>> => {
     try {
-      return await db.begin(async (tx) => {
+      return await db().begin(async (tx) => {
         await lock(tx);
         const result = await write(tx);
         if (!result.ok) return result;
@@ -316,13 +317,13 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
     },
     async overview(actor: Actor, after: string | null = null, filters: { search?: string; scope?: "ready" | "all" } = {}) {
       requireAdmin(actor);
-      const result = await rows(db, null, after, filters);
+      const result = await rows(db(), null, after, filters);
       const items = result.slice(0, POSIX_PAGE_SIZE).map(candidate);
       return { config: await service.configuration(actor), items, nextCursor: result.length > POSIX_PAGE_SIZE ? items.at(-1)!.id : null };
     },
     async get(actor: Actor, id: string) {
       requireAdmin(actor);
-      const [row] = await rows(db, id, null);
+      const [row] = await rows(db(), id, null);
       if (!row) throw new PosixError("user_not_found", 404);
       return { config: await readConfig(), user: candidate(row) };
     },
@@ -331,7 +332,7 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
       const parsed = LinuxIdentityConfigurationSchema.safeParse(input);
       if (!parsed.success) throw new PosixError("invalid_configuration", 400);
       const ranges = parsed.data.enabled ? await readRanges() : [];
-      await db.begin(async (tx) => {
+      await db().begin(async (tx) => {
         // Same order as provisioning; settings write upgrades this lock in the same transaction.
         await lock(tx);
         if (options?.replaceUnreadable !== true) {
@@ -360,7 +361,7 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
     },
     async provision(actor: Actor, id: string) {
       requireAdmin(actor);
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         await lock(tx);
         const config = await readConfig(tx);
         if (!config.enabled) throw new PosixError("setup_disabled");
@@ -371,7 +372,7 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
       requireAdmin(actor);
       const parsed = PosixOverridesSchema.safeParse(input);
       if (!parsed.success) throw new PosixError("invalid_paths", 400);
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         await lock(tx);
         const [row] = await rows(tx, id, null);
         if (!row) throw new PosixError("user_not_found", 404);
@@ -394,7 +395,7 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
     async createGroup(actor: Actor, input: { name: string; description?: string }) {
       requireAdmin(actor);
       const ranges = await readRanges();
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         await lock(tx);
         const created = await createLocalGroup(input, tx);
         if (!created.ok) throw new PosixError("group_conflict");
@@ -405,7 +406,7 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
     async provisionGroup(actor: Actor, id: string) {
       requireAdmin(actor);
       const ranges = await readRanges();
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         await lock(tx);
         return assignGroup(tx, actor, id, ranges);
       });
@@ -413,5 +414,5 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
   };
   return { service, writeLocalAccount };
 };
-export const createPosixService = (db: typeof sql = sql, readRanges = readIpaIdRanges) => createPosixRuntime(db, readRanges).service;
+export const createPosixService = (db?: typeof sql, readRanges = readIpaIdRanges) => createPosixRuntime(db, readRanges).service;
 export const { service: posix, writeLocalAccount } = createPosixRuntime();

@@ -1,4 +1,3 @@
-import { sql } from "../../runtime/clients";
 /**
  * Centralized profile calculation for IPA-backed users.
  *
@@ -6,6 +5,7 @@ import { sql } from "../../runtime/clients";
  * Local group mutations keep that projection as source of truth; the local
  * display mirror is only a bootstrap fallback before the first full sync.
  */
+import { sql } from "../../runtime/clients";
 
 import { calculateIpaProfileFromGroupNames } from "../account-model";
 import { getFreeIpaConfig } from "../freeipa-config";

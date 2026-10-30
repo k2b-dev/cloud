@@ -4,13 +4,18 @@ import ts from "@typescript/typescript6";
 import { listFiles, sourceFilePattern } from "../checks/files";
 
 type Edit = { start: number; end: number; text: string };
-const testSource = /(?:\.(?:test|spec|test-fixture)\.[cm]?[jt]sx?$|\/(?:test|tests|fixtures)\/)/;
+const testSource = /(?:\.(?:test|spec|test-fixture)\.[cm]?[jt]sx?$|(?:^|\/)(?:test|tests|fixtures|bench)\/)/;
 
 /** Rewrite one source file without reprinting its unrelated syntax or comments. */
 export const migrateSource = (source: string, file: string, migratePools = !testSource.test(file)) => {
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const edits: Edit[] = [];
-  const add = (node: ts.Node, text: string) => edits.push({ start: node.getStart(ast), end: node.end, text });
+  const add = (node: ts.Node, text: string) => {
+    const edit = { start: node.getStart(ast), end: node.end, text };
+    edits.push(edit);
+    return edit;
+  };
+  let replacedImport: Edit | undefined;
   const module =
     file.startsWith("packages/cloud/") && !file.startsWith("packages/cloud/examples/")
       ? (() => {
@@ -57,6 +62,7 @@ export const migrateSource = (source: string, file: string, migratePools = !test
       for (const item of clause.namedBindings.elements) {
         const name = item.propertyName?.text ?? item.name.text;
         if (!item.isTypeOnly && (name === "SQL" || name === "RedisClient")) constructors.set(item.name.text, name);
+        if (!item.isTypeOnly && (name === "sql" || name === "redis") && !bindings.has(name)) bindings.set(name, item.name.text);
       }
     }
   }
@@ -69,6 +75,19 @@ export const migrateSource = (source: string, file: string, migratePools = !test
     }
     return false;
   };
+  const rendered = (node: ts.Node): string => {
+    let text = node.getText(ast);
+    const start = node.getStart(ast);
+    for (const edit of edits.filter((edit) => edit.start >= start && edit.end <= node.end).sort((a, b) => b.start - a.start))
+      text = text.slice(0, edit.start - start) + edit.text + text.slice(edit.end - start);
+    return text;
+  };
+  const replacePool = (node: ts.NewExpression, text: string) => {
+    for (let index = edits.length - 1; index >= 0; index--)
+      if (edits[index]!.start >= node.getStart(ast) && edits[index]!.end <= node.end) edits.splice(index, 1);
+    add(node, text);
+    pools++;
+  };
   const visit = (node: ts.Node) => {
     if (ts.isNewExpression(node) && migratePools) {
       const expression = node.expression;
@@ -79,13 +98,13 @@ export const migrateSource = (source: string, file: string, migratePools = !test
           : undefined;
       if (kind === "SQL") {
         const args = node.arguments ?? [];
+        for (const arg of args) visit(arg);
         const first = args[0];
-        let options = first?.getText(ast) ?? "";
+        let options = first ? rendered(first) : "";
         if (first && !ts.isObjectLiteralExpression(first))
-          options = `{ ${args[1] ? `...(${args[1].getText(ast)}), ` : ""}url: ${first.getText(ast)} }`;
-        add(node, `${binding("createSql")}(${options})`);
+          options = `{ ${args[1] ? `...(${rendered(args[1])}), ` : ""}url: ${rendered(first)} }`;
+        replacePool(node, `${binding("createSql")}(${options})`);
         if (ts.isIdentifier(expression)) convertedConstructors.add(expression.text);
-        pools++;
         return;
       }
       if (kind === "RedisClient") {
@@ -94,9 +113,9 @@ export const migrateSource = (source: string, file: string, migratePools = !test
         // Only the installation URL has the same meaning through createRedis.
         // Explicit alternate targets are reviewed by the owner, never discarded.
         if (!url || /^(?:env\.(?:REDIS_URL|VALKEY_URL)|connections\(\)\.valkey\.url)$/.test(url)) {
-          add(node, `${binding("createRedis")}(${args[1]?.getText(ast) ?? ""})`);
+          for (const arg of args) visit(arg);
+          replacePool(node, `${binding("createRedis")}(${args[1] ? rendered(args[1]) : ""})`);
           if (ts.isIdentifier(expression)) convertedConstructors.add(expression.text);
-          pools++;
           return;
         }
       }
@@ -136,8 +155,8 @@ export const migrateSource = (source: string, file: string, migratePools = !test
         changed = true;
       } else kept.push(item.getText(ast));
     }
-    if (changed)
-      add(
+    if (changed) {
+      const edit = add(
         node,
         kept.length
           ? `import ${clause.name ? `${clause.name.text}, ` : ""}{ ${kept.join(", ")} } from "bun";`
@@ -145,6 +164,8 @@ export const migrateSource = (source: string, file: string, migratePools = !test
             ? `import ${clause.name.text} from "bun";`
             : "",
       );
+      if (!kept.length && !clause.name) replacedImport ??= edit;
+    }
   }
   for (const node of ast.statements) {
     if (
@@ -167,11 +188,19 @@ export const migrateSource = (source: string, file: string, migratePools = !test
       `${kept.length ? `export { ${kept.map((item) => item.getText(ast)).join(", ")} } from "bun";\n` : ""}export { ${moved.map((item) => item.getText(ast)).join(", ")} } from ${JSON.stringify(module)};`,
     );
   }
+  const platformImport = imports.length ? `import { ${[...new Set(imports)].join(", ")} } from ${JSON.stringify(module)};` : undefined;
+  if (platformImport && replacedImport) replacedImport.text = platformImport;
   for (const edit of edits.sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
-  if (imports.length) {
-    const offset = source.startsWith("#!") ? source.indexOf("\n") + 1 : 0;
-    source =
-      source.slice(0, offset) + `import { ${[...new Set(imports)].join(", ")} } from ${JSON.stringify(module)};\n` + source.slice(offset);
+  if (platformImport && !replacedImport) {
+    const updated = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    const existingImports = updated.statements.filter(ts.isImportDeclaration);
+    const lastImport = existingImports.at(-1);
+    const first = updated.statements[0];
+    const declarationDoc =
+      first && !ast.statements.some(ts.isImportDeclaration) ? ts.getJSDocCommentsAndTags(first).find(ts.isJSDoc) : undefined;
+    const trailing = lastImport ? ts.getTrailingCommentRanges(source, lastImport.end)?.at(-1) : undefined;
+    const offset = trailing?.end ?? lastImport?.end ?? declarationDoc?.getStart(updated) ?? first?.getStart(updated) ?? source.length;
+    source = source.slice(0, offset) + `${offset && source[offset - 1] !== "\n" ? "\n" : ""}${platformImport}\n` + source.slice(offset);
   }
   return { source, pools };
 };

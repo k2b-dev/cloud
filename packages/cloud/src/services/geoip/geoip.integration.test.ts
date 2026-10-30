@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { databaseSuite, initializeTestPlatform, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
 import { migrate as migrateGeoIp } from "../../../../core/src/migrate/core/geoip";
 import { createAdminGeoIpRoutes } from "../../api/admin-geoip";
@@ -54,6 +54,14 @@ suite("GeoIP Postgres replacement, audit and multi-instance reload", () => {
     if (directory) rmSync(directory, { recursive: true, force: true });
     await sql.close();
     await disposable?.drop();
+  });
+
+  test("the imported GeoIP singleton follows a replacement platform client", async () => {
+    const { geoip } = await import(".");
+    const previous = sql;
+    await initializeTestPlatform();
+    expect(sql).not.toBe(previous);
+    expect((await geoip.status(admin, { now: () => frozenNow })).databases.map((database) => database.upload)).toEqual([null, null]);
   });
 
   test("real route authorization rejects non-admin GET, PUT and DELETE", async () => {

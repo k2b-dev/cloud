@@ -1,4 +1,3 @@
-import { redis, sql } from "../../runtime/clients";
 /**
  * Settings service — runtime-configurable settings backed by Postgres.
  *
@@ -10,6 +9,7 @@ import { redis, sql } from "../../runtime/clients";
  * env-backed entries into Postgres. Startup never replaces an existing row;
  * env bootstrap only fills missing keys.
  */
+import { redis, sql } from "../../runtime/clients";
 
 import { bindSettingValue, replaceSettingValue, unwrapSettingValue } from "./binding";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";

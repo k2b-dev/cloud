@@ -1,4 +1,3 @@
-import { sql } from "../runtime/clients";
 /**
  * Admin API for platform-wide runtime settings.
  *
@@ -13,6 +12,7 @@ import { z } from "zod";
 import { ObjectStoreConfigurationError, ObjectStoreConnectionError, testObjectStoreConnection } from "../_internal/object-store-config";
 import { listApps } from "../_internal/registry";
 import { enrichDirtyAiConversations } from "../ai/enrich";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
 import { settingsDeleteLegacyKeys, settingsListLegacyKeys, settingsService } from "../services";
 import { readAccountCategoryPolicy } from "../services/account-category-policy";

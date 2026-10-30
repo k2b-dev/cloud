@@ -29,9 +29,11 @@ transactions, reservations, query helpers, SQL files, listeners, client
 options, and writable callbacks. Connections open on use.
 
 Before start, using either handle throws `sql used before platform start` or
-`redis used before platform start`. Unit and render tests need no startup when
-they do not use connections. Tests that replace services can stub their
-connection snapshot without opening infrastructure connections.
+`redis used before platform start`. The logger still writes to the console
+when database persistence fails before startup or after teardown; logging never
+throws a client startup error. Unit and render tests need no startup when they
+do not use connections. Tests that replace services can stub their connection
+snapshot without opening infrastructure connections.
 
 Use `lazySync()` for module-scope Sync declarations and use them after
 `app.start()`. See [Background work](/en/docs/automation/lifecycle-background-work). `storage` uses the operator's

@@ -124,7 +124,8 @@ function write(params: WriteParams): void {
   const consoleFn = params.level === "error" ? console.error : params.level === "warn" ? console.warn : console.log;
   consoleFn(prefix, params.message, ...(safeMetadata ? [safeMetadata] : []));
 
-  sql`
+  const persist = async () => {
+    await sql`
     INSERT INTO logging.entries (level, source, message, metadata)
     VALUES (
       ${params.level},
@@ -132,7 +133,9 @@ function write(params: WriteParams): void {
       ${params.message},
       (${safeMetadata ? JSON.stringify(safeMetadata) : null}::text)::jsonb
     )
-  `.catch((err: Error) => console.error("[logging] DB write failed:", err.message));
+    `;
+  };
+  void persist().catch((err: Error) => console.error("[logging] DB write failed:", err.message));
 }
 
 /**

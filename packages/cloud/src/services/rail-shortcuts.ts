@@ -17,8 +17,9 @@ const requireAdmin = (actor: User | undefined) => {
   if (!actor || !hasRole(actor, "admin")) throw new RailAdminError(403, "Administrator access required");
 };
 
-export const createRailShortcutsService = (db: SQL = sql) => {
-  const list = async (query: SQL = db): Promise<RailAdminState> => {
+export const createRailShortcutsService = (injectedDb?: SQL) => {
+  const db = () => injectedDb ?? sql;
+  const list = async (query: SQL = db()): Promise<RailAdminState> => {
     const [state] = await query<{ revision: number }[]>`SELECT revision FROM auth.rail_state WHERE singleton`;
     const rows = await query<{ shortcut: unknown; access: unknown }[]>`
       SELECT r.shortcut, COALESCE((
@@ -42,7 +43,7 @@ export const createRailShortcutsService = (db: SQL = sql) => {
       requireAdmin(actor);
       // One generation switch invalidates every user, including concurrent old refills.
       // Keep the configuration revision unchanged so open editors remain valid.
-      await db`UPDATE auth.rail_state SET cache_version = gen_random_uuid() WHERE singleton`;
+      await db()`UPDATE auth.rail_state SET cache_version = gen_random_uuid() WHERE singleton`;
     },
     async list(actor: User | undefined) {
       requireAdmin(actor);
@@ -51,7 +52,7 @@ export const createRailShortcutsService = (db: SQL = sql) => {
     async save(actor: User | undefined, input: RailAdminInput) {
       requireAdmin(actor);
       const value = RailAdminInputSchema.parse(input);
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         const [state] = await tx<{ revision: number }[]>`SELECT revision FROM auth.rail_state WHERE singleton FOR UPDATE`;
         if (state?.revision !== value.revision) throw new RailAdminError(409, "App bar configuration changed. Reload before saving.");
         await tx`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM auth.rail_shortcut_access)`;
@@ -77,13 +78,13 @@ export const createRailShortcutsService = (db: SQL = sql) => {
       const match = buildAccessPrincipalCondition({
         subject: { type: "user", userId },
         columns: {
-          userId: db`a.user_id`,
-          groupId: db`a.group_id`,
-          serviceAccountId: db`a.service_account_id`,
-          authenticatedOnly: db`a.authenticated_only`,
+          userId: db()`a.user_id`,
+          groupId: db()`a.group_id`,
+          serviceAccountId: db()`a.service_account_id`,
+          authenticatedOnly: db()`a.authenticated_only`,
         },
       });
-      const rows = await db<{ shortcut: unknown }[]>`
+      const rows = await db()<{ shortcut: unknown }[]>`
         SELECT r.shortcut FROM auth.rail_shortcuts r WHERE EXISTS (
           SELECT 1 FROM auth.rail_shortcut_access ra JOIN auth.access a ON a.id = ra.access_id
           WHERE ra.shortcut_id = r.id AND a.permission = 'read' AND ${match}

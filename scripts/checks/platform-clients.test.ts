@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { checkSource, rule } from "./platform-clients";
+import { baseline, checkSource, rule } from "./platform-clients";
 
 const path = "packages/example/src/data.ts";
 test.each([
@@ -71,6 +71,50 @@ test("the repository guard includes root tests and PWA workspaces", async () => 
     const findings = await rule.run({ workspaceRoot, fix: false, flags: new Set() });
     expect(findings.map(({ file }) => file).sort()).toEqual(paths.map((path) => join(workspaceRoot, path)).sort());
     expect(findings.every(({ message }) => message.includes("@k2b/cloud"))).toBe(true);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+const bunModule = JSON.stringify("bun");
+test.each([
+  `const db = (await import(${bunModule})).sql;`,
+  'const db = require("bun")["sql"];',
+  "const cache = globalThis.Bun.redis;",
+  `const { sql } = await import(${bunModule});`,
+  'const { redis } = require("bun");',
+])("rejects alternate Bun client access: %s", (source) => {
+  expect(checkSource(path, source)).toHaveLength(1);
+});
+
+test("deletion and assignment only write; nullish assignment also reads the previous value", () => {
+  expect(checkSource(path, 'delete process.env.DATABASE_URL; process.env.APP_SECRET = "fixture";')).toEqual([]);
+  expect(checkSource(path, "process.env.DATABASE_URL ??= fallback;")).toHaveLength(1);
+});
+
+test("root test and fixture directories allow native pools and target reads", () => {
+  for (const file of ["tests/integration.ts", "fixtures/setup.ts", "test/setup.ts", "bench/run.ts"])
+    expect(checkSource(file, "new SQL(process.env.DATABASE_URL)")).toEqual([]);
+});
+
+test("a new finding before a baselined finding reports the new source line", async () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), "platform-clients-baseline-"));
+  const entry = Object.entries(baseline).find(([, contents]) => contents.length === 1 && contents[0]!.startsWith("import "))!;
+  const [path, [content]] = entry;
+  const file = join(workspaceRoot, path);
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    const lines = Array.from({ length: 5 }, () => "");
+    lines[0] = 'import { redis } from "bun";';
+    lines[4] = content!;
+    writeFileSync(file, lines.join("\n"));
+    const findings = await rule.run({ workspaceRoot, fix: false, flags: new Set() });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ file, line: 1 });
+    // Unrelated lines may move an existing finding without changing its identity.
+    lines[0] = "// an unrelated import or comment was added";
+    writeFileSync(file, lines.join("\n"));
+    expect(await rule.run({ workspaceRoot, fix: false, flags: new Set() })).toEqual([]);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }

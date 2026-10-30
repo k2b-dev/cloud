@@ -49,8 +49,8 @@ type Dependencies = {
 
 /** Core-owned administration read shared by SSR and HTTP; app access is not administrator authority. */
 export function createAppDetailsService(dependencies: Dependencies = {}) {
-  const db = dependencies.db ?? sql;
   return async (appId: string, options: { authority: RequestAuthority; locale?: string }): Promise<AppDetails | null> => {
+    const db = dependencies.db ?? sql;
     if (!canRepairAppAccess(options.authority))
       throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required.");
     const locale = options.locale ?? "en";

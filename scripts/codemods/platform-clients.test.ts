@@ -110,3 +110,54 @@ test("dry-run reports counts without writing and reruns change nothing", () => {
   expect(migratePackage(root, "packages/example").files).toBe(1);
   expect(migratePackage(root, "packages/example").files).toBe(0);
 });
+
+test.each([
+  '/** File documentation. */\nimport { sql } from "bun";\nconst query = sql`SELECT 1`;',
+  "#!/usr/bin/env bun\n// File documentation.\nconst query = Bun.sql`SELECT 1`;",
+])("inserts client imports after leading comments and preserves rerun output", (input) => {
+  const result = migrateSource(input, "packages/example/src/data.ts");
+  expect(result.source.indexOf("File documentation.")).toBeLessThan(result.source.indexOf('from "@k2b/cloud"'));
+  expect(migrateSource(result.source, "packages/example/src/data.ts").source).toBe(result.source);
+});
+
+test("a moved named client is reused by namespace and global access", () => {
+  const result = migrateSource('import { sql as db } from "bun"; const a = db; const b = Bun.sql;', "packages/example/src/data.ts");
+  expect(result.source).toContain('import { sql as db } from "@k2b/cloud"');
+  expect(result.source).toContain("const b = db");
+  expect(result.source).not.toContain("platformSql");
+});
+
+test("rewritten pool arguments still migrate clients and nested constructors in one pass", () => {
+  const result = migrateSource(
+    'import { SQL, RedisClient, sql } from "bun"; const pool = new SQL({ nested: new SQL(), callback: () => Bun.sql, cache: new RedisClient(env.REDIS_URL) });',
+    "packages/example/src/data.ts",
+  );
+  expect(result.pools).toBe(3);
+  expect(result.source).toContain("nested: createSql(), callback: () => sql, cache: createRedis()");
+  expect(result.source).not.toContain("Bun.sql");
+  expect(result.source).not.toContain("sql as platformSql");
+  expect(migrateSource(result.source, "packages/example/src/data.ts").source).toBe(result.source);
+});
+
+test("imports precede declaration JSDoc while keeping trailing import comments attached", () => {
+  const documented = migrateSource("/** Documents foo. */\nexport const foo = Bun.sql;", "packages/example/src/data.ts").source;
+  expect(documented.indexOf('from "@k2b/cloud"')).toBeLessThan(documented.indexOf("/** Documents foo. */"));
+  expect(documented).toContain("/** Documents foo. */\nexport const foo");
+  const trailing = migrateSource(
+    'import { file } from "bun"; // keep this explanation\nconst db = Bun.sql;',
+    "packages/example/src/data.ts",
+  ).source;
+  expect(trailing).toContain('import { file } from "bun"; // keep this explanation\nimport');
+});
+
+test("replacing the only Bun import preserves declaration JSDoc and file headers", () => {
+  const input = '/** File header. */\nimport { sql } from "bun";\n\n/** Reads x. */\nexport const x = sql`SELECT 1`;';
+  const result = migrateSource(input, "packages/example/src/data.ts").source;
+  expect(result).toBe(input.replace('from "bun"', 'from "@k2b/cloud"'));
+  expect(migrateSource(result, "packages/example/src/data.ts").source).toBe(result);
+});
+
+test.each(["bench/run.ts", "tests/setup.ts", "packages/example/bench/run.ts"])("fixture pools stay native: %s", (file) => {
+  const input = 'import { SQL } from "bun"; const pool = new SQL({ max: 1 });';
+  expect(migrateSource(input, file)).toEqual({ source: input, pools: 0 });
+});

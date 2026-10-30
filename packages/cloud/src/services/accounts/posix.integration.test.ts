@@ -1,18 +1,18 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { SQL } from "bun";
-import { databaseSuite, testInfra, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { databaseSuite, initializeTestPlatform, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 
-// Select the final test database before domain modules capture native clients.
-const disposable = testInfra.database ? await useFreshDatabase("posix") : undefined;
-const { migrate: migrateAudit } = await import("../../../../core/src/migrate/core/audit");
-const { migrate: migrateEvents } = await import("../../../../core/src/migrate/core/events");
-const { migratePosix } = await import("../../../../core/src/migrate/core/posix");
-const { mirrorIpaPosix } = await import("../ipa/posix");
-const { accountsAppService } = await import("./app");
-const localGroups = await import("./local-groups");
-const { createPosixRuntime, createPosixService, PosixError } = await import("./posix");
-const { providers } = await import("../providers");
-const { set } = await import("../settings");
+import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
+import { migrate as migrateEvents } from "../../../../core/src/migrate/core/events";
+import { migratePosix } from "../../../../core/src/migrate/core/posix";
+import { mirrorIpaPosix } from "../ipa/posix";
+import { providers } from "../providers";
+import { set } from "../settings";
+import { accountsAppService } from "./app";
+import * as localGroups from "./local-groups";
+import { createPosixRuntime, createPosixService, PosixError, posix } from "./posix";
+
+let disposable: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
 
 const localUsers = providers.local.users;
 const suite = databaseSuite();
@@ -29,6 +29,7 @@ suite("isolated Linux identity migration and provisioning", () => {
     return row!.id;
   };
   beforeAll(async () => {
+    disposable = await useFreshDatabase("posix");
     db = new SQL(disposable!.url);
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE SCHEMA IF NOT EXISTS settings`.simple();
@@ -65,6 +66,12 @@ suite("isolated Linux identity migration and provisioning", () => {
     expect(row!.updated_at.toISOString()).toBe("2026-01-02T03:04:05.000Z");
     await service.configure(admin, { ...config, enabled: false }, { replaceUnreadable: true });
     expect((await service.overview(admin)).config.unreadable).toBe(false);
+  });
+
+  test("the imported POSIX singleton follows a replacement platform client", async () => {
+    const previous = await posix.configuration(admin);
+    await initializeTestPlatform();
+    expect(await posix.configuration(admin)).toEqual(previous);
   });
 
   test("local creation and guest promotion assign attributes through the real provider", async () => {

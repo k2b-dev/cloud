@@ -297,12 +297,13 @@ const verify = async (key: AppDevicePublicKey, message: string, signature: strin
 /** One owner for production API and isolated HTTP consumers. Config is re-read
  * per operation; SQL transactions serialize device decisions and revocation. */
 export const createAppApprovalService = (
-  db: SQL = sql,
-  configuration = (requireEnabled = true) => readAppApprovalConfig(db, requireEnabled),
+  injectedDb?: SQL,
+  configuration = (requireEnabled = true) => readAppApprovalConfig(injectedDb ?? sql, requireEnabled),
   hints: AppLoginDecisionHints = syncLoginDecisionHints,
   push: AppLoginPushSender = fetchPushSender,
   addresses: AppLoginAddressStore = valkeyAppLoginAddressStore,
 ) => {
+  const db = () => injectedDb ?? sql;
   // Error messages may contain their inputs; log only the error class, never addresses or proofs.
   const addressFailure = (error: unknown) =>
     log.warn("App login address hint unavailable", { error: error instanceof Error ? error.name : "UnknownError" });
@@ -333,12 +334,12 @@ export const createAppApprovalService = (
   const cleanup = async () => {
     // Bounded opportunistic maintenance: each accepted write retires up to 100
     // expired rows per table, so bursts cannot trigger an unbounded sweep.
-    await db`DELETE FROM auth.app_device_changes WHERE id IN (SELECT id FROM auth.app_device_changes WHERE expires_at < now() - interval '1 minute' ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
-    await db`DELETE FROM auth.app_pairings WHERE id IN (SELECT p.id FROM auth.app_pairings p
+    await db()`DELETE FROM auth.app_device_changes WHERE id IN (SELECT id FROM auth.app_device_changes WHERE expires_at < now() - interval '1 minute' ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
+    await db()`DELETE FROM auth.app_pairings WHERE id IN (SELECT p.id FROM auth.app_pairings p
       WHERE p.expires_at < now() - interval '1 minute' AND NOT EXISTS (SELECT 1 FROM auth.app_device_changes c WHERE c.pairing_id=p.id)
       ORDER BY p.expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
-    await db`DELETE FROM auth.app_logins WHERE id IN (SELECT id FROM auth.app_logins WHERE expires_at < now() AND NOT (kind='terminal' AND state='approved') ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
-    await db`DELETE FROM auth.app_device_proofs WHERE (device_id,jti) IN (SELECT device_id,jti FROM auth.app_device_proofs WHERE expires_at < now() ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
+    await db()`DELETE FROM auth.app_logins WHERE id IN (SELECT id FROM auth.app_logins WHERE expires_at < now() AND NOT (kind='terminal' AND state='approved') ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
+    await db()`DELETE FROM auth.app_device_proofs WHERE (device_id,jti) IN (SELECT device_id,jti FROM auth.app_device_proofs WHERE expires_at < now() ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
   };
   const pairingOwner = async (tx: SQL, actor: AppApprovalActor, pairing: PairingRow, cfg: AppApprovalConfig) => {
     if (
@@ -410,7 +411,7 @@ export const createAppApprovalService = (
     if (!cfg.enabled || !cfg.appOrigin) return;
     try {
       // A withdrawn device change keeps its window, so withdrawing and asking again cannot push without bound.
-      const rows = await db<{ push_token: string }[]>`
+      const rows = await db()<{ push_token: string }[]>`
         UPDATE auth.app_devices d SET login_wake_at=now(), login_wake_ref=${requestId}::uuid
         WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND revoked_at IS NULL AND push_token IS NOT NULL
           AND (${options?.accept ?? null}::text IS NULL OR ${options?.accept ?? null}::text=ANY(d.accepts))
@@ -424,7 +425,7 @@ export const createAppApprovalService = (
         Array.from(new Set(rows.map((row) => row.push_token)), async (token) => {
           const status = await push(cfg.appOrigin, { token, cloudOrigin: cfg.issuer, requestRef: requestId });
           if (status === 410)
-            await db`UPDATE auth.app_devices SET push_token=NULL WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND push_token=${token}`;
+            await db()`UPDATE auth.app_devices SET push_token=NULL WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND push_token=${token}`;
         }),
       );
     } catch (error) {
@@ -464,7 +465,7 @@ export const createAppApprovalService = (
       try {
         const cfg = await config(false);
         if (!cfg.enabled || !cfg.appOrigin) return;
-        const rows = await db<{ push_token: string; user_id: string }[]>`
+        const rows = await db()<{ push_token: string; user_id: string }[]>`
           UPDATE auth.app_devices d SET action_wake_at=now(), action_wake_ref=${approvalId}::uuid
           WHERE d.id IN (
             SELECT device.id FROM auth.app_devices device JOIN approvals.requests r ON r.approver_user_id=device.user_id
@@ -484,7 +485,7 @@ export const createAppApprovalService = (
           Array.from(tokens, async ([token, userId]) => {
             const status = await push(cfg.appOrigin, { token, cloudOrigin: cfg.issuer, requestRef: approvalId, kind: "action" });
             if (status === 410)
-              await db`UPDATE auth.app_devices SET push_token=NULL WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND push_token=${token}`;
+              await db()`UPDATE auth.app_devices SET push_token=NULL WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND push_token=${token}`;
           }),
         );
       } catch (error) {
@@ -493,7 +494,7 @@ export const createAppApprovalService = (
     },
     maintain: async (notify: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>, signal?: AbortSignal) => {
       await cleanup();
-      const rows = await db<(DeviceRow & { has_email: boolean })[]>`
+      const rows = await db()<(DeviceRow & { has_email: boolean })[]>`
         SELECT d.*, COALESCE(btrim(u.mail), '') <> '' AS has_email
         FROM auth.app_devices d JOIN auth.users u ON u.id = d.user_id
         WHERE d.notified_at IS NULL ORDER BY d.created_at LIMIT ${limits.pageSize}`;
@@ -504,7 +505,7 @@ export const createAppApprovalService = (
         // The notice is email-only, so an account without email relies on the
         // enrollment audit entry instead of a delivery that can only fail.
         if (row.has_email) await notify({ deviceId: row.id, userId: row.user_id, name: row.name, assisted: row.assisted });
-        await db`UPDATE auth.app_devices SET notified_at=now() WHERE id=${row.id}::uuid AND notified_at IS NULL`;
+        await db()`UPDATE auth.app_devices SET notified_at=now() WHERE id=${row.id}::uuid AND notified_at IS NULL`;
       }
     },
     info: async () => {
@@ -525,7 +526,7 @@ export const createAppApprovalService = (
       const id = crypto.randomUUID(),
         token = secret(),
         expiresAt = future(limits.pairingSeconds);
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         await fresh(tx, actor);
         if (targetId !== actor.userId && (!actor.admin || !cfg.adminPairing)) return reject("FORBIDDEN", 403);
         await tx`SELECT id FROM auth.users WHERE id = ${targetId}::uuid FOR UPDATE`;
@@ -550,7 +551,7 @@ export const createAppApprovalService = (
     claimPairing: async (claim: { pairingId: string; secret: string; publicKey: AppDevicePublicKey; name: string; signature: string }) => {
       const cfg = await config();
       if (!(await verify(claim.publicKey, appPairingProofMessage(cfg.issuer, claim), claim.signature))) return reject("FORBIDDEN", 403);
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         const [p] = await tx<
           PairingRow[]
         >`SELECT * FROM auth.app_pairings WHERE id = ${claim.pairingId}::uuid AND issuer = ${cfg.issuer} FOR UPDATE`;
@@ -565,7 +566,7 @@ export const createAppApprovalService = (
     },
     pairingResult: async (id: string, token: string, key: AppDevicePublicKey) => {
       const cfg = await config();
-      const [p] = await db<PairingRow[]>`SELECT * FROM auth.app_pairings WHERE id = ${id}::uuid AND issuer = ${cfg.issuer}`;
+      const [p] = await db()<PairingRow[]>`SELECT * FROM auth.app_pairings WHERE id = ${id}::uuid AND issuer = ${cfg.issuer}`;
       if (!p || !matches(token, p.secret_hash)) return reject("FORBIDDEN", 403);
       const age = Date.now() - new Date(p.expires_at).getTime();
       if (age >= 0 && !(age < 60_000 && (p.state === "confirmed" || p.state === "cancelled"))) return reject("FORBIDDEN", 403);
@@ -577,7 +578,7 @@ export const createAppApprovalService = (
     },
     inspectPairing: async (actor: AppApprovalActor, id: string) => {
       const cfg = await config();
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         const [p] = await tx<PairingRow[]>`SELECT * FROM auth.app_pairings WHERE id = ${id}::uuid AND issuer = ${cfg.issuer}`;
         if (!p) return reject("UNAVAILABLE", 404);
         const [change] = await tx<ChangeRow[]>`SELECT * FROM auth.app_device_changes WHERE pairing_id=${p.id}::uuid`;
@@ -599,7 +600,7 @@ export const createAppApprovalService = (
     confirmPairing: async (actor: AppApprovalActor, id: string, code: string): Promise<z.infer<typeof AppPairingConfirmResultSchema>> => {
       const cfg = await config();
       let wakeId: string | undefined;
-      const result = await db.begin(async (tx) => {
+      const result = await db().begin(async (tx) => {
         const [snapshot] = await tx<PairingRow[]>`SELECT * FROM auth.app_pairings WHERE id=${id}::uuid AND issuer=${cfg.issuer}`;
         if (!snapshot) return reject("CONFLICT", 409);
         await tx`SELECT id FROM auth.users WHERE id=${snapshot.user_id}::uuid FOR NO KEY UPDATE`;
@@ -637,7 +638,7 @@ export const createAppApprovalService = (
     },
     cancelPairing: async (actor: AppApprovalActor, id: string) => {
       const cfg = await config();
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         const [snapshot] = await tx<PairingRow[]>`SELECT * FROM auth.app_pairings WHERE id=${id}::uuid AND issuer=${cfg.issuer}`;
         if (!snapshot) return reject("UNAVAILABLE", 404);
         await tx`SELECT id FROM auth.users WHERE id=${snapshot.user_id}::uuid FOR NO KEY UPDATE`;
@@ -657,7 +658,7 @@ export const createAppApprovalService = (
       const cfg = await config(false);
       const changeId = "changeId" in lookup ? lookup.changeId : null,
         deviceId = "deviceId" in lookup ? lookup.deviceId : null;
-      const [row] = await db<ChangeRow[]>`SELECT * FROM auth.app_device_changes
+      const [row] = await db()<ChangeRow[]>`SELECT * FROM auth.app_device_changes
         WHERE issuer=${cfg.issuer} AND user_id=${actor.userId}::uuid AND requested_by_sid=${actor.sid}::uuid AND kind='revoke'
           AND (${changeId}::uuid IS NULL OR id=${changeId}::uuid) AND (${deviceId}::uuid IS NULL OR device_id=${deviceId}::uuid)
         ORDER BY created_at DESC, id DESC LIMIT 1`;
@@ -666,7 +667,7 @@ export const createAppApprovalService = (
     },
     cancelChange: async (actor: AppApprovalActor, id: string) => {
       const cfg = await config(false);
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         await tx`SELECT id FROM auth.users WHERE id=${actor.userId}::uuid FOR NO KEY UPDATE`;
         const change = await ownedChange(tx, cfg, actor, id);
         if (changeStatus(change).state !== "pending") return reject("CONFLICT", 409);
@@ -677,7 +678,7 @@ export const createAppApprovalService = (
     },
     listDevices: async (actor: AppApprovalActor, after?: string) => {
       const cfg = await config(false);
-      const rows = await db<
+      const rows = await db()<
         DeviceRow[]
       >`SELECT * FROM auth.app_devices WHERE issuer=${cfg.issuer} AND user_id=${actor.userId}::uuid AND (${after ?? null}::uuid IS NULL OR id > ${after ?? null}::uuid) ORDER BY id LIMIT ${limits.pageSize + 1}`;
       return {
@@ -693,7 +694,7 @@ export const createAppApprovalService = (
     ): Promise<z.infer<typeof AppDeviceRevokeResultSchema> | undefined> => {
       const cfg = await config(false);
       let wakeId: string | undefined;
-      const result = await db.begin(async (tx) => {
+      const result = await db().begin(async (tx) => {
         await tx`SELECT id FROM auth.users WHERE id=${actor.userId}::uuid FOR NO KEY UPDATE`;
         const user = await fresh(tx, actor);
         const [device] = await tx<DeviceRow[]>`SELECT * FROM auth.app_devices
@@ -724,7 +725,7 @@ export const createAppApprovalService = (
     listUserDevices: async (actor: AppDeviceAdministrator, userId: string): Promise<AppDeviceView[]> => {
       if (!actor.admin) return reject("FORBIDDEN", 403);
       const cfg = await config(false);
-      const rows = await db<
+      const rows = await db()<
         DeviceRow[]
       >`SELECT * FROM auth.app_devices WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND revoked_at IS NULL ORDER BY created_at, id LIMIT ${limits.devicesPerAccount}`;
       return rows.map(view);
@@ -734,7 +735,7 @@ export const createAppApprovalService = (
     revokeUserDevice: async (actor: AppDeviceAdministrator, userId: string, id: string) => {
       if (!actor.admin) return reject("FORBIDDEN", 403);
       const cfg = await config(false);
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         const [device] = await tx<
           DeviceRow[]
         >`SELECT * FROM auth.app_devices WHERE id=${id}::uuid AND issuer=${cfg.issuer} AND user_id=${userId}::uuid FOR UPDATE`;
@@ -754,7 +755,7 @@ export const createAppApprovalService = (
         code = comparison(),
         expiresAt = future(limits.loginSeconds);
       let owner: string | undefined;
-      await db.begin(async (tx) => {
+      await db().begin(async (tx) => {
         let candidate = await loginCandidate(tx, identifier, category);
         if (candidate && !(await loginBudget(tx, cfg.issuer, candidate.id))) candidate = undefined;
         const now = new Date();
@@ -790,7 +791,7 @@ export const createAppApprovalService = (
         code = comparison(),
         expiresAt = future(limits.loginSeconds);
       let owner: string | undefined;
-      await db.begin(async (tx) => {
+      await db().begin(async (tx) => {
         let candidate = await loginCandidate(tx, input.identifier);
         const subject = candidate ?? { id: crypto.randomUUID(), profile: "user" as const };
         // Even a decoy performs the client-access, device and shared-budget queries.
@@ -831,7 +832,7 @@ export const createAppApprovalService = (
         return reject("FORBIDDEN", 403);
       await cleanup();
       let decidedBrowserId: string | undefined;
-      const outcome = await db.begin(async (tx) => {
+      const outcome = await db().begin(async (tx) => {
         let changeUserId: string | undefined;
         if (proof.command.operation === "change") {
           const [snapshot] = await tx<
@@ -1106,7 +1107,9 @@ export const createAppApprovalService = (
     browserStatus: async (id: string, token: string, hold?: { ms: number; signal?: AbortSignal }) => {
       const cfg = await config();
       const read = async () => {
-        const [row] = await db<LoginRow[]>`SELECT * FROM auth.app_logins WHERE kind='browser' AND id=${id}::uuid AND issuer=${cfg.issuer}`;
+        const [row] = await db()<
+          LoginRow[]
+        >`SELECT * FROM auth.app_logins WHERE kind='browser' AND id=${id}::uuid AND issuer=${cfg.issuer}`;
         if (!row || !matches(token, row.browser_hash)) return reject("UNAVAILABLE", 404);
         const expiresIn = new Date(row.expires_at).getTime() - Date.now();
         return { state: expiresIn <= 0 ? "expired" : row.state, expiresIn };
@@ -1135,7 +1138,7 @@ export const createAppApprovalService = (
     },
     consumeLogin: async (id: string, token: string) => {
       const cfg = await config();
-      return db.begin(async (tx) => {
+      return db().begin(async (tx) => {
         // Lock order is device -> request for both approval and completion.
         const [snapshot] = await tx<
           LoginRow[]

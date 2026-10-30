@@ -1,4 +1,3 @@
-import { sql } from "../runtime/clients";
 /**
  * Self-service endpoints — everything a logged-in user does with their OWN
  * account. Owned by core, mounted at /api/me/*. Auth flows live in /auth;
@@ -6,7 +5,6 @@ import { sql } from "../runtime/clients";
  */
 
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
@@ -43,6 +41,7 @@ import {
   WebAuthnPasskeySchema,
 } from "../contracts";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, getTimeZone, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
