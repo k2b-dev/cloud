@@ -302,11 +302,8 @@ export function NotePage(props: { mode: NoteMode }) {
           });
     }),
   );
-  const remoteFile = createMemo(() => {
-    const share = record()?.share;
-    if (!share) return undefined;
-    return (key: string) => api.fileUrl(share.readId, key);
-  });
+  // A string, so writing the record on every keystroke does not reconfigure the editor in the middle of its update.
+  const remoteReadId = createMemo(() => record()?.share?.readId);
 
   const keepCopy = async () => {
     const current = opened();
@@ -510,7 +507,7 @@ export function NotePage(props: { mode: NoteMode }) {
               }}
               onFiles={(list) => void addFiles(list)}
               files={files()}
-              remoteFile={remoteFile()}
+              remoteReadId={remoteReadId()}
             />
           )}
         </Show>
