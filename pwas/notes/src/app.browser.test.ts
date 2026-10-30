@@ -279,7 +279,10 @@ describe("k2b notes · Produktions-SPA", () => {
     };
     // Without the server the note stays as a pending deletion, and nothing retries in a loop.
     await remove();
-    await page.getByText(/Löschen ausstehend/).first().waitFor();
+    await page
+      .getByText(/Löschen ausstehend/)
+      .first()
+      .waitFor();
     await page.waitForTimeout(1_500);
     expect(deletes).toBe(1);
     expect(await cards().filter({ hasText: "Lissabon im März" }).count()).toBe(1);
