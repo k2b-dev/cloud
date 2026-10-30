@@ -8,7 +8,8 @@ import { createEditor } from "@k2b/editor";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { createSharedTextActionHistory } from "@k2b/cloud/browser/shared-text";
-import { listCommandsExtension } from "@k2b/editor/markdown";
+import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
+import { createNotebookTablePresentation, listCommandsExtension, notebookSourceFormulasExtension } from "@k2b/editor/markdown";
 import { encoding } from "@k2b/stdlib";
 import { Button, LocaleProvider, NoticeCard, ScrollArea } from "@k2b/ui";
 import { TextEditor, type TextEditorControls } from "@k2b/ui/text-editor";
@@ -18,9 +19,9 @@ import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import type { NoteTableActionRequest } from "../../../../lib/table-actions";
+import { notebookTableOptions } from "../../../../lib/table-options";
 import { editor } from "../../../lib/editor";
 import { notebookListOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
-import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import {
   caretIntoTableCell,
   cellFormattingKeys,
@@ -29,8 +30,6 @@ import {
   tableCellPresence,
   tableCellSearch,
 } from "../../../lib/editor/shared-editor";
-import { createNotebookTablePresentation, notebookSourceFormulasExtension } from "../../../lib/editor/shared-tables";
-import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { caretFormat, insertTable, sameCaretFormat } from "./editor-actions";
@@ -143,7 +142,7 @@ function Harness() {
   const [readOnly, setReadOnly] = createSignal(false);
   const [unknown, setUnknown] = createSignal<UnknownTableAction | null>(null);
   const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
-  const presentation = createNotebookTablePresentation({ notebookId: "Book01", locale: () => locale });
+  const presentation = createNotebookTablePresentation({ ...notebookTableOptions("Book01"), locale: () => locale });
 
   const structure = createNotebookTableStructure({
     ytext,

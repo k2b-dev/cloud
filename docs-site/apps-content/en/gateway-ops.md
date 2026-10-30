@@ -116,6 +116,17 @@ Run `cld admin help` for logs, telemetry, jobs, workflows, notifications, and
 bounded storage diagnostics. Run `cld admin <area> <command> --help` before a
 maintenance action.
 
+## Configure NATS cluster diagnostics
+
+Set the separate system-account connection under
+**Administration → Observability → NATS → Diagnostics access**. Choose the System
+access format and paste .creds contents or a user NKey seed into the encrypted
+**System access** field. The CA field accepts PEM
+certificate contents. Changes apply to the next diagnostics connection; an
+empty server list disables cluster diagnostics. See
+[NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for permissions and migration from the deprecated `NATS_ADMIN_*` inputs.
+
 ## Deployment requirements
 
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for

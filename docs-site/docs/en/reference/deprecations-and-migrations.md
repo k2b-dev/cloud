@@ -10,6 +10,20 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## NATS diagnostics access moves to settings
+
+The four Gateway Ops `NATS_ADMIN_*` inputs are deprecated. During this release,
+startup imports missing settings from them, storing credentials, seeds, and CA
+PEM as **contents**, never paths. Stored rows take precedence. Unreadable files
+produce a warning with the variable and path; correct the mount and restart,
+or configure diagnostics in **Administration → Observability → NATS → Diagnostics access**.
+
+Verify cluster diagnostics with a refresh before removing the old inputs and
+mounts. Later changes apply to the next diagnostics connection. The secret
+System access value stays encrypted and hidden in administration responses.
+See [NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for setting keys and the migration steps.
+
 ## App workload credentials are delivered automatically
 
 Core now issues and rotates a credential for every registered app instance.

@@ -112,6 +112,7 @@ const registry = defineEnv({
     schema: z.string(),
     default: "",
     scope: "secret",
+    secretFile: true,
     example: "change-me-generate-with-openssl-rand-hex-32",
     doc: "Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written.",
   },
@@ -119,6 +120,7 @@ const registry = defineEnv({
     schema: z.string(),
     default: "",
     scope: "secret",
+    secretFile: true,
     doc: "Core only: temporary first-administrator or recovery login token; remove it after normal administrator sign-in works.",
   },
 
@@ -141,22 +143,26 @@ const registry = defineEnv({
   CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: {
     schema: z.string(),
     scope: "secret",
+    secretFile: true,
     example: "change-me-generate-with-openssl-rand-hex-32",
     doc: "Core only: 64-hex KEK for platform identity signing keys stored in Postgres; generate once with `openssl rand -hex 32` and never distribute it to other apps.",
   },
   CLOUD_IDENTITY_NEXT_KEY: {
     schema: z.string(),
     scope: "secret",
+    secretFile: true,
     doc: "Core only: pre-distributed next KEK before promoting it to current; cannot be combined with `CLOUD_IDENTITY_PREVIOUS_KEY`.",
   },
   CLOUD_IDENTITY_PREVIOUS_KEY: {
     schema: z.string(),
     scope: "secret",
+    secretFile: true,
     doc: "Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed.",
   },
   CLOUD_OAUTH_BROKER_SECRET: {
     schema: z.string(),
     scope: "secret",
+    secretFile: true,
     doc: "Core and OAuth only: 64-hex secret that lets the OAuth app request token signatures from Core; generate independently with `openssl rand -hex 32`.",
   },
   CLOUD_CORE_INTERNAL_ORIGIN: {
@@ -166,6 +172,7 @@ const registry = defineEnv({
   CLOUD_APP_CREDENTIAL: {
     schema: z.string(),
     scope: "secret",
+    secretFile: true,
     doc: "Optional host-run app override for the automatically delivered app workload credential; provision through Core's admin workload API with `identity:invoke`.",
   },
   CLOUD_IDENTITY_JWKS_ORIGIN: {

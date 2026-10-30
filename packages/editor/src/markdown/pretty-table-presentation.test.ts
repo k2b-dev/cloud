@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createPrettyTablePresentation, renderPrettyTableHtml } from "./pretty-table";
+import { tableOptions } from "./table-options.fixture";
 
 describe("pretty table cell presentation", () => {
   test("preserves the existing complete HTML byte for byte", () => {
@@ -13,7 +14,7 @@ describe("pretty table cell presentation", () => {
         ],
         align: [null, "right"],
       },
-      { locale: "de", notebookId: "ABC123" },
+      { locale: "de", ...tableOptions() },
     );
     // Captured from the original renderer before extracting cell presentation.
     expect(html).toBe(

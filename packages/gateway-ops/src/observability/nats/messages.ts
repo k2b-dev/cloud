@@ -4,6 +4,21 @@ export const natsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      access: "Diagnostics access",
+      accessDescription:
+        "Configure the separate system-account connection. Changes apply to the next diagnostics connection. An empty server list disables cluster diagnostics.",
+      accessServers: "System-account servers",
+      accessKind: "System access format",
+      accessSecret: "System access",
+      accessSecretHelp: "Paste .creds file contents or a user NKey seed. Stored encrypted. Leave empty to keep the saved secret.",
+      accessCa: "TLS CA certificate (PEM)",
+      accessCaHelp: "Paste certificate contents. Empty uses the default trust store; use tls:// server URLs to require TLS.",
+      accessClear: "Clear saved system access",
+      accessReplaceRequired: "Enter new system access or explicitly clear the saved value.",
+      accessSwitchHelp: "Paste access in the new format too. A format that does not match the saved secret keeps cluster diagnostics off.",
+      accessCreds: ".creds file content",
+      accessNkey: "NKey seed",
+
       sampledAt: "Snapshot taken",
       refresh: "Refresh",
       previous: "Previous page",
@@ -68,6 +83,23 @@ export const natsMessages = i18n.define({
       noLeader: "No leader",
     },
     de: {
+      access: "Diagnosezugang",
+      accessDescription:
+        "Separate Verbindung zum Systemkonto einrichten. Änderungen gelten ab der nächsten Diagnoseverbindung. Eine leere Serverliste schaltet die Clusterdiagnose ab.",
+      accessServers: "Server des Systemkontos",
+      accessKind: "Format des Systemzugangs",
+      accessSecret: "Systemzugang",
+      accessSecretHelp:
+        "Inhalt der .creds-Datei oder NKey-Seed eines Benutzers einfügen. Wird verschlüsselt gespeichert. Leer lassen, um den gespeicherten Zugang zu behalten.",
+      accessCa: "TLS-CA-Zertifikat (PEM)",
+      accessCaHelp: "Zertifikatsinhalt einfügen. Leer gilt der Standard-Zertifikatsspeicher; Server-URLs mit tls:// erzwingen TLS.",
+      accessClear: "Gespeicherten Systemzugang löschen",
+      accessReplaceRequired: "Neuen Systemzugang eingeben oder den gespeicherten Wert ausdrücklich löschen.",
+      accessSwitchHelp:
+        "Auch den Zugang im neuen Format einfügen. Passt das Format nicht zum gespeicherten Zugang, bleibt die Clusterdiagnose abgeschaltet.",
+      accessCreds: "Inhalt einer .creds-Datei",
+      accessNkey: "NKey-Seed",
+
       sampledAt: "Stand",
       refresh: "Aktualisieren",
       previous: "Vorherige Seite",

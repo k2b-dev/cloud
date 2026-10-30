@@ -1,4 +1,4 @@
-export const packedSiblings = ["@k2b/ui", "@k2b/ssr"] as const;
+export const packedSiblings = ["@k2b/ui", "@k2b/ssr", "@k2b/editor"] as const;
 type Sibling = (typeof packedSiblings)[number];
 type SiblingValues = Record<Sibling, string>;
 export type PackedConsumerMode = "workspace" | "release";
@@ -20,5 +20,9 @@ export const resolvePackedConsumerPins = async (input: {
     if (pin === workspaceVersion) return { pin, spec: input.archives[name], source: "packed" };
     throw new Error(`${name}@${pin} is neither on npm nor published by this release (workspace version: ${workspaceVersion})`);
   };
-  return { "@k2b/ui": await resolvePin("@k2b/ui"), "@k2b/ssr": await resolvePin("@k2b/ssr") };
+  return {
+    "@k2b/ui": await resolvePin("@k2b/ui"),
+    "@k2b/ssr": await resolvePin("@k2b/ssr"),
+    "@k2b/editor": await resolvePin("@k2b/editor"),
+  };
 };

@@ -1,4 +1,4 @@
-import type { CloudAiChartTable } from "@k2b/cloud/ai/browser";
+import type { ChartTable } from "../charts";
 
 // A formatted number such as `-1.200,00 €`, `-$18.00` or `-5 %`: a spreadsheet reads it as a value.
 const plainNumber = /^[-+]?\p{Sc}?\s?\d[\d.,\s]*(?:\s?(?:%|\p{Sc}))?$/u;
@@ -13,7 +13,7 @@ const tsvCell = (value: string) => {
 };
 
 /** A chart's table as tab-separated text with the shown, formatted cells, as Copy data puts it on the clipboard. */
-export const chartTableText = (table: CloudAiChartTable): string =>
+export const chartTableText = (table: ChartTable): string =>
   [
     table.columns.map((column) => tsvCell(column.label)).join("\t"),
     ...table.rows.map((row) => table.columns.map((column) => tsvCell(row.cells[column.id] ?? "")).join("\t")),

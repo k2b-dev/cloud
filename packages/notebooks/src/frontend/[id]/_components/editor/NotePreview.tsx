@@ -1,8 +1,8 @@
 import { fadeScrollPadding } from "@k2b/editor/markdown/fade-scroll-margins";
+import { notebookChartFrameHtml } from "@k2b/editor/markdown/lib/chart-blocks";
 import { highlight } from "@k2b/stdlib";
 import { Button, NoticeCard, personColor, ScrollArea, useLocale } from "@k2b/ui";
 import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
-import { notebookChartFrameHtml } from "../../../../lib/chart-blocks";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { changesBetween } from "../../../lib/yjs/lazy-collab";
 import { notebookWorkspaceMessages } from "../../messages";

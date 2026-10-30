@@ -118,6 +118,7 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
   const { AlertsView } = await import("../alerts/view");
   const { HealthCheckView } = await import("../health-check/view");
   const { RetentionView } = await import("../retention/view");
+  const { NatsAccessView } = await import("../nats/access-view");
   const { defaultLogFilter } = await import("../logs/_components/types");
 
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -181,6 +182,7 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
     (c: Context<{ Variables: Variables }>) => {
       const url = new URL(c.req.url);
       const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
+      const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
       const state = (url.searchParams.get("state") ?? "normal") as ObservabilityFixtureState;
       c.req.raw.headers.set("x-cloud-locale", locale);
       c.set("runtime", {
@@ -222,10 +224,10 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
       });
       c.set("user", user);
       c.set("settings", { app: { name: "Cloud", locale } });
-      c.set("page", { title: "Observability", theme: "light" });
+      c.set("page", { title: "Observability", theme });
       const body = renderToString(() => render(c, locale, state, url));
       return c.html(
-        `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+        `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
       );
     };
   const attention = { home: "warning" as const, nats: "warning" as const };
@@ -287,6 +289,19 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
         attention,
         values: { logs: 14, events: 14, rollups: 90 },
         unreadable: state === "unreadable" ? { events: true } : {},
+      }),
+    ),
+  );
+
+  pages.get(
+    "/admin/observability/nats/access",
+    page((c, locale, state) =>
+      createComponent(NatsAccessView, {
+        c,
+        locale,
+        attention,
+        values: { servers: ["tls://nats.example:4222"], kind: "creds", ca: "" },
+        unreadable: { servers: false, kind: false, access: state === "unreadable", ca: false },
       }),
     ),
   );

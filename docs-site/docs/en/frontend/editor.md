@@ -116,6 +116,42 @@ reconfigured. The slot leaves the view when the calling owner is disposed. The
 building blocks use the same mechanism, so a menu that unmounts takes its
 extension with it.
 
+## Write together
+
+`@k2b/editor/collab` adds collaborative editing on Yjs. Install `yjs`,
+`y-protocols`, and `y-codemirror.next` next to the package; the root export
+does not need them.
+
+```tsx
+import { collab } from "@k2b/editor/collab";
+
+const text = doc.getText("text");
+const undoManager = new Y.UndoManager(text);
+
+<Editor
+  editor={editor}
+  label="Note"
+  initialValue={text.toString()}
+  maxLength={2_097_152}
+  extensions={collab({ text, undoManager, awareness })}
+  host={{ undo: () => undoManager.undo(), redo: () => undoManager.redo(), boundary: () => undoManager.stopCapturing() }}
+/>;
+```
+
+`collab({ text, undoManager, awareness })` binds the view to the shared
+`Y.Text`, keeps CodeMirror's history boundaries in the Yjs undo stack, and
+draws the other writers' cursors. Every action run through `editor.run` stays
+one undo step. The editor writes its own cursor into the awareness state as
+`cursor: { anchor, head }`, relative positions from
+`Y.relativePositionToJSON`, and reads `user.name` and `user.color` of the
+others. An application that checks presence on its server keeps exactly these
+fields.
+
+The transport stays in the application: the WebSocket or another provider,
+reconnecting, and confirming updates. The parts are also exported alone:
+`isolateYjsHistory(undoManager)` for a host that binds Yjs itself, and
+`remoteCursors(text, awareness)`.
+
 ## Locale
 
 The package's own texts, such as the toolbar's accessible name, come from its
@@ -132,7 +168,10 @@ utilities and the completion palette are included:
 ```
 
 Import optional Markdown extensions from `@k2b/editor/markdown`. Add them to
-`editor.use()` or the CodeMirror view that the application already owns:
+`editor.use()` or the CodeMirror view that the application already owns. The
+package has no import side effects apart from its stylesheet, so a bundler
+leaves out what the host does not import, such as Mermaid or KaTeX. Code
+languages in fenced blocks load when a block of that language first appears:
 
 ```ts
 import {
@@ -157,7 +196,7 @@ expects the host to load KaTeX’s stylesheet and fonts.
 | --- | --- |
 | `listsExtension`, `ligaturesExtension` | `excludedRanges(markdown)` returns source spans that stay literal, such as application directives. |
 | `listCommandsExtension` | The same `excludedRanges`, plus `isRemoteTransaction(transaction)` to prevent automatic number repairs on collaboration updates. Supply the same range callback to lists and commands. |
-| `imageExtension`, `linksExtension` | `resolveUrl(kind, ref)` resolves application schemes. `openImage(image, url, label)` and `openLink(url, ref, label)` keep previews and navigation in the host. Without callbacks, links use document navigation and images open their URL in a new tab. Unresolved custom schemes stay source. |
+| `imageExtension`, `linksExtension` | `resolveUrl(kind, ref)` resolves application schemes. `openImage(image, url, label)` and `openLink(url, ref, label)` keep previews and navigation in the host. Without callbacks, links use document navigation and images open their URL in a new tab. Unresolved custom schemes stay source. For an image, `resolveUrl` may return a `blob:` URL, such as one for an image stored in the browser; a `blob:` URL written into the text itself stays source. |
 | `imageExtension` | `foreignImagesAsLinks: true` renders images from other origins as links without fetching them. The default renders images as before. |
 | `mermaidExtension` | Required `configuration({ dark })` returns a Mermaid configuration. Optional `title(markdown)` names fullscreen views and exports; `locale` sets the detached preview's locale. Rendering is serialized, and cached SVGs are separated by configuration callback and theme. |
 | `infoBlocksExtension` | Pass the current locale for untitled notice labels. |
@@ -180,3 +219,34 @@ The preview helpers `inline-syntax`, `math-syntax`, `fade-scroll-margins`,
 `mermaid-render`, `mermaid-viewport`, and `urls` also have direct imports
 under `@k2b/editor/markdown/` to keep read-only previews and print independent
 of the full extension set.
+
+## Formulas and charts
+
+`@k2b/editor/formula` exports the dependency-free table formula evaluator,
+including `evaluateFormula`, `evaluateTableCell`, and their context and result
+types. It reads the table's header and cell strings; the caller owns presentation.
+
+`@k2b/editor/charts` exports portable chart types, `chartSchema`, and rendering
+helpers such as `chartRenderOptions`, `chartRows`, and `chartTable`. Install the
+`zod` peer dependency alongside the package. The schema
+accepts application chart data without AI size limits. Cloud keeps its AI
+validation and limits and continues to export its existing formula and chart APIs.
+
+```ts
+import { evaluateFormula } from "@k2b/editor/formula";
+import { chartSchema, chartTable } from "@k2b/editor/charts";
+
+const result = evaluateFormula("=SUM(Value)", {
+  headers: ["Value"], rows: [["2"], ["3"], ["=SUM(Value)"]], currentRow: 2, currentCol: 0,
+});
+const chart = chartSchema().parse({ kind: "stat", title: "Total", value: 5 });
+const table = chartTable(chart, "en");
+```
+
+For CodeMirror table presentation, use `tablesExtension` or
+`createNotebookTablePresentation` from `@k2b/editor/markdown`. Supply
+`resolveUrl(kind, ref)` for host note and tag routes. `createBlockPreviews`
+uses a host `load` callback for previews; `localChartPreviews` can implement that
+callback for charts over named tables in the same document, including formulas,
+without a server. Pass the chart schema, limits, locale, and diagnostic messages
+from the host. Cross-document queries and subscriptions remain host-owned.

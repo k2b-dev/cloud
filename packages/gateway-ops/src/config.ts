@@ -1,6 +1,7 @@
 import { appAccess, defineApp } from "@k2b/cloud";
 import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
 import { appEnv } from "./env";
+import { natsDiagnosticsSettings } from "./observability/nats/settings";
 
 const port = 3000;
 
@@ -108,6 +109,7 @@ export const app = defineApp({
       },
     },
 
+    ...natsDiagnosticsSettings,
     "gateway.health_check_schedule": {
       kind: "cron",
       label: "Health Check Schedule",

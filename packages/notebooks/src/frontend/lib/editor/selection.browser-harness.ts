@@ -1,13 +1,14 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { BlockType, EditorView } from "@codemirror/view";
+import { remoteCursors } from "@k2b/editor/collab";
 import { pointerSelectionHeld } from "@k2b/editor/markdown";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { notebookTableOptions } from "../../../lib/table-options";
 import { handleSoftNoteNavigationRequests } from "../soft-navigation";
 import { editor } from "./index";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "./notebook-options";
-import { remoteCursors } from "./remote-cursors";
 
 const doc = [
   "# Project heading",
@@ -47,7 +48,7 @@ const makeClient = (parent: HTMLElement, name: string, color: string, seed?: Y.D
         editor.searchTheme(),
         editor.customLightInit(),
         editor.noteScroller,
-        editor.tablesExtension("n1"),
+        editor.tablesExtension(notebookTableOptions("n1")),
         editor.imageExtension(notebookUrlOptions("n1")),
         editor.listsExtension(notebookListOptions),
         editor.infoBlocksExtension("en"),

@@ -25,6 +25,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./app-key": "./src/app-key.ts",
     "./desktop": "./src/desktop/index.ts",
     "./desktop/solid": "./src/desktop/solid.tsx",
     "./server": "./src/server/index.ts",
@@ -159,7 +160,8 @@
     "yjs": "13.6.33",
     "hash-wasm": "4.12.0",
     "@types/sanitize-html": "2.16.1",
-    "@types/web-push": "3.6.4"
+    "@types/web-push": "3.6.4",
+    "@k2b/editor": "0.1.0"
   },
   "devDependencies": {
     "@babel/core": "8.0.6",

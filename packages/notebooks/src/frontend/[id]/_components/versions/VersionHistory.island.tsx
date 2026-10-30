@@ -1,3 +1,4 @@
+import { enhanceNotebookCharts } from "@k2b/editor/markdown/notebook-charts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
@@ -18,7 +19,7 @@ import { diffLines } from "diff";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { renderNotebookBook } from "@/lib/book-renderer";
-import { enhanceNotebookCharts } from "../../../lib/notebook-charts";
+import { notebookChartOptions } from "../../../../lib/chart-options";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { readErrorMessage } from "../settings/utils";
@@ -541,7 +542,7 @@ export default function VersionHistory(props: Props) {
                           // User effects run after the render effect that writes the version's HTML.
                           createEffect(() => {
                             selectedContentHtml();
-                            onCleanup(enhanceNotebookCharts(element, locale()));
+                            onCleanup(enhanceNotebookCharts(element, locale(), notebookChartOptions));
                           })
                         }
                       />

@@ -61,3 +61,9 @@ test("long runs of Markdown punctuation derive in linear time", () => {
     expect(performance.now() - start).toBeLessThan(1_000);
   }
 });
+
+test("plain text keeps no tag, also where removing one joins two halves", () => {
+  expect(deriveMeta("# Hallo <b>Welt</b>\n").title).toBe("Hallo Welt");
+  expect(deriveMeta("# <scr<script>ipt>alert(1)</script>\n").title).not.toContain("<");
+  expect(deriveMeta("# Weg -> Ziel\n").title).toBe("Weg -> Ziel");
+});

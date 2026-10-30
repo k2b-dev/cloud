@@ -17,11 +17,11 @@ import {
 import { getSearchQuery, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import type { EditorState, Extension } from "@codemirror/state";
 import { type EditorView, getTooltip, repositionTooltips, showTooltip, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { resolveTextCursor } from "@k2b/editor/collab";
 import { type TextEditorControls, tableHost } from "@k2b/ui/text-editor";
 import { displayCell, findTables, gridLine, rowCount, type Table } from "@k2b/ui/text-editor/model";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import { resolveTextCursor } from "./relative-cursor";
 
 const tables = new WeakMap<EditorState, Table[]>();
 const tablesOf = (state: EditorState) => {

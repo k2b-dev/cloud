@@ -91,21 +91,44 @@ Gateway Ops uses the installation's application-account connection to inspect
 JetStream streams and consumers. Cluster-wide server diagnostics use a
 separate system-account connection:
 
-| Variable | Purpose |
-| --- | --- |
-| `NATS_ADMIN_SERVERS` | Bootstrap URLs for the separate diagnostics connection |
-| `NATS_ADMIN_CREDS_FILE` | Mounted credentials for the NATS system account |
-| `NATS_ADMIN_NKEY_SEED_FILE` | Mounted system-account NKey seed, as an alternative to the credentials file |
-| `NATS_ADMIN_TLS_CA_FILE` | Trusted CA file for the diagnostics connection |
+Open **Administration → Observability → NATS → Diagnostics access** and configure:
 
-Set these only on Gateway Ops. Do not distribute system credentials to other
-Cloud applications or replace their `NATS_CREDS_FILE` with an administrator
-credential. Mount credential files through the deployment's secret system;
-never place their contents in Compose, Git, or support reports.
-Choose either a credentials file or an NKey seed file, not both.
+| Setting | Value |
+| --- | --- |
+| `gateway.nats_admin_servers` | System-account server URLs; empty disables cluster diagnostics |
+| `gateway.nats_admin_access_kind` | `creds` for .creds file content, or `nkey` for a user NKey seed |
+| `gateway.nats_admin_access` | **System access**: paste the complete .creds content or seed, stored as an encrypted secret |
+| `gateway.nats_admin_tls_ca` | Trusted CA certificate or certificate bundle as PEM text; empty uses the default trust store |
+
+Changes apply to the next diagnostics connection, including **Refresh**, CLI
+reads, metrics collection, and health checks. When changing the access format,
+replace System access too; a mismatched format keeps cluster diagnostics off.
+Use `tls://` server URLs when using TLS with the default trust store. A custom
+CA enables TLS on the diagnostics connection.
+
+If the saved settings cannot be read, cluster diagnostics report unavailable
+and omit `cloud_nats_cluster_configured` until the configuration is known.
+Application-account inventory and consumer metrics continue independently.
+
+System credentials belong only to Gateway Ops. Do not distribute them to other
+Cloud applications or replace application-account credentials with system
+credentials. Never place their contents in Compose, Git, or support reports.
+The secret is hidden in administration responses and cannot be read back there.
+
+For this release, `NATS_ADMIN_SERVERS`, `NATS_ADMIN_CREDS_FILE`,
+`NATS_ADMIN_NKEY_SEED_FILE`, and `NATS_ADMIN_TLS_CA_FILE` are deprecated startup
+imports. Missing settings import server URLs and **file contents**, including
+the access format. Stored rows always win, including empty or unreadable rows.
+Unreadable files produce a warning naming the variable and path and prevent
+an incomplete bootstrap from enabling diagnostics. Correct the mount and
+restart Gateway Ops, or save the settings in Administration. Remove the old
+environment values and mounts after checking the imported settings and
+refreshing the NATS page. Resetting a setting while the old environment is
+still present allows it to be imported again at the next startup.
 
 The diagnostics identity needs permission to request
 `$SYS.REQ.SERVER.PING.JSZ` and `$SYS.REQ.SERVER.PING.VARZ` and receive inbox replies.
+Grant only these diagnostics permissions; do not use an unrestricted system identity.
 The node table shows process RAM from VARZ, including buffers and caches.
 JetStream memory-storage metrics measure memory-backed streams separately;
 these can be zero when streams use file storage.

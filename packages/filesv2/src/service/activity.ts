@@ -592,9 +592,12 @@ export async function recoverActivity(input: {
   return { checked };
 }
 
-export async function purgeActivity(input: { now?: Date; retentionDays: number }): Promise<{ purged: number }> {
+/** Rows one retention call deletes at most, so a call stays short however much history expired at once. */
+export const ACTIVITY_PURGE_BATCH = 10_000;
+
+export async function purgeActivity(input: { now?: Date; retentionDays: number; batch?: number }): Promise<{ purged: number }> {
   // Open upload, trash, and lifecycle journals retain their history, including unclear entries.
   const rows = await sql<{ id: string }[]>`DELETE FROM filesv2.activity WHERE id IN
-    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' AND NOT EXISTS (SELECT 1 FROM filesv2.uploads u WHERE u.id=activity.upload_id AND u.state='open') AND NOT EXISTS (SELECT 1 FROM filesv2.operations o WHERE o.id=activity.operation_id AND o.state='pending') AND NOT EXISTS (SELECT 1 FROM filesv2.trash t WHERE t.id=activity.trash_id AND t.state IN ('pending','restoring')) ORDER BY started_at LIMIT 10000) RETURNING id`;
+    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' AND NOT EXISTS (SELECT 1 FROM filesv2.uploads u WHERE u.id=activity.upload_id AND u.state='open') AND NOT EXISTS (SELECT 1 FROM filesv2.operations o WHERE o.id=activity.operation_id AND o.state='pending') AND NOT EXISTS (SELECT 1 FROM filesv2.trash t WHERE t.id=activity.trash_id AND t.state IN ('pending','restoring')) ORDER BY started_at LIMIT ${input.batch ?? ACTIVITY_PURGE_BATCH}) RETURNING id`;
   return { purged: rows.length };
 }

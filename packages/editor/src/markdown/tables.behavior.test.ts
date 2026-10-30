@@ -5,7 +5,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 import { isServer } from "solid-js/web";
-import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { createDomTestHarness } from "../../../ui/test/dom";
 
 // Completion helpers reach the browser extension barrel; install DOM globals first.
 const loading = createDomTestHarness();
@@ -39,7 +39,7 @@ describe("Notebook table escaped pipes", () => {
         state: EditorState.create({
           doc,
           selection: { anchor: sourceVisible ? doc.indexOf("=LEN") + 4 : 0 },
-          extensions: [markdownExtension(), tablesExtension("ABC123")],
+          extensions: [markdownExtension(), tablesExtension()],
         }),
       });
       // Table widgets follow the syntax tree. CodeMirror parses it within a small time budget, so on a busy runner

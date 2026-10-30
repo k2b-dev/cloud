@@ -19,6 +19,69 @@ For the services and optional integrations needed by each app, start with
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
 
+## Read secrets from mounted files
+
+Set `NAME_FILE` to a file path in the owning process or container, for example
+`APP_SECRET_FILE=/run/secrets/app-secret`. Mount the file so that the process can
+read it, and unset `NAME` and its aliases: providing both sources with non-empty
+values stops startup. Empty or whitespace-only environment values are unset.
+Cloud removes exactly one trailing LF or CRLF from the file and preserves all
+other whitespace. An empty result follows the same
+unset/default rule as an empty environment value. A missing or unreadable file
+stops startup with the variable name and path, without printing its contents.
+Inject the variable into the container itself; the repository's Compose input
+files do not automatically forward `*_FILE` variables. Keep the secret exactly
+the same when moving it to a file: extra spaces or a second newline change its
+value. Cloud reads the file once per entry and path; replace the file and restart
+the process to apply a changed secret.
+
+File alternatives are supported for:
+
+- `APP_SECRET` and `ADMIN_LOGIN_TOKEN`;
+- `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`, `CLOUD_IDENTITY_NEXT_KEY` and
+  `CLOUD_IDENTITY_PREVIOUS_KEY`;
+- `CLOUD_OAUTH_BROKER_SECRET` and `CLOUD_APP_CREDENTIAL`;
+- Cloud Login's `CLOUD_LOGIN_VAPID_PRIVATE_KEY`.
+
+### Declare an application secret
+
+Application registries use the same mechanism through `@k2b/cloud/config`:
+
+```ts
+import { defineEnv, envSource, envString } from "@k2b/cloud/config";
+
+const appEnv = defineEnv({
+  PROVIDER_TOKEN: {
+    schema: envString,
+    scope: "secret",
+    secretFile: true,
+    doc: "Provider credential for this application.",
+  },
+});
+
+const token = appEnv.PROVIDER_TOKEN;
+const source = envSource(appEnv, "PROVIDER_TOKEN");
+```
+
+`secretFile: true` enables the canonical `PROVIDER_TOKEN_FILE` variable and
+validates a configured file when the registry is created. Values remain lazy
+on subsequent access, with file contents cached per entry and path.
+`envSource(registry, name)` returns `"env"`, `"alias"`,
+`"file"`, `"default"` or `"unset"` for the effective raw value, without evaluating
+a default factory. Empty environment values and empty file results return
+`"default"` when a default exists, otherwise `"unset"`. Explicit `false` and `0`
+values retain their source. Source detection resolves configured files with
+the same cache and throws for unreadable files or conflicting sources; it does not validate the value's
+schema. Read the registry property to obtain the validated value.
+
+## Enroll application public keys
+
+Core now accepts locally generated Ed25519 public keys through administrator
+APIs and `cld admin apps keys`. The installation ID lives in Core’s database.
+Enrollment alone does not change application startup or remove any existing
+environment values. See [App keys](/en/docs/operations/app-keys) for creation,
+resumable CLI output, rotation, and revocation.
+
 ## Replace the legacy Weather geo configuration
 
 Upgrade Core and configure its secret `geo.api_key` and credit budgets before
@@ -67,10 +130,10 @@ environment variables. Applications using the shared HTTP transports supply
 | `NATS_CREDS_FILE` | Optional mounted NATS credentials file |
 | `NATS_TLS_CA_FILE` | Optional trusted CA file for NATS TLS |
 | `NATS_IGNORE_CLUSTER_UPDATES` | Keep reachable seed addresses when advertised Docker hostnames are inaccessible |
-| `NATS_ADMIN_SERVERS` | Gateway Ops only: separate system-account connection for NATS cluster diagnostics |
-| `NATS_ADMIN_CREDS_FILE` | Gateway Ops only: mounted system-account credentials file |
-| `NATS_ADMIN_NKEY_SEED_FILE` | Gateway Ops only: alternative static system-account user seed; mutually exclusive with `NATS_ADMIN_CREDS_FILE` |
-| `NATS_ADMIN_TLS_CA_FILE` | Gateway Ops only: trusted CA for the separate system connection |
+| `NATS_ADMIN_SERVERS` | Deprecated; Gateway Ops imports URLs into `gateway.nats_admin_servers` at startup |
+| `NATS_ADMIN_CREDS_FILE` | Deprecated; Gateway Ops imports .creds **contents** into the secret `gateway.nats_admin_access` |
+| `NATS_ADMIN_NKEY_SEED_FILE` | Deprecated; imports user seed **contents** and selects `nkey`; mutually exclusive with `NATS_ADMIN_CREDS_FILE` |
+| `NATS_ADMIN_TLS_CA_FILE` | Deprecated; Gateway Ops imports CA PEM **contents** into `gateway.nats_admin_tls_ca` |
 | `APP_SECRET` | Encrypts settings and credentials |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | Core-only KEK for private platform signing keys; exactly 64 hexadecimal characters |
 | `CLOUD_IDENTITY_NEXT_KEY` | Temporary next Core KEK, distributed before promotion |
@@ -82,6 +145,13 @@ environment variables. Applications using the shared HTTP transports supply
 | `CLOUD_APP_CREDENTIAL` | Optional host-run app override for the automatically delivered workload credential; not used by OAuth |
 | `NODE_ENV` | Set to `production` by built-in images; development tooling supplies its own mode |
 | `ADMIN_LOGIN_TOKEN` | Core-only temporary first-access or recovery token; no production default |
+
+Configure new installations through **Administration → Observability → NATS → Diagnostics access**.
+The NATS diagnostics settings belong to Gateway Ops and apply to its next
+diagnostics connection. Existing settings are never overwritten by environment
+imports. Cluster diagnostics remain off when the server list is empty. See
+[NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for formats, failed imports, and removal of the deprecated inputs.
 
 `APP_ID` selects the application for Cloud's build and development scripts. It
 is not application runtime configuration. Runtime identity comes from the app declaration.

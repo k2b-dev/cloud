@@ -17,6 +17,7 @@ RUN bun install --frozen-lockfile --ignore-scripts --filter @k2b/cloud-docs
 COPY packages/cloud/tsconfig.json packages/cloud/
 COPY packages/cloud/src packages/cloud/src
 COPY packages/ssr/src packages/ssr/src
+COPY packages/editor/src packages/editor/src
 COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
 COPY docs-site docs-site

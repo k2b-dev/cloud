@@ -10,6 +10,7 @@ import {
 import { ViewTabs } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { buildGatewayHealth, type GatewayHealth } from "../../health";
+import { natsMessages } from "../nats/messages";
 import { type AreaMessages, areaMessages } from "./area-messages";
 
 /** Every section of the Observability area, in the order of its first column. */
@@ -183,8 +184,8 @@ export function ObservabilityArea(props: AreaProps) {
   );
 }
 
-/** NATS and Sync share one section; these tabs switch between their two views. */
-export function NatsSyncTabs(props: { current: "nats" | "sync"; locale: string }) {
+/** NATS diagnostics, Sync work, and diagnostics access share one section. */
+export function NatsSyncTabs(props: { current: "nats" | "sync" | "access"; locale: string }) {
   const t = areaText(props.locale);
   return (
     <ViewTabs
@@ -193,6 +194,7 @@ export function NatsSyncTabs(props: { current: "nats" | "sync"; locale: string }
       items={[
         { id: "nats", label: "NATS", href: OBSERVABILITY_SECTION_HREF.nats },
         { id: "sync", label: "Sync", href: "/admin/observability/nats/sync" },
+        { id: "access", label: natsMessages.resolve([props.locale]).t.access, href: "/admin/observability/nats/access" },
       ]}
     />
   );

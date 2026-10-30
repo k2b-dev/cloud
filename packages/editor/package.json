@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Configurable Markdown editor for SolidJS: editor, toolbar, bubble menu, and slash menu on one shared state.",
   "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./markdown": "./src/markdown/index.ts",
@@ -13,13 +16,35 @@
     "./markdown/mermaid-viewport": "./src/markdown/mermaid-viewport.tsx",
     "./markdown/inline-syntax": "./src/markdown/_lib/inline-syntax.ts",
     "./markdown/math-syntax": "./src/markdown/_lib/math-syntax.ts",
-    "./markdown/fade-scroll-margins": "./src/markdown/fade-scroll-margins.ts"
+    "./markdown/fade-scroll-margins": "./src/markdown/fade-scroll-margins.ts",
+    "./collab": "./src/collab/index.ts",
+    "./formula": "./src/formula.ts",
+    "./charts": "./src/charts.ts",
+    "./markdown/pretty-table": "./src/markdown/pretty-table.ts",
+    "./markdown/pretty-table-messages": "./src/markdown/pretty-table-messages.ts",
+    "./markdown/chart-copy": "./src/markdown/chart-copy.ts",
+    "./markdown/notebook-charts": "./src/markdown/notebook-charts.tsx"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "peerDependencies": {
-    "solid-js": "^1.9.10"
+    "solid-js": "^1.9.10",
+    "y-codemirror.next": "^0.3.6",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33",
+    "zod": "^4.3.4"
+  },
+  "peerDependenciesMeta": {
+    "y-codemirror.next": {
+      "optional": true
+    },
+    "y-protocols": {
+      "optional": true
+    },
+    "yjs": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.3",
@@ -57,7 +82,12 @@
     "@types/bun": "1.4.2",
     "solid-js": "1.9.17",
     "typescript": "7.0.2",
-    "playwright": "1.64.1"
+    "playwright": "1.64.1",
+    "bun-plugin-tailwind": "0.1.2",
+    "zod": "4.6.5",
+    "y-codemirror.next": "0.3.6",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.33"
   },
   "license": "AGPL-3.0-or-later",
   "author": "Valentin Kolb",
@@ -80,6 +110,7 @@
     "src",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
+    "!src/**/*.fixture.ts",
     "README.md",
     "LICENSE"
   ],

@@ -3,14 +3,12 @@ import { history, isolateHistory, undo } from "@codemirror/commands";
 import { forceParsing } from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-
+import { isolateYjsHistory } from "@k2b/editor/collab";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-
-import { asUndoStep, isolateYjsHistory } from "./history";
 
 const loading = createDomTestHarness();
 const { basicExtensions, markdownExtension } = await import("@k2b/editor/markdown");
@@ -19,7 +17,7 @@ const { listCommandsExtension } = await import("@k2b/editor/markdown");
 const { caretFormat, insertTable } = await import("../../[id]/_components/editor/editor-actions");
 const { default: EditorToolbar } = await import("../../[id]/_components/editor/EditorToolbar");
 const { LocaleProvider } = await import("@k2b/ui");
-const { createEditor } = await import("@k2b/editor");
+const { asUndoStep, createEditor } = await import("@k2b/editor");
 loading.cleanup();
 
 /** The shared editor state the toolbar formats, bound to a test view. */

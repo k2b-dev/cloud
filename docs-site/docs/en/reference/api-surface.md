@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-28
+updated: 2026-10-30
 ---
 
 # API surface
@@ -29,6 +29,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
+| `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
 | `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
@@ -43,7 +44,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
-| `@k2b/cloud/config` | Supported, server-only | Selected typed runtime values |
+| `@k2b/cloud/config` | Supported, server-only | Typed environment registries |
 
 Use the barrels above by default. Use a subpath when the specialized-entry
 table below links its feature guide.
@@ -294,10 +295,12 @@ returns a `CloudThemePreference` (`light`, `dark`, or `system`). Both readers
 and types come from `@k2b/cloud/shared`. See
 [Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).
 
-`@k2b/cloud/config` exports `env.APP_SECRET`, `env.PORT`,
-`env.IS_DEVELOPMENT`, and `env.ADMIN_LOGIN_TOKEN`. The
-[runtime configuration guide](/en/docs/operations/runtime-configuration)
-documents all process variables; that larger list is not the shape of `env`.
+`@k2b/cloud/config` exports the platform `env` registry and `defineEnv()` for
+application registries. Set `secretFile: true` on a secret entry to allow its
+`NAME_FILE` alternative. `envSource(registry, name)` reports `"env"`, `"alias"`,
+`"file"`, `"default"` or `"unset"` without evaluating default factories. See
+[Runtime configuration](/en/docs/operations/runtime-configuration#declare-an-application-secret)
+for file validation, empty-value rules and an application example.
 
 ### Render Markdown for email
 
@@ -331,6 +334,7 @@ Import `evaluateTableCell(row, column, context)` and `EvalResult` from
 `@k2b/cloud/shared` when a chart or another derived view must use the same
 values as a Markdown table. Row and column indices are zero-based. The context
 contains `headers`, raw `rows`, `currentRow`, and `currentCol`.
+These exports use the formula engine from `@k2b/editor/formula`.
 
 ```ts
 import { evaluateTableCell } from "@k2b/cloud/shared";
@@ -368,6 +372,10 @@ become `NaN`, which the renderer leaves out.
 Server integrations save run results with `createAiConversationView` and receive
 `AiViewInvalidError` for invalid specs. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals) for validation and groups.
+
+The portable chart schemas and rendering helpers are implemented in
+`@k2b/editor/charts`; the existing Cloud exports remain available. Cloud owns
+AI validation and size limits.
 
 Custom chart hosts use browser exports `cloudAiChartRenderOptions`,
 `cloudAiChartLegend`, `cloudAiChartRows`, `cloudAiChartTable`, `cloudAiChartTooltip`,

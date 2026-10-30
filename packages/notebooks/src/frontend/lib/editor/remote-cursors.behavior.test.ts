@@ -4,6 +4,7 @@ import { StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { notebookTableOptions } from "../../../lib/table-options";
 
 const measurements: (() => void)[] = [];
 const settle = async () => {
@@ -17,7 +18,7 @@ const mount = async (seedCursors = false, text = "Collaborative notes") => {
   const { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate } = await import("y-protocols/awareness");
   const { yCollab } = await import("y-codemirror.next");
   const { createTrustedTextAwareness } = await import("@k2b/cloud/shared-text");
-  const { REMOTE_CARET_IDLE_CLASS, remoteCursors } = await import("./remote-cursors");
+  const { REMOTE_CARET_IDLE_CLASS, remoteCursors } = await import("@k2b/editor/collab");
   jest.useFakeTimers();
   jest.setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
   const doc = new Y.Doc();
@@ -337,7 +338,7 @@ describe("remote cursors", () => {
     const { view, awareness, ada, cleanup } = await mount();
     const focused = spyOn(document, "hasFocus").mockReturnValue(true);
     try {
-      const { REMOTE_CARET_LABEL_IDLE_MS } = await import("./remote-cursors");
+      const { REMOTE_CARET_LABEL_IDLE_MS } = await import("@k2b/editor/collab");
       view.focus();
       view.dispatch({ selection: { anchor: 3 } });
       awareness.setLocalStateField("cursor", null);
@@ -376,11 +377,11 @@ describe("remote cursors", () => {
     const { view, ada, cleanup } = await mount(false, "Before\n\n| Name | Value |\n| --- | --- |\n| Alpha | 1 |\n\nAfter");
     try {
       const { markdownExtension } = await import("@k2b/editor/markdown");
-      const { tablesExtension } = await import("./tables");
+      const { tablesExtension } = await import("@k2b/editor/markdown");
       const { refreshMarkdownDecorationsEffect } = await import("@k2b/editor/markdown");
       view.dispatch({
         selection: { anchor: view.state.doc.length },
-        effects: StateEffect.appendConfig.of([markdownExtension(), tablesExtension("n1")]),
+        effects: StateEffect.appendConfig.of([markdownExtension(), tablesExtension(notebookTableOptions("n1"))]),
       });
       forceParsing(view, view.state.doc.length, 5000);
       view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });

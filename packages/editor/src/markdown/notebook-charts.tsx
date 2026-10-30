@@ -1,20 +1,11 @@
-import {
-  type CloudAiChartInput,
-  type CloudAiChartTable,
-  cloudAiChartMarkKey,
-  cloudAiChartReferenceMark,
-  cloudAiChartRenderOptions,
-  cloudAiChartRows,
-  cloudAiChartSchema,
-  cloudAiChartTooltip,
-} from "@k2b/cloud/ai/browser";
 import { i18n } from "@k2b/stdlib";
 import { CopyButton, IconButton, LocaleProvider, prepareChartSnapshot, toast } from "@k2b/ui";
 import { type ChartTooltip, inspectChart } from "@k2b/ui/chart-inspection";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
-import { notebookChartTableHtml } from "../../lib/chart-blocks";
+import { type ChartInput, type ChartTable, chartMarkKey, chartReferenceMark, chartRenderOptions, chartRows, chartTooltip } from "../charts";
 import { chartTableText } from "./chart-copy";
+import { type MarkdownChartOptions, notebookChartTableHtml } from "./lib/chart-blocks";
 
 export const notebookChartMessages = i18n.define({
   baseLocale: "en",
@@ -34,13 +25,11 @@ export const notebookChartMessages = i18n.define({
   },
 });
 
-type Drawn = { tooltips: Map<string, ChartTooltip>; table: CloudAiChartTable };
+type Drawn = { tooltips: Map<string, ChartTooltip>; table: ChartTable };
 
-let schema: ReturnType<typeof cloudAiChartSchema> | undefined;
-const readInput = (figure: HTMLElement): CloudAiChartInput | null => {
+const readInput = (figure: HTMLElement, options: Pick<MarkdownChartOptions, "schema">): ChartInput | null => {
   try {
-    schema ??= cloudAiChartSchema();
-    const result = schema.safeParse(JSON.parse(figure.dataset.chart ?? "null"));
+    const result = options.schema.safeParse(JSON.parse(figure.dataset.chart ?? "null"));
     return result.success ? result.data : null;
   } catch {
     return null;
@@ -48,15 +37,15 @@ const readInput = (figure: HTMLElement): CloudAiChartInput | null => {
 };
 
 /** The same drawing as the server's (`renderNotebookChartFigure`), for the tooltips and table of its marks. */
-const draw = (input: CloudAiChartInput, locale: string): Drawn => {
-  const rows = cloudAiChartRows(input, locale);
-  const snapshot = prepareChartSnapshot(cloudAiChartRenderOptions(input, locale, { legend: "outside" }), {
-    key: ({ datum }) => cloudAiChartMarkKey(datum),
+const draw = (input: ChartInput, locale: string): Drawn => {
+  const rows = chartRows(input, locale);
+  const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale, { legend: "outside" }), {
+    key: ({ datum }) => chartMarkKey(datum),
     tooltip: ({ datum }) => {
       const row = rows.add(datum);
-      return cloudAiChartTooltip(rows.columns(), row);
+      return chartTooltip(rows.columns(), row);
     },
-    reference: ({ datum }) => cloudAiChartReferenceMark(input, datum),
+    reference: ({ datum }) => chartReferenceMark(input, datum),
   });
   return { tooltips: new Map(snapshot.marks.map((mark) => [mark.key, mark.tooltip])), table: rows.table() };
 };
@@ -113,14 +102,14 @@ function ChartControls(props: { figure: HTMLElement; viewport: HTMLElement; draw
  * frame reserves for them, so nothing moves. A figure without valid chart data keeps its static drawing, whose marks
  * still carry their values as SVG titles. Returns the cleanup that restores the static figures.
  */
-export function enhanceNotebookCharts(root: HTMLElement, locale: string): () => void {
+export function enhanceNotebookCharts(root: HTMLElement, locale: string, options: Pick<MarkdownChartOptions, "schema">): () => void {
   const cleanups: (() => void)[] = [];
   for (const figure of root.querySelectorAll<HTMLElement>("figure.notebook-book-chart[data-chart]:not([data-enhanced])")) {
     const chart = figure.querySelector<HTMLElement>(".notebook-book-chart__viewport > .k2b-chart");
     const viewport = chart?.parentElement;
     const actions = figure.querySelector<HTMLElement>(".notebook-book-chart__actions");
     const kind = chart?.dataset.chartKind;
-    const input = readInput(figure);
+    const input = readInput(figure, options);
     if (!chart || !viewport || !actions || !input || kind !== input.kind) continue;
     let drawn: Drawn | undefined;
     // The drawing waits for the first tooltip, table or copy: a note can hold many charts nobody inspects.
@@ -133,7 +122,7 @@ export function enhanceNotebookCharts(root: HTMLElement, locale: string): () => 
     chart.dataset.interactive = "true";
     const inspection = inspectChart(chart, {
       kind: input.kind,
-      format: ({ datum }) => lazy().tooltips.get(cloudAiChartMarkKey(datum)) ?? { rows: [] },
+      format: ({ datum }) => lazy().tooltips.get(chartMarkKey(datum)) ?? { rows: [] },
     });
     const dispose = render(
       () => <ChartControls figure={figure} viewport={viewport} drawn={lazy} locale={locale} onView={inspection.close} />,
