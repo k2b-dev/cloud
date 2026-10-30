@@ -31,7 +31,12 @@ export const monitoringCapabilities = defineCapabilities({
         adminError(context) ??
         ok({
           data: {
-            apps: AppStatusSummaryInputSchema.parse(input).appIds.map((appId) => ({ appId, traffic: null, links: [], lastSeenAt: null })),
+            apps: AppStatusSummaryInputSchema.parse(input).appIds.map((appId) => ({
+              appId,
+              traffic: null,
+              links: [{ kind: "metrics", label: "Monitoring", href: "/admin/monitoring" }],
+              lastSeenAt: null,
+            })),
             otherApps: [],
           },
         }),

@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { adminAuthority } from "../../../scripts/fixtures/app-status";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
 import { removeAppListing } from "./app-listing";
+import { appListingMessages } from "./app-listing-messages";
 
 const live: AppRegistryDetail = {
   id: "mail",
@@ -71,18 +72,57 @@ describe("offline app listing removal", () => {
     expect(running).toMatchObject({ status: 409, code: "app_running" });
     expect(restarted.effects).toEqual(["visible", "forget"]);
   });
-  test("refuses uncertain registry state and cancelled operations", async () => {
+  test("refuses a rejected target registry entry and cancelled operations", async () => {
     const service = dependencies();
     const result = await removeAppListing(params(), {
       ...service,
       registry: async () => ({ apps: [], issues: [{ key: "apps/mail", version: "1", reason: "unreadable" }] }),
     });
-    expect(result).toMatchObject({ status: 503, code: "forget_failed" });
+    expect(result).toMatchObject({ status: 409, code: "app_running" });
     expect(service.effects).toEqual([]);
     const controller = new AbortController();
     controller.abort();
     expect(await removeAppListing({ ...params(), signal: controller.signal }, service)).toMatchObject({ code: "forget_failed" });
     expect(service.effects).toEqual([]);
+  });
+  test("unrelated rejected entries do not prevent removal at either registry check", async () => {
+    const service = dependencies();
+    const result = await removeAppListing(params(), {
+      ...service,
+      registry: async () => ({ apps: [], issues: [{ key: "apps/other", version: "1", reason: "unreadable" }] }),
+    });
+    expect(result).toEqual({ ok: true, data: { appId: "mail", hidden: true } });
+    expect(service.effects).toEqual(["visible", "forget", "hide"]);
+  });
+  test("a rejected target entry that appears during provider effects prevents hiding", async () => {
+    const service = dependencies();
+    let reads = 0;
+    const result = await removeAppListing(params(), {
+      ...service,
+      registry: async () => ({
+        apps: [],
+        issues: ++reads === 2 ? [{ key: "apps/mail", version: "1", reason: "unreadable" }] : [],
+      }),
+    });
+    expect(result).toMatchObject({ status: 409, code: "app_running" });
+    expect(service.effects).toEqual(["visible", "forget"]);
+  });
+  test("resolves removal messages from the request locale with base-locale fallback", async () => {
+    expect(appListingMessages.check()).toEqual([]);
+    for (const [locale, error] of [
+      ["de-AT", "Laufende Apps können nicht entfernt werden."],
+      ["en-GB", "Running apps cannot be removed."],
+      ["fr", "Running apps cannot be removed."],
+    ] as const) {
+      const result = await removeAppListing(
+        { ...params(), locale },
+        {
+          ...dependencies(),
+          registry: async () => ({ apps: [live], issues: [] }),
+        },
+      );
+      expect(result).toMatchObject({ status: 409, code: "app_running", error });
+    }
   });
   test("enforces administrator and OAuth write authority at the service and route", async () => {
     const service = dependencies();

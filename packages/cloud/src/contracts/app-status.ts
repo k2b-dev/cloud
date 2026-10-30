@@ -28,6 +28,7 @@ export const AppStatusTrafficSchema = z
   .strict();
 export const AppStatusLinkSchema = z
   .object({
+    kind: z.enum(["logs", "metrics", "routes", "capabilities"]).optional(),
     label: z.string().min(1).max(120),
     href: z
       .string()

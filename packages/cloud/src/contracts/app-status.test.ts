@@ -4,7 +4,13 @@ import { appStatusDeclaration, appStatusManifest } from "../../../../scripts/fix
 import { readBoundedJson } from "../_internal/bounded-json";
 import { compileCapabilities } from "../_internal/capabilities";
 import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
-import { AppStatusDetailDataSchema, AppStatusSummaryDataSchema, AppStatusSummaryInputSchema, appStatusIssues } from "./app-status";
+import {
+  AppStatusDetailDataSchema,
+  AppStatusLinkSchema,
+  AppStatusSummaryDataSchema,
+  AppStatusSummaryInputSchema,
+  appStatusIssues,
+} from "./app-status";
 import { CapabilityManifestSchema } from "./capabilities";
 
 describe("app-status contract", () => {
@@ -33,6 +39,21 @@ describe("app-status contract", () => {
         nextCursor: null,
       }).success,
     ).toBe(false);
+  });
+  test("accepts semantic link kinds and links without kinds without relaxing link bounds", () => {
+    for (const kind of ["logs", "metrics", "routes", "capabilities"] as const) {
+      expect(AppStatusLinkSchema.parse({ kind, label: "Open", href: "/admin/monitoring" })).toEqual({
+        kind,
+        label: "Open",
+        href: "/admin/monitoring",
+      });
+    }
+    expect(AppStatusLinkSchema.parse({ label: "More monitoring", href: "/admin/monitoring" })).toEqual({
+      label: "More monitoring",
+      href: "/admin/monitoring",
+    });
+    expect(AppStatusLinkSchema.safeParse({ kind: "unknown", label: "Open", href: "/admin/monitoring" }).success).toBe(false);
+    expect(AppStatusLinkSchema.safeParse({ kind: "logs", label: "Open", href: "/app/logs" }).success).toBe(false);
   });
   test("compiles and retains a compatible role", () => {
     const manifest = appStatusManifest();
