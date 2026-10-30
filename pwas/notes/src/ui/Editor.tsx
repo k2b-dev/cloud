@@ -8,6 +8,7 @@ import type { TextEditorController } from "@k2b/ui/text-editor";
 import { createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { api } from "../lib/api";
 import { MAX_NOTE_LENGTH } from "../lib/model";
 import { preferences } from "../prefs";
 import { navigate } from "../router";
@@ -55,8 +56,8 @@ export function NoteEditor(props: {
   onFiles?: (files: File[]) => void;
   /** URLs of the note's files by key, for `file:KEY` references; a new object re-renders them. */
   files?: Record<string, string>;
-  /** Server URL of a file the note does not hold locally, for shared notes. */
-  remoteFile?: (key: string) => string;
+  /** Read link of a shared note, for files it does not hold locally. */
+  remoteReadId?: string;
 }) {
   const undoManager = new Y.UndoManager(props.text);
   onCleanup(() => undoManager.destroy());
@@ -157,9 +158,10 @@ export function NoteEditor(props: {
     if (!loaded) return [];
     const md = loaded.md;
     const files = props.files ?? {};
-    const remote = props.remoteFile;
+    const readId = props.remoteReadId;
     const urls: MarkdownUrlOptions = {
-      resolveUrl: (_kind, ref) => (ref.startsWith("file:") ? (files[ref.slice(5)] ?? remote?.(ref.slice(5)) ?? ref) : ref),
+      resolveUrl: (_kind, ref) =>
+        ref.startsWith("file:") ? (files[ref.slice(5)] ?? (readId ? api.fileUrl(readId, ref.slice(5)) : ref)) : ref,
       foreignImagesAsLinks: true,
     };
     return [
