@@ -91,3 +91,9 @@ JPEG, WebP, GIF, AVIF and PDF. SVG and other active content are refused.
 inline; PDFs download as attachments. Responses carry checked MIME types, safe
 filenames, nosniff, no-referrer and no-store. Uploads reserve storage before
 commit and serialize with deletion; image resizing belongs to the client.
+
+File requests share a process concurrency budget of `NOTES_MAX_OPEN_PADS`
+transfers. Admission and edit-link checks happen before reading upload bodies.
+Body reads are cancelled on disconnect or after one 30-second heartbeat interval,
+so stalled uploads release their slots. Excess transfers return 503
+`transfers_full`; clients can retry.
