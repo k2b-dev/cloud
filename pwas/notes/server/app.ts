@@ -25,7 +25,7 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
     c.header("Cache-Control", "private, no-store");
     c.header(
       "Content-Security-Policy",
-      "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      `default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'${options ? ` ${options.origin.replace(/^http/, "ws")}` : ""}; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`,
     );
   });
   app.onError((error, c) => {

@@ -167,3 +167,7 @@ user and listens on port 3000. It needs only its dedicated Postgres database
 and the Notes configuration above. CI boots it against a fresh database, checks
 readiness and SPA delivery, then creates a note and verifies its 1200 × 630 PNG.
 The release image is `cloud-notes`; this image does not join the Cloud app set.
+
+The CSP permits the editor's runtime styles and local inline font subsets.
+Scripts remain restricted to the same origin; inline scripts remain blocked.
+WebSockets may connect only to the configured Notes origin.
