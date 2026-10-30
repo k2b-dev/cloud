@@ -1,10 +1,12 @@
 import type { NoteMeta } from "./model";
 
 export function plainText(text: string): string {
+  // One tag pass can join two halves into a new tag, so every `<` left after it goes too.
   return text
     .replace(/!\[([^[\]]*)\]\([^()]*\)/g, "$1")
     .replace(/\[([^[\]]+)\]\([^()]*\)/g, "$1")
     .replace(/<[^<>]*>/g, "")
+    .replace(/</g, "")
     .replace(/[`*_~]/g, "")
     .replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-+*]\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s+)/, "")
     .replace(/(?<!\s)\s+#+\s*$/, "")
