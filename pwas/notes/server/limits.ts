@@ -11,6 +11,8 @@ export const limits = {
   peersPerIp: 20,
   createPerHour: 20,
   uploadPerHour: 10,
+  reportPerHour: 10,
+  loginPerQuarterHour: 5,
   bufferBytes: 1_048_576,
   compactUpdates: 500,
   compactIdleMs: 30_000,

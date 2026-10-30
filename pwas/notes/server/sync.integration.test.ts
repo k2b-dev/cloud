@@ -334,7 +334,7 @@ databaseSuite()("Notes durable Yjs sync", () => {
     await expect(service.admit(shared.editId, "203.0.113.10")).rejects.toMatchObject({ code: "deleted" });
     const [row] = await db<{ bytes: number }[]>`SELECT octet_length(snapshot) AS bytes FROM pads WHERE read_id=${shared.readId}`;
     expect(row!.bytes).toBe(0);
-    expect((await service.store.status()).usedBytes).toBe(costs.pad);
+    expect((await service.store.status()).usedBytes).toBe(costs.tombstone + costs.decision + 2 * Buffer.byteLength("deleted"));
   });
 
   test("text, state, and document type limits reject changes before persistence", async () => {
