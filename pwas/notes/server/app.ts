@@ -4,10 +4,11 @@ import { NotesError } from "./errors";
 import { fileDisposition, fileKey, readUpload } from "./files";
 import { boundedJson, requireOrigin, snapshotBytes } from "./http";
 import { limits, requestIp } from "./limits";
+import { mountModeration } from "./moderation";
 import type { NotesService } from "./service";
 
 export type NotesBindings = { peerIp?: string };
-export type HttpOptions = { origin: string; trustedProxy?: string };
+export type HttpOptions = { origin: string; trustedProxy?: string; adminPasswordHash?: string };
 const createPad = z.strictObject({
   snapshot: z.string().max(Math.ceil(limits.stateBytes / 3) * 4),
   accepted: z.literal(true),
@@ -44,6 +45,7 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
       if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) requireOrigin(c.req.raw, options.origin);
       await next();
     });
+    mountModeration(app, service, options, ip);
     app.get("/api/status", async (c) => {
       const status = await service.store.status();
       return c.json({

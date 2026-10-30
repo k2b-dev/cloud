@@ -63,7 +63,9 @@ export class NotesStore {
     }
   }
   private async measure(): Promise<void> {
-    const [row] = await this.db<{ bytes: string }[]>`SELECT COALESCE(SUM(size_bytes),0)::text AS bytes FROM pads`;
+    const [row] = await this.db<
+      { bytes: string }[]
+    >`SELECT ((SELECT COALESCE(SUM(size_bytes),0) FROM pads)+(SELECT COALESCE(SUM(storage_bytes),0) FROM reports)+(SELECT COALESCE(SUM(storage_bytes),0) FROM moderation_log)+(SELECT COALESCE(SUM(storage_bytes),0) FROM admin_sessions))::text AS bytes`;
     this.usedBytes = Number(row!.bytes);
   }
   private async reconcile(): Promise<void> {

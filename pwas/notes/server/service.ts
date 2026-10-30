@@ -78,7 +78,7 @@ export class NotesService {
     }, limits.heartbeatMs);
     this.timer.unref();
   }
-  private enqueue<T>(readId: string, run: () => Promise<T>): Promise<T> {
+  enqueue<T>(readId: string, run: () => Promise<T>): Promise<T> {
     let queue = this.queues.get(readId);
     if (!queue) {
       queue = { tail: Promise.resolve(), pending: 0 };
@@ -420,7 +420,7 @@ export class NotesService {
     if (access.access !== "edit") throw new NotesError("read_only", 403);
     await this.removeReadId(access.readId, "delete", "deleted");
   }
-  private invalidate(readId: string, reason = "resync_required"): void {
+  invalidate(readId: string, reason = "resync_required"): void {
     const room = this.rooms.get(readId);
     for (const peer of [...(room?.peers ?? [])]) this.disconnect(peer, 1013, reason);
     room?.doc.destroy();
