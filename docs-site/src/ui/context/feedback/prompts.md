@@ -129,7 +129,7 @@ if (!values) return;
 
 ## Search
 
-The search resolver receives the current query and an `AbortSignal`. It returns items with a `label` and optional `desc`, `icon`, root-relative `previewUrl`, or `value`. Results without `desc` use a compact single-line row; adding `desc` expands only that result to the two-line layout. Handle the selected value after the returned promise resolves; result items do not own application side effects.
+The search resolver receives the current query and an `AbortSignal`. It returns items with a `label` and optional `id`, `desc`, `icon`, root-relative `previewUrl`, or `value`. Give each result a stable `id`, such as its record ID. Then a newer answer that contains the same result keeps its row, so a click in progress still lands. Without an `id`, each answer replaces the rows. Results without `desc` use a compact single-line row; adding `desc` expands only that result to the two-line layout. Handle the selected value after the returned promise resolves; result items do not own application side effects.
 
 Search options include `placeholder`, `initialQuery`, `minQueryLength`, `debounceMs`, `emptyText`, and `noResultsText`.
 
@@ -240,7 +240,7 @@ type PromptSearchInput = {
 };
 
 type PromptSearchItem<T = unknown> = {
-  label: string; desc?: string; icon?: string; previewUrl?: string; value?: T;
+  id?: string; label: string; desc?: string; icon?: string; previewUrl?: string; value?: T;
 };
 
 type PromptSearchOptions = DialogOptions & {

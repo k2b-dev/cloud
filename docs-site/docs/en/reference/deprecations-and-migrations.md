@@ -46,6 +46,14 @@ Import `storage` from `@k2b/cloud`. The former `@k2b/cloud/services` export
 remains available for this release and is deprecated. Its behavior and saved
 storage configuration are unchanged. See [Object store](/en/docs/platform/object-store).
 
+## Network and AI environment values become administrator settings
+
+This release imports nine network and AI values at startup, without replacing
+stored rows. `GOTENBERG_URL` is bootstrap-only; `CLOUD_IDENTITY_JWKS_ORIGIN`
+is replaced by `CLOUD_CORE_INTERNAL_ORIGIN`, and `GATEWAY_INSTANCE_ID` defaults
+to a random per-process ID. Run `cld admin settings status --env` before
+removing legacy variables. Follow the [operator migration steps](/en/docs/operations/deprecations-and-migrations).
+
 ## Personal Linux groups in exports
 
 Accounts group and entity exports and OAuth/OIDC group claims exclude personal

@@ -1,24 +1,30 @@
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
+import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { sql } from "bun";
 import api from "../api";
 import { listLogs, runNotebookS3Backup, snapshotTargetBlocked, updateConfig } from "./backup";
 import { notebookServiceMessages } from "./messages";
 
 const suite = databaseSuite();
-const original = process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
-afterEach(() => {
-  if (original === undefined) delete process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
-  else process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = original;
+let targets: string[] = [];
+let policy: ReturnType<typeof spyOn<typeof settingsStore, "readKey">>;
+const readSetting = settingsStore.readKey;
+beforeEach(() => {
+  targets = [];
+  policy = spyOn(settingsStore, "readKey").mockImplementation((key) =>
+    key === "notebooks.snapshot_allowed_targets" ? Promise.resolve(targets) : readSetting(key),
+  );
 });
+afterEach(() => policy.mockRestore());
 
 suite("Notebook snapshot target policy", () => {
   test("refuses saves without storing, accepts operator exceptions, and logs existing internal targets in English", async () => {
-    delete process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
+    targets = [];
     const id = crypto.randomUUID();
     const uid = `snapshot-${crypto.randomUUID()}`;
     const [user] = await sql<
@@ -40,10 +46,10 @@ suite("Notebook snapshot target policy", () => {
     try {
       expect(await updateConfig({ notebookId: id, userId, data })).toMatchObject({ ok: false, error: snapshotTargetBlocked() });
       expect(await sql`SELECT notebook_id FROM notebooks.s3_snapshot_configs WHERE notebook_id = ${id}::uuid`).toHaveLength(0);
-      process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = "127.0.0.1";
+      targets = ["127.0.0.1"];
       expect((await updateConfig({ notebookId: id, userId, data })).ok).toBe(true);
       await sql`DELETE FROM notebooks.s3_snapshot_configs WHERE notebook_id = ${id}::uuid`;
-      delete process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
+      targets = [];
       const key = await encryptValue(data.accessKeyId);
       const secret = await encryptValue(data.secretAccessKey);
       await sql`INSERT INTO notebooks.s3_snapshot_configs (notebook_id, enabled, endpoint, region, bucket, access_key_id, secret_access_key, updated_by)

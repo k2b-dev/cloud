@@ -289,6 +289,18 @@
     },
     {
       "id": 25,
+      "prompt": "Move a Cloud application network allowlist from environment configuration into an administrator setting with one-time environment bootstrap.",
+      "expected_output": "Keeps the allowlist in its owning application, validates writes through the existing settings contract, preserves stored values during bootstrap, restricts changes to administrators, and retains the checked network transport.",
+      "files": [],
+      "expectations": [
+        "The administrator setting rejects malformed host, IP, CIDR and port entries.",
+        "A stored value wins over environment bootstrap, including an unreadable stored row.",
+        "Ordinary application users cannot widen the allowlist.",
+        "Requests still use createAllowedNetworkFetch or resolveAllowedNetworkAddresses."
+      ]
+    },
+    {
+      "id": 26,
       "prompt": "Add a separate data worker to a Cloud application. It needs SQL, Valkey, Sync and object storage, plus a SQL pool limited to four connections.",
       "expected_output": "Uses the platform startup entry before importing domain code, imports native sql and redis handles plus lazySync and storage from @k2b/cloud, and creates and closes its own SQL pool through createSql({ max: 4 }).",
       "files": [],

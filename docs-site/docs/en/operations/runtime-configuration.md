@@ -157,7 +157,7 @@ environment variables. Applications using the shared HTTP transports supply
 | `CLOUD_IDENTITY_NEXT_KEY` | Temporary next Core KEK, distributed before promotion |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | Temporary previous Core KEK during a rolling rewrap |
 | `CLOUD_OAUTH_BROKER_SECRET` | Shared only by Core and OAuth to authenticate OAuth issuance; exactly 64 hexadecimal characters; required when running OAuth |
-| `CLOUD_IDENTITY_JWKS_ORIGIN` | Optional private transport origin for loading Core's public identity JWKS; does not change the public issuer |
+| `CLOUD_IDENTITY_JWKS_ORIGIN` | Deprecated; use `CLOUD_CORE_INTERNAL_ORIGIN` for Core identity JWKS |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's public JWKS; does not change the public issuer |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for OAuth issuance and workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
 | `CLOUD_APP_CREDENTIAL` | Optional host-run app override for the automatically delivered workload credential; not used by OAuth |
@@ -185,12 +185,12 @@ verify browser and invocation JWTs with public keys and must never receive this
 secret. Generate it with `openssl rand -hex 32` and keep it independent from
 `APP_SECRET`.
 
-Set `CLOUD_IDENTITY_JWKS_ORIGIN` to Core's private service origin when the
-deployment network provides one, for example `http://app-core:3000`. Tokens
-still use the public `app.url` origin as `iss`; this variable changes only the
-network path used to fetch the purpose-specific session and invocation public
-keys. Without it, applications load those JWKS endpoints from the public issuer
-origin.
+Set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin, for example
+`http://app-core:3000`. Session and invocation JWKS use that origin while
+tokens retain the public `app.url` issuer. The deprecated
+`CLOUD_IDENTITY_JWKS_ORIGIN` remains honored when explicitly set for this
+release and logs a startup warning. Without either value, JWKS use the public
+issuer origin.
 
 Set `CLOUD_OAUTH_JWKS_ORIGIN` to the OAuth application's private service
 origin, for example `http://app-oauth:3000`. Access-token verification then
@@ -490,3 +490,28 @@ also bounds each device and visit; a Valkey outage refuses the query. Usage
 appears in the Geo ledger and `app_pwa.core.query` audit entries, rather than
 Core's capability execution log. See [App-PWA sessions](/en/docs/identity/app-pwa-sessions#offer-address-suggestions)
 for the request and error contracts.
+
+## Move network and AI values into settings
+
+The following variables are deprecated bootstrap sources for administrator
+settings. A stored row wins; an invalid environment value is ignored with a
+warning. For trusted proxies, an invalid bootstrap value with no stored row
+stops gateway startup. Run `cld admin settings status --env` after the upgrade, resolve any
+reported problems, then remove the legacy environment entries. Follow the
+[operator migration procedure](/en/docs/operations/deprecations-and-migrations).
+
+| Environment variable | Administrator setting |
+| --- | --- |
+| `OUTGOING_MAIL_ALLOWED_TARGETS` | `outgoing_mail.allowed_targets` |
+| `GATEWAY_TRUSTED_PROXIES` | `gateway.trusted_proxies` |
+| `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` | `gateway.webhook_allowed_targets` |
+| `ASSISTANT_RSQL_ALLOWED_TARGETS` | `assistant.rsql_allowed_targets` |
+| `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | `notebooks.snapshot_allowed_targets` |
+| `WORKFLOW_AI_BUDGET` | `ai.workflow_budget` |
+| `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` | `ai.workflow_attempt_timeout_ms` |
+| `WORKFLOW_AI_QUEUE_TIMEOUT_MS` | `ai.workflow_queue_timeout_ms` |
+| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | `mail.workflow_ai_body_max_chars` |
+| `GOTENBERG_URL` | `gotenberg.url` (bootstrap only) |
+
+Remove `GATEWAY_INSTANCE_ID` to use a random per-process identity. An explicit
+legacy value is still honored for this release and logs a startup warning.

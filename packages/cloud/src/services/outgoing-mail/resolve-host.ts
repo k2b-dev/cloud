@@ -1,8 +1,9 @@
-import { env } from "../../config/env";
 import { networkAddressFamily, normalizeNetworkHostname, parseNetworkAllowlistEnv } from "../../shared/network-address";
 import { NetworkTargetBlockedError, resolveAllowedNetworkAddresses } from "../network-security";
+import { coreSettings } from "../settings/api";
 
-export const outgoingMailAllowlist = () => parseNetworkAllowlistEnv("OUTGOING_MAIL_ALLOWED_TARGETS", env.OUTGOING_MAIL_ALLOWED_TARGETS);
+export const outgoingMailAllowlist = async () =>
+  parseNetworkAllowlistEnv("outgoing_mail.allowed_targets", await coreSettings.get<string[]>("outgoing_mail.allowed_targets"));
 
 /** One bounded lookup shared by SMTP and bounce IMAP; clients use only the checked addresses. */
 export const resolveMailHost = async (host: string, signal?: AbortSignal, resolve = resolveAllowedNetworkAddresses, port?: number) => {
@@ -14,7 +15,7 @@ export const resolveMailHost = async (host: string, signal?: AbortSignal, resolv
   try {
     cancellation.throwIfAborted();
     const addresses = await Promise.race([
-      resolve(hostname, outgoingMailAllowlist(), undefined, port),
+      outgoingMailAllowlist().then((allowlist) => resolve(hostname, allowlist, undefined, port)),
       new Promise<never>((_, reject) => {
         abort = () => reject(cancellation.reason);
         cancellation.addEventListener("abort", abort, { once: true });
@@ -29,7 +30,7 @@ export const resolveMailHost = async (host: string, signal?: AbortSignal, resolv
   } catch (error) {
     if (error instanceof NetworkTargetBlockedError)
       throw new NetworkTargetBlockedError(
-        "Outgoing mail target is on an internal network. An operator can allow it with OUTGOING_MAIL_ALLOWED_TARGETS.",
+        "Outgoing mail target is on an internal network. An operator can allow it with outgoing_mail.allowed_targets.",
       );
     throw error;
   } finally {

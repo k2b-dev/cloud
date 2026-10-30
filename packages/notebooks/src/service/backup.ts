@@ -8,7 +8,7 @@ import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
-import { appEnv } from "../env";
+import { app } from "../config";
 import { exportNotebookZip, type NotebookExport } from "./export";
 import { notebookServiceMessages } from "./messages";
 import { presignSnapshotObject, uploadSnapshotObjects } from "./snapshot-http";
@@ -292,8 +292,8 @@ const validateResolvedSnapshotConfig = (config: ResolvedSnapshotUpdate): Result<
   return validateSnapshotEndpoint(config.endpoint, config.region);
 };
 
-export const snapshotAllowlist = () =>
-  parseNetworkAllowlistEnv("NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS", appEnv.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS);
+export const snapshotAllowlist = async () =>
+  parseNetworkAllowlistEnv("notebooks.snapshot_allowed_targets", await app.settings.get("notebooks.snapshot_allowed_targets"));
 
 export const snapshotTargetBlocked = () => ({
   code: "NOTEBOOK_SNAPSHOT_TARGET_BLOCKED",
@@ -313,7 +313,7 @@ export const checkSnapshotTarget = async (
   } catch {
     return fail(err.badInput("S3 endpoint and region must form a valid storage address."));
   }
-  return (await isNetworkTargetBlocked(target.hostname, snapshotAllowlist(), {
+  return (await isNetworkTargetBlocked(target.hostname, await snapshotAllowlist(), {
     ...options,
     port: Number(target.port || (target.protocol === "https:" ? 443 : 80)),
   }))
@@ -536,7 +536,7 @@ export const createNotebookBackupManifest = (params: {
 
 export const defaultS3Uploader: NotebookBackupUploader = async (config, objects) => {
   try {
-    return await uploadSnapshotObjects(config, objects, { allowlist: snapshotAllowlist() });
+    return await uploadSnapshotObjects(config, objects, { allowlist: await snapshotAllowlist() });
   } catch (error) {
     if (error instanceof NetworkTargetBlockedError) throw error;
     throw new Error(

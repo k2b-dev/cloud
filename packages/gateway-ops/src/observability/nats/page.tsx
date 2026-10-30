@@ -106,7 +106,7 @@ export default ssr<AuthContext>(async (c) => {
         <NatsSyncTabs current="nats" locale={locale} />
         {!parsed.success ? <NoticeCard tone="warning" title={t.invalidFilters} /> : null}
         {cluster.status === "not_configured" ? (
-          <NoticeCard tone="info" title={t.cluster} detail={t.notConfigured} />
+          <NoticeCard tone="info" title={t.cluster} detail={cluster.accessRequired ? t.accessEndpointHelp : t.notConfigured} />
         ) : cluster.status !== "available" ? (
           <NoticeCard tone="warning" title={cluster.status === "partial" ? t.partial : t.unavailable} detail={t.clusterIssue} />
         ) : null}

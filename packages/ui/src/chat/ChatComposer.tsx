@@ -2120,6 +2120,26 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     </div>
   );
 
+  // A press on a row remembers its command. The host can rebuild the list, or the whole menu, between press and release;
+  // the browser then sends the click to a common ancestor (#2140). A release on the same command's new row runs it.
+  let pressedCommand: { key: string; row: HTMLElement } | undefined;
+  onMount(() => {
+    const release = (event: PointerEvent) => {
+      const pressed = pressedCommand;
+      pressedCommand = undefined;
+      if (!pressed || pressed.row.isConnected || event.type !== "pointerup") return;
+      const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-command-key]");
+      if (!under || under.dataset.commandKey !== pressed.key || !shellRef?.contains(under)) return;
+      const command = commandRowMap().get(pressed.key)?.command;
+      if (command) void executeCommand(command);
+    };
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+    onCleanup(() => {
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+    });
+  });
   // Rows are keyed by the command's key, not its object: hosts rebuild their command objects whenever their inputs change,
   // and a row replaced between the press and the release would swallow the click (#2140).
   const commandRowMap = createMemo(() => new Map(commandModel().rows.map((row) => [chatCommandKey(row.command), row])));
@@ -2145,6 +2165,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         aria-describedby={command().reason ? `${commandOptionId(command())}-reason` : undefined}
         data-reason={command().reason ? "true" : undefined}
         data-active={selectedCommandKey() === key ? "true" : undefined}
+        data-command-key={key}
+        onPointerDown={(event) => {
+          pressedCommand = { key, row: event.currentTarget };
+        }}
         onMouseDown={keepFieldFocus}
         onClick={(event) => {
           event.preventDefault();

@@ -5,7 +5,7 @@ section: Operations
 order: 1165
 description: Inspect NATS infrastructure, investigate Sync failures, and configure independent outage monitoring.
 tags: [nats, sync, observability, operations]
-updated: 2026-10-28
+updated: 2026-10-30
 ---
 
 # NATS operations
@@ -99,6 +99,9 @@ Open **Administration → Observability → NATS → Diagnostics access** and co
 | `gateway.nats_admin_access_kind` | `creds` for .creds file content, or `nkey` for a user NKey seed |
 | `gateway.nats_admin_access` | **System access**: paste the complete .creds content or seed, stored as an encrypted secret |
 | `gateway.nats_admin_tls_ca` | Trusted CA certificate or certificate bundle as PEM text; empty uses the default trust store |
+
+Changing the server list discards saved system access and keeps cluster diagnostics off until you enter access again (or explicitly clear it for an anonymous connection), including changes through the settings API, CLI, or environment import.
+Re-enter existing access once after updating so it is bound to the current server list.
 
 Changes apply to the next diagnostics connection, including **Refresh**, CLI
 reads, metrics collection, and health checks. When changing the access format,

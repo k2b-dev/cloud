@@ -4,11 +4,11 @@ import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security"
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
-import { appEnv } from "./env";
+import { app } from "./config";
 import { buildGatewayHealth, type GatewayHealth, type GatewayHealthStatus, scopeGatewayHealth } from "./health";
 
-export const webhookAllowlist = () =>
-  parseNetworkAllowlistEnv("GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS", appEnv.GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS);
+export const webhookAllowlist = async () =>
+  parseNetworkAllowlistEnv("gateway.webhook_allowed_targets", await app.settings.get("gateway.webhook_allowed_targets"));
 
 const log = logger("gateway:webhooks");
 const MAX_REPEAT_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -242,7 +242,7 @@ export const deliverHealthWebhook = async (webhook: HealthWebhook, health: Gatew
             signal: controller.signal,
           }
         : { method: "GET", signal: controller.signal };
-    const response = await createAllowedNetworkFetch(webhookAllowlist())(webhook.url, init);
+    const response = await createAllowedNetworkFetch(await webhookAllowlist())(webhook.url, init);
     await response.body?.cancel();
     if (!response.ok) throw new Error(`Webhook returned HTTP ${response.status}`);
     await markResult(webhook, health, true);
@@ -250,7 +250,7 @@ export const deliverHealthWebhook = async (webhook: HealthWebhook, health: Gatew
   } catch (error) {
     const message =
       error instanceof NetworkTargetBlockedError
-        ? "Webhook target is on an internal network. An operator can allow it with GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS."
+        ? "Webhook target is on an internal network. An operator can allow it with gateway.webhook_allowed_targets."
         : error instanceof Error
           ? error.message
           : String(error);

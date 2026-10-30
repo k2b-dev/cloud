@@ -11,6 +11,7 @@ export const natsMessages = i18n.define({
       accessKind: "System access format",
       accessSecret: "System access",
       accessSecretHelp: "Paste .creds file contents or a user NKey seed. Stored encrypted. Leave empty to keep the saved secret.",
+      accessEndpointHelp: "Enter system access for the current server list. Changing servers discards saved access.",
       accessCa: "TLS CA certificate (PEM)",
       accessCaHelp: "Paste certificate contents. Empty uses the default trust store; use tls:// server URLs to require TLS.",
       accessClear: "Clear saved system access",
@@ -91,6 +92,8 @@ export const natsMessages = i18n.define({
       accessSecret: "Systemzugang",
       accessSecretHelp:
         "Inhalt der .creds-Datei oder NKey-Seed eines Benutzers einfügen. Wird verschlüsselt gespeichert. Leer lassen, um den gespeicherten Zugang zu behalten.",
+      accessEndpointHelp:
+        "Systemzugang für die aktuelle Serverliste eingeben. Bei einer Serveränderung wird der gespeicherte Zugang verworfen.",
       accessCa: "TLS-CA-Zertifikat (PEM)",
       accessCaHelp: "Zertifikatsinhalt einfügen. Leer gilt der Standard-Zertifikatsspeicher; Server-URLs mit tls:// erzwingen TLS.",
       accessClear: "Gespeicherten Systemzugang löschen",

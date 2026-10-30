@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId } from "@k2b/cloud/ai";
+import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { sql } from "bun";
 import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
-import { app } from "../config";
 import { agentHost, hostFetch } from "./agent-host";
 import { artifactDatabase } from "./database";
 import { appChecks } from "./html/check-service";
@@ -13,15 +13,16 @@ import { testIdentity } from "./test-identity";
 
 // Uses the production schemas prepared by `bun run test --integration`.
 databaseSuite()("Scheduled Code Mode", () => {
-  let originalTargets: string | undefined;
+  let targets: string[];
+  let policy: ReturnType<typeof spyOn<typeof settingsStore, "readKey">>;
+  const readSetting = settingsStore.readKey;
   beforeEach(() => {
-    originalTargets = process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = ["127.0.0.1", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])].join(",");
+    targets = ["127.0.0.1", "localhost", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])];
+    policy = spyOn(settingsStore, "readKey").mockImplementation((key) =>
+      key === "assistant.rsql_allowed_targets" ? Promise.resolve(targets) : readSetting(key),
+    );
   });
-  afterEach(() => {
-    if (originalTargets === undefined) delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    else process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = originalTargets;
-  });
+  afterEach(() => policy.mockRestore());
 
   test("runs with a real task mandate alongside a foreground turn and fails closed after revocation", async () => {
     const previousOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
@@ -238,7 +239,7 @@ databaseSuite()("Scheduled Code Mode", () => {
       await sql`INSERT INTO auth.users(id,uid,provider,profile,display_name) VALUES(${userId}::uuid,${userId},'local','user','Background check test')`;
       const identity = testIdentity(userId);
       const conversation = await aiConversations.createConversation({ ownerUserId: userId, title: "Background check" });
-      const settings = spyOn(app.settings, "get").mockImplementation(
+      const settings = spyOn(settingsStore, "readKey").mockImplementation(
         async (key) =>
           ({
             "assistant.storage_total_mib": 250,

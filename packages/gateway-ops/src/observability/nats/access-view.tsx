@@ -7,6 +7,7 @@ export function NatsAccessView(props: {
   locale: string;
   attention: Attention;
   values: NatsAccessValues;
+  accessRequired?: boolean;
   unreadable: Record<"servers" | "kind" | "access" | "ca", boolean>;
 }) {
   const { t } = natsMessages.resolve([props.locale]);
@@ -14,7 +15,7 @@ export function NatsAccessView(props: {
     <ObservabilityArea c={props.c} locale={props.locale} section="nats" attention={props.attention}>
       <ObservabilityPane label={t.access} description={t.accessDescription} saveStatus>
         <NatsSyncTabs current="access" locale={props.locale} />
-        <NatsAccessForm values={props.values} unreadable={props.unreadable} />
+        <NatsAccessForm values={props.values} unreadable={props.unreadable} accessRequired={props.accessRequired} />
       </ObservabilityPane>
     </ObservabilityArea>
   );
