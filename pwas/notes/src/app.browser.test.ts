@@ -215,6 +215,11 @@ describe("k2b notes · Produktions-SPA", () => {
     const previousCount = await cards().count();
     await page.goto(`${origin}/beispiel`);
     await page.getByRole("status").filter({ hasText: "Beispiel · nichts wird gespeichert" }).waitFor();
+    // The Notebooks presentation renders the example's notice instead of its `:::note` source.
+    await page.locator(".cm-notice-card-widget").first().waitFor();
+    // The `:::chart` block is drawn in the browser, and the checklist shows boxes.
+    await page.locator(".cm-query-block-preview svg").first().waitFor();
+    expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
     await editor().fill("Diese Beispieländerung darf nicht gespeichert werden");
     await back().click();
     await page.getByText("9 Notizen in diesem Browser", { exact: true }).waitFor();
@@ -223,6 +228,9 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.goto(`${origin}/beispiel`);
     await editor().waitFor();
     expect(await editor().innerText()).not.toContain("Diese Beispieländerung");
+    // A tag shows as a pill; a click opens the overview filtered by it.
+    await page.locator(".n-tagpill", { hasText: "#ideen" }).click();
+    await page.waitForURL(`${origin}/?tag=ideen`);
   }, 20_000);
 
   test("Teilen: Zustimmung, sichtbarer 503-Fehler, Retry mit Links und einmaligem Cloud-Hinweis", async () => {
@@ -263,6 +271,37 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.getByRole("button", { name: "Teilen", exact: true }).click();
     await dialog.getByRole("heading", { name: "Notiz ist geteilt", exact: true }).waitFor();
     expect(await cloud.count()).toBe(0);
+  }, 25_000);
+
+  test("Geteilte Notiz: jede Eingabe erreicht das Dokument, kein Editor-Plugin fällt aus", async () => {
+    // Writing the record on each keystroke once reconfigured the editor inside its own update; CodeMirror then switched
+    // the Yjs binding off and later typing never reached the note.
+    const crashes: string[] = [];
+    page.on("console", (message) => {
+      if (message.text().includes("plugin crashed")) crashes.push(message.text());
+    });
+    await page.route("**/api/pads", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await route.fulfill({ status: 201, json: { readId: READ_ID, editId: EDIT_ID } });
+    });
+    await createNote("Geteilt");
+    await page.getByRole("button", { name: "Teilen", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("checkbox", { name: /Ich halte mich an die Nutzungsbedingungen/ }).check();
+    await dialog.getByRole("checkbox", { name: /Ich habe die Datenschutzhinweise gelesen/ }).check();
+    await dialog.getByRole("button", { name: "Links erstellen", exact: true }).click();
+    await dialog.getByRole("button", { name: "Fertig", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await editor().click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" eins");
+    await page.keyboard.type(" zwei");
+    // The title is derived from the note's Yjs text, so it only changes when typing reached the document.
+    await page.waitForFunction(() => document.querySelector('[role="textbox"]')?.getAttribute("aria-label") === "Geteilt eins zwei");
+    await page.reload();
+    await editor().waitFor();
+    await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent?.includes("zwei"), undefined, { timeout: 5_000 });
+    expect(crashes).toEqual([]);
   }, 25_000);
 
   test("Löschen einer geteilten Notiz: mit Server weg, ohne Server ausstehend, ohne Wiederholungsschleife", async () => {
@@ -338,6 +377,9 @@ describe("k2b notes · Produktions-SPA", () => {
       for (const title of ["Lauftraining Herbst", "Lissabon im März", "Sauerteig – Notizen"]) {
         expect(await cards().filter({ hasText: title }).first().isVisible()).toBe(true);
       }
+      // The editor presentation is part of the offline app, not only the plain editor.
+      await page.goto(`${origin}/beispiel`);
+      await page.locator(".cm-notice-card-widget").first().waitFor();
     } finally {
       await context.setOffline(false);
     }
