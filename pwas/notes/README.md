@@ -21,7 +21,7 @@ and `migrations/`; the SPA owns `src/`, `index.html`, and its build script.
 - [x] Checked image/PDF files in Postgres.
 - [x] Explicit human-open signal and six-month expiry.
 - [ ] Reports, password-protected moderation, and decision log.
-- [ ] Escaped link metadata and a network-free 1200 × 630 preview.
+- [x] Escaped link metadata and a network-free 1200 × 630 preview.
 - [ ] SPA/API/WebSocket image and graceful shutdown.
 
 Run the integration files through the repository test runner with
@@ -138,3 +138,20 @@ Administrative sessions, decisions and removal audits remain available when the
 application budget is full. Their bounded records are still accounted for and
 may exceed the application threshold so the operator can free storage. Public
 note creation, uploads, reports and updates remain subject to their thresholds.
+
+## Website and link previews
+
+The production entrypoint serves the built SPA from `dist/`, alongside the API
+and WebSocket. Build outputs are enumerated at startup; source maps are not
+served. Unknown API or asset paths return 404. Shared pages insert escaped
+Open Graph text into the `<!--og-->` marker of the same index file. The
+canonical URL remains the requested link; the image URL always uses the read
+link. Inactive notes serve the SPA error state without stale metadata.
+
+`GET /p/:readId/preview.png` produces a 1200 × 630 PNG from local text and
+numeric chart data. The renderer never receives note URLs, HTML, SVG, or image
+bytes. At most one render runs at a time; other notes receive the retryable
+`preview_busy` state. A process cache holds at most `NOTES_MAX_OPEN_PADS` images,
+keyed by content hash. No GET or HEAD writes to Postgres or updates human-open
+dates. HEAD validates access but does not render. Cache hits still check the
+current note status, including deletion and blocking.
