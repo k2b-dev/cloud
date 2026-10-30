@@ -3,10 +3,11 @@ import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/s
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
+import { createEditor } from "@k2b/editor";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
 import { Button, FileDropTarget, NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
-import { TextEditor, type TextEditorControls } from "@k2b/ui/text-editor";
+import { TextEditor } from "@k2b/ui/text-editor";
 import { type Accessor, createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { yCollab } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
@@ -30,7 +31,6 @@ import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import {
   caretIntoTableCell,
   cellFormattingKeys,
-  createDynamicExtensions,
   tableCellCompletions,
   tableCellPresence,
   tableCellSearch,
@@ -468,10 +468,11 @@ function EditorInstance(
   awareness.setLocalStateField("cursor", null);
 
   // One shared editor view; Notebook extensions reconfigure their own compartments of it.
-  const extensions = createDynamicExtensions();
-  const addExtension = extensions.add;
-  const [editorView, setEditorView] = createSignal<EditorView>();
-  const [tableControls, setTableControls] = createSignal<TextEditorControls>();
+  // Reactive extensions are slots of the one shared view; the toolbar formats the same editor.
+  const editorState = createEditor();
+  const addExtension = editorState.use;
+  const editorView = editorState.view;
+  const tableControls = editorState.controls;
   let openTablePicker = () => {};
   const tablePresentation = createNotebookTablePresentation({ notebookId: props.notebookId, locale });
   const comments = createEditorComments({
@@ -1375,7 +1376,7 @@ function EditorInstance(
             // Notebook keeps its own Markdown presentation, toolbar and view menu; the engine adds the shared table grid.
             presentation={() => []}
             toolbar={false}
-            extensions={extensions.extension()}
+            extensions={editorState.extension()}
             maxLength={NOTE_EDITOR_MAX_LENGTH}
             host={{
               undo: () => runHistory("undo"),
@@ -1390,9 +1391,7 @@ function EditorInstance(
             onDroppedImages={(count, files) => files.length >= count}
             onAttachImages={() => openAttachmentPicker(props.notebookId, locale())}
             onReady={(controller, controls) => {
-              extensions.attach(controller.view);
-              setTableControls(controls);
-              setEditorView(controller.view);
+              editorState.attach(controller.view, { controller, controls });
             }}
           />
           {comments.margin(
@@ -1420,7 +1419,7 @@ function EditorInstance(
           fallback={
             <EditorToolbar
               connected={!collabStarted() || connected()}
-              editorView={editorView()}
+              editor={editorState}
               notebookId={props.notebookId}
               noteId={props.noteId}
               initialPanelOpen={panelOpen()}

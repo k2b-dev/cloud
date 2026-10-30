@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { EditorState, Facet } from "@codemirror/state";
+import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { TableHost } from "@k2b/ui/text-editor";
-import { createRoot, createSignal } from "solid-js";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
@@ -10,9 +9,7 @@ import { createDomTestHarness } from "../../../../../ui/test/dom";
 // The public browser entry defines Solid controls at import time; install the DOM first.
 const bootstrap = createDomTestHarness();
 const { tableGrid, tableHost } = await import("@k2b/ui/text-editor");
-const { caretIntoTableCell, cellAt, createDynamicExtensions, outsideTable, tableAround, tableCellPresence } = await import(
-  "./shared-editor"
-);
+const { caretIntoTableCell, cellAt, outsideTable, tableAround, tableCellPresence } = await import("./shared-editor");
 bootstrap.cleanup();
 
 const doc = "Intro\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n| Ink | =SUM(Cost) |\n\nAfter";
@@ -34,31 +31,6 @@ const cell = (root: HTMLElement, row: number, column: number) => {
 };
 
 describe("Notebook shared editor adapter", () => {
-  test("reactive extensions reconfigure only their own compartment of the one view", () => {
-    const dom = createDomTestHarness();
-    const marker = Facet.define<string, string[]>();
-    const [mode, setMode] = createSignal("rich");
-    let dispose!: () => void;
-    let extensions!: ReturnType<typeof createDynamicExtensions>;
-    createRoot((root) => {
-      dispose = root;
-      extensions = createDynamicExtensions();
-      extensions.add(marker.of("static"));
-      extensions.add(() => marker.of(mode()));
-    });
-    const view = new EditorView({ parent: dom.root, state: EditorState.create({ extensions: extensions.extension() }) });
-    try {
-      extensions.attach(view);
-      expect(view.state.facet(marker)).toEqual(["static", "rich"]);
-      setMode("source");
-      expect(view.state.facet(marker)).toEqual(["static", "source"]);
-    } finally {
-      dispose();
-      view.destroy();
-      dom.cleanup();
-    }
-  });
-
   test("table lookup addresses grid cells and moves block insertions after the table", () => {
     const state = EditorState.create({ doc });
     const table = tableAround(state, doc.indexOf("Paper"));

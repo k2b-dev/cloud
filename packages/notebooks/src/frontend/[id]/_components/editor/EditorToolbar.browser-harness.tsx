@@ -2,8 +2,9 @@ import { history, redo, undo } from "@codemirror/commands";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { createEditor } from "@k2b/editor";
 import { LocaleProvider, ScrollArea } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { notebooksYjs } from "../../../../lib/yjs";
 import { basicExtensions } from "../../../lib/editor/basic";
@@ -21,6 +22,11 @@ function Harness() {
   let host!: HTMLDivElement;
   let scrollPort: HTMLDivElement | undefined;
   const [view, setView] = createSignal<EditorView>();
+  const editorState = createEditor();
+  createEffect(() => {
+    const current = view();
+    if (current) editorState.attach(current);
+  });
   const [toolbarMounted, setToolbarMounted] = createSignal(true);
   const locale = new URLSearchParams(window.location.search).get("locale") ?? "en";
   let pending = false;
@@ -123,7 +129,7 @@ function Harness() {
             fallback={
               <EditorToolbar
                 connected={true}
-                editorView={view()}
+                editor={editorState}
                 notebookId="Book01"
                 noteId="Note01"
                 initialPanelOpen={false}

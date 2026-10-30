@@ -103,6 +103,33 @@ describe("@k2b/editor building blocks", () => {
     expect(page.view().state.doc.toString()).toBe("word");
   });
 
+  test("reactive extensions reconfigure only their own slot of the one view", async () => {
+    const { EditorState, Facet } = await import("@codemirror/state");
+    const { EditorView } = await import("@codemirror/view");
+    const { createSignal } = await import("solid-js");
+    const dom = createDomTestHarness();
+    const marker = Facet.define<string, string[]>();
+    const [mode, setMode] = createSignal("rich");
+    const { editor, dispose } = createRoot((dispose) => {
+      const editor = createEditor();
+      editor.use(marker.of("static"));
+      editor.use(() => marker.of(mode()));
+      return { editor, dispose };
+    });
+    await Promise.resolve();
+    const view = new EditorView({ parent: dom.root, state: EditorState.create({ extensions: editor.extension() }) });
+    try {
+      editor.attach(view);
+      expect(view.state.facet(marker)).toEqual(["static", "rich"]);
+      setMode("source");
+      expect(view.state.facet(marker)).toEqual(["static", "source"]);
+    } finally {
+      dispose();
+      view.destroy();
+      dom.cleanup();
+    }
+  });
+
   test("an extension added after mount joins the view and leaves with its owner", async () => {
     using page = mount("text");
     await Promise.resolve();

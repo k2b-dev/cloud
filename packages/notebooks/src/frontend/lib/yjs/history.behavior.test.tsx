@@ -17,7 +17,15 @@ const { listCommandsExtension } = await import("../editor/list-commands");
 const { caretFormat, insertTable } = await import("../../[id]/_components/editor/editor-actions");
 const { default: EditorToolbar } = await import("../../[id]/_components/editor/EditorToolbar");
 const { LocaleProvider } = await import("@k2b/ui");
+const { createEditor } = await import("@k2b/editor");
 loading.cleanup();
+
+/** The shared editor state the toolbar formats, bound to a test view. */
+const editorFor = (view: EditorView) => {
+  const editor = createEditor();
+  editor.attach(view);
+  return editor;
+};
 
 const mount = (doc: string, extensions: Extension[] = []) => {
   const dom = createDomTestHarness();
@@ -77,7 +85,7 @@ describe("Yjs undo boundaries", () => {
           <LocaleProvider locale="en">
             <EditorToolbar
               connected
-              editorView={clientA.view}
+              editor={editorFor(clientA.view)}
               notebookId="Book01"
               noteId="Note01"
               initialPanelOpen={false}
