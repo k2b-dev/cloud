@@ -62,9 +62,7 @@ export const app = defineApp({
       section: "observability",
       id: "gateway",
       label: "Gateway",
-      links: [
-        { href: "/admin/observability/gateway/routes", icon: "ti-route", label: "Routes" },
-      ],
+      links: [{ href: "/admin/observability/gateway/routes", icon: "ti-route", label: "Routes" }],
     },
     {
       section: "observability",

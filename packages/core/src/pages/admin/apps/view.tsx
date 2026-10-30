@@ -6,7 +6,7 @@ import { For, type JSX, Show } from "solid-js";
 import Access from "./Access.island";
 import AddApp from "./AddApp.island";
 import AppRowMenu from "./AppRowMenu.island";
-import type { AppsFormat } from "./format";
+import { type AppsFormat, providerValues } from "./format";
 import Keys, { type KeysProps } from "./Keys.island";
 import KeysCreate from "./KeysCreate.island";
 import { keysMessages } from "./keys-messages";
@@ -39,6 +39,8 @@ export type AppPageData = {
   revokedKeyName: string | null;
   /** Providers that did not answer for this app. */
   providerFailures: readonly string[];
+  /** The app's access rule as one phrase, for a rule the app fixes itself. */
+  accessRule: string;
   /** Display names of known apps by ID, for publishers of heard events. */
   appNames: ReadonlyMap<string, string>;
 };
@@ -420,7 +422,6 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
   const selected = props.data.query.view;
   const neverStarted = entry.neverStarted;
   const providerOnly = !entry.coreKnows && !entry.live;
-  const numbers = entry.numbers.find((item) => item.traffic) ?? entry.numbers[0];
   const unavailable = props.app.providerFailures.length > 0 || entry.numbersUnavailable;
   const routes = routeSummary(entry.routes);
   const runtimeValue = () => {
@@ -436,35 +437,25 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
       </>
     );
   };
-  const trafficValue = (): JSX.Element => {
-    if (neverStarted) return "–";
-    const traffic = numbers?.traffic;
-    const value = traffic
-      ? t.trafficValue({
-          requests: f.number(traffic.requests),
-          rate: traffic.requests ? f.percent(traffic.errors / traffic.requests) : f.percent(0),
-          ms: traffic.avgMs !== null ? f.ms(traffic.avgMs) : null,
-        })
-      : numbers
-        ? t.noMeasurements
-        : unavailable
-          ? null
-          : t.noMeasurements;
-    return <ProviderValue part="traffic" initial={value} unavailable={unavailable && !traffic} unavailableLabel={t.unavailable} />;
-  };
-  const errorsValue = (): JSX.Element => {
-    if (neverStarted) return "–";
-    const traffic = numbers?.traffic;
-    return (
+  const values = providerValues(t, f, entry.numbers, unavailable);
+  const trafficValue = (): JSX.Element =>
+    neverStarted ? (
+      "–"
+    ) : (
+      <ProviderValue part="traffic" initial={values.traffic} unavailable={values.unavailable} unavailableLabel={t.unavailable} />
+    );
+  const errorsValue = (): JSX.Element =>
+    neverStarted ? (
+      "–"
+    ) : (
       <ProviderValue
         part="errors"
-        initial={traffic ? t.errorsValue({ count: traffic.errors }) : numbers ? t.noMeasurements : null}
-        unavailable={unavailable && !traffic}
+        initial={values.errors}
+        unavailable={values.unavailable}
         unavailableLabel={t.unavailable}
-        tone={traffic && traffic.requests > 0 && traffic.errors / traffic.requests >= 0.01 ? "danger" : undefined}
+        tone={values.errorsTone}
       />
     );
-  };
   const accessValue = (): JSX.Element => {
     if (neverStarted) return t.removeOffNever;
     if (providerOnly) return "–";
@@ -473,7 +464,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
       if (entry.access && entry.access.managers === 0) return <span class="text-(--k2b-warning-text)">{t.accessNobody}</span>;
       return entry.access ? t.accessValue({ people: entry.access.people, groups: entry.access.groups }) : t.unknown;
     }
-    return details?.access.kind === "resources" || entry.accessKind === "resources" ? t.accessResources : t.accessUnknown;
+    return entry.accessKind === "resources" ? t.accessResources : props.app.accessRule;
   };
   const keysValue = (): JSX.Element => {
     const keys = entry.keys;
@@ -618,7 +609,15 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
         {(href) => <Row icon="ti ti-settings" label={t.adminOf({ name: entry.name })} href={href()} external app={entry.id} />}
       </Show>
       <For each={links}>
-        {(link) => <Row icon={LINK_ICON[link.kind ?? "other"]} label={link.label} href={link.href} external app={entry.id} />}
+        {(link) => (
+          <Row
+            icon={LINK_ICON[link.kind ?? "other"] ?? "ti ti-external-link"}
+            label={link.label}
+            href={link.href}
+            external
+            app={entry.id}
+          />
+        )}
       </For>
       <Show
         when={entry.removable && !neverStarted}
@@ -725,7 +724,7 @@ function EventsColumn(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageD
                 </Show>
               </div>
               <div class="mt-0.5 text-[12.5px] text-dimmed">
-                <code>{`${hearing.eventType} v${hearing.version}`}</code>
+                <code class="font-mono text-[12px]">{`${hearing.eventType} v${hearing.version}`}</code>
                 {` · ${d.from({ app: props.app.appNames.get(hearing.publisherAppId) ?? hearing.publisherAppId })}`}
                 {hearing.counts.done ? ` · ${d.delivered({ count: hearing.counts.done })}` : ""}
               </div>
@@ -778,7 +777,7 @@ function EventsColumn(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageD
                 </Show>
               </div>
               <div class="mt-0.5 text-[12.5px] text-dimmed">
-                <code>{`${event.type} v${event.version}`}</code>
+                <code class="font-mono text-[12px]">{`${event.type} v${event.version}`}</code>
                 {` · ${d.subscribers({ count: event.subscriberCount })}`}
               </div>
             </div>

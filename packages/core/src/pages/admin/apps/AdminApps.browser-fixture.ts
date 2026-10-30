@@ -281,6 +281,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
                     details,
                     revokedKeyName: keys.find((item) => item.status === "revoked")?.name ?? null,
                     providerFailures: state === "provider" ? ["Gateway"] : [],
+                    accessRule: entry.accessKind === "noGuests" ? "Alle außer Gästen" : "Alle angemeldeten Personen",
                     appNames: new Map([
                       ["contacts", "Kontakte"],
                       ["files", "Dateien"],

@@ -13,7 +13,9 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
 
 const render = (props: { note?: string; noteTone?: "neutral" | "warning" | "danger" }) =>
-  renderToString(() => createComponent(AppWorkspace.SidebarItem, { href: "/apps/mail", description: "0.53.0 · /mail", ...props, children: "Mail" }));
+  renderToString(() =>
+    createComponent(AppWorkspace.SidebarItem, { href: "/apps/mail", description: "0.53.0 · /mail", ...props, children: "Mail" }),
+  );
 
 test("a note is a third line after the description and carries its tone", () => {
   const html = render({ note: "3 deliveries failed", noteTone: "danger" });

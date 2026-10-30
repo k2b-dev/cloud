@@ -1,13 +1,12 @@
 import { type AppRegistryDetail, assessRuntimeCompatibility, listAppsDetailed, readAppRegistrySnapshot } from "@k2b/cloud";
 import { appAccessMessages } from "@k2b/cloud/access/ui";
-import type { AppAccessRule } from "@k2b/cloud/contracts";
+import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/server";
 import {
   AppAccessManagementError,
   accounts,
   appAdminFacts,
   appDetails,
-  appKeys,
   canRepairAppAccess,
   coreSettings,
   latestGatewayRouteSnapshot,
@@ -15,6 +14,7 @@ import {
   readAppAccess,
   serviceAccountCredentials,
 } from "@k2b/cloud/services";
+import { appKeys } from "@k2b/cloud/services/app-keys";
 import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { AdminLayout, getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
 import { createAppStatusReader } from "../../../app-status";
@@ -40,12 +40,13 @@ const linkOf = (numbers: readonly ProviderNumbers[], kind: "logs" | "metrics" | 
 
 /** How many Queries and Actions the app offers, from its current catalog entry. */
 const capabilityCount = async (appId: string, locale: string, authority: Parameters<typeof getCapabilityCatalogApp>[2]) => {
-  const app = await getCapabilityCatalogApp(appId, locale, authority).catch(() => null);
+  const read = await getCapabilityCatalogApp(appId, locale, authority).catch(() => null);
+  const app = read?.ok ? read.data : null;
   return app ? app.manifest.queries.length + app.manifest.actions.length : null;
 };
 
 /** The access rule as one phrase, in the words of the access editor. */
-const ruleLabel = (locale: string, access: AppAccessRule | undefined): string => {
+const ruleLabel = (locale: string, access: AppRegistryEntry["access"]): string => {
   const t = appAccessMessages.resolve([locale]).t;
   switch (access?.kind) {
     case "resources":
@@ -340,6 +341,7 @@ export default ssr<AuthContext>(async (c) => {
           details,
           revokedKeyName: keyList?.find((key) => key.status === "revoked")?.name ?? null,
           providerFailures,
+          accessRule: ruleLabel(locale, liveApp?.access ?? localized.get(entry.id)?.access),
           appNames: new Map(entries.map((candidate) => [candidate.id, candidate.name])),
         }
       : null,
