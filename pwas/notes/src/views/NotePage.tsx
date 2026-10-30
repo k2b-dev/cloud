@@ -282,6 +282,32 @@ export function NotePage(props: { mode: NoteMode }) {
     }),
   );
 
+  // Files of this note as object URLs, so images show offline; a shared note falls back to the server copy.
+  const [files, setFiles] = createSignal<Record<string, string>>({});
+  const showFile = (key: string, blob: Blob) => setFiles((current) => ({ ...current, [key]: URL.createObjectURL(blob) }));
+  createEffect(
+    on(recordId, (id) => {
+      let active = true;
+      onCleanup(() => {
+        active = false;
+        for (const url of Object.values(untrack(files))) URL.revokeObjectURL(url);
+        setFiles({});
+      });
+      if (id)
+        void app
+          .store()
+          ?.listFiles(id)
+          .then((list) => {
+            if (active) for (const file of list) showFile(file.key, file.blob);
+          });
+    }),
+  );
+  const remoteFile = createMemo(() => {
+    const share = record()?.share;
+    if (!share) return undefined;
+    return (key: string) => api.fileUrl(share.readId, key);
+  });
+
   const keepCopy = async () => {
     const current = opened();
     if (!current) return;
@@ -329,6 +355,7 @@ export function NotePage(props: { mode: NoteMode }) {
         continue;
       }
       const key = await store.putFile(current.id, file, original.name);
+      showFile(key, file);
       room -= 1;
       const share = current.share;
       const editId = share?.kind === "own" ? share.editId : share?.kind === "foreign" && share.role === "edit" ? share.linkId : null;
@@ -482,6 +509,8 @@ export function NotePage(props: { mode: NoteMode }) {
                 if (focusNext === record()?.id) focusNext = null;
               }}
               onFiles={(list) => void addFiles(list)}
+              files={files()}
+              remoteFile={remoteFile()}
             />
           )}
         </Show>

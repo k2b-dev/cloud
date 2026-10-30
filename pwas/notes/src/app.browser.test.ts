@@ -215,6 +215,11 @@ describe("k2b notes · Produktions-SPA", () => {
     const previousCount = await cards().count();
     await page.goto(`${origin}/beispiel`);
     await page.getByRole("status").filter({ hasText: "Beispiel · nichts wird gespeichert" }).waitFor();
+    // The Notebooks presentation renders the example's notice instead of its `:::note` source.
+    await page.locator(".cm-notice-card-widget").first().waitFor();
+    // The `:::chart` block is drawn in the browser, and the checklist shows boxes.
+    await page.locator(".cm-query-block-preview svg").first().waitFor();
+    expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
     await editor().fill("Diese Beispieländerung darf nicht gespeichert werden");
     await back().click();
     await page.getByText("9 Notizen in diesem Browser", { exact: true }).waitFor();
@@ -223,6 +228,9 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.goto(`${origin}/beispiel`);
     await editor().waitFor();
     expect(await editor().innerText()).not.toContain("Diese Beispieländerung");
+    // A tag shows as a pill; a click opens the overview filtered by it.
+    await page.locator(".n-tagpill", { hasText: "#ideen" }).click();
+    await page.waitForURL(`${origin}/?tag=ideen`);
   }, 20_000);
 
   test("Teilen: Zustimmung, sichtbarer 503-Fehler, Retry mit Links und einmaligem Cloud-Hinweis", async () => {
@@ -338,6 +346,9 @@ describe("k2b notes · Produktions-SPA", () => {
       for (const title of ["Lauftraining Herbst", "Lissabon im März", "Sauerteig – Notizen"]) {
         expect(await cards().filter({ hasText: title }).first().isVisible()).toBe(true);
       }
+      // The editor presentation is part of the offline app, not only the plain editor.
+      await page.goto(`${origin}/beispiel`);
+      await page.locator(".cm-notice-card-widget").first().waitFor();
     } finally {
       await context.setOffline(false);
     }
