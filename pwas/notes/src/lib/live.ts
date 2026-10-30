@@ -48,6 +48,8 @@ export function connectLive(options: {
   let attempt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
+  /** Deleted, expired, blocked or read-only: this link will not work again, so nothing reconnects. */
+  let terminal = false;
   let synced = false;
   /** Set once this socket sent the server what it was missing; later edits go one by one. */
   let answered = false;
@@ -210,7 +212,7 @@ export function connectLive(options: {
   };
 
   const connect = () => {
-    if (closed) return;
+    if (closed || terminal) return;
     if (!navigator.onLine) {
       setStatus("offline");
       wasOffline = true;
@@ -242,6 +244,7 @@ export function connectLive(options: {
       refreshPeople();
       if (closed) return;
       if (NO_RETRY_REASONS.has(event.reason)) {
+        terminal = true;
         if (event.reason !== "read_only") {
           setStatus("gone");
           options.onGone?.(event.reason === "blocked" ? "blocked" : event.reason === "expired" ? "expired" : "deleted");
@@ -263,6 +266,7 @@ export function connectLive(options: {
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
       if (code === "not_found" || code === "gone" || code === "blocked") {
+        terminal = true;
         setStatus("gone");
         options.onGone?.(code === "blocked" ? "blocked" : code === "gone" ? "expired" : "not_found");
         return true;
@@ -280,6 +284,7 @@ export function connectLive(options: {
     }, delay);
   };
   const online = () => {
+    if (terminal) return;
     if (timer) clearTimeout(timer);
     timer = undefined;
     attempt = 0;
