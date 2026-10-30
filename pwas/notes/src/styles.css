@@ -1499,3 +1499,22 @@ body.k2b-ui {
 .n-editor .cm-content > .cm-line:first-child * {
   text-decoration: none;
 }
+/* The editor keeps a 24 px row for table notices above the text; the page padding gives it back, so the
+   title sits where the mockup puts it. */
+.k2b-ui .n-doc {
+  padding-top: calc(2.75rem - 24px);
+}
+.k2b-ui .n-doc[data-first] {
+  padding-top: calc(4.5rem - 24px);
+}
+.k2b-ui .n-doc[data-first] .k2b-ste-host {
+  min-height: 0;
+}
+@container page (max-width: 640px) {
+  .k2b-ui .n-doc {
+    padding-top: calc(1.5rem - 24px);
+  }
+  .k2b-ui .n-doc[data-first] {
+    padding-top: calc(2.5rem - 24px);
+  }
+}
