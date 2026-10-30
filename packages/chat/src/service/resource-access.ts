@@ -156,6 +156,8 @@ export const readResource = async (
   dependencies = resourceReaderDependencies,
   onUnavailable?: () => void,
 ): Promise<ResourceDecision | null> => {
+  if (context.authorizedResources !== undefined)
+    return context.authorizedResources.find((entry) => entry.ref.type === ref.type && entry.ref.id === ref.id)?.decision ?? null;
   if (!context.caller) return null;
   let pending = pendingReaders.get(context.caller);
   if (!pending) {

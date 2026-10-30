@@ -4,6 +4,8 @@ export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      viaAssistant: "via Assistant",
+      viaMcp: "via MCP",
       notificationMembershipRequired: "Open the chat before changing notifications or following a discussion.",
       notificationsLabel: "Notifications",
       notificationsAll: "All messages",
@@ -497,6 +499,8 @@ export const chatMessages = i18n.define({
       logs: "Logs",
     },
     de: {
+      viaAssistant: "über Assistant",
+      viaMcp: "über MCP",
       notificationMembershipRequired: "Öffne den Chat, bevor du Benachrichtigungen änderst oder einer Diskussion folgst.",
       notificationsLabel: "Benachrichtigungen",
       notificationsAll: "Alle Nachrichten",

@@ -908,7 +908,7 @@ describe("capability API", () => {
     const routes = createCapabilityRoutes({
       getCapability: async () => entry(),
       authenticate,
-      fetch: async () => Response.json({ code: "RATE_LIMITED", message: "Retry later" }, { status: 429 }),
+      fetch: async () => Response.json({ code: "RATE_LIMITED", message: "Retry later", details: { retryAfter: 7 } }, { status: 429 }),
     });
     const response = await routes.request("/capabilities/v1/queries/demo/get", {
       method: "POST",
@@ -916,7 +916,23 @@ describe("capability API", () => {
       body: JSON.stringify({ input: { id: "one" } }),
     });
     expect(response.status).toBe(429);
-    expect(await response.json()).toEqual({ code: "RATE_LIMITED", message: "Retry later" });
+    expect(response.headers.get("retry-after")).toBe("7");
+    expect(await response.json()).toEqual({ code: "RATE_LIMITED", message: "Retry later", details: { retryAfter: 7 } });
+  });
+
+  test.each([0, -1, 1.5, "7", Number.MAX_SAFE_INTEGER + 1])("throttling omits invalid Retry-After %p", async (retryAfter) => {
+    const routes = createCapabilityRoutes({
+      getCapability: async () => entry(),
+      authenticate,
+      fetch: async () => Response.json({ code: "RATE_LIMITED", message: "Retry later", details: { retryAfter } }, { status: 429 }),
+    });
+    const response = await routes.request("/capabilities/v1/queries/demo/get", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { id: "one" } }),
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeNull();
   });
 
   test("dispatches only advertised Action reviews through the read-only review route", async () => {
