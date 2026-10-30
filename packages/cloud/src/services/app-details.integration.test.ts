@@ -50,10 +50,7 @@ const capabilities: CapabilityRegistryEntry = {
   presentation: { baseLocale: "en", translations: { de: { events: { changed: { title: "Geändert", description: "Eintrag geändert" } } } } },
 };
 let online = true;
-const details = createAppDetailsService({
-  getApp: async (appId) => (online && appId === app.id ? app : null),
-  capabilities: async () => (online ? [capabilities] : []),
-});
+let details: ReturnType<typeof createAppDetailsService>;
 const authenticate =
   (requestAuthority: RequestAuthority): MiddlewareHandler<AuthContext> =>
   async (c, next) => {
@@ -73,6 +70,10 @@ beforeAll(async () => {
   await migrateEvents();
   await migrateAppEvents();
   await migrateNotifications();
+  details = createAppDetailsService({
+    getApp: async (appId) => (online && appId === app.id ? app : null),
+    capabilities: async () => (online ? [capabilities] : []),
+  });
 }, 30_000);
 afterAll(async () => {
   if (database) {

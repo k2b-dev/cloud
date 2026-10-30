@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "../../src/runtime/clients";
-import "../../../mail/test/integration-preload";
 import { encryptSecret } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
@@ -12,44 +10,39 @@ import {
   emitWorkflowEvent,
   wakeWorkflowRunsWaitingOn,
 } from "@k2b/cloud/workflows/store";
-
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { mailCapabilities } from "../../../mail/src/capabilities";
-import { draftContentInputSchema } from "../../../mail/src/contracts";
-import { newShortId } from "../../../mail/src/lib/short-id";
-import { migrate } from "../../../mail/src/migrate";
-import { grantMailboxAccess } from "../../../mail/src/service/access";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
-import {
-  cancelPendingAutomaticRepliesInTransaction,
-  linkAutomaticReplyCommandInTransaction,
-  prepareAutomaticReplyInTransaction,
-} from "../../../mail/src/service/automatic-reply";
-import { listActivity } from "../../../mail/src/service/collaboration";
-import { executeMutationCommand, executeOutboxSubmission } from "../../../mail/src/service/command-runtime";
-import { imapSmtpConnector } from "../../../mail/src/service/connectors";
-import { createDraft, getDraft, listConversationDrafts } from "../../../mail/src/service/drafts";
-import { createMailbox } from "../../../mail/src/service/mailboxes";
-import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "../../../mail/src/service/message-protocol";
-import { ingestEnvelope } from "../../../mail/src/service/sync-runtime";
-import { getWorkflowSnapshot, type MailWorkflowTargetSnapshot, mailWorkflowEventContext } from "../../../mail/src/service/workflow-data";
-import {
-  activateWorkflow,
-  createWorkflow,
-  createWorkflowVersion,
-  deactivateWorkflow,
-  restoreWorkflowVersion,
-  updateWorkflowMetadata,
-} from "../../../mail/src/service/workflow-definition-service";
-import { mailWorkflowMessagePrecondition } from "../../../mail/src/service/workflow-message-preconditions";
-import { runMailWorkflow } from "../../../mail/src/service/workflow-runtime";
-import * as workflowBinder from "../../../mail/src/workflows/binder";
-import { snapshotMailWorkflowCatalog } from "../../../mail/src/workflows/catalog";
-import { mailWorkflows } from "../../../mail/src/workflows/module";
+import type { MailWorkflowTargetSnapshot } from "../../../mail/src/service/workflow-data";
 import { createAiProvider } from "../../src/ai/provider";
 import * as aiStructured from "../../src/ai/structured";
+import { sql } from "../../src/runtime/clients";
 import * as workflowAiRuntime from "../../src/workflows/ai/runtime";
 import { claimWorkflowAiTask, completeWorkflowAiTask } from "../../src/workflows/ai/store";
+
+// Select the final test database before domain modules capture native clients.
+await import("../../../mail/test/integration-preload");
+const { mailCapabilities } = await import("../../../mail/src/capabilities");
+const { draftContentInputSchema } = await import("../../../mail/src/contracts");
+const { newShortId } = await import("../../../mail/src/lib/short-id");
+const { migrate } = await import("../../../mail/src/migrate");
+const { grantMailboxAccess } = await import("../../../mail/src/service/access");
+const { cancelPendingAutomaticRepliesInTransaction, linkAutomaticReplyCommandInTransaction, prepareAutomaticReplyInTransaction } =
+  await import("../../../mail/src/service/automatic-reply");
+const { listActivity } = await import("../../../mail/src/service/collaboration");
+const { executeMutationCommand, executeOutboxSubmission } = await import("../../../mail/src/service/command-runtime");
+const { imapSmtpConnector } = await import("../../../mail/src/service/connectors");
+const { createDraft, getDraft, listConversationDrafts } = await import("../../../mail/src/service/drafts");
+const { createMailbox } = await import("../../../mail/src/service/mailboxes");
+const { EMPTY_MESSAGE_PROTOCOL_FACTS } = await import("../../../mail/src/service/message-protocol");
+const { ingestEnvelope } = await import("../../../mail/src/service/sync-runtime");
+const { getWorkflowSnapshot, mailWorkflowEventContext } = await import("../../../mail/src/service/workflow-data");
+const { activateWorkflow, createWorkflow, createWorkflowVersion, deactivateWorkflow, restoreWorkflowVersion, updateWorkflowMetadata } =
+  await import("../../../mail/src/service/workflow-definition-service");
+const { mailWorkflowMessagePrecondition } = await import("../../../mail/src/service/workflow-message-preconditions");
+const { runMailWorkflow } = await import("../../../mail/src/service/workflow-runtime");
+const workflowBinder = await import("../../../mail/src/workflows/binder");
+const { snapshotMailWorkflowCatalog } = await import("../../../mail/src/workflows/catalog");
+const { mailWorkflows } = await import("../../../mail/src/workflows/module");
 
 const suite = suiteFor("database", "nats");
 const noEffectBudget = {

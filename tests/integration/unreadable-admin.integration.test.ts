@@ -1,5 +1,4 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { artifactDatabase } from "../../packages/assistant/src/artifacts/database";
@@ -15,6 +14,7 @@ import {
   ContactDirectorySuggestInputSchema,
   ContactDirectorySuggestionSchema,
 } from "../../packages/cloud/src/contracts";
+import { redis, sql } from "../../packages/cloud/src/runtime/clients";
 import { crypto } from "../../packages/cloud/src/server/services";
 import { audit } from "../../packages/cloud/src/services/audit";
 import { session } from "../../packages/cloud/src/services/session";

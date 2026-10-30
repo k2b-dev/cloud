@@ -33,7 +33,7 @@ const entry: CapabilityRegistryEntry = {
   endpoint: "http://producer.test",
   manifest: compiled.manifest,
 };
-const broker = createAppEventBroker({ registry: async () => [entry], deadLetters: async () => [], streams: async function* () {} });
+let broker: ReturnType<typeof createAppEventBroker>;
 const authenticate: MiddlewareHandler<AuthContext> = async (context, next) => {
   const user = LocalUserSchema.parse({
     id: id(100),
@@ -59,7 +59,7 @@ const authenticate: MiddlewareHandler<AuthContext> = async (context, next) => {
   context.set("credentialKind", "session");
   await next();
 };
-const routes = createAppEventRoutes(authenticate, broker);
+let routes: ReturnType<typeof createAppEventRoutes>;
 let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
 beforeAll(async () => {
   if (!testInfra.database) return;
@@ -67,6 +67,9 @@ beforeAll(async () => {
   await migrateEvents();
   await migrateAppEvents();
   await migrateAudit();
+  // Factories retain their native pool; construct them after selecting the final test target.
+  broker = createAppEventBroker({ registry: async () => [entry], deadLetters: async () => [], streams: async function* () {} });
+  routes = createAppEventRoutes(authenticate, broker);
 });
 afterAll(async () => {
   if (database) {

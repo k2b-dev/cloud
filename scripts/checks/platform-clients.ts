@@ -1030,7 +1030,6 @@ export const baseline: Readonly<Record<string, number>> = {
   "tests/integration/identity/identity-keyring.integration.test.ts": 1,
   "tests/integration/identity/mandate-capability-policy.integration.test.ts": 1,
   "tests/integration/test-infra-redis-binding.integration.test.ts": 1,
-  "tests/integration/unreadable-admin.integration.test.ts": 2,
 };
 
 const delivered = new Set([

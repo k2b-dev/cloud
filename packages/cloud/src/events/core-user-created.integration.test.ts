@@ -1,22 +1,23 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
-import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
-import { migrate as migrateLogging } from "../../../core/src/migrate/core/logging";
 import type { AppEventEnvelope } from "../contracts/app-events";
 import { sql } from "../runtime/clients";
-import { freeipa } from "../server/services";
-import * as freeIpaConfig from "../services/freeipa-config";
-import { syncFromIpa } from "../services/ipa/sync";
-import { create } from "../services/providers/local/users";
-import * as settings from "../services/settings";
 import { startAppEventDelivery } from "./app-event-delivery";
 import { coreUserEventPublisher } from "./core-user-created";
 
-let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
+// Select the final test database before domain modules capture native clients.
+const database = testInfra.database ? await useFreshDatabase("user_created_events") : undefined;
+const { migrate: migrateAuth } = await import("../../../core/src/migrate/core/auth");
+const { migrate: migrateEvents } = await import("../../../core/src/migrate/core/events");
+const { migrate: migrateLogging } = await import("../../../core/src/migrate/core/logging");
+const { freeipa } = await import("../server/services");
+const freeIpaConfig = await import("../services/freeipa-config");
+const { syncFromIpa } = await import("../services/ipa/sync");
+const { create } = await import("../services/providers/local/users");
+const settings = await import("../services/settings");
+
 beforeAll(async () => {
   if (!testInfra.database) return;
-  database = await useFreshDatabase("user_created_events");
   await migrateAuth();
   await migrateEvents();
   await migrateLogging();
