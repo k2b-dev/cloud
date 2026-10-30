@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import {
   ChangesPageSchema,
+  ChatSnapshotSchema,
   ConversationSchema,
+  ForYouPageSchema,
   ItemEventsPageSchema,
   MessagePageSchema,
+  SharedPageSchema,
   SystemChatPageSchema,
   ThreadListSchema,
   ThreadSchema,
@@ -16,6 +20,7 @@ import {
 import { mockDiscussionCatalog, providerApp } from "../service/discussions.test-fixture";
 import { chatLiveChannels } from "../service/live-channels";
 import { accessKey, authorizationKey, resourceReaderDependencies } from "../service/resource-access";
+import { SearchResultSchema } from "../service/search-contracts";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -206,7 +211,7 @@ suiteFor(
     const page = SystemChatPageSchema.parse(await (await api(person, "/system-chats")).json());
     expect(page.skipped).toEqual(["inventory.collection"]);
     expect(page.items.map((entry) => entry.ref.type)).toEqual(["supplies.collection"]);
-    expect(page.cursors["inventory.collection"]).toBe("{}");
+    expect(page.cursors["inventory.collection"]).toEqual({});
     down = false;
     trackKeys(person, collection);
     const next = SystemChatPageSchema.parse(
@@ -349,7 +354,7 @@ suiteFor(
     expect(next.cursors[collection.type]).toBe("");
     expect([...first.items, ...next.items].map((entry) => entry.ref)).toEqual(refs.slice(1));
   });
-  test("warm container caches cannot hide budget-boundary threads or changes", async () => {
+  test("cold snapshots and directory continuations survive more than sixty item threads", async () => {
     const person = await f.person();
     const container = { ...collection, id: "44444444-4444-4444-8444-444444444444" };
     const refs = Array.from({ length: 61 }, (_, i) => ({ type: item.type, id: `55555555-5555-4555-8555-${String(i).padStart(12, "0")}` }));
@@ -375,26 +380,47 @@ suiteFor(
     f.trackChat(chat.id);
     const [stored] = await sql<{ id: string }[]>`SELECT id FROM chat.conversations WHERE short_id = ${chat.id}`;
     if (!stored) throw new Error("Missing test conversation");
-    for (const [index, ref] of refs.entries()) {
-      const [thread] = await sql<{ id: string }[]>`INSERT INTO chat.threads
-        (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id, last_activity_at)
-        VALUES (${`b${String(index).padStart(5, "0")}`}, ${stored.id}::uuid, 'Box', ${ref.type}, ${ref.id}, 'user', ${person.id}::uuid, '2026-10-29T12:00:00Z') RETURNING id`;
-      if (!thread) throw new Error("Missing test thread");
-      await sql`INSERT INTO chat.messages (short_id, conversation_id, thread_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id)
-        VALUES (${`b${String(index).padStart(9, "0")}`}, ${stored.id}::uuid, ${thread.id}::uuid, ${index + 1}, ${index + 1}, 'text', 'user', ${person.id}::uuid, 'Reader', 'Count this box', ${`budget-${index}`})`;
-    }
+    await sql`INSERT INTO chat.threads
+      (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id, last_activity_at)
+      SELECT 'b' || lpad((ordinal - 1)::text, 5, '0'), ${stored.id}::uuid, 'Box', ${item.type}, resource_id,
+        'user', ${person.id}::uuid, '2026-10-29T12:00:00Z'
+      FROM unnest(${toPgTextArray(refs.map((ref) => ref.id))}::text[]) WITH ORDINALITY AS resources(resource_id, ordinal)`;
+    await sql`INSERT INTO chat.messages
+      (short_id, conversation_id, thread_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id)
+      SELECT 'b' || lpad(right(short_id, 5), 9, '0'), conversation_id, id, right(short_id, 5)::int + 1,
+        right(short_id, 5)::int + 1, 'text', 'user', ${person.id}::uuid, 'Reader', 'Count this box', 'budget-' || right(short_id, 5)::int
+      FROM chat.threads WHERE conversation_id = ${stored.id}::uuid`;
     await sql`UPDATE chat.conversations SET seq_head = 61, rev = 61 WHERE id = ${stored.id}::uuid`;
+    await redis.send("DEL", trackKeys(person, container));
+    const snapshotResponse = await api(person, `/conversations/${chat.id}/snapshot`);
+    expect(snapshotResponse.status).toBe(200);
+    const snapshot = ChatSnapshotSchema.parse(await snapshotResponse.json());
+    expect(snapshot.conversation.summaryCursor).not.toBeNull();
+    expect(snapshot.threads.incomplete).toBeTrue();
+    expect(snapshot.threads.nextCursor).not.toBeNull();
     const first = ThreadListSchema.parse(await (await api(person, `/conversations/${chat.id}/threads`)).json());
-    expect(first.items).toHaveLength(59);
-    expect(first.nextCursor).toBe("b00058");
+    expect(first.items).toHaveLength(60);
+    expect(first.nextCursor).toBe("b00059");
     const second = ThreadListSchema.parse(await (await api(person, `/conversations/${chat.id}/threads?cursor=${first.nextCursor}`)).json());
-    expect(second.items).toHaveLength(2);
+    expect(second.items).toHaveLength(1);
     expect(second.nextCursor).toBeNull();
     expect(new Set([...first.items, ...second.items].map((thread) => thread.id)).size).toBe(61);
-    for (const ref of refs) await redis.send("DEL", trackKeys(person, ref));
+    await redis.send(
+      "DEL",
+      refs.flatMap((ref) => trackKeys(person, ref)),
+    );
     broken = true;
-    expect((await api(person, `/conversations/${chat.id}/changes?afterRev=0`)).status).toBe(500);
+    const failedResponse = await api(person, `/conversations/${chat.id}/changes?afterRev=0`);
+    expect(failedResponse.status).toBe(200);
+    const failed = ChangesPageSchema.parse(await failedResponse.json());
+    expect(failed.incomplete).toBeTrue();
+    expect(failed.messages.some((message) => message.thread === "b00000")).toBeFalse();
+    expect(failed.messages.length).toBeGreaterThan(0);
     broken = false;
+    await redis.send(
+      "DEL",
+      refs.flatMap((ref) => trackKeys(person, ref)),
+    );
     const changes = ChangesPageSchema.parse(await (await api(person, `/conversations/${chat.id}/changes?afterRev=0`)).json());
     expect(changes.messages).toHaveLength(59);
     expect(changes.rev).toBe(59);
@@ -404,5 +430,156 @@ suiteFor(
     expect(next.rev).toBe(61);
     expect(next.more).toBeFalse();
     expect(new Set([...changes.messages, ...next.messages].map((message) => message.id)).size).toBe(61);
+    await sql`UPDATE chat.messages m SET refs = jsonb_build_array(jsonb_build_object('type', t.resource_type, 'id', t.resource_id))
+      FROM chat.threads t WHERE m.thread_id = t.id AND m.conversation_id = ${stored.id}::uuid`;
+    await redis.send(
+      "DEL",
+      refs.flatMap((ref) => trackKeys(person, ref)),
+    );
+    reader.mockImplementation(async (_app: string, capability: string) => ({
+      data: {
+        view: {
+          title: "Box",
+          permission: "read",
+          ...(capability === "item.read" ? { container: { ref: container, title: "Warehouse" } } : {}),
+        },
+        padding: "x".repeat(200 * 1024),
+      },
+    }));
+    const shared = SharedPageSchema.parse(await (await api(person, `/conversations/${chat.id}/shared?kind=elements`)).json());
+    expect(shared.incomplete).toBeTrue();
+    expect(shared.nextCursor).toBe("");
+    const sharedRetry = SharedPageSchema.parse(await (await api(person, `/conversations/${chat.id}/shared?kind=elements&cursor=`)).json());
+    expect(sharedRetry.incomplete).toBeUndefined();
+    expect(sharedRetry.items).toHaveLength(30);
+    const recipient = await f.person();
+    trackKeys(recipient, container);
+    refs.forEach((ref) => trackKeys(recipient, ref));
+    await sql`INSERT INTO chat.message_mentions (message_id, principal_type, principal_id, start_offset, end_offset, created_at)
+      SELECT id, 'user', ${recipient.id}::uuid, 0, 1, '2026-10-29T12:00:00Z'
+      FROM chat.messages WHERE conversation_id = ${stored.id}::uuid`;
+    const forYou = ForYouPageSchema.parse(await (await api(recipient, "/for-you")).json());
+    expect(forYou.incomplete).toBeTrue();
+    expect(forYou.nextCursor).toBe("");
+    const forYouRetry = ForYouPageSchema.parse(await (await api(recipient, "/for-you?cursor=")).json());
+    expect(forYouRetry.incomplete).toBeUndefined();
+    expect(forYouRetry.items).toHaveLength(30);
+  }, 30_000);
+  test("missing open links and a broken item leave sibling summaries, messages and discovery usable", async () => {
+    const person = await f.person();
+    const collection = { type: "inventory.collection", id: "failure-isolation-container" };
+    const item = { type: "inventory.item", id: "failed-item" };
+    const nextCursor = '"'.repeat(2048);
+    trackKeys(person, collection);
+    reader.mockImplementation(async (_app: string, capability: string, input: Record<string, unknown>) => {
+      if (capability === "collection.containers") {
+        if (input.cursor !== undefined) {
+          expect(input.cursor).toBe(nextCursor);
+          return { data: { items: [], next: null } };
+        }
+        return { data: { items: [{ ref: collection, title: "Warehouse" }], next: nextCursor } };
+      }
+      if (input.id === item.id) throw new Error("One item offline");
+      return {
+        data: {
+          view: {
+            title: "Readable sibling",
+            permission: "read",
+            ...(capability === "item.read" ? { container: { ref: collection, title: "Warehouse" } } : {}),
+          },
+        },
+      };
+    });
+    const opened = await api(person, `/system-chats/${collection.type}/${collection.id}/open`, "POST");
+    expect(opened.status).toBe(200);
+    const chat = ConversationSchema.parse(await opened.json());
+    f.trackChat(chat.id);
+    const [stored] = await sql<{ id: string }[]>`SELECT id FROM chat.conversations WHERE short_id = ${chat.id}`;
+    if (!stored) throw new Error("Missing conversation");
+    const refs = [item, { ...item, id: "sibling" }];
+    for (const [i, ref] of refs.entries()) {
+      trackKeys(person, ref);
+      await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id)
+        VALUES (${`fail0${i}`}, ${stored.id}::uuid, 'Box', ${ref.type}, ${ref.id}, 'user', ${person.id}::uuid)`;
+    }
+    const summaryResponse = await api(person, `/conversations/${chat.id}`);
+    expect(summaryResponse.status).toBe(200);
+    expect(ConversationSchema.parse(await summaryResponse.json()).incomplete).toBeTrue();
+    const directory = ThreadListSchema.parse(await (await api(person, `/conversations/${chat.id}/threads`)).json());
+    expect(directory.items.map((thread) => thread.id)).toEqual(["fail01"]);
+    expect(directory.items[0]?.resource?.href).toBeUndefined();
+    expect(directory.incomplete).toBeTrue();
+    expect((await api(person, `/conversations/${chat.id}/messages`)).status).toBe(200);
+    expect((await api(person, `/conversations/${chat.id}/snapshot`)).status).toBe(200);
+    const discovery = SystemChatPageSchema.parse(await (await api(person, "/system-chats")).json());
+    expect(discovery.items.map((entry) => entry.ref)).toEqual([collection]);
+    expect(discovery.cursors[collection.type]).toEqual({ cursor: nextCursor });
+    const continuation = await api(person, `/system-chats?cursors=${encodeURIComponent(JSON.stringify(discovery.cursors))}`);
+    expect(continuation.status).toBe(200);
+    expect(SystemChatPageSchema.parse(await continuation.json()).cursors[collection.type]).toBe("");
+    expect(discovery.skipped).toEqual([collection.type]);
+  });
+
+  test("search covers the full directory and deduplicates cold container reads", async () => {
+    const person = await f.person();
+    const refs = Array.from({ length: 12 }, (_, i) => ({ ...collection, id: `search-container-${i}` }));
+    const parents = new Map<string, typeof collection>();
+    const at = "2026-10-29T12:00:00Z";
+    for (const [index, ref] of refs.entries()) {
+      trackKeys(person, ref);
+      const [stored] = await sql<{ id: string }[]>`INSERT INTO chat.conversations
+        (short_id, kind, resource_type, resource_id, name, created_by_type, created_by_id, created_at, last_activity_at)
+        VALUES (${`sr${String(index).padStart(4, "0")}`}, 'system', ${ref.type}, ${ref.id}, 'Warehouse', 'user', ${person.id}::uuid, ${at}, ${at}) RETURNING id`;
+      if (!stored) throw new Error("Missing conversation");
+      f.trackChat(`sr${String(index).padStart(4, "0")}`);
+      for (let i = 0; i < 3; i++) {
+        const id = `search-item-${index}-${i}`;
+        parents.set(id, ref);
+        trackKeys(person, { type: item.type, id });
+        await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id, last_activity_at)
+          VALUES (${`s${String(index * 3 + i).padStart(5, "0")}`}, ${stored.id}::uuid, 'Old name', ${item.type}, ${id}, 'user', ${person.id}::uuid, ${at})`;
+      }
+    }
+    const counts = new Map<string, number>();
+    reader.mockImplementation(async (_app: string, capability: string, input: Record<string, unknown>) => {
+      if (capability === "collection.containers")
+        return { data: { items: input.query ? [] : refs.map((ref) => ({ ref, title: "Warehouse" })), next: null } };
+      const id = String(input.id);
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+      const parent = parents.get(id);
+      return {
+        data: {
+          view: {
+            title: parent?.id === refs[11]!.id ? "Needle" : "Box",
+            permission: "read",
+            ...(parent ? { container: { ref: parent, title: "Warehouse" } } : {}),
+          },
+        },
+      };
+    });
+    const response = await api(person, "/search?q=Needle");
+    expect(response.status).toBe(200);
+    const result = SearchResultSchema.parse(await response.json());
+    expect(result.systemUnavailable).toBeUndefined();
+    expect(result.items).toHaveLength(3);
+    expect(JSON.stringify(result.items)).toContain("sr0011");
+    expect([...counts.values()].every((count) => count === 1)).toBeTrue();
+    expect([...counts.values()].reduce((sum, count) => sum + count, 0)).toBe(48);
+    // A larger cold directory reaches the transport budget, which is partial scope, not an owner outage.
+    const [first] = await sql<{ id: string }[]>`SELECT id FROM chat.conversations WHERE short_id = 'sr0000'`;
+    if (!first) throw new Error("Missing first conversation");
+    for (let i = 0; i < 15; i++) {
+      const id = `search-extra-${i}`;
+      parents.set(id, refs[0]!);
+      trackKeys(person, { type: item.type, id });
+      await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id, last_activity_at)
+        VALUES (${`x${String(i).padStart(5, "0")}`}, ${first.id}::uuid, 'Old name', ${item.type}, ${id}, 'user', ${person.id}::uuid, ${at})`;
+    }
+    await redis.send("DEL", [...keys]);
+    counts.clear();
+    const partial = SearchResultSchema.parse(await (await api(person, "/search?q=Needle")).json());
+    expect(partial.systemUnavailable).toBeUndefined();
+    expect(partial.incomplete).toBeTrue();
+    expect(partial.items).toHaveLength(3);
   });
 });

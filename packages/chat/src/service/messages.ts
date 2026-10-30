@@ -16,12 +16,12 @@ import {
   SnapshotQuerySchema,
 } from "./contracts";
 import { conversations } from "./conversations";
-import { DiscussionReadStopped, discussionRead } from "./discussion-read";
 import { chatLive } from "./live";
 import { validateMentions } from "./mentions";
 import { mutateMessage } from "./message-mutations";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { openParticipant } from "./read-state";
+import { discussionIncomplete, discussionStopped } from "./resource-access";
 import { canReadThread, visibleMessages, visibleThreadIdPage } from "./thread-access";
 import { threadStates } from "./thread-state";
 import { findThread, threadNotFound, threads } from "./threads";
@@ -129,16 +129,20 @@ const list = async (input: Input & { query?: unknown }) => {
       AND ${query.before !== undefined ? db`seq < ${query.before}` : query.after !== undefined ? db`seq > ${query.after}` : db`true`}
       ORDER BY seq ${query.after !== undefined ? db`ASC` : db`DESC`} LIMIT ${MESSAGE_PAGE_SIZE}`;
     if (query.after === undefined) candidates.reverse();
-    const rows = query.thread === undefined ? await visibleMessages(db, input, candidates) : candidates;
+    const rows = query.thread === undefined ? await visibleMessages(db, input, candidates, query.after === undefined) : candidates;
     const seqHead = Number(allowed.data.seq_head);
-    const full = candidates.length === MESSAGE_PAGE_SIZE;
+    const full = candidates.length === MESSAGE_PAGE_SIZE || discussionStopped(input);
     return ok({
+      ...(discussionIncomplete(input) ? { incomplete: true as const } : {}),
       items: await messageViews(db, rows, input.conversationId, input.accessSubject, input.locale),
       seqHead,
       rev: Number(allowed.data.rev),
       ...(query.after !== undefined
-        ? { from: query.after + 1, to: full ? Number(candidates.at(-1)!.seq) : seqHead }
-        : { from: full ? Number(candidates[0]!.seq) : 1, to: query.before !== undefined ? Math.min(query.before - 1, seqHead) : seqHead }),
+        ? { from: query.after + 1, to: full ? Number(candidates.at(-1)?.seq ?? query.after) : seqHead }
+        : {
+            from: full ? Number(candidates[0]?.seq ?? query.before ?? seqHead + 1) : 1,
+            to: query.before !== undefined ? Math.min(query.before - 1, seqHead) : seqHead,
+          }),
     });
   });
 };
@@ -197,7 +201,7 @@ const snapshot = async (
       AND ${position !== null ? db`seq < ${position + MESSAGE_PAGE_SIZE / 2}` : db`true`}
       ORDER BY seq DESC LIMIT ${MESSAGE_PAGE_SIZE}`;
     candidates.reverse();
-    const rows = selector === undefined ? await visibleMessages(db, input, candidates) : candidates;
+    const rows = selector === undefined ? await visibleMessages(db, input, candidates, true) : candidates;
     const seqHead = Number(allowed.data.seq_head);
     const list = await threads.list(
       {
@@ -211,10 +215,11 @@ const snapshot = async (
     return ok({
       conversation: conversation.data,
       page: {
+        ...(discussionIncomplete(input) ? { incomplete: true as const } : {}),
         items: await messageViews(db, rows, input.conversationId, input.accessSubject, input.locale),
         seqHead,
         rev: Number(allowed.data.rev),
-        from: candidates.length === MESSAGE_PAGE_SIZE ? Number(candidates[0]!.seq) : 1,
+        from: candidates.length === MESSAGE_PAGE_SIZE || discussionStopped(input) ? Number(candidates[0]?.seq ?? seqHead + 1) : 1,
         to: position !== null ? Math.min(position + MESSAGE_PAGE_SIZE / 2 - 1, seqHead) : seqHead,
       },
       threads: list.data,
@@ -243,10 +248,7 @@ const changes = async (input: Input & { query: unknown }) => {
     const afterRev = parsed.data.afterRev;
     const head = Number(allowed.data.rev);
     if (afterRev > head) return fail({ code: "RESYNC_REQUIRED", status: 409, message: catalog(input).resyncRequired });
-    if (allowed.data.kind === "system" && input.caller) await discussionRead(input).catalog();
-    const changeLimit =
-      allowed.data.kind === "system" && input.caller ? Math.min(CHANGES_PAGE_SIZE, discussionRead(input).remaining) : CHANGES_PAGE_SIZE;
-    if (changeLimit <= 0) throw new DiscussionReadStopped("DISCUSSION_CALL_BUDGET");
+    const changeLimit = CHANGES_PAGE_SIZE;
     const candidates = await db<
       MessageRow[]
     >`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND rev > ${afterRev}
@@ -254,9 +256,10 @@ const changes = async (input: Input & { query: unknown }) => {
     const rows = await visibleMessages(db, input, candidates);
     const conversation = Number(allowed.data.changed_rev) > afterRev ? await conversations.get(input, db) : null;
     if (conversation && !conversation.ok) return conversation;
-    const more = candidates.length === changeLimit;
+    const more = candidates.length === changeLimit || discussionStopped(input);
     return ok({
-      rev: more ? Number(candidates.at(-1)!.rev) : head,
+      ...(discussionIncomplete(input) ? { incomplete: true as const } : {}),
+      rev: more ? Number(candidates.at(-1)?.rev ?? afterRev) : head,
       more,
       conversation: conversation?.data ?? null,
       messages: await messageViews(db, rows, input.conversationId, input.accessSubject, input.locale),

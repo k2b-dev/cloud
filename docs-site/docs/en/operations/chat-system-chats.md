@@ -39,10 +39,13 @@ Their message views include the same viewer-specific `reactions` as ordinary
 chat messages. Reaction live events carry a refresh hint on the item thread
 key; clients read the current reactions over HTTP.
 Item threads carry `resource: { ref, title, context?, status?, done?, permission,
-container?, href, typeTitle, icon, color? }`. The reader's standard `view`
+container?, href?, typeTitle, icon, color? }`. The reader's standard `view`
 supplies the title, localized context and status, completion flag, permission,
 and container `{ ref, title }`. The catalog supplies the type title, icon and
-optional color. Chat does not interpret domain fields or resolve status labels.
+optional color. Icons must match `^ti ti-[a-z0-9-]+$` (at most 80 characters);
+invalid manifest icons use the default discussion icon. The reader’s optional
+`open` link supplies `href`; without it the header hides its open controls.
+Chat does not interpret domain fields or resolve status labels.
 
 Chat no longer exposes separate assignees, deadlines, or exact event start and
 end times. A provider can include those details in its localized context line.
@@ -53,8 +56,15 @@ does not supply one.
 Responses contain `{ items, cursors, skipped }`. Items include `ref`, `name`,
 `typeTitle`, `icon`, optional `color`, and nullable `conversation`. Send the
 returned cursors unchanged for the next page. An empty cursor means that
-provider is exhausted; nonempty cursors also preserve work for skipped providers.
-`skipped` identifies providers with unavailable lists or container readers.
+provider is exhausted; position objects also preserve work for skipped providers.
+`skipped` identifies providers with unavailable lists, container readers or item summaries.
+Each unfinished position is an object with an optional provider `cursor` (at
+most 2,048 characters) and an optional container-page `offset` (0–100). For
+example, `{ "inventory.collection": { "cursor": "next-page" } }` resumes a
+provider; `{ "inventory.collection": "" }` marks it exhausted. The query is
+decoded once, without nested JSON cursor strings. The map accepts at most
+1,500 keys (60 catalog pages of 25 providers); the serialized query is bounded
+by those limits and resource type lengths.
 Unvisited providers lead the next round, so a large or unavailable provider cannot starve others. Refresh to
 restart discovery after the directory changes.
 
@@ -133,6 +143,10 @@ resource. An empty successful response is `{ "items": [] }`.
 The standard Chat list request limiter applies (HTTP 429); disconnects cancel
 search queries and further reader work.
 
+A search that reaches the shared transport budget returns `incomplete: true`
+with its authorized results and a Retry notice. `systemUnavailable` identifies
+an actual provider failure; a cold cache reaching its budget is not an outage.
+
 The browser client in `frontend/search-api.ts` exports `createSearchApi()`
 with `search(q, signal?)` and the `SearchHit`, `SearchResult`, and `SearchApi`
 types. It validates both the query and response and preserves server error
@@ -175,22 +189,23 @@ Providers without activity return an empty complete page.
 Container pages use the `cursors` map described above. A catalog failure
 returns `PROVIDER_UNAVAILABLE` (HTTP 500). A list failure or an exhausted budget preserves that provider's position and
 adds its type to `skipped`, while other providers can still contribute results.
-A failed summary also leaves that provider resumable.
+An incomplete summary is marked on its conversation; a broken item reader
+never rewinds the provider directory.
 An individual container with a failed or malformed reader is omitted and its
 type is reported in `skipped`; the directory continues past it so one broken
 resource cannot block later containers. Refresh discovery to retry omitted
 containers. Retry unfinished provider pages with the returned map.
 
-A system thread page inspects at most 60 candidates, limited further by the remaining request budget, by latest activity,
+A system thread page inspects at most 60 candidates by latest activity,
 with the thread ID breaking ties.
 Visibility, search, and state filters apply within that page. Follow a non-null
 `nextCursor` even when `items` is empty. Ordinary chats retain their existing
 activity and archive ordering. `short=true` selects the four recent candidate
-threads, unread candidates, and optional `selected` thread within the remaining
-request budget. The selected thread and recent candidates take priority.
+threads, unread candidates, and optional `selected` thread within the candidate page. The selected thread and recent candidates take priority.
 Candidate selection precedes item authorization and unread-state calculation;
 short refreshes never calculate unread state across the whole directory.
-The short selection has no continuation; use the directory for more threads.
+A partial short selection returns `nextCursor: ""`; open the directory to
+continue from its first page.
 It never supplies an aggregate count. Automatic refresh reads this one short
 page, while explicit directory browsing follows cursors. Live directory
 refresh re-reads exactly the number of pages the reader already loaded,
@@ -209,13 +224,18 @@ not exhaust summary continuations before rendering. While a summary is partial,
 the row and section show `…` for an unknown count or `n+` for a lower bound.
 An incomplete zero does not mark the section as read, including for the open chat.
 
-Every reader consumes the same request budget as provider discovery. A single
-summary also stops after at most 60 candidates. Hidden candidates consume the
-same traversal budget as readable ones. Candidate limits shrink to the
-remaining budget so continuation never skips uninspected items. If a reader
-fails during a thread or message page, the request fails visibly; retry the same
-cursor. Budget exhaustion never becomes an authorization denial. Cancellation
-and the shared deadline stop outstanding reads.
+Only actual remote calls and returned envelopes consume the shared request
+budget; cache hits are free. Candidate traversal has its own bound: a summary
+inspects at most 60 candidates, including hidden ones. Budget exhaustion
+returns a partial page and keeps continuation before the first uninspected
+candidate, even when nothing is returned. It does not fail the snapshot or SSR.
+Thread directories, conversation summaries, message pages, change feeds, shared
+lists and **For you** pages
+carry `incomplete: true` when a reader is unavailable or the request budget
+stops work. An unavailable item is hidden while readable siblings remain
+available. The directory and conversation show a notice with Retry; retry the
+read to check omitted items again. Cancellation and the shared deadline stop
+outstanding reads.
 
 General and an individually selected thread authorize only the container and,
 for the latter, that item. Their snapshots contain only the selected thread's
@@ -225,6 +245,10 @@ Aggregate history authorizes at most 50 candidate messages per request, change
 feeds 200, and shared history 32. These reads never enumerate all threads.
 Follow history `from`/`to`, change-feed `rev`/`more`, and shared `nextCursor`
 even when the returned items are empty: they advance past hidden candidates.
+When the shared or **For you** page reaches its transport budget, `incomplete`
+is true and `nextCursor` preserves the incoming cursor (or `""` for the first
+page). Retry that page; the interface keeps readable rows and offers Retry
+instead of continuing past unchecked items.
 
 `POST /conversations/read-all` inspects at most 50 candidate conversations and
 100 item threads across them. A completed page returns `marked`, `more`, and,

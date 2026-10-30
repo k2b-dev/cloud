@@ -80,6 +80,11 @@ ref and title. Never disclose a title or permission before authorizing the
 reader. Consumers that cache localized views must include locale in their
 cache key.
 
+An `open` semantic link in the reader envelope is recommended so consumers can
+offer “Open in …”. It is optional: a reader with a compatible view can offer
+discussions without an open link. Chat hides its open-resource controls when
+the link is absent.
+
 The compiler derives view support from the reader's data schema. There is no
 second author declaration to keep synchronized. An optional or incompatible
 `view` stays ordinary domain data and does not advertise standard view

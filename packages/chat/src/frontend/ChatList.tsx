@@ -259,7 +259,7 @@ export default function ChatList(props: {
                     {/* The open chat is being read, so it shows no mark, unless the reader marked it unread on purpose. With its
                       threads shown, each thread carries its own count instead. */}
                     <Show
-                      when={row().summaryCursor != null}
+                      when={row().summaryCursor != null || row().incomplete}
                       fallback={
                         <AppWorkspace.SidebarItemStatus
                           {...notificationMarks(

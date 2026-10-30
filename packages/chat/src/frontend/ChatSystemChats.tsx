@@ -65,7 +65,7 @@ export default function ChatSystemChats(props: {
     return [...rows.values()];
   });
   const unread = () => rows().reduce((sum, row) => sum + row.unread, 0);
-  const incomplete = () => rows().some((row) => row.summaryCursor != null);
+  const incomplete = () => rows().some((row) => row.summaryCursor != null || row.incomplete);
   return (
     <AppWorkspace.SidebarSection
       class={`chat-system-chats${unread() === 0 && !incomplete() ? " chat-system-chats--read" : ""}`}

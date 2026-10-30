@@ -335,3 +335,32 @@ test("cancels queued capability calls before they start", async () => {
   expect(settled.every((result) => result.status === "rejected")).toBeTrue();
   expect(calls).toBe(6);
 });
+
+test("deduplicates cold concurrent container reads and spends no calls on cache hits", async () => {
+  const c = context();
+  let calls = 0;
+  const dependencies: ResourceReaderDependencies = {
+    invoke: async () => {
+      calls++;
+      return envelope();
+    },
+  };
+  const resources = await readerBatch(
+    Array.from({ length: 100 }, () => ref),
+    (ref) => readResource(c, ref, dependencies),
+  );
+  expect(resources.every((resource) => resource?.title === "Inventory")).toBeTrue();
+  expect(calls).toBe(1);
+  const { discussionRead } = await import("./discussion-read");
+  expect(discussionRead(c).remaining).toBe(DISCUSSION_CALL_LIMIT - 2);
+});
+
+test("readers without open links remain readable and manifest icons are constrained", async () => {
+  catalog.mockRestore();
+  const app = providerApp("inventory");
+  app.manifest.types[0]!.icon = "ti ti-box arbitrary-class";
+  catalog = mockDiscussionCatalog([app]);
+  const resource = await readResource(context(), ref, { invoke: async () => ({ data: envelope().data }) });
+  expect(resource).toMatchObject({ title: "Inventory", icon: "ti ti-messages" });
+  expect(resource?.href).toBeUndefined();
+});

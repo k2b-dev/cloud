@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { SystemChatPageSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -600,14 +601,15 @@ test("discovery advances each provider independently after one source is exhaust
     await page.route("**/api/chat/system-chats*", async (route) => {
       const query = Object.fromEntries(new URL(route.request().url()).searchParams);
       queries.push(query);
-      const cursors: Record<string, string> = JSON.parse(query.cursors ?? "{}");
+      const { cursors } = SystemChatPageSchema.parse({ items: [], cursors: JSON.parse(query.cursors ?? "{}"), skipped: [] });
+      const notebook = cursors["notebooks.notebook"];
       await route.fulfill({
         json: {
           items: [],
           cursors: {
-            "spaces.space": cursors["spaces.space"] === undefined ? "Space2" : "",
+            "spaces.space": cursors["spaces.space"] === undefined ? { cursor: "Space2" } : "",
             "notebooks.notebook":
-              cursors["notebooks.notebook"] === undefined ? "Book02" : cursors["notebooks.notebook"] === "Book02" ? "Book03" : "",
+              notebook === undefined ? { cursor: "Book02" } : notebook && notebook.cursor === "Book02" ? { cursor: "Book03" } : "",
           },
           skipped: [],
         },

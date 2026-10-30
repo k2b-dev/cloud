@@ -15,11 +15,11 @@ import {
   type ThreadSchema,
   UpdateThreadSchema,
 } from "./contracts";
-import { DiscussionReadStopped, discussionRead, providerFor } from "./discussion-read";
+import { providerFor } from "./discussion-read";
 import { chatLive } from "./live";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
-import { ItemRefSchema, readResource } from "./resource-access";
-import { canReadThread, projectResource, visibleThreadPage } from "./thread-access";
+import { discussionIncomplete, ItemRefSchema, readResource } from "./resource-access";
+import { canReadThread, inspectedThreadCount, projectResource, SUMMARY_TRAVERSAL_BUDGET, visibleThreadPage } from "./thread-access";
 import { threadStates } from "./thread-state";
 
 type Input = ChatContext & { conversationId: string; query?: unknown; selectedThread?: string };
@@ -50,9 +50,7 @@ const projectList = async (
     { kind: string; resource_type: string; resource_id: string }[]
   >`SELECT kind, resource_type, resource_id FROM chat.conversations WHERE id = ${conversationId}::uuid`;
   const system = conversation?.kind === "system";
-  if (system && input.caller) await discussionRead(input).catalog();
-  const pageLimit = system && input.caller ? Math.min(MAX_THREADS, discussionRead(input).remaining) : MAX_THREADS;
-  if (pageLimit <= 0) throw new DiscussionReadStopped("DISCUSSION_CALL_BUDGET");
+  const pageLimit = system ? SUMMARY_TRAVERSAL_BUDGET : MAX_THREADS;
   // The opaque thread ID identifies the activity boundary. Page candidates before reader checks and filters,
   // so empty visible pages still advance without scanning an unbounded number of resources.
   // Keep the timestamp in Postgres: converting it to Date would truncate the cursor's microseconds.
@@ -76,7 +74,7 @@ const projectList = async (
           : db`last_activity_at DESC, short_id`
         : db`(archived_at IS NOT NULL), CASE WHEN archived_at IS NULL THEN last_activity_at END DESC,
       CASE WHEN archived_at IS NOT NULL THEN name END, short_id`
-    } LIMIT ${system && query.short ? pageLimit : pageLimit + 1}`;
+    } LIMIT ${pageLimit + 1}`;
   const page = rows.slice(0, pageLimit);
   // Candidate selection bounds both authorization and unread SQL. Never calculate
   // unread state for the whole directory just to choose a short refresh page.
@@ -111,7 +109,18 @@ const projectList = async (
   );
   return {
     general: { unread: states.find((state) => state.id === null)!.unread, lastMessage: previews.get(null) ?? null },
-    ...(system ? { nextCursor: !query.short && rows.length > pageLimit ? page.at(-1)!.short_id : null } : {}),
+    ...(system
+      ? {
+          nextCursor: query.short
+            ? rows.length > inspectedThreadCount(input, page)
+              ? ""
+              : null
+            : rows.length > inspectedThreadCount(input, page)
+              ? (page[inspectedThreadCount(input, page) - 1]?.short_id ?? query.cursor ?? "")
+              : null,
+          ...(discussionIncomplete(input) ? { incomplete: true } : {}),
+        }
+      : {}),
     items: visible
       .filter(
         ({ row }) =>

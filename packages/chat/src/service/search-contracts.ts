@@ -26,6 +26,7 @@ export const SearchHitSchema = z.discriminatedUnion("kind", [
 export const SearchResultSchema = z.strictObject({
   items: z.array(SearchHitSchema).max(SEARCH_LIMIT),
   systemUnavailable: z.literal(true).optional(),
+  incomplete: z.literal(true).optional(),
 });
 export type SearchHit = z.infer<typeof SearchHitSchema>;
 export type SearchResult = z.infer<typeof SearchResultSchema>;

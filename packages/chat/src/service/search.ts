@@ -1,3 +1,4 @@
+import { DISCUSSION_PAGE_LIMIT } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { type SQLQuery, sql } from "bun";
@@ -5,7 +6,7 @@ import { boundConversation, type ChatContext, capPermission, messages, readableM
 import { conversationSearchTitle } from "./conversation-titles";
 import { conversations } from "./conversations";
 import { DiscussionReadStopped, discussionRead } from "./discussion-read";
-import { readContainers, readerBatch, readResource } from "./resource-access";
+import { readContainers, readerBatch, readResource, resourceDeferred } from "./resource-access";
 import { SEARCH_LIMIT, type SearchHit, SearchQuerySchema, type SearchResult } from "./search-contracts";
 import { nameMatchRank, rankSearchCandidates, type SearchCandidate } from "./search-ranking";
 import { SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
@@ -97,18 +98,17 @@ type SystemThreadRow = {
 };
 const system = async (context: ChatContext, q: string, bound: string | null) => {
   let unavailable = false;
+  let incomplete = false;
   const onUnavailable = () => {
     unavailable = true;
   };
   const session = discussionRead(context);
   const read = async (type: string, id: string) => {
-    try {
-      return await readResource(context, { type, id }, undefined, onUnavailable);
-    } catch (error) {
-      if (!(error instanceof DiscussionReadStopped)) throw error;
-      onUnavailable();
-      return null;
-    }
+    const ref = { type, id };
+    return readResource(context, ref, undefined, () => {
+      if (resourceDeferred(context, ref)) incomplete = true;
+      else onUnavailable();
+    });
   };
   const candidates: Candidate[] = [];
   const scope = new Map<string, Set<string>>();
@@ -122,7 +122,7 @@ const system = async (context: ChatContext, q: string, bound: string | null) => 
     context.caller?.signal?.throwIfAborted();
     try {
       const page = await readContainers(context, type, undefined, undefined, q, SEARCH_LIMIT);
-      const directory = await readContainers(context, type, undefined, undefined, undefined, SEARCH_LIMIT);
+      const directory = await readContainers(context, type, undefined, undefined, undefined, DISCUSSION_PAGE_LIMIT);
       scope.set(type, new Set([...page.items, ...directory.items].map((entry) => entry.ref.id)));
       for (const entry of page.items) {
         context.caller?.signal?.throwIfAborted();
@@ -144,9 +144,10 @@ const system = async (context: ChatContext, q: string, bound: string | null) => 
           key,
         });
       }
-    } catch {
+    } catch (error) {
       context.caller?.signal?.throwIfAborted();
-      unavailable = true;
+      if (error instanceof DiscussionReadStopped) incomplete = true;
+      else unavailable = true;
     }
   }
   // Stored item names are snapshots. Read current names on a single directory-sized page.
@@ -199,6 +200,9 @@ const system = async (context: ChatContext, q: string, bound: string | null) => 
     get unavailable() {
       return unavailable;
     },
+    get incomplete() {
+      return incomplete;
+    },
   };
 };
 
@@ -230,5 +234,9 @@ export const search = async (input: ChatContext & { query: unknown }): Promise<R
     items.push(hit);
   }
   input.caller?.signal?.throwIfAborted();
-  return ok({ items, ...(resources.unavailable ? { systemUnavailable: true as const } : {}) });
+  return ok({
+    items,
+    ...(resources.unavailable ? { systemUnavailable: true as const } : {}),
+    ...(resources.incomplete ? { incomplete: true as const } : {}),
+  });
 };

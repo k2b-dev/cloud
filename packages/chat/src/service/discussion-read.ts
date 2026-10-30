@@ -9,6 +9,8 @@ export const DISCUSSION_DEADLINE_MS = 10_000;
 export class DiscussionReadStopped extends Error {}
 export class DiscussionRead {
   remaining = DISCUSSION_CALL_LIMIT;
+  incomplete = false;
+  readonly deferred = new Set<string>();
   private bytes = 0;
   readonly deadline = Date.now() + DISCUSSION_DEADLINE_MS;
   private providers?: Promise<DiscussionProvider[]>;
@@ -98,11 +100,13 @@ export const providerFor = async (context: ChatContext, type: string, role?: "it
   (await discussionRead(context).catalog()).find(
     (provider) => (role !== "container" && provider.itemType === type) || (role !== "item" && provider.containerType === type),
   );
+export const discussionIcon = (icon: string | undefined) =>
+  icon && icon.trim() === icon && /^ti ti-[a-z0-9-]+$/.test(icon) && icon.length <= 80 ? icon : "ti ti-messages";
 export const typePresentation = (provider: DiscussionProvider, type: string) => {
   const entry = provider.app.manifest.types.find((entry) => `${provider.app.appId}.${entry.localId}` === type);
   return {
     typeTitle: entry?.title ?? provider.app.appName,
-    icon: entry?.icon ?? provider.app.appIcon,
+    icon: discussionIcon(entry?.icon ?? provider.app.appIcon),
     ...(entry?.color ? { color: entry.color } : {}),
   };
 };

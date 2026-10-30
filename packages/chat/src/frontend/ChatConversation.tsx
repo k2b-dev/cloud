@@ -480,16 +480,22 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               <span class="chat-resource-head__metadata">
                 <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
               </span>
-              <span class="chat-resource-head__link">
-                <ButtonLink href={resource().href} variant="text" size="sm">
-                  {resourceLabel()}
-                </ButtonLink>
-              </span>
-              <span class="chat-resource-head__icon">
-                <IconButtonLink href={resource().href} label={resourceLabel()}>
-                  <i class="ti ti-external-link" aria-hidden="true" />
-                </IconButtonLink>
-              </span>
+              <Show when={resource().href}>
+                {(href) => (
+                  <>
+                    <span class="chat-resource-head__link">
+                      <ButtonLink href={href()} variant="text" size="sm">
+                        {resourceLabel()}
+                      </ButtonLink>
+                    </span>
+                    <span class="chat-resource-head__icon">
+                      <IconButtonLink href={href()} label={resourceLabel()}>
+                        <i class="ti ti-external-link" aria-hidden="true" />
+                      </IconButtonLink>
+                    </span>
+                  </>
+                )}
+              </Show>
             </>
           )}
         </Show>
@@ -522,9 +528,13 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               {(status) => <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />}
             </Show>
             <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
-            <ButtonLink href={resource().href} variant="text" size="xs">
-              {resourceLabel()}
-            </ButtonLink>
+            <Show when={resource().href}>
+              {(href) => (
+                <ButtonLink href={href()} variant="text" size="xs">
+                  {resourceLabel()}
+                </ButtonLink>
+              )}
+            </Show>
           </div>
         )}
       </Show>

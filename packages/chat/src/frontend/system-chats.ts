@@ -13,7 +13,8 @@ import {
 
 export type SystemChatPage = z.infer<typeof SystemChatPageSchema>;
 export type ThreadQuery = z.input<typeof ThreadQuerySchema>;
-export const containerIcon = (icon: string | null | undefined) => icon ?? "ti ti-messages";
+export const containerIcon = (icon: string | null | undefined) =>
+  icon && icon.trim() === icon && /^ti ti-[a-z0-9-]+$/.test(icon) && icon.length <= 80 ? icon : "ti ti-messages";
 
 const client = () => createApiClient<ApiType>({ baseUrl: "/api/chat" });
 const response = async <T>(result: Pick<Response, "ok" | "status" | "json">, schema: z.ZodType<T>): Promise<T> => {
@@ -21,7 +22,7 @@ const response = async <T>(result: Pick<Response, "ok" | "status" | "json">, sch
   return schema.parse(await result.json());
 };
 
-export const loadSystemChats = async (query: { cursors?: Record<string, string> }, signal: AbortSignal) => {
+export const loadSystemChats = async (query: { cursors?: SystemChatPage["cursors"] }, signal: AbortSignal) => {
   const page = await response(
     await client()["system-chats"].$get({ query: query.cursors ? { cursors: JSON.stringify(query.cursors) } : {} }, { init: { signal } }),
     SystemChatPageSchema,

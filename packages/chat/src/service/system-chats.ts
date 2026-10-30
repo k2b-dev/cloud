@@ -1,13 +1,13 @@
 import { err, fail, ok } from "@k2b/cloud/server";
 import { crypto } from "@k2b/stdlib";
 import { sql } from "bun";
-import { z } from "zod";
 import { boundConversation, type ChatContext, type ConversationRow, capPermission, messages, subjectPrincipal } from "./access";
-import { SystemChatParamSchema, SystemChatQuerySchema } from "./contracts";
+import { type SystemChatPageSchema, SystemChatParamSchema, SystemChatQuerySchema } from "./contracts";
 import { conversations } from "./conversations";
 import { discussionRead, providerFor } from "./discussion-read";
 import { openParticipant } from "./read-state";
-import { readContainers, readResource } from "./resource-access";
+import { discussionIncomplete, readContainers, readResource, resourceDeferred } from "./resource-access";
+import { SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
 
 const open = async (input: ChatContext & { resourceType: string; resourceId: string }) => {
   const parsed = SystemChatParamSchema.safeParse(input);
@@ -53,25 +53,17 @@ const list = async (input: ChatContext & { query?: unknown }) => {
   const types = [...new Set([...Object.keys(incoming), ...providers.map((provider) => provider.containerType)])].filter((type) =>
     providers.some((provider) => provider.containerType === type),
   );
-  const cursors: Record<string, string> = {};
+  const cursors: typeof SystemChatPageSchema._output.cursors = {};
   const skipped: string[] = [];
   const entries = [];
-  const visited: [string, string][] = [];
+  const visited: [string, (typeof cursors)[string]][] = [];
   for (const [index, type] of types.entries()) {
     if (incoming[type] === "") {
       visited.push([type, ""]);
       continue;
     }
-    const start = incoming[type] ?? "{}";
-    let cursor: string | undefined;
-    try {
-      cursor = z
-        .object({ cursor: z.string().max(2048).optional() })
-        .strict()
-        .parse(JSON.parse(start)).cursor;
-    } catch {
-      return fail(err.badInput(messages(input).invalidInput));
-    }
+    const start = incoming[type] ?? {};
+    const { cursor, offset = 0 } = start;
     if (session.remaining < 2) {
       cursors[type] = start;
       if (!skipped.includes(type)) skipped.push(type);
@@ -81,18 +73,26 @@ const list = async (input: ChatContext & { query?: unknown }) => {
       const active = types.slice(index).filter((candidate) => incoming[candidate] !== "").length;
       // Split the available work fairly; reserve list + reader calls and room for summaries.
       const limit = Math.max(1, Math.min(100, Math.floor((session.remaining / active - 1) / 2)));
-      const page = await readContainers(input, type, cursor, undefined, undefined, limit);
-      for (const entry of page.items) {
+      const page = await readContainers(input, type, cursor, undefined, undefined, Math.max(limit, offset + 1));
+      let stopped = false;
+      for (const [entryIndex, entry] of page.items.entries()) {
+        if (entryIndex < offset) continue;
         let unavailable = false;
         const resource = await readResource(input, entry.ref, undefined, () => {
           unavailable = true;
         });
+        if (resourceDeferred(input, entry.ref)) {
+          cursors[type] = { ...(cursor ? { cursor } : {}), offset: entryIndex };
+          if (!skipped.includes(type)) skipped.push(type);
+          stopped = true;
+          break;
+        }
         // A broken individual reader must not pin the provider to this page forever.
-        // Budget/deadline failures throw instead and preserve the provider's old cursor.
+        // Budget/deadline stops keep an offset before the first uninspected entry.
         if (unavailable && !skipped.includes(type)) skipped.push(type);
         if (resource && capPermission(resource.permission, input.actor) !== "none") entries.push({ entry, resource });
       }
-      visited.push([type, page.nextCursor === null ? "" : JSON.stringify({ cursor: page.nextCursor })]);
+      if (!stopped) visited.push([type, page.nextCursor === null ? "" : { cursor: page.nextCursor }]);
     } catch {
       input.caller.signal?.throwIfAborted();
       cursors[type] = start;
@@ -101,32 +101,22 @@ const list = async (input: ChatContext & { query?: unknown }) => {
   }
   for (const [type, cursor] of visited) cursors[type] = cursor;
   const visible = [];
-  const retry = new Set<string>();
-  for (const [index, { entry, resource }] of entries.entries()) {
+  for (const { entry, resource } of entries) {
     input.caller.signal?.throwIfAborted();
     const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM chat.conversations
       WHERE kind = 'system' AND resource_type = ${entry.ref.type} AND resource_id = ${entry.ref.id}`;
     if (bound.data !== null && row?.short_id !== bound.data) continue;
-    const threadBudget = { remaining: Math.max(0, Math.floor(session.remaining / (entries.length - index))) };
+    const threadBudget = { remaining: Math.floor(SUMMARY_TRAVERSAL_BUDGET / entries.length) };
     try {
       const conversation = row ? await conversations.get({ ...input, conversationId: row.short_id, threadBudget }) : null;
       if (conversation && !conversation.ok) continue;
       visible.push({ ...entry, name: resource.title, conversation: conversation?.data ?? null });
+      if (discussionIncomplete(input) && !skipped.includes(entry.ref.type)) skipped.push(entry.ref.type);
     } catch {
       input.caller.signal?.throwIfAborted();
-      // Summary reads share the same budget. Keep a failed summary's provider
-      // resumable instead of losing its entry or failing the other providers.
-      retry.add(entry.ref.type);
+      if (!skipped.includes(entry.ref.type)) skipped.push(entry.ref.type);
     }
   }
-  for (const type of retry) {
-    cursors[type] = incoming[type] ?? "{}";
-    if (!skipped.includes(type)) skipped.push(type);
-  }
-  const continued = Object.fromEntries([
-    ...[...retry].map((type) => [type, cursors[type]]),
-    ...Object.entries(cursors).filter(([type]) => !retry.has(type)),
-  ]);
-  return ok({ items: visible, cursors: continued, skipped });
+  return ok({ items: visible, cursors, skipped });
 };
 export const systemChats = { open, list };

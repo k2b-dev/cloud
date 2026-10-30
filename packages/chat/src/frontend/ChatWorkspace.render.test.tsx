@@ -306,9 +306,15 @@ const renderChild = (locale: string, child: () => ReturnType<typeof createCompon
   );
 
 for (const locale of ["en", "de"]) {
-  for (const summaryCursor of ["", "Page02"]) {
+  for (const summaryCursor of ["", "Page02", null]) {
     test(`partial sidebar summaries stay visibly unknown in ${locale}, cursor ${JSON.stringify(summaryCursor)}`, () => {
-      const row = { ...conversation, kind: "system" as const, summaryCursor, unread: 0 };
+      const row = {
+        ...conversation,
+        kind: "system" as const,
+        summaryCursor,
+        ...(summaryCursor === null ? { incomplete: true as const } : {}),
+        unread: 0,
+      };
       const html = render(locale, { ...props(), sidebar: { items: [row], nextCursor: null } });
       expect(html).toContain(locale === "de" ? "Ungelesene Nachrichten noch nicht vollständig gezählt" : "Unread count is incomplete");
       expect(html).not.toContain("chat-system-chats--read");
@@ -429,4 +435,62 @@ test("a skipped discussion provider leaves a visible notice with retry, not a si
   );
   expect(html).toContain("Einige Orte konnten gerade nicht geladen werden.");
   expect(html).toContain("Erneut versuchen");
+});
+
+for (const href of [undefined, "/app/inventory/item"])
+  test(`system item SSR ${href ? "offers" : "hides"} every open-resource control`, () => {
+    const system = {
+      ...conversation,
+      kind: "system" as const,
+      resource: { type: "inventory.collection", id: "Warehouse" },
+      threads: 1,
+      incomplete: true as const,
+    };
+    const html = render("en", {
+      ...props(),
+      chatId: system.id,
+      view: "Item01",
+      open: {
+        conversation: system,
+        threads: {
+          general: { unread: 0, lastMessage: null },
+          items: [
+            {
+              id: "Item01",
+              name: "Box",
+              description: null,
+              archived: false,
+              unread: 0,
+              read: null,
+              lastMessage: null,
+              createdAt: now,
+              lastActivityAt: now,
+              resource: {
+                ref: { type: "inventory.item", id: "Box" },
+                title: "Box",
+                permission: "read",
+                typeTitle: "Inventory item",
+                icon: "ti ti-box",
+                ...(href ? { href } : {}),
+              },
+            },
+          ],
+        },
+        page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+        focus: null,
+      },
+    });
+    if (href) expect(html.match(/href="\/app\/inventory\/item"/g)).toHaveLength(3);
+    else {
+      expect(html).not.toContain("chat-resource-head__link");
+      expect(html).not.toContain("chat-resource-head__icon");
+    }
+    expect(html).toContain("Some discussions could not be checked.");
+  });
+
+test("a partial For you page offers Retry and does not claim the list is empty", () => {
+  const html = render("en", { ...props(), forYouPage: true, forYouInitial: { items: [], nextCursor: "", incomplete: true } });
+  expect(html).toContain("Some discussions could not be checked.");
+  expect(html).toContain(chatMessages.resolve(["en"]).t.retry);
+  expect(html).not.toContain(chatMessages.resolve(["en"]).t.forYouEmpty);
 });

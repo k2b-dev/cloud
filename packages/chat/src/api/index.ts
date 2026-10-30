@@ -85,7 +85,7 @@ import {
   SummaryQuerySchema,
   SystemChatPageSchema,
   SystemChatParamSchema,
-  SystemChatQuerySchema,
+  SystemChatQueryInputSchema,
   ThreadListSchema,
   ThreadParamSchema,
   ThreadQuerySchema,
@@ -225,11 +225,11 @@ const app = new Hono<AuthContext>()
       summary: "List visible discussion containers with their system chats",
       ...requiresAuth,
       description:
-        "Discovers discussion providers from the catalog and reads a fair page of authorized containers. Send cursors as a JSON object keyed by container type; an empty value marks an exhausted provider. Nonempty cursors continue providers, including skipped ones. Items carry the type presentation. Catalog pages, container lists, item readers and summaries share 60 calls, 4 MiB and a ten-second deadline. Follow summaryCursor for partial summaries.",
+        "Discovers discussion providers from the catalog and reads a fair page of authorized containers. Send cursors as a JSON object keyed by container type; an empty string marks an exhausted provider. Position objects contain a provider cursor of at most 2048 characters and an optional page offset; send them back unchanged to continue skipped providers. Items carry the type presentation. Catalog pages, container lists, item readers and summaries share 60 calls, 4 MiB and a ten-second deadline. Follow summaryCursor for partial summaries.",
       responses: { 200: jsonResponse(SystemChatPageSchema, "Visible containers and independent source cursors") },
     }),
-    validator("query", SystemChatQuerySchema, invalidInput),
-    async (c) => respond(c, chatService.systemChats.list({ ...context(c), query: c.req.query() })),
+    validator("query", SystemChatQueryInputSchema, invalidInput),
+    async (c) => respond(c, chatService.systemChats.list({ ...context(c), query: c.req.valid("query") })),
   )
   .post(
     "/system-chats/:resourceType/:resourceId/open",

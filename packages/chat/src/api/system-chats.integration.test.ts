@@ -146,12 +146,12 @@ suite("system chats use caller-authorized readers", () => {
     const conversation = await open(person, space);
     const response = await api(
       person,
-      "/system-chats?cursors=%7B%22spaces.space%22%3A%22%7B%5C%22cursor%5C%22%3A%5C%22space-page%5C%22%7D%22%2C%22notebooks.notebook%22%3A%22%7B%5C%22cursor%5C%22%3A%5C%22note-page%5C%22%7D%22%7D",
+      `/system-chats?cursors=${encodeURIComponent(JSON.stringify({ "spaces.space": { cursor: "space-page" }, "notebooks.notebook": { cursor: "note-page" } }))}`,
     );
     const list = SystemChatPageSchema.parse(await response.json());
     expect(list.items.map((item) => item.conversation?.id ?? null)).toEqual([conversation.id, null]);
-    expect(list.cursors["spaces.space"]).toBe(JSON.stringify({ cursor: "next-space" }));
-    expect(list.cursors["notebooks.notebook"]).toBe(JSON.stringify({ cursor: "next-note" }));
+    expect(list.cursors["spaces.space"]).toEqual({ cursor: "next-space" });
+    expect(list.cursors["notebooks.notebook"]).toEqual({ cursor: "next-note" });
     expect(calls.find((call) => call.capability === "spaces.space.containers")?.input).toMatchObject({ cursor: "space-page" });
     expect(calls.find((call) => call.capability === "notebooks.notebook.containers")?.input).toMatchObject({ cursor: "note-page" });
   });
@@ -435,7 +435,7 @@ suite("system chats use caller-authorized readers", () => {
     expect(secondReads.length).toBe(101);
     const short = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?short=true&selected=p00000`)).json());
     expect(short.items.map((item) => item.id)).toEqual(["p00000"]);
-    expect(short.nextCursor).toBeNull();
+    expect(short.nextCursor).toBe("");
     const author = await f.person();
     await sql`INSERT INTO chat.messages (short_id, conversation_id, thread_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id)
       SELECT 'Unread0001', c.id, t.id, 1, 1, 'text', 'user', ${author.id}::uuid, 'Nora', 'Unread task', 'unread-task'
@@ -553,10 +553,13 @@ suite("system chats use caller-authorized readers", () => {
     const next = MessagePageSchema.parse(await (await f.request(person.headers, `/${chat.id}/messages?before=${first.from}`)).json());
     expect(next.items).toEqual([]);
     expect(next.from).toBe(2);
+    calls.length = 0;
     const changes = ChangesPageSchema.parse(await (await f.request(person.headers, `/${chat.id}/changes?afterRev=0`)).json());
     expect(changes.messages).toEqual([]);
-    expect(changes.rev).toBeLessThan(101);
-    expect(changes.more).toBeTrue();
+    // History warmed 100 denied decisions; only the final item needs another reader call.
+    expect(calls.length).toBe(1);
+    expect(changes.rev).toBe(101);
+    expect(changes.more).toBeFalse();
     const moreChanges = ChangesPageSchema.parse(
       await (await f.request(person.headers, `/${chat.id}/changes?afterRev=${changes.rev}`)).json(),
     );
@@ -626,7 +629,7 @@ suite("system chats use caller-authorized readers", () => {
     calls.length = 0;
     const result = await api(
       person,
-      "/system-chats?cursors=%7B%22spaces.space%22%3A%22%22%2C%22notebooks.notebook%22%3A%22%7B%5C%22cursor%5C%22%3A%5C%22second%5C%22%7D%22%7D",
+      `/system-chats?cursors=${encodeURIComponent(JSON.stringify({ "spaces.space": "", "notebooks.notebook": { cursor: "second" } }))}`,
     );
     expect(result.status).toBe(200);
     expect(calls.map((call) => call.capability)).toEqual(["notebooks.notebook.containers"]);

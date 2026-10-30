@@ -70,7 +70,7 @@ import { chatLive } from "./live";
 import { publishMembership } from "./live-updates";
 import { appendMessage, personSnapshots, queueAddedNotification } from "./message-store";
 import { projectRead, type ReadProjection, readProjection, unreadQuery } from "./read-state";
-import { readerBatch, readResource } from "./resource-access";
+import { discussionIncomplete, readerBatch, readResource } from "./resource-access";
 import { messageCondition, type ThreadBudget, visibleThreadIdPage } from "./thread-access";
 
 import { threadStates } from "./thread-state";
@@ -610,6 +610,7 @@ const getInSnapshot = async (
     ...(row.kind === "system"
       ? {
           summaryCursor: page.nextCursor,
+          ...(discussionIncomplete(input) ? { incomplete: true as const } : {}),
           discussionItemType: row.resource_type ? (await providerFor(input, row.resource_type, "container"))?.itemType : undefined,
         }
       : {}),

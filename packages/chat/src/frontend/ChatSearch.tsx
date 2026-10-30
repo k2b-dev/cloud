@@ -152,9 +152,13 @@ export default function ChatSearch(props: {
           </For>
         </AppWorkspace.SidebarSection>
       </Show>
-      <Show when={status() !== "failed" && answer()?.result.systemUnavailable}>
-        <InlineGuidance role="alert" tone="danger" class="chat-list-error">
-          {t().searchSystemUnavailable}
+      <Show when={status() !== "failed" && (answer()?.result.systemUnavailable || answer()?.result.incomplete)}>
+        <InlineGuidance
+          role={answer()?.result.systemUnavailable ? "alert" : "status"}
+          tone={answer()?.result.systemUnavailable ? "danger" : "neutral"}
+          class="chat-list-error"
+        >
+          {answer()?.result.systemUnavailable ? t().searchSystemUnavailable : t().discussionsIncomplete}
           <Button size="sm" variant="ghost" disabled={status() === "loading"} onClick={retry}>
             {t().retry}
           </Button>

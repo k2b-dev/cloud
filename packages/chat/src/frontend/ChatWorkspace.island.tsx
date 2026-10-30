@@ -2335,7 +2335,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               }
               backHref={threaded() ? listHref(threadsPageHref(current().id)) : undefined}
               draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
-              notice={draftNotice()}
+              notice={
+                <>
+                  {draftNotice()}
+                  <Show when={current().incomplete || openChat()?.threads?.incomplete}>
+                    <InlineGuidance tone="neutral" role="status">
+                      {t().discussionsIncomplete}{" "}
+                      <Button variant="text" size="xs" onClick={() => refreshCurrentPath()}>
+                        {t().retry}
+                      </Button>
+                    </InlineGuidance>
+                  </Show>
+                </>
+              }
               composerNotice={
                 notice() ? (
                   <Show when={readFailure()} fallback={notice()}>

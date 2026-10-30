@@ -8,7 +8,14 @@ import {
 import { redis } from "bun";
 import { z } from "zod";
 import type { ChatContext } from "./access";
-import { DISCUSSION_CONCURRENCY, DiscussionReadStopped, discussionRead, providerFor, typePresentation } from "./discussion-read";
+import {
+  DISCUSSION_CONCURRENCY,
+  DiscussionReadStopped,
+  discussionIcon,
+  discussionRead,
+  providerFor,
+  typePresentation,
+} from "./discussion-read";
 
 export const ACCESS_TTL_SECONDS = 60;
 export const READER_CONCURRENCY = DISCUSSION_CONCURRENCY;
@@ -17,9 +24,9 @@ export const ContainerRefSchema = CloudResourceRefSchema;
 export const ItemRefSchema = CloudResourceRefSchema;
 export type ResourceRef = z.infer<typeof CloudResourceRefSchema>;
 export const ResourceDecisionSchema = CloudResourceReaderViewSchema.extend({
-  href: CapabilitySemanticLinkSchema.shape.href,
+  href: CapabilitySemanticLinkSchema.shape.href.optional(),
   typeTitle: z.string(),
-  icon: z.string(),
+  icon: z.string().transform(discussionIcon),
   color: z.string().optional(),
 });
 export type ResourceDecision = z.infer<typeof ResourceDecisionSchema>;
@@ -93,7 +100,7 @@ export const invokeDiscussion = async (
     return dependencies.invoke(appId, capabilityId, input, { ...session.caller, signal });
   });
 };
-export const readResource = async (
+const loadResource = async (
   context: ChatContext,
   ref: ResourceRef,
   dependencies = resourceReaderDependencies,
@@ -133,11 +140,52 @@ export const readResource = async (
     }
     return decision;
   } catch (error) {
-    if (error instanceof DiscussionReadStopped) throw error;
+    if (context.caller) {
+      const session = discussionRead(context);
+      session.incomplete = true;
+      if (error instanceof DiscussionReadStopped) session.deferred.add(JSON.stringify(ref));
+    }
     onUnavailable?.();
     return null;
   }
 };
+const pendingReaders = new WeakMap<CapabilityCaller, Map<string, Promise<{ resource: ResourceDecision | null; unavailable: boolean }>>>();
+export const readResource = async (
+  context: ChatContext,
+  ref: ResourceRef,
+  dependencies = resourceReaderDependencies,
+  onUnavailable?: () => void,
+): Promise<ResourceDecision | null> => {
+  if (!context.caller) return null;
+  let pending = pendingReaders.get(context.caller);
+  if (!pending) {
+    pending = new Map();
+    pendingReaders.set(context.caller, pending);
+  }
+  const key = accessKey(contextPrincipal(context), ref, context.locale ?? context.caller.locale ?? "en");
+  let read = pending.get(key);
+  if (!read) {
+    read = (async () => {
+      let unavailable = false;
+      const resource = await loadResource(context, ref, dependencies, () => {
+        unavailable = true;
+      });
+      return { resource, unavailable };
+    })();
+    pending.set(key, read);
+  }
+  try {
+    const result = await read;
+    if (result.unavailable) onUnavailable?.();
+    return result.resource;
+  } finally {
+    if (pending.get(key) === read) pending.delete(key);
+  }
+};
+export const resourceDeferred = (context: ChatContext, ref: ResourceRef) =>
+  !!context.caller && discussionRead(context).deferred.has(JSON.stringify(ref));
+export const discussionStopped = (context: ChatContext) => !!context.caller && discussionRead(context).deferred.size > 0;
+export const discussionIncomplete = (context: ChatContext) => !!context.caller && discussionRead(context).incomplete;
 export const readContainers = async (
   context: ChatContext,
   type: string,

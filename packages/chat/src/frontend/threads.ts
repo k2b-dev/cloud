@@ -38,7 +38,9 @@ export const inView = (view: ThreadView, message: Pick<Message, "thread">) => vi
 export const threadIcon = (thread: Pick<Thread, "resource"> | null | undefined) => {
   const resource = thread?.resource;
   if (!resource) return "ti ti-hash";
-  return resource.icon;
+  return resource.icon.trim() === resource.icon && /^ti ti-[a-z0-9-]+$/.test(resource.icon) && resource.icon.length <= 80
+    ? resource.icon
+    : "ti ti-hash";
 };
 
 export const threadOf = (list: ThreadList | null, id: string | null | undefined) =>
