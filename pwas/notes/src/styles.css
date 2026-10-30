@@ -1613,3 +1613,18 @@ body.k2b-ui {
     display: none;
   }
 }
+
+/* `#tag` in a note: the pill of mockup v4, sized to the text line so a caret entering it does not move lines. */
+.n-editor .n-tagpill {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) var(--tile), transparent);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}

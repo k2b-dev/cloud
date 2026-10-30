@@ -9,7 +9,9 @@ import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { MAX_NOTE_LENGTH } from "../lib/model";
 import { preferences } from "../prefs";
+import { navigate } from "../router";
 import { t } from "../state";
+import { tagPills } from "./tag-pills";
 
 type Presentation = typeof import("@k2b/editor/markdown");
 let presentationModule: Promise<Presentation> | undefined;
@@ -145,6 +147,10 @@ export function NoteEditor(props: {
       md.ligaturesExtension(),
       md.initialMarkdownDecorationRefreshExtension(),
       md.pointerSelectionMarkdownRefreshExtension(),
+      tagPills(md, {
+        open: (tag) => navigate(`/?tag=${encodeURIComponent(tag)}`),
+        label: (tag) => t().tagPillTitle({ tag }),
+      }),
     ];
   });
 

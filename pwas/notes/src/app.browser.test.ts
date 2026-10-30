@@ -225,6 +225,9 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.goto(`${origin}/beispiel`);
     await editor().waitFor();
     expect(await editor().innerText()).not.toContain("Diese Beispieländerung");
+    // A tag shows as a pill; a click opens the overview filtered by it.
+    await page.locator(".n-tagpill", { hasText: "#ideen" }).click();
+    await page.waitForURL(`${origin}/?tag=ideen`);
   }, 20_000);
 
   test("Teilen: Zustimmung, sichtbarer 503-Fehler, Retry mit Links und einmaligem Cloud-Hinweis", async () => {

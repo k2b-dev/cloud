@@ -852,6 +852,7 @@
       "devDependencies": {
         "@babel/core": "8.0.6",
         "@babel/preset-typescript": "8.0.1",
+        "@codemirror/language": "catalog:",
         "@codemirror/state": "catalog:",
         "@codemirror/view": "catalog:",
         "@types/babel__core": "7.20.5",
