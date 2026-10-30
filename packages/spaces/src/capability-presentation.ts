@@ -65,14 +65,33 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "space.containers": {
           title: "Diskussionsorte auflisten",
           description: "Lesbare Spaces mit Fortsetzung auflisten.",
+          input: {
+            query: "Optionaler Suchtext für Orte.",
+            cursor: "Fortsetzung der vorherigen Seite.",
+            limit: "Höchstens so viele Orte auf dieser Seite.",
+          },
         },
         "space.readable": {
           title: "Leser für Space prüfen",
           description: "Prüfen, welche aktuellen Konten diesen Space lesen dürfen; ohne Grenzen einzelner Anmeldedaten.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
         },
         "item.readable": {
           title: "Leser für Aufgabe oder Termin prüfen",
           description: "Prüfen, welche aktuellen Konten den Eintrag im erwarteten Container lesen dürfen; ohne Inhaltszugriff.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort der Ressource.",
+            "container.type": "Deklarierter Typ des Orts.",
+            "container.id": "Öffentliche ID des Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
         },
         "calendar.list": {
           title: "Kalender auflisten",
