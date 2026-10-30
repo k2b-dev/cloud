@@ -275,6 +275,9 @@ Navigation behavior:
 - replace navigation preserves existing `history.state` unless `state` is set
 - rejected async `onNavigate` callbacks log the error and fall back to a full
   document navigation
+- under `prefers-reduced-motion: reduce`, enhanced navigation and
+  `startViewTransition()` run the update directly, without a view transition,
+  so capturing the old state never delays the navigation
 
 Available exports:
 

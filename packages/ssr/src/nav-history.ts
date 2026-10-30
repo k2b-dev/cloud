@@ -65,7 +65,8 @@ export const navigateTo = (href: string): void => {
 
 export const startViewTransition = (callback: () => void | Promise<void>): void => {
   const doc = document as ViewTransitionDocument;
-  if (!doc.startViewTransition) {
+  // Reduced motion shows no transition, and capturing the old state for none would still delay the navigation.
+  if (!doc.startViewTransition || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
     void callback();
     return;
   }
