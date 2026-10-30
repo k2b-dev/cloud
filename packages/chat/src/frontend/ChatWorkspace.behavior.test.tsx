@@ -1061,6 +1061,58 @@ describe("ChatWorkspace interactions", () => {
     expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
     expect(consoleErrors).toEqual([]);
   });
+  test("the info link acts on the address that was clicked, even when the panel changes before its transition calls back", async () => {
+    await mount(true, [conversation]);
+    let update: (() => unknown) | undefined;
+    // A view transition that calls back only when the test lets it, as a busy browser does (#2116).
+    Object.defineProperty(dom.document, "startViewTransition", {
+      configurable: true,
+      value: (callback: () => unknown) => {
+        update = callback;
+        return { ready: Promise.resolve(), finished: Promise.resolve(), skipTransition: () => {} };
+      },
+    });
+    const infoLink = () =>
+      dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!;
+    expect(infoLink().getAttribute("aria-expanded")).toBe("false");
+    infoLink().click();
+    expect(update).toBeDefined();
+    // Before the callback, the panel opens another way, here by Forward to the info address.
+    dom.window.history.pushState(null, "", "/app/chat/c/Chat01?panel=info");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    expect(infoLink().getAttribute("aria-expanded")).toBe("true");
+    await update!();
+    await settle();
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat01?panel=info");
+    expect(infoLink().getAttribute("aria-expanded")).toBe("true");
+    expect(consoleErrors).toEqual([]);
+  });
+  test("info chosen while the same chat is still opening opens once that open ends", async () => {
+    const linked = message(1, "Linked message");
+    await mount(true, [conversation]);
+    const pending = Promise.withResolvers<Response>();
+    pendingSnapshots.set(conversation.id, pending.promise);
+    dom.window.history.pushState(null, "", `/app/chat/c/Chat01/m/${linked.id}`);
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
+    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+    await settle();
+    pending.resolve(
+      Response.json({
+        threads: noThreads,
+        cursor: "c.0",
+        conversation,
+        page: { items: [linked], seqHead: 1, rev: 1, from: 1, to: 1 },
+        focus: linked.id,
+      }),
+    );
+    await settle();
+    expect(dom.window.location.pathname + dom.window.location.search).toBe(`/app/chat/c/Chat01/m/${linked.id}?panel=info`);
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(consoleErrors).toEqual([]);
+  });
   for (const initialPanel of [null, "info"] as const) {
     test(`info preserves the linked message window when opened from ${initialPanel ?? "the chat"}`, async () => {
       const linked = message(1, "Linked message");
