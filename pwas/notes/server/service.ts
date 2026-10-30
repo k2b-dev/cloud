@@ -40,7 +40,7 @@ export type Connection = {
   pendingBytes: number;
   rates: RateLimits;
 };
-export type NotesOptions = { storageBytes: number; maxConnections: number; maxOpenPads: number };
+export type NotesOptions = { storageBytes: number; maxConnections: number; maxOpenPads: number; adminPasswordHash?: string };
 
 export class NotesService {
   readonly rates = new RateLimits();
@@ -57,6 +57,8 @@ export class NotesService {
   private timer?: ReturnType<typeof setInterval>;
   private maintenance?: Promise<void>;
   maintenanceError: string | null = null;
+  private lastMeasured = Date.now();
+  private storageState = "normal";
   constructor(
     store: NotesStore,
     readonly options: NotesOptions,
@@ -428,9 +430,13 @@ export class NotesService {
   }
   async removeReadId(readId: string, kind: "delete" | "block" | "expire", reason: string, today?: string): Promise<void> {
     await this.enqueue(readId, async () => {
-      if (!(await this.store.mark(readId, kind, reason, today))) return;
-      this.invalidate(readId, kind === "block" ? "blocked" : kind === "expire" ? "expired" : "deleted");
-      await this.store.cleanup(readId);
+      let marked = false;
+      try {
+        marked = await this.store.mark(readId, kind, reason, today);
+      } finally {
+        // A failed COMMIT response may still have committed the removal.
+        this.invalidate(readId, marked ? (kind === "block" ? "blocked" : kind === "expire" ? "expired" : "deleted") : "resync_required");
+      }
     });
   }
   async tick(now = Date.now()): Promise<void> {
@@ -439,6 +445,14 @@ export class NotesService {
       throw new NotesError("unavailable", 503);
     }
     this.rates.prune();
+    if (now - this.lastMeasured >= 3_600_000) {
+      await this.store.auditStorage();
+      this.lastMeasured = now;
+    }
+    const status = await this.store.status();
+    const state = status.full ? "storage_full" : status.sharingPaused ? "sharing_paused" : "normal";
+    if (state !== this.storageState && state !== "normal") console.error(`[notes] ${state}`);
+    this.storageState = state;
     for (const connection of this.connections) {
       if (now - connection.lastPong >= limits.heartbeatMs * 2) {
         this.disconnect(connection, 1013, "heartbeat_timeout");
@@ -459,6 +473,7 @@ export class NotesService {
         console.error("[notes] maintenance_item_failed");
       }
     };
+    await maintain(() => this.store.pruneSessions(this.options.adminPasswordHash ? hash(this.options.adminPasswordHash) : ""));
     for (const [readId] of this.rooms)
       await maintain(() =>
         this.enqueue(readId, async () => {
