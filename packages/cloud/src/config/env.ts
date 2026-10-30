@@ -54,7 +54,7 @@ const registry = defineEnv({
     schema: z.string(),
     default: "",
     example: "dev",
-    doc: "Sync namespace shared by every app of one installation; isolates its NATS resources from other installations on the same cluster.",
+    doc: "Sync namespace shared by every app of one installation; separates NATS resource names, not access. Use one NATS account per installation.",
   },
   SYNC_REPLICAS: {
     schema: syncReplicas,
@@ -175,7 +175,7 @@ const registry = defineEnv({
     schema: z.string(),
     scope: "secret",
     secretFile: true,
-    doc: "App-bound workload credential provisioned through Core's admin workload API; background apps such as Mail need one with `identity:invoke`.",
+    doc: "Optional host-run app override for the automatically delivered app workload credential; provision through Core's admin workload API with `identity:invoke`.",
   },
   CLOUD_IDENTITY_JWKS_ORIGIN: {
     schema: z.string(),

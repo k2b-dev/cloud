@@ -157,7 +157,6 @@ services:
     image: ghcr.io/k2b-dev/cloud-app-mail:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     environment:
       <<: *shared-env
-      CLOUD_APP_CREDENTIAL: ${CLOUD_MAIL_APP_CREDENTIAL:-}
 
   app-notebooks:
     <<: *app-defaults

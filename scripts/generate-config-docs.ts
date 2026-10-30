@@ -58,7 +58,6 @@ const composeInputs: Record<string, { value: string; doc: string; optional?: tru
   POSTGRES_PASSWORD: { value: "change-me", doc: "Postgres password for the same connection." },
   POSTGRES_DB: { value: "cloud", doc: "Postgres database name for the same connection." },
   CLOUD_HOST: { value: "cloud.example.com", doc: "Public hostname routed by Traefik to the gateway; also forms APP_URL." },
-  CLOUD_MAIL_APP_CREDENTIAL: { value: "", doc: "Mail only: Compose passes this workload credential to Mail as CLOUD_APP_CREDENTIAL." },
   CLOUD_DEV_POSTGRES_PORT: {
     value: "5432",
     doc: "Development only: loopback host port for Postgres; host-run processes and CLOUD_TEST_DATABASE_URL must use the same port.",

@@ -1,3 +1,4 @@
+import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
@@ -20,6 +21,7 @@ import {
   serviceAccountCredentials,
   serviceAccounts,
 } from "@k2b/cloud/services";
+import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
 import { publishSpaceChange, spacesLive } from "./live";
@@ -439,4 +441,23 @@ export const spaceAccessAdapter: ResourceAccessAdapter = {
   add: addSpaceAccess,
   remove: removeSpaceAccess,
   count: countSpaceAccess,
+};
+
+/** Current account grants and resource binding, independent of credential scopes. */
+export const getResourceSpacePermissions = async (spaceId: string, readers: readonly ResourceReader[]): Promise<PermissionLevel[]> => {
+  const granted = await getEffectivePermissions({
+    accessIds: sql`SELECT access_id FROM spaces.space_access WHERE space_id = ${spaceId}::uuid`,
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers.map(({ binding }, index) =>
+    binding && (binding.appId !== SPACES_APP_ID || binding.resourceType !== SPACE_RESOURCE_TYPE || binding.resourceId !== spaceId)
+      ? "none"
+      : (granted[index] ?? "none"),
+  );
+};
+
+export const readableSpacePrincipals = async (spaceId: string, principals: readonly ResourcePrincipal[]): Promise<ResourcePrincipal[]> => {
+  const readers = await resolveResourceReaders(principals);
+  const permissions = await getResourceSpacePermissions(spaceId, readers);
+  return readers.filter((_, index) => permissions[index] !== "none").map((reader) => reader.principal);
 };

@@ -347,7 +347,8 @@ export default function MailConversationList(props: {
           ref={(element) => {
             listScrollElement = element;
           }}
-          class="flex-1 px-2 pb-2"
+          class="flex-1 pb-2"
+          inset
           scrollPreserveKey={`mail-list-${props.mailboxId}`}
         >
           {props.error ? (

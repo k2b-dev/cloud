@@ -69,6 +69,15 @@ FreeIPA und die Gruppenzuordnung für die Administration richtest du in den Eins
 
 ## App-Schlüssel rotieren {icon="key"}
 
+Core stellt App-Schlüssel automatisch aus und rotiert sie. **App-Schlüssel**
+zeigt sie als `Runtime <Instanz>` an. Wenn du einen automatischen Schlüssel
+widerrufst, wird der Hintergrundzugriff aller Instanzen dieser App deaktiviert,
+auch nach einem Neustart. Wähle in derselben Tabelle **App-Hintergrundzugriff
+aktivieren**, um ihn wieder freizugeben. Die App erhält dann automatisch einen
+neuen Schlüssel. Bei einem Host-Override muss ein widerrufener Schlüssel
+weiterhin manuell ersetzt werden. Die folgenden Schritte dienen einem optionalen
+Override für eine App auf dem Host.
+
 Unter **App-Schlüssel** findest du die vorhandenen Schlüssel in einer Tabelle.
 
 :::steps

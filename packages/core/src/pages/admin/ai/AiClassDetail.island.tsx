@@ -140,7 +140,7 @@ export default function AiClassDetail(props: {
   const nothing = () => props.models.length === 0;
 
   return (
-    <div class="grid gap-5 px-4 pb-10">
+    <div class="grid gap-5 px-2 pb-10">
       <p class="-mt-2 flex min-h-5 items-center gap-2 text-sm text-(--k2b-text-muted)" role="status">
         <Show when={saving()}>
           <StatusBadge tone="running" variant="dot" label={t().saving} />

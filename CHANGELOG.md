@@ -3,6 +3,25 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.53.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.52.0...cloud-v0.53.0) (2026-10-30)
+
+
+### Features
+
+* **accounts:** grant machines separate group management rights ([#1843](https://github.com/k2b-dev/cloud/issues/1843)) ([63cbcdd](https://github.com/k2b-dev/cloud/commit/63cbcdde9fd6a00d60ed9191b830910e34cf8806))
+* **chat:** notification settings and unread marks in Chat ([#2077](https://github.com/k2b-dev/cloud/issues/2077)) ([5a6aca9](https://github.com/k2b-dev/cloud/commit/5a6aca99752a1da767075e8facaeee56e7e7ef9a))
+* **chat:** push notifications for mentions, replies and new messages ([#2076](https://github.com/k2b-dev/cloud/issues/2076)) ([3ad40ed](https://github.com/k2b-dev/cloud/commit/3ad40ed8f4afee42dcb5dac7a47b4755be7e9d13))
+* **cloud:** resource types name their container and let apps check readers ([#2111](https://github.com/k2b-dev/cloud/issues/2111)) ([0e24a6b](https://github.com/k2b-dev/cloud/commit/0e24a6b2d6945975796491def162c1b119cf6367))
+* **cloud:** save and edit maps across Assistant, Contacts and Notebooks ([#1848](https://github.com/k2b-dev/cloud/issues/1848)) ([0831cd2](https://github.com/k2b-dev/cloud/commit/0831cd22824819e86c06df16b37a34ccb5cf2616))
+* **filesv2:** observe local file changes and export activity ([#1931](https://github.com/k2b-dev/cloud/issues/1931)) ([12e1c3c](https://github.com/k2b-dev/cloud/commit/12e1c3c726cc9132d43c26b99d7f6ec05d539e7b))
+
+
+### Bug Fixes
+
+* **admin:** resize the administration sidebar and columns like any app ([#2106](https://github.com/k2b-dev/cloud/issues/2106)) ([a1e434b](https://github.com/k2b-dev/cloud/commit/a1e434beaff4a993838373563a95621127697565))
+* **chat:** prevent integration cleanup failures from cascading ([#2121](https://github.com/k2b-dev/cloud/issues/2121)) ([94f99f8](https://github.com/k2b-dev/cloud/commit/94f99f8b8864c30e6d5d4d5d7650906c994334f2)), closes [#2118](https://github.com/k2b-dev/cloud/issues/2118)
+* **ui:** keep the same space inside both edges of every workspace column ([#2107](https://github.com/k2b-dev/cloud/issues/2107)) ([e71ac10](https://github.com/k2b-dev/cloud/commit/e71ac1020f6d36b65242fb540ebbaab0b2eef2e8))
+
 ## [0.52.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.51.0...cloud-v0.52.0) (2026-10-29)
 
 

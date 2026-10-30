@@ -29,7 +29,7 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `DATABASE_URL` | string | runtime | unset | no | Postgres connection read by Bun SQL and by application-owned pools. |
 | `REDIS_URL` | string | runtime | unset | no | Valkey connection used by Bun Redis for caches and rate limits. Aliases: `VALKEY_URL`. |
 | `NATS_SERVERS` | list | runtime | empty list | no | Comma-separated NATS JetStream bootstrap servers; the client dials all of them. |
-| `SYNC_NAMESPACE` | string | runtime | empty | no | Sync namespace shared by every app of one installation; isolates its NATS resources from other installations on the same cluster. |
+| `SYNC_NAMESPACE` | string | runtime | empty | no | Sync namespace shared by every app of one installation; separates NATS resource names, not access. Use one NATS account per installation. |
 | `SYNC_REPLICAS` | 1 \| 3 \| 5 | runtime | `3` | no | Persistent JetStream replica count (1, 3 or 5); keep it consistent across the installation and migrate existing resources before changing it. |
 | `NATS_CREDS_FILE` | string | runtime | unset | no | Path to a mounted NATS `.creds` file (JWT and NKey); unset means server-side no-auth. |
 | `NATS_TLS_CA_FILE` | string | runtime | unset | no | Path to a mounted CA certificate that enables TLS to NATS; unset means plain TCP. |
@@ -47,7 +47,7 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | string | secret | unset | no | Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed. File alternative: `CLOUD_IDENTITY_PREVIOUS_KEY_FILE`. |
 | `CLOUD_OAUTH_BROKER_SECRET` | string | secret | unset | no | Core and OAuth only: 64-hex secret that lets the OAuth app request token signatures from Core; generate independently with `openssl rand -hex 32`. File alternative: `CLOUD_OAUTH_BROKER_SECRET_FILE`. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | string | runtime | unset | no | Direct Core listener origin for OAuth issuance, mandate-backed background work and internal callbacks; host-run callers use the Core port, not the gateway. |
-| `CLOUD_APP_CREDENTIAL` | string | secret | unset | no | App-bound workload credential provisioned through Core's admin workload API; background apps such as Mail need one with `identity:invoke`. File alternative: `CLOUD_APP_CREDENTIAL_FILE`. |
+| `CLOUD_APP_CREDENTIAL` | string | secret | unset | no | Optional host-run app override for the automatically delivered app workload credential; provision through Core's admin workload API with `identity:invoke`. File alternative: `CLOUD_APP_CREDENTIAL_FILE`. |
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the Core listener for session and invocation JWKS; unset fetches keys from the public issuer origin. |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the OAuth listener for OAuth JWKS; unset fetches keys from the public issuer origin. |
 | `APP_DIR` | string | development | unset | no | Application directory for standalone consumers running `@k2b/cloud/scripts/build.ts` or the SSR dev server outside the monorepo; defaults to the package directory. |

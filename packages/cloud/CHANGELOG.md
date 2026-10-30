@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.46.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.45.0...npm-cloud-v0.46.0) (2026-10-30)
+
+
+### Features
+
+* **accounts:** grant machines separate group management rights ([#1843](https://github.com/k2b-dev/cloud/issues/1843)) ([63cbcdd](https://github.com/k2b-dev/cloud/commit/63cbcdde9fd6a00d60ed9191b830910e34cf8806))
+* **chat:** notification settings and unread marks in Chat ([#2077](https://github.com/k2b-dev/cloud/issues/2077)) ([5a6aca9](https://github.com/k2b-dev/cloud/commit/5a6aca99752a1da767075e8facaeee56e7e7ef9a))
+* **cloud:** resource types name their container and let apps check readers ([#2111](https://github.com/k2b-dev/cloud/issues/2111)) ([0e24a6b](https://github.com/k2b-dev/cloud/commit/0e24a6b2d6945975796491def162c1b119cf6367))
+* **cloud:** save and edit maps across Assistant, Contacts and Notebooks ([#1848](https://github.com/k2b-dev/cloud/issues/1848)) ([0831cd2](https://github.com/k2b-dev/cloud/commit/0831cd22824819e86c06df16b37a34ccb5cf2616))
+
+
+### Bug Fixes
+
+* **admin:** resize the administration sidebar and columns like any app ([#2106](https://github.com/k2b-dev/cloud/issues/2106)) ([a1e434b](https://github.com/k2b-dev/cloud/commit/a1e434beaff4a993838373563a95621127697565))
+* **ui:** keep the same space inside both edges of every workspace column ([#2107](https://github.com/k2b-dev/cloud/issues/2107)) ([e71ac10](https://github.com/k2b-dev/cloud/commit/e71ac1020f6d36b65242fb540ebbaab0b2eef2e8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.35.0 to 0.36.0
+
 ## [0.45.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.44.0...npm-cloud-v0.45.0) (2026-10-29)
 
 
