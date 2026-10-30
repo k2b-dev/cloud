@@ -2,15 +2,16 @@ import { expect, test } from "bun:test";
 import type { SettingDef } from "./defaults";
 import { envSettingStatus } from "./env-status";
 
-const def = (raw: unknown): SettingDef => ({
-  key: "test.secret",
-  kind: "secret",
-  default: "",
-  group: "test",
-  description: "",
-  envVariable: "TEST_SECRET",
-  envBootstrap: () => raw,
-});
+const def = (raw: unknown) =>
+  ({
+    key: "test.secret",
+    kind: "secret",
+    default: "",
+    group: "test",
+    description: "",
+    envVariable: "TEST_SECRET",
+    envBootstrap: () => raw,
+  }) satisfies SettingDef;
 test("status reports presence and conflicts without exposing secret values", () => {
   const row = envSettingStatus(def("secret-env"), { stored: "readable", value: "secret-stored" });
   expect(row).toMatchObject({ storedValuePresent: true, envValuePresent: true, conflict: "differs", needsAttention: true });
