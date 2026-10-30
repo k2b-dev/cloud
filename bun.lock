@@ -26,6 +26,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@k2b/cloud": "workspace:*",
+        "@k2b/editor": "workspace:*",
         "@k2b/fibel": "0.7.6",
         "@k2b/ssr": "workspace:*",
         "@k2b/stdlib": "catalog:",
