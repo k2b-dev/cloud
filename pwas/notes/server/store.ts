@@ -21,6 +21,11 @@ export const textBytes = (value: string): number => Buffer.byteLength(value, "ut
 
 export class NotesStore {
   private owner = randomId();
+  private usedBytes = 0;
+  private uncertain = false;
+  private recovery?: Promise<void>;
+  private readonly inflight = new Set<Promise<unknown>>();
+  private readonly releases = new Map<Transaction, number>();
   private lease?: Awaited<ReturnType<SQL["reserve"]>>;
   constructor(
     readonly db: SQL,
@@ -35,10 +40,12 @@ export class NotesStore {
       if (!row?.held) throw new Error("notes_already_running");
       await lease`UPDATE notes_storage SET owner_id=${this.owner} WHERE singleton`;
       this.lease = lease;
+      await this.measure();
     } catch (error) {
       try {
         await lease`SELECT pg_advisory_unlock(726628314)`;
       } catch {}
+      this.lease = undefined;
       lease.release();
       throw error;
     }
@@ -53,30 +60,70 @@ export class NotesStore {
       lease.release();
     }
   }
-  /** The storage row fences a previous process whose advisory-lock connection died. */
-  async transaction<T>(run: (tx: Transaction) => Promise<T>): Promise<T> {
-    if (!this.lease) throw new NotesError("unavailable", 503);
-    return this.db.begin(async (tx) => {
-      const [row] = await tx<{ owner_id: string }[]>`SELECT owner_id FROM notes_storage WHERE singleton FOR UPDATE`;
-      if (row?.owner_id !== this.owner) throw new NotesError("unavailable", 503);
-      return run(tx);
+  private async measure(): Promise<void> {
+    const [row] = await this.db<{ bytes: string }[]>`SELECT COALESCE(SUM(size_bytes),0)::text AS bytes FROM pads`;
+    this.usedBytes = Number(row!.bytes);
+  }
+  private async reconcile(): Promise<void> {
+    if (!this.uncertain) return;
+    this.recovery ??= (async () => {
+      // New transactions wait here. Negative reservations are released only after commit.
+      await Promise.allSettled([...this.inflight]);
+      await this.measure();
+      this.uncertain = false;
+    })().finally(() => {
+      this.recovery = undefined;
     });
+    await this.recovery;
+  }
+  async ownsDatabase(): Promise<boolean> {
+    if (!this.lease) return false;
+    const [row] = await this.db<{ owner_id: string }[]>`SELECT owner_id FROM notes_storage WHERE singleton`;
+    return row?.owner_id === this.owner;
+  }
+  /** Shared owner locks let independent notes commit concurrently while fencing takeover. */
+  async transaction<T>(run: (tx: Transaction) => Promise<T>): Promise<T> {
+    do {
+      await this.reconcile();
+    } while (this.uncertain);
+    if (!this.lease) throw new NotesError("unavailable", 503);
+    const pending = this.db.begin(async (tx) => {
+      const [row] = await tx<{ owner_id: string }[]>`SELECT owner_id FROM notes_storage WHERE singleton FOR SHARE`;
+      if (row?.owner_id !== this.owner) throw new NotesError("unavailable", 503);
+      this.releases.set(tx, 0);
+      try {
+        const result = await run(tx);
+        return { result, release: this.releases.get(tx)! };
+      } finally {
+        this.releases.delete(tx);
+      }
+    });
+    this.inflight.add(pending);
+    try {
+      const { result, release } = await pending;
+      this.usedBytes -= release;
+      return result;
+    } catch (error) {
+      // Even a rejected COMMIT can have reached Postgres. Recount after all active writes.
+      this.uncertain = true;
+      throw error;
+    } finally {
+      this.inflight.delete(pending);
+    }
   }
   async reserve(tx: Transaction, delta: number, kind: "new" | "existing" = "existing"): Promise<void> {
     const threshold = kind === "new" ? Math.floor(this.storageBytes * 0.9) : this.storageBytes;
-    const rows =
-      await tx`UPDATE notes_storage SET used_bytes=used_bytes+${delta} WHERE singleton AND used_bytes+${delta}>=0 AND (${delta}<=0 OR used_bytes+${delta}<=${threshold}) RETURNING used_bytes`;
-    if (rows.length !== 1) throw new NotesError("storage_full", 507);
+    if (delta > 0 && this.usedBytes + delta > threshold) throw new NotesError("storage_full", 507);
+    if (delta > 0) this.usedBytes += delta;
+    else this.releases.set(tx, (this.releases.get(tx) ?? 0) - delta);
   }
   async status(): Promise<{ usedBytes: number; capacityBytes: number; sharingPaused: boolean; full: boolean }> {
-    const [row] = await this.db<{ used_bytes: string }[]>`SELECT used_bytes::text FROM notes_storage WHERE singleton`;
-    if (!row) throw new NotesError("unavailable", 503);
-    const usedBytes = Number(row.used_bytes);
+    await this.reconcile();
     return {
-      usedBytes,
+      usedBytes: this.usedBytes,
       capacityBytes: this.storageBytes,
-      sharingPaused: usedBytes >= Math.floor(this.storageBytes * 0.9),
-      full: usedBytes >= this.storageBytes,
+      sharingPaused: this.usedBytes >= Math.floor(this.storageBytes * 0.9),
+      full: this.usedBytes >= this.storageBytes,
     };
   }
   async resolve(token: string): Promise<PadAccess> {
@@ -129,9 +176,9 @@ export class NotesStore {
       }
     });
   }
-  async append(readId: string, id: string, update: Uint8Array, content: string): Promise<{ id: string; duplicate: boolean }> {
+  async append(readId: string, id: string, update: Uint8Array): Promise<{ id: string; duplicate: boolean }> {
     return this.transaction(async (tx) => {
-      const [pad] = await tx<PadRow[]>`SELECT blocked_at,deleted_at,status_reason,content_md FROM pads WHERE read_id=${readId} FOR UPDATE`;
+      const [pad] = await tx<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${readId} FOR UPDATE`;
       this.assertActive(pad);
       const [previous] = await tx<
         { id: string; update: Uint8Array }[]
@@ -140,27 +187,28 @@ export class NotesStore {
         if (!Buffer.from(previous.update).equals(update)) throw new NotesError("update_id_conflict", 409);
         return { id: previous.id, duplicate: true };
       }
-      const contentDelta = textBytes(content) - textBytes(pad!.content_md);
-      const cost = costs.update + update.byteLength + contentDelta;
+      const cost = costs.update + update.byteLength;
       await this.reserve(tx, cost);
       const [row] = await tx<
         { id: string }[]
       >`INSERT INTO pad_updates(read_id,client_update_id,update) VALUES(${readId},${id},${Buffer.from(update)}) ON CONFLICT(read_id,client_update_id) DO NOTHING RETURNING id::text`;
       if (!row) throw new NotesError("update_id_conflict", 409);
-      await tx`UPDATE pads SET content_md=${content},size_bytes=size_bytes+${cost} WHERE read_id=${readId}`;
+      await tx`UPDATE pads SET size_bytes=size_bytes+${cost} WHERE read_id=${readId}`;
       return { id: row.id, duplicate: false };
     });
   }
-  async compact(readId: string, snapshot: Uint8Array, through: string): Promise<void> {
+  async compact(readId: string, snapshot: Uint8Array, through: string, content: string): Promise<void> {
     await this.transaction(async (tx) => {
-      const [pad] = await tx<PadRow[]>`SELECT snapshot,blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${readId} FOR UPDATE`;
+      const [pad] = await tx<
+        (PadRow & { snapshot_bytes: number; content_bytes: number })[]
+      >`SELECT octet_length(snapshot) AS snapshot_bytes,octet_length(content_md) AS content_bytes,blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${readId} FOR UPDATE`;
       this.assertActive(pad);
       const [log] = await tx<
         { bytes: string }[]
       >`SELECT COALESCE(SUM(octet_length(update)+${costs.update}),0)::text AS bytes FROM pad_updates WHERE read_id=${readId} AND id<=${through}`;
-      const delta = snapshot.byteLength - pad!.snapshot.byteLength - Number(log!.bytes);
+      const delta = snapshot.byteLength - pad!.snapshot_bytes - Number(log!.bytes) + textBytes(content) - pad!.content_bytes;
       await this.reserve(tx, delta);
-      await tx`UPDATE pads SET snapshot=${Buffer.from(snapshot)},applied_through=${through},size_bytes=size_bytes+${delta} WHERE read_id=${readId}`;
+      await tx`UPDATE pads SET snapshot=${Buffer.from(snapshot)},content_md=${content},applied_through=${through},size_bytes=size_bytes+${delta} WHERE read_id=${readId}`;
       await tx`DELETE FROM pad_updates WHERE read_id=${readId} AND id<=${through}`;
     });
   }
@@ -171,9 +219,13 @@ export class NotesStore {
       await tx`UPDATE pads SET last_human_open_on=CURRENT_DATE WHERE read_id=${readId} AND last_human_open_on<>CURRENT_DATE`;
     });
   }
-  async mark(readId: string, kind: "delete" | "block" | "expire", reason: string): Promise<void> {
-    await this.transaction(async (tx) => {
-      await tx`UPDATE pads SET blocked_at=CASE WHEN ${kind}='block' THEN COALESCE(blocked_at,now()) ELSE blocked_at END, deleted_at=CASE WHEN ${kind}<>'block' THEN COALESCE(deleted_at,now()) ELSE deleted_at END,status_reason=${reason} WHERE read_id=${readId}`;
+  async mark(readId: string, kind: "delete" | "block" | "expire", reason: string, today?: string): Promise<boolean> {
+    return this.transaction(async (tx) => {
+      const rows =
+        kind === "expire"
+          ? await tx`UPDATE pads SET deleted_at=now(),status_reason='expired' WHERE read_id=${readId} AND deleted_at IS NULL AND blocked_at IS NULL AND last_human_open_on<=(${today}::date-interval '6 months') RETURNING read_id`
+          : await tx`UPDATE pads SET blocked_at=CASE WHEN ${kind}='block' THEN now() ELSE blocked_at END,deleted_at=CASE WHEN ${kind}='delete' THEN now() ELSE deleted_at END,status_reason=COALESCE(status_reason,${reason}) WHERE read_id=${readId} AND deleted_at IS NULL AND blocked_at IS NULL RETURNING read_id`;
+      return rows.length === 1;
     });
   }
   async cleanup(readId: string): Promise<void> {

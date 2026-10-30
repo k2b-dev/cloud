@@ -22,12 +22,28 @@ export const limits = {
   processingMs: 200,
 } as const;
 
+const normalizeIp = (value: string): string => value.toLowerCase().replace(/^::ffff:(?=\d+\.)/, "");
+export const rateKey = (value: string): string => {
+  const ip = normalizeIp(value);
+  if (isIP(ip) !== 6) return ip;
+  const halves = ip.split("::");
+  const left = halves[0]!.split(":").filter(Boolean);
+  const right = halves[1]?.split(":").filter(Boolean) ?? [];
+  const words = halves.length === 1 ? left : [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
+  return (
+    words
+      .slice(0, 4)
+      .map((part) => parseInt(part, 16).toString(16))
+      .join(":") + "::/64"
+  );
+};
 /** Only the transport's actual peer can opt into forwarded addresses. */
 export const requestIp = (peer: string | undefined, forwarded: string | null, trustedProxy?: string): string => {
   if (!peer || isIP(peer) === 0) return "unknown";
-  if (peer !== trustedProxy || !forwarded) return peer;
+  peer = normalizeIp(peer);
+  if (!trustedProxy || peer !== normalizeIp(trustedProxy) || !forwarded) return rateKey(peer);
   const last = forwarded.split(",").at(-1)?.trim();
-  return last && isIP(last) ? last : peer;
+  return rateKey(last && isIP(last) ? last : peer);
 };
 
 /** Bounded sliding windows; callers use separate action names for independent budgets. */
@@ -39,17 +55,22 @@ export class RateLimits {
   ) {}
   take(action: string, ip: string, maximum: number, windowMs: number, cost = 1): void {
     const now = this.now();
-    const key = `${action}:${ip}`;
+    const key = `${action}:${rateKey(ip)}`;
     let entry = this.windows.get(key);
     if (!entry) {
       if (this.windows.size >= this.maxKeys) this.prune();
-      if (this.windows.size >= this.maxKeys) throw new NotesError("rate_limiter_full", 503);
+      if (this.windows.size >= this.maxKeys) {
+        const oldest = this.windows.keys().next().value;
+        if (oldest !== undefined) this.windows.delete(oldest);
+      }
       entry = { timestamps: [], until: now + windowMs };
       this.windows.set(key, entry);
     }
     entry.timestamps = entry.timestamps.filter((entry) => entry.at > now - windowMs);
     if (entry.timestamps.reduce((sum, entry) => sum + entry.cost, 0) + cost > maximum) throw new NotesError("rate_limited", 429);
     entry.timestamps.push({ at: now, cost });
+    this.windows.delete(key);
+    this.windows.set(key, entry);
     entry.until = now + windowMs;
   }
   prune(): void {

@@ -66,8 +66,10 @@ required admission budgets; select process limits with the pre-launch load test.
 address. Without it, forwarding headers are ignored. The optional
 `NOTES_ADMIN_PASSWORD_HASH` is reserved for moderation; without it admin is off.
 
-Storage accounting reserves payload bytes, UTF-8 text, and fixed per-row costs
-transactionally. New sharing pauses at 90%; existing updates stop at capacity.
+Storage accounting reserves payload bytes, UTF-8 snapshot text, and fixed row
+costs before committing. A fenced single writer maintains the counter in memory,
+reconstructs it from durable rows at startup, and reconciles uncertain transactions
+before accepting further reservations. Negative deltas release space after commit. New sharing pauses at 90%; existing updates stop at capacity.
 This is an application budget: provision Postgres disk, indexes, WAL, backups,
 and compaction headroom separately. `/api/status` exposes the visible pause/full
 state; `/readyz` fails when the budget is full.

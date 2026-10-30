@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
 import * as sync from "y-protocols/sync";
@@ -9,6 +10,14 @@ import { NotesError } from "./errors";
 import { limits, RateLimits } from "./limits";
 import type { NotesStore } from "./store";
 import { hash } from "./tokens";
+
+const read = <T>(decode: () => T): T => {
+  try {
+    return decode();
+  } catch {
+    throw new NotesError("invalid_frame");
+  }
+};
 
 type Room = { doc: Y.Doc; through: string; updates: number; peers: Set<Connection>; touched: number; changed: number };
 type Queue = { tail: Promise<unknown>; pending: number };
@@ -41,7 +50,8 @@ export class NotesService {
   private readonly ipConnections = new Map<string, number>();
   private readonly padConnections = new Map<string, number>();
   private loadingRooms = 0;
-  private nextAwarenessId = 2 ** 32;
+  private reading = 0;
+  private nextAwarenessId = randomInt(2 ** 32, 2 ** 48);
   private stopping = false;
   private timer?: ReturnType<typeof setInterval>;
   private maintenance?: Promise<void>;
@@ -105,31 +115,36 @@ export class NotesService {
     this.rates.take("create", ip, limits.createPerHour, 3_600_000);
     return this.store.create(bytes);
   }
-  async read(token: string) {
+  async read(token: string, ip?: string) {
+    if (ip) this.rates.take("read", ip, limits.peersPerPad, 60_000);
+    if (!(await this.store.ownsDatabase())) throw new NotesError("unavailable", 503);
     const access = await this.store.resolve(token);
-    return this.enqueue(access.readId, async () => {
-      const loaded = await this.store.load(access.readId);
-      try {
-        return {
-          readId: access.readId,
-          role: access.access,
-          title:
-            loaded.doc
-              .getText("text")
-              .toString()
-              .split("\n")
-              .find((line) => line.trim())
-              ?.replace(/^#{1,6}\s+/, "")
-              .slice(0, 200) ?? "",
-          snapshot: Buffer.from(Y.encodeStateAsUpdate(loaded.doc)).toString("base64"),
-          content: loaded.doc.getText("text").toString(),
-          status: "active" as const,
-          liveAvailable: (this.padConnections.get(access.readId) ?? 0) < limits.peersPerPad,
-        };
-      } finally {
-        loaded.doc.destroy();
-      }
-    });
+    if (this.reading >= this.options.maxOpenPads) throw new NotesError("overloaded", 429);
+    this.reading++;
+    let loaded: Awaited<ReturnType<NotesStore["load"]>> | undefined;
+    try {
+      const cached = this.rooms.get(access.readId);
+      if (!cached) loaded = await this.store.load(access.readId);
+      const doc = cached?.doc ?? loaded!.doc;
+      const content = doc.getText("text").toString();
+      return {
+        readId: access.readId,
+        role: access.access,
+        title:
+          content
+            .split("\n")
+            .find((line) => line.trim())
+            ?.replace(/^#{1,6}\s+/, "")
+            .slice(0, 200) ?? "",
+        snapshot: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64"),
+        content,
+        status: "active" as const,
+        liveAvailable: (this.padConnections.get(access.readId) ?? 0) < limits.peersPerPad,
+      };
+    } finally {
+      this.reading--;
+      loaded?.doc.destroy();
+    }
   }
   async humanOpen(token: string, ip: string): Promise<void> {
     this.rates.take("open", ip, limits.createPerHour * limits.peersPerIp, 3_600_000);
@@ -139,6 +154,7 @@ export class NotesService {
   async admit(token: string, ip: string): Promise<Connection> {
     if (this.stopping) throw new NotesError("unavailable", 503);
     this.rates.take("connect", ip, limits.peersPerIp, 60_000);
+    if (!(await this.store.ownsDatabase())) throw new NotesError("unavailable", 503);
     const access = await this.store.resolve(token);
     if (this.stopping) throw new NotesError("unavailable", 503);
     const ipCount = this.ipConnections.get(ip) ?? 0;
@@ -178,10 +194,11 @@ export class NotesService {
           connection,
           frame(message.identity, (e) => encoding.writeVarUint(e, connection.awareness.id)),
         );
-        this.send(
-          connection,
-          frame(message.sync, (e) => sync.writeSyncStep1(e, room.doc)),
-        );
+        if (connection.access === "edit")
+          this.send(
+            connection,
+            frame(message.sync, (e) => sync.writeSyncStep1(e, room.doc)),
+          );
         for (const other of room.peers)
           if (other.awareness.current)
             this.send(
@@ -225,18 +242,18 @@ export class NotesService {
       if (connection.pendingMessages > limits.messagesPerSecond || connection.pendingBytes > limits.stateBytes + 256)
         throw new NotesError("overloaded", 429);
       const decoder = decoding.createDecoder(bytes);
-      const type = decoding.readVarUint(decoder);
+      const type = read(() => decoding.readVarUint(decoder));
       if (type === message.update) {
-        updateId = decoding.readVarString(decoder);
-        if (!/^[\x21-\x7e]{1,128}$/.test(updateId)) throw new NotesError("invalid_update_id");
         if (connection.access !== "edit") throw new NotesError("read_only", 403);
-        const update = decoding.readVarUint8Array(decoder);
+        updateId = read(() => decoding.readVarString(decoder));
+        if (!/^[\x21-\x7e]{1,128}$/.test(updateId)) throw new NotesError("invalid_frame");
+        const update = read(() => decoding.readVarUint8Array(decoder));
         if (decoder.pos !== bytes.length) throw new NotesError("invalid_frame");
         await this.enqueue(connection.readId, () => this.apply(connection, updateId, update));
       } else if (type === message.sync) {
-        const subtype = decoding.readVarUint(decoder);
+        const subtype = read(() => decoding.readVarUint(decoder));
         if (subtype === sync.messageYjsSyncStep1) {
-          const vector = decoding.readVarUint8Array(decoder);
+          const vector = read(() => decoding.readVarUint8Array(decoder));
           if (decoder.pos !== bytes.length || vector.byteLength > limits.stateBytes) throw new NotesError("invalid_frame");
           await this.enqueue(connection.readId, async () => {
             const room = await this.room(connection.readId);
@@ -247,17 +264,18 @@ export class NotesService {
           });
         } else if (subtype === sync.messageYjsSyncStep2 || subtype === sync.messageYjsUpdate) {
           if (connection.access !== "edit") throw new NotesError("read_only", 403);
-          const update = decoding.readVarUint8Array(decoder);
+          const update = read(() => decoding.readVarUint8Array(decoder));
           if (decoder.pos !== bytes.length) throw new NotesError("invalid_frame");
           updateId = `standard:${hash(update)}`;
           await this.enqueue(connection.readId, () => this.apply(connection, updateId, update));
         } else throw new NotesError("invalid_frame");
       } else if (type === message.awareness) {
         connection.rates.take("awareness", "socket", limits.awarenessPerSecond, 1_000);
-        const awareness = decoding.readVarUint8Array(decoder);
+        const awareness = read(() => decoding.readVarUint8Array(decoder));
         if (decoder.pos !== bytes.length) throw new NotesError("invalid_frame");
         await this.enqueue(connection.readId, async () => {
           const room = await this.room(connection.readId);
+          if (connection.released) return;
           const trusted = connection.awareness.publish(awareness);
           this.broadcast(
             room,
@@ -290,11 +308,11 @@ export class NotesService {
     if (connection.released) return;
     const room = await this.room(connection.readId);
     const candidate = new Y.Doc();
-    const started = performance.now();
     let committed = false;
     try {
       const before = Y.encodeStateAsUpdate(room.doc);
       Y.applyUpdate(candidate, before);
+      const started = performance.now();
       try {
         Y.applyUpdate(candidate, bytes);
       } catch {
@@ -305,11 +323,21 @@ export class NotesService {
         this.send(connection, ackFrame(id));
         return;
       }
-      const result = await this.store.append(connection.readId, id, bytes, candidate.getText("text").toString());
+      let result: Awaited<ReturnType<NotesStore["append"]>>;
+      try {
+        result = await this.store.append(connection.readId, id, bytes);
+      } catch (error) {
+        if (!(error instanceof NotesError) || error.code === "unavailable") {
+          // COMMIT may have succeeded. Never compact this possibly stale room again.
+          this.send(connection, rejectFrame(id, "unavailable"));
+          this.invalidate(connection.readId);
+        }
+        throw error;
+      }
       committed = true;
       const previous = room.doc;
       room.doc = candidate;
-      room.through = result.id;
+      if (BigInt(result.id) > BigInt(room.through)) room.through = result.id;
       room.updates += result.duplicate ? 0 : 1;
       room.changed = room.touched = Date.now();
       previous.destroy();
@@ -339,7 +367,7 @@ export class NotesService {
   }
   private async compactRoom(readId: string, room: Room): Promise<void> {
     if (!room.updates) return;
-    await this.store.compact(readId, Y.encodeStateAsUpdate(room.doc), room.through);
+    await this.store.compact(readId, Y.encodeStateAsUpdate(room.doc), room.through, room.doc.getText("text").toString());
     room.updates = 0;
   }
   private release(connection: Connection): void {
@@ -381,20 +409,24 @@ export class NotesService {
     if (access.access !== "edit") throw new NotesError("read_only", 403);
     await this.removeReadId(access.readId, "delete", "deleted");
   }
-  async removeReadId(readId: string, kind: "delete" | "block" | "expire", reason: string): Promise<void> {
+  private invalidate(readId: string, reason = "resync_required"): void {
+    const room = this.rooms.get(readId);
+    for (const peer of [...(room?.peers ?? [])]) this.disconnect(peer, 1013, reason);
+    room?.doc.destroy();
+    this.rooms.delete(readId);
+  }
+  async removeReadId(readId: string, kind: "delete" | "block" | "expire", reason: string, today?: string): Promise<void> {
     await this.enqueue(readId, async () => {
-      await this.store.mark(readId, kind, reason);
-      const room = this.rooms.get(readId);
-      for (const peer of [...(room?.peers ?? [])])
-        this.disconnect(peer, 1008, kind === "block" ? "blocked" : kind === "expire" ? "expired" : "deleted");
-      if (room) {
-        room.doc.destroy();
-        this.rooms.delete(readId);
-      }
+      if (!(await this.store.mark(readId, kind, reason, today))) return;
+      this.invalidate(readId, kind === "block" ? "blocked" : kind === "expire" ? "expired" : "deleted");
       await this.store.cleanup(readId);
     });
   }
   async tick(now = Date.now()): Promise<void> {
+    if (!(await this.store.ownsDatabase())) {
+      for (const readId of this.rooms.keys()) this.invalidate(readId);
+      throw new NotesError("unavailable", 503);
+    }
     this.rates.prune();
     for (const connection of this.connections) {
       if (now - connection.lastPong >= limits.heartbeatMs * 2) {
@@ -407,22 +439,34 @@ export class NotesService {
         this.disconnect(connection, 1013, "resync_required");
       }
     }
+    let failed = false;
+    const maintain = async (run: () => Promise<void>) => {
+      try {
+        await run();
+      } catch {
+        failed = true;
+        console.error("[notes] maintenance_item_failed");
+      }
+    };
     for (const [readId] of this.rooms)
-      await this.enqueue(readId, async () => {
-        const room = this.rooms.get(readId);
-        if (!room) return;
-        if (room.updates && now - room.changed >= limits.compactIdleMs) await this.compactRoom(readId, room);
-        if (!room.peers.size && (this.padConnections.get(readId) ?? 0) === 0 && now - room.touched >= limits.evictIdleMs) {
-          await this.compactRoom(readId, room);
-          room.doc.destroy();
-          this.rooms.delete(readId);
-        }
-      });
+      await maintain(() =>
+        this.enqueue(readId, async () => {
+          const room = this.rooms.get(readId);
+          if (!room) return;
+          if (room.updates && now - room.changed >= limits.compactIdleMs) await this.compactRoom(readId, room);
+          if (!room.peers.size && (this.padConnections.get(readId) ?? 0) === 0 && now - room.touched >= limits.evictIdleMs) {
+            await this.compactRoom(readId, room);
+            room.doc.destroy();
+            this.rooms.delete(readId);
+          }
+        }),
+      );
     // One bounded batch per tick; startup repeats the same sweep after a restart.
     for (const readId of await this.store.expired(new Date(now).toISOString().slice(0, 10), limits.peersPerPad))
-      await this.removeReadId(readId, "expire", "expired");
-    for (const readId of await this.store.pendingCleanup(limits.peersPerPad)) await this.enqueue(readId, () => this.store.cleanup(readId));
-    this.maintenanceError = null;
+      await maintain(() => this.removeReadId(readId, "expire", "expired", new Date(now).toISOString().slice(0, 10)));
+    for (const readId of await this.store.pendingCleanup(limits.peersPerPad))
+      await maintain(() => this.enqueue(readId, () => this.store.cleanup(readId)));
+    this.maintenanceError = failed ? "maintenance_failed" : null;
   }
   async stop(): Promise<void> {
     if (this.stopping) return;

@@ -12,7 +12,11 @@ export const serveNotes = async (db: SQL, options: NotesOptions & HttpOptions & 
   const service = new NotesService(new NotesStore(db, options.storageBytes), options);
   await service.start();
   let stopping = false;
-  const app = createNotesApp(async () => !stopping && (await databaseReady(db)) && !(await service.store.status()).full, service, options);
+  const app = createNotesApp(
+    async () => !stopping && (await databaseReady(db)) && (await service.store.ownsDatabase()) && !(await service.store.status()).full,
+    service,
+    options,
+  );
   let server: ReturnType<typeof Bun.serve<SocketData>>;
   try {
     server = Bun.serve<SocketData>({
@@ -36,7 +40,10 @@ export const serveNotes = async (db: SQL, options: NotesOptions & HttpOptions & 
           )
             return;
           service.disconnect(connection);
-          return new Response(null, { status: 400 });
+          return new Response(null, {
+            status: 400,
+            headers: { "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex", "Cache-Control": "private, no-store" },
+          });
         } catch (error) {
           if (connection) service.disconnect(connection);
           const failure = error instanceof NotesError ? error : new NotesError("unavailable", 503);
