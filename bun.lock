@@ -790,6 +790,7 @@
       "name": "@k2b/notes-site",
       "dependencies": {
         "@k2b/cloud": "workspace:*",
+        "file-type": "21.3.4",
         "hono": "catalog:",
         "lib0": "0.2.117",
         "y-protocols": "catalog:",

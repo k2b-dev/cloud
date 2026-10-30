@@ -18,7 +18,7 @@ and `migrations/`; the SPA owns `src/`, `index.html`, and its build script.
 - [x] Recovery across crashes and concurrent compaction.
 - [x] Independent read/edit links, write checks, connection-owned awareness.
 - [x] Text, state, connection, rate, and total storage limits.
-- [ ] Checked image/PDF files in Postgres.
+- [x] Checked image/PDF files in Postgres.
 - [x] Explicit human-open signal and six-month expiry.
 - [ ] Reports, password-protected moderation, and decision log.
 - [ ] Escaped link metadata and a network-free 1200 × 630 preview.
@@ -77,3 +77,17 @@ state; `/readyz` fails when the budget is full.
 Focused integration tests cover real WebSockets, concurrent offline edits,
 read-only rejection, awareness identity, storage/connection/document limits,
 failed persistence, and SIGKILL during compaction and after commit before ACK.
+
+## Files
+
+`POST /api/pads/:editId/files` accepts multipart fields `key` and `file` and
+returns `{key}`. Keys use 1–128 ASCII letters, digits, underscores, or hyphens.
+Repeating a key with identical bytes is idempotent; different bytes return 409.
+Limits: 5 MiB per file, 20 files per note, 10 upload attempts per hour/IP.
+The server bounds the streamed request before parsing multipart data and checks
+magic bytes independently of the provided MIME type. Supported formats are PNG,
+JPEG, WebP, GIF, AVIF and PDF. SVG and other active content are refused.
+`GET /api/pads/:id/files/:key` accepts either capability. Raster images display
+inline; PDFs download as attachments. Responses carry checked MIME types, safe
+filenames, nosniff, no-referrer and no-store. Uploads reserve storage before
+commit and serialize with deletion; image resizing belongs to the client.

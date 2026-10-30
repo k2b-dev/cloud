@@ -14,7 +14,8 @@
     "zod": "catalog:",
     "yjs": "catalog:",
     "y-protocols": "catalog:",
-    "lib0": "0.2.117"
+    "lib0": "0.2.117",
+    "file-type": "21.3.4"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
