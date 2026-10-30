@@ -81,13 +81,19 @@ const pinPageClock = (at: number) => {
   globalThis.Date = PinnedDate as DateConstructor;
 };
 
-beforeEach(async () => {
-  context = await browser.newContext({ locale: "de-DE", viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+const openContext = async (serviceWorkers: "allow" | "block") => {
+  context = await browser.newContext({ locale: "de-DE", viewport: { width: 1280, height: 900 }, reducedMotion: "reduce", serviceWorkers });
   context.setDefaultTimeout(5_000);
   context.setDefaultNavigationTimeout(10_000);
   await context.addInitScript(pinPageClock, NOW);
   page = await context.newPage();
   errors = pageErrors(page);
+};
+
+// WebKit sends a page's requests through its service worker, where page.route cannot stub them;
+// only the offline test needs the worker and gets a context that allows it.
+beforeEach(async () => {
+  await openContext("block");
 });
 
 afterEach(async () => {
@@ -317,6 +323,8 @@ describe("k2b notes · Produktions-SPA", () => {
   }, 20_000);
 
   test("Offline-Reload: aktiver Service Worker lädt die App und ihre lokalen Notizen", async () => {
+    await context.close();
+    await openContext("allow");
     await importNotes();
     const previousCount = await cards().count();
     await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated", undefined, { timeout: 10_000 });
