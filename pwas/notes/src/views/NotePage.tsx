@@ -388,7 +388,7 @@ export function NotePage(props: { mode: NoteMode }) {
             <Wordmark />
           </Match>
           <Match when={!first()}>
-            <a class="n-back" href="/">
+            <a class="n-back" href="/" aria-label={t().back}>
               <Icon name="ti-arrow-left" />
               <span class="n-lbl">{t().back}</span>
             </a>
