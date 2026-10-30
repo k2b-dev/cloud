@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-28
+updated: 2026-10-30
 ---
 
 # Configuration reference
@@ -97,6 +97,19 @@ Declared in `packages/notebooks/src/env.ts`.
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
 | `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks that notebook S3 snapshots may upload to, for example `minio,10.20.0.0/16`; unset allows only public storage. Bare entries cover every port; host:port and [ipv6]:port restrict a host or IP to one port; `/0` entries and other invalid entries stop Notebooks at startup. |
+
+## Application: notes
+
+Declared in `pwas/notes/server/env.ts`.
+
+| Variable | Type | Scope | Default | Required | Description |
+| --- | --- | --- | --- | --- | --- |
+| `NOTES_PUBLIC_ORIGIN` | string | runtime | unset | yes | Notes only: public website origin used for WebSocket, mutation, and administrator origin checks. |
+| `NOTES_ADMIN_PASSWORD_HASH` | string | secret | unset | no | Notes only: Argon2id operator password hash generated with Bun.password.hash; changing it invalidates all administrator sessions. |
+| `NOTES_TRUSTED_PROXY` | string | runtime | unset | no | Notes only: immediate proxy address allowed to supply the last X-Forwarded-For entry; unset trusts no forwarding header. |
+| `NOTES_STORAGE_BYTES` | number | runtime | unset | yes | Notes only: total reserved application storage budget in bytes; new notes and files pause at 90 percent and existing updates stop at capacity. |
+| `NOTES_MAX_CONNECTIONS` | number | runtime | unset | yes | Notes only: maximum simultaneous WebSockets in this single process, selected from the pre-launch load test. |
+| `NOTES_MAX_OPEN_PADS` | number | runtime | unset | yes | Notes only: maximum documents held in memory at once, selected from the pre-launch load test. |
 
 ## Application: pwa-auth
 

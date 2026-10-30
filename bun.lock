@@ -791,6 +791,9 @@
       "dependencies": {
         "@k2b/cloud": "workspace:*",
         "hono": "catalog:",
+        "lib0": "0.2.117",
+        "y-protocols": "catalog:",
+        "yjs": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
