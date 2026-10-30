@@ -196,8 +196,9 @@ export default function Credentials(props: Props) {
   const [revision, setRevision] = createSignal(0);
   const entries = query.create({
     source: () => ({ page: page(), revision: revision() }),
+    initial: { source: { page: 1, revision: 0 }, data: props.initial },
+    isSameSource: (a, b) => a.page === b.page && a.revision === b.revision,
     load: async (source, { abortSignal }): Promise<Listing> => {
-      if (source.page === 1 && source.revision === 0) return props.initial;
       const response = await api.credentials.$get(
         { query: { page: String(source.page), perPage: "20" } },
         { init: { signal: abortSignal } },
@@ -206,7 +207,15 @@ export default function Credentials(props: Props) {
       return response.json();
     },
   });
-  const blocked = () => entries.loading() || entries.refreshing() || !!entries.error();
+  const enable = mutation.create({
+    mutation: async (appId: string, { abortSignal }) => {
+      const response = await api[":appId"].$patch({ param: { appId }, json: { status: "active" } }, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(t().failed);
+    },
+    onSuccess: () => setRevision((v) => v + 1),
+  });
+  onCleanup(() => enable.abort());
+  const blocked = () => enable.loading() || entries.loading() || entries.refreshing() || !!entries.error();
   const open = (entry?: Entry) => {
     const selected = entry?.owner.type === "resource" ? entry.owner.appId : (props.apps[0]?.id ?? "");
     if (!selected || blocked()) return;
@@ -246,6 +255,7 @@ export default function Credentials(props: Props) {
           {t().create}
         </Button>
       </div>
+      <Show when={enable.error()}>{(error) => <NoticeCard tone="danger" title={t().failed} detail={error().message} />}</Show>
       <Show when={entries.error()}>
         {(error) => (
           <NoticeCard tone="danger" title={t().failed} detail={error().message}>
@@ -280,9 +290,9 @@ export default function Credentials(props: Props) {
             if (col.id === "status")
               return (
                 <span
-                  class={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${status(row) === "active" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-zinc-500/10 text-dimmed"}`}
+                  class={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${status(row) === "active" && row.serviceAccount.status === "active" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-zinc-500/10 text-dimmed"}`}
                 >
-                  {t()[status(row)]}
+                  {row.serviceAccount.status === "disabled" ? t().disabled : t()[status(row)]}
                 </span>
               );
             if (col.id === "expires")
@@ -299,7 +309,18 @@ export default function Credentials(props: Props) {
               );
             if (col.id === "actions")
               return (
-                <div class="flex justify-end">
+                <div class="flex justify-end gap-2">
+                  <Show when={row.serviceAccount.status === "disabled" && row.owner.type === "resource"}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={blocked()}
+                      onClick={() => row.owner.type === "resource" && void enable.mutate(row.owner.appId)}
+                    >
+                      {t().enable}
+                    </Button>
+                  </Show>
                   <Button
                     type="button"
                     variant="danger"

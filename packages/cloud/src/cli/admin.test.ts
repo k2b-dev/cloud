@@ -555,6 +555,33 @@ describe("app credential administration", () => {
     expect(read.calls[0]?.path).toBe("/api/admin/identity/workloads/inventory/credentials?page=2&perPage=20");
     expect(JSON.parse(read.lines[0]!)).toEqual(listing);
   });
+  test("enabling and disabling app workload access requires confirmation and targets the app", async () => {
+    for (const action of ["enable", "disable"]) {
+      const blocked = createContext(["app-credentials", action, "inventory"]);
+      await expect(adminCli.run(blocked.ctx)).rejects.toThrow("requires --yes");
+      expect(blocked.calls).toHaveLength(0);
+      const write = createContext(["app-credentials", action, "inventory"], { yes: true }, [
+        jsonResponse({ status: action === "enable" ? "active" : "disabled" }),
+      ]);
+      await adminCli.run(write.ctx);
+      expect(write.calls[0]?.path).toBe("/api/admin/identity/workloads/inventory");
+      expect(write.calls[0]?.init?.method).toBe("PATCH");
+      expect(JSON.parse(String(write.calls[0]?.init?.body))).toEqual({ status: action === "enable" ? "active" : "disabled" });
+    }
+  });
+  test("credential listings show when the app-wide workload account is disabled", async () => {
+    const read = createContext(["app-credentials", "list", "inventory"], {}, [
+      jsonResponse({
+        items: [{ ...credential, serviceAccount: { status: "disabled" } }],
+        page: 1,
+        perPage: 20,
+        total: 1,
+        hasNext: false,
+      }),
+    ]);
+    await adminCli.run(read.ctx);
+    expect(read.tables[0]?.[0]).toMatchObject({ id: credential.id, status: "disabled" });
+  });
   test("revoke targets one UUID and requires confirmation", async () => {
     const blocked = createContext(["app-credentials", "revoke", "inventory", credential.id]);
     blocked.ctx.options.locale = "de-CH";

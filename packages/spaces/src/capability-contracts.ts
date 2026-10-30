@@ -1,7 +1,10 @@
 import {
   CapabilitySemanticLinkSchema,
+  CloudResourceReaderViewSchema,
   CloudResourceRefSchema,
   CloudResourceViewSchema,
+  DiscussionActivityInputSchema,
+  ResourceActivityEventSchema,
   ServiceAccountKindSchema,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
@@ -178,6 +181,7 @@ export const SpaceSummaryDataSchema = z
   .strict();
 
 export const SpaceDetailDataSchema = SpaceSummaryDataSchema.extend({
+  view: CloudResourceReaderViewSchema,
   columns: z.array(SpaceColumnDataSchema).max(100),
   columnsTruncated: z.boolean(),
   tags: z.array(SpaceTagDataSchema).max(100),
@@ -296,8 +300,8 @@ const ItemContainerSchema = z.strictObject({
   permission: z.enum(["read", "write", "admin"]),
 });
 export const ItemReadDataSchema = z.discriminatedUnion("kind", [
-  TaskDataSchema.extend({ container: ItemContainerSchema }),
-  EventDataSchema.extend({ container: ItemContainerSchema }),
+  TaskDataSchema.extend({ container: ItemContainerSchema, view: CloudResourceReaderViewSchema.required({ container: true }) }),
+  EventDataSchema.extend({ container: ItemContainerSchema, view: CloudResourceReaderViewSchema.required({ container: true }) }),
 ]);
 const ItemListBaseDataShape = {
   id: ResourceShortIdSchema,
@@ -727,10 +731,9 @@ export const EventInvitationCommitDataSchema = z
   .strict();
 export const CommentDeleteDataSchema = z.object({ commentId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
 
-export const ActivityInputSchema = z.strictObject({
-  space: ResourceShortIdSchema.describe("Container short ID returned by space.list or space.read."),
-  item: ResourceShortIdSchema.optional().describe("Optional item short ID in this container."),
-  timeZone: TimeZoneInputSchema.refine((zone) => {
+export const ActivityInputSchema = DiscussionActivityInputSchema.extend({
+  container: DiscussionActivityInputSchema.shape.container.optional(),
+  timeZone: DiscussionActivityInputSchema.shape.timeZone.refine((zone) => {
     if (!zone) return true;
     try {
       new Intl.DateTimeFormat("en", { timeZone: zone });
@@ -738,24 +741,18 @@ export const ActivityInputSchema = z.strictObject({
     } catch {
       return false;
     }
-  }).describe("IANA time zone for date presentation; the installation zone when omitted."),
-  before: TimestampSchema.max(40).optional().describe("Exclusive upper bound on the last occurrence, as an ISO datetime."),
-  after: TimestampSchema.max(40).optional().describe("Exclusive lower bound on the last occurrence, as an ISO datetime."),
-  cursor: CursorSchema,
-  limit: z.number().int().min(1).max(100).default(50).describe("Maximum rows to return, from 1 to 100; defaults to 50."),
-});
+  }, "Expected an IANA time zone"),
+  space: ResourceShortIdSchema.optional().describe("Published alias for container; use either field, or the same ID in both."),
+})
+  .refine((input) => Boolean(input.container ?? input.space), "A container is required")
+  .refine((input) => !input.container || !input.space || input.container === input.space, "Container aliases must agree");
 export const ActivityDataSchema = z
   .array(
-    z.strictObject({
-      id: z.string().max(100),
-      at: TimestampSchema,
-      ref: z.strictObject({ type: z.literal("spaces.item"), id: ResourceShortIdSchema }).nullable(),
-      /** The item's current title, for a badge where the event shows outside the item's own place. */
+    ResourceActivityEventSchema.extend({
       title: z.string().max(500).nullable(),
-      actor: z.strictObject({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
-      icon: z.string().max(80),
-      sentence: z.string().max(4000),
-      count: z.number().int().min(1),
+      ref: resourceRef("spaces.item")
+        .extend({ id: ResourceShortIdSchema.min(6).max(6) })
+        .nullable(),
     }),
   )
   .max(100);
