@@ -260,7 +260,6 @@ services:
     environment:
       <<: *env
       APP_ID: mail
-      CLOUD_APP_CREDENTIAL: ${CLOUD_MAIL_APP_CREDENTIAL:-}
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

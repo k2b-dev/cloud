@@ -104,7 +104,7 @@ const errorResponse = (c: Context, status: 400 | 401, code: "UNAUTHORIZED" | "VA
       message: code === "UNAUTHORIZED" ? "A valid app workload credential is required" : "Invalid invocation request",
     },
     status,
-    { "Cache-Control": "no-store" },
+    { "Cache-Control": "no-store", ...(status === 401 ? { "x-cloud-workload-auth": "required" } : {}) },
   );
 
 const dispatchRequest = (source: Request, input: InvocationRequest): Request => {
@@ -153,6 +153,7 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
         dependencies: dependencies.dispatchDependencies,
       }),
     );
+    response.headers.delete("x-cloud-workload-auth");
     response.headers.set("Cache-Control", "no-store");
     return response;
   });

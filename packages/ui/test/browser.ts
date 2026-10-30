@@ -209,7 +209,16 @@ const probeMainThread = async (page: Page): Promise<string> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      page.evaluate(() => document.readyState).then((state) => `Main thread: answered in ${Date.now() - started} ms, readyState ${state}`),
+      page
+        .evaluate(() => ({
+          state: document.readyState,
+          // An enhanced link moves history only from inside its view transition's update.
+          transition: Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition),
+        }))
+        .then(
+          ({ state, transition }) =>
+            `Main thread: answered in ${Date.now() - started} ms, readyState ${state}, view transition ${transition ? "active" : "none"}`,
+        ),
       new Promise<string>((resolve) => {
         // Before a commit, Chromium holds page.evaluate until the pending navigation ends, so silence alone does not prove a blocked page there.
         timer = setTimeout(
@@ -331,7 +340,8 @@ const explainNavigations = (page: Page): Page => {
     for (const record of records) record.load = true;
   });
 
-  const explained = async <T>(name: string, call: () => Promise<T>): Promise<T> => {
+  // `navigation` marks a navigation the test starts, during which pageErrors() ignores WebKit's refused loads.
+  const explained = async <T>(name: string, call: () => Promise<T>, navigation = true): Promise<T> => {
     const started = Date.now();
     const before = page.url();
     const record: NavigationRecord = {
@@ -342,14 +352,14 @@ const explainNavigations = (page: Page): Page => {
       load: false,
     };
     records.add(record);
-    const navigation = { from: before };
-    navigations.add(navigation);
+    const navigationEntry = { from: before };
+    if (navigation) navigations.add(navigationEntry);
     try {
       try {
         return await call();
       } finally {
         records.delete(record);
-        navigations.delete(navigation);
+        navigations.delete(navigationEntry);
       }
     } catch (error) {
       // Every failure carries the evidence. Bun's test timeout can kill the browser before Playwright's own timeout;
@@ -390,6 +400,9 @@ const explainNavigations = (page: Page): Page => {
 
   const goto = page.goto.bind(page);
   page.goto = (url, options) => explained("goto", () => goto(url, options));
+  // A click on an enhanced link changes the address later, so a wait for it explains itself too.
+  const waitForURL = page.waitForURL.bind(page);
+  page.waitForURL = (url, options) => explained("waitForURL", () => waitForURL(url, options), false);
   const reload = page.reload.bind(page);
   page.reload = (options) => explained("reload", () => reload(options));
   const goBack = page.goBack.bind(page);

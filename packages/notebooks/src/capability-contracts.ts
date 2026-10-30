@@ -1,4 +1,9 @@
-import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
+import {
+  CapabilitySemanticLinkSchema,
+  CloudResourceReaderViewSchema,
+  DiscussionActivityInputSchema,
+  ResourceActivityEventSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -27,8 +32,11 @@ const NotebookDataShape = {
   links: ResourceLinksSchema,
 };
 
-export const NotebookDataSchema = z.object(NotebookDataShape).strict();
-const NotebookListItemDataSchema = NotebookDataSchema.extend({ ref: resourceRef("notebooks.notebook") }).strict();
+export const NotebookDataSchema = z.object({ ...NotebookDataShape, view: CloudResourceReaderViewSchema }).strict();
+const NotebookListItemDataSchema = z
+  .object(NotebookDataShape)
+  .extend({ ref: resourceRef("notebooks.notebook") })
+  .strict();
 export const NotebookListDataSchema = z.array(NotebookListItemDataSchema).max(100);
 export const NotebookBrowseDataSchema = z
   .array(
@@ -119,6 +127,7 @@ export const NamedBlockSummaryDataSchema = z
   .strict();
 
 export const NoteDetailDataSchema = NoteSummaryDataSchema.extend({
+  view: CloudResourceReaderViewSchema.required({ container: true }),
   container: z.strictObject({ ref: resourceRef("notebooks.notebook"), name: z.string().min(1).max(200), permission: PermissionSchema }),
   content: z.string().max(50_000),
   contentOffset: z.number().int().nonnegative(),
@@ -421,27 +430,19 @@ export const NoteMoveInputSchema = z
     "Specify at most one placement: position, before, or after",
   );
 
-export const ActivityInputSchema = z.strictObject({
-  notebook: ResourceShortIdSchema.describe("Container short ID returned by notebook.list or notebook.read."),
-  item: ResourceShortIdSchema.optional().describe("Optional item short ID in this container."),
-  before: TimestampSchema.max(40).optional().describe("Exclusive upper bound on the last occurrence, as an ISO datetime."),
-  after: TimestampSchema.max(40).optional().describe("Exclusive lower bound on the last occurrence, as an ISO datetime."),
-  cursor: CursorSchema,
-  limit: z.number().int().min(1).max(100).default(50).describe("Maximum rows to return, from 1 to 100; defaults to 50."),
-});
+export const ActivityInputSchema = DiscussionActivityInputSchema.extend({
+  container: DiscussionActivityInputSchema.shape.container.optional(),
+  notebook: ResourceShortIdSchema.optional().describe("Published alias for container; use either field, or the same ID in both."),
+})
+  .refine((input) => Boolean(input.container ?? input.notebook), "A container is required")
+  .refine((input) => !input.container || !input.notebook || input.container === input.notebook, "Container aliases must agree");
 export const ActivityDataSchema = z
   .array(
-    z.strictObject({
-      id: z.string().max(100),
-      at: TimestampSchema,
-      ref: z.strictObject({ type: z.literal("notebooks.note"), id: ResourceShortIdSchema }).nullable(),
-      /** The note's current title, for a badge where the event shows outside the note's own place. */
+    ResourceActivityEventSchema.extend({
       title: z.string().max(500).nullable(),
-      actor: z.strictObject({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
-      icon: z.string().max(80),
-      sentence: z.string().max(4000),
-      href: CapabilitySemanticLinkSchema.shape.href.optional(),
-      count: z.number().int().min(1),
+      ref: resourceRef("notebooks.note")
+        .extend({ id: ResourceShortIdSchema.min(6).max(6) })
+        .nullable(),
     }),
   )
   .max(100);
