@@ -515,6 +515,34 @@ suiteFor(
     await sendPush(recipient.id, chat.id);
     expect(sent).toHaveLength(1);
   });
+  test("sidebar counts prepare each system thread once and use cached decisions inside the snapshot", async () => {
+    const { author, recipient, chat } = await setup();
+    const first = await post(author, chat.shortId, "Hello Lea", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    const second = await post(author, chat.shortId, "Hello Lea again", {
+      mentions: [{ principal: { type: "user", id: recipient.id }, start: 6, end: 9 }],
+    });
+    await asSystem(chat.id, author.id, [first.uuid, second.uuid], recipient.id);
+    reader!.mockImplementation(async (input) => {
+      const [held] = await sql<{ held: boolean }[]>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid() AND state = 'idle in transaction'
+          AND query ~ 'chat\.(messages|threads|conversations)') AS held`;
+      expect(held!.held).toBe(false);
+      return { state: "checked", readable: [...input.principals] };
+    });
+    const checks = spyOn(systemReaderAccess, "readableSystemRecipients");
+    try {
+      expect(await conversations.list(recipient.context)).toMatchObject({ ok: true, data: { items: [], forYouUnread: 2 } });
+      expect(reader!.mock.calls).toHaveLength(2); // Both messages share one item/container reader pair.
+      expect(checks.mock.calls.map((call) => ({ mode: call[4], snapshot: call[3] !== sql }))).toEqual([
+        { mode: "interactive", snapshot: false },
+        { mode: "cached", snapshot: true },
+      ]);
+    } finally {
+      checks.mockRestore();
+    }
+  });
   for (const revoked of ["chosen", "latest"] as const) {
     test(`system coalescing rechecks the ${revoked} element before exposing an older personal message`, async () => {
       const { author, recipient, chat } = await setup();

@@ -31,7 +31,15 @@ export const decodeForYouCursor = (value: string): Cursor | null => {
     return null;
   }
 };
-type Candidate = MessageRow & { id: string; conversation: string; mention: boolean; unread: boolean; cursor_at: string };
+type Candidate = MessageRow & {
+  id: string;
+  conversation: string;
+  conversation_id: string;
+  conversation_kind: "chat" | "system";
+  mention: boolean;
+  unread: boolean;
+  cursor_at: string;
+};
 const position = (row: Candidate): Cursor => ({ v: 1, at: row.cursor_at, id: row.id });
 const encode = (cursor: Cursor) => Buffer.from(JSON.stringify(cursor)).toString("base64url");
 const allowedPersonal = (context: ChatContext) => {
@@ -57,7 +65,7 @@ const candidates = (
       ON reply.conversation_id = original.conversation_id AND reply.reply_to_seq = original.seq
       WHERE ${conversationId ? db`original.conversation_id = ${conversationId}::uuid AND` : db``} original.author_type = ${self.type} AND original.author_id = ${self.id}::uuid
   ), distinct_targets AS (SELECT message_id, bool_or(mention) AS mention FROM targets GROUP BY message_id), page AS (
-    SELECT m.*, c.short_id AS conversation, target.mention,
+    SELECT m.*, c.short_id AS conversation, c.kind AS conversation_kind, target.mention,
       to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
       (p.conversation_id IS NOT NULL AND m.seq > LEAST(GREATEST(COALESCE(
         CASE WHEN m.thread_id IS NULL THEN p.last_read_seq ELSE tr.last_read_seq END, 0), p.joined_seq),
@@ -188,17 +196,14 @@ const countUnread = async (context: ChatContext, db: typeof sql, conversationId?
   for (let batch = 0; batch < FOR_YOU_COUNT_BATCHES && total < FOR_YOU_COUNT_CAP; batch++) {
     context.caller?.signal?.throwIfAborted();
     const page = await candidates(db, context, RESOURCE_PAGE_SIZE, cursor, true, conversationId);
-    // Counting needs only yes/no, never cached titles or content. Item permission includes its owning container.
-    const systems = await db<{ id: string; thread_id: string | null; conversation_id: string }[]>`
-      SELECT m.id, m.thread_id, m.conversation_id FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
-      WHERE m.id = ANY(${toPgUuidArray(page.map((row) => row.id))}::uuid[]) AND c.kind = 'system'
-    `;
-    const systemIds = new Set(systems.map((row) => row.id));
+    if (!page.length) break;
+    // Candidate rows already identify system chats; ordinary chats need no system-reader lookup.
+    const systems = page.filter((row) => row.conversation_kind === "system");
     total += (
       await visible(
         db,
         context,
-        page.filter((row) => !systemIds.has(row.id)),
+        page.filter((row) => row.conversation_kind === "chat"),
       )
     ).rows.length;
     if (context.accessSubject.type === "user") {
@@ -242,11 +247,9 @@ const warmSystemReaderCounts = async (context: ChatContext) => {
   for (let batch = 0; batch < FOR_YOU_COUNT_BATCHES; batch++) {
     context.caller?.signal?.throwIfAborted();
     const page = await candidates(sql, context, RESOURCE_PAGE_SIZE, cursor, true);
-    const systems = await sql<{ conversation_id: string; thread_id: string | null }[]>`
-      SELECT DISTINCT m.conversation_id, m.thread_id FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
-      WHERE m.id = ANY(${toPgUuidArray(page.map((row) => row.id))}::uuid[]) AND c.kind = 'system'
-    `;
-    for (const row of systems) {
+    const systems = page.filter((row) => row.conversation_kind === "system");
+    for (const threadId of new Set(systems.map((row) => row.thread_id))) {
+      const row = systems.find((row) => row.thread_id === threadId)!;
       if (readerSignal.aborted) break;
       await readableSystemRecipients(row.conversation_id, row.thread_id, [context.accessSubject.userId], sql, "interactive", {
         signal: readerSignal,
