@@ -1,4 +1,9 @@
-import { CapabilitySemanticLinkSchema, CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import {
+  CAPABILITY_QUALIFIED_ID_MAX_LENGTH,
+  CapabilitySemanticLinkSchema,
+  CloudResourceReaderViewSchema,
+  CloudResourceRefSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const MEMBER_PAGE_SIZE = 100;
@@ -216,36 +221,54 @@ const ThreadReadSchema = z.strictObject({
   unreadFromSeq: z.number().int().min(1).nullable(),
 });
 const LastMessageSchema = z.strictObject({ id: MessageIdSchema, author: AuthorSchema, preview: z.string(), createdAt: z.iso.datetime() });
-export const ThreadResourceSchema = z.strictObject({
-  deadline: z.string().nullable().optional(),
-  deadlineAllDay: z.boolean().optional(),
-  assignees: z.array(z.string()).max(100).optional(),
-  startsAt: z.string().optional(),
-  endsAt: z.string().optional(),
-  allDay: z.boolean().optional(),
+export const ThreadResourceSchema = CloudResourceReaderViewSchema.extend({
   ref: CloudResourceRefSchema,
-  kind: z.enum(["task", "event", "note"]),
-  status: z.string().nullable(),
-  done: z.boolean(),
-  href: z.string(),
+  href: CapabilitySemanticLinkSchema.shape.href.optional(),
+  typeTitle: z.string(),
+  icon: z.string(),
+  color: z.string().optional(),
 });
 export const ThreadQuerySchema = z.strictObject({
   short: z.literal("true").optional(),
   selected: ThreadIdSchema.optional(),
   filter: z.enum(["open", "done", "unread"]).optional(),
   q: z.string().trim().max(100).optional(),
-  cursor: ThreadIdSchema.optional(),
+  cursor: z.union([ThreadIdSchema, z.literal("")]).optional(),
 });
 export const ForResourceSchema = z.strictObject({
-  ref: CloudResourceRefSchema.extend({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema }),
+  ref: CloudResourceRefSchema,
 });
 export const SystemChatParamSchema = z.object({
-  resourceType: z.enum(["spaces.space", "notebooks.notebook"]),
-  resourceId: ShortIdSchema,
+  resourceType: CloudResourceRefSchema.shape.type,
+  resourceId: CloudResourceRefSchema.shape.id,
 });
-export const SystemChatQuerySchema = z.strictObject({
-  spacesCursor: z.string().max(256).optional(),
-  notebooksCursor: z.string().max(256).optional(),
+// Discovery has at most 60 catalog pages, each containing at most 25 providers.
+export const SYSTEM_CHAT_PROVIDER_LIMIT = 60 * 25;
+export const SYSTEM_CHAT_CURSOR_LIMIT = 2048;
+// Bound the serialized query too; callers need not escape ordinary opaque cursor characters.
+export const SYSTEM_CHAT_CURSORS_LIMIT =
+  SYSTEM_CHAT_PROVIDER_LIMIT * (CAPABILITY_QUALIFIED_ID_MAX_LENGTH + SYSTEM_CHAT_CURSOR_LIMIT + 40) + 2;
+const SystemChatPositionSchema = z.strictObject({
+  cursor: z.string().max(SYSTEM_CHAT_CURSOR_LIMIT).optional(),
+  offset: z.number().int().min(0).max(100).optional(),
+});
+const SystemChatCursorsSchema = z
+  .record(CloudResourceRefSchema.shape.type, z.union([z.literal(""), SystemChatPositionSchema]))
+  .refine((value) => Object.keys(value).length <= SYSTEM_CHAT_PROVIDER_LIMIT);
+export const SystemChatQueryInputSchema = z.strictObject({ cursors: z.string().max(SYSTEM_CHAT_CURSORS_LIMIT).optional() });
+export const SystemChatQuerySchema = SystemChatQueryInputSchema.extend({
+  cursors: z
+    .string()
+    .max(SYSTEM_CHAT_CURSORS_LIMIT)
+    .transform((value, ctx) => {
+      try {
+        return SystemChatCursorsSchema.parse(JSON.parse(value));
+      } catch {
+        ctx.addIssue({ code: "custom", message: "Invalid cursors" });
+        return z.NEVER;
+      }
+    })
+    .optional(),
 });
 export const ThreadSchema = z.strictObject({
   following: z.boolean().optional(),
@@ -261,7 +284,11 @@ export const ThreadSchema = z.strictObject({
   createdAt: z.iso.datetime(),
 });
 export const ThreadListSchema = z.strictObject({
-  nextCursor: ThreadIdSchema.nullable().optional(),
+  incomplete: z.literal(true).optional(),
+  nextCursor: z
+    .union([ThreadIdSchema, z.literal("")])
+    .nullable()
+    .optional(),
   general: z.strictObject({ unread: z.number().int().min(0).max(UNREAD_CAP), lastMessage: LastMessageSchema.nullable() }),
   items: z.array(ThreadSchema).max(MAX_THREADS),
 });
@@ -346,6 +373,7 @@ export const NotificationsSchema = z.strictObject({
 });
 export const FollowingSchema = z.strictObject({ following: z.boolean() });
 export const ConversationSchema = z.object({
+  incomplete: z.literal(true).optional(),
   notifications: NotificationsSchema.nullable(),
   mentionsUnread: z.number().int().min(0).max(FOR_YOU_COUNT_CAP),
   archived: z.boolean(),
@@ -353,6 +381,7 @@ export const ConversationSchema = z.object({
   summaryCursor: z.string().nullable().optional(),
   kind: z.enum(["chat", "system"]).optional(),
   resource: CloudResourceRefSchema.nullable().optional(),
+  discussionItemType: CloudResourceRefSchema.shape.type.optional(),
   threads: z.number().int().min(0),
   channel: z.boolean(),
   member: z.boolean(),
@@ -381,9 +410,20 @@ export const CreateOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("existing"), matches: z.array(ExistingMatchSchema) }),
 ]);
 export const SystemChatPageSchema = z.strictObject({
-  items: z.array(z.strictObject({ ref: CloudResourceRefSchema, name: z.string(), conversation: ConversationSchema.nullable() })).max(200),
-  spacesCursor: z.string().nullable(),
-  notebooksCursor: z.string().nullable(),
+  items: z
+    .array(
+      z.strictObject({
+        ref: CloudResourceRefSchema,
+        name: z.string(),
+        typeTitle: z.string(),
+        icon: z.string(),
+        color: z.string().optional(),
+        conversation: ConversationSchema.nullable(),
+      }),
+    )
+    .max(100),
+  cursors: SystemChatCursorsSchema,
+  skipped: z.array(CloudResourceRefSchema.shape.type),
 });
 export const ConversationPageSchema = z.object({
   items: z.array(ConversationSchema),
@@ -549,6 +589,7 @@ export const MessageSchema = z.object({
   contentRevision: z.number().int().nonnegative().optional(),
   editedAt: z.iso.datetime().nullable().optional(),
   deletedAt: z.iso.datetime().nullable().optional(),
+  via: z.enum(["assistant", "mcp"]).nullable().optional(),
 });
 export const MessageViewSchema = MessageSchema.extend({ systemText: z.string().nullable() });
 // Shared by the API and the composer, which must keep rejected text out of the send queue.
@@ -631,6 +672,7 @@ export const ForYouItemSchema = z.strictObject({
   unread: z.boolean(),
 });
 export const ForYouPageSchema = z.strictObject({
+  incomplete: z.literal(true).optional(),
   items: z.array(ForYouItemSchema).max(FOR_YOU_PAGE_SIZE),
   nextCursor: z.string().nullable(),
 });
@@ -654,6 +696,7 @@ export const SharedItemSchema = z.discriminatedUnion("kind", [
 ]);
 export type SharedItem = z.infer<typeof SharedItemSchema>;
 export const SharedPageSchema = z.strictObject({
+  incomplete: z.literal(true).optional(),
   items: z.array(SharedItemSchema).max(SHARED_PAGE_SIZE),
   nextCursor: z.string().nullable(),
 });
@@ -670,6 +713,7 @@ export const ChangesQuerySchema = z.object({ afterRev: sequenceQuery(0) });
  * in `items`, also where other threads' messages lie between them. A client joins pages and live messages by them.
  */
 export const MessagePageSchema = z.object({
+  incomplete: z.literal(true).optional(),
   items: z.array(MessageViewSchema),
   seqHead: z.number().int(),
   rev: z.number().int(),
@@ -691,6 +735,7 @@ export const ChatSnapshotSchema = z.object({
   focus: MessageIdSchema.nullable(),
 });
 export const ChangesPageSchema = z.object({
+  incomplete: z.literal(true).optional(),
   rev: z.number().int(),
   more: z.boolean(),
   conversation: ConversationSchema.nullable(),
@@ -733,7 +778,7 @@ export const ItemEventsQuerySchema = z.strictObject({
   thread: z.union([ShortIdSchema, z.literal("all")]).default("all"),
   before: z.string().datetime({ offset: true }).max(40).optional(),
   after: z.string().datetime({ offset: true }).max(40).optional(),
-  cursor: z.string().min(1).max(256).optional(),
+  cursor: z.string().min(1).max(2048).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export const ItemEventSchema = z.object({
@@ -748,11 +793,11 @@ export const ItemEventSchema = z.object({
   count: z.number().int().min(1),
   thread: z.union([
     z.object({ id: ShortIdSchema, name: z.string() }),
-    z.object({ ref: z.object({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema }), name: z.string() }),
+    z.object({ ref: z.object({ type: CloudResourceRefSchema.shape.type, id: CloudResourceRefSchema.shape.id }), name: z.string() }),
   ]),
 });
 export const ItemEventsPageSchema = z.object({
   items: z.array(ItemEventSchema).max(100),
-  nextCursor: z.string().max(256).nullable(),
+  nextCursor: z.string().max(2048).nullable(),
   unavailable: z.literal(true).optional(),
 });

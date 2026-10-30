@@ -13,7 +13,7 @@ type Page = z.infer<typeof ForYouPageSchema>;
 export type ForYouItem = z.infer<typeof ForYouItemSchema>;
 
 /**
- * Mentions of and replies to the reader in every chat they may read, Space and notebook chats included, newest first.
+ * Mentions of and replies to the reader in every chat they may read, resource discussions included, newest first.
  * A row opens its thread at the message; reading it there clears its unread state, and the page reads again.
  */
 export default function ForYou(props: {
@@ -34,6 +34,7 @@ export default function ForYou(props: {
   // Read once: the workspace hands the server's page over only to the first mount.
   const initial = props.initial;
   const [items, setItems] = createSignal<readonly ForYouItem[]>(initial?.items ?? []);
+  const [incomplete, setIncomplete] = createSignal(initial?.incomplete === true);
   const [cursor, setCursor] = createSignal(initial?.nextCursor ?? null);
   const [status, setStatus] = createSignal<"loading" | "ready" | "failed">(
     initial === undefined ? "loading" : initial === null ? "failed" : "ready",
@@ -55,16 +56,18 @@ export default function ForYou(props: {
         const page = await api.list(next, current.signal);
         setItems((rows) => [...rows, ...page.items]);
         setCursor(page.nextCursor);
+        setIncomplete(page.incomplete === true);
       } else {
         const depth = Math.max(items().length, 1);
         let page = await api.list(undefined, current.signal);
         const rows = [...page.items];
-        while (rows.length < depth && page.nextCursor && !current.signal.aborted) {
+        while (rows.length < depth && page.nextCursor && !page.incomplete && !current.signal.aborted) {
           page = await api.list(page.nextCursor, current.signal);
           rows.push(...page.items);
         }
         setItems(rows);
         setCursor(page.nextCursor);
+        setIncomplete(page.incomplete === true);
       }
       setStatus("ready");
     } catch (error) {
@@ -107,6 +110,14 @@ export default function ForYou(props: {
               <For each={[0, 1, 2]}>{() => <Skeleton class="h-12 w-full" />}</For>
             </div>
           </Show>
+          <Show when={incomplete() && status() === "ready"}>
+            <InlineGuidance tone="neutral" role="status">
+              {t().discussionsIncomplete}{" "}
+              <Button variant="text" size="xs" onClick={() => void load()}>
+                {t().retry}
+              </Button>
+            </InlineGuidance>
+          </Show>
           <Show when={status() === "failed"}>
             <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
               {t().forYouFailed}{" "}
@@ -115,7 +126,7 @@ export default function ForYou(props: {
               </Button>
             </InlineGuidance>
           </Show>
-          <Show when={status() === "ready" && items().length === 0}>
+          <Show when={status() === "ready" && items().length === 0 && !incomplete()}>
             <p class="py-2 text-sm text-secondary" role="status">
               {t().forYouEmpty}
             </p>
@@ -154,7 +165,7 @@ export default function ForYou(props: {
               )}
             </For>
           </ul>
-          <Show when={cursor()}>
+          <Show when={cursor() && !incomplete()}>
             <Button variant="text" size="sm" loading={loadingMore()} disabled={status() !== "ready"} onClick={() => void load(true)}>
               {t().showMoreForYou}
             </Button>

@@ -3,12 +3,12 @@ import { cloudAiChartTable } from "@k2b/cloud/ai/browser";
 import { markdown } from "@k2b/cloud/shared";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
 import katex from "katex";
+import { DOCUMENTED_IMAGE_FORMS } from "../../../editor/src/markdown/lib/markdown-image.fixtures";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook, sanitizeNotebookBookHtml } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
 import * as chartBlocks from "./chart-blocks";
 import { notebookChartTableHtml, parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
-import { DOCUMENTED_IMAGE_FORMS } from "./markdown-image.fixtures";
 
 const render = (markdown: string, locale = "en", queryResults?: ReadonlyMap<number, NoteQueryResult>) =>
   renderNotebookBook({ markdown, notebookId: "ABC123", locale, queryResults });

@@ -32,6 +32,15 @@ test.each(["roles", "resources"] as const)(
         processSync.bindProcessSync(sync);
         return { sync, stop: async () => processSync.unbindProcessSync() };
       }),
+      spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+        instanceId: "0123456789abcdef",
+        register: async () => {},
+        leave: async () => {},
+        join: async () => {},
+        publish: async () => {},
+        adopt: async () => {},
+        renew: async () => {},
+      }),
       spyOn(heartbeat, "createHeartbeat").mockReturnValue({ start: async () => {}, stop: async () => {} }),
       spyOn(watcher, "ensureRuntimeWatcher").mockResolvedValue(undefined),
       spyOn(watcher, "stopRuntimeWatcher").mockResolvedValue(undefined),

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../_internal/process-identity";
 import * as registry from "../_internal/registry";
-import { readResourcePrincipals } from "./resource-readers";
+import { ResourceReaderRateLimited, readResourcePrincipals } from "./resource-readers";
 import * as client from "./server-invoke";
 import { compileCapabilityManifest } from "./testing";
 
@@ -63,4 +63,27 @@ test("missing setup is an explicit reason, and temporary failure throws for retr
   expect(readResourcePrincipals(input)).rejects.toThrow("FORBIDDEN");
   lookup.mockResolvedValue(null);
   expect(readResourcePrincipals(input)).rejects.toThrow("registry entry unavailable");
+});
+
+test("rate admission carries Retry-After and defaults to the 60-second window", async () => {
+  for (const delay of [undefined, 90_000]) {
+    invoke.mockResolvedValue({ ok: false, error: { code: "RATE_LIMITED", message: "Busy", status: 429, retryAfterMs: delay } });
+    await expect(readResourcePrincipals(input)).rejects.toMatchObject({ retryAfterMs: delay ?? 60_000 });
+    await expect(readResourcePrincipals(input)).rejects.toBeInstanceOf(ResourceReaderRateLimited);
+  }
+});
+test("a container type without its generated readable query is not configured", async () => {
+  const containerManifest = compileCapabilityManifest("inventory", {
+    protocolVersion: 2,
+    types: {
+      collection: { title: "Collection", description: "Collection." },
+      item: { title: "Item", description: "Item.", container: "collection", access: { readable: () => [] } },
+    },
+  });
+  lookup.mockResolvedValue({ ...entry, manifest: containerManifest });
+  expect(await readResourcePrincipals({ ...input, ref: { type: "inventory.collection", id: "collection-1" } })).toEqual({
+    state: "not_configured",
+    reason: "no_readable",
+  });
+  expect(invoke).not.toHaveBeenCalled();
 });

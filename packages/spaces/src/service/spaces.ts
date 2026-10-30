@@ -184,9 +184,10 @@ export const listPage = async (params: {
   boundSpaceId?: string | null;
   requiredLevel?: PermissionLevel;
   query?: string;
-  pagination?: PageParams;
+  pagination?: PageParams & { offset?: number };
 }): Promise<Paginated<SpaceWithPermission>> => {
-  const { page, perPage, offset } = paginate(params.pagination);
+  const { page, perPage, offset: pageOffset } = paginate(params.pagination);
+  const offset = params.pagination?.offset ?? pageOffset;
   if (!(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) return { items: [], page, perPage, total: 0, hasNext: false };
 
   const principalMatch = buildSpacePrincipalCondition(params.subject);
@@ -243,7 +244,7 @@ export const listPage = async (params: {
     page,
     perPage,
     total,
-    hasNext: page * perPage < total,
+    hasNext: offset + perPage < total,
   };
 };
 

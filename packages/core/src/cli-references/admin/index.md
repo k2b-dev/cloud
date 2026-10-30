@@ -296,12 +296,20 @@ cld admin app-credentials apps
 cld admin app-credentials list mail --json
 (umask 077; cld admin app-credentials create mail --name production --yes > mail-credential.txt)
 cld admin app-credentials revoke mail <credential-id> --yes
+cld admin app-credentials enable mail --yes
+cld admin app-credentials disable mail --yes
 ```
 
 Creation prints the token once; structured output includes token and metadata.
 Transfer the token to the deployment secret store, then remove the temporary
 file. An optional `--expires-at` takes a future ISO 8601 timestamp. Lists show
-metadata only. Configure `CLOUD_APP_CREDENTIAL` only in its owning app and
+metadata only. Core issues and rotates `Runtime <instance>` credentials automatically.
+Revoking an automatic runtime credential disables the app's workload account
+across all instances and restarts. `enable <app> --yes` allows issuance again;
+`disable <app> --yes` blocks workload access explicitly. The equivalent API is
+`PATCH /api/admin/identity/workloads/<app>` with `{"status":"active"}` or
+`{"status":"disabled"}`. Revoked tokens stay revoked after re-enabling. For an explicit
+host-run override, configure `CLOUD_APP_CREDENTIAL` only in its owning app and
 `CLOUD_CORE_INTERNAL_ORIGIN` with Core's private origin. Mandates still control
 the allowed background actions. For rotation, create and deploy a replacement,
 verify its calls, then revoke the old credential. The equivalent UI is

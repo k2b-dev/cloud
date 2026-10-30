@@ -820,6 +820,17 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await migrateAppKeys();
   console.log("  ✓ auth.service_account_credentials table");
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.app_workload_instances (
+      app_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      credential_id UUID NOT NULL UNIQUE REFERENCES auth.service_account_credentials(id) ON DELETE CASCADE,
+      previous_credential_id UUID UNIQUE REFERENCES auth.service_account_credentials(id) ON DELETE SET NULL,
+      PRIMARY KEY (app_id, instance_id)
+    )
+  `.simple();
+
+  await sql`ALTER TABLE auth.app_workload_instances ADD COLUMN IF NOT EXISTS last_refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()`.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS auth.webauthn_credentials (

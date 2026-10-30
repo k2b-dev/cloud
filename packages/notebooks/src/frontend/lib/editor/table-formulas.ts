@@ -32,8 +32,7 @@
  * All three checks are O(line length) — cheap.
  */
 import { type Completion, type CompletionContext, type CompletionResult, snippetCompletion } from "@codemirror/autocomplete";
-import { cellTextBeforeCursor, isTableRow } from "./_lib/table-cell";
-import { withIcon } from "./completion-icon";
+import { cellTextBeforeCursor, isTableRow, withIcon } from "@k2b/editor/markdown";
 
 type Formula = {
   /** Function name as it appears in the formula source. */

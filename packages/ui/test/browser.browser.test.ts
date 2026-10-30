@@ -370,6 +370,27 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  test("a waitForURL that times out says whether a view transition still holds the address change", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto(new URL("/start", server.url).href);
+      // Like an enhanced link, the address changes only inside the transition's update, which here never ends.
+      await page.evaluate(() => {
+        document.startViewTransition?.(() => new Promise<void>(() => {}));
+      });
+      const error = await page.waitForURL("**/next", { timeout: 1000 }).catch((reason: unknown) => reason);
+      expect(error).toBeInstanceOf(errors.TimeoutError);
+      if (!(error instanceof errors.TimeoutError)) throw new Error("Expected a waitForURL timeout");
+      expect(error.message).toContain("Navigation diagnosis:");
+      expect(error.message).toMatch(/waitForURL waited \d+ ms/);
+      expect(error.message).toMatch(/view transition (active|none)/);
+      if (await page.evaluate(() => "startViewTransition" in document)) expect(error.message).toContain("view transition active");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
   test("a navigation whose document never answers says it did not commit", async () => {
     const context = await browser.newContext();
     try {

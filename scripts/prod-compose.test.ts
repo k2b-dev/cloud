@@ -21,7 +21,8 @@ describe("production Compose release set", () => {
       }
       expect(receivers).toEqual(["app-core", "app-oauth"]);
       expect(source).not.toContain("CLOUD_OAUTH_APP_CREDENTIAL");
-      expect(source).toContain("CLOUD_MAIL_APP_CREDENTIAL");
+      expect(source).not.toContain("CLOUD_MAIL_APP_CREDENTIAL");
+      expect(source).not.toMatch(/CLOUD_[A-Z]+_APP_CREDENTIAL/);
     }
   });
   test("requires one immutable tag for every runtime image", () => {

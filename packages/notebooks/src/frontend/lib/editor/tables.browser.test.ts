@@ -14,10 +14,10 @@ beforeAll(async () => {
   const fixture = `
 import { EditorState } from "@codemirror/state";
 import { drawSelection, EditorView, lineNumbers } from "@codemirror/view";
-import { markdownExtension } from "./markdown";
+import { markdownExtension } from "@k2b/editor/markdown";
 import { tablesExtension } from "./tables";
-import { noteScroller } from "./note-scroller";
-import { customLightInit, rawLightInit } from "./theme";
+import { noteScroller } from "@k2b/editor/markdown";
+import { customLightInit, rawLightInit } from "@k2b/editor/markdown";
 
 const doc = [
   "Für die nächsten Wochen planen wir drei feste Formate.",

@@ -85,7 +85,7 @@ import {
   SummaryQuerySchema,
   SystemChatPageSchema,
   SystemChatParamSchema,
-  SystemChatQuerySchema,
+  SystemChatQueryInputSchema,
   ThreadListSchema,
   ThreadParamSchema,
   ThreadQuerySchema,
@@ -207,7 +207,7 @@ const app = new Hono<AuthContext>()
       summary: "Search your chats, subscribed channels, containers and named threads",
       ...requiresAuth,
       description:
-        "Trim q to 1–100 characters. Returns at most eight literal, case-insensitive name matches: exact, prefix, word, then substring; recent activity breaks ties. Archived chats sort last. Owner lists receive the text filter and a 100-container limit each. An unfiltered 100-container page per owner scopes item discovery. Item names come from authorized readers on the 100 most recently active threads in caller-listed containers. Search shares the 302-call reader budget, including summary reads. System summaries with remaining item candidates have summaryCursor: empty string; empty directories have null. Owner failures retain other results and set systemUnavailable: true. Uses the standard list request limiter and cancels further work on disconnect.",
+        "Trim q to 1–100 characters. Returns at most eight literal, case-insensitive name matches: exact, prefix, word, then substring; recent activity breaks ties. Archived chats sort last. Provider container queries receive the text filter and a limit of eight. An unfiltered eight-container page per provider scopes item discovery. Item titles come from authorized readers on at most 60 recently active threads in caller-listed containers. Discovery, lists, readers and summaries share 60 calls, 4 MiB and a ten-second deadline. System summaries with remaining item candidates have summaryCursor: empty string; empty directories have null. Owner failures retain other results and set systemUnavailable: true. Uses the standard list request limiter and cancels further work on disconnect.",
       responses: {
         200: jsonResponse(SearchResultSchema, "Ranked hits with optional system-search failure"),
         400: jsonResponse(z.object({ code: z.literal("BAD_INPUT"), message: z.string() }), "Invalid search query"),
@@ -222,13 +222,13 @@ const app = new Hono<AuthContext>()
     auth.requireRole("authenticated"),
     describeRoute({
       tags: ["Chat"],
-      summary: "List visible Spaces and Notebooks with their system chats",
+      summary: "List visible discussion containers with their system chats",
       ...requiresAuth,
       description:
-        "Reads at most 100 containers from each owning application with the caller's credential. Pass spacesCursor and notebooksCursor independently. Includes containers without a conversation as conversation: null. Unavailable or unauthorized resources are omitted. Summaries share a 100-thread candidate budget across the entire response. Follow each non-null summaryCursor at GET /conversations/:conversation?summaryCursor=...; counts describe that page, with General included only on the initial page.",
+        "Discovers discussion providers from the catalog and reads a fair page of authorized containers. Send cursors as a JSON object keyed by container type; an empty string marks an exhausted provider. Position objects contain a provider cursor of at most 2048 characters and an optional page offset; send them back unchanged to continue skipped providers. Items carry the type presentation. Catalog pages, container lists, item readers and summaries share 60 calls, 4 MiB and a ten-second deadline. Follow summaryCursor for partial summaries.",
       responses: { 200: jsonResponse(SystemChatPageSchema, "Visible containers and independent source cursors") },
     }),
-    validator("query", SystemChatQuerySchema, invalidInput),
+    validator("query", SystemChatQueryInputSchema, invalidInput),
     async (c) => respond(c, chatService.systemChats.list({ ...context(c), query: c.req.valid("query") })),
   )
   .post(
@@ -527,7 +527,7 @@ const app = new Hono<AuthContext>()
       summary: "List chat threads, including archived threads",
       ...requiresAuth,
       description:
-        "System chats inspect at most 100 candidate threads per page, ordered by latest activity with thread-ID ties. Reader visibility, open/done/unread and q filters apply within that page. Follow nextCursor even when items is empty. Names and descriptions come from the item reader. resource.status is the Space column ID, or null for a note; done follows completedAt. Regular chats retain their activity/archive ordering.",
+        "System chats inspect at most 60 candidate threads per page, limited further by the shared provider budget, ordered by latest activity with thread-ID ties. Reader visibility, open/done/unread and q filters apply within that page. Follow nextCursor even when items is empty. Resource title, context, status and completion come from the reader standard view. Regular chats retain their activity/archive ordering.",
       responses: {
         200: jsonResponse(ThreadListSchema, "Authorized thread page"),
         404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Conversation not readable"),

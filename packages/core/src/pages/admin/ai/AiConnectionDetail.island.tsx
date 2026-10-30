@@ -144,7 +144,7 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
 
   return (
-    <div class="grid gap-4 px-4 pb-8">
+    <div class="grid gap-4 px-2 pb-8">
       <AiProviderNotice
         providerId={base().id}
         providerLabel={base().label}

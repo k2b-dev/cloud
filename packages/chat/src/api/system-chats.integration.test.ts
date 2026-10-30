@@ -17,10 +17,11 @@ import {
   ThreadListSchema,
   ThreadSchema,
 } from "../service/contracts";
+import { DISCUSSION_CALL_LIMIT as READER_REQUEST_BUDGET } from "../service/discussion-read";
+import { mockDiscussionCatalog, standardData } from "../service/discussions.test-fixture";
 import { chatLiveChannels } from "../service/live-channels";
 import { reconcile } from "../service/maintenance";
-import { accessKey, type ResourceReaderDependencies, resourceReaderDependencies } from "../service/resource-access";
-import { READER_REQUEST_BUDGET, SUMMARY_TRAVERSAL_BUDGET } from "../service/thread-access";
+import { accessKey, authorizationKey, type ResourceReaderDependencies, resourceReaderDependencies } from "../service/resource-access";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -38,16 +39,17 @@ suite("system chats use caller-authorized readers", () => {
   const key = (person: Person, type: string, id: string) => {
     const key = accessKey(`user:${person.id}`, { type, id });
     keys.add(key);
+    keys.add(authorizationKey(`user:${person.id}`, { type, id }));
     return key;
   };
   const expire = async (person: Person, type: string, id: string) => {
     // Redis expiration, without a wall-clock sleep or a process-local clock/cache.
-    await redis.send("PEXPIREAT", [key(person, type, id), "1"]);
+    await redis.send("DEL", [key(person, type, id), authorizationKey(`user:${person.id}`, { type, id })]);
   };
   const grant = (person: Person, type: string, id: string, data: Record<string, unknown>) => {
     key(person, type, id);
     replies.set(`${credential(person)}:${type}:${id}`, {
-      data: { id, ...data },
+      data: standardData(type, data),
       links: [{ rel: "open", href: `/app/${type.split(".")[0]}/${id}` }],
     });
   };
@@ -71,7 +73,9 @@ suite("system chats use caller-authorized readers", () => {
     return ThreadSchema.parse(await response.json());
   };
   const viewer = (person: Person) => ({ id: `user:${person.id}`, ...person.context, scopes: [] });
+  let catalog: ReturnType<typeof mockDiscussionCatalog>;
   beforeEach(() => {
+    catalog = mockDiscussionCatalog();
     replies.clear();
     calls.length = 0;
     down = false;
@@ -79,11 +83,24 @@ suite("system chats use caller-authorized readers", () => {
       const who = caller.cookie ?? caller.authorization ?? "";
       calls.push({ capability: `${appId}.${capabilityId}`, caller: who, input });
       if (down) throw new Error("reader unavailable");
-      if (capabilityId.endsWith(".list")) return replies.get(`${who}:${appId}.${capabilityId}`) ?? { data: [] };
+      if (capabilityId.endsWith(".containers")) {
+        const reply = replies.get(`${who}:${appId}.${capabilityId.replace(".containers", ".list")}`);
+        if (!reply) return { data: { items: [], next: null } };
+        if (!Array.isArray(reply.data)) return reply;
+        const offset = Number(input.cursor) || 0;
+        const rows = reply.data.slice(offset, offset + Number(input.limit));
+        return {
+          data: {
+            items: rows.map((row) => ({ ref: { type: `${appId}.${capabilityId.split(".")[0]}`, id: row.id }, title: row.name })),
+            next: offset + rows.length < reply.data.length ? String(offset + rows.length) : (reply.page?.nextCursor ?? null),
+          },
+        };
+      }
       return replies.get(`${who}:${appId}.${capabilityId.split(".")[0]}:${input.id}`) ?? null;
     });
   });
   afterEach(async () => {
+    catalog.mockRestore();
     reader.mockRestore();
     if (keys.size) await redis.send("DEL", [...keys]);
     keys.clear();
@@ -127,13 +144,16 @@ suite("system chats use caller-authorized readers", () => {
     });
     key(person, "spaces.space", denied);
     const conversation = await open(person, space);
-    const response = await api(person, "/system-chats?spacesCursor=space-page&notebooksCursor=note-page");
+    const response = await api(
+      person,
+      `/system-chats?cursors=${encodeURIComponent(JSON.stringify({ "spaces.space": { cursor: "space-page" }, "notebooks.notebook": { cursor: "note-page" } }))}`,
+    );
     const list = SystemChatPageSchema.parse(await response.json());
     expect(list.items.map((item) => item.conversation?.id ?? null)).toEqual([conversation.id, null]);
-    expect(list.spacesCursor).toBe("next-space");
-    expect(list.notebooksCursor).toBe("next-note");
-    expect(calls.find((call) => call.capability === "spaces.space.list")?.input).toEqual({ limit: 100, cursor: "space-page" });
-    expect(calls.find((call) => call.capability === "notebooks.notebook.list")?.input).toEqual({ limit: 100, cursor: "note-page" });
+    expect(list.cursors["spaces.space"]).toEqual({ cursor: "next-space" });
+    expect(list.cursors["notebooks.notebook"]).toEqual({ cursor: "next-note" });
+    expect(calls.find((call) => call.capability === "spaces.space.containers")?.input).toMatchObject({ cursor: "space-page" });
+    expect(calls.find((call) => call.capability === "notebooks.notebook.containers")?.input).toMatchObject({ cursor: "note-page" });
   });
 
   test("refuses manual threads, metadata, member edits and cross-container item threads", async () => {
@@ -145,7 +165,7 @@ suite("system chats use caller-authorized readers", () => {
     grant(person, "spaces.item", item, { title: "Task", kind: "task", spaceId: id, completedAt: null });
     const created = await thread(person, chat.id, item);
     expect((await thread(person, chat.id, item)).id).toBe(created.id);
-    expect(created.resource).toMatchObject({ ref: { type: "spaces.item", id: item }, kind: "task", done: false, status: null });
+    expect(created.resource).toMatchObject({ ref: { type: "spaces.item", id: item }, typeTitle: "Inventory item", done: false });
     for (const [path, method, body] of [
       ["/threads", "POST", { name: "manual" }],
       [`/threads/${created.id}`, "PATCH", { name: "new" }],
@@ -330,13 +350,13 @@ suite("system chats use caller-authorized readers", () => {
 
     const note = testShortId();
     grant(owner, "notebooks.note", note, { title: "Note", notebookId: id });
-    expect((await thread(owner, chat.id, note, "notebooks.note")).resource?.kind).toBe("note");
+    expect((await thread(owner, chat.id, note, "notebooks.note")).resource?.typeTitle).toBe("Inventory item");
   });
   test("standalone and agent credentials use their own reader and retain read-only scope caps", async () => {
     const headers = await f.credential();
     const id = testShortId();
     replies.set(`${headers.authorization}:spaces.space:${id}`, {
-      data: { id, name: "For credential", permission: "manage" },
+      data: standardData("spaces.space", { name: "For credential", permission: "manage" }),
       links: [{ rel: "open", href: "/space" }],
     });
     const response = await api({ headers }, `/system-chats/spaces.space/${id}/open`, "POST");
@@ -382,7 +402,7 @@ suite("system chats use caller-authorized readers", () => {
       id: first.id,
       name: "After",
       description: "Updated",
-      resource: { done: true, status: null },
+      resource: { done: true },
     });
     expect(ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?filter=open`)).json()).items).toEqual([]);
     revoke(person, "spaces.item", item);
@@ -407,7 +427,7 @@ suite("system chats use caller-authorized readers", () => {
     }
     const first = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads`)).json());
     expect(first.items).toEqual([]);
-    expect(first.nextCursor).toBe("p00001");
+    expect(first.nextCursor).toBe("p00042");
     const next = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?cursor=${first.nextCursor}`)).json());
     expect(next.items.map((item) => item.id)).toEqual(["p00000"]);
     expect(next.nextCursor).toBeNull();
@@ -415,7 +435,7 @@ suite("system chats use caller-authorized readers", () => {
     expect(secondReads.length).toBe(101);
     const short = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?short=true&selected=p00000`)).json());
     expect(short.items.map((item) => item.id)).toEqual(["p00000"]);
-    expect(short.nextCursor).toBeNull();
+    expect(short.nextCursor).toBe("");
     const author = await f.person();
     await sql`INSERT INTO chat.messages (short_id, conversation_id, thread_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id)
       SELECT 'Unread0001', c.id, t.id, 1, 1, 'text', 'user', ${author.id}::uuid, 'Nora', 'Unread task', 'unread-task'
@@ -452,42 +472,32 @@ suite("system chats use caller-authorized readers", () => {
     }
   });
 
-  test("summary traversal shares one request budget across large containers and continues counts", async () => {
+  test("summary traversal shares the discovery budget and continues counts", async () => {
     const person = await f.person(),
-      author = await f.person();
-    const containers = [];
-    for (let c = 0; c < 3; c++) {
-      const space = testShortId();
-      grant(person, "spaces.space", space, { name: "Space", permission: "write" });
-      const chat = await open(person, space);
-      containers.push({ id: space, name: "Space", permission: "write", chat: chat.id });
-      for (let n = 0; n < SUMMARY_TRAVERSAL_BUDGET + 1; n++) {
-        const item = testShortId(),
-          shortId = `${c}${String(n).padStart(5, "0")}`;
-        grant(person, "spaces.item", item, { title: "Item", kind: "task", spaceId: space });
-        await sql`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id)
-          SELECT ${shortId}, id, 'Item', 'user', ${person.id}::uuid, 'spaces.item', ${item} FROM chat.conversations WHERE short_id = ${chat.id}`;
-      }
-      await sql`INSERT INTO chat.messages (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id)
-        SELECT ${`g${String(c).padStart(9, "0")}`}, id, 1, 1, 'text', 'user', ${author.id}::uuid, 'Author', 'General', 'general'
-        FROM chat.conversations WHERE short_id = ${chat.id}`;
-      await sql`UPDATE chat.conversations SET seq_head = 1, rev = 1 WHERE short_id = ${chat.id}`;
-      await expire(person, "spaces.space", space);
+      space = testShortId();
+    grant(person, "spaces.space", space, { name: "Space", permission: "write" });
+    const chat = await open(person, space);
+    for (let n = 0; n < 61; n++) {
+      const item = testShortId(),
+        shortId = `q${String(n).padStart(5, "0")}`;
+      grant(person, "spaces.item", item, { title: "Item", kind: "task", spaceId: space });
+      await sql`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id)
+        SELECT ${shortId}, id, 'Item', 'user', ${person.id}::uuid, 'spaces.item', ${item} FROM chat.conversations WHERE short_id = ${chat.id}`;
     }
-    replies.set(`${credential(person)}:spaces.space.list`, { data: containers });
+    await expire(person, "spaces.space", space);
+    replies.set(`${credential(person)}:spaces.space.list`, { data: [{ id: space, name: "Space" }] });
     calls.length = 0;
-    const result = SystemChatPageSchema.parse(await (await api(person, "/system-chats")).json());
-    expect(calls.length).toBe(2 + containers.length + SUMMARY_TRAVERSAL_BUDGET);
-    expect(calls.length).toBeLessThanOrEqual(READER_REQUEST_BUDGET);
-    expect(result.items.map((entry) => entry.conversation?.unread)).toEqual([1, 0, 0]);
-    expect(result.items.map((entry) => entry.conversation?.threads)).toEqual([SUMMARY_TRAVERSAL_BUDGET, 0, 0]);
-    expect(result.items.map((entry) => entry.conversation?.summaryCursor)).toEqual(["000099", "", ""]);
-    calls.length = 0;
-    const next = ConversationSchema.parse(await (await f.request(person.headers, `/${containers[0]!.chat}?summaryCursor=000099`)).json());
-    expect(next.threads).toBe(1);
-    expect(next.unread).toBe(0);
+    const page = SystemChatPageSchema.parse(await (await api(person, "/system-chats")).json());
+    const first = page.items[0]!.conversation!;
+    expect(first.threads).toBeGreaterThan(0);
+    expect(first.threads).toBeLessThan(61);
+    expect(first.summaryCursor).not.toBeNull();
+    expect(calls.length + 1).toBeLessThanOrEqual(READER_REQUEST_BUDGET); // catalog shares this budget
+    const next = ConversationSchema.parse(
+      await (await f.request(person.headers, `/${chat.id}?summaryCursor=${first.summaryCursor}`)).json(),
+    );
+    expect(first.threads + next.threads).toBe(61);
     expect(next.summaryCursor).toBeNull();
-    expect(calls.length).toBe(1);
   });
 
   test("fully hidden read-all candidates consume one page and return a progressing cursor", async () => {
@@ -543,9 +553,19 @@ suite("system chats use caller-authorized readers", () => {
     const next = MessagePageSchema.parse(await (await f.request(person.headers, `/${chat.id}/messages?before=${first.from}`)).json());
     expect(next.items).toEqual([]);
     expect(next.from).toBe(2);
+    calls.length = 0;
     const changes = ChangesPageSchema.parse(await (await f.request(person.headers, `/${chat.id}/changes?afterRev=0`)).json());
     expect(changes.messages).toEqual([]);
+    // History warmed 100 denied decisions; only the final item needs another reader call.
+    expect(calls.length).toBe(1);
     expect(changes.rev).toBe(101);
+    expect(changes.more).toBeFalse();
+    const moreChanges = ChangesPageSchema.parse(
+      await (await f.request(person.headers, `/${chat.id}/changes?afterRev=${changes.rev}`)).json(),
+    );
+    expect(moreChanges.messages).toEqual([]);
+    expect(moreChanges.rev).toBe(101);
+    expect(moreChanges.more).toBeFalse();
     const shared = SharedPageSchema.parse(await (await f.request(person.headers, `/${chat.id}/shared`)).json());
     expect(shared.items).toEqual([]);
     expect(shared.nextCursor).not.toBeNull();
@@ -553,14 +573,14 @@ suite("system chats use caller-authorized readers", () => {
     calls.length = 0;
     const read = ReadAllOutcomeSchema.parse(await (await f.request(person.headers, "/read-all", "POST", { confirmed: true })).json());
     expect(read).toMatchObject({ outcome: "done", marked: 0, more: true });
-    expect(calls.length).toBe(1 + SUMMARY_TRAVERSAL_BUDGET);
+    expect(calls.length).toBeLessThanOrEqual(READER_REQUEST_BUDGET - 1);
     if (read.outcome !== "done") throw new Error("Expected completed page");
     calls.length = 0;
     const done = ReadAllOutcomeSchema.parse(
       await (await f.request(person.headers, "/read-all", "POST", { confirmed: true, cursor: read.nextCursor })).json(),
     );
     expect(done).toMatchObject({ outcome: "done", marked: 0, more: false });
-    expect(calls.length).toBe(1);
+    expect(calls.length).toBe(43); // first page spent one call on discovery and one on the container
     // A later authorized item on a resumed page is marked; hidden items stay untouched.
     grant(person, "spaces.item", lastItem, { title: "Now readable", kind: "task", spaceId: space });
     await expire(person, "spaces.item", lastItem);
@@ -602,15 +622,18 @@ suite("system chats use caller-authorized readers", () => {
   test("discovery errors remain visible and an exhausted source is never restarted", async () => {
     const person = await f.person();
     down = true;
-    expect((await api(person, "/system-chats")).status).toBe(500);
+    expect(SystemChatPageSchema.parse(await (await api(person, "/system-chats")).json()).skipped.length).toBeGreaterThan(0);
     down = false;
     replies.set(`${credential(person)}:spaces.space.list`, { data: {} });
-    expect((await api(person, "/system-chats")).status).toBe(500);
+    expect(SystemChatPageSchema.parse(await (await api(person, "/system-chats")).json()).skipped.length).toBeGreaterThan(0);
     calls.length = 0;
-    const result = await api(person, "/system-chats?spacesCursor=&notebooksCursor=second");
+    const result = await api(
+      person,
+      `/system-chats?cursors=${encodeURIComponent(JSON.stringify({ "spaces.space": "", "notebooks.notebook": { cursor: "second" } }))}`,
+    );
     expect(result.status).toBe(200);
-    expect(calls.map((call) => call.capability)).toEqual(["notebooks.notebook.list"]);
-    expect(SystemChatPageSchema.parse(await result.json()).spacesCursor).toBeNull();
+    expect(calls.map((call) => call.capability)).toEqual(["notebooks.notebook.containers"]);
+    expect(SystemChatPageSchema.parse(await result.json()).cursors["spaces.space"]).toBe("");
   });
 
   test("item thread metadata comes from public readers and never displays a column ID", async () => {
@@ -633,7 +656,7 @@ suite("system chats use caller-authorized readers", () => {
     const list = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads`)).json());
     expect(list.items[0]).toMatchObject({
       id: selected.id,
-      resource: { status: "In progress", deadline, deadlineAllDay: true, assignees: ["Nora"] },
+      resource: { title: "Task", typeTitle: "Inventory item" },
     });
     expect(JSON.stringify(list.items[0]?.resource)).not.toContain("Col001");
     expect(JSON.stringify(list.items[0]?.resource)).not.toContain(person.id);

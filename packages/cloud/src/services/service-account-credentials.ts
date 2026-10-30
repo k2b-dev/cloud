@@ -221,10 +221,10 @@ const verifyApiTokenSecret = async (secret: string, storedHash: string, scopes: 
   }
 };
 
-const generateUniqueTokenParts = async (): Promise<{ tokenPrefix: string; secret: string; token: string }> => {
+const generateUniqueTokenParts = async (db: SqlRunner): Promise<{ tokenPrefix: string; secret: string; token: string }> => {
   for (let i = 0; i < 5; i += 1) {
     const parts = generateTokenParts();
-    const [row] = await sql<{ exists: boolean }[]>`
+    const [row] = await db<{ exists: boolean }[]>`
       SELECT EXISTS(
         SELECT 1 FROM auth.service_account_credentials WHERE token_prefix = ${parts.tokenPrefix}
       ) AS exists
@@ -342,7 +342,7 @@ const insertApiToken = async (
     if (expiresAt.getTime() <= Date.now()) return fail(err.badInput("Expiry must be in the future"));
   }
 
-  const parts = await generateUniqueTokenParts();
+  const parts = await generateUniqueTokenParts(db);
   const secretHash = hashApiTokenSecret(parts.secret, params.scopes ?? []);
 
   try {
@@ -376,15 +376,18 @@ const insertApiToken = async (
   }
 };
 
-export const createApiToken = async (params: {
-  serviceAccountId: string;
-  name: string;
-  createdBy?: string | null;
-  expiresAt?: string | null;
-  scopes?: string[];
-}): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+export const createApiToken = async (
+  params: {
+    serviceAccountId: string;
+    name: string;
+    createdBy?: string | null;
+    expiresAt?: string | null;
+    scopes?: string[];
+  },
+  options: { db?: SQL } = {},
+): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
   if (params.scopes?.includes(AI_INFERENCE_SCOPE)) return fail(err.badInput("ai:inference is reserved for models-only personal API keys"));
-  return insertApiToken(sql, params);
+  return insertApiToken(options.db ?? sql, params);
 };
 
 export const createUserApiToken = async (params: {
@@ -732,13 +735,13 @@ type RevokeCredentialInput =
 export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL } = {}): Promise<Result<void>> => {
   if (!UUID_PATTERN.test(params.credentialId)) return fail(err.notFound("API key"));
 
-  const run = async (db: SQL): Promise<Result<void>> => {
+  const run = async (db: SQL, credentialId = params.credentialId): Promise<Result<void>> => {
     const [row] = await db<DbCredentialRow[]>`
       UPDATE auth.service_account_credentials
       SET status = 'revoked',
         revoked_at = now(),
         revoked_by = ${params.actor?.id ?? null}::uuid
-      WHERE id = ${params.credentialId}::uuid
+      WHERE id = ${credentialId}::uuid
         AND status = 'active' AND kind = 'api_token'
       RETURNING id, service_account_id, name, kind, status, token_prefix, scopes, expires_at,
         last_used_at, created_by, created_at, revoked_at, revoked_by
@@ -750,14 +753,14 @@ export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL 
           SELECT id, service_account_id, name, kind, status, token_prefix, scopes, expires_at,
             last_used_at, created_by, created_at, revoked_at, revoked_by
           FROM auth.service_account_credentials
-          WHERE id = ${params.credentialId}::uuid AND kind = 'api_token'
+          WHERE id = ${credentialId}::uuid AND kind = 'api_token'
           LIMIT 1
         `;
     const result = row || existing?.status === "revoked" ? ok() : fail(err.notFound("API key"));
     return audit.recordResult({
       action: "service_account_credential.revoke",
       actor: params.actor ? actorForUser(params.actor) : null,
-      target: { type: "service_account_credential", id: params.credentialId, label: row?.name ?? existing?.name ?? null },
+      target: { type: "service_account_credential", id: credentialId, label: row?.name ?? existing?.name ?? null },
       metadata: {
         serviceAccountId: row?.service_account_id ?? existing?.service_account_id ?? null,
         ...(params.actor ? { adminAction: true } : { provenance: "system", service: params.system.service, reason: params.system.reason }),
@@ -766,7 +769,46 @@ export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL 
       db,
     });
   };
-  return options.db ? run(options.db) : sql.begin(run);
+  const revokeWithWorkload = async (db: SQL): Promise<Result<void>> => {
+    if (params.actor) {
+      const [instance] = await db<{ app_id: string; instance_id: string; service_account_id: string }[]>`
+        SELECT i.app_id, i.instance_id, c.service_account_id FROM auth.app_workload_instances i
+        JOIN auth.service_account_credentials c ON c.id = i.credential_id
+        WHERE i.credential_id = ${params.credentialId}::uuid OR i.previous_credential_id = ${params.credentialId}::uuid
+      `;
+      if (instance) {
+        // Same lock order as Core rotation. Resolve the latest generation *after* waiting,
+        // so an admin revoking the displayed token also revokes an overlapping rotation.
+        await db`SELECT id FROM auth.service_accounts WHERE id = ${instance.service_account_id}::uuid FOR UPDATE`;
+        // The account is the durable app-wide off switch, including future process instances.
+        await db`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${instance.service_account_id}::uuid`;
+        await audit.record(
+          {
+            action: "service_account.disable",
+            outcome: "allowed",
+            actor: actorForUser(params.actor),
+            target: { type: "service_account", id: instance.service_account_id },
+            metadata: { appId: instance.app_id, serviceAccountId: instance.service_account_id, status: "disabled" },
+          },
+          db,
+        );
+        const [current] = await db<{ credential_id: string; previous_credential_id: string | null }[]>`
+          SELECT credential_id, previous_credential_id FROM auth.app_workload_instances
+          WHERE app_id = ${instance.app_id} AND instance_id = ${instance.instance_id}
+        `;
+        if (current) {
+          for (const credentialId of [current.credential_id, current.previous_credential_id]) {
+            if (!credentialId) continue;
+            const result = await run(db, credentialId);
+            if (!result.ok) return result;
+          }
+          return ok();
+        }
+      }
+    }
+    return run(db);
+  };
+  return options.db ? revokeWithWorkload(options.db) : sql.begin(revokeWithWorkload);
 };
 
 const findActiveByTokenPrefix = async (tokenPrefix: string): Promise<DbCredentialWithSecretRow | null> => {

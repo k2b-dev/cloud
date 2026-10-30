@@ -201,15 +201,22 @@ run server Code Mode tools under the same routine-scoped authority; see
 
 ## Invoke from a worker
 
-Provision a resource-bound service-account credential for the owning
-application with binding `{ appId, resourceType: "cloud.app", resourceId:
-appId }` and the `identity:invoke` scope. Store it as
-`CLOUD_APP_CREDENTIAL` in that application only.
-Also set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
-broker routes are not reachable through the public gateway, and the helper
-does not fall back to the public origin for mandate calls.
+Core automatically delivers an app-bound `identity:invoke` credential to each
+registered app instance. Use `getAppWorkloadCredential()` from
+`@k2b/cloud/services` at call time so rotation takes effect. It returns
+`undefined` when no valid credential is available; dependent work must fail
+closed with a visible reason. A transient refresh failure keeps the current
+token available until it expires. Never cache the returned token or pass it to a browser
+or target app.
 
-An administrator opens **Administration → App credentials** (`/admin/app-credentials`),
+Set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
+broker routes are not reachable through the public gateway, and the helper
+does not fall back to the public origin for mandate calls. For host-run apps,
+`CLOUD_APP_CREDENTIAL` is an optional explicit override; it wins over automatic
+delivery and remains operator-managed. See [runtime configuration](/en/docs/operations/runtime-configuration)
+for rotation, revocation, health diagnostics, and the shared-infrastructure trust limit.
+
+For an explicit host-run override, an administrator opens **Administration → App credentials** (`/admin/app-credentials`),
 chooses **Create credential**, then selects the owning app and enters a name and
 optional expiration time in the dialog.
 The token is shown once. Save it in the deployment's secret store and inject it
@@ -244,7 +251,15 @@ credential metadata across apps with `GET /api/admin/identity/workloads/credenti
 or for one app with `GET /api/admin/identity/workloads/inventory/credentials`, and
 revoke one exact credential with
 `DELETE /api/admin/identity/workloads/inventory/credentials/<credentialId>`.
-Rotate by creating a new credential, deploying it to the owning app, verifying
+Revoking an automatic runtime credential disables the app's workload access
+across all instances and restarts. Restore it in **App credentials** with
+**Enable app workload access**, with `cld admin app-credentials enable <app> --yes`,
+or with `PATCH /api/admin/identity/workloads/<app>` and `{"status":"active"}`.
+The shared capability client refreshes a broker-rejected workload credential
+and retries once; persistent credential rejection returns HTTP 503 so workers
+can retry later. Subject and target authorization failures remain permanent.
+
+For a host-run override, rotate by creating a new credential, deploying it to the owning app, verifying
 broker calls, and then revoking the old credential. Do not reuse the OAuth
 broker secret; it is shared only by Core and OAuth for OAuth issuance.
 
@@ -264,6 +279,10 @@ Use the server capability helper with the current mandate revision:
 
 ```ts
 import { invokeCapability } from "@k2b/cloud/capabilities/server";
+import { getAppWorkloadCredential } from "@k2b/cloud/services";
+
+const credential = getAppWorkloadCredential();
+if (!credential) throw new Error("App workload authorization is unavailable");
 
 const result = await invokeCapability(
   {
@@ -274,7 +293,7 @@ const result = await invokeCapability(
     idempotencyKey: job.id,
   },
   {
-    authorization: `Bearer ${process.env.CLOUD_APP_CREDENTIAL}`,
+    authorization: `Bearer ${credential}`,
     mandate: {
       id: job.mandateId,
       revision: job.mandateRevision,

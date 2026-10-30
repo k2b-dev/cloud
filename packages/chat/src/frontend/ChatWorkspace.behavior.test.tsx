@@ -154,7 +154,7 @@ describe("ChatWorkspace interactions", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         if (url.pathname === "/api/chat/preferences") return Response.json({ collapsed: [] });
-        if (url.pathname === "/api/chat/system-chats") return Response.json({ items: [], spacesCursor: null, notebooksCursor: null });
+        if (url.pathname === "/api/chat/system-chats") return Response.json({ items: [], cursors: {}, skipped: [] });
         if (url.pathname === "/api/chat/conversations/unread-count") {
           aggregateRequests++;
           return Response.json({ count: aggregateUnread });

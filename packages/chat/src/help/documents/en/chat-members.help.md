@@ -110,4 +110,4 @@ In a chat's list menu, choose **Pin chat** to put it in **Pinned**. Use **Move u
 
 **Archive chat** hides a chat from your list without leaving it. New messages keep it archived. Open **Archive** at the foot of the list and choose **Restore** in its menu to bring it back, including its saved pin position. Archiving changes only your own list.
 
-These controls also apply to subscribed channels. Unpinned channels appear under **Channels**. **All** and **Unread** filter both chats and channels; each section keeps its saved collapsed state. Spaces and Notebooks remain in their own section and cannot be pinned or personally archived.
+These controls also apply to subscribed channels. Unpinned channels appear under **Channels**. **All** and **Unread** filter both chats and channels; each section keeps its saved collapsed state. Resource discussions remain in their own section and cannot be pinned or personally archived.

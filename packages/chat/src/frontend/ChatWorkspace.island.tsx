@@ -91,7 +91,7 @@ import {
   threadsPageHref as threadsPageAddress,
   UNREAD_COUNT_PATH,
 } from "./route";
-import { containerIcon, openResourceThread, openSystemChat, systemMembers } from "./system-chats";
+import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
 
 import { openThreadDialog } from "./ThreadDialog";
 import {
@@ -524,7 +524,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const refreshSearch = () => {
     if (searchQuery().trim()) chatSearch.retry();
   };
-  // A Space's or notebook's chat opened from "For you", the search, or another app shows where it lives in the list.
+  // A resource discussion opened from "For you", the search, or another app shows where it lives in the list.
   createEffect(
     on(
       () => (system() ? conversation()!.id : null),
@@ -589,7 +589,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // In "All threads", a chip under each message names its thread and opens it.
   const originOf = (chatId: string, view: ThreadView) => {
     const name = threadName(view);
-    if (system() && view === "general") return { label: name, icon: containerIcon(conversation()?.resource?.type) };
+    if (system() && view === "general") return { label: name, icon: containerIcon(conversation()?.icon) };
     if (!name) return undefined;
     return {
       label: name,
@@ -598,7 +598,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       onSelect: () => void openView(chatId, view),
     };
   };
-  // Changes to the items of a Space or notebook show between its messages. They are read through the owning app
+  // Changes to the items of a container show between its messages. They are read through the owning app
   // for the loaded window of messages, again when the history changes, when the page comes back and once a minute.
   // They are no messages; a failed read keeps the ones shown and says so, with a way to read them again.
   type ItemEvent = z.infer<typeof ItemEventSchema>;
@@ -722,7 +722,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const canOpen = ["write", "admin"].includes(openChat()?.conversation?.permission ?? "");
     return {
       label: thread.name,
-      icon: thread.ref.type === "notebooks.note" ? "ti ti-file-text" : "ti ti-circle",
+      icon: "ti ti-messages",
       ...(canOpen
         ? {
             selectLabel: t().openThread({ name: thread.name }),
@@ -811,6 +811,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         attachments: message.attachments,
         quote: quoteOf(current.id, message),
         origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
+        via: message.via,
         key: sendKeys.get(message.id) ?? message.id,
         kind: message.kind,
         authorId: message.author.id,
@@ -1464,12 +1465,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const openSystemFromList = async (id: string, navigation: LinkNavigateEvent) => {
     const row = systemList.page()?.items.find((item) => item.conversation?.id === id);
     const ref = row?.ref ?? rows().find((row) => row.id === id)?.resource ?? (conversation()?.id === id ? conversation()?.resource : null);
-    if (!ref || (ref.type !== "spaces.space" && ref.type !== "notebooks.notebook")) return;
+    if (!ref) return;
     await openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
   };
-  /** Opens a Space's or notebook's chat, starting it when nobody has written there yet. */
+  /** Opens a container's chat, starting it when nobody has written there yet. */
   const openSystem = async (
-    ref: { type: "spaces.space" | "notebooks.notebook"; id: string },
+    ref: { type: string; id: string },
     go: (href: string) => void = (href) => navigate(href, { scroll: "preserve" }),
   ) => {
     const token = ++systemOpen;
@@ -1722,15 +1723,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setCreatingThread(true);
     try {
       if (current.kind === "system") {
-        if (!current.resource) return;
+        if (!current.resource || !current.discussionItemType) return;
         const item = await openCloudResourcePicker({
           title: t().discussElement,
-          scope: { ref: current.resource, label: current.title, icon: containerIcon(current.resource.type) },
+          scope: { ref: current.resource, label: current.title, icon: containerIcon(current.icon) },
           requireReader: true,
-          resourceType: current.resource.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
+          resourceType: current.discussionItemType,
         });
         if (!item || conversation()?.id !== current.id) return;
-        if (item.ref.type !== "spaces.item" && item.ref.type !== "notebooks.note") return;
+        if (item.ref.type !== current.discussionItemType) return;
         const thread = await openResourceThread(current.id, { ref: { type: item.ref.type, id: item.ref.id } });
         if (conversation()?.id !== current.id) return;
         await store.refreshThreads();
@@ -2335,7 +2336,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               }
               backHref={threaded() ? listHref(threadsPageHref(current().id)) : undefined}
               draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
-              notice={draftNotice()}
+              notice={
+                <>
+                  {draftNotice()}
+                  <Show when={current().incomplete || openChat()?.threads?.incomplete}>
+                    <InlineGuidance tone="neutral" role="status">
+                      {t().discussionsIncomplete}{" "}
+                      <Button variant="text" size="xs" onClick={() => refreshCurrentPath()}>
+                        {t().retry}
+                      </Button>
+                    </InlineGuidance>
+                  </Show>
+                </>
+              }
               composerNotice={
                 notice() ? (
                   <Show when={readFailure()} fallback={notice()}>
@@ -2367,7 +2380,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 system() && openThread()
                   ? current().title
                   : system()
-                    ? systemMembers(current().resource?.type, t())
+                    ? t().systemMembers
                     : current().channel
                       ? t().subscribers({ count: current().memberCount })
                       : undefined
@@ -2614,8 +2627,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     onOpen={(id, navigation) => {
                       const ref = row().resource;
                       if (row().kind !== "system") return openFromList(id, navigation);
-                      if (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")
-                        return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+                      if (ref) return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
                     }}
                     onMore={() => {}}
                     pending={listPending() || listLoading()}

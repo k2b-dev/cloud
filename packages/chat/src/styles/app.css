@@ -1065,6 +1065,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-resource-head__status {
+  margin-inline-start: 0.5rem;
+}
 .chat-resource-head__metadata {
   min-width: 0;
   max-width: 24rem;

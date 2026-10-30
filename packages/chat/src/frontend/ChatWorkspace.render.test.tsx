@@ -306,9 +306,15 @@ const renderChild = (locale: string, child: () => ReturnType<typeof createCompon
   );
 
 for (const locale of ["en", "de"]) {
-  for (const summaryCursor of ["", "Page02"]) {
+  for (const summaryCursor of ["", "Page02", null]) {
     test(`partial sidebar summaries stay visibly unknown in ${locale}, cursor ${JSON.stringify(summaryCursor)}`, () => {
-      const row = { ...conversation, kind: "system" as const, summaryCursor, unread: 0 };
+      const row = {
+        ...conversation,
+        kind: "system" as const,
+        summaryCursor,
+        ...(summaryCursor === null ? { incomplete: true as const } : {}),
+        unread: 0,
+      };
       const html = render(locale, { ...props(), sidebar: { items: [row], nextCursor: null } });
       expect(html).toContain(locale === "de" ? "Ungelesene Nachrichten noch nicht vollständig gezählt" : "Unread count is incomplete");
       expect(html).not.toContain("chat-system-chats--read");
@@ -361,74 +367,22 @@ for (const locale of ["en", "de"]) {
   });
 }
 
-for (const [zone, start, end, days] of [
-  ["Europe/Berlin", "2026-10-23T22:00:00.000Z", "2026-10-24T22:00:00.000Z", ["2026-10-24"]],
-  ["Europe/Berlin", "2026-10-23T22:00:00.000Z", "2026-10-25T23:00:00.000Z", ["2026-10-24", "2026-10-25"]],
-  ["America/Los_Angeles", "2026-10-24T07:00:00.000Z", "2026-10-25T07:00:00.000Z", ["2026-10-24"]],
-] as const) {
-  test(`all-day metadata uses calendar dates and inclusive end in ${zone}: ${end}`, () => {
-    const html = renderChild("en", () =>
-      createComponent(ThreadMetadata, {
-        dateConfig: { timeZone: zone, firstDayOfWeek: 1 },
-        resource: {
-          ref: { type: "spaces.item", id: "Item01" },
-          kind: "event",
-          startsAt: start,
-          endsAt: end,
-          allDay: true,
-          status: null,
-          done: false,
-          deadline: "2026-10-24",
-          deadlineAllDay: true,
-          href: "/app/spaces/Item01",
-        },
-      }),
-    );
-    const dates = [...html.matchAll(/datetime="([^"]+)"/g)].map((match) => match[1]!.slice(0, 10));
-    expect(dates).toEqual(["2026-10-24", ...days]);
-  });
-}
-
-test("timed events retain their exact instants, including their exclusive endpoint", () => {
-  const start = "2026-10-24T08:00:00.000Z",
-    end = "2026-10-24T09:00:00.000Z";
+test("thread metadata renders the provider's localized context without interpreting dates", () => {
   const html = renderChild("de", () =>
     createComponent(ThreadMetadata, {
       dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
       resource: {
-        ref: { type: "spaces.item", id: "Item01" },
-        kind: "event",
-        status: null,
-        done: false,
-        startsAt: start,
-        endsAt: end,
-        allDay: false,
-        href: "/app/spaces/Item01",
+        ref: { type: "inventory.item", id: "uuid" },
+        title: "Item",
+        permission: "read",
+        typeTitle: "Inventory item",
+        icon: "ti ti-package",
+        context: "Lieferung am 30. Oktober",
+        href: "/app/inventory/item",
       },
     }),
   );
-  expect(html).toContain(`datetime="${start}"`);
-  expect(html).toContain(`datetime="${end}"`);
-  expect(html).toContain("10:00");
-  expect(html).toContain("11:00");
-});
-
-test("all-day events without an end keep their local start date", () => {
-  const html = renderChild("en", () =>
-    createComponent(ThreadMetadata, {
-      dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
-      resource: {
-        ref: { type: "spaces.item", id: "Item01" },
-        kind: "event",
-        status: null,
-        done: false,
-        startsAt: "2026-10-23T22:00:00.000Z",
-        allDay: true,
-        href: "/app/spaces/Item01",
-      },
-    }),
-  );
-  expect([...html.matchAll(/datetime="([^"]+)"/g)].map((match) => match[1]!.slice(0, 10))).toEqual(["2026-10-24"]);
+  expect(html).toContain("Lieferung am 30. Oktober");
 });
 
 test("system chat links keep personal Unread separate from the thread directory filter", () => {
@@ -447,4 +401,96 @@ test("system chat links keep personal Unread separate from the thread directory 
   });
   expect(html).toContain("/app/chat/panel/c/Chat01?panel=info&amp;listFilter=unread");
   expect(html).not.toContain("/app/chat/panel/c/Chat01?panel=info&amp;filter=unread");
+});
+
+test("a skipped discussion provider leaves a visible notice with retry, not a silent gap", () => {
+  const list = {
+    href: (id: string) => `/app/chat/c/${id}`,
+    onPersonal: () => {},
+    pending: false,
+    activeId: null,
+    viewerId,
+    dateConfig: props().dateConfig,
+    now: () => new Date(now),
+    onOpen: () => {},
+    onMarkRead: () => {},
+    onMarkUnread: () => {},
+  };
+  const html = renderChild("de", () =>
+    createComponent(ChatSystemChats, {
+      list,
+      current: null,
+      updates: [],
+      unavailableId: null,
+      expanded: true,
+      onExpanded: () => {},
+      onOpen: () => {},
+      state: {
+        page: () => ({ items: [], cursors: {}, skipped: ["inventory.shelf"] }),
+        status: () => "ready",
+        more: () => false,
+        load: async () => {},
+      },
+    }),
+  );
+  expect(html).toContain("Einige Orte konnten gerade nicht geladen werden.");
+  expect(html).toContain("Erneut versuchen");
+});
+
+for (const href of [undefined, "/app/inventory/item"])
+  test(`system item SSR ${href ? "offers" : "hides"} every open-resource control`, () => {
+    const system = {
+      ...conversation,
+      kind: "system" as const,
+      resource: { type: "inventory.collection", id: "Warehouse" },
+      threads: 1,
+      incomplete: true as const,
+    };
+    const html = render("en", {
+      ...props(),
+      chatId: system.id,
+      view: "Item01",
+      open: {
+        conversation: system,
+        threads: {
+          general: { unread: 0, lastMessage: null },
+          items: [
+            {
+              id: "Item01",
+              name: "Box",
+              description: null,
+              archived: false,
+              unread: 0,
+              read: null,
+              lastMessage: null,
+              createdAt: now,
+              lastActivityAt: now,
+              resource: {
+                ref: { type: "inventory.item", id: "Box" },
+                title: "Box",
+                permission: "read",
+                typeTitle: "Inventory item",
+                icon: "ti ti-box",
+                ...(href ? { href } : {}),
+              },
+            },
+          ],
+        },
+        page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+        focus: null,
+      },
+    });
+    if (href) expect(html.match(/href="\/app\/inventory\/item"/g)).toHaveLength(3);
+    else {
+      expect(html).not.toContain("chat-resource-head__link");
+      expect(html).not.toContain("chat-resource-head__icon");
+    }
+    expect(html).toContain("Some discussions could not be checked.");
+  });
+
+test("a partial For you page offers Retry and does not claim the list is empty", () => {
+  const html = render("en", { ...props(), forYouPage: true, forYouInitial: { items: [], nextCursor: "", incomplete: true } });
+  expect(html).toContain("Some discussions could not be checked.");
+  expect(html).toContain(chatMessages.resolve(["en"]).t.retry);
+  expect(html).not.toContain(chatMessages.resolve(["en"]).t.forYouEmpty);
 });

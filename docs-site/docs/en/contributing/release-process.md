@@ -97,15 +97,16 @@ release-please runs on every push to `main`:
    `release.yml`. For a Cloud release, it reuses these images instead of
    building them again, builds the CLI binaries, and attaches the binaries
    and `release.json` to the `cloud-vX.Y.Z` GitHub release.
-4. For each new `npm-cloud-v*`, `npm-ui-v*`, or `npm-ssr-v*` tag,
-   `release.yml` publishes `@k2b/cloud`, `@k2b/ui`, or `@k2b/ssr` with npm
-   provenance. A prerelease version such as `0.8.0-rc.1` publishes under the
+4. For each new `npm-cloud-v*`, `npm-ui-v*`, `npm-ssr-v*`, or `npm-editor-v*`
+   tag, `release.yml` publishes `@k2b/cloud`, `@k2b/ui`, `@k2b/ssr`, or
+   `@k2b/editor` with npm provenance. A prerelease version such as `0.8.0-rc.1` publishes under the
    `next` dist-tag; a stable version publishes under `latest`. `@k2b/cloud`
    pins exact `@k2b/ui` and `@k2b/ssr` versions, so it publishes only after
    both are installable from npm. When the same release publishes either of
    them, the workflow waits up to 20 minutes in total; otherwise the pinned
    version must already be on npm, or `@k2b/cloud` stays unpublished and the
-   release fails.
+   release fails. `@k2b/editor` pins an exact `@k2b/ui` version and waits for
+   it the same way.
 
 The release PR runs the `packed` check with `--release`, including in the
 merge queue, to test already published sibling pins from npm and versions
@@ -136,7 +137,8 @@ left `@k2b/ui` unbumped, so published Cloud code imported an export its pinned
 UI version did not have.
 
 Each package publishes through an npm Trusted Publisher for `k2b-dev/cloud`
-with the workflow file `main.yml`. `release.yml` runs the publish, but it is a
+with the workflow file `main.yml`. Configure it for a new package, such as
+`@k2b/editor`, before its first release. `release.yml` runs the publish, but it is a
 reusable workflow, and npm checks the workflow that calls it.
 
 release-please updates exact pins between workspace packages but leaves peer

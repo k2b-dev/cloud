@@ -35,6 +35,10 @@ and such changes are not treated as breaking until then.
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/ui/text-editor` | Supported, SolidJS | [Markdown editor with editable table cells](/en/ui/input/text-editor); application-injected collaboration |
 | `@k2b/ui/text-editor/model` | Supported, portable | Pure Markdown table parsing and minimal source edits for the editor and server actions |
+| `@k2b/editor` | Supported, SolidJS | [Editor, toolbar, bubble menu, and slash menu on shared state](/en/docs/frontend/editor) |
+| `@k2b/editor/styles.css` | Supported, Tailwind CSS | [Widget styles and source class scanning](/en/docs/frontend/editor#compose-markdown-extensions) |
+| `@k2b/editor/markdown` | Supported, CodeMirror | [Optional Markdown extensions and source parsers](/en/docs/frontend/editor#compose-markdown-extensions) |
+| `@k2b/editor/markdown/lib/*` | Supported, portable | Direct source parser imports for server and CLI consumers |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
@@ -170,6 +174,7 @@ Use the capability guide to choose the narrow API:
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
 - [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
+- [Resource types and discussions](/en/docs/platform/resource-types-and-discussions): `resolveResourceReaders` and `ResourceReader` from `@k2b/cloud/services/identity` resolve current account subjects and resource bindings for provider-owned reader checks.
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)
 - [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address): `requestPublicHttps()` for server-side requests to a URL that a person, an administrator, or remote content chooses; `resolvePublicNetworkAddresses()`, `NetworkTargetBlockedError`, and `pinnedNetworkLookup()` from `@k2b/cloud/services/network-security` for other transports.
@@ -224,7 +229,7 @@ For [resource discussions](/en/docs/platform/resource-types-and-discussions),
 `ResourceReadableInputSchema`, `ResourceReadableDataSchema`,
 `ResourceActivityEventSchema`, the `Discussion*Schema` values,
 `typeViewIssues`, and `discussionsIssues` come from `@k2b/cloud/contracts`.
-`discussionProviders` and `readResourcePrincipals` come from
+`discussionProviders`, `readResourcePrincipals`, and `ResourceReaderRateLimited` come from
 `@k2b/cloud/capabilities/server`; `assertResourceView` comes from
 `@k2b/cloud/capabilities/testing`. The generated Query's context is
 `CapabilityAppExecutionContext`.

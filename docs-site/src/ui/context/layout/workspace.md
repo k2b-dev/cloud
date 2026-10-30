@@ -217,6 +217,21 @@ The shadow is paint only: it does not move content, take pointer input, or
 scroll with a column. A waiting Detail keeps its stronger drawer shadow, and a
 phone, which shows one column at a time, has none.
 
+Because the shadow marks both edges of a column, a column keeps the same space
+inside both side edges, as the sidebar does. A level body and a
+`surface="navigation"` pane keep 0.5 rem on each side: a row's fill, hover, and
+selection stop 0.5 rem before either edge, and a group title and row text line
+up with the level head's 1 rem. With a mouse, the end space is the column's
+fixed 0.5 rem scroll track, so a classic scrollbar never widens one side. The
+track is there before anything overflows, so Safari, which reserves no gutter,
+shows the same space and nothing moves when a column starts to scroll. On a
+touch screen, overlay scrollbars take no room and the padding stays on both
+sides. Content in a level adds only its own space beyond the 0.5 rem, for
+example `px-2` for text that lines up with the head; it never cancels the inset
+with a negative margin. Firefox has no fixed track: it keeps the padding
+on both sides and adds its own classic scrollbar, if any, at the end. A `MainPane` outside levels without a surface adds no
+inset; its content owns its edges, like `Main`.
+
 ## Host width
 
 The nearest `k2b-app-area` inline-size container supplies the app's width.

@@ -86,7 +86,7 @@ export default function SystemThreadDirectory(props: {
         if (request.signal.aborted) return;
         for (const thread of next.items) items.set(thread.id, thread);
         cursor = next.nextCursor ?? undefined;
-        if (cursor === undefined) {
+        if (cursor === undefined || next.incomplete) {
           pages++;
           break;
         }
@@ -211,6 +211,14 @@ export default function SystemThreadDirectory(props: {
             </AppWorkspace.SidebarItem>
           )}
         </For>
+        <Show when={page()?.incomplete && status() === "ready"}>
+          <InlineGuidance tone="neutral" role="status">
+            {t().discussionsIncomplete}{" "}
+            <Button variant="text" size="xs" onClick={() => void load()}>
+              {t().retry}
+            </Button>
+          </InlineGuidance>
+        </Show>
         <Show when={status() === "failed"}>
           <InlineGuidance tone="danger" role="status">
             {t().threadsLoadFailed}{" "}
@@ -219,10 +227,10 @@ export default function SystemThreadDirectory(props: {
             </Button>
           </InlineGuidance>
         </Show>
-        <Show when={status() === "ready" && page()?.items.length === 0 && !page()?.nextCursor}>
+        <Show when={status() === "ready" && page()?.items.length === 0 && page()?.nextCursor == null}>
           <p class="chat-threads-page__empty">{input() || filter() ? t().noThreadMatches : t().noItemThreads}</p>
         </Show>
-        <Show when={page()?.nextCursor}>
+        <Show when={page()?.nextCursor != null}>
           <Button
             class="chat-system-directory__more"
             variant="ghost"

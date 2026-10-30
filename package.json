@@ -1,13 +1,14 @@
 {
   "name": "@k2b/cloud-workspace",
   "private": true,
-  "version": "0.52.0",
+  "version": "0.53.0",
   "type": "module",
   "packageManager": "bun@1.4.2",
   "workspaces": {
     "packages": [
       "docs-site",
       "pwas/pwa-auth",
+      "pwas/notes",
       "packages/accounts",
       "packages/api-docs",
       "packages/assistant",
@@ -16,6 +17,7 @@
       "packages/cloud",
       "packages/contacts",
       "packages/core",
+      "packages/editor",
       "packages/cloud-cli",
       "packages/dashboard",
       "packages/faq",

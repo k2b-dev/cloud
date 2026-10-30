@@ -227,10 +227,12 @@ suite("chat shared items API", () => {
       expect((await f.request(stranger.headers, `/${chat.shortId}/shared?kind=${kind}`)).status).toBe(404);
       expect((await f.request(owner.headers, `/${chat.shortId}/shared?kind=${kind}&thread=Absent`)).status).toBe(404);
     }
+    expect((await f.request(owner.headers, `/${chat.shortId}/shared?cursor=`)).status).toBe(200);
+    expect(await list(owner, chat.shortId, { cursor: "" })).toEqual(await list(owner, chat.shortId));
     const other = await f.fixture(owner);
     const foreign = await thread(owner, other.shortId, "Other chat");
     expect((await f.request(owner.headers, `/${chat.shortId}/shared?thread=${foreign.id}`)).status).toBe(404);
-    for (const query of ["kind=unknown", "thread=bad", "cursor=bad", "cursor=", `cursor=${"x".repeat(161)}`])
+    for (const query of ["kind=unknown", "thread=bad", "cursor=bad", `cursor=${"x".repeat(161)}`])
       expect((await f.request(owner.headers, `/${chat.shortId}/shared?${query}`)).status).toBe(400);
     // An agent with write access but a read-only token lists what was shared and cannot share more; a delegated token
     // acts for its person, whose access applies (Identity → Authorization).

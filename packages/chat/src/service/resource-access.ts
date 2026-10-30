@@ -1,41 +1,36 @@
 import { type CapabilityCaller, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
-import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import {
+  CapabilitySemanticLinkSchema,
+  CloudResourceReaderViewSchema,
+  CloudResourceRefSchema,
+  DiscussionContainersDataSchema,
+} from "@k2b/cloud/contracts";
 import { redis } from "bun";
 import { z } from "zod";
 import type { ChatContext } from "./access";
-import { ShortIdSchema } from "./contracts";
+import {
+  DISCUSSION_CONCURRENCY,
+  DiscussionReadStopped,
+  discussionIcon,
+  discussionRead,
+  providerFor,
+  typePresentation,
+} from "./discussion-read";
 
 export const ACCESS_TTL_SECONDS = 60;
-export const READER_CONCURRENCY = 8;
+export const READER_CONCURRENCY = DISCUSSION_CONCURRENCY;
 export const RESOURCE_PAGE_SIZE = 100;
-export const ContainerRefSchema = CloudResourceRefSchema.extend({
-  type: z.enum(["spaces.space", "notebooks.notebook"]),
-  id: ShortIdSchema,
-});
-export const ItemRefSchema = CloudResourceRefSchema.extend({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema });
+export const ContainerRefSchema = CloudResourceRefSchema;
+export const ItemRefSchema = CloudResourceRefSchema;
 export type ResourceRef = z.infer<typeof CloudResourceRefSchema>;
-const PermissionSchema = z.enum(["read", "write", "admin"]);
-export const ResourceDecisionSchema = z.object({
-  permission: PermissionSchema,
-  name: z.string(),
-  description: z.string().nullable(),
-  href: z.string(),
-  container: ContainerRefSchema.nullable(),
-  kind: z.enum(["task", "event", "note"]).nullable(),
-  status: z.string().nullable(),
-  done: z.boolean(),
-  columns: z
-    .array(z.object({ id: z.string(), name: z.string() }))
-    .max(100)
-    .optional(),
-  deadline: z.string().nullable().optional(),
-  deadlineAllDay: z.boolean().optional(),
-  assignees: z.array(z.string()).max(100).optional(),
-  startsAt: z.string().optional(),
-  endsAt: z.string().optional(),
-  allDay: z.boolean().optional(),
+export const ResourceDecisionSchema = CloudResourceReaderViewSchema.extend({
+  href: CapabilitySemanticLinkSchema.shape.href.optional(),
+  typeTitle: z.string(),
+  icon: z.string().transform(discussionIcon),
+  color: z.string().optional(),
 });
 export type ResourceDecision = z.infer<typeof ResourceDecisionSchema>;
+const AuthorizationSchema = ResourceDecisionSchema.pick({ permission: true, container: true }).strip();
 const EnvelopeSchema = z.object({
   data: z.unknown(),
   links: z.array(z.object({ rel: z.string(), href: z.string() })).optional(),
@@ -66,7 +61,10 @@ export const readerBatch = async <T, U>(values: readonly T[], run: (value: T) =>
   }
   return results;
 };
-export const accessKey = (principal: string, ref: ResourceRef) => `chat:access:v2:${principal}:${ref.type}:${ref.id}`;
+export const accessKey = (principal: string, ref: ResourceRef, locale = "en") =>
+  `chat:access:v3:${JSON.stringify([principal, ref.type, ref.id, locale])}`;
+export const authorizationKey = (principal: string, ref: ResourceRef) =>
+  `chat:authorization:v1:${JSON.stringify([principal, ref.type, ref.id])}`;
 export const contextPrincipal = (context: ChatContext) => {
   if (context.credentialPrincipal) return context.credentialPrincipal;
   const subject = context.accessSubject;
@@ -75,150 +73,145 @@ export const contextPrincipal = (context: ChatContext) => {
     ? `${principal}:scopes=${[...new Set(context.actor.scopes)].sort().join(",")}`
     : principal;
 };
-export const cachedResource = async (principal: string, ref: ResourceRef): Promise<ResourceDecision | null> => {
+/** Live delivery needs only authority, independent of the locale of the last HTTP read. */
+export const cachedResource = async (principal: string, ref: ResourceRef) => {
   try {
-    const value = await redis.get(accessKey(principal, ref));
-    return value === null ? null : ResourceDecisionSchema.nullable().parse(JSON.parse(value));
+    const value = await redis.get(authorizationKey(principal, ref));
+    return value === null ? null : AuthorizationSchema.nullable().parse(JSON.parse(value));
   } catch {
     return null;
   }
 };
-const ContainerDataSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  permission: z.enum(["read", "write", "manage", "admin"]),
-  columns: z
-    .array(z.object({ id: z.string(), name: z.string() }))
-    .max(100)
-    .optional(),
-});
-const ItemDataSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  description: z.string().nullable().optional(),
-  kind: z.enum(["task", "event"]).optional(),
-  spaceId: z.string().optional(),
-  notebookId: z.string().optional(),
-  columnId: z.string().nullable().optional(),
-  completedAt: z.string().nullable().optional(),
-  deadline: z.string().nullable().optional(),
-  deadlineAllDay: z.boolean().optional(),
-  assignees: z
-    .array(z.object({ displayName: z.string() }))
-    .max(100)
-    .optional(),
-  startsAt: z.string().optional(),
-  endsAt: z.string().optional(),
-  allDay: z.boolean().optional(),
-});
+export const invokeDiscussion = async (
+  context: ChatContext,
+  appId: string,
+  capabilityId: string,
+  input: Record<string, unknown>,
+  dependencies = resourceReaderDependencies,
+) => {
+  const session = discussionRead(context);
+  return session.page(async (signal) => {
+    if (context.capabilityQuery) {
+      const result = await context.capabilityQuery({ appId, capabilityId, input, signal }, z.unknown());
+      if (result.ok) return EnvelopeSchema.parse(result.data);
+      if (result.error.status === 403 || result.error.status === 404) return null;
+      throw new Error("Resource provider unavailable");
+    }
+    return dependencies.invoke(appId, capabilityId, input, { ...session.caller, signal });
+  });
+};
+const loadResource = async (
+  context: ChatContext,
+  ref: ResourceRef,
+  dependencies = resourceReaderDependencies,
+  onUnavailable?: () => void,
+): Promise<ResourceDecision | null> => {
+  const principal = contextPrincipal(context);
+  const key = accessKey(principal, ref, context.locale ?? context.caller?.locale ?? "en");
+  try {
+    context.caller?.signal?.throwIfAborted();
+    const cached = context.capabilityQuery ? null : await redis.get(key);
+    if (cached !== null) return ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
+    if (!context.caller || !CloudResourceRefSchema.safeParse(ref).success) return null;
+    const provider = await providerFor(context, ref.type);
+    if (!provider) return null;
+    const type = provider.app.manifest.types.find((type) => `${provider.app.appId}.${type.localId}` === ref.type);
+    if (!type?.reader) return null;
+    const result = await invokeDiscussion(context, provider.app.appId, type.reader, { id: ref.id }, dependencies);
+    let decision: ResourceDecision | null = null;
+    if (result) {
+      const view = z.object({ view: CloudResourceReaderViewSchema }).parse(result.data).view;
+      if (ref.type === provider.itemType ? view.container?.ref.type !== provider.containerType : view.container !== undefined)
+        throw new Error("Resource reader container mismatch");
+      decision = ResourceDecisionSchema.parse({
+        ...view,
+        href: result.links?.find((link) => link.rel === "open")?.href,
+        ...typePresentation(provider, ref.type),
+      });
+    }
+    if (!context.capabilityQuery) {
+      await redis.set(key, JSON.stringify(decision), "EX", ACCESS_TTL_SECONDS);
+      await redis.set(
+        authorizationKey(principal, ref),
+        JSON.stringify(decision ? AuthorizationSchema.parse(decision) : null),
+        "EX",
+        ACCESS_TTL_SECONDS,
+      );
+    }
+    return decision;
+  } catch (error) {
+    if (context.caller) {
+      const session = discussionRead(context);
+      session.incomplete = true;
+      if (error instanceof DiscussionReadStopped) session.deferred.add(JSON.stringify(ref));
+    }
+    onUnavailable?.();
+    return null;
+  }
+};
+const pendingReaders = new WeakMap<CapabilityCaller, Map<string, Promise<{ resource: ResourceDecision | null; unavailable: boolean }>>>();
 export const readResource = async (
   context: ChatContext,
   ref: ResourceRef,
   dependencies = resourceReaderDependencies,
   onUnavailable?: () => void,
 ): Promise<ResourceDecision | null> => {
-  const key = accessKey(contextPrincipal(context), ref);
+  if (context.authorizedResources !== undefined)
+    return context.authorizedResources.find((entry) => entry.ref.type === ref.type && entry.ref.id === ref.id)?.decision ?? null;
+  if (!context.caller) return null;
+  let pending = pendingReaders.get(context.caller);
+  if (!pending) {
+    pending = new Map();
+    pendingReaders.set(context.caller, pending);
+  }
+  const key = accessKey(contextPrincipal(context), ref, context.locale ?? context.caller.locale ?? "en");
+  let read = pending.get(key);
+  if (!read) {
+    read = (async () => {
+      let unavailable = false;
+      const resource = await loadResource(context, ref, dependencies, () => {
+        unavailable = true;
+      });
+      return { resource, unavailable };
+    })();
+    pending.set(key, read);
+  }
   try {
-    context.caller?.signal?.throwIfAborted();
-    // A nested query carries invocation-specific authority; an HTTP cache entry cannot authorize it.
-    const cached = context.capabilityQuery ? null : await redis.get(key);
-    if (cached !== null) return ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
-    // Live delivery has no interactive credential and may only consume an existing decision.
-    if (!context.caller) return null;
-    context.caller.signal?.throwIfAborted();
-    const container = ContainerRefSchema.safeParse(ref);
-    const item = ItemRefSchema.safeParse(ref);
-    if (!container.success && !item.success) return null;
-    const [appId, type] = ref.type.split(".");
-    const capabilityQuery = context.capabilityQuery;
-    const result = capabilityQuery
-      ? await (async () => {
-          const response = await capabilityQuery(
-            { appId: appId!, capabilityId: `${type}.read`, input: { id: ref.id }, signal: context.caller?.signal },
-            z.unknown(),
-          );
-          if (response.ok) return EnvelopeSchema.parse(response.data);
-          if (response.error.status === 403 || response.error.status === 404) return null;
-          throw new Error("Resource provider unavailable");
-        })()
-      : await dependencies.invoke(appId!, `${type}.read`, { id: ref.id }, context.caller);
-    const href = result?.links?.find((link) => link.rel === "open")?.href;
-    let decision: ResourceDecision | null = null;
-    if (result && href && container.success) {
-      const parsed = ContainerDataSchema.safeParse(result.data);
-      if (parsed.success && parsed.data.id === ref.id) {
-        const data = parsed.data;
-        decision = {
-          permission: data.permission === "manage" ? "admin" : data.permission,
-          name: data.name,
-          description: data.description ?? null,
-          href,
-          container: null,
-          kind: null,
-          status: null,
-          done: false,
-          columns: data.columns,
-        };
-      }
-    } else if (result && href && item.success) {
-      const parsed = ItemDataSchema.safeParse(result.data);
-      if (parsed.success && parsed.data.id === ref.id) {
-        const data = parsed.data;
-        const parent =
-          ref.type === "spaces.item" && data.spaceId && data.kind
-            ? { type: "spaces.space" as const, id: data.spaceId }
-            : ref.type === "notebooks.note" && data.notebookId
-              ? { type: "notebooks.notebook" as const, id: data.notebookId }
-              : null;
-        if (parent) {
-          const containerDecision = ref.type === "spaces.item" ? await readResource(context, parent, dependencies, onUnavailable) : null;
-          decision = {
-            permission: "read",
-            name: data.title,
-            description: data.description ?? null,
-            href,
-            container: parent,
-            kind: ref.type === "notebooks.note" ? "note" : data.kind!,
-            status: containerDecision?.columns?.find((column) => column.id === data.columnId)?.name ?? null,
-            ...(data.kind === "task" ? { deadline: data.deadline ?? null, deadlineAllDay: data.deadlineAllDay } : {}),
-            assignees: data.assignees?.map((person) => person.displayName),
-            ...(data.kind === "event" ? { startsAt: data.startsAt, endsAt: data.endsAt, allDay: data.allDay } : {}),
-            done: data.completedAt != null,
-          };
-        }
-      }
-    }
-    if (result !== null && decision === null) {
-      onUnavailable?.();
-      return null;
-    }
-    if (!context.capabilityQuery) await redis.set(key, JSON.stringify(decision), "EX", ACCESS_TTL_SECONDS);
-    return decision;
-  } catch {
-    onUnavailable?.();
-    // A failed reader or cache never falls back to Chat grants or stale permissions.
-    return null;
+    const result = await read;
+    if (result.unavailable) onUnavailable?.();
+    return result.resource;
+  } finally {
+    if (pending.get(key) === read) pending.delete(key);
   }
 };
+export const resourceDeferred = (context: ChatContext, ref: ResourceRef) =>
+  !!context.caller && discussionRead(context).deferred.has(JSON.stringify(ref));
+export const discussionStopped = (context: ChatContext) => !!context.caller && discussionRead(context).deferred.size > 0;
+export const discussionIncomplete = (context: ChatContext) => !!context.caller && discussionRead(context).incomplete;
 export const readContainers = async (
   context: ChatContext,
-  type: z.infer<typeof ContainerRefSchema>["type"],
+  type: string,
   cursor?: string,
   dependencies = resourceReaderDependencies,
   query?: string,
+  limit = RESOURCE_PAGE_SIZE,
 ) => {
   if (!context.caller || cursor === "") return { items: [], nextCursor: null };
-  context.caller.signal?.throwIfAborted();
-  const [appId, localType] = type.split(".");
-  const result = await dependencies.invoke(
-    appId!,
-    `${localType}.list`,
-    { limit: RESOURCE_PAGE_SIZE, ...(cursor ? { cursor } : {}), ...(query ? { query } : {}) },
-    context.caller,
+  const provider = await providerFor(context, type, "container");
+  if (!provider) return { items: [], nextCursor: null };
+  const result = await invokeDiscussion(
+    context,
+    provider.app.appId,
+    provider.containers,
+    { limit, ...(cursor ? { cursor } : {}), ...(query ? { query } : {}) },
+    dependencies,
   );
-  // Null means an explicit provider denial; outages and malformed envelopes remain failures.
   if (result === null) return { items: [], nextCursor: null };
-  const data = z.array(ContainerDataSchema).max(RESOURCE_PAGE_SIZE).parse(result.data);
-  return { items: data.map((entry) => ({ ref: { type, id: entry.id }, name: entry.name })), nextCursor: result.page?.nextCursor ?? null };
+  const data = DiscussionContainersDataSchema.parse(result.data);
+  if (data.items.some((entry) => entry.ref.type !== type) || data.items.length > limit || (data.next !== null && data.next === cursor))
+    throw new Error("Invalid discussion container page");
+  return {
+    items: data.items.map((entry) => ({ ref: entry.ref, name: entry.title, ...typePresentation(provider, type) })),
+    nextCursor: data.next,
+  };
 };
