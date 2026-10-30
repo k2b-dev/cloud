@@ -159,7 +159,6 @@ body.k2b-ui {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  min-width: 12.5rem;
   height: 32px;
   padding: 0 0.55rem;
   color: var(--k2b-text-muted);
@@ -182,6 +181,16 @@ body.k2b-ui {
 }
 .n-status .n-short {
   display: none;
+}
+.n-labels {
+  display: inline-grid;
+}
+.n-labels > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.n-labels > span[data-active] {
+  visibility: visible;
 }
 .n-spin {
   animation: n-spin 1s linear infinite;
@@ -1432,7 +1441,7 @@ body.k2b-ui {
     display: none;
   }
   .n-status .n-short {
-    display: inline;
+    display: inline-grid;
   }
   .n-doc {
     padding: 1.5rem 1.25rem 8rem;

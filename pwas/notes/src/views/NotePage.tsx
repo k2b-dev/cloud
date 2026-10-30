@@ -30,10 +30,13 @@ let focusNext: string | null = null;
 const [handingOff, setHandingOff] = createSignal(false);
 export { handingOff };
 
+const STATUSES: Status[] = ["local", "shared", "syncing", "offline", "read", "example", "unsaved", "pendingDelete"];
+
+/** Every label sits in the same grid cell, so the status always takes the width of its longest wording. */
 function StatusLabel(props: { status: Status }) {
-  const view = () => {
+  const views = (): Record<Status, [IconName, string, string, string | undefined]> => {
     const m = t();
-    const views: Record<Status, [IconName, string, string, string | undefined]> = {
+    return {
       local: ["ti-device-desktop", m.statusLocal, m.statusLocalShort, undefined],
       shared: ["ti-circle-check", m.statusShared, m.statusSharedShort, "ok"],
       syncing: ["ti-loader-2", m.statusSyncing, m.statusSyncingShort, undefined],
@@ -43,13 +46,21 @@ function StatusLabel(props: { status: Status }) {
       unsaved: ["ti-alert-triangle", m.statusUnsaved, m.statusUnsavedShort, "danger"],
       pendingDelete: ["ti-trash", m.statusPendingDelete, m.statusPendingDeleteShort, "warn"],
     };
-    return views[props.status];
   };
+  const view = () => views()[props.status];
   return (
     <span class="n-status" role="status" data-tone={view()[3]}>
-      <Icon name={view()[0] ?? "ti-device-desktop"} class={props.status === "syncing" ? "n-spin" : undefined} />
-      <span class="n-long">{view()[1]}</span>
-      <span class="n-short">{view()[2]}</span>
+      <Icon name={view()[0]} class={props.status === "syncing" ? "n-spin" : undefined} />
+      <span class="n-labels n-long">
+        <For each={STATUSES}>
+          {(status) => <span data-active={status === props.status ? "" : undefined}>{views()[status][1]}</span>}
+        </For>
+      </span>
+      <span class="n-labels n-short">
+        <For each={STATUSES}>
+          {(status) => <span data-active={status === props.status ? "" : undefined}>{views()[status][2]}</span>}
+        </For>
+      </span>
     </span>
   );
 }

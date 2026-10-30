@@ -164,8 +164,8 @@ describe("k2b notes · Produktions-SPA", () => {
     expect(await cards().allTextContents()).toEqual(
       expect.arrayContaining([expect.stringContaining("Gartenverein"), expect.stringContaining("Satzungsentwurf")]),
     );
-    // Keep this assertion after the filter checks, so a missing duplicate hero does not hide their result.
-    expect(regularCount).toBe(9);
+    // The "Weiterschreiben" card stands in for the newest note's own card, as in mockup v4.
+    expect(regularCount).toBe(8);
   }, 20_000);
 
   test("Control+K: Volltexttreffer öffnen und eine erfolglose Suche anbieten", async () => {
@@ -312,6 +312,7 @@ describe("k2b notes · Produktions-SPA", () => {
     expect((await search.innerText()).trim()).toBe("");
     await search.click();
     await page.getByRole("combobox", { name: "Suchbegriff", exact: true }).waitFor();
-    expect(radius).toBeGreaterThanOrEqual(fab.width / 2);
+    // Mockup v4: a rounded square, 56 px with an 18 px radius.
+    expect(radius).toBe(18);
   }, 20_000);
 });
