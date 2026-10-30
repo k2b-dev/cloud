@@ -103,6 +103,11 @@ NODE_ENV=production APP_ID=inventory bun run packages/cloud/scripts/build.ts
 That repository path is not an application API. Standalone builds always use
 the script shipped by their pinned package version.
 
+The generated server entry initializes platform connections before importing
+application code, then exports the application's default server. The development
+preload uses the same initializer before loading `src/config`. See
+[Platform start and connections](/en/docs/build/platform-start).
+
 ## Add build output
 
 Place browser assets in `public/`. The build copies them to
@@ -123,7 +128,8 @@ Do not locate server-side files relative to `import.meta.url`: the bundle
 flattens every module into `dist/server.js`, so such paths only work from the
 source tree.
 
-Import Bun built-ins statically, for example `import { sql } from "bun"`. The
+Import Cloud connections with `import { sql, redis } from "@k2b/cloud"`.
+Import other Bun built-ins statically. The
 minified server bundle breaks `await import("bun")`: it runs from source but
 throws a `ReferenceError` in the built image.
 

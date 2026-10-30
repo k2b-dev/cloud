@@ -1,3 +1,4 @@
+// Slice 7 removes this legacy env-URL rewrite together with Bun-global client imports.
 /** Name Bun's default pool before its first use without changing connection ownership. */
 export const configurePostgresApplicationName = (
   applicationId: string,
@@ -27,4 +28,14 @@ export const configurePostgresApplicationName = (
 
   url.searchParams.set("application_name", `cloud:${applicationId}`);
   environment[variable] = url.toString();
+};
+
+/** Preserve operator URL options; otherwise name every connection through native client options. */
+export const postgresApplicationOptions = (applicationId: string, connectionUrl: string): Record<string, string> => {
+  const url = new URL(connectionUrl);
+  let operatorConfigured = false;
+  url.searchParams.forEach((_value, key) => {
+    if (key.toLowerCase() === "application_name" || key.toLowerCase() === "options") operatorConfigured = true;
+  });
+  return operatorConfigured ? {} : { application_name: `cloud:${applicationId}` };
 };

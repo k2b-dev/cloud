@@ -56,6 +56,7 @@ import { connectTestNats } from "./test-nats";
 
 export type { InfraKind } from "./test-infra-env";
 export { connectTestNats } from "./test-nats";
+export { initializeTestPlatform } from "./platform";
 
 const testOnlyDefaults: Record<string, string> = {
   APP_SECRET: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",

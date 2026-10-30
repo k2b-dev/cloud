@@ -19,6 +19,24 @@ For the services and optional integrations needed by each app, start with
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
 
+## Platform connection startup
+
+The platform now initializes its native SQL and Valkey clients before loading
+application code. Deployments with explicit database and Valkey URLs keep their
+connection targets. Core and Gateway continue to
+read infrastructure values from their environment. The new clients use a
+startup snapshot; existing Postgres application names are preserved.
+
+Connection values and mounted NATS credentials and CA contents are captured at
+startup; restart the process after changing them. Database and Valkey URLs
+need explicit values, with `VALKEY_URL` accepted as the alias for `REDIS_URL`.
+This also applies to development-preload processes that previously only loaded
+configuration. Set both URLs before running the preload. Postgres URL aliases
+(`DATABASEURL`, `TLS_DATABASE_URL`, `POSTGRES_URL`, `PGURL`, `PG_URL`, and
+`TLS_POSTGRES_DATABASE_URL`) remain accepted. Implicit localhost and `PG*`-only
+configuration now need an explicit URL. See
+[Platform start and connections](/en/docs/build/platform-start) for the author API.
+
 ## Read secrets from mounted files
 
 Set `NAME_FILE` to a file path in the owning process or container, for example

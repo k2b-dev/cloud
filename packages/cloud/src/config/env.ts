@@ -35,6 +35,7 @@ const registry = defineEnv({
   // Infrastructure
   DATABASE_URL: {
     schema: z.string(),
+    aliases: ["DATABASEURL", "TLS_DATABASE_URL", "POSTGRES_URL", "PGURL", "PG_URL", "TLS_POSTGRES_DATABASE_URL"],
     example: "postgresql://ipa:ipa@localhost:5432/ipa",
     doc: "Postgres connection read by Bun SQL and by application-owned pools.",
   },

@@ -67,7 +67,7 @@ export const checkPackedRuntime = async (root: string, consumer: string, cleanEn
         process.execPath,
         "--no-env-file",
         "-e",
-        'import {runCoreSetup} from "./packages/core/src/runtime-helpers"; await runCoreSetup(); process.exit(0)',
+        'import {initializePlatform} from "@k2b/cloud/start"; await initializePlatform({appId:"core",source:"env"}); const {runCoreSetup}=await import("./packages/core/src/runtime-helpers"); await runCoreSetup(); process.exit(0)',
       ],
       env,
     );

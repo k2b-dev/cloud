@@ -116,9 +116,13 @@ const { app, plugin } = await import(configPath);
 // every production app without requiring app-owned bootstrap imports.
 const serverEntry = resolve(dist, ".server-entry.ts");
 const reflectMetadata = Bun.resolveSync("reflect-metadata", frameworkDir);
+const platformStart = resolve(frameworkDir, "src/start.ts");
+const declaredAppId = app?.meta.id ?? appId;
+if (declaredAppId !== appId)
+  throw new Error(`APP_ID ${JSON.stringify(appId)} does not match declared app ${JSON.stringify(declaredAppId)}`);
 await writeFile(
   serverEntry,
-  `import ${JSON.stringify(reflectMetadata)};\nexport { default } from ${JSON.stringify(resolve(appDir, "src/index.ts"))};\n`,
+  `import ${JSON.stringify(reflectMetadata)};\nimport { startPlatform } from ${JSON.stringify(platformStart)};\nconst application = await startPlatform({ appId: ${JSON.stringify(declaredAppId)}, load: () => import(${JSON.stringify(resolve(appDir, "src/index.ts"))}) });\nexport default application.default;\n`,
 );
 let server: Awaited<ReturnType<typeof Bun.build>>;
 try {
