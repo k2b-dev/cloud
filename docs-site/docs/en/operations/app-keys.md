@@ -74,6 +74,35 @@ without an enrollment record causes an error; preserve the file and repair the
 cause before retrying. Use a **new output directory for a new key or rotation**. The enrollment file is private material
 and needs the same protection as the final key.
 
+## Use the key at start
+
+After enrollment, supply either `CLOUD_APP_KEY` or
+`CLOUD_APP_KEY_FILE=/run/secrets/inventory.key` to the application process, plus
+`CLOUD_CORE_INTERNAL_ORIGIN=https://core.example.internal`. Mount the key file
+so the application user can read it. Do not supply both key sources: that
+stops startup. The key's app ID must match the built or development app ID.
+Core and Gateway keep their infrastructure environment values and refuse keys.
+
+**Keep infrastructure environment values until the platform-client import
+migration is complete.** Key-only production operation is not yet supported;
+remaining Bun-global SQL/Redis imports still read `DATABASE_URL` and
+`REDIS_URL` from the environment. The bootstrap initializer itself supports a
+key and Core origin, but that does not migrate application imports.
+
+The platform requests its connections once before loading application code.
+Explicit environment values win per value; Core supplies missing values.
+Connection changes require a rolling restart. Use verified TLS across hosts;
+install a private CA through `NODE_EXTRA_CA_CERTS` before startup. See
+[Deployment requirements](/en/docs/operations/deployment-requirements#prepare-application-connection-bootstrap)
+for replica consistency and startup probes.
+
+Invalid, unknown, revoked or mismatched keys stop startup. If Core is
+unreachable or answers HTTP 429 or 503, startup retries for at most five minutes
+without opening an HTTP listener. A retry signs a new proof even if the first
+response was lost. Successful bootstrap updates `lastUsedAt`. Revocation blocks
+new bootstrap requests on every Core replica immediately; it does not close
+already established database or NATS connections or recall delivered secrets.
+
 ## Inspect and revoke keys
 
 ```bash
@@ -84,8 +113,8 @@ cld --profile operator admin apps keys revoke inventory <keyId> --yes
 The list includes the public key, fingerprint, name, creation and creator,
 optional expiry, last use, and revocation metadata. Status is `active`,
 `expired`, or `revoked`; `accountStatus` is `active` or `disabled`. A disabled
-account prevents authentication with all its keys. `lastUsedAt` remains null
-until a consuming protocol records successful authentication. Lists accept `--page` and `--per-page`
+account prevents authentication with all its keys. Successful bootstrap updates
+`lastUsedAt`; a key that has never authenticated has a null value. Lists accept `--page` and `--per-page`
 (default 100, maximum 500).
 
 Revocation is idempotent. Retrying enrollment of a revoked or expired public

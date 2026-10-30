@@ -48,6 +48,7 @@ export const createRegistryMembership = (
     instanceId?: string;
     hostname?: string;
     startedAt?: number;
+    bootstrap?: AppInstanceRecord["bootstrap"];
     writeTimeoutMs?: number;
   },
 ) => {
@@ -60,6 +61,7 @@ export const createRegistryMembership = (
     hostname: options.hostname ?? hostname(),
     startedAt: options.startedAt ?? Date.now(),
     entries: {},
+    ...(options.bootstrap ? { bootstrap: structuredClone(options.bootstrap) } : {}),
   };
   const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;
   if (!Number.isFinite(writeTimeoutMs) || writeTimeoutMs <= 0) throw new RangeError("Membership write timeout must be positive and finite");

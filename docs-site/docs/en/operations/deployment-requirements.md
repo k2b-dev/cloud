@@ -235,6 +235,40 @@ Valkey admission, paid calls are refused with `GEO_BUSY`; there is no
 unlimited fallback. Availability checks remain free. Cache failures alone do
 not fail a request that admission accepts.
 
+## Prepare application connection bootstrap
+
+Core and Gateway keep their infrastructure environment configuration. Every
+Core replica must start with the same database, Valkey, NATS, namespace,
+replica count and `APP_SECRET` values, including optional rotation values and
+NATS credentials/CA **file contents**. Core reads the NATS files once at
+platform startup; replacing them requires a rolling restart of Core and its
+application clients. Bootstrap does not reload existing connections.
+
+Give an application its enrolled `CLOUD_APP_KEY` or readable
+`CLOUD_APP_KEY_FILE`, plus `CLOUD_CORE_INTERNAL_ORIGIN` pointing directly to
+Core. The gateway blocks `/_internal/*`. Across hosts, require HTTPS with
+server verification: bootstrap responses contain installation credentials.
+For a private CA, provide `NODE_EXTRA_CA_CERTS` before the first fetch, through
+the image or deployment. Never disable certificate verification. A TLS/CA
+failure follows the bounded network retry policy, so inspect the CA deployment
+when bootstrap repeatedly reports transient failures.
+
+A Kubernetes Secret can mount the private key as a file; the application
+process must be able to read it. Core and Gateway refuse app keys. No init
+container or Kubernetes API access is required. Size Kubernetes startup probes
+to cover **bootstrap (up to five minutes), NATS connection startup (up to five
+minutes), and application setup**, plus the deployment's scheduling margin.
+While bootstrap waits, there is no HTTP listener or readiness response. A
+permanent credential/protocol failure exits immediately; an exhausted network
+budget exits so the container restart policy can retry.
+
+**Key-only production operation is not yet supported.** Keep each app's
+infrastructure environment values until the platform-client import migration
+is complete; Bun-global SQL/Redis imports still depend on them. This release
+adds the bootstrap protocol, not the operator migration. See
+[Runtime configuration](/en/docs/operations/runtime-configuration#bootstrap-application-connections-from-core)
+and [App keys](/en/docs/operations/app-keys#use-the-key-at-start).
+
 ## Treat the gateway as a trusted platform service
 
 Like application services, Core and the gateway hold the installation's

@@ -16,6 +16,7 @@ import {
   WIDGET_TITLE_MAX_LENGTH,
   type WidgetSettingsDeclaration,
 } from "../contracts/widgets";
+import type { PlatformBootstrapMetadata } from "../runtime/connections";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
 import { lazySync } from "./process-sync";
@@ -63,6 +64,8 @@ export type AppInstanceRecord = {
   hostname: string;
   startedAt: number;
   entries: Record<string, string>;
+  /** Missing on older instances means unknown, never env or successful bootstrap. */
+  bootstrap?: PlatformBootstrapMetadata;
 };
 
 // The id and owner are a cross-version contract: all replicas must use the same lock.
@@ -103,6 +106,8 @@ export type AppRegistryDetail = AppRegistryEntry & {
   updatedAt: number;
   expiresAt: number;
   version: string;
+  /** Per-process startup metadata for admin readers. null means an older/unknown producer. */
+  instances?: { instanceId: string; hostname: string; startedAt: number; bootstrap: PlatformBootstrapMetadata | null }[];
 };
 
 export type AppRegistryIssue = {
@@ -411,8 +416,21 @@ export const getCapability = async (appId: string): Promise<CapabilityRegistryEn
  * Same as `listApps` but returns registry metadata for admin observability.
  */
 export const listAppsDetailed = async (): Promise<AppRegistryDetail[]> => {
-  const snapshot = await readAppRegistrySnapshot();
-  return snapshot.apps;
+  const [snapshot, instances] = await Promise.all([
+    readAppRegistrySnapshot(),
+    appInstanceRegistry().snapshot({ prefix: APP_INSTANCE_PREFIX }),
+  ]);
+  return snapshot.apps.map((app) => ({
+    ...app,
+    instances: instances.entries
+      .filter(({ value }) => value.appId === app.id)
+      .map(({ value }) => ({
+        instanceId: value.instanceId,
+        hostname: value.hostname,
+        startedAt: value.startedAt,
+        bootstrap: value.bootstrap ?? null,
+      })),
+  }));
 };
 
 /**

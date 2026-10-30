@@ -819,6 +819,7 @@ export const defineApp = <
         registry: appInstanceRegistry,
         lock: appMembershipLock,
         startedAt: entry.startedAt,
+        bootstrap: connections().bootstrap,
       });
       // Heartbeat
       const heartbeat = createHeartbeat(meta.id, entry, {

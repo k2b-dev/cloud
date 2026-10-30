@@ -269,7 +269,10 @@ export const revokeAppKey = async (params: { actor: AdminActor; appId: string; k
 };
 
 /** Bootstrap and signed workload requests must query this directly; no cache. */
-export const getActiveAppKey = async (params: { appId: string; keyId: string }, db: SQL = sql): Promise<AppKeyMetadata | null> => {
+export const getActiveAppKey = async (
+  params: { appId: string; keyId: string },
+  db: SQL = sql,
+): Promise<(AppKeyMetadata & { connectionsAllowed: boolean }) | null> => {
   try {
     validateAppKeyAppId(params.appId);
   } catch {
@@ -277,14 +280,14 @@ export const getActiveAppKey = async (params: { appId: string; keyId: string }, 
   }
   if (params.keyId.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(params.keyId))
     return null;
-  const [row] = await db<Row[]>`
+  const [row] = await db<(Row & { connections_allowed: boolean })[]>`
     SELECT ${db.unsafe(columns)} FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     WHERE c.kind = 'app_key' AND c.id = ${params.keyId}::uuid AND c.status = 'active'
       AND (c.expires_at IS NULL OR c.expires_at > now()) AND sa.status = 'active'
       AND sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app' AND sa.resource_id = ${params.appId}
   `;
-  return row ? map(row) : null;
+  return row ? { ...map(row), connectionsAllowed: row.connections_allowed } : null;
 };
 
 /** Call only after successful authentication; a late touch cannot revive a key. */

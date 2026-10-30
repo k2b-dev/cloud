@@ -10,6 +10,7 @@ import { aiLive, aiLiveChannels } from "@k2b/cloud/ai/live";
 import {
   createAiOpenAiRoutes,
   createAppAccessRoutes,
+  createAppBootstrapRoutes,
   createCoreApiRouter,
   createMcpProtectedResourceRoutes,
   createPwaPhoneRoutes,
@@ -51,6 +52,7 @@ const coreApi = new Hono()
   .route("/", api);
 
 const router = new Hono<AuthContext>()
+  .route("/", createAppBootstrapRoutes())
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
   .route("/_cloud/app-access", createAppAccessRoutes())
