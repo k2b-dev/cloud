@@ -636,6 +636,36 @@ describe("sync ended editor recovery", () => {
     expect(editor.view().state.doc.toString().startsWith("# Intro from Ada")).toBe(true);
   });
 
+  test("first edits survive a remote rewrite whose text diff runs out of time", async () => {
+    // A text diff that takes too long gives up (lazy-collab's timeout). Typed words must then still be in the note,
+    // never only in a toast.
+    const lazy = await import("../../../lib/yjs/lazy-collab");
+    const diff = spyOn(lazy, "changesBetween").mockReturnValue(null);
+    try {
+      using editor = await mountNoteEditor({ pending: false });
+      const instance = editor.providers[0]!;
+      // Ada rewrites the note at the same time, from the state before these words were typed.
+      const ada = new Y.Doc();
+      Y.applyUpdate(ada, Y.encodeStateAsUpdate(instance.opts.doc));
+      const before = Y.encodeStateVector(ada);
+      ada.transact(() => {
+        const text = ada.getText("codemirror");
+        text.delete(0, text.length);
+        text.insert(0, "Rewritten by Ada.");
+      });
+      editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Mine." }, userEvent: "input.type" });
+      const ytext = instance.opts.doc.getText("codemirror");
+      Y.applyUpdate(instance.opts.doc, Y.encodeStateAsUpdate(ada, before), "remote");
+      instance.opts.onReady?.();
+      expect(editor.view().state.doc.toString()).toContain("Mine.");
+      expect(ytext.toString()).toContain("Mine.");
+      expect(ytext.toString()).toContain("Rewritten by Ada.");
+      expect(editor.view().state.doc.toString()).toBe(ytext.toString());
+    } finally {
+      diff.mockRestore();
+    }
+  });
+
   test("before the first edit, a save by someone else replaces the shown text without connecting", async () => {
     using editor = await mountNoteEditor({ pending: false });
     const instance = editor.providers[0]!;
