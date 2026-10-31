@@ -1,7 +1,7 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { latestTopicCursor } from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
-import type { TransactionSQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 import type { NotebookWorkspaceEvent, NotebookWorkspaceInvalidationScope } from "../lib/workspace-events";
 
 type InvalidationReason = Extract<NotebookWorkspaceEvent, { type: "workspace.invalidated" }>["reason"];
@@ -19,14 +19,14 @@ export const workspaceTopic = lazySync((sync) =>
 
 type WorkspaceOutboxRow = { id: string; attempts: number; notebook_id: string; payload: NotebookWorkspaceEvent };
 
-export const createWorkspaceOutbox = () =>
+export const createWorkspaceOutbox = (config: { reconcileIntervalMs?: number } = {}) =>
   createPgOutbox<WorkspaceOutboxRow>({
     table: "notebooks.workspace_outbox",
     name: "notebooks:workspace-events",
     orderBy: "notebook_id",
     sequence: "seq",
     // Same cadence as platform live delivery; batch, claim and backoff use its defaults.
-    reconcileIntervalMs: 1_000,
+    reconcileIntervalMs: config.reconcileIntervalMs ?? 1_000,
     publish: (row) =>
       workspaceTopic().publish({
         tenantId: row.notebook_id,
@@ -37,6 +37,13 @@ export const createWorkspaceOutbox = () =>
   });
 
 export const workspaceOutbox = createWorkspaceOutbox();
+
+/** Commit domain writes and their hints before waking delivery. Nested writers use the supplied tx. */
+export const workspaceTransaction = async <const T>(run: SQL.TransactionContextCallback<T>, database = sql) => {
+  const result = await database.begin(run);
+  void workspaceOutbox.notify();
+  return result;
+};
 
 // Only enqueue here. The lifecycle dispatcher publishes committed rows, including
 // those left by a stopped process. Every hint is a reference-only invalidation:

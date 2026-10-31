@@ -236,8 +236,9 @@ publishes pending hints to the existing `cloud:notebooks:events:workspace`
 topic. A restart resumes committed rows. A failed publication keeps its row
 and retries until the broker accepts it, using the platform outbox's default
 batch size, claim timeout and backoff. See [Deliver an outbox](/en/docs/data/migrations-and-transactions#deliver-an-outbox).
-The dispatcher checks for committed hints every second, so healthy delivery
-can take up to one second before publication begins.
+Each workspace write wakes the dispatcher after its transaction commits, so
+healthy delivery starts immediately. The dispatcher also checks every second
+to recover pending hints after a crash or failed wake.
 
 When open notes or sidebars lag behind saved changes, inspect the pending
 rows' `attempts`, `next_attempt_at` and `last_error`, and the

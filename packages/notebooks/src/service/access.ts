@@ -26,7 +26,7 @@ import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { resolveNotebookApiKeyPermission } from "./api-key-permissions";
-import { invalidated } from "./workspace-events";
+import { invalidated, workspaceTransaction } from "./workspace-events";
 
 // ==========================
 // Notebook Access Adapter
@@ -283,7 +283,7 @@ export const listNotebookAccessPage = async (
  */
 export const addNotebookAccess = async (notebookId: string, accessId: string): Promise<Result<void>> => {
   try {
-    await sql.begin(async (tx) => {
+    await workspaceTransaction(async (tx) => {
       await tx`
       INSERT INTO notebooks.notebook_access (notebook_id, access_id)
       VALUES (${notebookId}::uuid, ${accessId}::uuid)
@@ -329,7 +329,7 @@ const mutateNotebookAccess = async (params: {
   permission?: PermissionLevel;
   caller?: NotebookAccessCaller;
 }): Promise<Result<void>> => {
-  const result = await sql.begin(async (tx): Promise<Result<void>> => {
+  const result = await workspaceTransaction(async (tx): Promise<Result<void>> => {
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${params.notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
     const before = await listNotebookAccess(params.notebookId, tx);
@@ -403,7 +403,7 @@ export const grantNotebookAccess = async (params: {
   caller?: NotebookAccessCaller;
 }): Promise<Result<AccessEntry>> => {
   const { notebookId, principal, permission } = params;
-  const result = await sql.begin(async (tx): Promise<Result<string>> => {
+  const result = await workspaceTransaction(async (tx): Promise<Result<string>> => {
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
     const before = await listNotebookAccess(notebookId, tx);

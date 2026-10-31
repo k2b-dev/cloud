@@ -1,4 +1,3 @@
-import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import * as Y from "yjs";
 import {
@@ -13,7 +12,7 @@ import { notebookServiceMessages } from "./messages";
 import type { Notebook } from "./notebooks";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
-import { invalidated } from "./workspace-events";
+import { invalidated, workspaceTransaction } from "./workspace-events";
 
 export type TemplateSummary = {
   id: string;
@@ -167,7 +166,7 @@ export const instantiate = async (
       finalNotebook = requireResult(await notebooks.update({ id: notebook.id, data: { homepageNoteId: homepage.id } }));
     }
 
-    await sql.begin((tx) =>
+    await workspaceTransaction((tx) =>
       invalidated({ notebookId: notebook.id, reason: "template", scopes: ["notebook", "tree", "tags", "references"] }, tx),
     );
     return ok(finalNotebook);

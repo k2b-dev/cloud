@@ -41,7 +41,7 @@ import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
 import { buildTextQuery } from "./search";
-import { invalidated, noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
+import { invalidated, noteCreated, noteDeleted, noteUpdated, workspaceTransaction } from "./workspace-events";
 import {
   applyYjsTopicEvent,
   compareStreamCursor,
@@ -414,7 +414,7 @@ export const lock = async (params: {
 
   const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteOrLockNotes(params.permission, rule));
   // The rule is checked in the same statement, so a concurrent settings change cannot slip a lock through.
-  const row = await sql.begin(async (tx) => {
+  const row = await workspaceTransaction(async (tx) => {
     const [row] = await tx<DbNote[]>`
     UPDATE notebooks.notes n
     SET locked_at = now(), updated_at = now()
@@ -956,7 +956,7 @@ export const create = async (params: {
       }
       return row;
     };
-    const row = await (params.tx ? persist(params.tx) : sql.begin(persist));
+    const row = await (params.tx ? persist(params.tx) : workspaceTransaction(persist));
 
     if (!row) {
       return { ok: false, error: "Failed to create note", status: 500 };
@@ -1013,7 +1013,7 @@ export const remove = async (params: { id: string; permission: PermissionLevel }
   const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteOrLockNotes(params.permission, rule));
   const [target] = await sql<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE id = ${params.id}::uuid`;
   if (!target) return fail(err.notFound("Note"));
-  const deleted = await sql.begin(async (tx) => {
+  const deleted = await workspaceTransaction(async (tx) => {
     await lockTree(tx, target.notebook_id);
     // The rule is checked in the same statement, so a concurrent settings change cannot slip a delete through.
     const [deleted] = await tx<{ id: string; notebook_id: string; short_id: string }[]>`
@@ -1056,7 +1056,7 @@ export const move = async (params: {
   const anchor = anchorId ? await get({ id: anchorId }) : null;
   if (anchorId && (!anchor || anchor.notebookId !== existing.notebookId)) return { ok: false, error: "Anchor note not found", status: 404 };
   const parentId = params.parentId === undefined ? (anchor ? anchor.parentId : existing.parentId) : params.parentId;
-  const result = await sql.begin(async (tx): Promise<MutationResult<Note>> => {
+  const result = await workspaceTransaction(async (tx): Promise<MutationResult<Note>> => {
     await lockTree(tx, existing.notebookId);
     // The row lock keeps a concurrent lock() from slipping in between the check and the move.
     const [row] = await tx<DbNote[]>`SELECT n.*,
@@ -1100,7 +1100,7 @@ export const move = async (params: {
 };
 
 export const resetOrder = async (params: { notebookId: string; parentId: string | null }): Promise<Result<void>> => {
-  const result = await sql.begin(async (tx) => {
+  const result = await workspaceTransaction(async (tx) => {
     await lockTree(tx, params.notebookId);
     if (params.parentId) {
       const [parent] =
@@ -1284,7 +1284,7 @@ export const save = async (params: SaveNoteParams): Promise<MutationResult<{ ver
   const requestedAtSeconds = (requestedAt ?? Date.now()) / 1000;
 
   // The note and its version commit together.
-  const { result, versionId } = await sql.begin(async (tx) => {
+  const { result, versionId } = await workspaceTransaction(async (tx) => {
     // Take the parent before the note so projection FKs cannot deadlock with
     // notebook deletion cascading down to this note.
     await tx`SELECT id FROM notebooks.notebooks WHERE id = ${existing.notebookId}::uuid FOR KEY SHARE`;
@@ -2147,7 +2147,7 @@ export const restoreFromSnapshot = async (params: {
   const restoreTopic = createYjsTopic();
   const legacyTopic = await legacyYjsTopicInfo(noteId);
 
-  const restored = await sql.begin(async (tx): Promise<MutationResult<{ versionId: string }>> => {
+  const restored = await workspaceTransaction(async (tx): Promise<MutationResult<{ versionId: string }>> => {
     await tx`SELECT id FROM notebooks.notebooks WHERE id = ${existing.notebookId}::uuid FOR KEY SHARE`;
     const [current] = await tx<(DbYjsState & { locked_at: Date | null })[]>`
       SELECT yjs_snapshot, yjs_stream_cursor, content_md, yjs_restore_revision::text,

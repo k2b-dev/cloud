@@ -268,14 +268,14 @@ const withNoteLock = async <T>(
   run: (tx: TransactionSQL) => Promise<Result<T>>,
 ): Promise<Result<T>> => {
   try {
-    return await annotationTransactions().begin(async (tx) => {
+    return await workspaceEvents.workspaceTransaction(async (tx) => {
       context.signal.throwIfAborted();
       // Only the fixed platform budget is interpolated into SET LOCAL.
       await tx.unsafe(`SET LOCAL lock_timeout = '${ANNOTATION_LOCK_TIMEOUT_MS}ms'`);
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`notebooks.annotations:${noteId}`}, 0))`;
       context.signal.throwIfAborted();
       return run(tx);
-    });
+    }, annotationTransactions());
   } catch (error) {
     if (error instanceof SQL.PostgresError && error.errno === "55P03") return conflict(words(context).busy, { retryable: true });
     throw error;
@@ -931,7 +931,7 @@ export const operate = async (
           head.doc.destroy();
         }
       }
-      await sql.begin(async (tx) => {
+      await workspaceEvents.workspaceTransaction(async (tx) => {
         await tx`UPDATE notebooks.annotation_operations SET status = 'applied', updated_at = now() WHERE id = ${op.id}::uuid`;
         // Accept follows the inserted items; undo follows the restored items.
         if (op.start_rel && op.end_rel)

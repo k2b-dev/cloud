@@ -19,7 +19,7 @@ import {
 import * as activity from "./activity";
 import helloMd from "./hello.md" with { type: "text" };
 import * as notes from "./notes";
-import { invalidated, notebookUpdated } from "./workspace-events";
+import { invalidated, notebookUpdated, workspaceTransaction } from "./workspace-events";
 
 // ==========================
 // Types
@@ -481,7 +481,7 @@ export const create = async (params: {
 
   const shortId = await generateUniqueShortId("notebook");
   try {
-    const row = await sql.begin(async (tx) => {
+    const row = await workspaceTransaction(async (tx) => {
       const [row] = await tx<DbNotebook[]>`
     INSERT INTO notebooks.notebooks (short_id, name, description, icon, created_by)
     VALUES (${shortId}, ${data.name}, ${data.description ?? null}, ${data.icon ?? null}, ${creatorId}::uuid)
@@ -574,7 +574,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
   }
 
   // Only an explicit change writes the deletion rule, so an update from a stale snapshot cannot undo an admin's choice.
-  const row = await sql.begin(async (tx) => {
+  const row = await workspaceTransaction(async (tx) => {
     const [before] = await tx<DbNotebook[]>`SELECT * FROM notebooks.notebooks WHERE id = ${id}::uuid FOR UPDATE`;
     const [row] = await tx<DbNotebook[]>`
     UPDATE notebooks.notebooks
@@ -632,7 +632,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
  */
 export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
   const accessEntries = await listNotebookAccess(params.id);
-  const result = await sql.begin(async (tx) => {
+  const result = await workspaceTransaction(async (tx) => {
     const result = await tx`DELETE FROM notebooks.notebooks WHERE id = ${params.id}::uuid`;
     if (result.count > 0)
       await invalidated({ notebookId: params.id, reason: "bulk", scopes: ["notebook", "tree", "tags", "references", "permissions"] }, tx);

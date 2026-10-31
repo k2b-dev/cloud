@@ -156,7 +156,7 @@ export const create = async (config: {
   if (!(await verifyNoteInNotebook(config))) return fail(err.notFound("Note"));
 
   const shortId = await generateUniqueShortId("comment");
-  const row = await sql.begin(async (tx) => {
+  const row = await workspaceEvents.workspaceTransaction(async (tx) => {
     const [row] = await tx<DbNoteComment[]>`
     WITH inserted AS (
       INSERT INTO notebooks.note_comments (short_id, note_id, author_user_id, author_display_name, content)
@@ -212,7 +212,7 @@ export const update = async (config: {
   if (existing.authorUserId !== config.authorUserId) return fail(err.forbidden("Only the author may edit this comment"));
   if (!existing.canEdit) return fail(err.forbidden("Comments can only be edited within 10 minutes"));
 
-  const row = await sql.begin(async (tx) => {
+  const row = await workspaceEvents.workspaceTransaction(async (tx) => {
     const [row] = await tx<DbNoteComment[]>`
     WITH updated AS (
       UPDATE notebooks.note_comments
@@ -268,7 +268,7 @@ export const remove = async (config: {
   if (existing.authorUserId !== config.authorUserId) return fail(err.forbidden("Only the author may delete this comment"));
   if (!existing.canDelete) return fail(err.forbidden("Comments can only be deleted within 10 minutes"));
 
-  const deleted = await sql.begin(async (tx) => {
+  const deleted = await workspaceEvents.workspaceTransaction(async (tx) => {
     const [deleted] = await tx<{ id: string }[]>`
     DELETE FROM notebooks.note_comments
     WHERE id = ${existing.id}::uuid

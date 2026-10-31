@@ -10,7 +10,7 @@ import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import type { PublicNotebookWorkspaceEvent } from "../lib/workspace-events";
 import * as noteRefs from "./note-refs";
 import * as notes from "./notes";
-import { createWorkspaceOutbox, latestCursor, workspaceTopic } from "./workspace-events";
+import { createWorkspaceOutbox, latestCursor, workspaceOutbox, workspaceTopic, workspaceTransaction } from "./workspace-events";
 
 suiteFor(
   "database",
@@ -23,6 +23,7 @@ suiteFor(
   let http: ReturnType<typeof Bun.serve> | undefined;
   let socket: WebSocket | undefined;
   let worker = createWorkspaceOutbox();
+  let wake: ReturnType<typeof spyOn<typeof workspaceOutbox, "notify">>;
   let restorePublisher = () => {};
   let notebookId = "";
   let notebookShortId = "";
@@ -48,8 +49,8 @@ suiteFor(
     managesGroupIds: [],
   };
   // Test timeout bounds every condition wait; no fixed sleeps decide the result.
-  const until = async (condition: () => boolean | Promise<boolean>) => {
-    const deadline = AbortSignal.timeout(15_000);
+  const until = async (condition: () => boolean | Promise<boolean>, timeoutMs = 15_000) => {
+    const deadline = AbortSignal.timeout(timeoutMs);
     while (!(await condition())) {
       deadline.throwIfAborted();
       await Bun.sleep(20);
@@ -127,6 +128,8 @@ suiteFor(
   beforeEach(async () => {
     setSystemTime(new Date("2026-10-31T12:00:00.000Z"));
     received.length = 0;
+    // Recovery tests control dispatch explicitly; the latency test forwards the real wake.
+    wake = spyOn(workspaceOutbox, "notify").mockResolvedValue();
     notebookId = crypto.randomUUID();
     notebookShortId = testShortId();
     await sql`INSERT INTO notebooks.notebooks(id, short_id, name) VALUES (${notebookId}::uuid, ${notebookShortId}, 'Workspace outbox')`;
@@ -140,6 +143,7 @@ suiteFor(
     worker = createWorkspaceOutbox();
     await worker.reconcile();
     await subscribe(await latestCursor({ notebookId }));
+    wake.mockClear();
   });
   afterEach(async () => {
     await worker.stop();
@@ -151,6 +155,7 @@ suiteFor(
       await closed.promise;
       socket = undefined;
     }
+    wake.mockRestore();
     restorePublisher();
     restorePublisher = () => {};
     setSystemTime();
@@ -165,6 +170,26 @@ suiteFor(
     await sql.close();
     await database?.drop();
   });
+
+  test("a committed write wakes delivery to a subscribed socket before the reconcile timer", async () => {
+    worker = createWorkspaceOutbox({ reconcileIntervalMs: 60_000 });
+    wake.mockImplementation(worker.notify);
+    worker.start();
+    await worker.reconcile(); // Finish startup's pass before the write can enqueue anything.
+    wake.mockClear();
+    await save("# Delivered immediately after commit");
+    const committedAt = performance.now();
+    await until(() => received.length === 1, 1_000);
+    expect(performance.now() - committedAt).toBeLessThan(1_000);
+    expect(wake).toHaveBeenCalledTimes(1);
+    expect(received[0]!.event).toEqual({
+      v: 1,
+      type: "note.updated",
+      notebookId: notebookShortId,
+      note: { id: note.shortId, historyIncomplete: false },
+    });
+    await until(async () => (await pending()).length === 0);
+  }, 5_000);
 
   test("a failed first publish commits the save and reaches the subscribed socket on retry without another write", async () => {
     const topic = workspaceTopic();
@@ -290,12 +315,13 @@ suiteFor(
   test("rolling back a domain change also rolls back its workspace hint", async () => {
     const { noteUpdated } = await import("./workspace-events");
     await expect(
-      sql.begin(async (tx) => {
+      workspaceTransaction(async (tx) => {
         await tx`UPDATE notebooks.notes SET content_md = '# Rolled back' WHERE id = ${note.id}::uuid`;
         await noteUpdated(note, tx);
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
+    expect(wake).not.toHaveBeenCalled();
     expect((await notes.get({ id: note.id }))?.contentMd).toBe("# Before");
     expect(await pending()).toHaveLength(0);
     expect(await worker.reconcile()).toBe(0);
