@@ -311,3 +311,14 @@ test("domains: an empty list and a failed read each say so in place", async () =
   await open("?app=lager&state=domains-error");
   expect(await page.locator('[data-row="Domains"]').innerText()).toContain("Nicht geladen");
 }, 20_000);
+
+test("domains: a promotion that stops halfway says so and can be finished", async () => {
+  await open("?app=lager&view=domains&state=domains-partial");
+  await page.getByRole("button", { name: "Aktionen für www.lager.example.de" }).click();
+  await page.getByRole("menuitem", { name: "Als Hauptdomain setzen" }).click();
+  const alert = page.locator('[data-domains="lager"] [role="alert"]');
+  await alert.getByText("Nur teilweise geändert.", { exact: false }).waitFor();
+  await alert.getByRole("button", { name: "Änderung abschließen" }).click();
+  await page.locator('[data-domain="lager.example.de"]').getByText("Leitet mit 301 weiter auf www.lager.example.de").waitFor();
+  expect(await alert.count()).toBe(0);
+}, 20_000);

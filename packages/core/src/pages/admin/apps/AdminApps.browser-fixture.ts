@@ -25,7 +25,8 @@ export type AdminAppsFixtureState =
   | "keys-two"
   | "slow"
   | "domains-empty"
-  | "domains-error";
+  | "domains-error"
+  | "domains-partial";
 
 const user: User = {
   id: ADMIN_ID,
@@ -99,6 +100,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
 
   let removed = new Set<string>();
   let domains = fixtureDomains();
+  let partialFailed = false;
   const pages = new Hono<{
     Variables: {
       runtime: CloudRuntime;
@@ -188,6 +190,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
                 app: { id: entry.id, name: entry.name },
                 initial: state === "domains-error" ? null : state === "domains-empty" ? [] : domains,
                 timeZone: "Europe/Berlin",
+                serverNow: FIXTURE_NOW,
               },
             } as const)
           : null;
@@ -363,6 +366,10 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
       if (!target) return fail(404, "APP_DOMAIN_NOT_FOUND");
       if (request.method === "PATCH") {
         const body = (await request.json()) as { redirectTo: string | null };
+        if (state === "domains-partial" && host === "lager.example.de" && !partialFailed) {
+          partialFailed = true;
+          return fail(503, "unavailable");
+        }
         if (body.redirectTo && domains.some((domain) => domain.redirectTo === host)) return fail(409, "APP_DOMAIN_REFERENCED");
         domains = domains.map((domain) => (domain.host === host ? { ...domain, redirectTo: body.redirectTo } : domain));
         return Response.json({ ...target, redirectTo: body.redirectTo });
@@ -419,6 +426,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     reset() {
       removed = new Set();
       domains = fixtureDomains();
+      partialFailed = false;
     },
     close() {
       server.stop(true);

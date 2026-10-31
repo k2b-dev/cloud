@@ -15,6 +15,8 @@ export type DomainsProps = {
   /** Null when the server could not read the domains; the column then offers to try again. */
   initial: AppDomainEntry[] | null;
   timeZone: string;
+  /** The server's clock when the page was rendered, so the check countdown never follows a wrong browser clock. */
+  serverNow: number;
 };
 
 /**
@@ -26,19 +28,25 @@ export default function Domains(props: DomainsProps) {
   const t = () => domainsMessages.resolve([locale()]).t;
   const [now, setNow] = createSignal(Date.now());
   const [clicked, setClicked] = createSignal<Record<string, number>>({});
-  const [busy, setBusy] = createSignal<string | null>(null);
   const [problem, setProblem] = createSignal<string | null>(null);
-  const [reload, setReload] = createSignal(0);
+  /** Changes still to run when a promotion stopped halfway: the list is consistent, the request unfinished. */
+  const [unfinished, setUnfinished] = createSignal<Array<{ host: string; redirectTo: string | null }> | null>(null);
+  // Server time minus browser time: the 60 s window runs on the server's clock, the countdown on the browser's.
+  const [skew, setSkew] = createSignal(props.serverNow - Date.now());
+  const busy = domainsState.busy;
+  const setBusy = domainsState.setBusy;
   const ticker = setInterval(() => setNow(Date.now()), 1000);
   onCleanup(() => clearInterval(ticker));
 
   const domains = query.create({
-    source: () => ({ revision: domainsState.revision() + reload() }),
+    source: () => ({ revision: domainsState.revision() }),
     initial: props.initial ? { source: { revision: 0 }, data: props.initial } : undefined,
     isSameSource: (a, b) => a.revision === b.revision,
     load: async (_, { abortSignal }): Promise<AppDomainEntry[]> => {
       const response = await api[":appId"].domains.$get({ param: { appId: props.app.id } }, { init: { signal: abortSignal } });
       if (!response.ok) throw new Error(t().loadFailed);
+      const date = Date.parse(response.headers.get("date") ?? "");
+      if (Number.isFinite(date)) setSkew(date - Date.now());
       return ((await response.json()) as { domains: AppDomainEntry[] }).domains;
     },
   });
@@ -48,37 +56,34 @@ export default function Domains(props: DomainsProps) {
       (data) => data && domainsState.setDomains(data),
     ),
   );
-  // A new domain's first check runs in the background: read the list once more a few seconds later, not in a loop.
-  createEffect(
-    on(
-      () => domains.data(),
-      (data) => {
-        if (!data?.some((domain) => !domain.status)) return;
-        const timer = setTimeout(() => setReload((value) => value + 1), 6000);
-        onCleanup(() => clearTimeout(timer));
-      },
-    ),
-  );
-  const refresh = () => setReload((value) => value + 1);
+  /** Reads the list again and keeps every action off until it is back, so no action starts from an old list. */
+  const reconcile = async () => {
+    await domains.refresh().catch(() => undefined);
+  };
 
-  /** Runs redirect changes in order; the first refusal stops and stays visible, and the list is read again either way. */
+  /** Runs redirect changes in order; a refusal stops and stays visible, and a promotion stopped halfway can finish. */
   const change = async (host: string, steps: Array<{ host: string; redirectTo: string | null }>) => {
     if (busy()) return;
     setBusy(host);
     setProblem(null);
+    setUnfinished(null);
     try {
-      for (const step of steps) {
+      for (const [index, step] of steps.entries()) {
         const response = await api[":appId"].domains[":host"]
           .$patch({ param: { appId: props.app.id, host: step.host }, json: { redirectTo: step.redirectTo } })
           .catch(() => null);
         if (!response?.ok) {
-          setProblem(domainError(t(), (await failure(response)).code));
+          const message = domainError(t(), (await failure(response)).code);
+          if (index > 0) {
+            setUnfinished(steps.slice(index));
+            setProblem(`${t().partial} ${message}`);
+          } else setProblem(message);
           break;
         }
       }
     } finally {
+      await reconcile();
       setBusy(null);
-      refresh();
     }
   };
   const check = async (host: string) => {
@@ -90,8 +95,8 @@ export default function Domains(props: DomainsProps) {
       const response = await api[":appId"].domains[":host"].check.$post({ param: { appId: props.app.id, host } }).catch(() => null);
       if (!response?.ok) setProblem(domainError(t(), (await failure(response)).code));
     } finally {
+      await reconcile();
       setBusy(null);
-      refresh();
     }
   };
 
@@ -106,7 +111,14 @@ export default function Domains(props: DomainsProps) {
     const domain = () => row.domain;
     const list = () => domains.data() ?? [];
     const aliases = () => aliasesOf(list(), domain().host);
-    const wait = () => Math.max(0, Math.ceil((nextCheckAt(domain(), clicked()[domain().host]) - now()) / 1000));
+    // Both sides of the comparison on the server's clock: a browser clock that runs ahead or behind does not matter.
+    const wait = () => {
+      const clickedAt = clicked()[domain().host];
+      return Math.max(
+        0,
+        Math.ceil((nextCheckAt(domain(), clickedAt === undefined ? undefined : clickedAt + skew()) - (now() + skew())) / 1000),
+      );
+    };
     const failed = () =>
       [domain().status?.dns, domain().status?.certificate, domain().status?.reachable].find((value) => value && !value.ok)?.detail;
     const items = (): DropdownAction[] => [
@@ -138,7 +150,7 @@ export default function Domains(props: DomainsProps) {
             icon: "ti ti-trash",
             label: t().remove,
             variant: "danger" as const,
-            action: () => void openRemoveDomainDialog(props.app, domain().host, locale(), refresh),
+            action: () => void openRemoveDomainDialog(props.app, domain().host, locale(), () => void reconcile()),
           },
     ];
     return (
@@ -205,8 +217,20 @@ export default function Domains(props: DomainsProps) {
         {(text) => (
           <NoticeCard tone="danger" icon="ti ti-alert-circle" role="alert" class="mb-2">
             <span>
-              <b>{t().changeFailed}</b> {text()}
+              <Show when={!unfinished()}>
+                <b>{t().changeFailed}</b>{" "}
+              </Show>
+              {text()}
             </span>
+            <Show when={unfinished()}>
+              {(steps) => (
+                <span class="mt-1.5 block">
+                  <Button size="sm" variant="secondary" disabled={busy() !== null} onClick={() => void change(steps()[0]!.host, steps())}>
+                    {t().finish}
+                  </Button>
+                </span>
+              )}
+            </Show>
           </NoticeCard>
         )}
       </Show>

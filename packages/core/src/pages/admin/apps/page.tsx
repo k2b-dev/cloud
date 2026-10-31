@@ -252,7 +252,8 @@ export default ssr<AuthContext>(async (c) => {
       ? liveApp.public === true
         ? await readDomains(liveApp.id)
         : null
-      : await readDomains(entry.id).then((read) => (read === "failed" || read.length === 0 ? null : read));
+      : // A failed read stays visible with its retry; only a successful empty read means "no Domains entry".
+        await readDomains(entry.id).then((read) => (read !== "failed" && read.length === 0 ? null : read));
   // The documentation link is optional: without the setting, hints and the keys column simply omit it.
   const documentationBase = entry ? await coreSettings.get<string>("app.documentation_url").catch(() => undefined) : undefined;
   const keyList =
@@ -336,6 +337,7 @@ export default ssr<AuthContext>(async (c) => {
                 app: { id: entry.id, name: entry.name },
                 initial: domains === "failed" ? null : [...domains],
                 timeZone: dateContext.timeZone ?? "UTC",
+                serverNow: Date.now(),
               },
             };
       case "events":

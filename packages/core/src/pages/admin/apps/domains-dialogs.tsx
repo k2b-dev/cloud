@@ -15,7 +15,11 @@ export const failure = async (response: { json(): Promise<unknown> } | null) => 
 };
 
 /** Adds a domain, optionally as a 301 alias of a primary domain. Conflicts stay in the dialog with the input kept. */
-export const openAddDomainDialog = (app: App, domains: readonly AppDomainEntry[], locale: string, onAdded: () => void) =>
+/** Conflicts that mean the shown list is old: read it again while the dialog keeps the person's input. */
+const STALE = new Set(["APP_DOMAIN_REFERENCED", "APP_DOMAIN_REDIRECT_TARGET", "APP_DOMAIN_NOT_FOUND"]);
+
+/** `onChanged(true)` after an add, `onChanged(false)` when a conflict showed that the list is old. */
+export const openAddDomainDialog = (app: App, domains: readonly AppDomainEntry[], locale: string, onChanged: (added: boolean) => void) =>
   dialogCore.open<void>(
     (close, context) => {
       const t = domainsMessages.resolve([locale]).t;
@@ -33,7 +37,10 @@ export const openAddDomainDialog = (app: App, domains: readonly AppDomainEntry[]
         },
         onSuccess: () => {
           close();
-          onAdded();
+          onChanged(true);
+        },
+        onError: (error) => {
+          if (STALE.has((error as Error & { code?: string }).code ?? "")) onChanged(false);
         },
       });
       onCleanup(() => add.abort());
@@ -120,8 +127,8 @@ export const openRemoveDomainDialog = (app: App, host: string, locale: string, o
           onRemoved();
         },
         onError: (error) => {
-          // Gone already: the list is stale, not the person's action.
-          if ((error as Error & { code?: string }).code === "APP_DOMAIN_NOT_FOUND") onRemoved();
+          // The list is old (gone already, or another domain now redirects here): read it again, keep the message.
+          if (STALE.has((error as Error & { code?: string }).code ?? "")) onRemoved();
         },
       });
       onCleanup(() => remove.abort());
