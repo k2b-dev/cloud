@@ -23,7 +23,6 @@ export const approvalAdminActor = (userId: string, authority: RequestAuthority):
     return null;
   const personalKey = credential === "api_key" && actor.kind === "service_account" && scopes.length === 0;
   if (credential !== "session" && !personalKey && !scopes.includes("admin")) return null;
-  if (credential === "mandate") return null;
   return actor.kind === "user" ? actor : { kind: "user", user };
 };
 
