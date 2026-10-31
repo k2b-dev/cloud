@@ -15,9 +15,9 @@ import { createIdentityOAuthIssuanceRoutes } from "../../../core/src/api/identit
 import { migrateAppBootstrap } from "../../../core/src/migrate/core/app-bootstrap";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
-import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
+import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { migrate as migrateOAuth } from "../../../oauth/src/migrate";
 import { BOOTSTRAP_PATH, signAppProof, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
 import { verifyAccessToken } from "../../src/services/oauth-tokens";
