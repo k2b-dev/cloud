@@ -4,6 +4,9 @@ import * as services from "@k2b/cloud/services";
 import { session } from "@k2b/cloud/services/session";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { stubRouterInfrastructure } from "../../../../../scripts/fixtures/no-transform";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
+
+useUnitClients();
 
 test("log retention saves do not implicitly replace unreadable values", async () => {
   const limit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());

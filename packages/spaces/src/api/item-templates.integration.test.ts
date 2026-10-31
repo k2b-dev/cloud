@@ -1,7 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import type { ItemTemplateDraft, SpaceDetail, SpaceItem, SpaceItemTemplate, SpaceTaskChecklistEntry } from "../contracts";

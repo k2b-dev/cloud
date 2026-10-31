@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { createTestAppSession, createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";

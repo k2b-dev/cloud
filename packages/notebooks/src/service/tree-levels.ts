@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { compareNoteOrder } from "../lib/note-order";
 import { SIDEBAR_FIRST_ROWS, SIDEBAR_MAX_WINDOW, SIDEBAR_PAGE_SIZE, type SidebarTreeSort } from "../lib/sidebar-tree";
 
@@ -72,7 +72,7 @@ export const sortLevel = (entries: TreeEntry[], sort: TreeSort, locale: string, 
   return sorted;
 };
 
-const selectEntries = sql`
+const selectEntries = () => sql`
   SELECT
     n.id, n.short_id, n.parent_id, n.title, n.position, n.created_at, n.updated_at, n.locked_at,
     EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children
@@ -92,10 +92,10 @@ export const readLevel = async (params: {
   // Separate predicates let the (notebook_id, parent_id, position) index serve both the top level and a branch.
   const rows =
     params.parentId === null
-      ? await sql<DbTreeEntry[]>`${selectEntries} WHERE n.notebook_id = ${params.notebookId}::uuid AND n.parent_id IS NULL`
+      ? await sql<DbTreeEntry[]>`${selectEntries()} WHERE n.notebook_id = ${params.notebookId}::uuid AND n.parent_id IS NULL`
       : await sql<
           DbTreeEntry[]
-        >`${selectEntries} WHERE n.notebook_id = ${params.notebookId}::uuid AND n.parent_id = ${params.parentId}::uuid`;
+        >`${selectEntries()} WHERE n.notebook_id = ${params.notebookId}::uuid AND n.parent_id = ${params.parentId}::uuid`;
   let entries = rows.map(toEntry);
   if (params.book && params.homepageId) {
     // The page the start page left keeps a branch only if it has other sub-pages.
@@ -108,7 +108,7 @@ export const readLevel = async (params: {
     if (params.parentId !== null) entries = entries.filter((entry) => entry.id !== params.homepageId);
     else if (!entries.some((entry) => entry.id === params.homepageId)) {
       const [home] = await sql<DbTreeEntry[]>`
-        ${selectEntries} WHERE n.id = ${params.homepageId}::uuid AND n.notebook_id = ${params.notebookId}::uuid
+        ${selectEntries()} WHERE n.id = ${params.homepageId}::uuid AND n.notebook_id = ${params.notebookId}::uuid
       `;
       if (home) entries.push({ ...toEntry(home), parentId: null });
     }
@@ -183,7 +183,7 @@ export const readSmallTree = async (params: {
   locale: string;
   homepageId: string | null;
 }): Promise<{ levels: TreeLevelWindow[]; expandedIds: string[] }> => {
-  const rows = await sql<DbTreeEntry[]>`${selectEntries} WHERE n.notebook_id = ${params.notebookId}::uuid LIMIT ${SMALL_TREE_NOTES + 1}`;
+  const rows = await sql<DbTreeEntry[]>`${selectEntries()} WHERE n.notebook_id = ${params.notebookId}::uuid LIMIT ${SMALL_TREE_NOTES + 1}`;
   const byParent = new Map<string | null, TreeEntry[]>([[null, []]]);
   for (const entry of rows.map(toEntry)) byParent.set(entry.parentId, [...(byParent.get(entry.parentId) ?? []), entry]);
   const levels = [...byParent].map(([parentId, entries]) => {

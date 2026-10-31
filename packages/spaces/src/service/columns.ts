@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { type BoardColumn, orderBoardColumns } from "@/board-columns";
 import type { CreateColumn, MutationResult, SpaceColumn, SpaceVirtualColumn, SpaceVirtualColumnKind, UpdateColumn } from "@/contracts";
 import { withShortId } from "../lib/short-id";

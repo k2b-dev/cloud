@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { assertResourceOpenLink } from "@k2b/cloud/capabilities/testing";
 import { type CapabilityExecutionContext, type CapabilityQueryDefinition, capabilityResultSchema, type User } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 import { pulseCapabilities } from "./capabilities";
 import { newShortId } from "./lib/short-id";

@@ -59,7 +59,7 @@ connections use `application_name=cloud:<app-id>` unless the URL supplies an
 operator name or startup options, or the pool's `connection` options override
 it. Platform initialization leaves the environment URL unchanged. During the
 transition from Bun-global clients, `defineApp()` retains the existing URL
-application name for those clients; the import migration removes that rewrite.
+application name for those clients; a separate follow-up removes that rewrite after every application migration has merged.
 
 ## Migrate existing imports
 
@@ -78,9 +78,11 @@ bun scripts/codemods/platform-clients.ts packages/my-app
 The command prints changed-file and converted-pool counts. It preserves aliases
 and unrelated Bun imports; running it again leaves migrated files unchanged.
 Review explicit Redis URLs, constructor spies, and subprocess startup manually.
+Standalone repository data commands initialize the same platform clients and need
+`DATABASE_URL` and `REDIS_URL`, including commands that query only Postgres.
 The `platform-clients` repository check also catches native module aliases,
 computed literal keys, and constructor values passed to other functions.
-Type-only constructor use stays allowed. Native constructors and direct target
+Type-only constructor use and `SQL.PostgresError` classification stay allowed. Native constructors and direct target
 reads remain available in `tests/`, `scripts/fixtures/`, package-root `test/`
 and `bench/` directories, test files, and explicitly listed fixture files.
 A `fixtures/` or `tests/` directory inside application source does not grant

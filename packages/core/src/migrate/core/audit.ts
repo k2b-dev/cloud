@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 
 export const migrate = async (): Promise<void> => {

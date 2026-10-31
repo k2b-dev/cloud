@@ -10,10 +10,10 @@ updated: 2026-10-07
 
 # Postgres queries
 
-Import Bun's shared SQL client and query the application's schema directly:
+Import Cloud's shared native SQL client and query the application's schema directly:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 ```
 
 Cloud does not add an ORM. Keep SQL in the service that owns the domain
@@ -21,20 +21,17 @@ operation.
 
 ## Identify application connections
 
-`defineApp()` adds `application_name=cloud:<app-id>` to the configured Postgres
-connection URL when no application name is supplied. This identifies the app
-in Postgres connection diagnostics. An existing `application_name` or `options`
-URL parameter remains operator-owned, and TLS connection settings are preserved.
+Platform startup names the shared pool `cloud:<app-id>`, including Gateway.
+An operator-supplied `application_name` or `options` URL parameter keeps its
+existing meaning. TLS connection settings are preserved.
 
-Call `defineApp()` before using Bun's default SQL pool, including reading
-`sql.options`. Perform startup queries in the application's lifecycle hooks.
-Bun initializes the pool configuration on first use, so a pool initialized
-before `defineApp()` keeps its existing name. Cloud does not replace the pool
-or rename an individual active connection. Separately constructed `new SQL()`
-clients with explicit URLs or options retain their own configuration.
+Use the client only after platform startup. Standard Cloud entrypoints handle
+this before importing application code. Separate data processes use
+[`@k2b/cloud/start`](/en/docs/build/platform-start).
 
-The standalone Gateway router does not use `defineApp()`, so its connection
-name must be supplied in its Postgres URL if attribution is needed.
+For a separately owned pool, use `createSql(options)` from `@k2b/cloud`.
+It inherits the installation URL and application name, while preserving explicit
+URL and connection overrides. Close the pool through its existing lifecycle.
 
 ## Map database rows
 

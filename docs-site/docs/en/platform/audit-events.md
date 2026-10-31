@@ -60,7 +60,7 @@ same result. Pass the transaction when the domain change and audit record must
 commit together:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 return sql.begin(async (tx) => {
   const result = await inventory.update(input, tx);

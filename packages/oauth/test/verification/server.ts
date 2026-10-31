@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { redis, sql } from "bun";
+import { RedisClient, SQL } from "bun";
 import { Hono } from "hono";
 import { createAuthRoutes } from "../../../cloud/src/api/auth";
 import { type AuthContext, auth, rateLimit, v } from "../../../cloud/src/server";
@@ -14,6 +14,11 @@ if (current) {
   const { initializePlatform } = await import("../../../cloud/src/start");
   await initializePlatform({ appId: core ? "core" : "oauth", source: "env" });
 }
+// The old checkout has no platform client exports. Its disposable target still
+// uses explicit native clients; only the current branch binds platform handles.
+const { sql, redis } = current
+  ? await import("@k2b/cloud")
+  : { sql: new SQL(process.env.DATABASE_URL!), redis: new RedisClient(process.env.REDIS_URL!) };
 const router = new Hono<AuthContext>();
 if (core) {
   for (const name of ["auth", "app-approval", "audit", "settings", "logging"]) {

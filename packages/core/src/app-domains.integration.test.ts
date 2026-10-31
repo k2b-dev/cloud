@@ -5,7 +5,6 @@ import type { AppRegistryEntry } from "@k2b/cloud/contracts/registry";
 import type { User } from "@k2b/cloud/contracts/shared";
 import type { AppDomainStatus } from "@k2b/cloud/services/app-domain-check";
 import { createAppDomainService } from "@k2b/cloud/services/app-domains";
-import { sql as nativeSql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrate } from "./migrate/core/app-domains";
 import { migrate as migrateAudit } from "./migrate/core/audit";
@@ -73,7 +72,6 @@ databaseSuite()("Core app domains and administration API", () => {
   });
   afterAll(async () => {
     await sql.close();
-    await nativeSql.close();
     await database?.drop();
   });
 

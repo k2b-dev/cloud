@@ -1,8 +1,8 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result, ratelimit } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 import { auditActor, type ChatContext, messages, requireConversation, subjectPrincipal } from "./access";
 import { prepareAttachmentContent } from "./attachment-content";
 import { type AttachmentRow, projectAttachment } from "./attachment-store";

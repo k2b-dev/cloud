@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { accountsAppService, serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import groups from "./groups";

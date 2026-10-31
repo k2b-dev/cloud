@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { backfillShortIds, type ShortIdTable } from "./lib/short-id";
 
 /** Converges both fresh and upgraded assignee tables; schema is injectable for isolated migration tests. */
@@ -53,7 +53,7 @@ export const migrateAssigneePrincipals = async ({
     .simple();
 };
 
-const claimHolderJoins = sql`
+const claimHolderJoins = () => sql`
   LEFT JOIN auth.users u ON tw.claim->'actor'->>'kind' = 'user' AND u.id::text = tw.claim->'actor'->>'id'
   LEFT JOIN auth.service_accounts sa ON tw.claim->'actor'->>'kind' = 'service_account'
     AND sa.id::text = tw.claim->'actor'->>'id' AND sa.kind <> 'user_delegated'
@@ -69,7 +69,7 @@ export const backfillClaimAssignees = async (db = sql): Promise<number> => {
   const candidates = await db<{ item_id: string }[]>`
     SELECT tw.item_id
     FROM spaces.task_work tw
-    ${claimHolderJoins}
+    ${claimHolderJoins()}
     WHERE tw.claim IS NOT NULL AND (u.id IS NOT NULL OR sa.id IS NOT NULL)
       AND NOT EXISTS (
         SELECT 1 FROM spaces.item_assignees ia
@@ -84,7 +84,7 @@ export const backfillClaimAssignees = async (db = sql): Promise<number> => {
         INSERT INTO spaces.item_assignees (item_id, user_id, service_account_id)
         SELECT tw.item_id, u.id, sa.id
         FROM spaces.task_work tw
-        ${claimHolderJoins}
+        ${claimHolderJoins()}
         WHERE tw.item_id = ${itemId}::uuid AND tw.claim IS NOT NULL AND (u.id IS NOT NULL OR sa.id IS NOT NULL)
         ON CONFLICT DO NOTHING
       `;

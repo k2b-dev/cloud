@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } from "@k2b/cloud/contracts";
 import { appApproval } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
-import { sql } from "bun";
 import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";

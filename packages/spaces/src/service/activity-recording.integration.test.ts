@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";

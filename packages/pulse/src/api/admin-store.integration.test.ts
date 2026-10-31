@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { serviceAccountCredentials, session } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";

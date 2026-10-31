@@ -1405,6 +1405,14 @@ body.k2b-ui {
     height: 44px;
     flex: none;
   }
+  /* In a table cell "Table" opens the cell menu: the same place and size, marked as active. */
+  .n-accessory .k2b-icon-button.k2b-ste-table-tool[data-size] {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    background: var(--k2b-selected);
+    color: var(--k2b-action);
+  }
 }
 @media (max-width: 640px) {
   .n-pal {

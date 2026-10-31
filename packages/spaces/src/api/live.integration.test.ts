@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { get as getSetting, serviceAccountCredentials } from "@k2b/cloud/services";
 import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
 import { createTestAppSession, createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";

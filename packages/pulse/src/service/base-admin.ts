@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { audit, toPgTextArray } from "@k2b/cloud/services";
 import { normalizeNetworkHostname, parseNetworkAllowlist } from "@k2b/cloud/shared";
-import { sql } from "bun";
 import { z } from "zod";
 import type { AdminBasesPage, AdminErrorCode, InternalTarget, InternalTargetsPage, OrphanDatabasesPage } from "../store/admin-contracts";
 import { LimitsUpdateSchema } from "../store/admin-schemas";

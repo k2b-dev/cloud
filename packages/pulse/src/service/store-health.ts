@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { accounts, logger, notifications } from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
-import { sql } from "bun";
 import { app } from "../config";
 import { hasAnyBaseAdminAccess, requireBaseAccess } from "./access-control";
 import { type BaseNotice, enqueueBaseNotice, notificationLocale } from "./base-notifications";

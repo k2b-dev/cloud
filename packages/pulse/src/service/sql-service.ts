@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { RequestActor } from "@k2b/cloud/contracts";
 import { type AccessSubject, ok } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { z } from "zod";
 import { ALERT_CHECKS_PER_HOUR, ALERT_MAX_EXECUTION_MS } from "../alert-contracts";
 import { prepareSql, SqlInputError } from "../sql-params";

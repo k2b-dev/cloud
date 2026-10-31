@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT,
   AI_WEBSITE_APPROVAL_TOOL,
@@ -25,7 +26,7 @@ import {
   userFromActor,
 } from "@k2b/cloud/server";
 import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import {

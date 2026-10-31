@@ -14583,9 +14583,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-selection-toolbar .k2b-button:not(.k2b-toolbar__action) i {
   font-size: 0.875rem;
 }
-.k2b-ui .k2b-selection-toolbar .k2b-toolbar__hint {
-  display: none;
-}
 .k2b-ui .k2b-selection-toolbar .k2b-toolbar__separator {
   height: 1rem;
   margin: 0 0.1875rem;

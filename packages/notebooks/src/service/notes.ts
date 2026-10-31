@@ -1,4 +1,4 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import type { MutationResult, PaginationParams, PermissionLevel } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server";
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
@@ -13,7 +13,7 @@ import {
 } from "@k2b/cloud/shared-text";
 import { type DateContext, dates, err, fail, fromBase64Strict, ok, type Result } from "@k2b/stdlib";
 import { ConflictError, RetentionGapError } from "@k2b/sync";
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import * as Y from "yjs";
 import { markNoteUpdated, publishNoteCreated } from "../app-events";
 import { mayDeleteOrLockNotes, NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "../lib/note-delete-permission";

@@ -129,7 +129,7 @@ Configure an ACME certificate resolver named `le` in Traefik, or change the
 admin setting to your existing resolver:
 
 ```sh
-cld --profile operator admin settings set gateway.ingress_cert_resolver --value '"myresolver"' --yes
+cld --profile operator admin settings set gateway.ingress_cert_resolver --app gateway-ops --value '"myresolver"' --yes
 ```
 
 The setting affects app-domain routers within five seconds. Configure your

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** App public keys share the existing app-bound service-account credential registry. */
 export const migrateAppKeys = async (): Promise<void> => {

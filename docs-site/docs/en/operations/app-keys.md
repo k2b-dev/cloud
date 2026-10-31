@@ -192,9 +192,17 @@ fingerprint or public key and revokes it. Keys created in the browser carry no i
 create an issuer key with `cld … --grant oauth:issue` (see
 [Background and OAuth authority](#background-and-oauth-authority)).
 
-The Apps list and the app page show the key state of each app. A running app
-without any key still **starts with its environment**; its page links to
-**Create key** and to [Use the key at start](#use-the-key-at-start). An app with
+The Apps list and the app page show the key state of each app. An app whose
+running instances took their connections from their own environment still
+**starts with its environment**, also when it already has a key; the registry
+reports how each instance started. Its page links to **Create key**, or to the
+keys when one exists, and to [Use the key at start](#use-the-key-at-start). When
+Core recorded a refused start (`lastRejectedStart`), **Start refused** and its
+reason lead the list row and the app page until the next successful start. The
+way out follows what still blocks the next start: **Turn on again** while
+background access is off, **Create new key** while no other valid key exists,
+and otherwise the deployment and a restart. The keys column marks
+the refused key with the time of the refusal. An app with
 only revoked or expired keys has **no valid key**: its running instances keep
 working, the next start fails, and **Create new key** is the page's one filled
 action next to [Rotate or recover a key](#rotate-or-recover-a-key). Two active

@@ -670,13 +670,39 @@ describe("Notebook on the shared text editor", () => {
       await page.waitForFunction(() => document.querySelector(".cm-notebook-active-result")?.textContent?.includes("150"));
       expect(await prose.evaluate((element) => element.getBoundingClientRect().top)).toBe(top);
       expect(await activeCell(page)).toBe("1,2");
+      // An error is one flat chip right below the cell, with the message and suggestion, described to the cell.
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.type("=SUMM(Hours)");
+      await page.waitForFunction(() => document.querySelector(".cm-notebook-active-result[data-error]")?.textContent?.includes("SUMM"));
+      const chip = await page.evaluate(() => {
+        const result = document.querySelector<HTMLElement>(".cm-notebook-active-result")!;
+        const cell = document.activeElement as HTMLElement;
+        const style = getComputedStyle(result);
+        return {
+          text: result.textContent,
+          described: cell.getAttribute("aria-describedby") === result.id,
+          below: result.getBoundingClientRect().top >= cell.parentElement!.getBoundingClientRect().bottom,
+          open: result.matches(":popover-open"),
+          flat: style.boxShadow === "none" && style.borderTopWidth === "0px",
+          wraps: style.whiteSpace === "normal",
+        };
+      });
+      expect(chip).toEqual({
+        text: expect.stringContaining("Suggestion: SUM"),
+        described: true,
+        below: true,
+        open: true,
+        flat: true,
+        wraps: true,
+      });
+      expect(await prose.evaluate((element) => element.getBoundingClientRect().top)).toBe(top);
       expect(errors).toEqual([]);
     } finally {
       await close();
     }
   });
 
-  test("approved WAVE1 right-click and grips use identical menus, including local Markdown", async () => {
+  test("right-click shows the whole menu and each grip its row's or column's part, including local Markdown", async () => {
     const { page, errors, close } = await open();
     try {
       await page.evaluate(() => {
@@ -724,14 +750,25 @@ describe("Notebook on the shared text editor", () => {
       expect(menuGeometry.height).toBe(32);
       expect(menuGeometry.font).toBe("13.5px");
       await page.keyboard.press("Escape");
+      // Approved F2: a row grip offers row and table actions, a column grip column, alignment and table actions.
+      await cell(page, 1, 0).hover();
       await page.locator(".k2b-ste-rowMenu").nth(1).click();
       await entries.first().waitFor();
-      expect(await entries.allTextContents()).toEqual(labels);
+      const row = await entries.allTextContents();
+      expect(row.every((label) => labels.includes(label))).toBe(true);
+      expect(row.some((label) => label.includes("Insert row above"))).toBe(true);
+      expect(row.some((label) => label.includes("Edit as Markdown"))).toBe(true);
+      expect(row.some((label) => /column/i.test(label))).toBe(false);
       expect(await page.locator('[role="menu"]:visible').evaluate((element) => element.getBoundingClientRect().width)).toBe(menuWidth);
       await page.keyboard.press("Escape");
+      await cell(page, 1, 0).hover();
       await page.locator(".k2b-ste-columnMenu").first().click();
       await entries.first().waitFor();
-      expect(await entries.allTextContents()).toEqual(labels);
+      const column = await entries.allTextContents();
+      expect(column.every((label) => labels.includes(label))).toBe(true);
+      expect(column.some((label) => label.includes("Insert column left"))).toBe(true);
+      expect(column.some((label) => label.includes("Edit as Markdown"))).toBe(true);
+      expect(column.some((label) => /\brow\b/i.test(label) && !/Header row/.test(label))).toBe(false);
       expect(errors).toEqual([]);
     } finally {
       await close();

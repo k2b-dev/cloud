@@ -3,6 +3,28 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.56.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.55.0...cloud-v0.56.0) (2026-10-31)
+
+
+### Features
+
+* **capabilities:** call platform capabilities as the app ([#2214](https://github.com/k2b-dev/cloud/issues/2214)) ([de4a979](https://github.com/k2b-dev/cloud/commit/de4a979ca1125d1c314b00479f12fa3aef218b49)), closes [#2213](https://github.com/k2b-dev/cloud/issues/2213)
+* **core:** manage an app's domains in Administration › Apps ([#2202](https://github.com/k2b-dev/cloud/issues/2202)) ([0c3e28b](https://github.com/k2b-dev/cloud/commit/0c3e28bcfe1de0c3ff8e4e54da253dcae8b1d624))
+* **editor:** show block anchors as quiet labels in Notebooks and the notes site ([#2186](https://github.com/k2b-dev/cloud/issues/2186)) ([a81989c](https://github.com/k2b-dev/cloud/commit/a81989c55bd7c4f78646ffa11e6347136053a9cc))
+* **identity:** admins see why an app start was refused ([#2224](https://github.com/k2b-dev/cloud/issues/2224)) ([94e7df1](https://github.com/k2b-dev/cloud/commit/94e7df121f9672f40213bd6f32d94cfac833feb3))
+* **identity:** apps sign background and OAuth calls with their key ([#2191](https://github.com/k2b-dev/cloud/issues/2191)) ([d0da761](https://github.com/k2b-dev/cloud/commit/d0da76197d3cb17ec0156547ac9abc60d8b203bc))
+* **notes-site:** add reports and password-protected moderation ([#2133](https://github.com/k2b-dev/cloud/issues/2133)) ([7f576a4](https://github.com/k2b-dev/cloud/commit/7f576a4ab9eb4bc6c3526bf141ec0da904c51f77))
+* **notes-site:** persist collaborative Yjs changes before acknowledgement ([#2127](https://github.com/k2b-dev/cloud/issues/2127)) ([9b60062](https://github.com/k2b-dev/cloud/commit/9b60062b00857d09eb4d9c4eaeba298425cc4ee2))
+* **notes-site:** store checked note attachments in Postgres ([#2129](https://github.com/k2b-dev/cloud/issues/2129)) ([fa6ad27](https://github.com/k2b-dev/cloud/commit/fa6ad27dad18f411cc89a20918bdcb64de618056))
+
+
+### Bug Fixes
+
+* **mail:** keep list times whole, quiet date headings, and even sidebar counts ([#2223](https://github.com/k2b-dev/cloud/issues/2223)) ([965fa2b](https://github.com/k2b-dev/cloud/commit/965fa2ba10c9001b42f1c92118a44dac878f8e5e))
+* **spaces:** the item detail test waits for each save, and test-waits rejects polling loops with a fixed attempt count ([#2221](https://github.com/k2b-dev/cloud/issues/2221)) ([4efc2ae](https://github.com/k2b-dev/cloud/commit/4efc2ae649a58ec137abded4bee6aa91d052779e))
+* **test:** a stopped suite's runner waits until its killed descendants have exited and names any survivor ([#2222](https://github.com/k2b-dev/cloud/issues/2222)) ([f7147d8](https://github.com/k2b-dev/cloud/commit/f7147d8783d1bf9123b8b0a0b4704d08d788a321))
+* **ui:** give every column edge one shadow in every state ([#2216](https://github.com/k2b-dev/cloud/issues/2216)) ([cdd8ffd](https://github.com/k2b-dev/cloud/commit/cdd8ffdaea8f72d4d25081c68b4da7a6e51e5838))
+
 ## [0.55.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.54.0...cloud-v0.55.0) (2026-10-31)
 
 
