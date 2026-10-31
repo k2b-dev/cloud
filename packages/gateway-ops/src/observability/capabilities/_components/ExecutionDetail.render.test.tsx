@@ -95,3 +95,29 @@ test("execution detail lists several calls of one request as their own sections"
   expect(html).toContain("idem-retry");
   expect(html).not.toContain(">Properties<");
 });
+
+test("execution detail identifies an app actor and its enrolled key without a person", () => {
+  const html = renderToString(() =>
+    createComponent(Detail, {
+      executions: [
+        {
+          ...execution,
+          origin: "app",
+          actorKind: "app",
+          actorId: null,
+          userId: null,
+          actorAppId: "vendor-web",
+          actorKeyId: "22222222-2222-4222-8222-222222222222",
+          accessSubjectType: null,
+          accessSubjectId: null,
+        },
+      ],
+      closeHref: "/admin/observability/capabilities",
+    }),
+  );
+  expect(html).toContain("vendor-web");
+  expect(html).toContain("App key ID");
+  expect(html).toContain("22222222-2222-4222-8222-222222222222");
+  expect(html).not.toContain("actor-full-id");
+  expect(html).not.toContain("/admin/ai?sec=usage");
+});

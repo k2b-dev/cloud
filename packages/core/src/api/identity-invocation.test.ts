@@ -349,3 +349,18 @@ test("app queries use workload identity without a mandate, while other targets a
   expect((await routes.request(request(appQuery))).status).toBe(403);
   expect(forwarded).toBe(1);
 });
+
+test("app-owned capability authority never accepts a legacy service-account workload token", async () => {
+  const routes = createIdentityInvocationRoutes({
+    authenticateWorkload,
+    dispatchDependencies: {
+      getCapability: async () => {
+        throw new Error("Unsigned app authority must not reach dispatch");
+      },
+    },
+  });
+  const response = await routes.request(
+    request({ appCaller: true, kind: "query", targetApp: "core", capabilityId: "address.autocomplete", input: { text: "Orleans" } }),
+  );
+  expect(response.status).toBe(401);
+});

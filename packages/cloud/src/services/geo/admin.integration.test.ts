@@ -251,6 +251,19 @@ suiteFor("database", "valkey")("Core geo administration", () => {
     });
   });
 
+  test("app spend contributes to totals without counting an app as a person at the limit", async () => {
+    const geo = service();
+    await geo.saveBudget(admin, { plan: "free", customRps: 5, customDailyCredits: 3000, monthlyCredits: 90000, personDailyCredits: 3 });
+    await createGeoLedger(sql).reserve(
+      { type: "app", appId: "vendor-web" },
+      { ...geoTestConfig, monthlyCredits: 90000, personDailyCredits: 3 },
+      3000,
+      "address",
+      GEO_TEST_NOW,
+    );
+    expect(await geo.usage(admin)).toMatchObject({ month: { used: 3 }, today: { used: 3 }, peopleAtLimit: 0 });
+  });
+
   test("administration counts every current-month routing cost overrun", async () => {
     const ledger = createGeoLedger(sql);
     await ledger.recordTransition(

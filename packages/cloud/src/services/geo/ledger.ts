@@ -1,9 +1,10 @@
 import type { SQL } from "bun";
 import type { AppPwaActor } from "../../app-pwa/contracts";
-import type { AccessSubject, CapabilityExecutionContext } from "../../contracts";
+import type { CapabilityAppExecutionContext, CapabilityExecutionContext } from "../../contracts";
 import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import { GeoError } from "./errors";
+import type { GeoBudgetSubject } from "./identity";
 import type { GeoConfig } from "./settings";
 
 export type GeoBudgetConfig = Pick<GeoConfig, "timezone" | "monthlyCredits" | "personDailyCredits">;
@@ -31,14 +32,18 @@ export const geoPeriods = (now: Date, timezone: string): { person: GeoPeriod; cl
     cloud: { period: day.slice(0, 7), resetsAt: boundary(32 * 86400_000, 7) },
   };
 };
-export const geoSubjectKey = (subject: AccessSubject) =>
-  subject.type === "user" ? `user:${subject.userId}` : `service_account:${subject.serviceAccountId}`;
+export const geoSubjectKey = (subject: GeoBudgetSubject) =>
+  subject.type === "app"
+    ? `app:${subject.appId}`
+    : subject.type === "user"
+      ? `user:${subject.userId}`
+      : `service_account:${subject.serviceAccountId}`;
 export type GeoReservation = {
   cost: number;
   group: string;
   rows: Array<{ scope: "cloud" | "person"; subject: string; period: string; resetsAt: string; limit: number }>;
 };
-const rowsFor = (subject: AccessSubject, config: GeoBudgetConfig, now: Date) => {
+const rowsFor = (subject: GeoBudgetSubject, config: GeoBudgetConfig, now: Date) => {
   const periods = geoPeriods(now, config.timezone);
   return [
     { scope: "cloud", subject: "*", ...periods.cloud, limit: config.monthlyCredits * 1000 },
@@ -48,7 +53,7 @@ const rowsFor = (subject: AccessSubject, config: GeoBudgetConfig, now: Date) => 
 export const createGeoLedger = (injectedDb?: SQL) => {
   const db = () => injectedDb ?? sql;
   return {
-    async reserve(subject: AccessSubject, config: GeoBudgetConfig, cost: number, group: string, now: Date): Promise<GeoReservation> {
+    async reserve(subject: GeoBudgetSubject, config: GeoBudgetConfig, cost: number, group: string, now: Date): Promise<GeoReservation> {
       if (!Number.isSafeInteger(cost) || cost < 0) throw new Error("Invalid geo reservation");
       const rows = rowsFor(subject, config, now);
       await db().begin(async (tx) => {
@@ -94,7 +99,7 @@ export const createGeoLedger = (injectedDb?: SQL) => {
         }
       });
     },
-    async availability(subject: AccessSubject, config: GeoBudgetConfig, now: Date) {
+    async availability(subject: GeoBudgetSubject, config: GeoBudgetConfig, now: Date) {
       const balances = [];
       for (const row of rowsFor(subject, config, now)) {
         const [used] = await db()<{ used: number }[]>`SELECT used::float8 AS used FROM geo.usage
@@ -106,7 +111,7 @@ export const createGeoLedger = (injectedDb?: SQL) => {
     async recordTransition(
       event: "provider_key_rejected" | "monthly_budget_exhausted" | "route_cost_overrun",
       timezone: string,
-      context: { actor: CapabilityExecutionContext["actor"] | AppPwaActor; requestId?: string },
+      context: { actor: CapabilityExecutionContext["actor"] | CapabilityAppExecutionContext["actor"] | AppPwaActor; requestId?: string },
       now: Date,
       metadata: Record<string, number> = {},
     ) {
@@ -120,14 +125,16 @@ export const createGeoLedger = (injectedDb?: SQL) => {
         const actor =
           context.actor.kind === "device" || context.actor.kind === "visit"
             ? null
-            : context.actor.kind === "user"
-              ? {
-                  userId: context.actor.user.id,
-                  uid: context.actor.user.uid,
-                  provider: context.actor.user.provider,
-                  roles: context.actor.user.roles,
-                }
-              : { uid: `service-account:${context.actor.serviceAccount.id}`, provider: "service_account", roles: context.actor.scopes };
+            : context.actor.kind === "app"
+              ? { uid: `app:${context.actor.appId}`, provider: "app", roles: [] }
+              : context.actor.kind === "user"
+                ? {
+                    userId: context.actor.user.id,
+                    uid: context.actor.user.uid,
+                    provider: context.actor.user.provider,
+                    roles: context.actor.user.roles,
+                  }
+                : { uid: `service-account:${context.actor.serviceAccount.id}`, provider: "service_account", roles: context.actor.scopes };
         await audit.record(
           {
             action: `core.geo.${event}`,
@@ -137,6 +144,7 @@ export const createGeoLedger = (injectedDb?: SQL) => {
             metadata: {
               period,
               ...metadata,
+              ...(context.actor.kind === "app" ? { appId: context.actor.appId, keyId: context.actor.keyId } : {}),
               ...(context.actor.kind === "device" || context.actor.kind === "visit"
                 ? {
                     appId: context.actor.appId,

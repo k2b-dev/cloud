@@ -324,6 +324,19 @@
         "Reconciles an unknown non-idempotent Action outcome instead of retrying blindly.",
         "Retains the legacy workload path only for apps without keys during this release and never falls back after app-key rejection."
       ]
+    },
+    {
+      "id": 28,
+      "prompt": "Add address autocomplete to a public registration website in a third-party Cloud app. No Cloud user is signed in. Which identity and limits should the server use?",
+      "expected_output": "Reads the capability and public-site guides, declares geo:query in platformPermissions, and calls geoClient.autocomplete with appCaller after startup using the enrolled app key. Visitors spend the app budget, so the form rate-limits by IP and preserves Retry-After.",
+      "files": [],
+      "expectations": [
+        "Uses the application actor through appCaller and the existing signed app transport, without inventing a visitor principal or service account token.",
+        "Declares platformPermissions: [\"geo:query\"] and treats provider app admission as explicit per capability.",
+        "Applies rateLimit with keyBy: \"ip\"; uses clientIp for additional app-owned controls when needed.",
+        "Handles 429 and Retry-After while preserving per-app and shared operational budgets.",
+        "Keeps person-owned resource operations under an interactive identity or mandate."
+      ]
     }
   ]
 }

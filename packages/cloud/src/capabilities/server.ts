@@ -19,6 +19,7 @@ import type { CapabilityCatalogAppClientResult, CapabilityInvocation, Capability
 
 export type { CapabilityActionWording } from "../_internal/capability-sentences";
 export {
+  appCaller,
   type CapabilityCaller,
   invokeCapability,
   invokeCapabilityWithDataSchema,
@@ -89,7 +90,7 @@ export const reviewCapabilityAction = async <TInput = unknown>(
   caller: CapabilityCaller,
 ): Promise<CapabilityReviewClientResult> => {
   try {
-    if (caller.workload) throw new Error("App query authority cannot review Actions");
+    if (caller.app || caller.workload) throw new Error("App query authority cannot review Actions");
     if (caller.authority) {
       if (caller.authorization || caller.cookie || caller.mandate || caller.transport)
         throw new Error("Use exactly one capability authority source");

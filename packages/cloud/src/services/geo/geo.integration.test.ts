@@ -73,6 +73,24 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     >`SELECT used::int AS used FROM geo.shares WHERE period IN ('2028-02', '2028-02-12') AND function_group='tiles'`;
     expect(rows.map((row) => row.used)).toEqual([1000, 1000]);
   });
+  test("apps share the existing daily subject allowance but cannot spend another app's budget", async () => {
+    const settings = { ...geoTestConfig, monthlyCredits: 10, personDailyCredits: 1 };
+    const app = { type: "app", appId: "vendor-web" } as const;
+    await ledger().reserve(app, settings, 1000, "address", GEO_TEST_NOW);
+    await expect(ledger().reserve(app, settings, 1000, "address", GEO_TEST_NOW)).rejects.toMatchObject({
+      code: "GEO_BUDGET_EXHAUSTED",
+      details: { scope: "person" },
+    });
+    await ledger().reserve({ type: "app", appId: "mail" }, settings, 1000, "address", GEO_TEST_NOW);
+    expect((await ledger().availability(app, settings, GEO_TEST_NOW)).person.exhausted).toBe(true);
+    const rows = await db<
+      { subject: string; used: number }[]
+    >`SELECT subject, used::int AS used FROM geo.usage WHERE scope='person' ORDER BY subject`;
+    expect(rows).toEqual([
+      { subject: "app:mail", used: 1000 },
+      { subject: "app:vendor-web", used: 1000 },
+    ]);
+  });
   test("parallel reservations admit exactly floor(budget/price) with no partial cloud debit", async () => {
     const settings = { ...geoTestConfig, monthlyCredits: 100, personDailyCredits: 3 };
     const results = await Promise.allSettled(

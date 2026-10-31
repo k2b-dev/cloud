@@ -152,7 +152,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         { used: number }[]
       >`SELECT used::float8 AS used FROM geo.usage WHERE scope = 'cloud' AND subject = '*' AND period = ${periods.cloud.period}`,
       db()<{ used: number; at_limit: number }[]>`
-        SELECT COALESCE(sum(used), 0)::float8 AS used, count(*) FILTER (WHERE used >= ${config.personDailyCredits * 1000})::int AS at_limit
+        SELECT COALESCE(sum(used), 0)::float8 AS used, count(*) FILTER (WHERE used >= ${config.personDailyCredits * 1000} AND subject NOT LIKE 'app:%')::int AS at_limit
         FROM geo.usage WHERE scope = 'person' AND period = ${periods.person.period}`,
       db()<{ function_group: string; used: number }[]>`
         SELECT function_group, used::float8 AS used FROM geo.shares WHERE scope = 'cloud' AND subject = '*' AND period = ${periods.cloud.period}`,

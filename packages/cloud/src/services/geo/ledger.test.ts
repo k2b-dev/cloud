@@ -15,5 +15,6 @@ test("calendar day and month roll in app.timezone, including DST", () => {
 });
 test("subject keys use principal kind and opaque id, delegated sessions keep their access subject", () => {
   expect(geoSubjectKey({ type: "user", userId: "opaque-id", delegatedByServiceAccountId: "delegate" })).toBe("user:opaque-id");
+  expect(geoSubjectKey({ type: "app", appId: "vendor-web" })).toBe("app:vendor-web");
   expect(geoSubjectKey({ type: "service_account", serviceAccountId: "opaque-id" })).toBe("service_account:opaque-id");
 });

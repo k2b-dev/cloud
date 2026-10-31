@@ -1,4 +1,4 @@
-import type { GeoContext } from "./service";
+import type { CapabilityExecutionContext } from "../../contracts";
 import type { GeoConfig } from "./settings";
 export const GEO_TEST_NOW = new Date("2026-10-20T10:00:00.000Z");
 export const GEO_TEST_KEY = "test-placeholder-key";
@@ -11,7 +11,7 @@ export const geoTestConfig: GeoConfig = {
   monthlyCredits: 90000,
   personDailyCredits: 300,
 };
-export const geoTestContext: GeoContext = {
+export const geoTestContext: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale" | "signal" | "requestId"> = {
   actor: {
     kind: "service_account",
     serviceAccount: {
