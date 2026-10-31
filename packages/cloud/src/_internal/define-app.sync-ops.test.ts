@@ -6,6 +6,7 @@ import { auth } from "../server/middleware/auth";
 import * as invocationActor from "../services/identity/invocation-actor";
 import { syncInvocationOperation } from "../services/identity/invocation-operations";
 import * as invocationToken from "../services/identity/invocation-token";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as settingsSnapshot from "../services/settings/snapshot";
@@ -80,6 +81,7 @@ test("internal Sync operations require a bound invocation and current admin auth
     health: () => ({ state: "ready", connection: "connected" }),
   } as unknown as Sync;
   const spies = [
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(fakeSync);

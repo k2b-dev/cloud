@@ -294,3 +294,6 @@ export type {
   ObjectListOptions,
   ObjectListResult,
 } from "./object-store";
+
+export { links } from "./links";
+export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";
