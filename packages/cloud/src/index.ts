@@ -45,6 +45,7 @@ export type {
   CodeAccessDecision,
   CodeAccessEntry,
   CodeAccessGrant,
+  CodeAccessRefusalCode,
   CodeAccessTarget,
 } from "./contracts/code-access";
 export type { AppInstallable } from "./contracts/installable";
