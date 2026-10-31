@@ -43,7 +43,7 @@ The failed push saves neither a version nor an approval request.
 ### Checker manifest
 
 The G6 fixture contract is exported as `CodeCheckedVersionManifestSchema` and
-`CodeCheckedVersionManifest` from Core's `code/index.ts` until C16 supplies its
+`CodeCheckedVersionManifest` from `@k2b/cloud/contracts` (also re-exported by Core's `code/index.ts`) until C16 supplies its
 checker producer. It contains:
 
 - `formatVersion: 1`, `sourceHash` and `bundleHash`;
@@ -85,7 +85,7 @@ For source inspection, `core.code.version.read` also provides bounded chunks.
 A binding contains `codeId`, `versionId`, `sourceHash`, `bundleHash`,
 `manifestHash`, `comparisonVersionId`, `comparisonSourceHash` and
 `comparisonBundleHash`. Keep it unchanged for the decision. A changed comparison
-sets `staleComparison: true`; submit and review a new version.
+sets `staleComparison: true`; submit and review a new version. Decided versions retain the original reviewed comparison even after the baseline advances.
 
 ## Decide through the shared approval
 
@@ -103,10 +103,10 @@ transactional owner handler. The first decision wins; repeating the same
 accepted decision returns its existing receipt.
 
 Core refuses changed hashes with `code_hash_mismatch`, a superseded version
-with `code_version_stale`, and a changed comparison or review with
+with `code_version_stale`, unavailable or deleting Code with `code_version_unavailable`, and a changed comparison or review with
 `code_comparison_stale`. The platform decision and domain evidence roll back
 together. The shared browser route returns a conflict; Cloud Login declines
-the stale decision. Review the current version and submit again.
+the stale decision. Review the current version and submit again. A successful submission atomically cancels older pending requests for the same Code, removing their cards from Waiting for you. Both approval and rejection still require the unchanged comparison.
 
 An author cannot approve their own version when another active human Cloud
 administrator exists. The platform's sole-admin rule is the only exception:
@@ -161,7 +161,7 @@ Core owns the services and tables. Other applications consume capabilities.
 
 The additive migration creates `code.version_submissions`,
 `code.version_decisions` and `code.version_baselines`. Submissions and decisions
-are immutable; user deletion may erase decision attribution. Requests may be
+are immutable; deleting the approving user erases decision attribution and conservatively revokes that approval for future activation or resume. Requests may be
 pruned without deleting durable decisions or source evidence. No Assistant data
 is rewritten.
 

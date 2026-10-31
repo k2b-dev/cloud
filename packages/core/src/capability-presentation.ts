@@ -23,6 +23,15 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.version.diff": {
+          title: "Code-Version vergleichen",
+          description:
+            "Liest vollständige Dateizeilen gegen die letzte freigegebene oder eingeschaltete Version mit genauem Entscheidungsstand.",
+        },
+        "code.version.list": {
+          title: "Code-Versionen auflisten",
+          description: "Liest Einreichungen und Freigabe-Belege einschließlich der Allein-Admin-Entscheidung.",
+        },
         "code.policy.read": {
           title: "Code-Richtlinie lesen",
           description: "Liest Standard und passende Gruppenregeln; Cloud-Admins sehen die vollständige Tabelle.",
@@ -184,6 +193,27 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.version.submit": {
+          title: "Code-Version einreichen",
+          description:
+            "Speichert geprüften Quelltext und Bundle gegen baseVersionId. Fragt nötige Freigaben an; die aktive Version läuft weiter.",
+        },
+        "code.version.approve": {
+          title: "Code-Version freigeben",
+          description: "Gibt genau diesen Quelltext, dieses Bundle und diesen Vergleich über die Cloud-Admin-Regel der Plattform frei.",
+        },
+        "code.version.reject": {
+          title: "Code-Version ablehnen",
+          description: "Lehnt die genaue Version und ihren Vergleich über dieselbe Plattform-Anfrage ab.",
+        },
+        "code.pause": {
+          title: "Code pausieren",
+          description: "Pausiert weitere Ausführung. Die aktive Version bleibt erhalten; verpasste Ereignisse werden nicht nachgeholt.",
+        },
+        "code.resume": {
+          title: "Code fortsetzen",
+          description: "Setzt die aktive Version nach Prüfung der aktuellen Richtlinie und Freigabe-Belege fort.",
+        },
         "code.policy.update": {
           title: "Code-Richtlinie ändern",
           description: "Ersetzt die Richtlinie am erwarteten Stand und plant sichtbare Pausen. Veraltete Änderungen werden abgelehnt.",

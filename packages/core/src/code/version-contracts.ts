@@ -1,44 +1,17 @@
-import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { CodeCheckedVersionManifestSchema, CodeVersionPermissionSchema } from "@k2b/cloud/contracts";
+
+export {
+  type CodeCheckedVersionManifest,
+  CodeCheckedVersionManifestSchema,
+  type CodeVersionPermission,
+  CodeVersionPermissionSchema,
+} from "@k2b/cloud/contracts";
+
 import { z } from "zod";
 import { CodeIdSchema, CodeSourceFilesSchema, CodeVersionSchema } from "./contracts";
-import { CodePolicyManifestSchema, CodePolicyRowSchema } from "./policy-contracts";
+import { CodePolicyRowSchema } from "./policy-contracts";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
-/** Checker evidence for a statically resolved operation, its exact target and source location. */
-export const CodeVersionPermissionSchema = z
-  .object({
-    operation: z.string().min(1),
-    kind: z.enum(["query", "action"]),
-    target: CloudResourceRefSchema.nullable(),
-    refs: z.record(z.string(), CloudResourceRefSchema),
-    row: CodePolicyRowSchema,
-    entrypoint: z.string().min(1),
-    location: z.object({ path: z.string().min(1), line: z.number().int().positive() }).strict(),
-  })
-  .strict();
-/** G6 checker fixture contract until C16 supplies its producer. Hashes cover the exact submitted snapshot.
- * policyRows includes all operation rows plus AI/internet use; permissions are complete static checker evidence.
- * A caller-supplied manifest never grants execution authority: dispatch still checks every actual call.
- */
-export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend({
-  formatVersion: z.literal(1),
-  sourceHash: hash,
-  bundleHash: hash,
-  permissions: z.array(CodeVersionPermissionSchema),
-})
-  .strict()
-  .superRefine((manifest, ctx) => {
-    for (const permission of manifest.permissions) {
-      if (!manifest.policyRows.includes(permission.row))
-        ctx.addIssue({ code: "custom", message: "Operation classification missing from policyRows" });
-      if (permission.kind === "query" && permission.row !== "read")
-        ctx.addIssue({ code: "custom", message: "Queries require the read classification" });
-      if (permission.kind === "action" && ["read", "ai", "internet"].includes(permission.row))
-        ctx.addIssue({ code: "custom", message: "Actions require an Action classification" });
-    }
-  });
-/** Immutable manifest consumed by submission, activation, CLI, chat tools and the checker. */
-export type CodeCheckedVersionManifest = z.infer<typeof CodeCheckedVersionManifestSchema>;
 /** Exact comparison evidence. Decisions must send this unchanged from version.diff or submit. */
 export const CodeVersionBindingSchema = z
   .object({

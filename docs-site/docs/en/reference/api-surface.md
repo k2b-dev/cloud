@@ -243,6 +243,12 @@ exports `AccountCategory`, `AccountCategoryPolicySchema`, `accountCategory`
 and `accountCategoryLabel`. See
 [Account types](/en/docs/operations/account-categories) for their use.
 
+The contracts barrel exports `CodeCheckedVersionManifestSchema`,
+`CodeCheckedVersionManifest`, `CodeVersionPermissionSchema`, `CODE_POLICY_ROWS`,
+`CodePolicyRowSchema` and `CodePolicyManifestSchema` for the checker and Core's
+version lifecycle. See [Code versions and approval](/en/docs/platform/code-versions).
+These schemas describe evidence; they grant no execution or resource access.
+
 The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator
 clients. Action approval schemas, `APP_ACTION_LIMITS`, and the Action digest

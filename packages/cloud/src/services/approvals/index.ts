@@ -1,4 +1,5 @@
 import type { SQL } from "bun";
+import { approvalMessages } from "../../approvals/messages";
 import { capabilityRequestHash } from "../../capabilities/claims";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
@@ -136,6 +137,17 @@ const columns = (compact = false) => sql`id, kind, sole_admin AS "soleAdmin", ap
   decided_device_id AS "decidedDeviceId", approver_auth_epoch::text AS "approverAuthEpoch",
   decided_via AS "decidedVia", decided_at AS "decidedAt", consumed_at AS "consumedAt",
   created_at AS "createdAt", expires_at AS "expiresAt"`;
+
+/** Advisory notice for every Code decision surface. The winning decision rechecks sole-admin eligibility under locks. */
+export const codeVersionSoleAdminNotice = async (
+  request: ApprovalRequest,
+  userId: string,
+  authority: RequestAuthority,
+  locale = "en",
+): Promise<string | null> => {
+  if (request.kind !== "code_version" || request.authorUserId !== userId || !approvalAdminActor(userId, authority)) return null;
+  return (await soleCodeAdmin(sql)) === userId ? approvalMessages.resolve([locale]).t.soleAdminNotice : null;
+};
 
 const transaction = <T>(db: SQL | undefined, run: (tx: SQL) => Promise<T>): Promise<T> => (db && db !== sql ? run(db) : sql.begin(run));
 

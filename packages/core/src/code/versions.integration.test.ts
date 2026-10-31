@@ -23,6 +23,7 @@ import {
   listCodeVersions,
   recordCodeVersionBaseline,
   requireCodeVersionApproval,
+  reviewCodeVersionDecision,
   setCodePaused,
   startCodeVersionApprovals,
   submitCodeVersion,
@@ -291,14 +292,16 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       code: "code_approval_revoked",
     });
   });
-  test("a newer pushed version invalidates an older pending decision, even on the shared approval service", async () => {
+  test("a newer push atomically cancels superseded requests and neither decision can use them", async () => {
     const code = await newCode(),
       first = await submitCodeVersion(input(code, "first"), author);
-    await submitCodeVersion(input(code, "next", first.version.id), author);
-    await expect(
-      approvals.decide(first.approvalId!, { approved: true }, { userId: reviewerId, via: "web_session", authority: reviewer.authority }),
-    ).rejects.toMatchObject({ code: "code_version_stale" });
-    expect(await approvals.get(first.approvalId!)).toMatchObject({ status: "pending" });
+    const next = await submitCodeVersion(input(code, "next", first.version.id), author);
+    for (const approved of [true, false])
+      expect(
+        await approvals.decide(first.approvalId!, { approved }, { userId: reviewerId, via: "web_session", authority: reviewer.authority }),
+      ).toMatchObject({ ok: false, code: "ALREADY_DECIDED" });
+    expect(await approvals.get(first.approvalId!)).toMatchObject({ status: "cancelled" });
+    expect(await approvals.get(next.approvalId!)).toMatchObject({ status: "pending" });
     expect(await sql`SELECT version_id FROM code.version_decisions WHERE version_id=${first.version.id}::uuid`).toHaveLength(0);
   });
   test("a changed comparison is refused and the platform decision rolls back", async () => {
@@ -311,8 +314,67 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     expect(changed).toMatchObject({ staleComparison: true, binding: { comparisonVersionId: first.version.id } });
     await expect(decideCodeVersion(next.binding, true, reviewer)).rejects.toMatchObject({ code: "code_comparison_stale" });
     await expect(decideCodeVersion(changed.binding, true, reviewer)).rejects.toMatchObject({ code: "code_comparison_stale" });
+    await expect(decideCodeVersion(next.binding, false, reviewer)).rejects.toMatchObject({ code: "code_comparison_stale" });
     expect(await approvals.get(next.approvalId!)).toMatchObject({ status: "pending" });
+    await submitCodeVersion(input(code, "review again", next.version.id), author);
+    expect(await approvals.get(next.approvalId!)).toMatchObject({ status: "cancelled" });
     expect(await findCode(code.id)).toMatchObject({ activeVersionId: first.version.id });
+  });
+  test("decided versions retain their original comparison after approval advances the baseline", async () => {
+    const code = await newCode(),
+      first = await submitCodeVersion(input(code, "before", null, ["read"]), author);
+    await activate(code, first);
+    const next = await submitCodeVersion(input(code, "after", first.version.id), author);
+    const before = await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, reviewer);
+    await decideCodeVersion(next.binding, true, reviewer);
+    expect(await diffCodeVersion({ codeId: code.id, versionId: next.version.id }, reviewer)).toEqual(before);
+  });
+  test("deleting Code returns an expected decision conflict and preserves the pending request", async () => {
+    const code = await newCode(),
+      submission = await submitCodeVersion(input(code, "pending"), author);
+    await sql`UPDATE code.codes SET state='deleting' WHERE id=${code.id}`;
+    await expect(
+      approvals.decide(
+        submission.approvalId!,
+        { approved: true },
+        { userId: reviewerId, via: "web_session", authority: reviewer.authority },
+      ),
+    ).rejects.toMatchObject({ code: "code_version_unavailable" });
+    expect(await approvals.get(submission.approvalId!)).toMatchObject({ status: "pending" });
+  });
+  test("the direct decision review includes C5's sole-admin notice", async () => {
+    await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
+    const code = await newCode(),
+      submission = await submitCodeVersion(input(code, "review"), author);
+    const review = await reviewCodeVersionDecision(submission.binding, true, author);
+    expect(review.consequences?.[0]?.text).toContain("Admin");
+    await sql`UPDATE auth.users SET admin=true WHERE id=${reviewerId}::uuid`;
+    expect((await reviewCodeVersionDecision(submission.binding, true, author)).consequences).toBeUndefined();
+  });
+  test("an admin's ordinary write credential can pause and resume their personal Code", async () => {
+    const code = await newCode(),
+      submission = await submitCodeVersion(input(code, "automatic", null, ["read"]), author);
+    await activate(code, submission);
+    const writer: CodeContext = { ...author, authority: { ...author.authority, credentialKind: "oauth", scopes: ["core:write"] } };
+    expect(await setCodePaused(code.id, true, writer)).toEqual({ state: "paused" });
+    expect(await setCodePaused(code.id, false, writer)).toEqual({ state: "active" });
+  });
+  test("deleting the reviewer conservatively revokes approval while retaining its decision", async () => {
+    const code = await newCode(),
+      submission = await submitCodeVersion(input(code, "approved"), author);
+    await decideCodeVersion(submission.binding, true, reviewer);
+    await activate(code, submission);
+    await setCodePaused(code.id, true, author);
+    try {
+      await sql`DELETE FROM auth.users WHERE id=${reviewerId}::uuid`;
+      await expect(setCodePaused(code.id, false, author)).rejects.toMatchObject({ code: "code_approval_revoked" });
+      expect((await listCodeVersions({ codeId: code.id, limit: 50 }, author)).items[0]?.decision).toMatchObject({
+        approved: true,
+        decidedBy: null,
+      });
+    } finally {
+      await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${reviewerId}::uuid,${reviewerId},'local','user',true) ON CONFLICT(id) DO NOTHING`;
+    }
   });
   test("two concurrent pushes from the same base yield one complete version and one conflict with the full difference", async () => {
     const code = await newCode(),

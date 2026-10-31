@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { type CapabilityActionCallReview, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
 import { isAppSessionActor } from "@k2b/cloud/server";
-import { audit } from "@k2b/cloud/services";
+import { audit, canRepairAppAccess } from "@k2b/cloud/services";
 import {
   APPROVAL_MAX_WAIT_MS,
   type ApprovalDecisionActor,
@@ -11,12 +11,13 @@ import {
   approvalDecisionChannel,
   approvalReviewDigest,
   approvals,
+  codeVersionSoleAdminNotice,
   registerApprovalDecisionHandler,
 } from "@k2b/cloud/services/approvals";
 import type { SQL } from "bun";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
-import type { Code, CodeSourceFiles } from "./contracts";
+import { type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { effective } from "./policy-effective";
 import { codeBundleHash, codeSourceHash, createCodeVersion, findCode, lockCodeForEdit, readCode, readCodeVersion } from "./store";
@@ -31,7 +32,8 @@ import { codeVersionDiff } from "./version-diff";
 import { codeVersionMessages } from "./version-messages";
 
 /** Stable refusal codes for CLI, chat tools and activation. Conflict details contain the current full comparison. */
-type CodeVersionErrorCode =
+export type CodeVersionErrorCode =
+  | "code_version_unavailable"
   | "code_version_conflict"
   | "code_hash_mismatch"
   | "code_comparison_stale"
@@ -41,6 +43,7 @@ type CodeVersionErrorCode =
   | "code_policy_never"
   | "code_version_stale"
   | "code_manifest_invalid";
+/** A version refusal returned unchanged by capabilities and as 409 by shared decision routes. */
 export class CodeVersionError extends ApprovalDecisionConflictError<CodeVersionErrorCode> {}
 type Snapshot = {
   id: string;
@@ -135,7 +138,13 @@ export async function submitCodeVersion(
     )
       throw new CodeVersionError("code_manifest_invalid", "Permission source location does not exist.");
   }
+  await readCode(input.codeId, context);
   return sql.begin(async (tx) => {
+    // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
+    const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r
+      JOIN code.version_submissions s ON s.approval_id=r.id
+      WHERE s.code_id=${input.codeId} AND r.kind='code_version' AND r.status='pending'
+      ORDER BY r.id FOR UPDATE OF r`;
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     const code = await lockCodeForEdit(input.codeId, context, tx);
     const [latest] = await tx<{ id: string }[]>`SELECT id FROM code.versions WHERE code_id=${code.id} ORDER BY number DESC LIMIT 1`;
@@ -147,6 +156,10 @@ export async function submitCodeVersion(
         files: codeVersionDiff(before?.source_files ?? {}, after?.source_files ?? {}),
       });
     }
+    await approvals.cancel(
+      superseded.map((row) => row.id),
+      tx,
+    );
     const version = await createCodeVersion(input, context, tx);
     const snapshot = await versionSnapshot(code.id, version.id, tx);
     const comparison = await baseline(code, tx);
@@ -206,11 +219,15 @@ export async function diffCodeVersion(input: z.infer<typeof codeVersionContracts
     if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
     const version = await versionSnapshot(code.id, input.versionId, tx);
     const manifest = manifestFor(version);
-    const comparison = await baseline(code, tx);
+    const [submission] = await tx<{ binding: CodeVersionBinding; decided: boolean }[]>`
+      SELECT s.binding,EXISTS(SELECT 1 FROM code.version_decisions d WHERE d.version_id=s.version_id) AS decided
+      FROM code.version_submissions s WHERE s.version_id=${version.id}::uuid`;
+    const comparison = submission?.decided
+      ? submission.binding.comparisonVersionId
+        ? await versionSnapshot(code.id, submission.binding.comparisonVersionId, tx)
+        : null
+      : await baseline(code, tx);
     const binding = bindingFor(code.id, version, comparison);
-    const [submission] = await tx<
-      { binding: CodeVersionBinding }[]
-    >`SELECT binding FROM code.version_submissions WHERE version_id=${version.id}::uuid`;
     return {
       binding,
       staleComparison: !submission || !sameBinding(binding, submission.binding),
@@ -222,22 +239,24 @@ export async function diffCodeVersion(input: z.infer<typeof codeVersionContracts
 }
 async function submissionFor(codeId: string, versionId: string, context: CodeContext, db: SQL = sql): Promise<CodeVersionSubmission> {
   const { version } = await readCodeVersion({ codeId, versionId, offset: 0, length: 1 }, context);
-  const [row] = await db<
-    {
-      binding: CodeVersionBinding;
-      approval_id: string | null;
-      status: string | null;
-      unexpired: boolean | null;
-      approved: boolean | null;
-      sole_admin: boolean | null;
-      decided_by: string | null;
-      decided_at: Date | null;
-    }[]
-  >`
+  const [row] = await db<SubmissionRow[]>`
     SELECT s.*,r.status,(r.expires_at>statement_timestamp()) AS unexpired,d.approved,d.sole_admin,d.decided_by,d.decided_at FROM code.version_submissions s
       LEFT JOIN approvals.requests r ON r.id=s.approval_id LEFT JOIN code.version_decisions d ON d.version_id=s.version_id
       WHERE s.code_id=${codeId} AND s.version_id=${versionId}::uuid`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code submission not found.");
+  return submissionReceipt(version, row, context);
+}
+type SubmissionRow = {
+  binding: CodeVersionBinding;
+  approval_id: string | null;
+  status: string | null;
+  unexpired: boolean | null;
+  approved: boolean | null;
+  sole_admin: boolean | null;
+  decided_by: string | null;
+  decided_at: Date | null;
+};
+function submissionReceipt(version: CodeVersion, row: SubmissionRow, context: CodeContext): CodeVersionSubmission {
   const { t } = messages(context);
   return {
     version,
@@ -269,12 +288,17 @@ async function submissionFor(codeId: string, versionId: string, context: CodeCon
 /** Bounded version history with durable decision receipts, including the sole-admin label. */
 export async function listCodeVersions(input: z.infer<typeof codeVersionContracts.list.input>, context: CodeContext) {
   await readCode(input.codeId, context);
-  const rows = await sql<
-    { id: string; number: number }[]
-  >`SELECT v.id,v.number FROM code.versions v JOIN code.version_submissions s ON s.version_id=v.id
-    WHERE v.code_id=${input.codeId} AND (${input.before ?? null}::int IS NULL OR v.number<${input.before ?? null}) ORDER BY v.number DESC LIMIT ${input.limit + 1}`;
-  const items = [];
-  for (const row of rows.slice(0, input.limit)) items.push(await submissionFor(input.codeId, row.id, context));
+  const rows = await sql<(SubmissionRow & { version: unknown; number: number })[]>`
+    SELECT v.number,s.*,r.status,(r.expires_at>statement_timestamp()) AS unexpired,d.approved,d.sole_admin,d.decided_by,d.decided_at,
+      jsonb_build_object('id',v.id,'codeId',v.code_id,'number',v.number,
+        'files',ARRAY(SELECT jsonb_object_keys(v.source_files) ORDER BY 1),
+        'sourceHash',v.source_hash,'bundleHash',v.bundle_hash,'sourceBytes',v.source_bytes,'bundleBytes',v.bundle_bytes,
+        'manifestAvailable',v.manifest IS NOT NULL,'createdBy',v.created_by,'createdAt',to_char(v.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) AS version
+    FROM code.versions v JOIN code.version_submissions s ON s.version_id=v.id
+      LEFT JOIN approvals.requests r ON r.id=s.approval_id LEFT JOIN code.version_decisions d ON d.version_id=v.id
+    WHERE v.code_id=${input.codeId} AND (${input.before ?? null}::int IS NULL OR v.number<${input.before ?? null})
+    ORDER BY v.number DESC LIMIT ${input.limit + 1}`;
+  const items = rows.slice(0, input.limit).map((row) => submissionReceipt(CodeVersionSchema.parse(row.version), row, context));
   return { items, nextBefore: rows.length > input.limit ? rows[input.limit - 1]!.number : null };
 }
 
@@ -283,11 +307,11 @@ export async function applyCodeVersionDecision(tx: SQL, request: ApprovalRequest
   const [submission] = await tx<
     { code_id: string; version_id: string; binding: CodeVersionBinding; review_digest: string | null }[]
   >`SELECT * FROM code.version_submissions WHERE approval_id=${request.id}::uuid`;
-  if (!submission) throw new CodeDataError("NOT_FOUND", "Code submission not found.");
+  if (!submission) throw new CodeVersionError("code_version_unavailable", "Code submission is no longer available.");
   await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
   await tx`SELECT id FROM code.codes WHERE id=${submission.code_id} FOR UPDATE`;
   const code = await findCode(submission.code_id, tx);
-  if (!code || code.state === "deleting") throw new CodeDataError("NOT_FOUND", "Code not found.");
+  if (!code || code.state === "deleting") throw new CodeVersionError("code_version_unavailable", "Code is no longer available.");
   const version = await versionSnapshot(code.id, submission.version_id, tx);
   const manifest = manifestFor(version);
   const [latest] = await tx<{ id: string }[]>`SELECT id FROM code.versions WHERE code_id=${code.id} ORDER BY number DESC LIMIT 1`;
@@ -416,7 +440,7 @@ export async function setCodePaused(codeId: string, paused: boolean, context: Co
     await tx`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
     const code = await findCode(codeId, tx);
     if (!code || code.state === "deleting") throw new CodeDataError("NOT_FOUND", "Code not found.");
-    if (person.roles.includes("admin")) requireCodePolicyAdmin(context, true);
+    if (person.roles.includes("admin") && canRepairAppAccess(context.authority)) requireCodePolicyAdmin(context, true);
     else await requireCodePermission(code, context, true, tx);
     if (!code.activeVersionId) throw new CodeDataError("CONFLICT", "Activate a version before pausing or resuming it.");
     if (!paused) await requireCodeVersionApproval(code, code.activeVersionId, tx);
@@ -445,16 +469,18 @@ export async function reviewCodeVersionDecision(
   approved: boolean,
   context: CodeContext,
 ): Promise<CapabilityActionCallReview> {
-  requireCodePolicyAdmin(context, true);
+  const person = requireCodePolicyAdmin(context, true);
   const submission = await submissionFor(input.codeId, input.versionId, context);
   if (!sameBinding(input, submission.binding) || !submission.approvalId)
     throw new CodeVersionError("code_comparison_stale", "Review does not match the submitted version.");
   const request = await approvals.get(submission.approvalId);
   if (!request?.details || !("sentence" in request.details)) throw new CodeDataError("CONFLICT", "Version review is unavailable.");
-  if (approved) return request.details;
+  const notice = await codeVersionSoleAdminNotice(request, person.id, context.authority, context.locale);
+  const details = notice ? { ...request.details, consequences: [{ text: notice }] } : request.details;
+  if (approved) return details;
   const { t, locale } = messages(context);
   return {
-    ...request.details,
+    ...details,
     locale,
     sentence: { action: t.rejectAction, running: t.rejectRunning, done: t.rejectDone, confirm: t.decline, decline: t.keepPending },
   };
