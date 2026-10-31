@@ -104,6 +104,17 @@ describe("notebook S3 backup", () => {
     expect(describeSnapshotError(error)).toBe("HTTP 403 403 - Forbidden (S3Error)");
   });
 
+  test("provider text never keeps markup, script bodies or tags joined by removal", () => {
+    const page = (body: string) => Object.assign(new Error(`<html><body>${body}</body></html>`), { name: "S3Error" });
+    for (const end of ["</script>", "</script >", "</SCRIPT\t\n>", "</script foo>"]) {
+      const text = describeSnapshotError(page(`<script>alert(1)${end}Bucket missing`));
+      expect(text).toBe("Bucket missing (S3Error)");
+    }
+    expect(describeSnapshotError(page("<style>p{}</style >Denied"))).toBe("Denied (S3Error)");
+    expect(describeSnapshotError(page("<script>never closed"))).toBe("Provider returned no error details.");
+    expect(describeSnapshotError(page("<scr<script>ipt>x</script>Gone"))).not.toContain("<");
+  });
+
   test("rejects Hetzner endpoints without location subdomain", () => {
     const invalid = validateSnapshotEndpoint("https://your-objectstorage.com", "nbg1");
     const valid = validateSnapshotEndpoint("https://nbg1.your-objectstorage.com", "nbg1");
