@@ -11,7 +11,7 @@ import { createSharedTextActionHistory } from "@k2b/cloud/browser/shared-text";
 import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
 import { createNotebookTablePresentation, listCommandsExtension, notebookSourceFormulasExtension } from "@k2b/editor/markdown";
 import { encoding } from "@k2b/stdlib";
-import { Button, LocaleProvider, NoticeCard, ScrollArea } from "@k2b/ui";
+import { AppWorkspace, Button, installAppWorkspaceController, LocaleProvider, NoticeCard, ScrollArea } from "@k2b/ui";
 import { TextEditor, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createSignal, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
@@ -254,6 +254,7 @@ function Harness() {
         mode = next;
       },
       posts: () => posts,
+      mounts: () => editorMounts,
       uploads: () => [...uploads],
       undo: async () => {
         await actions.undo();
@@ -336,6 +337,7 @@ function Harness() {
             }}
             onDroppedImages={(count, files) => files.length >= count}
             onReady={(controller, next) => {
+              editorMounts++;
               extensions.attach(controller.view, { controller, controls: next });
               setControls(next);
               setView(controller.view);
@@ -375,6 +377,7 @@ export type NoteHarness = {
   setOnline: (online: boolean) => void;
   setServer: (mode: ServerMode) => void;
   posts: () => number;
+  mounts: () => number;
   uploads: () => string[];
   undo: () => Promise<void>;
   peerType: (after: string, insert: string) => void;
@@ -390,4 +393,37 @@ declare global {
   }
 }
 
-const dispose = render(() => <Harness />, document.getElementById("root")!);
+let editorMounts = 0;
+// `workspace` puts the editor where the notebook page does: beside the resizable navigation, in the document surface.
+const dispose = params.has("workspace")
+  ? (() => {
+      const stop = installAppWorkspaceController();
+      const unmount = render(
+        () => (
+          <LocaleProvider locale={locale}>
+            <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
+              <AppWorkspace.Sidebar id="notebook-navigation" class="notebook-sidebar" label="Navigation" resizable defaultSize={256}>
+                <nav class="p-3 text-sm">Budget</nav>
+              </AppWorkspace.Sidebar>
+              <AppWorkspace.Content>
+                <AppWorkspace.Main scroll={false}>
+                  <div
+                    class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"
+                    data-comments=""
+                    data-full-width={params.has("fullWidth") ? "" : undefined}
+                  >
+                    <Harness />
+                  </div>
+                </AppWorkspace.Main>
+              </AppWorkspace.Content>
+            </AppWorkspace>
+          </LocaleProvider>
+        ),
+        document.getElementById("root")!,
+      );
+      return () => {
+        unmount();
+        stop();
+      };
+    })()
+  : render(() => <Harness />, document.getElementById("root")!);
