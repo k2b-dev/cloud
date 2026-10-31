@@ -1973,6 +1973,22 @@ export function createFilesService(
         items.some((item) => within(relative, item) || within(item, relative)),
       );
     },
+    /** Resolve a fixed storage-root target without requiring read access to the root's children.
+     * Operations still authorize their own path, including Unix ancestor traversal and leaf rights.
+     */
+    async rootLocation(call: UserFilesCall, id: string): Promise<{ baseId: string }> {
+      const stable = parseStableEntryRefId(id);
+      if (stable) {
+        await authorizedBase(call.actor, stable.baseId);
+        // Storage roots always use path refs, including on storage with stable entry IDs.
+        throw new FilesError("root_target_required", 400);
+      }
+      const ref = await resolveEntryRefId(id);
+      if (!ref) throw new FilesError("not_found", 404);
+      const current = await authorizedBase(call.actor, ref.baseId);
+      if (ref.path !== "") throw new FilesError("root_target_required", 400);
+      return { baseId: current.inspection.summary.id };
+    },
     /** The base and base-relative path of a folder named by its file ID, after the usual access checks. */
     async folderLocation(call: UserFilesCall, id: string): Promise<{ baseId: string; path: string }> {
       const actor = call.actor;
@@ -2640,7 +2656,16 @@ export function createFilesService(
     async entryById(call: UserFilesCall, id: string): Promise<EntryResult> {
       const actor = call.actor;
       const current = await located(actor, id);
-      if (!current.relative) throw new FilesError("invalid_path");
+      if (!current.relative) {
+        // A storage root is an addressable entry too; it has no parent entry or favorite state.
+        const base = current.inspection.summary;
+        const resourceId = await entryRef(base.id, { path: "" });
+        return {
+          base,
+          entry: { ...fileEntry(base, "", current.node), name: base.name, resourceId },
+          resourceId,
+        };
+      }
       return entryResult(current);
     },
     async recent(call: UserFilesCall): Promise<MarkedEntry[]> {
