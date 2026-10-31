@@ -8,6 +8,7 @@ const natsTest = testFor("database", "nats");
 natsTest(
   "a quiet notebook has a replay cursor, and stored hints stay small and readable by older replicas",
   async () => {
+    await migrate();
     const { createSync } = await import("@k2b/sync");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const connection = await connectTestNats({ ignoreClusterUpdates: true, name: "notebooks-workspace-events-test" });
@@ -18,10 +19,10 @@ natsTest(
       defaults: { replicas: 1 },
     });
     const abort = new AbortController();
+    const notebookId = crypto.randomUUID();
     bindProcessSync(sync);
     try {
       const workspaceEvents = await import("./workspace-events");
-      const notebookId = crypto.randomUUID();
       // The SSR baseline of a notebook without events must still let the
       // socket replay what happens between the page load and the subscribe.
       const cursor = await workspaceEvents.latestCursor({ notebookId });
@@ -43,11 +44,14 @@ natsTest(
         updatedAt: "2026-10-31T12:00:00.000Z",
         lockedAt: null,
       };
-      await migrate();
       await sql.begin(async (tx) => {
         await workspaceEvents.noteUpdated(note, tx);
         await workspaceEvents.notebookUpdated({ id: notebookId }, tx);
       });
+      const stored = await sql<{ kind: string }[]>`
+        SELECT jsonb_typeof(payload) AS kind FROM notebooks.workspace_outbox
+        WHERE notebook_id = ${notebookId}::uuid ORDER BY seq`;
+      expect(stored).toEqual([{ kind: "object" }, { kind: "object" }]);
       await workspaceEvents.workspaceOutbox.reconcile();
 
       const events = workspaceEvents.live({ notebookId, after: cursor, signal: abort.signal })[Symbol.asyncIterator]();
@@ -69,6 +73,7 @@ natsTest(
       await events.return?.();
     } finally {
       abort.abort();
+      await sql`DELETE FROM notebooks.workspace_outbox WHERE notebook_id = ${notebookId}::uuid`;
       await sync.drain({ timeoutMs: 5_000 });
       unbindProcessSync();
       await connection.drain();

@@ -50,7 +50,7 @@ export const workspaceTransaction = async <const T>(run: SQL.TransactionContextC
 // a repeat after the broker's dedupe window only refetches canonical state.
 const publish = async (tx: TransactionSQL, event: NotebookWorkspaceEvent): Promise<void> => {
   await tx`INSERT INTO notebooks.workspace_outbox (notebook_id, payload)
-    VALUES (${event.notebookId}::uuid, ${JSON.stringify(event)}::jsonb)`;
+    VALUES (${event.notebookId}::uuid, ${JSON.stringify(event)}::text::jsonb)`;
 };
 
 export const live = (config: { notebookId: string; after?: string | null; signal?: AbortSignal }) =>
