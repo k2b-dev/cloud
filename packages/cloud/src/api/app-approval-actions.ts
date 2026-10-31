@@ -11,12 +11,12 @@ const INBOX_PAGES = 5;
 
 export const createDeviceActions = (appName: (appId: string, locale: string) => string): AppDeviceActions => {
   const view: AppDeviceActions["view"] = async ({ userId, issuer, actionId }) => {
-    const { items } = await listPending({ approverUserId: userId, id: actionId, limit: 1 });
+    const { items } = await listPending({ roleContext: { kind: "cloud_login" }, approverUserId: userId, id: actionId, limit: 1 });
     const row = items[0];
     if (!row) return null;
     const policy = (await loadApprovalActionPolicies([row]))(row);
     const mapped = await appActionView(row, { issuer, appName, policy });
-    if (row.kind === "code_version" && mapped.truncated) return null;
+    if (row.kind === "code_version" && (mapped.truncated || !row.canApprove)) return null;
     return appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy) ? mapped : null;
   };
   return {
@@ -27,14 +27,19 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
       let count = 0;
       let cursor: string | undefined;
       for (let page = 0; page < INBOX_PAGES && actions.length < APP_ACTION_LIMITS.inboxActions; page += 1) {
-        const result = await listPending({ approverUserId: userId, limit: APPROVALS_PAGE_SIZE, ...(cursor ? { cursor } : {}) });
+        const result = await listPending({
+          roleContext: { kind: "cloud_login" },
+          approverUserId: userId,
+          limit: APPROVALS_PAGE_SIZE,
+          ...(cursor ? { cursor } : {}),
+        });
         count = result.count;
         const policyOf = await loadApprovalActionPolicies(result.items);
         for (const row of result.items) {
           const policy = policyOf(row);
           const mapped = await appActionView(row, { issuer, appName, policy });
           if (
-            !(row.kind === "code_version" && mapped.truncated) &&
+            !(row.kind === "code_version" && (mapped.truncated || !row.canApprove)) &&
             appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy)
           )
             actions.push(appActionSummary(mapped));

@@ -54,6 +54,7 @@ export const approvalRoutes = new Hono<AuthContext>()
         ...c.req.valid("param"),
         ...c.req.valid("query"),
         approverUserId: user.id,
+        roleContext: { kind: "request", authority: auth.getAuthority(c) },
         signal: c.req.raw.signal,
       });
       c.header("Cache-Control", "private, no-store");
@@ -116,7 +117,10 @@ export const approvalRoutes = new Hono<AuthContext>()
     async (c) => {
       const user = userFromActor(c.get("actor"));
       if (!user) return c.json({ message: "Approvals require a user-backed actor." }, 403);
-      return respond(c, ok(await countPending({ approverUserId: user.id })));
+      return respond(
+        c,
+        ok(await countPending({ approverUserId: user.id, roleContext: { kind: "request", authority: auth.getAuthority(c) } })),
+      );
     },
   )
   .post(
@@ -147,6 +151,7 @@ export const approvalRoutes = new Hono<AuthContext>()
         const decision = c.req.valid("json");
         const result = await approvals.decide(record.id, decision, {
           userId: user.id,
+          authority: auth.getAuthority(c),
           via: approvalDecisionChannel({
             credentialKind: c.get("credentialKind"),
             actor: c.get("actor"),

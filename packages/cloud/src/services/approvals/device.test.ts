@@ -18,6 +18,7 @@ import { loadApprovalActionPolicies, pendingApprovalReview } from "./question";
 
 const row: PendingApprovalRow = {
   kind: "action",
+  canApprove: true,
   requesterHref: null,
   id: "ab811792-7476-4a8c-b676-2c6007bb9b5b",
   appId: "mail",

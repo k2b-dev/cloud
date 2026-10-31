@@ -106,6 +106,25 @@ describe("Approvals", () => {
     }
   });
 
+  test("the author sees why another admin is required and can still reject", async () => {
+    const request = item("code-author", {
+      canApprove: false,
+      requester: { kind: "code_version", appId: "demo", title: "Report", href: "/code/report/" },
+    });
+    const view = await mount({ initial: page([request]) }, () => Response.json({ status: "rejected" }));
+    try {
+      expect(view.dom.root.textContent).toContain("Another Cloud admin must approve your version.");
+      await Bun.sleep(550);
+      const reject = view.button("Don't run");
+      expect(reject?.disabled).toBe(false);
+      reject!.click();
+      await waitFor(() => view.requests.length > 0, "the rejection");
+      expect(view.requests[0]?.body).toEqual({ approved: false });
+    } finally {
+      view.cleanup();
+    }
+  });
+
   test("a Code-version request has its own source and receipt without a chat continuation", async () => {
     const request = item("code1", {
       sentence: "Approve Report?",

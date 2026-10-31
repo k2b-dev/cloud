@@ -6,12 +6,13 @@ import type { CapabilityActionReviewData } from "../../contracts/capabilities";
 import { CapabilityActionReviewPresentationSchema, CloudResourceHrefSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import { isAppSessionActor } from "../../server/actor";
-import type { RequestActor, RequestCredentialKind } from "../../server/middleware/auth";
-import { get as getUser } from "../accounts/users";
+import type { RequestActor, RequestAuthority, RequestCredentialKind } from "../../server/middleware/auth";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
+import { hasApprovalRoleAccess } from "./authority";
 import { compactApprovalDetailsSql } from "./content";
 
+export type { ApprovalRoleContext } from "./authority";
 export { readApprovalContent } from "./content";
 export { countPending, listPending, presentPendingApproval } from "./list";
 export { migrateApprovals } from "./migrate";
@@ -73,6 +74,7 @@ export type ActionApprovalRequestInput = ApprovalRequestBase & {
 /**
  * An immutable version review addressed to Cloud admins, independent of any chat. `input` must contain the owning
  * service's complete version binding (including source and bundle hashes); `review` is the proposed change snapshot.
+ * `expiresInMs` is a finite owner-chosen wait; resubmitting an expired question needs a new requester reference.
  * The author cannot approve their own version. Core owns the version state and installs a decision handler.
  */
 export type CodeVersionApprovalRequestInput = ApprovalRequestBase & {
@@ -151,9 +153,12 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
   const recipient = role ? null : input.approverUserId;
   const subjectId = role ? null : input.subjectId;
   // Zero or less records a request that is already expired, such as a call that waited too long before the upgrade.
-  const expiresInMs = Number.isNaN(input.expiresInMs)
-    ? APPROVAL_MAX_WAIT_MS
-    : Math.max(0, Math.min(input.expiresInMs, APPROVAL_MAX_WAIT_MS));
+  if (role && !Number.isFinite(input.expiresInMs)) throw new TypeError("Code approval expiry must be finite.");
+  const expiresInMs = role
+    ? Math.max(0, input.expiresInMs)
+    : Number.isNaN(input.expiresInMs)
+      ? APPROVAL_MAX_WAIT_MS
+      : Math.max(0, Math.min(input.expiresInMs, APPROVAL_MAX_WAIT_MS));
   return transaction(db, async (tx): Promise<ApprovalRequestResult> => {
     const [row] = await tx<{ id: string }[]>`
       INSERT INTO approvals.requests (app_id, action, approval_scope, requester_kind, requester_ref, requester_app_id,
@@ -201,8 +206,8 @@ export type ApprovalDecisionResult =
  * back both writes. Called exactly once for the winning decision, never on replay. No external effects belong here.
  */
 export type ApprovalDecisionHandler = (tx: SQL, request: ApprovalRequest, actor: ApprovalDecisionActor) => Promise<void>;
-/** A person and their credential channel; role membership is always resolved from the current account. */
-export type ApprovalDecisionActor = { userId: string; via: ApprovalDecisionChannel; deviceId?: string };
+/** A person and their credential channel. Role decisions require request authority, or an active Cloud Login device. */
+export type ApprovalDecisionActor = { userId: string; via: ApprovalDecisionChannel; deviceId?: string; authority?: RequestAuthority };
 const decisionHandlers = new Map<"code_version", ApprovalDecisionHandler>();
 /**
  * Install the Code version owner's transactional transition during service startup. Returns a disposer for tests
@@ -226,15 +231,24 @@ export const decide = async (
     // Lock the approver and device before the request so revocation and decisions serialize.
     const decider = await lockDecider(tx, actor.userId, actor.deviceId ?? null);
     if (decider.epoch === null || (actor.deviceId !== undefined && !decider.deviceActive)) return { ok: false, code: "NOT_FOUND" };
+    const [recipient] = await tx<{ kind: ApprovalKind }[]>`SELECT kind FROM approvals.requests
+      WHERE id=${id}::uuid AND (approver_user_id=${actor.userId}::uuid OR approver_role='admin')`;
+    if (!recipient) return { ok: false, code: "NOT_FOUND" };
+    const role = recipient.kind === "code_version";
+    if (role) {
+      if (actor.via === "cloud_login" && !actor.deviceId) return { ok: false, code: "NOT_FOUND" };
+      const context =
+        actor.via === "cloud_login"
+          ? { kind: "cloud_login" as const }
+          : actor.authority
+            ? { kind: "request" as const, authority: actor.authority }
+            : undefined;
+      if (!(await hasApprovalRoleAccess(actor.userId, context, tx))) return { ok: false, code: "NOT_FOUND" };
+    }
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND (approver_user_id=${actor.userId}::uuid OR approver_role='admin') FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
-    const role = row.kind === "code_version";
     if (role) {
-      if (actor.via === "cloud_login" && !actor.deviceId) return { ok: false, code: "NOT_FOUND" };
-      const user = await getUser({ id: actor.userId }, { db: tx });
-      if (!user?.roles.includes("admin") || (user.accountExpires && new Date(user.accountExpires).getTime() <= Date.now()))
-        return { ok: false, code: "NOT_FOUND" };
       if (decision.remember) return { ok: false, code: "NOT_REMEMBERABLE" };
       if (decision.approved && row.authorUserId === actor.userId) return { ok: false, code: "SELF_APPROVAL" };
     }
@@ -302,7 +316,7 @@ export const decide = async (
 export type ApprovalConsumeResult =
   | { ok: true }
   | { ok: false; code: "NOT_FOUND" | "NOT_APPROVED" | "ALREADY_CONSUMED" | "INPUT_CHANGED" | "REVIEW_CHANGED" | "REVOKED" };
-/** Consume one personal Action approval; Code-version decisions are durable version evidence, never chat consent. */
+/** Consume one personal Action approval; Code-version transitions belong to their version service, never chat consent. */
 export const consume = async (
   id: string,
   input: { input: unknown; review: CapabilityActionReviewData | null; requester: { kind: ApprovalRequesterKind; ref: string } },

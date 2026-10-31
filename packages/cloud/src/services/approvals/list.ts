@@ -6,12 +6,14 @@ import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "
 import { type CapabilityActionPolicy, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import type { ApprovalAssurance, ApprovalKind } from ".";
-import { compactApprovalDetailsSql, openRequests } from "./content";
+import type { ApprovalRoleContext } from "./authority";
+import { compactApprovalDetailsSql, openRecipientRequests } from "./content";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
 
 export type PendingApprovalRow = {
   id: string;
   kind: ApprovalKind;
+  canApprove: boolean;
   requesterHref: string | null;
   appId: string;
   action: string;
@@ -42,22 +44,24 @@ const matches = (appId?: string, link?: string) => sql`
 /** List personal chat waits and independent Code-version requests addressed to the current Cloud-admin role. */
 export const listPending = async (input: {
   approverUserId: string;
+  roleContext?: ApprovalRoleContext;
   id?: string;
   appId?: string;
   link?: string;
   cursor?: string;
   limit?: number;
-}): Promise<{ items: PendingApprovalRow[]; nextCursor: string | null; count: number; elsewhere: number }> => {
-  const limit = input.limit ?? APPROVALS_PAGE_SIZE;
-  if (!Number.isInteger(limit) || limit < 1 || limit > APPROVALS_PAGE_SIZE) throw new RangeError("Invalid approval page size.");
-  const cursor = input.cursor ? decodeApprovalCursor(input.cursor) : null;
-  if (input.cursor && !cursor) throw new RangeError("Invalid approval cursor.");
-  const open = await openRequests(input.approverUserId, input.id);
-  const [counts] = await sql<{ count: number; elsewhere: number }[]>`WITH open AS (${open.query})
+}): Promise<{ items: PendingApprovalRow[]; nextCursor: string | null; count: number; elsewhere: number }> =>
+  sql.begin(async (tx) => {
+    const limit = input.limit ?? APPROVALS_PAGE_SIZE;
+    if (!Number.isInteger(limit) || limit < 1 || limit > APPROVALS_PAGE_SIZE) throw new RangeError("Invalid approval page size.");
+    const cursor = input.cursor ? decodeApprovalCursor(input.cursor) : null;
+    if (input.cursor && !cursor) throw new RangeError("Invalid approval cursor.");
+    const open = await openRecipientRequests(input.approverUserId, input.id, input.roleContext, tx);
+    const [counts] = await tx<{ count: number; elsewhere: number }[]>`WITH open AS (${open.query})
     SELECT count(*) FILTER (WHERE ${matches(input.appId, input.link)})::int AS count,
       count(*) FILTER (WHERE NOT (${matches(input.appId, input.link)}))::int AS elsewhere FROM open r`;
-  const rows = await sql<PendingApprovalRow[]>`WITH open AS (${open.query})
-    SELECT r.id, r.kind, r.requester_href AS "requesterHref", r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest",
+    const rows = await tx<PendingApprovalRow[]>`WITH open AS (${open.query})
+    SELECT r.id, r.kind, (r.kind <> 'code_version' OR r.author_user_id IS DISTINCT FROM ${input.approverUserId}::uuid) AS "canApprove", r.requester_href AS "requesterHref", r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest",
       r.created_at AS "createdAt", r.expires_at AS "expiresAt",
       to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt",
       question.short_id AS "conversationShortId", question.title AS "conversationTitle",
@@ -82,27 +86,28 @@ export const listPending = async (input: {
     WHERE ${matches(input.appId, input.link)}
       AND (${cursor?.id ?? null}::uuid IS NULL OR (r.created_at,r.id) < (${cursor?.createdAt ?? null}::timestamptz,${cursor?.id ?? null}::uuid))
     ORDER BY r.created_at DESC,r.id DESC LIMIT ${limit + 1}`;
-  const items = rows.slice(0, limit);
-  const last = items.at(-1);
-  return {
-    items,
-    nextCursor: rows.length > limit && last ? encodeApprovalCursor({ createdAt: last.cursorCreatedAt, id: last.id }) : null,
-    count: counts?.count ?? 0,
-    elsewhere: counts?.elsewhere ?? 0,
-  };
-};
+    const items = rows.slice(0, limit);
+    const last = items.at(-1);
+    return {
+      items,
+      nextCursor: rows.length > limit && last ? encodeApprovalCursor({ createdAt: last.cursorCreatedAt, id: last.id }) : null,
+      count: counts?.count ?? 0,
+      elsewhere: counts?.elsewhere ?? 0,
+    };
+  });
 
 /** Count the same current personal and role requests as `listPending`, including requests without a chat. */
-export const countPending = async (input: { approverUserId: string }): Promise<ApprovalCounts> => {
-  const open = await openRequests(input.approverUserId);
-  const [row] = await sql<ApprovalCounts[]>`WITH open AS MATERIALIZED (${open.query}),
+export const countPending = async (input: { approverUserId: string; roleContext?: ApprovalRoleContext }): Promise<ApprovalCounts> =>
+  sql.begin(async (tx) => {
+    const open = await openRecipientRequests(input.approverUserId, undefined, input.roleContext, tx);
+    const [row] = await tx<ApprovalCounts[]>`WITH open AS MATERIALIZED (${open.query}),
     app_requests AS (SELECT DISTINCT r.id AS request_id, app.id AS app_id FROM open r
       CROSS JOIN LATERAL unnest(ARRAY[r.app_id,r.requester_app_id]) app(id)),
     app_counts AS (SELECT app_id AS id,count(*)::int AS count FROM app_requests GROUP BY app_id)
     SELECT (SELECT count(*)::int FROM open) AS total,
       COALESCE((SELECT jsonb_object_agg(id,count) FROM app_counts),'{}'::jsonb) AS apps`;
-  return row ?? { total: 0, apps: {} };
-};
+    return row ?? { total: 0, apps: {} };
+  });
 
 export const presentPendingApproval = (
   row: PendingApprovalRow,
@@ -122,6 +127,7 @@ export const presentPendingApproval = (
   const remember = !codeVersion && row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
   return {
     id: row.id,
+    ...(codeVersion ? { canApprove: row.canApprove } : {}),
     app: { id: row.appId, name: app?.name ?? row.appId, icon: app?.icon ?? null },
     action: row.action,
     assurance: row.assurance,

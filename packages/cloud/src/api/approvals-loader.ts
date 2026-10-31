@@ -4,7 +4,7 @@ import { listCapabilities } from "../_internal/registry";
 import type { ApprovalListQuery, ApprovalPage } from "../contracts/approvals";
 import { CapabilityActionReviewPresentationSchema, capabilityActionPolicy } from "../contracts/capabilities";
 import { userFromActor } from "../server/actor";
-import type { AuthContext } from "../server/middleware/auth";
+import { type AuthContext, auth } from "../server/middleware/auth";
 import { listPending, presentPendingApproval } from "../services/approvals/list";
 import { logger } from "../services/logging";
 import { getLocalizedRuntimeContext } from "../ssr/runtime";
@@ -12,7 +12,13 @@ import { getLocalizedRuntimeContext } from "../ssr/runtime";
 export const loadPendingApprovals = async <T extends AuthContext>(c: Context<T>, query: ApprovalListQuery): Promise<ApprovalPage> => {
   const user = userFromActor(c.get("actor"));
   if (!user) throw new HTTPException(403, { message: "Approvals require a user-backed actor." });
-  const page = await listPending({ approverUserId: user.id, appId: query.app, link: query.link, cursor: query.cursor });
+  const page = await listPending({
+    roleContext: { kind: "request", authority: auth.getAuthority(c) },
+    approverUserId: user.id,
+    appId: query.app,
+    link: query.link,
+    cursor: query.cursor,
+  });
   const apps = getLocalizedRuntimeContext(c).apps;
   const needsPolicy = page.items.some((row) => {
     if (row.storedReview && "sentence" in row.storedReview) return false;

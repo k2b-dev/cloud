@@ -156,6 +156,7 @@ function ApprovalCard(props: {
           state={state()}
           timeZone={READER_TIME_ZONE}
           remember={remember()}
+          unavailable={props.item.canApprove === false ? t().anotherAdminRequired : undefined}
           onConfirm={() => props.decide({ approved: true })}
           onDecline={() => props.decide({ approved: false })}
           // The outcome lines join the card's sentence, so they speak the stored review's language.
@@ -200,7 +201,13 @@ function BandDecision(props: {
         {t().reject}
       </Button>
       <Show when={!(props.item.review && "contentRef" in props.item.review && props.item.review.contentRef)}>
-        <Button size="sm" variant="primary" loading={props.busy} onClick={() => props.decide({ approved: true })}>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={props.item.canApprove === false}
+          loading={props.busy}
+          onClick={() => props.decide({ approved: true })}
+        >
           {t().approve}
         </Button>
       </Show>
@@ -240,6 +247,7 @@ const openDetails = (item: PendingApproval, locale: string) =>
                 <ActionQuestion
                   card={card}
                   state="open"
+                  unavailable={item.canApprove === false ? t().anotherAdminRequired : undefined}
                   timeZone={READER_TIME_ZONE}
                   remember={
                     item.remember.chat && item.assurance === "standard"

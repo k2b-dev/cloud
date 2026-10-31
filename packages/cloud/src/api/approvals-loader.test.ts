@@ -14,6 +14,7 @@ import { loadPendingApprovals } from "./approvals-loader";
 const user = buildProjectedUser({ id: "00000000-0000-4000-8000-000000000001", provider: "local", profile: "user" });
 const row: pending.PendingApprovalRow = {
   kind: "action",
+  canApprove: true,
   requesterHref: null,
   id: "00000000-0000-4000-8000-000000000002",
   appId: "demo",
@@ -40,6 +41,8 @@ const page = (items: pending.PendingApprovalRow[]) => ({ items, nextCursor: null
 const routes = new Hono<AuthContext & { Variables: { runtime: { apps: RuntimeAppMeta[] } } }>()
   .use(async (c, next) => {
     c.set("actor", { kind: "user", user });
+    c.set("accessSubject", { type: "user", userId: user.id });
+    c.set("credentialKind", "session");
     c.set("runtime", { apps: [{ id: "demo", name: "Demo", icon: "ti ti-mail", description: "Demo", routes: ["/app/demo"] }] });
     await next();
   })

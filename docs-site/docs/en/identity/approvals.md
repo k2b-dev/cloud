@@ -95,10 +95,17 @@ The rail and app grid add each app's open approvals to its icon count.
 chat or Studio call. Current Cloud admins see them in the shared list and
 counts and can read the complete review. Other people cannot read or decide
 them, including the author when that person is not a Cloud admin. Cloud checks
-current local or FreeIPA administrator membership on every decision.
+current local or FreeIPA administrator membership, account category, and
+credential authority on every read and decision. Request adapters pass
+`ApprovalRoleContext` with the full `RequestAuthority`. Web sessions, personal
+unscoped CLI keys, and credentials explicitly scoped `admin` may act for an
+admin; app sessions, machine accounts, mandates, and ordinary `write` tokens
+cannot. Omitting the context preserves personal Action reads only.
 
 A Cloud admin can approve another author's version or reject any version.
-The author cannot approve their own version. These requests always use
+The author cannot approve their own version, even when they are the only
+admin. The browser shows that another admin is required and keeps rejection
+available; Cloud Login does not offer the author their own question. These requests always use
 `confirm`, never offer remembered choices, and never use chat preferences.
 Signing out the author does not end a role request; its explicit expiry and
 cancellation still apply. Deleting the author preserves the request. Approving
@@ -123,7 +130,9 @@ for the Code version service and administration surfaces:
 - `ActionApprovalRequestInput` preserves the existing personal request shape.
   `CodeVersionApprovalRequestInput` requires `kind: "code_version"`,
   `approverRole: "admin"`, `authorUserId`, and a `code_version` requester with
-  a stable `ref`, an `appId`, and a same-origin `href` to the Code.
+  a stable submission-attempt `ref`, an `appId`, and a same-origin `href` to the
+  Code. The version service chooses a finite `expiresInMs`; the personal
+  Action limit does not apply. A resubmission after expiry needs a new `ref`.
 - `request(input, tx?)` records an immutable question. For a version, its
   `input` contains the complete version binding, including Code ID, version
   ID, source hash, bundle hash, and comparison revision. The owning service
@@ -132,7 +141,9 @@ for the Code version service and administration surfaces:
 - `registerApprovalDecisionHandler("code_version", handler)` installs the
   owning service's transition once at startup and returns a disposer. Its
   `ApprovalDecisionHandler` receives `(tx, request, actor)`, where
-  `ApprovalDecisionActor` identifies the deciding person and channel. The
+  `ApprovalDecisionActor` identifies the deciding person, channel, and
+  `authority` from the authenticated request. Cloud Login instead requires
+  an active signed device. The
   handler checks the current version, its author, hashes and comparison, and
   writes the durable version-decision evidence on the supplied transaction.
   Throwing rolls back that write, the platform decision and its audit event.
@@ -145,9 +156,14 @@ for the Code version service and administration surfaces:
   No decision is recorded in those cases.
 - `get(id, tx?, compactReview?)` is a trusted server-side snapshot read;
   it does not authorize a caller. HTTP consumers use the shared routes.
-  `listPending`, `countPending`, and `readApprovalContent` check recipients.
+  `listPending`, `countPending`, and `readApprovalContent` check recipients
+  using their `roleContext`. `PendingApproval.canApprove` is false for the
+  Code author.
   `consume` accepts personal Action requests only; version decisions are
   durable evidence in the owning version service.
+
+Platform rows are pruned 90 days after expiry. Durable version evidence belongs
+to the version service and must be written by its decision handler.
 
 Passing a transaction to `request` or `decide` joins that transaction; the
 caller must commit or roll it back. Without one, the service owns the
@@ -189,8 +205,8 @@ against a client that holds the person's `cld` token and leaves the header out.
   first. A decision on it never applies to a changed effect; that effect asks
   again, as described below.
 - **Requests expire.** A chat request accepts a decision for 24 hours, like the
-  turn that waits for it. A Studio capability call waits up to one day. No
-  request waits longer than 24 hours.
+  turn that waits for it. A Studio capability call waits up to one day.
+  Code-version requests use the expiry chosen by their owner.
 - **Signing out everywhere ends open requests.** They leave lists, counts,
   and Cloud Login. A decision on such a request answers as expired.
 - **Ending the wait cancels the request.** When a turn ends, its open requests
@@ -373,6 +389,7 @@ Each item contains `id`, `app` (`id`, localized `name`, nullable `icon`),
 `action`, `assurance`, `sentence`, nullable `review`, `requester`
 (`kind: "chat" | "code_version"`, `appId`, nullable `title`, `href`), `remember`
 (`chat`, `always`, `website` booleans), `createdAt`, and `expiresAt`.
+Code-version items also include `canApprove`; it is false for their author.
 The timestamps use ISO strings. `apps` maps app IDs to positive open counts.
 An approval can count for both its effect owner and requester app.
 `total` counts each request once.

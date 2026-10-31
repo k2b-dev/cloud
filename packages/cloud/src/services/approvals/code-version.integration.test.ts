@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import type { SQL } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../../_internal/capability-review.test-fixture";
 import { migrateCloudAi } from "../../ai/migrate";
 import { sql } from "../../runtime/clients";
+import type { RequestAuthority } from "../../server/middleware/auth";
+import { get as getUser } from "../accounts/users";
 import { encryptValue } from "../settings/crypto";
 import {
   approvalReviewDigest,
@@ -75,7 +78,22 @@ databaseSuite()("independent Code-version approvals", () => {
     requests.push(result.id);
     return { id: result.id, input };
   };
-  const decide = (id: string, userId = admin, approved = true) => approvals.decide(id, { approved }, { userId, via: "web_session" });
+  const authorityFor = async (userId: string, db: SQL = sql): Promise<RequestAuthority> => {
+    const user = await getUser({ id: userId }, { db });
+    if (!user) throw new Error("Missing authority user");
+    return { actor: { kind: "user", user }, accessSubject: { type: "user", userId }, credentialKind: "session", scopes: [] };
+  };
+  const roleContext = async (userId: string) => ({ kind: "request" as const, authority: await authorityFor(userId) });
+  const decide = async (id: string, userId = admin, approved = true) =>
+    approvals.decide(
+      id,
+      { approved },
+      {
+        userId,
+        via: "web_session",
+        authority: await authorityFor(userId),
+      },
+    );
 
   test("adds the role without rewriting existing personal approval rows", async () => {
     const input = snapshot();
@@ -165,15 +183,15 @@ databaseSuite()("independent Code-version approvals", () => {
   test("lists, counts and complete content require the role but no pending chat", async () => {
     const { id, input } = await ask();
     const digest = approvalReviewDigest(input.review);
-    expect((await listPending({ approverUserId: admin, id })).items[0]).toMatchObject({
+    expect((await listPending({ approverUserId: admin, id, roleContext: await roleContext(admin) })).items[0]).toMatchObject({
       id,
       kind: "code_version",
       conversationShortId: null,
     });
     expect((await listPending({ approverUserId: outsider, id })).items).toEqual([]);
-    expect((await countPending({ approverUserId: admin })).apps.demo).toBeGreaterThan(0);
+    expect((await countPending({ approverUserId: admin, roleContext: await roleContext(admin) })).apps.demo).toBeGreaterThan(0);
     expect((await countPending({ approverUserId: outsider })).total).toBe(0);
-    expect(await readApprovalContent({ id, digest, approverUserId: admin })).toEqual({
+    expect(await readApprovalContent({ id, digest, approverUserId: admin, roleContext: await roleContext(admin) })).toEqual({
       kind: "page",
       title: "Source diff",
       body: "- old\n+ new",
@@ -182,14 +200,14 @@ databaseSuite()("independent Code-version approvals", () => {
     expect(await readApprovalContent({ id, digest, approverUserId: outsider })).toBeNull();
     await sql`UPDATE auth.users SET admin=false WHERE id=${admin}::uuid`;
     try {
-      expect((await listPending({ approverUserId: admin, id })).items).toEqual([]);
-      expect(await readApprovalContent({ id, digest, approverUserId: admin })).toBeNull();
+      expect((await listPending({ approverUserId: admin, id, roleContext: await roleContext(admin) })).items).toEqual([]);
+      expect(await readApprovalContent({ id, digest, approverUserId: admin, roleContext: await roleContext(admin) })).toBeNull();
       expect(await decide(id)).toEqual({ ok: false, code: "NOT_FOUND" });
     } finally {
       await sql`UPDATE auth.users SET admin=true WHERE id=${admin}::uuid`;
     }
     await decide(id);
-    expect(await readApprovalContent({ id, digest, approverUserId: admin })).toBeNull();
+    expect(await readApprovalContent({ id, digest, approverUserId: admin, roleContext: await roleContext(admin) })).toBeNull();
   });
 
   test("FreeIPA admin roles use current configured groups, not the local admin flag", async () => {
@@ -201,7 +219,14 @@ databaseSuite()("independent Code-version approvals", () => {
         await tx`INSERT INTO auth.ipa_user_effective_groups VALUES(${outsider}::uuid,'code-review-admins')`;
         await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
         ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
-        expect(await approvals.decide(id, { approved: true }, { userId: outsider, via: "web_session" }, tx)).toMatchObject({ ok: true });
+        expect(
+          await approvals.decide(
+            id,
+            { approved: true },
+            { userId: outsider, via: "web_session", authority: await authorityFor(outsider, tx) },
+            tx,
+          ),
+        ).toMatchObject({ ok: true });
         throw rollback;
       }),
     ).rejects.toBe(rollback);
@@ -233,9 +258,56 @@ databaseSuite()("independent Code-version approvals", () => {
     expect(await decide(id)).toMatchObject({ ok: true });
   });
 
+  test("version owners can keep a review pending beyond the Action wait budget", async () => {
+    const lifetime = 7 * 24 * 60 * 60_000;
+    const { id } = await ask({ ...snapshot(), expiresInMs: lifetime });
+    const record = await approvals.get(id);
+    expect(record!.expiresAt.getTime() - record!.createdAt.getTime()).toBe(lifetime);
+    expect(await approvals.decide(id, { approved: true }, { userId: admin, via: "web_session" })).toEqual({ ok: false, code: "NOT_FOUND" });
+  });
+
+  test("credential ceilings and disabled account categories apply to role reads and decisions", async () => {
+    const { id, input } = await ask();
+    const authority = await authorityFor(admin);
+    const restricted = { ...authority, credentialKind: "oauth" as const, scopes: ["write"] };
+    expect(await approvals.decide(id, { approved: true }, { userId: admin, via: "oauth", authority: restricted })).toEqual({
+      ok: false,
+      code: "NOT_FOUND",
+    });
+    expect((await listPending({ approverUserId: admin, id, roleContext: { kind: "request", authority: restricted } })).items).toEqual([]);
+    expect(
+      await readApprovalContent({
+        id,
+        approverUserId: admin,
+        digest: approvalReviewDigest(input.review),
+        roleContext: { kind: "request", authority: restricted },
+      }),
+    ).toBeNull();
+    const phone = { ...authority, actor: { ...authority.actor, sessionKind: "app" as const } };
+    expect(await approvals.decide(id, { approved: true }, { userId: admin, via: "app_session", authority: phone })).toEqual({
+      ok: false,
+      code: "NOT_FOUND",
+    });
+    const rollback = new Error("category fixture rollback");
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`INSERT INTO settings.entries(key,value) VALUES('user.category.login.enabled',${await encryptValue(false)})
+        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+        expect(await approvals.decide(id, { approved: true }, { userId: admin, via: "web_session", authority }, tx)).toEqual({
+          ok: false,
+          code: "NOT_FOUND",
+        });
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await approvals.get(id)).toMatchObject({ status: "pending" });
+  });
+
   test("ACP only rejects and Cloud Login requires a current device belonging to the admin", async () => {
     const { id } = await ask();
-    expect(await approvals.decide(id, { approved: true }, { userId: admin, via: "acp_bridge" })).toEqual({
+    expect(
+      await approvals.decide(id, { approved: true }, { userId: admin, via: "acp_bridge", authority: await authorityFor(admin) }),
+    ).toEqual({
       ok: false,
       code: "REJECT_ONLY",
     });

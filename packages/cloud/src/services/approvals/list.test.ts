@@ -12,6 +12,7 @@ import { type PendingApprovalRow, presentPendingApproval } from "./list";
 
 const row: PendingApprovalRow = {
   kind: "action",
+  canApprove: true,
   requesterHref: null,
   id: crypto.randomUUID(),
   appId: "mail",
@@ -125,6 +126,7 @@ test("a standalone Code review links to its owner and never inherits remembered 
     {
       ...row,
       kind: "code_version",
+      canApprove: false,
       requesterHref: "/code/report/",
       requesterTitle: "Report version 2",
       conversationShortId: null,
@@ -137,6 +139,7 @@ test("a standalone Code review links to its owner and never inherits remembered 
     [],
   );
   expect(approval.requester).toEqual({ kind: "code_version", appId: "assistant", title: "Report version 2", href: "/code/report/" });
+  expect(approval.canApprove).toBe(false);
   expect(approval.remember).toEqual({ chat: false, always: false, website: false });
   expect(ApprovalPageSchema.safeParse({ items: [approval], nextCursor: null, count: 1, elsewhere: 0 }).success).toBe(true);
 });

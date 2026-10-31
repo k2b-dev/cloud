@@ -34,6 +34,8 @@ export type ApprovalListQuery = z.infer<typeof ApprovalListQuerySchema>;
 export const PendingApprovalSchema = z
   .object({
     id: z.uuid(),
+    /** False for the Code author: rejection remains available, approval requires another Cloud admin. */
+    canApprove: z.boolean().optional(),
     /** The app that owns the effect, named from the registry in the reader's language. */
     app: z.object({ id: z.string(), name: z.string(), icon: z.string().nullable() }).strict(),
     action: z.string(),
