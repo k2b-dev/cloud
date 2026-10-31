@@ -176,6 +176,7 @@ Use the capability guide to choose the narrow API:
 - [Saved maps](/en/docs/platform/saved-map-documents): `GeoDocumentSchema`, pin/link schemas and `serializeGeoDocument` from `@k2b/cloud/geo/document` save Geo results and complete routes as Notebook blocks.
 - [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, `geoRouteContract`, geo input/result schemas, route plans/updates, and provenance types come from `@k2b/cloud/contracts`.
 - [Object store](/en/docs/platform/object-store): `storage` from `@k2b/cloud/services` supplies app-bound private documents and permanent public image URLs.
+- [One-time links](/en/docs/identity/one-time-links): `links.create(input, { tx }?)`, `links.peek(token, { purpose }, { tx }?)`, and `links.redeem(token, { purpose }, { tx }?)` from `@k2b/cloud/services` share single-use credentials within an application package; synchronous `appKey(name): string` from `@k2b/cloud/server` derives app-specific signing keys.
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
@@ -199,6 +200,22 @@ Its HTTP route is
 an unknown app and requires administrator authority on both paths. See
 [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for fields, offline behavior and bounds.
+
+`appAdminFacts(authority, appIds)` and `AppAdminFacts` from `@k2b/cloud/services`
+provide Core's administrator-only batch summary for up to 500 input app IDs.
+Each distinct ID receives persisted grant-entry counts (not expanded group membership) and effective managers,
+key and workload-token counts, active subscriptions, non-retired event
+declarations, active notification kinds, and failed or waiting deliveries.
+Credential counts exclude revoked or expired credentials from `active`,
+independently of account status; key revocation takes precedence over expiry.
+Account status comes from the oldest app-bound account. Missing access state
+and grants yield `access: null`; other missing counts are zero. `firstKnownAt`
+is the earliest app-bound account, credential, grant creation, or access
+configuration timestamp available in Core; an unconfigured empty access state
+has no timestamp. Waiting deliveries are `pending` or `retrying`; failures are
+`failed`, matching `appDetails`. The service throws `AppAccessManagementError`
+with status 403 for missing administration authority or 400 for more than 500
+input IDs, including duplicates. This is a platform administration read, not an application API.
 
 `linuxIdentities` is a platform-owned administration service from this barrel.
 It checks administrator access on reads and writes. See

@@ -5,6 +5,7 @@ import { appAccess } from "../contracts/app-access";
 import { stubConnections } from "../runtime/connections.test-fixture";
 import { defineHelp } from "../server/help";
 import * as authMiddleware from "../server/middleware/auth";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -26,6 +27,7 @@ test.each(["roles", "resources"] as const)(
     let authenticated = 0,
       appCalls = 0;
     const spies = [
+      spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
       spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
       spyOn(processSync, "startProcessSync").mockImplementation(async () => {
         processSync.bindProcessSync(sync);

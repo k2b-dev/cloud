@@ -73,6 +73,10 @@ Cloud redacts metadata keys containing terms such as `password`,
 `secret`, `token`, `cookie`, `authorization`, `apiKey`, `privateKey`, or
 `session`.
 
+Credentials shaped as `cl_` plus 43 base64url characters are also redacted
+inside log messages, metadata values and keys, and trace text and metadata.
+This covers URLs containing a one-time token under any query parameter name.
+
 HTTP request logs record the matched route template, such as
 `/api/inventory/items/:id`. When no route pattern answered, they record the
 redacted pathname.
@@ -83,6 +87,8 @@ from `@k2b/cloud/services`. It takes a pathname, not a full URL, and:
 - drops queries and fragments;
 - replaces everything below `/share/<app>/`, `/api/mail/public-attachments/`,
   and `/app/mail/a/` with `:token`, whatever the token looks like;
+- always replaces segments containing a `cl_` one-time token with `:token`,
+  including URL-encoded path segments and tokens that look like readable slugs;
 - elsewhere replaces UUIDs with `:id` and credential-shaped segments with
   `:token`: at least 16 letters, digits, `-`, or `_` that do not read like a
   lowercase word slug, also next to a dot as in `<token>.ics`.

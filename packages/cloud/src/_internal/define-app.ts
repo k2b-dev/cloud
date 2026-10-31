@@ -86,6 +86,7 @@ import {
   widgetInvocationOperation,
 } from "../services/identity/invocation-operations";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import { startLinksRuntime } from "../services/links/runtime";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { readRailSnapshot } from "../services/rail-snapshot";
@@ -1196,6 +1197,8 @@ export const defineApp = <
       // An application fails before any setup when Core has not created the platform outbox yet.
       // Core creates it in its own setup, so it starts publishing after that.
       if (meta.id !== "core") await startOutbox();
+
+      cleanup.push(await startLinksRuntime());
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);
