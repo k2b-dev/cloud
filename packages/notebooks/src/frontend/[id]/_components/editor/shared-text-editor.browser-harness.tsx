@@ -9,7 +9,12 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { createSharedTextActionHistory } from "@k2b/cloud/browser/shared-text";
 import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
-import { createNotebookTablePresentation, listCommandsExtension, notebookSourceFormulasExtension } from "@k2b/editor/markdown";
+import {
+  createNotebookTablePresentation,
+  listCommandsExtension,
+  localChartPreviews,
+  notebookSourceFormulasExtension,
+} from "@k2b/editor/markdown";
 import { encoding } from "@k2b/stdlib";
 import { Button, LocaleProvider, NoticeCard, ScrollArea } from "@k2b/ui";
 import { TextEditor, type TextEditorControls } from "@k2b/ui/text-editor";
@@ -18,10 +23,12 @@ import { render } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { notebookChartOptions } from "../../../../lib/chart-options";
 import type { NoteTableActionRequest } from "../../../../lib/table-actions";
 import { notebookTableOptions } from "../../../../lib/table-options";
 import { editor } from "../../../lib/editor";
 import { notebookListOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
+import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import {
   caretIntoTableCell,
   cellFormattingKeys,
@@ -159,9 +166,23 @@ function Harness() {
     onUnknown: (action) => setUnknown(action),
   });
 
+  // Charts draw from the note's own tables here; the application loads the same previews from its server.
+  const blockPreviews = createQueryBlockPreviews({
+    notebookId: "Book01",
+    noteId: "Note01",
+    readOnly: false,
+    initialMarkdown: initial,
+    view,
+    enabled: rich,
+    locale: () => locale,
+    load: async (markdown) =>
+      localChartPreviews(markdown ?? ytext.toString(), locale, notebookChartOptions, (diagnostic) => diagnostic.code),
+  });
+
   // Same order and modes as NoteEditor.client.tsx.
   let openTablePicker = () => {};
   const extensions = createEditor();
+  extensions.use(blockPreviews.listener);
   extensions.use(cellFormattingKeys(controls));
   extensions.use(tableCellSearch);
   extensions.use(() => yCollab(ytext, null, { undoManager }));
@@ -202,6 +223,7 @@ function Harness() {
           editor.listsExtension(notebookListOptions),
           editor.infoBlocksExtension(locale),
           editor.dataBlocksExtension(),
+          blockPreviews.extension,
           editor.namedBlocksExtension(),
           editor.linksExtension(notebookUrlOptions("Book01")),
           editor.markupExtension(),

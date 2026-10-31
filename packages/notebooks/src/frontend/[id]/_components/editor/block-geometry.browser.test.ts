@@ -49,6 +49,16 @@ const doc = [
   "owner: Lena",
   ":::",
   "",
+  ":::chart",
+  "type: bar",
+  "title: Kosten",
+  "data: @costs",
+  "x: Item",
+  "y: Cost",
+  ":::",
+  "",
+  "Nach dem Diagramm.",
+  "",
   "- Punkt eins",
   "- [ ] Aufgabe",
   "",
@@ -74,6 +84,8 @@ for (const viewport of [
       url.searchParams.set("doc", doc);
       await page.goto(url.href);
       await page.waitForFunction(() => window.noteHarness?.ready());
+      // The chart preview loads after the editor mounts.
+      await page.waitForFunction(() => !!document.querySelector(".cm-query-block-widget svg"));
       await page.evaluate(() => window.noteHarness.settle());
       expect(await page.evaluate(() => window.noteHarness.blockDrift())).toEqual([]);
       expect(errors).toEqual([]);
