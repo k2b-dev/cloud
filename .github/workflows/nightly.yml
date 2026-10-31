@@ -264,8 +264,8 @@ jobs:
           done
       - name: Boot Core, gateway, Accounts, Grids, Mail and Chat against fresh infrastructure
         env:
-          # Production refuses to issue sessions for a non-HTTPS public origin.
-          APP_URL: https://cloud.nightly-smoke.test
+          # The configured HTTPS issuer also permits the loopback transport Host at the gateway.
+          APP_URL: https://127.0.0.1:3000
           APP_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
         run: |
           set -euo pipefail
@@ -315,7 +315,7 @@ jobs:
           exit 1
       - name: Run the Grids, Mail and Chat browser smokes
         env:
-          APP_URL: https://cloud.nightly-smoke.test
+          APP_URL: https://127.0.0.1:3000
           # Mail seeds its fixture and Chat deletes its chat through their persistence boundaries.
           DATABASE_URL: postgresql://ipa:ipa@127.0.0.1:5432/ipa
         run: |

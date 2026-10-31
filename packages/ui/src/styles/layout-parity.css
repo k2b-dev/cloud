@@ -2874,7 +2874,7 @@ html {
       .k2b-app-workspace__sidebar-body > .k2b-app-workspace__sidebar-item,
       .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item
     )
-    :is(.k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-context) {
+    :is(.k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-note, .k2b-app-workspace__sidebar-item-context) {
     display: none;
   }
 

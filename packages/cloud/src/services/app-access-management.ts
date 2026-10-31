@@ -1,4 +1,5 @@
 import type { SQL } from "bun";
+import { managerEligibility } from "../_internal/app-access-manager-sql";
 import type { AppMeta } from "../contracts/app";
 import type { AppAccessDeclaration, AppAccessSnapshot } from "../contracts/app-access";
 import { publishAppAccessChanged, wakeAppAccessChanged } from "../events/app-access";
@@ -108,14 +109,6 @@ const listEntries = async (appId: string, db: SQL = sql): Promise<AccessEntry[]>
             : { type: "public" },
   }));
 };
-/** Shared eligibility predicate for the last-manager guard and its presentation. */
-const managerEligibility = (db: SQL) => db`
-  EXISTS (SELECT 1 FROM auth.users u WHERE (u.account_expires IS NULL OR u.account_expires > now()) AND
-    (u.id = a.user_id OR (a.group_id IS NOT NULL AND a.group_id IN (${recursiveGroupIdsSubquery(db`u.id`)}))))
-  OR EXISTS (SELECT 1 FROM auth.service_accounts sa WHERE sa.id = a.service_account_id
-    AND sa.status = 'active' AND sa.kind IN ('standalone', 'agent'))
-`;
-
 const entryPresentation = async (appId: string): Promise<Map<string, { groupMemberCount?: number; effectiveManager: boolean }>> => {
   const rows = await sql<{ id: string; group_member_count: number | null; effective_manager: boolean }[]>`
     SELECT a.id,

@@ -15087,6 +15087,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.125rem;
   font-weight: 400;
 }
+/* A third line for the one fact that needs attention; the tone repeats what its words say. */
+.k2b-ui .k2b-app-workspace__sidebar-item-note {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  font-weight: 400;
+}
+.k2b-ui .k2b-app-workspace__sidebar-item-note[data-tone="warning"] { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-app-workspace__sidebar-item-note[data-tone="danger"] { color: var(--k2b-danger-text); }
+/* With a third line, the icon and the trailing status stay with the first line instead of the middle. */
+.k2b-ui
+  :is(.k2b-app-workspace__sidebar-item:not(.has-action), .k2b-app-workspace__sidebar-item-main):has(
+    > .k2b-app-workspace__sidebar-item-copy > .k2b-app-workspace__sidebar-item-note
+  ) {
+  align-items: flex-start;
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-note {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
 .k2b-ui .k2b-app-workspace__sidebar-section-content { display: contents; }
 .k2b-ui .k2b-app-workspace__sidebar-section-content[hidden] { display: none; }
 .k2b-ui .k2b-app-workspace__sidebar-section-count { margin-inline-start: 0.375rem; font-variant-numeric: tabular-nums; }

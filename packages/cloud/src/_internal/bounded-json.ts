@@ -1,7 +1,12 @@
 export type BoundedJsonResult = { ok: true; data: unknown } | { ok: false; reason: "too_large" | "invalid_json" };
 
 /** Reads JSON without allowing a missing or forged Content-Length to bypass the byte cap. */
-export const readBoundedJson = async (message: Request | Response, maxBytes: number, signal?: AbortSignal): Promise<BoundedJsonResult> => {
+export const readBoundedJson = async (
+  message: Request | Response,
+  maxBytes: number,
+  signal?: AbortSignal,
+  consumeBytes?: (bytes: number) => void,
+): Promise<BoundedJsonResult> => {
   signal?.throwIfAborted();
   const declared = message.headers.get("content-length");
   if (declared !== null) {
@@ -27,6 +32,7 @@ export const readBoundedJson = async (message: Request | Response, maxBytes: num
     while (true) {
       const next = await reader.read();
       if (next.done) break;
+      consumeBytes?.(next.value.byteLength);
       total += next.value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => undefined);

@@ -15,7 +15,8 @@ Core stores only its public key and lifecycle metadata. An application can have
 at most two active, unexpired keys. Core and Gateway cannot have app keys.
 Other IDs, including `oauth`, can be enrolled before their first start.
 
-Enrollment is available through `cld` and the administrator API. Keep your
+Enrollment is available in **Administration → Apps**, through `cld`, and through the
+administrator API. Keep your
 current [runtime configuration](/en/docs/operations/runtime-configuration):
 enrolling a key alone does not configure or start an application.
 
@@ -102,6 +103,28 @@ without opening an HTTP listener. A retry signs a new proof even if the first
 response was lost. Successful bootstrap updates `lastUsedAt`. Revocation blocks
 new bootstrap requests on every Core replica immediately; it does not close
 already established database or NATS connections or recall delivered secrets.
+
+## Create keys in Administration
+
+Open **Administration → Apps**, the app, and **Keys**
+(`/admin/apps?app=<id>&view=keys`). **Create key** asks for an optional name; the
+browser creates the pair and sends only the public key. The private key appears
+once, as the key, a Compose snippet or a Kubernetes Secret, with **Copy** and a
+download; closing before either asks first. A lost answer offers **Check**, which
+registers the same pair again instead of creating a second key. An app that never
+ran is added with **Add app** and its ID. Browsers without HTTPS or without
+Ed25519 support show the `cld` command instead. The row menu of a key copies its
+fingerprint or public key and revokes it.
+
+The Apps list and the app page show the key state of each app. A running app
+without any key still **starts with its environment**; its page links to
+**Create key** and to [Use the key at start](#use-the-key-at-start). An app with
+only revoked or expired keys has **no valid key**: its running instances keep
+working, the next start fails, and **Create new key** is the page's one filled
+action next to [Rotate or recover a key](#rotate-or-recover-a-key). Two active
+keys mean a **rotation in progress**; the keys column marks the older key as
+**(old)** and shows when each key was last used, so you revoke the old one once
+no instance uses it.
 
 ## Inspect and revoke keys
 

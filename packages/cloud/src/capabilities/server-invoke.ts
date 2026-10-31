@@ -4,6 +4,7 @@ import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabiliti
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
+  CAPABILITY_MAX_RESULT_BYTES,
   CapabilityCatalogSchema,
   type CapabilityOrigin,
   capabilityResultSchema,
@@ -36,6 +37,8 @@ export type CapabilityCaller = {
   /** BCP 47 locale of the originating request, forwarded as invocation metadata. */
   locale?: string | null;
   signal?: AbortSignal;
+  /** Request-local aggregate response budget; called before result validation for every received chunk. */
+  consumeResponseBytes?: (bytes: number) => void;
   /** App-only query authority. The workload credential goes only to Core. */
   workload?: { appId: string };
   /** Durable background authority. `authorization` must be the owning app's workload credential. */
@@ -113,6 +116,8 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
     if (caller.authority) {
       if (caller.authorization || caller.cookie || caller.mandate || caller.workload || caller.transport)
         throw new Error("Use exactly one capability authority source");
+      let charged = false;
+      const charge = caller.consumeResponseBytes;
       const outcome = await dispatchCapability({
         request,
         kind: invocation.kind === "query" ? "queries" : "actions",
@@ -122,8 +127,23 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         authority: caller.authority,
         locale: caller.locale ?? undefined,
         origin: caller.origin ?? "app",
+        ...(charge
+          ? {
+              consumeResponseBytes: (bytes: number) => {
+                charged = true;
+                charge(bytes);
+              },
+            }
+          : {}),
       });
-      return readCapabilityResponse(outcome, capabilityResultSchema(dataSchema, { consumer: true }));
+      return readCapabilityResponse(
+        outcome,
+        capabilityResultSchema(dataSchema, { consumer: true }),
+        CAPABILITY_MAX_RESULT_BYTES,
+        // Only a budgeted caller cancels reading a response that already arrived; others keep the received result.
+        charge ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
+        charged ? undefined : charge,
+      );
     }
     const brokerRequest = new Request(request, {
       body: JSON.stringify(
@@ -170,7 +190,13 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         return unavailable(undefined, undefined, caller.locale ?? undefined);
       }
     }
-    return readCapabilityResponse(response, capabilityResultSchema(dataSchema, { consumer: true }));
+    return readCapabilityResponse(
+      response,
+      capabilityResultSchema(dataSchema, { consumer: true }),
+      CAPABILITY_MAX_RESULT_BYTES,
+      caller.consumeResponseBytes ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
+      caller.consumeResponseBytes,
+    );
   } catch (cause) {
     return unavailable(cause, invocation, caller.locale ?? undefined);
   }

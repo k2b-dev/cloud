@@ -7,6 +7,7 @@ import { defineCapabilities } from "../contracts/capabilities";
 import { stubConnections } from "../runtime/connections.test-fixture";
 import * as invocationMiddleware from "../server/middleware/invocation";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -109,6 +110,7 @@ test("forwards the Bun server and owns capability JSON timeouts until success or
       return next();
     }),
     spyOn(settingsService, "get").mockResolvedValue("en"),
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);

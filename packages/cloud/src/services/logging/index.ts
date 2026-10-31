@@ -2,7 +2,7 @@ import type { PaginationParams } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { registerSettings } from "../settings/defaults";
-import { redactMetadata } from "./redaction";
+import { redactLinkTokens, redactMetadata } from "./redaction";
 import { observeSyncEvent, TRACE_STUCK_AFTER_MS, trace } from "./trace";
 import { readWebVitals } from "./web-vitals";
 
@@ -120,17 +120,19 @@ const mapRow = (row: DbLogRow): LogEntry => ({
 /** Fire-and-forget write — mirrors to console, then inserts to DB async. */
 function write(params: WriteParams): void {
   const safeMetadata = params.metadata ? (redactMetadata(params.metadata) as Record<string, unknown>) : undefined;
-  const prefix = `[${params.source}]`;
+  const source = redactLinkTokens(params.source);
+  const message = redactLinkTokens(params.message);
+  const prefix = `[${source}]`;
   const consoleFn = params.level === "error" ? console.error : params.level === "warn" ? console.warn : console.log;
-  consoleFn(prefix, params.message, ...(safeMetadata ? [safeMetadata] : []));
+  consoleFn(prefix, message, ...(safeMetadata ? [safeMetadata] : []));
 
   const persist = async () => {
     await sql`
     INSERT INTO logging.entries (level, source, message, metadata)
     VALUES (
       ${params.level},
-      ${params.source},
-      ${params.message},
+      ${source},
+      ${message},
       (${safeMetadata ? JSON.stringify(safeMetadata) : null}::text)::jsonb
     )
     `;

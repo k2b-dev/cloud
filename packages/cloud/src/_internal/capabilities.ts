@@ -1,5 +1,7 @@
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "../contracts/app-events";
+import { appStatusIssues } from "../contracts/app-status";
 import {
+  CapabilityAppStatusManifestSchema,
   type CapabilityEventManifest,
   CapabilityEventManifestSchema,
   CapabilityQualifiedIdSchema,
@@ -108,6 +110,7 @@ const DECLARATION_FIELDS = {
   fileProvider: true,
   calendarSource: true,
   discussions: true,
+  appStatus: true,
   events: true,
   subscribes: true,
 } satisfies DefinedFields<CapabilityDefinitions>;
@@ -710,6 +713,7 @@ export const compileCapabilities = (
   }
   if (definitions.fileProvider) assertDefinedFields(definitions.fileProvider, FILE_PROVIDER_FIELDS, "fileProvider");
 
+  if (definitions.appStatus !== undefined) CapabilityAppStatusManifestSchema.parse(definitions.appStatus);
   if (definitions.discussions !== undefined) CapabilityDiscussionsManifestSchema.parse(definitions.discussions);
   for (const [localId, type] of Object.entries(definitions.types ?? {})) {
     if (type.access !== undefined) {
@@ -1037,6 +1041,7 @@ export const compileCapabilities = (
   });
   const manifestBase = {
     ...(resourceTypes.length ? { resourceTypes } : {}),
+    ...(definitions.appStatus ? { appStatus: definitions.appStatus } : {}),
     ...(definitions.discussions ? { discussions: definitions.discussions } : {}),
     ...(resourcePages.length ? { resourcePages } : {}),
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
@@ -1058,6 +1063,8 @@ export const compileCapabilities = (
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
+  const statusIssues = appStatusIssues(manifest);
+  if (statusIssues.length) throw new Error(`appStatus: ${statusIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
   const discussionIssues = discussionsIssues(manifest);
   if (discussionIssues.length)
     throw new Error(`discussions: ${discussionIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
@@ -1234,6 +1241,7 @@ export const resolveCapabilityManifestPresentation = (
         : {}),
       ...(current.subscribes ? { subscribes: current.subscribes } : {}),
       ...(current.resourceTypes ? { resourceTypes: current.resourceTypes } : {}),
+      ...(current.appStatus ? { appStatus: current.appStatus } : {}),
       ...(current.discussions ? { discussions: current.discussions } : {}),
       ...(current.resourcePages ? { resourcePages: current.resourcePages } : {}),
       ...(current.calendarSource ? { calendarSource: current.calendarSource } : {}),
