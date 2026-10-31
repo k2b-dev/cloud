@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { aiChatTasks, aiConversations, createAiShortId } from "@k2b/cloud/ai";
 import * as settingsStore from "@k2b/cloud/services/settings/store";
+import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { agentHost, hostFetch } from "./agent-host";
 import { artifactDatabase } from "./database";
@@ -13,6 +14,7 @@ import { testIdentity } from "./test-identity";
 
 // Uses the production schemas prepared by `bun run test --integration`.
 databaseSuite()("Scheduled Code Mode", () => {
+  useTestAppRegistry(["core", "assistant"]);
   let targets: string[];
   let policy: ReturnType<typeof spyOn<typeof settingsStore, "readKey">>;
   const readSetting = settingsStore.readKey;
@@ -256,8 +258,10 @@ databaseSuite()("Scheduled Code Mode", () => {
         await artifactDatabase.connect(resourceId, identity);
         const started = await backgroundCheckStart(userId, conversation, { resourceId, operation: "export" });
         scopes.push(...started.scopes);
-        expect(started.response.status).toBe(200);
-        expect(await started.response.json()).toMatchObject({ artifactId: resourceId, scopeId: expect.any(String) });
+        expect({ status: started.response.status, body: await started.response.json() }).toMatchObject({
+          status: 200,
+          body: { artifactId: resourceId, scopeId: expect.any(String) },
+        });
         expect(scopes).toHaveLength(1);
       } finally {
         for (const scope of scopes) await appChecks.discard(scope, identity);
