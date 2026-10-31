@@ -663,7 +663,7 @@ model class and interpret the resolved variant. See
 ### Code access adapters and Core proofs
 
 `CodeAccessAdapter`, `CodeAccessDecision`, `CodeAccessEntry`,
-`CodeAccessGrant`, `CodeAccessTarget`, `CodeAccessRefusalCode` and `CapabilityCodeDefinition` are
+`CodeAccessGrant`, `CodeAccessTarget`, `CodeAccessRefusalCode`, `CodeAccessSetData` and `CapabilityCodeDefinition` are
 application-facing types from `@k2b/cloud`; their schemas also come from
 `@k2b/cloud/contracts`.
 

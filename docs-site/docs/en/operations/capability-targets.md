@@ -49,8 +49,9 @@ invocation signing keys and public invocation JWKS.
 
 Deploy each provider with all four adapter functions together. A type with
 `access`, or a type named in `code.owners`, must have a declared reader or the
-provider refuses startup with the type's name. Existing reader-only adapters
-remain supported. New generated Actions carry `unattended: false`, so older
+provider refuses startup with the type's name. Existing `readable`-only declarations remain supported when their Type has a
+reader. This also applies to third-party providers: add a canonical reader
+before upgrading if a Type currently declares `access.readable` alone. New generated Actions carry `unattended: false`, so older
 Core readers omit them instead of stripping that restriction.
 
 Keep the adapter available while its app has Code grants to remove. Core must

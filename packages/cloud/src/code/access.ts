@@ -192,7 +192,7 @@ export const setCodeAccess = async (
       const result: CodeAccessSetData = decision.granted
         ? { ...decision, grantId: claims.grantId }
         : { ...decision, reasonCode: "adapter_refused" };
-      if (!decision.granted) throw new RollbackDecision(result);
+      if (!decision.granted || (input.dryRun && input.operations.length === 0)) throw new RollbackDecision(result);
       const previous = await tx<
         GrantRow[]
       >`SELECT * FROM capabilities.code_access_grants WHERE app_id = ${appId} AND principal = ${claims.principal}::uuid AND NOT revoked LIMIT ${maxListGrants + 1}`;

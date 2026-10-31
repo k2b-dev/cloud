@@ -584,7 +584,8 @@ Cloud generates these capabilities once per app:
 Resource targets use qualified Types, for example
 `{ type: "inventory.item", id: "item-1" }`; an app target uses
 `{ type: "app", id: "inventory" }`. Operations are unique qualified capability
-IDs. An empty operation set allows Core to check the owner during activation.
+IDs. An empty operation set is accepted only with `dryRun: true` to check the owner
+during activation.
 Core calls `invokeCodeAccess({ request, appId, operation, input, authority, locale?, review? })`
 from `@k2b/cloud/capabilities/server` after checking owner/editor authority.
 Only that explicit Core path issues the signed, operation-bound `code_access`
@@ -604,15 +605,20 @@ restoration requires a new activation and grant identity. Real `set` refusals
 have a separate denied audit event; dry runs create no permission or access-audit
 rows. Stable `reasonCode` values are `origin_forbidden`, `proof_invalid`,
 `not_manager`, `removed`, `binding_conflict`, `account_inactive`,
-`unsupported_target`, `operations_invalid` and `adapter_refused`. Keep the
+`unsupported_target`, `operations_invalid`, `adapter_refused` and
+`capacity_exceeded`. Keep the
 application's human-facing refusal reason separate from these recovery codes.
 
 Normal target share lists expose `grantId` for each Code share so the rights
 editor can remove it directly. Cloud lists only live, ledger-backed grants and
 enforces the existing 256 KiB capability result budget; adapters must keep their
 account lists within that budget. Operation IDs must belong to the receiving
-app and name the target Type in `target` or `refs` (app targets admit the app's
-declared operations).
+app. Actions and Queries with an explicit target must name the target Type in
+`target` or `refs`; targetless Queries leave the resource-level decision to
+`grant`. App targets admit the app's declared operations. Actions with
+`code: false` cannot receive a Code grant. Before committing a new grant,
+Cloud checks that the complete account list will still fit the result budget;
+`capacity_exceeded` requires removing unused grants before retrying.
 
 #### Core activation and cleanup contracts
 
@@ -626,7 +632,7 @@ with `typ: "cloud-code-access+jwt"` and `token_use: "code_access"`. Its claims
 bind `codeId`, `versionId`, `activationId`, `activatingPerson`, `principal`,
 `grantId`, `target` and the complete `operations` set. It also carries `ver`,
 `iss`, target-app `aud`, `iat`, `nbf` and `exp`; lifetime is exactly 30 seconds,
-without expiry tolerance. The verifier rejects changes to the person, target
+with the same two-second clock tolerance as invocation tokens. The verifier rejects changes to the person, target
 or operations. Core persists the grant identity before issuing a proof and
 reuses it when reissuing an expired proof for the same activation.
 
