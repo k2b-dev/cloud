@@ -8,7 +8,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { ADMIN_ID, FIXTURE_NOW, fixtureApps, fixtureDetails, fixtureKeys } from "./AdminApps.fixture-data";
+import { ADMIN_ID, FIXTURE_NOW, fixtureApps, fixtureDetails, fixtureDomains, fixtureKeys } from "./AdminApps.fixture-data";
 
 /** States the captures and tests switch with `?state=`, next to the page's own `app`, `view`, `window` and `moved`. */
 export type AdminAppsFixtureState =
@@ -23,7 +23,9 @@ export type AdminAppsFixtureState =
   | "keys-off"
   | "keys-error"
   | "keys-two"
-  | "slow";
+  | "slow"
+  | "domains-empty"
+  | "domains-error";
 
 const user: User = {
   id: ADMIN_ID,
@@ -96,6 +98,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
   await (await import("../../../../scripts/tabler-assets")).buildTablerIconAssets(publicDir);
 
   let removed = new Set<string>();
+  let domains = fixtureDomains();
   const pages = new Hono<{
     Variables: {
       runtime: CloudRuntime;
@@ -177,6 +180,17 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
             timeZone: "Europe/Berlin",
           },
         } as const;
+      if (view === "domains")
+        return entry.id === "lager"
+          ? ({
+              view,
+              domains: {
+                app: { id: entry.id, name: entry.name },
+                initial: state === "domains-error" ? null : state === "domains-empty" ? [] : domains,
+                timeZone: "Europe/Berlin",
+              },
+            } as const)
+          : null;
       if (view === "events") return details ? ({ view } as const) : null;
       if (view === "routes") {
         const traffic = entry.numbers[0]?.traffic;
@@ -296,6 +310,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
                       migrate: "/docs/en/operations/app-keys#use-the-key-at-start",
                     },
                     accessRule: entry.accessKind === "noGuests" ? "Alle außer Gästen" : "Alle angemeldeten Personen",
+                    domains: entry.id !== "lager" ? null : state === "domains-error" ? "failed" : state === "domains-empty" ? [] : domains,
                     appNames: new Map([
                       ["contacts", "Kontakte"],
                       ["files", "Dateien"],
@@ -325,6 +340,40 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     }
     const status = url.pathname.match(/^\/api\/admin\/apps\/([^/]+)\/status$/);
     if (status) return Response.json({ traffic: "12.400 · 0,2 % Fehler · 48 ms", errors: "24 in 24 h", unavailable: false });
+    const domainPath = url.pathname.match(/^\/api\/admin\/apps\/lager\/domains(?:\/([^/]+)(\/check)?)?$/);
+    if (domainPath) {
+      const host = domainPath[1] ? decodeURIComponent(domainPath[1]) : null;
+      const fail = (status: number, code: string) => Response.json({ message: code, code }, { status });
+      if (request.method === "GET" && !host) return state === "domains-error" ? fail(503, "unavailable") : Response.json({ domains });
+      if (request.method === "POST" && !host) {
+        const body = (await request.json()) as { host: string; redirectTo?: string };
+        if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(body.host)) return fail(400, "APP_DOMAIN_INVALID_HOST");
+        if (body.host === "mail.example.de" || domains.some((domain) => domain.host === body.host)) return fail(409, "APP_DOMAIN_ASSIGNED");
+        const added = {
+          host: body.host,
+          redirectTo: body.redirectTo ?? null,
+          createdAt: new Date(FIXTURE_NOW).toISOString(),
+          active: true,
+          status: null,
+        };
+        domains = [...domains, added];
+        return Response.json(added, { status: 201 });
+      }
+      const target = domains.find((domain) => domain.host === host);
+      if (!target) return fail(404, "APP_DOMAIN_NOT_FOUND");
+      if (request.method === "PATCH") {
+        const body = (await request.json()) as { redirectTo: string | null };
+        if (body.redirectTo && domains.some((domain) => domain.redirectTo === host)) return fail(409, "APP_DOMAIN_REFERENCED");
+        domains = domains.map((domain) => (domain.host === host ? { ...domain, redirectTo: body.redirectTo } : domain));
+        return Response.json({ ...target, redirectTo: body.redirectTo });
+      }
+      if (request.method === "DELETE") {
+        if (domains.some((domain) => domain.redirectTo === host)) return fail(409, "APP_DOMAIN_REFERENCED");
+        domains = domains.filter((domain) => domain.host !== host);
+        return Response.json({ deleted: true });
+      }
+      if (request.method === "POST" && domainPath[2]) return Response.json({ status: target.status });
+    }
     const keyList = url.pathname.match(/^\/api\/admin\/apps\/([^/]+)\/keys$/);
     if (keyList && request.method === "GET") {
       if (state === "keys-error") return Response.json({ message: "unavailable" }, { status: 503 });
@@ -369,6 +418,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     url: `http://127.0.0.1:${server.port}/admin/apps`,
     reset() {
       removed = new Set();
+      domains = fixtureDomains();
     },
     close() {
       server.stop(true);

@@ -52,6 +52,16 @@ Pass the application ID first and the host second. You can assign a domain
 while a known application is stopped. Adding an assignment starts its first
 domain check in the background.
 
+The same works in **Administration → Apps**: open the application and choose
+**Domains** (`/admin/apps?app=<id>&view=domains`). The column lists each domain
+with its checks (DNS, certificate, reachable), marks the primary domain and its
+`301` aliases, and offers **Add domain**, **Make primary domain**,
+**Redirect to …**, **Remove …**, and **Check**, which runs at most once per
+60 seconds. A domain that other domains redirect to cannot be removed until
+their redirect changes. Only an application that declares `public: true` has
+**Domains**; a stopped application shows it while it still has assigned
+domains.
+
 Point the domain's DNS A/AAAA records at your ingress. Configure ingress to
 preserve the request's `Host`, `Origin`, `Sec-Fetch-Site`, and `Sec-Fetch-Dest`,
 forward WebSockets, and stream responses without buffering. Configure trusted

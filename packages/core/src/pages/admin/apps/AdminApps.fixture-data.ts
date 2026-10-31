@@ -3,6 +3,7 @@
  * (apps-zusammenfuehren-mockup v1). Times are relative to `FIXTURE_NOW`, which the fixture freezes.
  */
 import type { AppDetails } from "@k2b/cloud/contracts";
+import type { AppDomainEntry } from "./domains-model";
 import type { KeyEntry } from "./keys-dialogs";
 import type { AppInput, ProviderNumbers } from "./model";
 
@@ -353,4 +354,36 @@ export const fixtureKeys = (id: string): KeyEntry[] => {
       revoked,
     ];
   return [first, revoked];
+};
+
+/** Lagerbestand declares public pages: a primary domain, its www alias, and one whose certificate is still missing. */
+export const fixtureDomains = (): AppDomainEntry[] => {
+  const healthy = (minutes: number) => ({
+    checkedAt: ago(minutes),
+    dns: { ok: true, detail: "203.0.113.10" },
+    certificate: { ok: true, detail: "Valid TLS certificate for this host" },
+    reachable: { ok: true, detail: "Cloud gateway returned the challenge" },
+  });
+  return [
+    { host: "lager.example.de", redirectTo: null, createdAt: "2026-10-20T09:00:00.000Z", active: true, status: healthy(12) },
+    {
+      host: "www.lager.example.de",
+      redirectTo: "lager.example.de",
+      createdAt: "2026-10-20T09:05:00.000Z",
+      active: true,
+      status: healthy(12),
+    },
+    {
+      host: "bestand.example.de",
+      redirectTo: null,
+      createdAt: "2026-10-30T13:00:00.000Z",
+      active: true,
+      status: {
+        checkedAt: ago(30),
+        dns: { ok: true, detail: "203.0.113.10" },
+        certificate: { ok: false, detail: "certificate has expired" },
+        reachable: null,
+      },
+    },
+  ];
 };
