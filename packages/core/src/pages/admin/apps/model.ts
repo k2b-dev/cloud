@@ -7,7 +7,7 @@
 export type AppStatusKind = "ok" | "warn" | "error" | "idle";
 
 /** The level-3 columns a row or hint opens; `remove` opens the confirmation instead. */
-export type AppView = "access" | "keys" | "events" | "routes" | "runtime" | "errors";
+export type AppView = "access" | "keys" | "domains" | "events" | "routes" | "runtime" | "errors";
 export type HintTarget = AppView | "remove";
 
 export type AppHint =
@@ -173,7 +173,7 @@ export const routeSummary = (routes: readonly string[]): { shown: string; more: 
   more: Math.max(0, routes.length - 2),
 });
 
-const VIEWS: readonly AppView[] = ["access", "keys", "events", "routes", "runtime", "errors"];
+const VIEWS: readonly AppView[] = ["access", "keys", "domains", "events", "routes", "runtime", "errors"];
 export const WINDOWS = ["1h", "6h", "24h", "7d", "30d"] as const;
 export type AppStatusWindow = (typeof WINDOWS)[number];
 export type MovedFrom = "gateway" | "credentials";

@@ -6,6 +6,10 @@ import { For, type JSX, Show } from "solid-js";
 import Access from "./Access.island";
 import AddApp from "./AddApp.island";
 import AppRowMenu from "./AppRowMenu.island";
+import Domains, { type DomainsProps } from "./Domains.island";
+import DomainsAdd from "./DomainsAdd.island";
+import { domainsMessages } from "./domains-messages";
+import { type AppDomainEntry, domainHealthy, primaries } from "./domains-model";
 import { type AppsFormat, providerValues } from "./format";
 import Keys, { type KeysProps } from "./Keys.island";
 import KeysCreate from "./KeysCreate.island";
@@ -43,6 +47,8 @@ export type AppPageData = {
   accessRule: string;
   /** Core and Gateway are platform services and have no app keys. */
   keysSupported: boolean;
+  /** The domains of an app with public pages; null for an app without them, which has no Domains row. */
+  domains: readonly AppDomainEntry[] | "failed" | null;
   /** Fibel pages for the key hints: recovering a key and switching from the environment to a key. */
   docs: { recover: string | null; migrate: string | null };
   /** Display names of known apps by ID, for publishers of heard events. */
@@ -60,6 +66,7 @@ export type RouteRow = {
 export type DetailData =
   | { view: "access"; rule: string; editor: AppAccessEditorProps | null }
   | { view: "keys"; keys: KeysProps }
+  | { view: "domains"; domains: DomainsProps }
   | { view: "events" }
   | {
       view: "routes";
@@ -458,7 +465,7 @@ function Row(props: {
           meta={
             <span class="flex items-center gap-2 text-[13px] font-normal text-(--k2b-text-muted) tabular-nums">
               {/* The value gives way before the label: it truncates, the label keeps its line. */}
-              <span class="max-w-[15rem] truncate">{props.value}</span>
+              <span class="max-w-[12.5rem] truncate">{props.value}</span>
               <i class={`ti ${props.external ? "ti-arrow-up-right" : "ti-chevron-right"} text-dimmed`} aria-hidden="true" />
             </span>
           }
@@ -526,6 +533,22 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
       return entry.access ? t.accessValue({ people: entry.access.people, groups: entry.access.groups }) : t.unknown;
     }
     return entry.accessKind === "resources" ? t.accessResources : props.app.accessRule;
+  };
+  const domainsValue = (domains: readonly AppDomainEntry[] | "failed"): JSX.Element => {
+    if (domains === "failed") return <span class="text-dimmed">{t.notLoaded}</span>;
+    if (domains.length === 0) return t.domainsNone;
+    const main = primaries(domains)[0]?.host ?? domains[0]!.host;
+    const problems = domains.filter((domain) => domain.status && !domainHealthy(domain)).length;
+    return (
+      <>
+        {main}
+        {domains.length > 1 ? ` +${domains.length - 1}` : ""}
+        <Show when={problems > 0}>
+          {" · "}
+          <span class="text-(--k2b-danger-text)">{t.domainsProblems({ count: problems })}</span>
+        </Show>
+      </>
+    );
   };
   const keysValue = (): JSX.Element => {
     const keys = entry.keys;
@@ -647,6 +670,11 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
         app={entry.id}
         selected={selected}
       />
+      <Show when={props.app.domains}>
+        {(domains) => (
+          <Row icon="ti ti-world" label={t.domains} value={domainsValue(domains())} view="domains" app={entry.id} selected={selected} />
+        )}
+      </Show>
       <Row
         icon="ti ti-broadcast"
         label={t.events}
@@ -1206,6 +1234,7 @@ const detailTitle = (t: AppsPageMessages, view: AppView, name: string) =>
   ({
     access: t.titleAccess({ name }),
     keys: t.titleKeys,
+    domains: t.titleDomains,
     events: t.titleEvents,
     routes: t.titleRoutes,
     runtime: t.titleRuntime,
@@ -1267,6 +1296,8 @@ export function AppsView(props: { data: AppsViewData }) {
                     disabledAccount={columnData.keys.accountStatus === "disabled"}
                     neverStarted={columnData.keys.neverStarted}
                   />
+                ) : columnData.view === "domains" ? (
+                  <DomainsAdd app={columnData.domains.app} initial={columnData.domains.initial ?? []} />
                 ) : undefined
               }
               description={
@@ -1290,6 +1321,8 @@ export function AppsView(props: { data: AppsViewData }) {
                           </a>
                         ) : null}
                       </>
+                    ) : columnData.view === "domains" ? (
+                      domainsMessages.resolve([data.locale]).t.sentence
                     ) : columnData.view === "events" ? (
                       t.eventsSub({ name })
                     ) : columnData.view === "access" && columnData.editor ? (
@@ -1306,6 +1339,8 @@ export function AppsView(props: { data: AppsViewData }) {
                   />
                 ) : columnData.view === "keys" ? (
                   <Keys {...columnData.keys} />
+                ) : columnData.view === "domains" ? (
+                  <Domains {...columnData.domains} />
                 ) : columnData.view === "events" ? (
                   <EventsColumn t={t} f={data.format} app={open().app} locale={data.locale} />
                 ) : columnData.view === "routes" ? (
