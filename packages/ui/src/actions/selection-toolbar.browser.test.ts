@@ -12,7 +12,7 @@ const entry = resolve(import.meta.dir, "selection-toolbar.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { Button, SelectionToolbar, Toolbar } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Button, installInputModeController, SelectionToolbar, Toolbar } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const text = document.getElementById("text");
 const [open, setOpen] = createSignal(false);
@@ -31,6 +31,7 @@ window.select = (from, to) => {
   setOpen(true);
 };
 window.closeToolbar = () => setOpen(false);
+installInputModeController();
 render(
   () =>
     createComponent(SelectionToolbar, {
@@ -41,7 +42,7 @@ render(
       onEscape: () => { window.calls.push("escape"); setOpen(false); },
       get children() {
         return [
-          createComponent(Toolbar.Action, { label: "Bold", icon: "ti ti-bold", onClick: () => window.calls.push("bold:" + getSelection().toString()) }),
+          createComponent(Toolbar.Action, { label: "Bold", icon: "ti ti-bold", keys: "mod+b", onClick: () => window.calls.push("bold:" + getSelection().toString()) }),
           createComponent(Toolbar.Separator, {}),
           createComponent(Button, { size: "sm", variant: "ghost", onClick: () => window.calls.push("comment"), children: "Comment" }),
         ];
@@ -159,6 +160,38 @@ describe("SelectionToolbar", () => {
       const placed = await geometry(page);
       expect(placed.side).toBe("below");
       expect(placed.toolbar.top).toBeGreaterThanOrEqual(placed.range!.bottom);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a shortcut typed in the text leaves compact actions without inline hints, at their size, with the shortcut in the tooltip", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => {
+        const paragraph = document.querySelector<HTMLElement>("#text p")!;
+        paragraph.contentEditable = "true";
+        paragraph.focus();
+        (window as unknown as { select: (a: number, b: number) => void }).select(300, 320);
+      });
+      await settle(page);
+      const bold = page.getByRole("button", { name: "Bold" });
+      const size = () =>
+        bold.evaluate((button) => {
+          const { width, height } = button.getBoundingClientRect();
+          return { width, height };
+        });
+      const before = await size();
+      await page.keyboard.press("ControlOrMeta+b");
+      await settle(page);
+      // The shortcut turns keyboard mode on for the document, which shows every `.k2b-kbd-hint` that is rendered.
+      expect(await page.evaluate(() => document.documentElement.dataset.k2bKbd)).toBe("on");
+      expect(await page.locator(".k2b-selection-toolbar .k2b-kbd").count()).toBe(0);
+      expect(await size()).toEqual(before);
+      expect(before).toEqual({ width: 30, height: 30 });
+      expect(await bold.getAttribute("aria-keyshortcuts")).toMatch(/^(?:Meta|Control)\+B$/);
+      await bold.hover();
+      await page.getByRole("tooltip", { name: /^Bold \((?:⌘B|Ctrl\+B)\)$/ }).waitFor();
     } finally {
       await page.context().close();
     }

@@ -171,6 +171,8 @@ export function Toolbar(props: ToolbarProps) {
     <div
       ref={root}
       class={props.class ?? "k2b-editor-toolbar flex min-w-0 items-center gap-2 text-dimmed"}
+      // The stylesheet sizes every control's icon here, the host's start and end controls included.
+      data-k2b-editor-toolbar=""
       style={{ "margin-bottom": lift() ? `${lift()}px` : undefined }}
       on:mousedown={(event) => event.preventDefault()}
     >

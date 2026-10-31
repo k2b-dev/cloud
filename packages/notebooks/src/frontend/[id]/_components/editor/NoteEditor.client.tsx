@@ -2,6 +2,7 @@ import { autocompletion } from "@codemirror/autocomplete";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
+import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { createEditor } from "@k2b/editor";
 import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
@@ -772,6 +773,8 @@ function EditorInstance(
       if (!props.readOnly) window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail }));
     },
   });
+  // Who is here, as the server last said; the presence snapshot arrives once per connection.
+  let participants: NotebookPresenceParticipant[] = [];
   const provider = props.readOnly
     ? null
     : yjs.createYjsProvider({
@@ -797,10 +800,10 @@ function EditorInstance(
           syncEnded.ready();
           structureChanged();
         },
-        // Forwards every presence update to the OnlineSection island via a
-        // window event — the editor itself doesn't need to track participants
-        // anymore now that the toolbar no longer renders them.
+        // Forwards every presence update to the detail panel via a window event. The last list stays here, so a panel
+        // that mounts after the snapshot still shows who is here.
         onPresenceChange: (next) => {
+          participants = next;
           window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: next }));
         },
         onFatal: (error) => {
@@ -896,7 +899,10 @@ function EditorInstance(
   );
   // A panel that mounts after the editor asks once for everything it mirrors, the text mode included.
   const onSyncStateRequest = () => {
-    if (provider) syncState.request();
+    if (provider) {
+      syncState.request();
+      window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: participants }));
+    }
     window.dispatchEvent(new CustomEvent(RICH_MODE_CHANGED_EVENT, { detail: { isRich: richMode() } }));
     lastActiveHeading = undefined;
     forcePresence = true;
@@ -1239,14 +1245,16 @@ function EditorInstance(
     const onWorkspaceEvent = (raw: Event) => {
       const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
       const { event } = detail;
-      if (props.readOnly || collabStarted()) return;
+      if (props.readOnly || collabStarted() || event.notebookId !== props.notebookId) return;
       // A note deleted elsewhere before anyone typed here reopens as the server now shows it.
       if (event.type === "note.deleted" && event.noteId === props.noteId) {
         window.location.reload();
         return;
       }
-      if (event.type !== "note.updated" || event.note.id !== props.noteId) return;
-      if (event.note.historyIncomplete) setHistoryIncomplete(true);
+      if (event.type === "note.updated") {
+        if (event.note.id !== props.noteId) return;
+        if (event.note.historyIncomplete) setHistoryIncomplete(true);
+      } else if (event.type !== "workspace.invalidated") return;
       savedTextRequest?.abort();
       const request = new AbortController();
       savedTextRequest = request;
