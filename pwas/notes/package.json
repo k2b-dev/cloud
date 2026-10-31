@@ -21,7 +21,8 @@
     "y-codemirror.next": "catalog:",
     "y-protocols": "catalog:",
     "yjs": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "file-type": "21.3.4"
   },
   "devDependencies": {
     "@babel/core": "8.0.6",

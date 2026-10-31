@@ -2,6 +2,8 @@ import type { SQL, TransactionSQL } from "bun";
 import * as Y from "yjs";
 import { decodeDocument } from "./document";
 import { NotesError } from "./errors";
+import type { CheckedFile } from "./files";
+import { limits } from "./limits";
 import { hash, randomId, validId } from "./tokens";
 
 type Transaction = TransactionSQL;
@@ -142,6 +144,13 @@ export class NotesStore {
     if (!row) throw new NotesError("not_found", 404);
     return { readId: row.read_id, access: row.can_edit ? "edit" : "read" };
   }
+  async editablePad(token: string): Promise<PadAccess> {
+    const access = await this.resolve(token);
+    if (access.access !== "edit") throw new NotesError("read_only", 403);
+    const [row] = await this.db<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${access.readId}`;
+    this.assertActive(row);
+    return access;
+  }
   assertActive(row: Pick<PadRow, "blocked_at" | "deleted_at" | "status_reason"> | undefined): void {
     if (!row) throw new NotesError("not_found", 404);
     if (row.blocked_at) throw new NotesError("blocked", 451, row.status_reason ?? undefined);
@@ -223,6 +232,42 @@ export class NotesStore {
       await this.reserve(tx, delta);
       await tx`UPDATE pads SET snapshot=${Buffer.from(snapshot)},content_md=${content},applied_through=${through},size_bytes=size_bytes+${delta} WHERE read_id=${readId}`;
       await tx`DELETE FROM pad_updates WHERE read_id=${readId} AND id<=${through}`;
+    });
+  }
+  async putFile(readId: string, file: CheckedFile): Promise<{ key: string }> {
+    return this.transaction(async (tx) => {
+      const [pad] = await tx<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${readId} FOR UPDATE`;
+      this.assertActive(pad);
+      const [previous] = await tx<{ bytes: Uint8Array }[]>`SELECT bytes FROM pad_files WHERE read_id=${readId} AND key=${file.key}`;
+      if (previous) {
+        if (!Buffer.from(previous.bytes).equals(file.bytes)) throw new NotesError("file_key_conflict", 409);
+        return { key: file.key };
+      }
+      const [row] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM pad_files WHERE read_id=${readId}`;
+      if (row!.count >= limits.files) throw new NotesError("too_many_files", 409);
+      const cost =
+        costs.file +
+        file.bytes.byteLength +
+        textBytes(file.name) +
+        textBytes(file.key) +
+        textBytes(file.type) +
+        textBytes(file.declaredType);
+      await this.reserve(tx, cost, "new");
+      await tx`INSERT INTO pad_files(read_id,key,name,bytes,type,checked_type) VALUES(${readId},${file.key},${file.name},${Buffer.from(file.bytes)},${file.declaredType},${file.type})`;
+      await tx`UPDATE pads SET size_bytes=size_bytes+${cost} WHERE read_id=${readId}`;
+      return { key: file.key };
+    });
+  }
+  async getFile(token: string, key: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; name: string; type: string }> {
+    const access = await this.resolve(token);
+    return this.db.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
+      const [pad] = await tx<PadRow[]>`SELECT blocked_at,deleted_at,status_reason FROM pads WHERE read_id=${access.readId}`;
+      this.assertActive(pad);
+      const [file] = await tx<
+        { bytes: Uint8Array<ArrayBuffer>; name: string; type: string }[]
+      >`SELECT bytes,name,checked_type AS type FROM pad_files WHERE read_id=${access.readId} AND key=${key}`;
+      if (!file) throw new NotesError("not_found", 404);
+      return file;
     });
   }
   async humanOpen(readId: string): Promise<void> {

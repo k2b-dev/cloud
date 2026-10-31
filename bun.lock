@@ -859,6 +859,7 @@
         "@k2b/editor": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
+        "file-type": "21.3.4",
         "hono": "catalog:",
         "lib0": "0.2.117",
         "solid-js": "catalog:",
