@@ -653,10 +653,10 @@ after checking the person's authority at the Code's owner, then posts
 `{ principal }` with that bearer token to
 `/api/_internal/capabilities/v1/code-authority/queries/code.access.list`.
 `verifyCodeAccessList` accepts only this separate `code_access_list` token use.
-It returns all current grants of that account, even when it is disabled, including
-unchanged foreign targets the person no longer manages. It cannot grant or remove access. This
-keeps existing permissions reusable while new or broader permissions still
-require current target-manager authority.
+It returns all current grants of that account, even when it is disabled,
+including unchanged foreign targets the person no longer manages. It cannot
+grant or remove access. This keeps existing permissions reusable while new
+or broader permissions still require current target-manager authority.
 
 ### Resource links
 
