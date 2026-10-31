@@ -40,6 +40,8 @@ const base = (input: Partial<AppInput> & Pick<AppInput, "id" | "name" | "icon" |
   accessKind: "signedIn",
   access: null,
   keys: { active: 1, expired: 0, revoked: 0, lastUsedAt: ago(3), accountStatus: "active" },
+  keysSupported: true,
+  keysKnown: true,
   failedDeliveries: 0,
   runtimeIssues: [],
   missingRoutes: [],
@@ -67,6 +69,8 @@ export const fixtureApps = (): AppInput[] => [
     description: "Dateien ablegen, teilen und gemeinsam bearbeiten.",
     routes: ["/files", "/api/files", "/s", "/dav"],
     accessKind: "resources",
+    // Still starts with its environment: running, no key yet.
+    keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
     numbers: numbers(13_610, 6, 62),
   }),
   base({
@@ -310,7 +314,7 @@ const key = (input: Partial<KeyEntry> & Pick<KeyEntry, "keyId" | "name" | "finge
 });
 
 export const fixtureKeys = (id: string): KeyEntry[] => {
-  if (id === "inventar") return [];
+  if (id === "inventar" || id === "files") return [];
   if (id === "notebooks")
     return [
       key({

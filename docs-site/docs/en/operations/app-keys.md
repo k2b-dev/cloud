@@ -116,6 +116,16 @@ ran is added with **Add app** and its ID. Browsers without HTTPS or without
 Ed25519 support show the `cld` command instead. The row menu of a key copies its
 fingerprint or public key and revokes it.
 
+The Apps list and the app page show the key state of each app. A running app
+without any key still **starts with its environment**; its page links to
+**Create key** and to [Use the key at start](#use-the-key-at-start). An app with
+only revoked or expired keys has **no valid key**: its running instances keep
+working, the next start fails, and **Create new key** is the page's one filled
+action next to [Rotate or recover a key](#rotate-or-recover-a-key). Two active
+keys mean a **rotation in progress**; the keys column marks the older key as
+**(old)** and shows when each key was last used, so you revoke the old one once
+no instance uses it.
+
 ## Inspect and revoke keys
 
 ```bash

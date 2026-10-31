@@ -19,7 +19,9 @@ test("each app gets one status in words and its hints, most severe first", () =>
     tools: "ok",
     wiki: "error",
   });
-  expect(derived.get("grids")!.hints.map((hint) => hint.kind)).toEqual(["errorRate", "failedDeliveries"]);
+  expect(derived.get("grids")!.hints.map((hint) => hint.kind)).toEqual(["errorRate", "failedDeliveries", "rotation"]);
+  expect(derived.get("files")!.hints.map((hint) => hint.kind)).toEqual(["envStart"]);
+  expect(derived.get("mail")!.hints).toEqual([]);
   expect(derived.get("wiki")!.hints.map((hint) => hint.kind)).toEqual(["providerOnly"]);
   expect(derived.get("inventar")!.hints.map((hint) => hint.kind)).toEqual(["neverStarted"]);
   expect(derived.get("notebooks")!.hints.map((hint) => hint.kind)).toEqual(["keyRevoked"]);
@@ -52,4 +54,15 @@ test("the address keeps the open app, its column and the routes window; old name
   expect(appsHref({ app: "mail", view: "routes", window: "24h" })).toBe("/admin/apps?app=mail&view=routes");
   expect(appsHref({ app: "mail", view: "routes", window: "1h" })).toBe("/admin/apps?app=mail&view=routes&window=1h");
   expect(appsHref({})).toBe("/admin/apps");
+});
+
+test("key hints come only from known facts and only for apps that can have a key", () => {
+  const noKeys = { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null };
+  expect(deriveApp({ ...app("chat"), keys: noKeys }).hints.map((hint) => hint.kind)).toEqual(["envStart"]);
+  // Core runs with its own infrastructure environment and can have no app key.
+  expect(deriveApp({ ...app("chat"), id: "core", keys: noKeys, keysSupported: false }).hints).toEqual([]);
+  // Unreadable facts are unknown, not "no key".
+  expect(deriveApp({ ...app("chat"), keys: noKeys, keysKnown: false }).hints).toEqual([]);
+  // Expired keys alone are no valid key either.
+  expect(deriveApp({ ...app("chat"), keys: { ...noKeys, expired: 1 } }).hints.map((hint) => hint.kind)).toEqual(["keyRevoked"]);
 });
