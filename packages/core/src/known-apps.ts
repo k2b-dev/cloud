@@ -50,7 +50,7 @@ export const rememberApps = async (apps: readonly (AppRegistryEntry | AppRegistr
     }));
     await sql`INSERT INTO core.known_apps (id, name, description, icon, accent, release, routes, nav_href, admin_href, last_seen_at)
       SELECT id, name, description, icon, accent, release, routes, nav_href, admin_href, last_seen_at
-      FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS entry(
+      FROM jsonb_to_recordset((${JSON.stringify(rows)}::jsonb #>> '{}')::jsonb) AS entry(
         id text, name text, description text, icon text, accent text, release text, routes jsonb, nav_href text, admin_href text, last_seen_at timestamptz)
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name, description = EXCLUDED.description, icon = EXCLUDED.icon, accent = EXCLUDED.accent,
@@ -91,7 +91,7 @@ export const rememberAppStatusReports = async (summary: AppStatusSummaries): Pro
   const entries = [...reports].map(([id, providers]) => ({ id, providers }));
   for (let offset = 0; offset < entries.length; offset += 200) {
     await sql`INSERT INTO core.known_apps (id, name, status_providers)
-      SELECT id, id, providers FROM jsonb_to_recordset(${JSON.stringify(entries.slice(offset, offset + 200))}::jsonb) AS entry(id text, providers jsonb)
+      SELECT id, id, providers FROM jsonb_to_recordset((${JSON.stringify(entries.slice(offset, offset + 200))}::jsonb #>> '{}')::jsonb) AS entry(id text, providers jsonb)
       ON CONFLICT (id) DO UPDATE SET status_providers = core.known_apps.status_providers || EXCLUDED.status_providers`;
   }
 };
