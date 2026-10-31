@@ -138,7 +138,8 @@ export default ssr<AuthContext>(async (c) => {
       title={[
         { title: t.start, href: "/" },
         { title: t.notebooks, href: "/app/notebooks" },
-        { title: notebook.name, href: `/app/notebooks/${notebook.id}` },
+        // Version history and the graph carry their own way back to the note, so the shell adds none there.
+        { title: notebook.name, ...(isVersionsMode || isGraphMode ? {} : { href: `/app/notebooks/${notebook.id}` }) },
         ...(selectedNote ? [{ title: selectedNote.title }] : []),
       ]}
     >
