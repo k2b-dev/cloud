@@ -258,6 +258,10 @@ export const parseArgs = (argv: string[]): Options => {
   return options;
 };
 
+/** How long a stopped suite's descendants get to exit after SIGKILL, and how often that is checked. */
+const descendantExitMs = 2_000;
+const descendantPollMs = 25;
+
 /** Stop a timed-out suite and its descendants before GitHub cancels the job without a runner error. */
 export const runTestCommand = async (suite: TestSuite, env: Record<string, string | undefined>, timeoutMs?: number): Promise<number> => {
   if (timeoutMs !== undefined && timeoutMs <= 0) throw new Error("test run exceeded its time budget");
@@ -311,6 +315,28 @@ export const runTestCommand = async (suite: TestSuite, env: Record<string, strin
       }
     }
   };
+  /**
+   * Waits until every recorded descendant has exited (a zombie counts as gone). SIGKILL is delivered, not awaited, so
+   * a check right after kill() can still see a dying process (#2208). Returns the PIDs still running after the wait.
+   */
+  const descendantsGone = async (waitMs: number): Promise<number[]> => {
+    const deadline = performance.now() + waitMs;
+    for (;;) {
+      const result = Bun.spawnSync(["ps", "-eo", "pid=,stat=,lstart="], { stdout: "pipe", stderr: "pipe" });
+      const running = result.stdout
+        .toString()
+        .trim()
+        .split("\n")
+        .flatMap((line) => {
+          const match = /^\s*(\d+)\s+(\S+)\s+(.+)$/.exec(line);
+          if (!match || match[2]!.startsWith("Z")) return [];
+          const pid = Number(match[1]);
+          return descendants.get(pid) === match[3] ? [pid] : [];
+        });
+      if (running.length === 0 || performance.now() > deadline) return running;
+      await Bun.sleep(descendantPollMs);
+    }
+  };
   const stop = (signal: NodeJS.Signals) => {
     kill(signal);
     force ??= setTimeout(() => kill("SIGKILL"), 5_000);
@@ -335,7 +361,9 @@ export const runTestCommand = async (suite: TestSuite, env: Record<string, strin
     if (expired || interrupted) {
       // The direct child can exit before a descendant that ignored SIGTERM.
       kill("SIGKILL");
-      throw new Error(interrupted ? `test run interrupted by ${interrupted}` : "test run exceeded its time budget");
+      const survivors = grouped ? await descendantsGone(descendantExitMs) : [];
+      const reason = interrupted ? `test run interrupted by ${interrupted}` : "test run exceeded its time budget";
+      throw new Error(survivors.length ? `${reason}; descendants still running after SIGKILL: ${survivors.join(", ")}` : reason);
     }
     return code;
   } finally {
