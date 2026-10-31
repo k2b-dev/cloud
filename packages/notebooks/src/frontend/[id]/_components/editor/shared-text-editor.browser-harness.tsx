@@ -390,7 +390,6 @@ function Harness() {
           editor={extensions}
           notebookId="Book01"
           noteId="Note01"
-          initialPanelOpen={false}
           format={format()}
           onUndo={() => {
             void actions.undo();
@@ -437,6 +436,7 @@ declare global {
 }
 
 let editorMounts = 0;
+const [navigationHidden, setNavigationHidden] = createSignal(false);
 // `workspace` puts the editor where the notebook page does: beside the resizable navigation, in the document surface.
 const dispose = params.has("workspace")
   ? (() => {
@@ -444,8 +444,17 @@ const dispose = params.has("workspace")
       const unmount = render(
         () => (
           <LocaleProvider locale={locale}>
-            <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
-              <AppWorkspace.Sidebar id="notebook-navigation" class="notebook-sidebar" label="Navigation" resizable defaultSize={256}>
+            {/* As on the note page: no head; the toolbar holds the navigation button. */}
+            <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0" head={false}>
+              <AppWorkspace.Sidebar
+                id="notebook-navigation"
+                class="notebook-sidebar"
+                label="Navigation"
+                resizable
+                defaultSize={256}
+                hidden={navigationHidden()}
+                onHiddenChange={setNavigationHidden}
+              >
                 <nav class="p-3 text-sm">Budget</nav>
               </AppWorkspace.Sidebar>
               <AppWorkspace.Content>

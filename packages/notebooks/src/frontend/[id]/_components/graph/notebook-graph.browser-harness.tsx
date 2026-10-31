@@ -42,7 +42,7 @@ declare global {
 export function NotebookGraphFixture(props: NotebookGraphFixtureProps) {
   return (
     <div class="notebook-book-shell">
-      <AppWorkspace mobileSurface="flush" class="notebook-book-workspace">
+      <AppWorkspace mobileSurface="flush" class="notebook-book-workspace" head={false}>
         {createComponent(BookNavigator, props.navigator)}
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false} class="relative">
@@ -57,7 +57,6 @@ export function NotebookGraphFixture(props: NotebookGraphFixtureProps) {
               view: props.view,
               now: props.now,
               timeZone: props.timeZone,
-              navigationHidden: props.navigator.navigationHidden,
             })}
           </AppWorkspace.Main>
         </AppWorkspace.Content>
