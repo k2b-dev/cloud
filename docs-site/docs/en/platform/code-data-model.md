@@ -31,11 +31,13 @@ owning application's domain IDs.
 The personal owner is an editor. For resource and application Code, the
 owner's current administrators are editors. Resource administrators come from
 the canonical reader; application administrators come from application access
-grants. An application's `canManage` callback restricts changes to its access
+grants. Reading that administration grant does not require a write-scoped credential. An application's `canManage` callback restricts changes to its access
 list, independently of Code editorship. Other people get access through
 explicit editor or reader shares. An editor can add or remove shares using
-the common access-entry model. Cloud administrators can read and edit all
-Code. Resource readability alone does not grant access to its Code.
+the common access-entry model. Cloud administration provides reader visibility
+for all Code. Writing and reading run contents require ordinary editor rights,
+including for administrators. Resource readability alone does not grant access
+to its Code.
 
 | Permission | Code and version source | Run metadata | Run inputs, outputs and calls |
 | --- | --- | --- | --- |
@@ -58,7 +60,8 @@ activation owns those grants.
 
 A version stores all source files, the exact UTF-8 bundle, `sourceHash`,
 `bundleHash` and a checked-version manifest slot. Source paths are relative
-POSIX paths. Storage rejects NUL characters and malformed Unicode with `BAD_INPUT`. The source hash is SHA-256 of compact JSON containing the sorted
+POSIX paths. Source, bundle and jsonb inputs reject NUL characters and malformed Unicode
+with `BAD_INPUT`. Results preserve their exact JSON text, including escaped NUL. The source hash is SHA-256 of compact JSON containing the sorted
 `[path, content]` pairs; the bundle hash is SHA-256 of the exact bundle bytes.
 
 The source, bundle, hashes and manifest are immutable. The checker and
@@ -88,7 +91,9 @@ shared Code. To discover Code through live owner administration, supply the
 exact resource or application owner. Cloud administrators list all Code.
 Code IDs provide the list cursor; run history uses a cursor containing the
 exact creation timestamp and run ID, so newer runs do not shift later pages.
-Treat both cursors as opaque.
+Treat both cursors as opaque. If an owner provider is unavailable, an explicit
+reader share remains usable; operations that need owner administration fail
+visibly until the provider recovers.
 
 A list page can be empty while `nextCursor` is present: filtering permissions
 applies to a bounded candidate window. Continue until `nextCursor` is null.
@@ -135,19 +140,21 @@ service.
 
 All settings require positive integers. New versions use current limits; a
 run pins its call and payload limits at creation. Smaller settings do not
-rewrite existing versions or active runs. Transport budgets bound the file count and input maximums. Run/call input
-admission uses Postgres's `jsonb::text` byte count, including its separator
-whitespace, before invocation. Capability results use the public 256 KiB
-result budget independently of the run input setting; storage allows twice
-that budget for jsonb separator whitespace. An oversized result outside the
-capability contract, or a result containing NUL/malformed Unicode, finishes
-the call as failed with an explicit diagnostic.
+rewrite existing versions or active runs. Transport budgets bound the file
+count and input maximums. Run/call input admission uses Postgres's `jsonb::text`
+byte count, including its separator whitespace, before invocation. Capability results use the public 256 KiB
+result budget independently of the run input setting. Results and run output
+use Postgres `json`, preserving exact JSON text without expanding numeric
+exponents or adding whitespace. An oversized result outside the capability
+contract is replaced by an explicit diagnostic without changing the recorded
+execution state.
 
 Core removes completed runs and their calls 30 days after `endedAt`, in bounded
 batches. Queued and running attempts are preserved regardless of their age.
-Versions remain with their Code; individual version deletion is rejected. Deleting a personal owner cascades to their
-Code, versions, runs and shares. Creator attribution uses `ON DELETE SET NULL`,
-so removing a creator leaves resource-owned Code intact.
+Versions remain with their Code; individual version deletion is rejected.
+Deleting a personal owner cascades to their Code, versions, runs and shares.
+Creator attribution uses `ON DELETE SET NULL`, so removing a creator leaves
+resource-owned Code intact.
 
 This data layer does not schedule runs, activate versions or revoke grants in
 other applications. Those services own their lifecycle transactions and the
@@ -162,8 +169,8 @@ services. `CODE_TABLES.shares` names `code.shares`, which links editor/reader
 shares to `auth.access`; it is separate from target Code grants. Use
 `addCodeShare` and `removeCodeShare` to edit these shares. Repeated shares for
 one principal update the existing access entry. Share and version writes lock
-the Code row and recheck permission within that transaction. Other applications consume the five capabilities instead of importing
-Core or accessing its tables.
+the Code row and recheck permission within that transaction. Other applications
+consume the five capabilities instead of importing Core or accessing its tables.
 
 `insertCodeRun`, `appendCodeCall` and `finishCodeCall` are internal runner-host
 storage seams. The dispatcher must authorize execution and validate its lease

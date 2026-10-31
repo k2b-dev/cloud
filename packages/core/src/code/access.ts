@@ -2,7 +2,7 @@ import { getApp, sql } from "@k2b/cloud";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import { CloudResourceReaderViewSchema, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
 import { getEffectivePermission, type RequestAuthority, userFromActor } from "@k2b/cloud/server";
-import { canManageAppAccess } from "@k2b/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { i18n } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
@@ -18,6 +18,9 @@ export class CodeDataError extends Error {
     super(message);
   }
 }
+/** An owner provider could not answer; existing reader grants remain usable. */
+export class CodeOwnerUnavailableError extends Error {}
+
 /** Code accounts themselves have no management/query surface, even if accidentally given a grant. */
 export const codePerson = (context: CodeContext, write = false) => {
   const { authority } = context;
@@ -62,11 +65,20 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
   if (owner.kind === "app") {
     const app = await getApp(owner.appId);
     if (!app) return null;
-    return { title: app.name, admin: await canManageAppAccess(context.authority, app) };
+    const entries =
+      app.access?.kind === "grants" ? await sql<{ access_id: string }[]>`SELECT access_id FROM auth.app_access WHERE app_id=${app.id}` : [];
+    const permission = await getEffectivePermission({
+      accessIds: entries.map((entry) => entry.access_id),
+      subject: context.authority.accessSubject,
+    });
+    return { title: app.name, admin: permission === "admin" };
   }
   const appId = cloudResourceRefAppId(owner.ref);
   const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority);
-  if (!catalog.ok) throw new Error("Code owner provider unavailable");
+  if (!catalog.ok) {
+    if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(catalog.error.code)) return null;
+    throw new CodeOwnerUnavailableError("Code owner provider unavailable");
+  }
   const reader = catalog.data && resolveCapabilityResourceReader(catalog.data.manifest, owner.ref);
   if (!reader) return null;
   const result = await invokeCapabilityWithDataSchema(
@@ -76,7 +88,7 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
   );
   if (!result.ok) {
     if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return null;
-    throw new Error("Code owner reader unavailable");
+    throw new CodeOwnerUnavailableError("Code owner reader unavailable");
   }
   return { title: result.data.data.view.title, admin: result.data.data.view.permission === "admin" };
 };
@@ -84,7 +96,7 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
 /** Default editors are the personal owner or live owner administrators; explicit shares add editors/readers. */
 export const codePermission = async (code: Code, context: CodeContext, db: SQL = sql): Promise<CodePermission | null> => {
   const user = codePerson(context);
-  if (user.roles.includes("admin")) return "editor";
+  const cloudAdmin = user.roles.includes("admin");
   if (code.owner.kind === "person" && code.owner.userId === user.id) return "editor";
   const entries = await db<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id = ${code.id}`;
   const permission = await getEffectivePermission(
@@ -95,8 +107,15 @@ export const codePermission = async (code: Code, context: CodeContext, db: SQL =
     db,
   );
   if (permission === "write" || permission === "admin") return "editor";
-  if (code.owner.kind !== "person" && (await readCodeOwner(code.owner, context))?.admin) return "editor";
-  return permission === "read" ? "reader" : null;
+  if (code.owner.kind !== "person") {
+    try {
+      if ((await readCodeOwner(code.owner, context))?.admin) return "editor";
+    } catch (error) {
+      if (!(error instanceof CodeOwnerUnavailableError) || (permission !== "read" && !cloudAdmin)) throw error;
+      logger("core:code-owner").warn("Code owner unavailable; retaining existing reader access", { codeId: code.id });
+    }
+  }
+  return permission === "read" || cloudAdmin ? "reader" : null;
 };
 /** Missing and inaccessible Code have the same result. */
 export const requireCodePermission = async (code: Code, context: CodeContext, editor = false, db: SQL = sql): Promise<CodePermission> => {

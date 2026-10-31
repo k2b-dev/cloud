@@ -113,11 +113,11 @@ const setting = async (key: keyof typeof CODE_SETTINGS) => {
   if (!Number.isSafeInteger(value) || value < definition.min || value > definition.max) throw new Error(`Invalid Code setting: ${key}`);
   return value;
 };
-const jsonText = (value: unknown): string => {
+const jsonText = (value: unknown, forJsonbOrText = false): string => {
   try {
     const text = JSON.stringify(value, (key, item: unknown) => {
       const invalidText = (value: string) => /[\u0000]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
-      if (invalidText(key) || (typeof item === "string" && invalidText(item)))
+      if (forJsonbOrText && (invalidText(key) || (typeof item === "string" && invalidText(item))))
         throw new CodeDataError("BAD_INPUT", "Code storage requires valid Unicode without NUL characters.");
       return item;
     });
@@ -167,7 +167,7 @@ export const createCode = async (input: { owner: CodeOwner; title: string }, con
     if (!user.roles.includes("admin") && !presentation.admin) throw new CodeDataError("FORBIDDEN", "Owner administration required.");
   }
   const title = input.title.trim();
-  jsonText(title);
+  jsonText(title, true);
   if (!title || title.length > 200) throw new CodeDataError("BAD_INPUT", "Code title must contain 1–200 characters.");
   try {
     return await sql.begin(async (tx) => {
@@ -277,8 +277,8 @@ export const createCodeVersion = async (
 ): Promise<CodeVersion> => {
   codePerson(context, true);
   const source = CodeSourceFilesSchema.parse(input.sourceFiles);
-  jsonText(source);
-  jsonText(input.bundle);
+  jsonText(source, true);
+  jsonText(input.bundle, true);
   const manifest = input.manifest === null ? null : CodeVersionManifestSchema.parse(input.manifest);
   const sourceBytes = Object.entries(source).reduce((total, [path, content]) => total + bytes(path) + bytes(content), 0);
   const bundleBytes = bytes(input.bundle);
@@ -291,7 +291,7 @@ export const createCodeVersion = async (
     Object.keys(source).length > fileLimit ||
     sourceBytes > sourceLimit ||
     bundleBytes > bundleLimit ||
-    bytes(jsonText(manifest)) > manifestLimit
+    bytes(jsonText(manifest, true)) > manifestLimit
   )
     throw new CodeDataError("BAD_INPUT", "Code version exceeds storage limits.");
   return sql.begin(async (tx) => {
@@ -441,7 +441,7 @@ export const insertCodeRun = async (
 ): Promise<string> => {
   const payloadBytes = await setting("core.code.payload_bytes");
   const callsLimit = await setting("core.code.calls_per_run");
-  const encoded = jsonText(input.input);
+  const encoded = jsonText(input.input, true);
   if ((await jsonbBytes(encoded, db)) > payloadBytes) throw new CodeDataError("BAD_INPUT", "Run input exceeds storage limit.");
   const [row] = await db<
     { id: string }[]
@@ -455,7 +455,7 @@ export const appendCodeCall = async (
   db: TransactionSQL,
 ): Promise<number> => {
   const call = NormalizedCapabilityCallSchema.parse(input.call);
-  const encoded = jsonText(call);
+  const encoded = jsonText(call, true);
   const [run] = await db<
     { payload_bytes: number; calls_limit: number }[]
   >`SELECT payload_bytes,calls_limit FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE`;
@@ -476,20 +476,17 @@ export const finishCodeCall = async (
   db: TransactionSQL,
 ): Promise<void> => {
   let encoded: string;
-  let unsupported = false;
   try {
     encoded = jsonText(input.result);
   } catch (error) {
     if (!(error instanceof CodeDataError)) throw error;
-    unsupported = true;
     encoded = jsonText({ code: "code_result_not_storable", message: error.message });
   }
-  // Storable results admitted by the capability transport are retained in full, independent of the run's input budget.
-  const size = await jsonbBytes(encoded, db);
-  const invalid = unsupported || size > CODE_RESULT_STORAGE_BYTES;
+  // Postgres json preserves exact text, including numeric exponents and escaped NUL.
+  const size = bytes(encoded);
   const stored = size > CODE_RESULT_STORAGE_BYTES ? jsonText({ code: "code_result_exceeds_capability_contract", bytes: size }) : encoded;
   const result =
-    await db`UPDATE code.calls SET state = ${invalid ? "failed" : input.state},result = ${stored}::text::jsonb,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state = 'running'`;
+    await db`UPDATE code.calls SET state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state = 'running'`;
   if (result.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");
 };
 /** Retention is 30 days after termination; active/queued runs and immutable versions are never swept. */

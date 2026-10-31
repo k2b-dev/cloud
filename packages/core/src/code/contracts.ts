@@ -1,4 +1,4 @@
-import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 /** Stable public identity; never changes when a new version is saved. */
@@ -107,8 +107,8 @@ export const CodeRunSchema = z
   })
   .strict();
 export type CodeRun = z.infer<typeof CodeRunSchema>;
-/** jsonb text adds separator whitespace; twice the public result budget bounds every valid capability result. */
-export const CODE_RESULT_STORAGE_BYTES = 2 * CAPABILITY_MAX_RESULT_BYTES;
+/** Results use Postgres json (exact JSON text), so the public capability result byte budget applies without expansion. */
+export const CODE_RESULT_STORAGE_BYTES = CAPABILITY_MAX_RESULT_BYTES;
 /** Inline JSON and text chunks share the capability response budget. Larger values remain complete in Postgres. */
 export const CODE_INLINE_JSON_BYTES = 16_384;
 /** Ordered observational record, not a replay journal or an idempotency reservation. */
@@ -117,7 +117,8 @@ export const CodeCallSchema = z
     ordinal: z.number().int().positive(),
     kind: z.enum(["query", "action"]),
     capability: z.string(),
-    call: NormalizedCapabilityCallSchema.nullable(),
+    /** Historical normalized JSON; output validation must not depend on the current invocation schema. */
+    call: z.json().nullable(),
     callChunked: z.boolean(),
     resultChunked: z.boolean(),
     result: z.json().nullable(),

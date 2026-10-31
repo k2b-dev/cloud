@@ -51,7 +51,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       entrypoint TEXT NOT NULL CHECK (char_length(entrypoint) BETWEEN 1 AND 512),
       state TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','running','succeeded','failed','cancelled','skipped')),
       outcome TEXT CHECK (outcome IS NULL OR outcome ~ '^[a-z][a-z0-9_]{0,127}$'),
-      input JSONB NOT NULL DEFAULT 'null'::jsonb, output JSONB,
+      input JSONB NOT NULL DEFAULT 'null'::jsonb, output JSON,
       payload_bytes INTEGER NOT NULL CHECK (payload_bytes BETWEEN 1 AND 32768),
       calls_limit INTEGER NOT NULL CHECK (calls_limit BETWEEN 1 AND 1000),
       generation INTEGER NOT NULL DEFAULT 0 CHECK (generation >= 0), lease_expires_at TIMESTAMPTZ,
@@ -59,14 +59,14 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       FOREIGN KEY (version_id,code_id) REFERENCES code.versions(id,code_id) ON DELETE CASCADE,
       CHECK ((state IN ('succeeded','failed','cancelled','skipped')) = (ended_at IS NOT NULL)),
       CHECK (ended_at IS NULL OR ended_at >= created_at),
-      CHECK (octet_length(input::text) <= payload_bytes AND (output IS NULL OR octet_length(output::text) <= 524288))
+      CHECK (octet_length(input::text) <= payload_bytes AND (output IS NULL OR octet_length(output::text) <= 262144))
     )`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_code_history ON code.runs(code_id,created_at DESC,id DESC)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_retention ON code.runs(ended_at,id) WHERE ended_at IS NOT NULL`.simple();
-    // 524288 = twice CAPABILITY_MAX_RESULT_BYTES, including jsonb separator whitespace.
+    // json preserves exact result text: no exponent expansion or separator whitespace beyond CAPABILITY_MAX_RESULT_BYTES.
     await tx`CREATE TABLE IF NOT EXISTS code.calls (
       run_id UUID NOT NULL REFERENCES code.runs(id) ON DELETE CASCADE, ordinal INTEGER NOT NULL CHECK (ordinal > 0),
-      kind TEXT NOT NULL CHECK (kind IN ('query','action')), call JSONB NOT NULL CHECK (jsonb_typeof(call) = 'object'), result JSONB,
+      kind TEXT NOT NULL CHECK (kind IN ('query','action')), call JSONB NOT NULL CHECK (jsonb_typeof(call) = 'object'), result JSON,
       state TEXT NOT NULL DEFAULT 'running' CHECK (state IN ('running','succeeded','failed')),
       started_at TIMESTAMPTZ NOT NULL DEFAULT now(), ended_at TIMESTAMPTZ,
       PRIMARY KEY(run_id,ordinal), CHECK ((state = 'running') = (ended_at IS NULL))
@@ -76,7 +76,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     DECLARE run code.runs;
     BEGIN
       SELECT * INTO run FROM code.runs WHERE id = NEW.run_id FOR UPDATE;
-      IF NEW.ordinal > run.calls_limit OR octet_length(NEW.call::text) > run.payload_bytes OR COALESCE(octet_length(NEW.result::text),0) > 524288 THEN
+      IF NEW.ordinal > run.calls_limit OR octet_length(NEW.call::text) > run.payload_bytes OR COALESCE(octet_length(NEW.result::text),0) > 262144 THEN
         RAISE EXCEPTION 'code call storage limit' USING ERRCODE = '23514';
       END IF;
       RETURN NEW;

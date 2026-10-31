@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import * as cloudRuntime from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
@@ -35,6 +36,7 @@ const ids = {
   admin: "55555555-5555-4555-8555-555555555555",
   creator: "66666666-6666-4666-8666-666666666666",
 };
+const actualReadCodeOwner = access.readCodeOwner;
 const fixed = new Date("2026-10-31T12:00:00.000Z");
 const person = (id: string, admin = false): User => ({
   id,
@@ -174,7 +176,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
       for (const response of [read, version, runs, run]) expect(response.ok).toBe(allowed);
       if (run.ok) {
         expect(codeQueryContracts.runRead.data.safeParse(run.data.data).success).toBe(true);
-        if (id === ids.reader) {
+        if (id === ids.reader || id === ids.admin) {
           expect(run.data.data.contents).toBeNull();
           expect(JSON.stringify(run)).not.toContain("private");
         } else {
@@ -319,10 +321,12 @@ databaseSuite()("Core Code data and Query authorization", () => {
       { owner: { kind: "resource", ref: { type: "example.mailbox", id: "creator-deletion" } }, title: "Survives" },
       ctx(ids.creator, true),
     );
+    ownerState.set(ids.creator, { title: "Survives", admin: true });
     const version = await createCodeVersion(
       { codeId: resource.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null },
       ctx(ids.creator, true),
     );
+    ownerState.delete(ids.creator);
     await sql`DELETE FROM auth.users WHERE id=${ids.creator}::uuid`;
     expect(await sql<{ created_by: string | null }[]>`SELECT created_by FROM code.codes WHERE id=${resource.id}`).toEqual([
       { created_by: null },
@@ -379,6 +383,30 @@ databaseSuite()("Core Code data and Query authorization", () => {
     ).toHaveLength(1);
     expect((await readCode(code.id, ctx(ids.editor))).permission).toBe("editor");
   });
+  test("Cloud administration gives reader visibility; writes and run contents require normal editor rights", async () => {
+    const personal = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Own authority" }, ctx(ids.owner));
+    expect((await readCode(personal.id, ctx(ids.admin, true))).permission).toBe("reader");
+    const version = { codeId: personal.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null };
+    await expect(createCodeVersion(version, ctx(ids.admin, true))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(addCodeShare(personal.id, { type: "user", userId: ids.stranger }, "editor", ctx(ids.admin, true))).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    const grant = await addCodeShare(personal.id, { type: "user", userId: ids.admin }, "editor", ctx(ids.owner));
+    expect((await createCodeVersion(version, ctx(ids.admin, true))).codeId).toBe(personal.id);
+    await removeCodeShare(personal.id, grant, ctx(ids.owner));
+    expect((await readCode(personal.id, ctx(ids.admin, true))).permission).toBe("reader");
+  });
+  test("a provider outage preserves explicit reader visibility", async () => {
+    const resource = await createCode(
+      { owner: { kind: "resource", ref: { type: "example.mailbox", id: "reader-outage" } }, title: "Readable" },
+      ctx(ids.admin, true),
+    );
+    ownerState.set(ids.admin, { title: "Mailbox", admin: true });
+    await addCodeShare(resource.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.admin, true));
+    ownerState.delete(ids.admin);
+    ownerSpy.mockRejectedValueOnce(new access.CodeOwnerUnavailableError("Provider offline"));
+    expect((await readCode(resource.id, ctx(ids.reader))).permission).toBe("reader");
+  });
   test("unfiltered lists avoid remote owner scans; exact owners check live administration", async () => {
     const resource = await createCode(
       { owner: { kind: "resource", ref: { type: "example.mailbox", id: "list-admin" } }, title: "Resource" },
@@ -414,7 +442,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
   });
   test("valid large results finish and remain readable in full through bounded chunks", async () => {
     const largeRun = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "large-result", input: null });
-    const result = { rows: "ä😀".repeat(20000) };
+    const result = { rows: "ä😀".repeat(20000), numbers: Array.from({ length: 1000 }, () => 1e100), escaped: "NUL\u0000" };
     await sql.begin(async (tx) => {
       const ordinal = await appendCodeCall(
         { runId: largeRun, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
@@ -444,9 +472,9 @@ databaseSuite()("Core Code data and Query authorization", () => {
       (await readCodeRun({ codeId: code.id, runId: largeRun, content: { kind: "result", ordinal: 1 } }, ctx(ids.reader))).contents,
     ).toBeNull();
   });
-  test("out-of-contract or non-storable results finish visibly instead of leaving calls running", async () => {
+  test("out-of-contract results finish visibly instead of leaving calls running", async () => {
     const run = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "bad-result", input: null });
-    for (const result of ["x".repeat(524289), "bad\u0000"]) {
+    for (const result of ["x".repeat(262145)]) {
       await sql.begin(async (tx) => {
         const ordinal = await appendCodeCall(
           { runId: run, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
@@ -458,8 +486,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
     const calls = await sql<
       { state: string; result: { code: string } }[]
     >`SELECT state,result FROM code.calls WHERE run_id=${run}::uuid ORDER BY ordinal`;
-    expect(calls.map((call) => call.state)).toEqual(["failed", "failed"]);
-    expect(calls.map((call) => call.result.code)).toEqual(["code_result_exceeds_capability_contract", "code_result_not_storable"]);
+    expect(calls.map((call) => call.state)).toEqual(["succeeded"]);
+    expect(calls.map((call) => call.result.code)).toEqual(["code_result_exceeds_capability_contract"]);
   });
   test("run keyset pages keep exact microseconds and ignore newer insertions", async () => {
     const a = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "keyset-a", input: null });
@@ -476,6 +504,30 @@ databaseSuite()("Core Code data and Query authorization", () => {
   });
   test("immutable versions reject individual deletion while owning Code still exists", async () => {
     await expect((async () => await sql`DELETE FROM code.versions WHERE id=${versionId}::uuid`)()).rejects.toThrow("immutable version");
+  });
+  test("an application administrator with a read-only credential can read its Code ownership", async () => {
+    const registry = spyOn(cloudRuntime, "getApp").mockResolvedValue({
+      id: "scope-app",
+      name: "Scope App",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/scope-app"],
+      baseUrl: "http://scope-app.test",
+      access: { kind: "grants" },
+    });
+    try {
+      await sql`INSERT INTO auth.app_access_state(app_id) VALUES('scope-app')`;
+      const [grant] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(user_id,permission) VALUES(${ids.owner}::uuid,'admin') RETURNING id`;
+      if (!grant) throw new Error("Missing admin grant");
+      await sql`INSERT INTO auth.app_access(app_id,access_id) VALUES('scope-app',${grant.id}::uuid)`;
+      const readOnly: access.CodeContext = { authority: { ...authority(ids.owner), credentialKind: "oauth", scopes: ["core:read"] } };
+      expect(await actualReadCodeOwner({ kind: "app", appId: "scope-app" }, readOnly)).toEqual({ title: "Scope App", admin: true });
+      expect(() => access.codePerson(readOnly, true)).toThrow("Credential");
+    } finally {
+      registry.mockRestore();
+    }
   });
   test("personal owner deletion cascades Code, versions, runs and access entries", async () => {
     const grants = await sql<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id=${code.id}`;
