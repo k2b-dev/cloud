@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { captureTableAction, fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
 import { findTables, gridLine, inspectTableStructure } from "@k2b/ui/text-editor/model";
-import { sql } from "bun";
 import * as Y from "yjs";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";

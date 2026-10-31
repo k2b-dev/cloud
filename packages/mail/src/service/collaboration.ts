@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { AccessUser, PermissionLevel } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   ActorRef,
   ConversationCompletionResult,

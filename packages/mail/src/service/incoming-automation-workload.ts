@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { mandates } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { hasCurrentMailboxUserPermission } from "./collaborators";
 
 export type IncomingAutomationMandateCaller = {

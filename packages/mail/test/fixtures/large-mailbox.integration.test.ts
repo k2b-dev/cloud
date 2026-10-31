@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailRequestContext } from "../../src/service/auth";

@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, i18n, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { stringify } from "yaml";
 import { z } from "zod";
 import {
@@ -245,7 +245,7 @@ type AutomaticReplyConfigurationRow = {
 
 type ConfigurationActor = { kind: "user" | "service_account"; id: string };
 
-const configurationColumns = sql`
+const configurationColumns = () => sql`
   configuration.id,
   configuration.short_id,
   configuration.mailbox_id,
@@ -502,7 +502,7 @@ const loadConfiguration = async (
   lock = false,
 ): Promise<Result<AutomaticReplyConfiguration>> => {
   const [row] = await db<AutomaticReplyConfigurationRow[]>`
-    SELECT ${configurationColumns}
+    SELECT ${configurationColumns()}
     FROM mail.automatic_reply_configurations configuration
     WHERE configuration.id = ${configurationId}::uuid
       AND configuration.mailbox_id = ${mailboxId}::uuid
@@ -625,7 +625,7 @@ export const listAutomaticReplyConfigurations = async (
   const allowed = await requireMailboxPermission(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<AutomaticReplyConfigurationRow[]>`
-    SELECT ${configurationColumns}
+    SELECT ${configurationColumns()}
     FROM mail.automatic_reply_configurations configuration
     WHERE configuration.mailbox_id = ${mailboxId}::uuid
     ORDER BY configuration.enabled DESC, configuration.normalized_name, configuration.id

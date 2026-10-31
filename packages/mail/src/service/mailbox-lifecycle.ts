@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { cancelPendingAutomaticRepliesInTransaction } from "./automatic-reply";
 import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 

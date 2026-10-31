@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MergeConversationsInput, ReassignConversationMessageInput, SplitConversationInput } from "../contracts";
 import { MAIL_CONVERSATION_ASSIGNEE_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { anchor, fixtureTables, planLargeMailbox, seedLargeMailbox } from "../../test/fixtures/large-mailbox";
 import { createRecipientMailboxFixture, recipientSuggestionNow as now } from "../../test/fixtures/recipient-suggestions";
