@@ -1403,7 +1403,7 @@ const queryDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(mailboxId);
       if (!scope.ok) return scope;
-      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "read");
+      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "read");
       if (!access.ok) return access;
       const conversation = await resolveMailboxResource("conversations", scope.data.id, input.conversationId);
       if (!conversation.ok) return conversation;

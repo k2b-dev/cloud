@@ -504,7 +504,11 @@ describe("mail capabilities", () => {
 
   test("conversation.related checks current access before resolving its conversation", async () => {
     const denied = fail(err.forbidden("Access denied"));
-    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({
+      ok: true,
+      data: { scope: "assigned", permission: "read", userId },
+    });
     const resource = spyOn(publicResources, "resolveMailboxPublicId");
     const related = spyOn(conversationContext, "listRelatedConversations");
     const query = mailCapabilities.queries["conversation.related"];
@@ -2325,6 +2329,7 @@ describe("mail capabilities", () => {
   });
 
   test("returns bounded related conversations with explainable reasons, refs, and links", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "read" });
     spyOn(conversationContext, "listRelatedConversations").mockResolvedValue({
       ok: true,
       data: [
