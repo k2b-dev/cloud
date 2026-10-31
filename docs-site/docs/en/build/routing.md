@@ -60,7 +60,7 @@ Cloud-host path routing continues to use the declared prefixes above.
 
 See [Public site of an app](/en/docs/build/public-surface) for SSR, development
 hosts, visitor sessions, client IPs and rate limits, and
-[App domains](/en/docs/operations/app-domains) for ingress and protections.
+the App domains operations guide for ingress and protections.
 
 ## Mount the same paths in Hono
 

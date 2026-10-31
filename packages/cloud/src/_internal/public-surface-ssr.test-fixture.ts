@@ -17,7 +17,6 @@ if (development) {
   if (!result.success) throw new AggregateError(result.logs, "Public site bundle failed");
   const child = Bun.spawn([process.execPath, "--no-env-file", `${root}/dist/server.js`], {
     cwd: root,
-    env: process.env,
     stdout: "pipe",
     stderr: "pipe",
     timeout: 25000,

@@ -43,7 +43,7 @@ no environment variable or external service; checks use existing Valkey for
 short-lived challenges. Core must resolve and reach each assigned host on
 TLS port 443, including through hairpin NAT or split DNS where required.
 See [Public site](/en/docs/build/public-surface#assign-and-check-domains) and
-[App domains](/en/docs/operations/app-domains).
+the App domains operations guide.
 
 ## Resource reader checks and discussions
 
