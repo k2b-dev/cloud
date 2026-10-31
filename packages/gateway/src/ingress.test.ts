@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import type { DomainSnapshot } from "./app-domains";
+import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { createGatewayHandler } from "./handler";
 import { createIngressHandler } from "./ingress";
 import { createProxyStats } from "./proxy";
@@ -47,6 +47,7 @@ test.each([
   ["unknown.test", 404],
   ["*.site.test", 404],
   ["site.test:443", 404],
+  ["site.test\\foreign.test", 404],
 ])("Caddy asks for assigned domain %s: %s", (host, status) => {
   expect(handle(new Request(`http://gateway:3001/_cloud/ingress/allowed?domain=${encodeURIComponent(host)}`)).status).toBe(status);
 });
@@ -116,4 +117,22 @@ test("invalid durable host names never enter ingress rules or certificate admiss
   const body = await guarded(new Request("http://private/_cloud/ingress/traefik")).json();
   expect(Object.keys(body.http.routers)).toHaveLength(2);
   expect(guarded(new Request(`http://private/_cloud/ingress/allowed?domain=${encodeURIComponent(invalid)}`)).status).toBe(404);
+});
+
+test("Cloud and configured internal host assignments are excluded from both ingress providers", async () => {
+  const cloudHosts = cloudHostSet("https://cloud.test", ["http://cloud-gateway-cloud.test:3000", "http://internal.test:3000"], false);
+  const domains = new Map(snapshot.domains);
+  for (const host of cloudHosts) domains.set(host, { host, appId: "offline", redirectTo: null, createdAt: "2026-10-30T00:00:00Z" });
+  const guarded = createIngressHandler(
+    () => ({ ...snapshot, cloudHosts, domains }),
+    "http://internal.test:3000",
+    () => "le",
+    "websecure",
+  );
+  const body = await guarded(new Request("http://private/_cloud/ingress/traefik")).json();
+  expect(Object.keys(body.http.routers).sort()).toEqual(["app-domain-alias.test", "app-domain-site.test"]);
+  for (const host of cloudHosts) {
+    expect(guarded(new Request(`http://private/_cloud/ingress/allowed?domain=${host}`)).status).toBe(404);
+  }
+  expect(guarded(new Request("http://private/_cloud/ingress/allowed?domain=site.test")).status).toBe(200);
 });

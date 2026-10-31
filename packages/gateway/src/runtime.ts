@@ -127,6 +127,7 @@ export const refreshRoutes = async (): Promise<void> => {
 // Domain/settings database failures must not hold back the registry or its presence lease.
 // Retain the last durable assignment snapshot, including removals, until a read succeeds.
 let domainTask: Promise<void> | null = null;
+let lastDomainSnapshotHash = "";
 export const refreshDomains = (): Promise<void> => {
   domainTask ??= (async () => {
     try {
@@ -135,9 +136,21 @@ export const refreshDomains = (): Promise<void> => {
         get<string>("app.url"),
         get<string>("gateway.ingress_cert_resolver"),
       ]);
+      const cloudHosts = cloudHostSet(publicUrl, configuredGatewayUrls, env.IS_DEVELOPMENT);
+      const snapshotHash = JSON.stringify([
+        [...cloudHosts].sort(),
+        domains.map(({ host, appId, redirectTo, createdAt }) => [host, appId, redirectTo, createdAt]).sort(),
+      ]);
+      if (snapshotHash !== lastDomainSnapshotHash) {
+        lastDomainSnapshotHash = snapshotHash;
+        for (const { host, appId } of domains) {
+          if (cloudHosts.has(host))
+            log.warn("App domain conflicts with a Cloud or internal gateway host; excluded from ingress", { host, appId });
+        }
+      }
       domainSnapshot = {
         ...domainSnapshot,
-        cloudHosts: cloudHostSet(publicUrl, configuredGatewayUrls, env.IS_DEVELOPMENT),
+        cloudHosts,
         domains: new Map(domains.map((domain) => [domain.host, domain])),
         domainsReady: true,
       };

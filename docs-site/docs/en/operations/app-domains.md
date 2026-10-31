@@ -77,6 +77,12 @@ cld --profile operator admin apps domains rm webseite example.org --yes
 For `set`, choose exactly one of `--redirect-to` and `--no-redirect`. Removal
 requires `--yes`.
 
+An assignment cannot replace a configured Cloud or internal gateway host,
+including the host in `GATEWAY_INTERNAL_URL`. Such a host keeps Cloud routing
+and is excluded from Traefik discovery and Caddy certificate admission. The
+gateway logs a warning for each conflicting host when the domain snapshot
+changes. Remove the conflicting assignment and choose another hostname.
+
 ## Configure Traefik
 
 The gateway serves a separate, private listener on port `3001`, controlled by
@@ -170,8 +176,9 @@ The administration checks DNS, certificate validity, then reachability:
 - **DNS:** A/AAAA records exist. This alone does not prove that DNS points to
   this gateway.
 - **Certificate:** the domain completes TLS with a valid certificate.
-- **Reachability:** a short-lived nonce sent to
-  `GET /_cloud/domain-check/<nonce>` returns unchanged from this gateway.
+- **Reachability:** Core sends `GET /_cloud/domain-check/<nonce>` and verifies
+  the separate, short-lived answer stored in Valkey. The answer never appears
+  in the request.
 
 Only assigned hosts with a live nonce receive the special check response. It
 is plain text with `Cache-Control: no-store`. Other requests to that path

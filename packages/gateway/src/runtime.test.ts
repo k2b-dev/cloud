@@ -20,6 +20,8 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     let builtVersion = -1;
     let domainReads = 0;
     let domainFailure = false;
+    let collidingHosts: string[] = [];
+    const warnings: Array<{ message: string; meta?: Record<string, unknown> }> = [];
     let publicUrl = "https://cloud.test";
     let hold: Promise<void> | undefined;
     let diagnosticsFail = false;
@@ -57,14 +59,23 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       readAppDomains: async () => {
         domainReads++;
         if (domainFailure) throw new Error("database unavailable");
-        return [{ host: `site-${registryVersion}.test`, appId: "site", redirectTo: null, createdAt: "2026-10-31T00:00:00.000Z" }];
+        return [`site-${registryVersion}.test`, ...collidingHosts].map((host) => ({
+          host,
+          appId: "site",
+          redirectTo: null,
+          createdAt: "2026-10-31T00:00:00.000Z",
+        }));
       },
     }));
     mock.module("@k2b/cloud/services/settings", () => ({
       get: async (key: string) => (key === "app.url" ? publicUrl : "le"),
     }));
     mock.module("@k2b/cloud/services", () => ({
-      logger: () => ({ info: () => {}, warn: () => {}, error: () => {} }),
+      logger: () => ({
+        info: () => {},
+        warn: (message: string, meta?: Record<string, unknown>) => warnings.push({ message, meta }),
+        error: () => {},
+      }),
       buildGatewayRouteSnapshot: (input: { stats: { totalRequests: number } }) => ({
         updatedAt: now,
         stats: { totalRequests: input.stats.totalRequests },
@@ -135,6 +146,26 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       expect(getDomainSnapshot().cloudHosts.has("cloud-dev.test")).toBe(true);
       expect(getDomainSnapshot().cloudHosts.has("cloud.test")).toBe(false);
       expect(getDomainSnapshot().domains.has("site-2.test")).toBe(true);
+
+      // A repeated read is not a changed domain snapshot; registry-only changes cannot spam warnings.
+      collidingHosts = ["cloud-new.test", "gateway"];
+      await refreshDomains();
+      expect(warnings.map(({ meta }) => meta?.host)).toEqual(collidingHosts);
+      await refreshRoutes();
+      await refreshDomains();
+      expect(warnings).toHaveLength(2);
+      registryVersion = 3;
+      await refreshDomains();
+      expect(warnings.map(({ meta }) => meta?.host)).toEqual([...collidingHosts, ...collidingHosts]);
+      collidingHosts = [];
+      await refreshDomains();
+      expect(warnings).toHaveLength(4);
+      collidingHosts = ["cloud-new.test"];
+      await refreshDomains();
+      expect(warnings).toHaveLength(5);
+      publicUrl = "https://cloud-latest.test";
+      await refreshDomains();
+      expect(warnings).toHaveLength(5);
 
       // Diagnostics failures must not suppress the gateway's presence lease.
       diagnosticsFail = true;

@@ -63,7 +63,7 @@ const fixture = (
   ]);
   let storageCalls = 0;
   let active = snapshot;
-  const nonces = new Set<string>();
+  const answers = new Map<string, string>();
   const rates: Array<[string, string]> = [];
   let rateResponse: Response | null = null;
   const handle = createGatewayHandler({
@@ -80,12 +80,12 @@ const fixture = (
       rates.push([host, address]);
       return rateResponse;
     },
-    hasNonce: async (key) => nonces.has(key),
+    readDomainCheckAnswer: async (key) => answers.get(key) ?? null,
   });
   return {
     requests,
     snapshot,
-    nonces,
+    answers,
     rates,
     storageCalls: () => storageCalls,
     setSnapshot: (next: DomainSnapshot) => {
@@ -279,13 +279,16 @@ test("host and resolved client address reach the limiter; rejection has Retry-Af
   expect(f.requests).toHaveLength(0);
 });
 
-test("assigned host answers only a live domain-check nonce; otherwise the app owns the request", async () => {
+test("assigned host returns the stored domain-check answer, never the path nonce", async () => {
   const f = fixture();
-  f.nonces.add(domainCheckKey("site.test", "nonce-value"));
+  f.answers.set(domainCheckKey("site.test", "nonce-value"), "separate-answer");
   const response = await f.request("/_cloud/domain-check/nonce-value");
-  expect(await response.text()).toBe("nonce-value");
+  expect(await response.text()).toBe("separate-answer");
   expect(response.headers.get("Cache-Control")).toBe("no-store");
   expect(response.headers.get("Content-Type")).toBe("text/plain");
+  const otherHost = await f.request("/_cloud/domain-check/nonce-value", {}, "alias.test");
+  expect(otherHost.status).toBe(301);
+  expect(await otherHost.text()).toBe("");
   const ordinary = await f.request("/_cloud/domain-check/expired");
   expect((await ordinary.json()).path).toBe("/_cloud/public/_cloud/domain-check/expired");
 });
@@ -582,7 +585,7 @@ test("gateway-generated public responses get base headers and telemetry with the
 
 test("a live domain-check path cannot bypass a WebSocket handshake's Origin rule", async () => {
   const f = fixture();
-  f.nonces.add(domainCheckKey("site.test", "nonce-value"));
+  f.answers.set(domainCheckKey("site.test", "nonce-value"), "separate-answer");
   expect(
     (await f.request("/_cloud/domain-check/nonce-value", { headers: { Upgrade: "websocket", Origin: "https://foreign.test" } })).status,
   ).toBe(403);
@@ -598,4 +601,18 @@ test("hosts awaiting the first durable domain snapshot get a retryable failure i
   expect((await f.request("/api/core", {}, "cloud.test")).status).toBe(200);
   f.setSnapshot({ ...f.snapshot, domains: new Map(), domainsReady: true });
   expect((await f.request()).status).toBe(421);
+});
+
+test.each(["cloud.test", "cloud-gateway-cloud.test", "internal.test"])("assignment cannot override Cloud routing for %s", async (host) => {
+  const f = fixture();
+  f.setSnapshot({
+    ...f.snapshot,
+    cloudHosts: cloudHostSet("https://cloud.test", ["http://cloud-gateway-cloud.test:3000", "http://internal.test:3000"], false),
+    domains: new Map([[host, { host, appId: "site", redirectTo: "site.test", createdAt: "2026-10-30T00:00:00Z" }]]),
+  });
+  const response = await f.request("/_cloud/app-access", {}, host);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Gateway-App")).toBe("core");
+  expect((await response.json()).path).toBe("/_cloud/app-access");
+  expect(f.rates).toEqual([]);
 });

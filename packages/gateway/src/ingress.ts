@@ -10,7 +10,9 @@ export const createIngressHandler =
     if (!["/_cloud/ingress/allowed", "/_cloud/ingress/traefik"].includes(url.pathname)) return new Response("Not found", { status: 404 });
     const current = snapshot();
     if (!current.domainsReady) return new Response("Domain assignments unavailable", { status: 503, headers: { "Retry-After": "5" } });
-    const domains = new Map([...current.domains].filter(([host]) => normalizeAppDomainHost(host) === host));
+    const domains = new Map(
+      [...current.domains].filter(([host]) => normalizeAppDomainHost(host) === host && !current.cloudHosts.has(host)),
+    );
     if (url.pathname === "/_cloud/ingress/allowed") {
       const host = normalizeAppDomainHost(url.searchParams.get("domain") ?? "");
       return new Response(null, { status: host && domains.has(host) ? 200 : 404, headers: { "Cache-Control": "no-store" } });

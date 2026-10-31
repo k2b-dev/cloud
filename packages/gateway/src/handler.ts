@@ -24,7 +24,7 @@ type GatewayDependencies = {
   health: () => Response;
   storage: (req: Request, address: string) => Promise<Response>;
   rate?: typeof checkPublicRate;
-  hasNonce?: (key: string) => Promise<boolean>;
+  readDomainCheckAnswer?: (key: string) => Promise<string | null>;
 };
 
 const unavailable = (): Response => new Response("Service unavailable", { status: 503, headers: { "Retry-After": "5" } });
@@ -68,12 +68,9 @@ export const createGatewayHandler =
         if (rejectPublicOrigin(req, decision)) return respond(new Response("Forbidden", { status: 403 }));
         if (req.method === "GET" && isDomainCheckPath(url.pathname)) {
           const nonce = url.pathname.slice(DOMAIN_CHECK_PATH_PREFIX.length);
-          if (
-            nonce &&
-            !nonce.includes("/") &&
-            (await (dependencies.hasNonce ?? (async (key) => (await redis.get(key)) !== null))(domainCheckKey(domain.host, nonce)))
-          ) {
-            return respond(new Response(nonce, { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } }));
+          const answer = await (dependencies.readDomainCheckAnswer ?? ((key) => redis.get(key)))(domainCheckKey(domain.host, nonce));
+          if (answer !== null) {
+            return respond(new Response(answer, { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } }));
           }
         }
       } catch {
