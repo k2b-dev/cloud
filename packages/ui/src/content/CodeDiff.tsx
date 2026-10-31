@@ -147,25 +147,27 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     const index = rows().findIndex((row) => (mark.side === "old" ? row.old === mark.line && row.kind !== "add" : row.new === mark.line));
     return index >= 0 ? index : undefined;
   });
-  const items = createMemo(() => {
-    const path = currentPath() ?? "";
-    const open = new Set(opened().get(path));
-    const plain = itemsOf(rows(), open, whole());
-    // The marked line is always shown: its fold opens without a click, also in the server render.
+  // The fold that hides the marked line opens without a click, also in the server render.
+  const markFold = createMemo(() => {
     const target = markIndex();
-    const fold = plain.find(
-      (item) => item.type === "fold" && target !== undefined && target >= item.start && target < item.start + item.count,
-    );
-    if (fold?.type !== "fold") return plain;
-    open.add(fold.start);
+    if (target === undefined) return undefined;
+    const plain = itemsOf(rows(), opened().get(currentPath() ?? "") ?? new Set(), whole());
+    const fold = plain.find((item) => item.type === "fold" && target >= item.start && target < item.start + item.count);
+    return fold?.type === "fold" ? fold.start : undefined;
+  });
+  const items = createMemo(() => {
+    const open = new Set(opened().get(currentPath() ?? ""));
+    const fold = markFold();
+    if (fold !== undefined) open.add(fold);
     return itemsOf(rows(), open, whole());
   });
-  const shown = createMemo(() => {
+  // Pages render cumulatively; a marked line renders the pages up to its own.
+  const markPages = createMemo(() => {
     const target = markIndex();
-    const position = target === undefined ? -1 : items().findIndex((item) => item.type === "row" && item.index === target);
-    const pageCount = Math.max(pages().get(currentPath() ?? "") ?? 1, Math.ceil((position + 1) / PAGE));
-    return Math.min(items().length, pageCount * PAGE);
+    if (target === undefined) return 0;
+    return Math.ceil((items().findIndex((item) => item.type === "row" && item.index === target) + 1) / PAGE);
   });
+  const shown = createMemo(() => Math.min(items().length, Math.max(pages().get(currentPath() ?? "") ?? 1, markPages()) * PAGE));
   const visible = createMemo(() => items().slice(0, shown()));
 
   const choose = (path: string) => {
@@ -185,21 +187,34 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     if (item) setFocusRow(item.type === "row" ? item.index : item.start);
   };
 
-  // A new mark switches to its file once; afterwards the person may choose another file.
+  // A mark switches to its file, also when that file arrives later. Afterwards the person may choose another file.
   createEffect(
     on(
-      () => props.mark && `${props.mark.path}\u0000${props.mark.side ?? "new"}\u0000${props.mark.line}`,
       () => {
+        const mark = props.mark;
+        return mark && props.files.some((file) => file.path === mark.path)
+          ? `${mark.path}\u0000${mark.side ?? "new"}\u0000${mark.line}`
+          : undefined;
+      },
+      (key) => {
         const path = props.mark?.path;
-        if (path && path !== currentPath() && props.files.some((file) => file.path === path)) choose(path);
+        if (!key || !path) return;
+        const before = currentPath();
+        setChosen(path);
+        if (path !== before) props.onFileChange?.(path);
       },
     ),
   );
+  // What a mark revealed stays revealed when the mark goes away; the marked line scrolls into view.
   createEffect(
     on(
       () => [markIndex(), currentPath()] as const,
-      ([target]) => {
-        if (target === undefined) return;
+      ([target, path]) => {
+        if (target === undefined || !path) return;
+        const fold = markFold();
+        const needed = markPages();
+        if (fold !== undefined) setOpened((current) => new Map(current).set(path, new Set([...(current.get(path) ?? []), fold])));
+        if (needed > (pages().get(path) ?? 1)) setPages((current) => new Map(current).set(path, needed));
         queueMicrotask(() => body?.querySelector(`[data-row="${target}"]`)?.scrollIntoView({ block: "center" }));
       },
     ),
@@ -309,6 +324,25 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     </div>
   );
 
+  // The tab panel holds the one code body: it names the file through its tab and takes keyboard focus.
+  const FileTabs = () => {
+    const panel = diffBody();
+    return (
+      <Tabs
+        variant="pill"
+        class="k2b-code-diff__files"
+        ariaLabel={messages().codeDiffFiles}
+        value={currentPath() ?? ""}
+        onValueChange={choose}
+        options={props.files.map((file) => ({
+          value: file.path,
+          label: fileLabel(file),
+          panel: file.path === currentPath() ? panel : undefined,
+        }))}
+      />
+    );
+  };
+
   return (
     <div class={`k2b-code-diff ${props.class ?? ""}`}>
       <Switch>
@@ -337,15 +371,7 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
           <Placeholder state="empty" icon="ti ti-equal" title={messages().codeDiffEmpty} />
         </Match>
         <Match when={props.files.length > 1}>
-          <Tabs
-            variant="pill"
-            class="k2b-code-diff__files"
-            ariaLabel={messages().codeDiffFiles}
-            value={currentPath() ?? ""}
-            onValueChange={choose}
-            options={props.files.map((file) => ({ value: file.path, label: fileLabel(file) }))}
-          />
-          {diffBody()}
+          <FileTabs />
         </Match>
         <Match when={props.files.length === 1}>
           <p class="k2b-code-diff__file">{fileLabel(props.files[0]!)}</p>

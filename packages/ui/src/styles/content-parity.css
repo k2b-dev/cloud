@@ -3858,7 +3858,8 @@
 
 /* Scoped syntax palette shared by CodeDisplay, DocCode and highlighted editors. */
 .k2b-ui {
-  --k2b-code-comment: #71717a;
+  /* Readable (4.5:1) on every code fill: muted, success, danger, and info surfaces. */
+  --k2b-code-comment: #67676f;
   --k2b-code-string: #1e3a8a;
   --k2b-code-number: #1d4ed8;
   --k2b-code-keyword: #b91c1c;
@@ -4091,9 +4092,10 @@
   color: var(--k2b-danger-text);
 }
 
-/* Inset bar and fill: the marked line keeps its geometry. */
+/* Inset bar and fill: the marked line keeps its geometry. The info surface
+   keeps every syntax colour readable. */
 .k2b-ui .k2b-code-diff__line[data-marked="true"] {
-  background: var(--k2b-selected);
+  background: var(--k2b-info-surface);
   box-shadow: inset 3px 0 0 var(--k2b-action);
 }
 

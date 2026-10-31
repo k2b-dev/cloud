@@ -84,15 +84,15 @@ type CodeDiffProps = {
 - **Folding:** three unchanged lines stay around every change; longer unchanged runs fold into one row ("9 unchanged lines") that opens in place. A file without changes is one fold.
 - **Files:** with more than one file, pill tabs name each file with `+added −removed`, `unchanged`, or the line count of a new file. The choice is internal unless `file` and `onFileChange` control it, for example from the URL.
 - **New files:** a file whose rows are all `add` has no predecessor. It shows as whole code with one number column, without fills or signs. Say in the surrounding text why the whole code is shown.
-- **Marking a line:** `mark` switches to its file, opens the fold around the line, renders its page, marks it with the selection fill and an inset bar, and scrolls it into view. Use `side: "old"` for a removed line. The server render already shows the marked line.
-- **Pages:** 400 rows render at a time; "Show 400 more lines" renders the next page.
+- **Marking a line:** `mark` switches to its file (also when that file arrives later), opens the fold around the line, renders the pages up to it, marks it with the info fill and an inset bar, and scrolls it into view. Use `side: "old"` for a removed line. The server render already shows the marked line. What a mark revealed stays open when the mark goes away, and the person can still choose another file.
+- **Pages:** 400 rows render at first; "Show 400 more lines" adds the next page and moves focus to its first row.
 - **States:** `status="loading"` keeps the code surface with skeleton rows and one status label. `status="error"` shows "The code difference could not be loaded", the application's `errorDescription`, and "Try again" when `onRetry` is set. Code without any change shows "The code is unchanged".
 
 Headings, version names, and the explanation of what a reviewer decides belong to the application around the component.
 
 ### Accessibility
 
-The code is a labelled region ("Code difference, read only · index.ts"). Screen readers hear "Added, line 13:" or "Removed, line 11:" before every changed line and "Marked line." before the marked one; numbers and signs are hidden from them and from text selection. Fold rows and "Show more" are buttons; focus moves to the first revealed row. File tabs follow the `Tabs` keyboard model.
+The code is a labelled region ("Code difference, read only · index.ts"). Screen readers hear "Added, line 13:" or "Removed, line 11:" before every changed line and "Marked line." before the marked one; numbers and signs are hidden from them and from text selection. Fold rows and "Show more" are buttons; focus moves to the first revealed row. File tabs follow the `Tabs` keyboard model and control the code as their tab panel, which takes keyboard focus. Comments and every other syntax colour keep 4.5:1 on the muted, success, danger, and info fills.
 
 ### Example
 

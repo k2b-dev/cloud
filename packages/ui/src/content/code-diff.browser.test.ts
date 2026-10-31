@@ -33,17 +33,21 @@ const del = (text) => ({ kind: "del", text });
 const head = Array.from({ length: 12 }, (_, index) => same("const step" + (index + 1) + " = " + (index + 1) + ";"));
 const long = "  await message.reply({ messageId: event.messageId, text, subject: 'Your callback request', cc: [], bcc: [], priority: 'normal' });";
 const files = [
-  { path: "index.ts", lines: [...head, del("  await draft.create({ text });"), add("  // Reply to the sender of the event"), add(long), same("}"), same("")] },
+  { path: "index.ts", lines: [...head, del("  await draft.create({ text });"), add("  // Reply to the sender of the event"), add(long), same("}"), same(""), same("// done")] },
   { path: "reply.test.ts", lines: [same("test('replies', () => {"), ...Array.from({ length: 900 }, (_, index) => add("  expect(sent[" + index + "]).toBeDefined();")), same("});")] },
   { path: "params.ts", lines: [same("export const params = {"), same("  window: 2,"), same("};")] },
 ];
 const [mark, setMark] = createSignal();
+const [shownFiles, setShownFiles] = createSignal(files);
 window.setMark = setMark;
+window.setFiles = (paths) => setShownFiles(files.filter((file) => paths.includes(file.path)));
 window.changes = [];
 render(
   () =>
     createComponent(CodeDiff, {
-      files,
+      get files() {
+        return shownFiles();
+      },
       get mark() {
         return mark();
       },
@@ -70,7 +74,12 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Fixture = { setMark: (mark?: { path: string; line: number; side?: "old" | "new" }) => void; changes: string[] };
+type Fixture = {
+  setMark: (mark?: { path: string; line: number; side?: "old" | "new" }) => void;
+  setFiles: (paths: string[]) => void;
+  changes: string[];
+};
+const fixtureCall = (page: Page, call: string) => page.evaluate(`window.${call}`);
 
 /** The component in a column of `width` px, in a viewport short enough that a far line must scroll. */
 const open = async (width: number, theme?: "dark"): Promise<Page> => {
@@ -104,12 +113,12 @@ describe("CodeDiff in a browser", () => {
     const page = await open(560);
     try {
       const fold = await rect(page, ".k2b-code-diff__fold");
-      const files = await rect(page, ".k2b-code-diff__files");
+      const files = await rect(page, ".k2b-code-diff__files .k2b-tabs__bar");
       await page.focus(".k2b-code-diff__fold");
       await page.keyboard.press("Enter");
       await settled(page);
       expect(await page.locator(".k2b-code-diff__fold").count()).toBe(0);
-      expect(await rect(page, ".k2b-code-diff__files")).toEqual(files);
+      expect(await rect(page, ".k2b-code-diff__files .k2b-tabs__bar")).toEqual(files);
       expect((await rect(page, '[data-row="0"]')).top).toBe(fold.top);
       expect(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.row)).toBe("0");
     } finally {
@@ -169,6 +178,47 @@ describe("CodeDiff in a browser", () => {
     }
   }, 30_000);
 
+  test("what a mark revealed stays when the mark goes away, and a mark waits for its file to arrive", async () => {
+    const page = await open(560);
+    try {
+      await fixtureCall(page, 'setMark({ path: "reply.test.ts", line: 700 })');
+      await settled(page);
+      expect(await page.locator(".k2b-code-diff__line").count()).toBe(800);
+      await fixtureCall(page, "setMark(undefined)");
+      await settled(page);
+      expect(await region(page)).toBe("Code difference, read only · reply.test.ts");
+      expect(await page.locator(".k2b-code-diff__line").count()).toBe(800);
+
+      // The marked file is not loaded yet: the mark switches to it once it arrives.
+      await page.click('[role="tab"]:has-text("index.ts")');
+      await fixtureCall(page, 'setFiles(["index.ts", "params.ts"])');
+      await fixtureCall(page, 'setMark({ path: "reply.test.ts", line: 3 })');
+      await settled(page);
+      expect(await region(page)).toBe("Code difference, read only · index.ts");
+      await fixtureCall(page, 'setFiles(["index.ts", "reply.test.ts", "params.ts"])');
+      await settled(page);
+      expect(await region(page)).toBe("Code difference, read only · reply.test.ts");
+      expect(await page.locator('[data-marked="true"]').getAttribute("data-row")).toBe("2");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("the selected file tab controls the code panel, which takes keyboard focus", async () => {
+    const page = await open(560);
+    try {
+      const tab = page.locator('[role="tab"][aria-selected="true"]');
+      const panel = page.locator('[role="tabpanel"]');
+      expect(await tab.getAttribute("aria-controls")).toBe(await panel.getAttribute("id"));
+      expect(await panel.getAttribute("aria-labelledby")).toBe(await tab.getAttribute("id"));
+      await tab.focus();
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("tabpanel");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("columns follow the component width and long lines wrap instead of scrolling", async () => {
     for (const [width, number, sign] of [
       [560, 36, 18],
@@ -198,7 +248,7 @@ describe("CodeDiff in a browser", () => {
     test(`passes axe with a marked line (${theme})`, async () => {
       const page = await open(560, theme === "dark" ? "dark" : undefined);
       try {
-        await page.evaluate(() => (window as unknown as Fixture).setMark({ path: "index.ts", line: 13, side: "old" }));
+        await page.evaluate(() => (window as unknown as Fixture).setMark({ path: "index.ts", line: 13 }));
         await settled(page);
         await page.addScriptTag({ content: axeSource });
         const violations = await page.evaluate(async () => {
