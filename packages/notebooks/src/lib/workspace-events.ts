@@ -3,6 +3,7 @@ import { STREAM_CURSOR_PATTERN } from "./yjs";
 export const NOTEBOOKS_WORKSPACE_WS_TYPE = {
   subscribe: "notes.workspace.subscribe",
   ready: "notes.workspace.ready",
+  presenceWatch: "notes.workspace.presence.watch",
   event: "notes.workspace.event",
   error: "notes.workspace.error",
   revoked: "notes.workspace.revoked",

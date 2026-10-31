@@ -632,6 +632,8 @@ for (const mode of ["write", "readonly"] as const) {
   test(`${mode}: the first HTML renders full width and seeds Ansicht from the cookie`, async () => {
     for (const fullWidth of [false, true]) {
       const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
+      const [presence] = await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]');
+      expect(islandProps(presence?.attributes["data-props"]).initialNoteId).toBe("note01");
       const surfaces = await select(html, ".notebook-document-surface");
       expect(surfaces).toHaveLength(1);
       expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);

@@ -380,10 +380,14 @@ for (const failure of ["missing IndexedDB", "storage error", "quota", "server er
       const page = await context.newPage();
       if (failure === "missing IndexedDB") await page.addInitScript(() => Object.defineProperty(window, "indexedDB", { value: undefined }));
       if (failure === "storage error" || failure === "quota")
+        // On the prototype: WebKit ignores a method assigned to the indexedDB instance itself.
         await page.addInitScript((quota) => {
-          indexedDB.open = () => {
-            throw new DOMException("Storage unavailable", quota ? "QuotaExceededError" : "SecurityError");
-          };
+          Object.defineProperty(IDBFactory.prototype, "open", {
+            configurable: true,
+            value: () => {
+              throw new DOMException("Storage unavailable", quota ? "QuotaExceededError" : "SecurityError");
+            },
+          });
         }, failure === "quota");
       if (failure === "server error" || failure === "network error")
         await page.route("**/document?**", (route) =>
