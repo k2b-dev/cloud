@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { captureTableAction, toBase64 } from "@k2b/cloud/shared-text";
 import { findTables } from "@k2b/ui/text-editor/model";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import * as Y from "yjs";
