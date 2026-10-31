@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { CAPABILITY_ASK_REASONS } from "@k2b/cloud/contracts";
+import { CAPABILITY_ASK_REASONS, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
+import { coreCapabilityMessages } from "../capability-messages";
 import {
   CodePolicyDefinitionSchema,
   CodePolicyManifestSchema,
@@ -156,4 +157,25 @@ describe("Code policy group resolution", () => {
     for (const silent of ["you", "draft", "shared"] as const) expect(codePolicyRow("action", { silent })).toBe(`silent_${silent}`);
     for (const ask of CAPABILITY_ASK_REASONS) expect(codePolicyRow("action", { ask })).toBe(`ask_${ask}`);
   });
+});
+
+test("policy review catalog supplies valid complete-review sentences and localized classifications", () => {
+  for (const requested of ["en", "de", "fr"]) {
+    const { t, locale } = coreCapabilityMessages(requested);
+    expect(
+      CapabilityActionCallReviewSchema.safeParse({
+        locale,
+        slots: {},
+        sentence: {
+          action: t.codePolicyReview({ revision: 2, count: 3 }),
+          running: t.codePolicyRunning,
+          done: t.codePolicyDone,
+          confirm: t.codePolicyConfirm,
+          decline: t.codePolicyDecline,
+        },
+      }).success,
+    ).toBe(true);
+    expect(t.codePolicyRow({ row: "read" })).toBe(locale === "de" ? "Lesen" : "Read");
+    expect(t.codePolicyValue({ value: "admin" })).toBe(locale === "de" ? "Admin gibt frei" : "Admin approval");
+  }
 });

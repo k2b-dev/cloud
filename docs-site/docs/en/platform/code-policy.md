@@ -103,7 +103,7 @@ review and cannot be called by Code.
 Preview checks active versions against their used rows and existing approval
 coverage. It counts only rows that become stricter and either become `never`
 or require an approval the version lacks. A looser table pauses nothing.
-`total` covers all active candidates in one database snapshot; `items` returns
+`total` counts every affected active Code in one database snapshot; `items` returns
 at most `limit` affected Codes (default 20, maximum 50). `nextCursor` is the
 last returned affected Code when another affected item remains. Follow it
 until null. The scan retains only one candidate batch, the result page and at

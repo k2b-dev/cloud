@@ -1246,11 +1246,11 @@ export const aiCapabilities = defineCapabilities({
             format: "plain" as const,
             body: CODE_POLICY_ROWS.map(
               (row) =>
-                `${t.codePolicyRows[row]} (${row})\n${input.definition.rules
+                `${t.codePolicyRow({ row })} (${row})\n${input.definition.rules
                   .filter((rule) => rule.row === row)
                   .map(
                     (rule) =>
-                      `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValues[rule.value]} (${rule.value})`,
+                      `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValue({ value: rule.value })} (${rule.value})`,
                   )
                   .join("\n")}`,
             ).join("\n\n"),
