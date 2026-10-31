@@ -5,7 +5,7 @@ section: Identity and access
 order: 352
 description: Give an integration or a coding agent its own principal with an OAuth client or API keys, and grant it access like a user.
 tags: [identity, service-accounts, agents, oauth, client-credentials]
-updated: 2026-10-23
+updated: 2026-10-31
 ---
 
 # Standalone service accounts and agents
@@ -23,6 +23,7 @@ Every service account has one `kind`:
 | `resource_bound` | A machine identity bound to one app resource | Explicit grants, capped to that resource |
 | `standalone` | An integration with its own identity | Direct and local group grants |
 | `agent` | A standalone account that surfaces as an agent | Direct and local group grants |
+| `code` | A platform-managed identity for resource or app Code | Only its own explicit Code access |
 
 `agent` changes presentation only: pickers and the Accounts app show the label
 "Agent" instead of a key. It carries no extra permission and no different token
@@ -43,6 +44,39 @@ The request contract does not change. A standalone account authenticates as a
 
 For Studio execution and its separate effect rights, see
 [Run Studio apps with a machine identity](/en/docs/identity/studio-machine-execution).
+
+## Code accounts
+
+The `code` kind is reserved for Code owned by a resource or an application.
+It is a separate principal: it uses only access granted to that exact account.
+Group, all-signed-in, and public entries never grant it access, including when
+an application answers `access.readable`. A Code account never counts as a
+resource manager.
+
+Code accounts cannot receive API tokens, models-only keys, OAuth clients or
+OAuth tokens. App keys belong only to a `resource_bound` account for
+`cloud.app/<appId>`, never to a Code account. The directory and principal picker
+exclude Code accounts, and ordinary resource-share and app-access operations
+refuse them. Code activation owns their access; the ordinary account creation
+and credential APIs remain limited to their existing kinds.
+
+For server-side account handling, `@k2b/cloud/services` exports two independent
+kind predicates:
+
+- `serviceAccountUsesOwnGrants(kind)` accepts `standalone`, `agent`, and `code`.
+- `serviceAccountMayHoldCredentials(kind)` accepts `user_delegated`,
+  `resource_bound`, `standalone`, and `agent`; it refuses `code` and unknown kinds.
+
+Use the first to distinguish account grants from user delegation or resource
+binding. Use the second before credential work, then check that credential's
+binding requirements. Neither predicate authorizes a request. Application
+resolvers use `buildAccessPrincipalCondition` or
+`buildAccessPrincipalTierConditions` from `@k2b/cloud/server` to retain the
+shared principal rules; batched `getEffectivePermissions` uses those same rules.
+
+Deleting the person recorded as creator clears the account's `createdBy` and
+the mandate's `createdByUserId`; it does not delete either record. This is
+separate from deleting the resource or application that owns the Code.
 
 ## Create the account
 

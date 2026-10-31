@@ -29,7 +29,7 @@ import {
   respond,
   setRequestTimeout,
 } from "@k2b/cloud/server";
-import { isStandaloneServiceAccountKind, settings, settingsService } from "@k2b/cloud/services";
+import { serviceAccountUsesOwnGrants, settings, settingsService } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import {
   GeoMapSnapshotAssetError,
@@ -807,7 +807,7 @@ const getNotebookAccessSubject = (c: Context<AuthContext>) => {
 const getCollectionNotebookBinding = (subject: ReturnType<typeof getNotebookAccessSubject>, locale?: string): Result<string | null> => {
   if (!subject.serviceAccountId) return ok(null);
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (subject.serviceAccount && isStandaloneServiceAccountKind(subject.serviceAccount.kind)) {
+  if (subject.serviceAccount && serviceAccountUsesOwnGrants(subject.serviceAccount.kind)) {
     return subject.serviceAccount.id === subject.serviceAccountId &&
       hasPermission(permissionFromScopes(subject.serviceAccountScopes), "read")
       ? ok(null)

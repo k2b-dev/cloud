@@ -15,7 +15,7 @@ import {
   type RequestActor,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
-import { isStandaloneServiceAccountKind, type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
+import { type ServiceAccountCredential, serviceAccountCredentials, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { publishContactChange } from "./live";
@@ -47,7 +47,7 @@ export const readableBookScope = (caller: {
   if (caller.accessSubject.type !== "service_account") return ok({ boundBookId: null });
   if (caller.actor.kind !== "service_account") return fail(err.forbidden("Access denied"));
   const { serviceAccount: account, scopes } = caller.actor;
-  if (isStandaloneServiceAccountKind(account.kind)) {
+  if (serviceAccountUsesOwnGrants(account.kind)) {
     return account.id === caller.accessSubject.serviceAccountId && hasPermission(permissionFromScopes(scopes), "read")
       ? ok({ boundBookId: null })
       : fail(err.forbidden("Access denied"));

@@ -17,11 +17,11 @@ import {
 } from "@k2b/cloud/server";
 import {
   coreSettings,
-  isStandaloneServiceAccountKind,
   isUniqueViolation,
   logger,
   type ServiceAccountKind,
   serviceAccounts,
+  serviceAccountUsesOwnGrants,
   toPgUuidArray,
 } from "@k2b/cloud/services";
 import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
@@ -453,7 +453,7 @@ const mayReadAcrossVenues = async (subject: VenueAccessSubject): Promise<boolean
   if (subject.subject.type !== "service_account") return true;
   if (subject.serviceAccountResourceId) return UUID_PATTERN.test(subject.serviceAccountResourceId);
   const account = await serviceAccounts.get({ id: subject.subject.serviceAccountId });
-  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+  return Boolean(account && serviceAccountUsesOwnGrants(account.kind));
 };
 
 /**

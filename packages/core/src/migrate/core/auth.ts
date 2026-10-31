@@ -566,7 +566,7 @@ export const migrate = async (): Promise<void> => {
       resource_id TEXT,
       created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT service_accounts_kind_check CHECK (kind IN ('user_delegated', 'resource_bound', 'standalone', 'agent')),
+      CONSTRAINT service_accounts_kind_check CHECK (kind IN ('user_delegated', 'resource_bound', 'standalone', 'agent', 'code')),
       CONSTRAINT service_accounts_status_check CHECK (status IN ('active', 'disabled')),
       CONSTRAINT service_accounts_binding_check CHECK (
         (
@@ -582,7 +582,7 @@ export const migrate = async (): Promise<void> => {
           AND resource_type IS NOT NULL
           AND resource_id IS NOT NULL
         ) OR (
-          kind IN ('standalone', 'agent')
+          kind IN ('standalone', 'agent', 'code')
           AND delegated_user_id IS NULL
           AND app_id IS NULL
           AND resource_type IS NULL
@@ -608,7 +608,7 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE auth.service_accounts DROP CONSTRAINT IF EXISTS service_accounts_kind_check`.simple();
   await sql`
     ALTER TABLE auth.service_accounts
-    ADD CONSTRAINT service_accounts_kind_check CHECK (kind IN ('user_delegated', 'resource_bound', 'standalone', 'agent'))
+    ADD CONSTRAINT service_accounts_kind_check CHECK (kind IN ('user_delegated', 'resource_bound', 'standalone', 'agent', 'code'))
   `.simple();
   await sql`ALTER TABLE auth.service_accounts DROP CONSTRAINT IF EXISTS service_accounts_binding_check`.simple();
   await sql`
@@ -627,7 +627,7 @@ export const migrate = async (): Promise<void> => {
         AND resource_type IS NOT NULL
         AND resource_id IS NOT NULL
       ) OR (
-        kind IN ('standalone', 'agent')
+        kind IN ('standalone', 'agent', 'code')
         AND delegated_user_id IS NULL
         AND app_id IS NULL
         AND resource_type IS NULL
@@ -820,6 +820,42 @@ export const migrate = async (): Promise<void> => {
     WHERE status = 'active'
   `.simple();
   await migrateAppKeys();
+  await sql`
+    CREATE OR REPLACE FUNCTION auth.check_service_account_credential_owner() RETURNS trigger AS $$
+    DECLARE account auth.service_accounts%ROWTYPE;
+    BEGIN
+      SELECT * INTO account FROM auth.service_accounts WHERE id = NEW.service_account_id FOR SHARE;
+      IF account.kind = 'code' THEN
+        RAISE EXCEPTION 'Code accounts cannot hold credentials' USING ERRCODE = '23514';
+      END IF;
+      IF NEW.kind = 'app_key' AND NOT (
+        account.kind = 'resource_bound' AND account.resource_type = 'cloud.app'
+        AND account.resource_id = account.app_id
+      ) THEN
+        RAISE EXCEPTION 'App keys require a cloud.app account' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    CREATE OR REPLACE TRIGGER service_account_credential_owner
+      BEFORE INSERT OR UPDATE OF service_account_id, kind ON auth.service_account_credentials
+      FOR EACH ROW EXECUTE FUNCTION auth.check_service_account_credential_owner();
+    CREATE OR REPLACE FUNCTION auth.check_service_account_credential_transition() RETURNS trigger AS $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM auth.service_account_credentials c WHERE c.service_account_id = NEW.id AND (
+        NEW.kind = 'code' OR (c.kind = 'app_key' AND NOT (
+          NEW.kind = 'resource_bound' AND NEW.resource_type = 'cloud.app' AND NEW.resource_id = NEW.app_id
+        ))
+      )) THEN
+        RAISE EXCEPTION 'Account credentials do not match its kind or binding' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    CREATE OR REPLACE TRIGGER service_account_credential_transition
+      BEFORE UPDATE OF kind, app_id, resource_type, resource_id ON auth.service_accounts
+      FOR EACH ROW EXECUTE FUNCTION auth.check_service_account_credential_transition();
+  `.simple();
   await migrateAppBootstrap();
   console.log("  ✓ auth.service_account_credentials table");
   await sql`

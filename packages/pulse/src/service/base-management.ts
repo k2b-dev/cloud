@@ -182,7 +182,9 @@ export const checkBaseCreation = async (params: { user: AccessScope; isCloudAdmi
   const policy = await readBasePolicy();
   if (
     ("subject" in params.user &&
-      (params.user.serviceAccount.kind === "resource_bound" || !params.user.scopes.some((s) => s === "write" || s === "admin"))) ||
+      (params.user.serviceAccount.kind === "resource_bound" ||
+        params.user.serviceAccount.kind === "code" ||
+        !params.user.scopes.some((s) => s === "write" || s === "admin"))) ||
     (policy.baseCreation === "people" && params.agent) ||
     (policy.baseCreation === "admins" && (params.agent || !params.isCloudAdmin))
   )
@@ -291,7 +293,7 @@ export const grantBaseAccess = async (params: {
       serviceAccountId = params.principal.serviceAccountId;
       const [serviceAccountRow] = await tx<{ id: string }[]>`
         SELECT id FROM auth.service_accounts
-        WHERE id = ${serviceAccountId}::uuid AND status = 'active'
+        WHERE id = ${serviceAccountId}::uuid AND status = 'active' AND kind <> 'code'
       `;
       if (!serviceAccountRow) return fail(err.notFound("Service account"));
     } else if (params.principal.type === "authenticated") {
@@ -356,7 +358,9 @@ const changeBaseAccess = (
     const changed =
       permission === null
         ? await tx`DELETE FROM auth.access WHERE id = ${params.accessId}::uuid`
-        : await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${params.accessId}::uuid`;
+        : await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${params.accessId}::uuid
+            AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
+              WHERE account.id = auth.access.service_account_id AND account.kind = 'code')`;
     return changed.count === 0 ? fail(err.notFound("Access entry")) : ok();
   });
 

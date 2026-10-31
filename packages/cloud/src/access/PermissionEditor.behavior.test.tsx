@@ -46,13 +46,13 @@ const labels = {
     user_delegated: "Benutzergebundenes Dienstkonto",
   },
 } as const;
-const icons: Record<ServiceAccountKind, string> = {
+const icons: Record<Exclude<ServiceAccountKind, "code">, string> = {
   agent: "ti-robot",
   standalone: "ti-key",
   resource_bound: "ti-box",
   user_delegated: "ti-user-key",
 };
-const kinds = Object.keys(icons) as ServiceAccountKind[];
+const kinds = Object.keys(icons) as Exclude<ServiceAccountKind, "code">[];
 
 const serviceEntry = (kind?: ServiceAccountKind): AccessEntry => ({
   id: `access-${kind ?? "unknown"}`,
@@ -287,9 +287,9 @@ describe("PermissionEditor service accounts", () => {
           async (input: string | URL | Request) => {
             requestedKinds.push(new URL(input instanceof Request ? input.url : input.toString()).searchParams.get("kinds") ?? "");
             return Response.json({
-              items: kinds.map((kind) => ({
+              items: [...kinds, "code"].map((kind) => ({
                 kind: "service_account",
-                serviceAccount: { id: `found-${kind}`, name: `Found ${kind}`, kind, ...binding(kind) },
+                serviceAccount: { id: `found-${kind}`, name: `Found ${kind}`, kind, ...binding(kind as ServiceAccountKind) },
               })),
             });
           },
@@ -337,6 +337,7 @@ describe("PermissionEditor service accounts", () => {
           input.dispatchEvent(new Event("input", { bubbles: true }));
           await waitFor(() => dom.root.querySelectorAll("[role=option]").length === kinds.length, "the service-account results");
           expect(requestedKinds).toContain("user,group,service_account");
+          expect(dom.root.textContent).not.toContain("Found code");
           const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=option]"));
           for (const kind of kinds) {
             const option = options.find((element) => element.textContent?.includes(`Found ${kind}`))!;

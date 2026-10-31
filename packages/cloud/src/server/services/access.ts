@@ -190,7 +190,7 @@ export const createAccess = async (
   } else if (principal.type === "service_account") {
     serviceAccountId = principal.serviceAccountId;
     const [serviceAccount] = await db<{ id: string }[]>`
-      SELECT id FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active'
+      SELECT id FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active' AND kind <> 'code'
     `;
     if (!serviceAccount) {
       return fail(err.notFound("Service account"));
@@ -233,6 +233,8 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
     UPDATE auth.access
     SET permission = ${params.permission}::auth.permission_level
     WHERE id = ${params.id}::uuid
+      AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
+        WHERE account.id = auth.access.service_account_id AND account.kind = 'code')
   `;
 
   if (result.count === 0) {
@@ -341,29 +343,28 @@ export type ResourceAccessAdapter<TResourceId = string> = {
  * Resource binding, credential scopes, and permission precedence remain the
  * responsibility of the app using the predicate.
  */
-export const buildAccessPrincipalTierConditions = (params: {
-  subject: AccessSubject | null;
+const principalTierConditions = (params: {
+  userId: string | SQLQuery | null;
+  serviceAccountId: string | SQLQuery | null;
+  authenticated: boolean;
   columns: AccessPrincipalColumns;
 }): AccessPrincipalTierConditions => {
-  const userId = params.subject?.type === "user" ? params.subject.userId : null;
-  const serviceAccountId = params.subject?.type === "service_account" ? params.subject.serviceAccountId : null;
-  const authenticated = params.subject !== null;
-  const columns = params.columns;
-
+  const { userId, serviceAccountId, authenticated, columns } = params;
+  // One rule for ordinary resolvers and batched access.readable checks. Read the
+  // persisted kind, never a caller-provided kind or optional opt-in flag.
+  const inherits = sql`NOT EXISTS (
+    SELECT 1 FROM auth.service_accounts code_account
+    WHERE code_account.id = ${serviceAccountId}::uuid AND code_account.kind = 'code'
+  )`;
   return {
     serviceAccount: sql`${columns.serviceAccountId} = ${serviceAccountId}::uuid`,
-    user: sql`${columns.userId} = ${userId}::uuid`,
-    group: sql`(
-      ${columns.groupId} IN (${
-        userId
-          ? recursiveGroupIdsSubquery(userId)
-          : serviceAccountId
-            ? recursiveServiceAccountGroupIdsSubquery(serviceAccountId)
-            : sql`SELECT NULL::uuid WHERE FALSE`
-      })
+    user: sql`${inherits} AND ${columns.userId} = ${userId}::uuid`,
+    group: sql`${inherits} AND (
+      ${columns.groupId} IN (${recursiveGroupIdsSubquery(userId ?? sql`NULL::uuid`)})
+      OR ${columns.groupId} IN (${recursiveServiceAccountGroupIdsSubquery(serviceAccountId ?? sql`NULL::uuid`)})
     )`,
-    authenticated: sql`${authenticated} AND ${columns.authenticatedOnly} = true`,
-    public: sql`(
+    authenticated: sql`${inherits} AND ${authenticated} AND ${columns.authenticatedOnly} = true`,
+    public: sql`${inherits} AND (
       ${columns.userId} IS NULL
       AND ${columns.groupId} IS NULL
       AND ${columns.serviceAccountId} IS NULL
@@ -372,10 +373,24 @@ export const buildAccessPrincipalTierConditions = (params: {
   };
 };
 
+export const buildAccessPrincipalTierConditions = (params: {
+  subject: AccessSubject | null;
+  columns: AccessPrincipalColumns;
+}): AccessPrincipalTierConditions =>
+  principalTierConditions({
+    userId: params.subject?.type === "user" ? params.subject.userId : null,
+    serviceAccountId: params.subject?.type === "service_account" ? params.subject.serviceAccountId : null,
+    authenticated: params.subject !== null,
+    columns: params.columns,
+  });
+
+const anyPrincipalTier = (tiers: AccessPrincipalTierConditions): SQLQuery =>
+  sql`(${tiers.serviceAccount} OR ${tiers.user} OR ${tiers.group} OR ${tiers.authenticated} OR ${tiers.public})`;
+
 /** Build one predicate that matches every principal tier for the subject. */
 export const buildAccessPrincipalCondition = (params: { subject: AccessSubject | null; columns: AccessPrincipalColumns }): SQLQuery => {
   const tiers = buildAccessPrincipalTierConditions(params);
-  return sql`(${tiers.serviceAccount} OR ${tiers.user} OR ${tiers.group} OR ${tiers.authenticated} OR ${tiers.public})`;
+  return anyPrincipalTier(tiers);
 };
 
 /**
@@ -385,6 +400,7 @@ export const buildAccessPrincipalCondition = (params: { subject: AccessSubject |
  * - Direct and nested group memberships for users and active standalone/agent accounts
  * - Authenticated access for every authenticated subject
  * - Public access for every subject, including anonymous callers
+ * Code accounts match only their own direct entry in every resolver and reader.
  *
  * Pass the transaction that locked the resource as `db` to authorize a change
  * against the grants it writes.
@@ -468,20 +484,25 @@ export const getEffectivePermissions = async (params: {
   if (Array.isArray(accessIds) && accessIds.length === 0) return subjects.map(() => "none");
   const userIds = subjects.map((subject) => (subject.type === "user" ? subject.userId : null));
   const serviceAccountIds = subjects.map((subject) => (subject.type === "service_account" ? subject.serviceAccountId : null));
-  // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`; every subject here is authenticated.
+  const principalMatch = anyPrincipalTier(
+    principalTierConditions({
+      userId: sql`s.user_id`,
+      serviceAccountId: sql`s.service_account_id`,
+      authenticated: true,
+      columns: {
+        userId: sql`a.user_id`,
+        groupId: sql`a.group_id`,
+        serviceAccountId: sql`a.service_account_id`,
+        authenticatedOnly: sql`a.authenticated_only`,
+      },
+    }),
+  );
   const rows = await sql<{ position: number; permission: PermissionLevel | null }[]>`
     SELECT s.position::int AS position, (
       SELECT a.permission
       FROM auth.access a
       WHERE ${Array.isArray(accessIds) ? sql`a.id = ANY(${toPgUuidArray(accessIds)}::uuid[])` : sql`a.id IN (${accessIds})`}
-        AND (
-          a.service_account_id = s.service_account_id
-          OR a.user_id = s.user_id
-          OR (s.user_id IS NOT NULL AND a.group_id IN (${recursiveGroupIdsSubquery(sql`s.user_id`)}))
-          OR (s.service_account_id IS NOT NULL AND a.group_id IN (${recursiveServiceAccountGroupIdsSubquery(sql`s.service_account_id`)}))
-          OR a.authenticated_only = true
-          OR (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND a.authenticated_only = false)
-        )
+        AND ${principalMatch}
       ORDER BY
         CASE a.permission
           WHEN 'admin' THEN 4
