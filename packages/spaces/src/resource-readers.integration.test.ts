@@ -154,7 +154,7 @@ suite("spaces current resource readers", () => {
       grants.push(codeGrant.id);
       await sql`INSERT INTO spaces.space_access(space_id, access_id) VALUES (${containerId}::uuid, ${codeGrant.id}::uuid)`;
       expect(await check([code])).toEqual([code]);
-      expect(await checkContainer()).toEqual([user, code, delegated]);
+      expect(await checkContainer()).toEqual([code]);
       await sql`DELETE FROM auth.access WHERE id = ${codeGrant.id}::uuid`;
       expect(await check([code])).toEqual([]);
       await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${delegatedId}::uuid`;

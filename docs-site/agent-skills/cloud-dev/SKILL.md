@@ -50,7 +50,12 @@ and durable data.
   process alone does not prove route readiness.
 - Cloud authenticates requests and resolves `actor` (identity and audit) and `accessSubject` (grants). Application services enforce resource permissions on every path;
   UI visibility and page context refs never grant access. Grant changes keep a manager (`ensureManagerRemains()`).
-  Only `resource_bound` service accounts carry `appId`, `resourceType`, and `resourceId`; `standalone` and `agent` accounts use their own grants, capped by scopes.
+  Only `resource_bound` service accounts carry `appId`, `resourceType`, and `resourceId`.
+  `standalone`, `agent`, and `code` accounts use their own grants. A `code`
+  account matches only its exact account grant, never group, all-signed-in, or
+  public entries, including `access.readable`. Code accounts have no credentials
+  and cannot enter through ordinary sharing, directory, or app-access paths.
+  Credential scopes cap standalone and agent accounts.
 - OAuth mutations require `write` or `admin`, including resource routes and forwarded capabilities; sessions and personal API keys keep their contracts.
   For read-only POST routes, put `auth.readOnly` first in the route's handlers; never use it for mutations or subtrees.
   Read **Route policies** (`/en/docs/identity/route-policies`).
