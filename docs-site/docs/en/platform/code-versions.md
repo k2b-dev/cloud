@@ -42,23 +42,30 @@ The failed push saves neither a version nor an approval request.
 
 ### Checker manifest
 
-The G6 fixture contract is exported as `CodeCheckedVersionManifestSchema` and
-`CodeCheckedVersionManifest` from `@k2b/cloud/contracts` (also re-exported by Core's `code/index.ts`) until C16 supplies its
-checker producer. It contains:
+`CodeCheckedVersionManifestSchema` and `CodeCheckedVersionManifest` are exported
+from `@k2b/cloud/contracts` and re-exported by Core's `code/index.ts`. The host
+copies these fields unchanged from C16's `checkCode` result:
 
-- `formatVersion: 1`, `sourceHash` and `bundleHash`;
-- unique `policyRows`, including every operation classification and any AI or
-  internet use;
-- `permissions`: the complete static list of `{ operation, kind, target, refs,
-  row, entrypoint, location: { path, line } }`. `kind` is `query` or `action`;
-  `target` is the exact resource reference or null, and `refs` contains related
-  resource references. Locations use one-based source lines.
+- `version: 1`;
+- `entrypoints`: `{ kind: "schedule" | "manual", entrypoint, cron, file, line }`;
+- `permissions`: `{ operation, target, file, line }`, retaining separate source
+  rows for literal targets and references. An app-wide operation has a null
+  target; dynamic personal targets have a null `target.id`;
+- `ai`: whether detected calls use AI;
+- `hashes`: lowercase SHA-256 digests for `source`, `sdk` and `bundle`.
 
-Source hashing uses SHA-256 over UTF-8 compact JSON of sorted `[path, content]`
-pairs. Bundle hashing uses SHA-256 over the exact UTF-8 bundle. The manifest
-is saved at version creation; it cannot be replaced later. A supplied manifest
-never grants permission to make a call. Dispatch checks each actual operation
-against current policy, version approval, mandate and resource access.
+The trusted host adds `entry` from the original `CodeCheckRequest.entry` and
+unique `policyRows` from operation metadata, including every used classification
+and any AI or internet use. Keep the checker's permission rows and entrypoints
+unchanged; locations are one-based. Core validates their source locations.
+
+Source hashing matches C16: SHA-256 over UTF-8
+`JSON.stringify({ entry, files })`, where `files` contains sorted `[path, content]`
+pairs. SDK hashing covers recursively key-sorted SDK JSON. Bundle hashing covers
+the exact UTF-8 bundle. The manifest is saved at version creation and cannot be
+replaced later. A manifest never grants permission to make a call. Dispatch
+checks each actual operation against current policy, version approval, mandate
+and resource access.
 
 ## Compare what will be approved
 
@@ -85,7 +92,8 @@ For source inspection, `core.code.version.read` also provides bounded chunks.
 A binding contains `codeId`, `versionId`, `sourceHash`, `bundleHash`,
 `manifestHash`, `comparisonVersionId`, `comparisonSourceHash` and
 `comparisonBundleHash`. Keep it unchanged for the decision. A changed comparison
-sets `staleComparison: true`; submit and review a new version. Decided versions retain the original reviewed comparison even after the baseline advances.
+sets `staleComparison: true`; submit and review a new version. Decided versions
+retain the original reviewed comparison even after the baseline advances.
 
 ## Decide through the shared approval
 
@@ -103,10 +111,14 @@ transactional owner handler. The first decision wins; repeating the same
 accepted decision returns its existing receipt.
 
 Core refuses changed hashes with `code_hash_mismatch`, a superseded version
-with `code_version_stale`, unavailable or deleting Code with `code_version_unavailable`, and a changed comparison or review with
+with `code_version_stale`, unavailable or deleting Code with
+`code_version_unavailable`, and a changed comparison or review with
 `code_comparison_stale`. The platform decision and domain evidence roll back
 together. The shared browser route returns a conflict; Cloud Login declines
-the stale decision. Review the current version and submit again. A successful submission atomically cancels older pending requests for the same Code, removing their cards from Waiting for you. Both approval and rejection still require the unchanged comparison.
+the stale decision. Review the current version and submit again. A successful
+submission atomically cancels older pending requests for the same Code, removing
+their cards from Waiting for you. Both approval and rejection still require the
+unchanged comparison.
 
 An author cannot approve their own version when another active human Cloud
 administrator exists. The platform's sole-admin rule is the only exception:
@@ -161,7 +173,8 @@ Core owns the services and tables. Other applications consume capabilities.
 
 The additive migration creates `code.version_submissions`,
 `code.version_decisions` and `code.version_baselines`. Submissions and decisions
-are immutable; deleting the approving user erases decision attribution and conservatively revokes that approval for future activation or resume. Requests may be
+are immutable; deleting the approving user erases decision attribution and
+conservatively revokes that approval for future activation or resume. Requests may be
 pruned without deleting durable decisions or source evidence. No Assistant data
 is rewritten.
 

@@ -59,27 +59,30 @@ describe("C8 complete CodeDiff and submission contracts", () => {
     const sourceFiles = { "a.ts": "hello" },
       bundle = "bundle";
     const manifest = {
-      formatVersion: 1,
-      sourceHash: codeSourceHash(sourceFiles),
-      bundleHash: codeBundleHash(bundle),
+      version: 1,
+      entry: "a.ts",
+      hashes: { source: codeSourceHash(sourceFiles, "a.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
+      entrypoints: [{ kind: "manual", entrypoint: "run", cron: null, file: "a.ts", line: 1 }],
+      ai: false,
       policyRows: ["read"],
       permissions: [
         {
           operation: "example.item.read",
-          kind: "query",
           target: { type: "example.item", id: "item" },
-          refs: {},
-          row: "read",
-          entrypoint: "weekly",
-          location: { path: "a.ts", line: 1 },
+          file: "a.ts",
+          line: 1,
         },
       ],
     };
     expect(CodeCheckedVersionManifestSchema.safeParse(manifest).success).toBe(true);
-    expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, policyRows: [] }).success).toBe(false);
+    expect(codeSourceHash(sourceFiles, "a.ts")).not.toBe(codeSourceHash(sourceFiles, "b.ts"));
+    expect(codeSourceHash(sourceFiles, "a.ts")).toBe(
+      new Bun.CryptoHasher("sha256").update(JSON.stringify({ entry: "a.ts", files: [["a.ts", "hello"]] })).digest("hex"),
+    );
+    expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, ai: true }).success).toBe(false);
     expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, policyRows: ["read", "read"] }).success).toBe(false);
     expect(
-      CodeCheckedVersionManifestSchema.safeParse({ ...manifest, permissions: [{ ...manifest.permissions[0], kind: "action" }] }).success,
+      CodeCheckedVersionManifestSchema.safeParse({ ...manifest, permissions: [{ ...manifest.permissions[0], line: 0 }] }).success,
     ).toBe(false);
     expect(
       codeVersionContracts.submit.input.safeParse({ codeId: "c_test", sourceFiles, bundle, manifest, baseVersionId: null }).success,

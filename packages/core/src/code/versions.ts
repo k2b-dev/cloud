@@ -64,10 +64,10 @@ function manifestFor(version: Snapshot) {
   if (!parsed.success) throw new CodeVersionError("code_manifest_invalid", "A complete checker manifest is required.");
   const manifest = parsed.data;
   if (
-    codeSourceHash(version.source_files) !== version.source_hash ||
+    codeSourceHash(version.source_files, manifest.entry) !== version.source_hash ||
     codeBundleHash(version.bundle) !== version.bundle_hash ||
-    manifest.sourceHash !== version.source_hash ||
-    manifest.bundleHash !== version.bundle_hash
+    manifest.hashes.source !== version.source_hash ||
+    manifest.hashes.bundle !== version.bundle_hash
   )
     throw new CodeVersionError("code_hash_mismatch", "Source or bundle hash does not match the immutable version.");
   return manifest;
@@ -125,17 +125,18 @@ export async function submitCodeVersion(
   const input = codeVersionContracts.submit.input.parse(raw);
   const author = codePerson(context, true);
   if (isAppSessionActor(context.authority.actor)) throw new CodeDataError("FORBIDDEN", "Phone sessions cannot submit Code authority.");
-  if (input.manifest.sourceHash !== codeSourceHash(input.sourceFiles) || input.manifest.bundleHash !== codeBundleHash(input.bundle))
+  if (
+    input.manifest.hashes.source !== codeSourceHash(input.sourceFiles, input.manifest.entry) ||
+    input.manifest.hashes.bundle !== codeBundleHash(input.bundle)
+  )
     throw new CodeVersionError("code_hash_mismatch", "Checker hashes do not match the submitted source and bundle.");
   if (input.manifest.policyRows.includes("ask_sends"))
     throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
-  for (const permission of input.manifest.permissions) {
-    const source = input.sourceFiles[permission.location.path];
-    if (
-      !Object.hasOwn(input.sourceFiles, permission.location.path) ||
-      source === undefined ||
-      permission.location.line > source.split("\n").length
-    )
+  if (!Object.hasOwn(input.sourceFiles, input.manifest.entry))
+    throw new CodeVersionError("code_manifest_invalid", "Checker entry does not exist.");
+  for (const permission of [...input.manifest.permissions, ...input.manifest.entrypoints]) {
+    const source = input.sourceFiles[permission.file];
+    if (!Object.hasOwn(input.sourceFiles, permission.file) || source === undefined || permission.line > source.split("\n").length)
       throw new CodeVersionError("code_manifest_invalid", "Permission source location does not exist.");
   }
   await readCode(input.codeId, context);
@@ -160,7 +161,7 @@ export async function submitCodeVersion(
       superseded.map((row) => row.id),
       tx,
     );
-    const version = await createCodeVersion(input, context, tx);
+    const version = await createCodeVersion({ ...input, entry: input.manifest.entry }, context, tx);
     const snapshot = await versionSnapshot(code.id, version.id, tx);
     const comparison = await baseline(code, tx);
     const binding = bindingFor(code.id, snapshot, comparison);

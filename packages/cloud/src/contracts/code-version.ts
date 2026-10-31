@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { CloudResourceRefSchema } from "./capabilities";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 /** Classification rows shared by the checker, activation, dispatcher and administration. */
@@ -31,40 +30,47 @@ export const CodePolicyManifestSchema = z.object({
 });
 /** Checked immutable version classifications; policyRows contains each used row once. */
 export type CodePolicyManifest = z.infer<typeof CodePolicyManifestSchema>;
-/** Checker evidence for a statically resolved operation, its exact target and source location. */
+/** C16 checker permission, retaining separate source rows for targets and refs. Null id is a dynamic personal target. */
 export const CodeVersionPermissionSchema = z
   .object({
     operation: z.string().min(1),
-    kind: z.enum(["query", "action"]),
-    target: CloudResourceRefSchema.nullable(),
-    refs: z.record(z.string(), CloudResourceRefSchema),
-    row: CodePolicyRowSchema,
-    entrypoint: z.string().min(1),
-    location: z.object({ path: z.string().min(1), line: z.number().int().positive() }).strict(),
+    target: z
+      .object({ type: z.string().min(1), id: z.string().min(1).nullable() })
+      .strict()
+      .nullable(),
+    file: z.string().min(1),
+    line: z.number().int().positive(),
   })
   .strict();
-/** One statically resolved permission in the immutable checked manifest. */
+/** One permission emitted by C16, with its source location. */
 export type CodeVersionPermission = z.infer<typeof CodeVersionPermissionSchema>;
-/** G6 checker fixture contract until C16 supplies its producer. Hashes cover the exact submitted snapshot.
- * policyRows includes all operation rows plus AI/internet use; permissions are complete static checker evidence.
- * A caller-supplied manifest never grants execution authority: dispatch still checks every actual call.
+/** C16's immutable manifest plus the host's original check entry and C7 policyRows.
+ * Copy version/entrypoints/permissions/ai/hashes unchanged from checkCode's result.
+ * entry comes from CodeCheckRequest.entry; policyRows comes from trusted operation metadata.
+ * A manifest is evidence, never execution authority: dispatch checks each actual call.
  */
 export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend({
-  formatVersion: z.literal(1),
-  sourceHash: hash,
-  bundleHash: hash,
+  version: z.literal(1),
+  entry: z.string().min(1),
+  entrypoints: z.array(
+    z
+      .object({
+        kind: z.enum(["schedule", "manual"]),
+        entrypoint: z.string().min(1),
+        cron: z.string().nullable(),
+        file: z.string().min(1),
+        line: z.number().int().positive(),
+      })
+      .strict(),
+  ),
   permissions: z.array(CodeVersionPermissionSchema),
+  ai: z.boolean(),
+  hashes: z.object({ source: hash, sdk: hash, bundle: hash }).strict(),
 })
   .strict()
   .superRefine((manifest, ctx) => {
-    for (const permission of manifest.permissions) {
-      if (!manifest.policyRows.includes(permission.row))
-        ctx.addIssue({ code: "custom", message: "Operation classification missing from policyRows" });
-      if (permission.kind === "query" && permission.row !== "read")
-        ctx.addIssue({ code: "custom", message: "Queries require the read classification" });
-      if (permission.kind === "action" && ["read", "ai", "internet"].includes(permission.row))
-        ctx.addIssue({ code: "custom", message: "Actions require an Action classification" });
-    }
+    if (manifest.ai && !manifest.policyRows.includes("ai"))
+      ctx.addIssue({ code: "custom", message: "AI classification missing from policyRows" });
   });
-/** Immutable manifest consumed by submission, activation, CLI, chat tools and the checker. */
+/** C16 evidence enriched by the trusted host for submission, activation, CLI and chat tools. */
 export type CodeCheckedVersionManifest = z.infer<typeof CodeCheckedVersionManifestSchema>;

@@ -68,20 +68,19 @@ const input = (code: Code, source: string, baseVersionId: string | null = null, 
   const sourceFiles = { "code.ts": source, "same.ts": "export const unchanged = true;\n" },
     bundle = `bundle:${source}`;
   const manifest: CodeCheckedVersionManifest = {
-    formatVersion: 1,
-    sourceHash: codeSourceHash(sourceFiles),
-    bundleHash: codeBundleHash(bundle),
+    version: 1,
+    entry: "code.ts",
+    hashes: { source: codeSourceHash(sourceFiles, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
+    entrypoints: [{ kind: "schedule", entrypoint: "weekly", cron: "0 8 * * 1", file: "code.ts", line: 1 }],
+    ai: rows.includes("ai"),
     policyRows: rows,
     permissions: rows
       .filter((row) => row !== "ai" && row !== "internet")
       .map((row) => ({
         operation: row === "read" ? "example.item.read" : "example.item.change",
-        kind: row === "read" ? "query" : "action",
         target: { type: "example.item", id: "item" },
-        refs: {},
-        row,
-        entrypoint: "weekly",
-        location: { path: "code.ts", line: 1 },
+        file: "code.ts",
+        line: 1,
       })),
   };
   return { codeId: code.id, sourceFiles, bundle, manifest, baseVersionId };
@@ -201,9 +200,9 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   });
   test("source and bundle hashes are checked at submission and decision, before any transition", async () => {
     const code = await newCode();
-    for (const key of ["sourceHash", "bundleHash"] as const) {
+    for (const key of ["source", "bundle"] as const) {
       const bad = input(code, "new");
-      bad.manifest[key] = "0".repeat(64);
+      bad.manifest.hashes[key] = "0".repeat(64);
       await expect(submitCodeVersion(bad, author)).rejects.toMatchObject({ code: "code_hash_mismatch" });
     }
     expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
@@ -414,7 +413,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   test("policy veto and bad checker locations leave neither a saved version nor an approval", async () => {
     const code = await newCode(),
       bad = input(code, "bad");
-    bad.manifest.permissions[0]!.location.line = 100;
+    bad.manifest.permissions[0]!.line = 100;
     await expect(submitCodeVersion(bad, author)).rejects.toMatchObject({ code: "code_manifest_invalid" });
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='silent_shared'`;
     await expect(submitCodeVersion(input(code, "blocked"), author)).rejects.toMatchObject({ code: "code_policy_never" });
