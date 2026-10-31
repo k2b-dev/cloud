@@ -118,7 +118,7 @@ export default function PrincipalPicker(props: {
             icon: "ti ti-users-group",
             description: e.group.description ?? undefined,
           });
-        else if (!props.serviceAccountFilter || props.serviceAccountFilter(e.serviceAccount)) {
+        else if (e.serviceAccount.kind !== "code" && (!props.serviceAccountFilter || props.serviceAccountFilter(e.serviceAccount))) {
           const account = e.serviceAccount;
           const kind = serviceAccountKindDisplay(account.kind, t());
           entries.push({

@@ -1140,14 +1140,51 @@ describe("chat dialogs and info", () => {
       expect(onChange.mock.calls).toEqual([[[{ principal: nora.principal, displayName: "Nora" }]]]);
       expect(fetched).toEqual([]);
     });
-    test(`full-account picker renders the platform user/group/service-account search in ${locale}`, async () => {
+    test(`full-account picker excludes code accounts and selects ordinary service accounts in ${locale}`, async () => {
       const people = mock<ChatDialogStore["people"]>(unexpected);
-      await mount(locale, () =>
-        createComponent(modules!.MemberPicker, { guest: false, chosen: [], excluded: [], people, onChange: () => {} }),
+      const agentId = "55555555-5555-4555-8555-555555555555";
+      const fetched = Promise.withResolvers<void>();
+      globalThis.fetch = Object.assign(
+        async () => {
+          fetched.resolve();
+          return Response.json({
+            items: [
+              { id: "66666666-6666-4666-8666-666666666666", name: "Code account", kind: "code" },
+              { id: agentId, name: "Agent account", kind: "agent" },
+            ].map((account) => ({
+              kind: "service_account",
+              serviceAccount: { ...account, status: "active", appId: null, resourceType: null, resourceId: null },
+            })),
+          });
+        },
+        { preconnect: originalFetch.preconnect },
       );
+      const onChange = mock<Parameters<NonNullable<typeof modules>["MemberPicker"]>[0]["onChange"]>();
+      await mount(locale, () => createComponent(modules!.MemberPicker, { guest: false, chosen: [], excluded: [], people, onChange }));
       expect(input("input").placeholder).toBe(
         locale === "en" ? "Add user, group, or service account…" : "Benutzer, Gruppe oder Dienstkonto hinzufügen…",
       );
+      type(input("input"), "account");
+      await fetched.promise;
+      await settle();
+      expect([...dom.document.querySelectorAll('[role="option"]')].map((option) => option.textContent?.trim())).toEqual([
+        expect.stringContaining("Agent account"),
+      ]);
+      expect(dom.document.body.textContent).not.toContain("Code account");
+      const option = dom.document.querySelector<HTMLButtonElement>('[role="option"]');
+      if (!option) throw new Error("Missing ordinary service-account option");
+      option.click();
+      expect(onChange.mock.calls).toEqual([
+        [
+          [
+            {
+              principal: { type: "service_account", serviceAccountId: agentId },
+              displayName: "Agent account",
+              serviceAccountKind: "agent",
+            },
+          ],
+        ],
+      ]);
       expect(people).not.toHaveBeenCalled();
     });
     test(`info search debounces q, and Show more sends its cursor and appends in ${locale}`, async () => {

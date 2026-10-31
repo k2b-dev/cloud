@@ -5,10 +5,20 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 
 # Deprecations and migrations
+
+## Service-account kind checks have separate purposes
+
+Replace `isStandaloneServiceAccountKind` with
+`serviceAccountUsesOwnGrants` for resource-grant resolution. For credential
+eligibility, use `serviceAccountMayHoldCredentials` and retain the credential
+type's binding checks. The `code` kind uses its own grants but cannot hold
+credentials. Keep administrator-managed account lists and normal directory,
+group, and sharing eligibility limited to their existing account kinds. See
+[Service accounts](/en/docs/identity/service-accounts#code-accounts).
 
 ## App keys authenticate background work and OAuth
 

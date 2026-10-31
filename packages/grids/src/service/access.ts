@@ -228,7 +228,7 @@ const insertAccessRow = async (
   } else if (params.principal.type === "service_account") {
     serviceAccountId = params.principal.serviceAccountId;
     const [account] = await client<{ id: string }[]>`
-      SELECT id FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active'
+      SELECT id FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active' AND kind <> 'code'
     `;
     if (!account) return fail(err.notFound(messages.serviceAccount));
   } else if (params.principal.type === "authenticated") {
@@ -431,6 +431,8 @@ export const updateAccessLevel = async (
     if (!guarded.ok) return fail(guarded.error);
     const update = await tx`
       UPDATE auth.access SET permission = ${level}::auth.permission_level WHERE id = ${accessId}::uuid
+        AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
+          WHERE account.id = auth.access.service_account_id AND account.kind = 'code')
     `;
     if (update.count === 0) return fail(err.notFound(messages.accessEntry));
     if (access.permission !== level) {

@@ -1,6 +1,6 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { accountsAppService as accountsService, isStandaloneServiceAccountKind, serviceAccounts } from "@k2b/cloud/services";
+import { accountsAppService as accountsService, serviceAccounts } from "@k2b/cloud/services";
 import { getServiceAccountAvatarState } from "@k2b/cloud/services/accounts/avatar";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
@@ -18,7 +18,7 @@ export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const id = agentIdFromPath(c.req.param("id"));
   const account = id ? await serviceAccounts.get({ id }) : null;
-  if (!account || !isStandaloneServiceAccountKind(account.kind)) return c.notFound();
+  if (!account || !(account.kind === "standalone" || account.kind === "agent")) return c.notFound();
   const [pendingRequestsPage, picture, creator] = await Promise.all([
     accountsService.accountRequest.list({ access: { userId: user.id, isAdmin: true }, filter: { status: "pending" } }),
     getServiceAccountAvatarState({ id: account.id }),

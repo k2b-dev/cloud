@@ -17,10 +17,10 @@ import {
   updateAccess,
 } from "@k2b/cloud/server";
 import {
-  isStandaloneServiceAccountKind,
   type ServiceAccountCredential,
   serviceAccountCredentials,
   serviceAccounts,
+  serviceAccountUsesOwnGrants,
 } from "@k2b/cloud/services";
 import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
@@ -128,7 +128,7 @@ export const buildSpacePrincipalCondition = (subject: AccessSubject) =>
 export const mayReadAcrossSpaces = async (subject: AccessSubject, boundSpaceId: string | null | undefined): Promise<boolean> => {
   if (subject.type !== "service_account" || isSpaceResourceId(boundSpaceId)) return true;
   const account = await serviceAccounts.get({ id: subject.serviceAccountId });
-  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+  return Boolean(account && serviceAccountUsesOwnGrants(account.kind));
 };
 
 /**
