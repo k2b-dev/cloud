@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 const identifier = (value: string): string => `"${value.replaceAll('"', '""')}"`;
 

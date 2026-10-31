@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { coreSettings } from "@k2b/cloud/services";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import icalGenerator, { ICalEventRepeatingFreq, type ICalRepeatingOptions, ICalWeekday } from "ical-generator";
 import type { Priority } from "@/contracts";
 import { buildSpaceCalendarUid } from "../routes";

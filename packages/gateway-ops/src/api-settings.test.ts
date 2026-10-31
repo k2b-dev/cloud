@@ -5,6 +5,9 @@ import { session } from "@k2b/cloud/services/session";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { ok } from "@k2b/stdlib";
 import { stubRouterInfrastructure } from "../../../scripts/fixtures/no-transform";
+import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
+
+useUnitClients();
 
 test("Gateway Ops forwards explicit replacement and preserves unreadable conflicts", async () => {
   const limit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());

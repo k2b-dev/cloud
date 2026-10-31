@@ -19,8 +19,9 @@
  * notes and attachments live in a single global scope (one short-id
  * column per table, no compound uniqueness).
  */
+
+import { sql } from "@k2b/cloud";
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 
 /** Length of the generated readable ID. */
 const SHORT_ID_LEN = 6;

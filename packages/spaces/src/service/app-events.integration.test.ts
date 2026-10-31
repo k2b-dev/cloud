@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/events";
 import { appEventFixture, deliverAppEvent } from "@k2b/cloud/events/testing";
-import { sql } from "bun";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import * as producer from "../app-events";
 import { spacesCapabilities } from "../capabilities";

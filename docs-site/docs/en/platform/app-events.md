@@ -266,7 +266,7 @@ Type IDs, the event type and version, and the source app from the declaration;
 `requestId` becomes `cause.requestId` in the envelope.
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { appEvents } from "@k2b/cloud/events";
 import { publisherCapabilities } from "./capabilities";
 

@@ -49,6 +49,8 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
         listCalls++;
         return { apps: [], issues: [] };
       },
+      // readAppDomains is replaced below; the handle is only passed through.
+      sql: {},
       startProcessSync: async () => ({ stop: async () => void writes.push("sync stopped") }),
       watchAppRegistry: ({ signal }: { signal: AbortSignal }) =>
         new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),

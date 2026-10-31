@@ -1,4 +1,5 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
@@ -6,7 +7,6 @@ import type { CapabilityActionCallReview } from "@k2b/cloud/contracts/capabiliti
 import { notifications } from "@k2b/cloud/services";
 import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
-import { sql } from "bun";
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import { databaseSuite } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";

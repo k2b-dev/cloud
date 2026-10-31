@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { ResourcePrincipal } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { databaseSuite, testInfra, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 
 const database = testInfra.database ? await useMigratedDatabase("notebooks_readers") : undefined;

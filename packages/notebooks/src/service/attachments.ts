@@ -13,10 +13,10 @@
  * responsible for `notebook.permission.get(...)` checks before calling.
  */
 
+import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import { fileIcons } from "@k2b/stdlib";
-import { sql } from "bun";
 import { generateUniqueShortId } from "../lib/short-id";
 
 export type AttachmentKind = "image" | "file";

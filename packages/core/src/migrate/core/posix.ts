@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Provisioning existing local accounts remains an explicit admin action. */
 export const migratePosix = async (db: typeof sql = sql): Promise<void> => {

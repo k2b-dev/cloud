@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import type { RequestActor, ServiceAccount, ServiceAccountCredential, User } from "@k2b/cloud/contracts";
 import { err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { SourceConfigSchema } from "../metric-filters";

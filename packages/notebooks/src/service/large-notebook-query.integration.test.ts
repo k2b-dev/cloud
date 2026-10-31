@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { parseNotebookQueryBlocks } from "../lib/query-blocks";
 import { migrate } from "../migrate";

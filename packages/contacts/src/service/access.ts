@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
@@ -16,7 +17,7 @@ import {
 } from "@k2b/cloud/server";
 import { isStandaloneServiceAccountKind, type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { publishContactChange } from "./live";
 import { conflictError, contactsMessages, notFoundError } from "./messages";
 import { isUuid } from "./shared";

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
+import { sql } from "@k2b/cloud";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiChatTasks,
@@ -23,7 +24,6 @@ import { approvalReviewDigest, approvals, migrateApprovals } from "@k2b/cloud/se
 import * as settingsService from "@k2b/cloud/services/settings";
 import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
@@ -102,9 +102,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
   beforeAll(async () => {
     // scripts/test-artifacts.ts provides an empty database in a disposable
-    // container. database.ts binds its own pool to DATABASE_URL at import
-    // time, so this suite cannot move to a fresh database in beforeAll; it
-    // builds the stand-in schema in the runner's database instead.
+    // container. Build this suite's stand-in schema only in that isolated
+    // target; a production migration template has different table contracts.
     const [existing] = await sql<
       { name: string }[]
     >`SELECT nspname AS name FROM pg_namespace WHERE nspname IN ('ai','auth','settings','assistant') LIMIT 1`;

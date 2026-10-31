@@ -90,7 +90,7 @@ alternative:
 - `@k2b/cloud/workflows` only when work needs a durable, inspectable,
   recoverable process rather than one bounded job.
 
-Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import `sql` or `redis` values from `bun`. Standard entrypoints initialize native clients before app code; separate data processes use `@k2b/cloud/start`. Use `createSql()` and `createRedis()` for owned pools, preserving limits and lifecycle. Read **Platform start and connections** (`/en/docs/build/platform-start`).
+Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import `sql` or `redis` values from `bun`. Standard entrypoints initialize native clients before app code; separate data processes use `@k2b/cloud/start`. Use `createSql()` and `createRedis()` for owned pools, preserving limits and lifecycle; create them after startup, not while importing a module. Read **Platform start and connections** (`/en/docs/build/platform-start`).
 
 Declare Sync handles with `lazySync()`, use them after `app.start()`, start
 workers in lifecycle startup, and drain them before releasing dependencies.

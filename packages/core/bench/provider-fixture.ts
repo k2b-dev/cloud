@@ -1,10 +1,10 @@
 import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
+import { redis } from "@k2b/cloud";
 import { UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as identity from "@k2b/cloud/services/identity";
 import { getIdentityRuntimeConfig, invalidateIdentityRuntimeConfig } from "@k2b/cloud/services/identity/runtime-config";
-import { redis } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { requireInvocation } from "../../cloud/src/server/middleware/invocation";

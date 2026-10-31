@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { Principal, RequestActor } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migratePosix } from "../../../core/src/migrate/core/posix";

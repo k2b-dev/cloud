@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { z } from "zod";
 import { messagePreview } from "../system-messages";
 import { type ChatContext, messages, requireConversation, subjectPrincipal } from "./access";

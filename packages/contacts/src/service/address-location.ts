@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { type GeoAddress, GeoAddressSchema, type GeoGeocodeInput, GeoProvenanceSchema } from "@k2b/cloud/contracts/geo";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { SqlExecutor } from "./shared";
 import type { ContactAddressInput, ContactAddressLocation } from "./types";
 

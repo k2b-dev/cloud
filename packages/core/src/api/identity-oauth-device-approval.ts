@@ -1,7 +1,8 @@
+import { sql } from "@k2b/cloud";
 import { AppTerminalLoginSchema } from "@k2b/cloud/contracts";
 import { AppApprovalError, type AppTerminalLogins, appApproval, audit, toPgTextArray } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { CoreNotificationSender } from "../notifications";

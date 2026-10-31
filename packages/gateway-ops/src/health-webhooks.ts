@@ -1,9 +1,8 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createAllowedNetworkFetch, logger, trace } from "@k2b/cloud/services";
 import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { app } from "./config";
 import { buildGatewayHealth, type GatewayHealth, type GatewayHealthStatus, scopeGatewayHealth } from "./health";
 
