@@ -40,6 +40,11 @@ Sessions and personal API keys keep their existing behavior. Resource-bound
 API keys retain the scope checks defined by their application.
 
 Mount administrative routes behind `auth.requireRole("admin")`. The role and
+Administrator diagnostic reads accept OAuth `read` or `admin` plus the person's
+current administrator role. Routine settings mutations accept `write` or
+`admin` plus that role. Recovery and credential operations can retain explicit
+`admin` step-up; see [CLI administration](/en/docs/operations/cli-administration).
+
 OAuth scope checks are independent: a scope never grants an administrator role
 or resource permission. Capability Actions and write streams also require
 `write` or `admin`, including when forwarded to another application.

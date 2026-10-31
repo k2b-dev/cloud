@@ -1,5 +1,5 @@
 import { hasRole } from "@k2b/cloud/contracts";
-import { createAllowedNetworkFetch } from "@k2b/cloud/services";
+import { audit, createAllowedNetworkFetch } from "@k2b/cloud/services";
 import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { invalidateSettingsCache, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
 import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
@@ -434,6 +434,15 @@ export const artifactDatabase = {
         await set("assistant.rsql_allowed_targets", next.allowedTargets, db, {
           replaceUnreadable: next.replaceUnreadable?.includes("assistant.rsql_allowed_targets") === true,
         });
+      await audit.record(
+        {
+          action: "assistant.database.configure",
+          outcome: "allowed",
+          actor: { userId: user(identity)?.id },
+          metadata: { fields: Object.keys(next) },
+        },
+        db,
+      );
     });
     if (testOnly) return { connected: true };
     await invalidateSettingsCache([

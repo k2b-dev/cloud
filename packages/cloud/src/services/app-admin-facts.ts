@@ -1,7 +1,7 @@
 import { managerEligibility } from "../_internal/app-access-manager-sql";
 import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
-import { AppAccessManagementError, canRepairAppAccess } from "./app-access-management";
+import { AppAccessManagementError, canReadAppAdministration } from "./app-access-management";
 
 export type AppAdminFacts = {
   access: { people: number; groups: number; serviceAccounts: number; managers: number; configured: boolean } | null;
@@ -21,7 +21,7 @@ export type AppAdminFacts = {
 
 /** Core-owned administration summary: at most 500 input IDs and four batched SQL reads. */
 export const appAdminFacts = async (authority: RequestAuthority, appIds: readonly string[]): Promise<Map<string, AppAdminFacts>> => {
-  if (!canRepairAppAccess(authority)) throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required.");
+  if (!canReadAppAdministration(authority)) throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required.");
   if (appIds.length > 500) throw new AppAccessManagementError("TOO_MANY_APPS", "At most 500 application IDs may be read at once.", 400);
   const ids = [...new Set(appIds)];
   const facts = new Map<string, AppAdminFacts>(

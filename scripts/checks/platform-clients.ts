@@ -595,8 +595,6 @@ export const baseline: Readonly<Record<string, readonly string[]>> = {
   "packages/venue/src/shift-notices.integration.test.ts": ['import { sql } from "bun";'],
   "packages/venue/src/shift-notices.ts": ['import { sql } from "bun";'],
   "packages/venue/src/visibility.integration.test.ts": ['import { sql } from "bun";'],
-  "packages/weather/src/api/settings.test.ts": ['import { SQL, sql } from "bun";'],
-  "packages/weather/src/api/settings.ts": ['import { sql } from "bun";'],
   "pwas/notes/server/start.ts": [
     'if (!env.DATABASE_URL) throw new Error("database_url_missing");',
     "const db = new SQL(env.DATABASE_URL);",

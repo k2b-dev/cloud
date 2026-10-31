@@ -44,8 +44,8 @@ Use a Cloud administrator profile for the target installation:
 
 ```sh
 cld --profile operator admin apps domains ls webseite
-cld --profile operator admin apps domains add webseite www.example.org
-cld --profile operator admin apps domains add webseite example.org --redirect-to www.example.org
+cld --profile operator admin apps domains add webseite www.example.org --yes
+cld --profile operator admin apps domains add webseite example.org --redirect-to www.example.org --yes
 ```
 
 Pass the application ID first and the host second. You can assign a domain
@@ -79,8 +79,8 @@ required.
 To change an alias, turn it into a direct site domain, or remove its assignment:
 
 ```sh
-cld --profile operator admin apps domains set webseite example.org --redirect-to www.example.org
-cld --profile operator admin apps domains set webseite example.org --no-redirect
+cld --profile operator admin apps domains set webseite example.org --redirect-to www.example.org --yes
+cld --profile operator admin apps domains set webseite example.org --no-redirect --yes
 cld --profile operator admin apps domains rm webseite example.org --yes
 ```
 
@@ -129,7 +129,7 @@ Configure an ACME certificate resolver named `le` in Traefik, or change the
 admin setting to your existing resolver:
 
 ```sh
-cld --profile operator admin settings set gateway.ingress_cert_resolver --value '"myresolver"'
+cld --profile operator admin settings set gateway.ingress_cert_resolver --value '"myresolver"' --yes
 ```
 
 The setting affects app-domain routers within five seconds. Configure your
@@ -173,7 +173,7 @@ Read the last stored check with `ls`, or run a new check with `check`:
 
 ```sh
 cld --profile operator admin apps domains ls webseite
-cld --profile operator admin apps domains check webseite www.example.org
+cld --profile operator admin apps domains check webseite www.example.org --yes
 ```
 
 The list shows Host, Redirect, Active, DNS, Certificate, and Reachable.

@@ -1,6 +1,7 @@
 import {
   type AuthContext,
   auth,
+  expectUserBackedActor,
   getLocale,
   getTimeZone,
   jsonResponse,
@@ -10,7 +11,8 @@ import {
   respond,
   validator,
 } from "@k2b/cloud/server";
-import { ok } from "@k2b/stdlib";
+import { settingsService } from "@k2b/cloud/services";
+import { err, fail, ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
@@ -121,6 +123,29 @@ const description = (summary: string, schema: z.ZodType) =>
   });
 const app = new Hono<AuthContext>()
   .use(rateLimit())
+  .put(
+    "/admin/settings/:key",
+    auth.requireRole("admin"),
+    validator("json", z.object({ value: z.unknown(), replaceUnreadable: z.boolean().optional() })),
+    async (c) => {
+      const key = c.req.param("key") ?? "";
+      if (!key.startsWith("chat.")) return respond(c, fail(err.badInput("Unknown Chat setting")));
+      const body = c.req.valid("json");
+      return respond(
+        c,
+        await settingsService.entry.update({
+          key,
+          ...body,
+          audit: {
+            action: "settings.update",
+            outcome: "allowed",
+            actor: { userId: expectUserBackedActor(c).id },
+            target: { type: "setting", id: key },
+          },
+        }),
+      );
+    },
+  )
   .get("/badge", auth.requireRole("authenticated"), description("Read the Chat badge count", BadgeSchema), async (c) =>
     respond(c, ok({ count: await badgeCount(context(c)) })),
   )

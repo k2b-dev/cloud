@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { serviceAccountCredentials, session } from "@k2b/cloud/services";
+import * as settings from "@k2b/cloud/services/settings";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
@@ -70,7 +71,7 @@ suite("Pulse store admin API", () => {
   let personId: string, agentId: string, baseId: string;
   const accessIds: string[] = [];
   let get: ReturnType<typeof spyOn<typeof app.settings, "get">>;
-  let set: ReturnType<typeof spyOn<typeof app.settings, "set">>;
+  let set: ReturnType<typeof spyOn<typeof settings, "set">>;
   let read: ReturnType<typeof spyOn<typeof app.settings, "read">>;
   // What the stored row looks like to this process; "unreadable" models a changed APP_SECRET.
   let storedState: "readable" | "unreadable" = "readable";
@@ -113,7 +114,7 @@ suite("Pulse store admin API", () => {
       value: current[key],
       stored: storedState === "unreadable" ? "unreadable" : current[key] ? "readable" : "none",
     }));
-    set = spyOn(app.settings, "set").mockImplementation(async (key, value) => {
+    set = spyOn(settings, "set").mockImplementation(async (key, value) => {
       Object.assign(current, { [key]: value });
     });
     sessionLookup = spyOn(session, "authenticateRequest").mockImplementation(async (_c, token) =>
@@ -260,7 +261,7 @@ suite("Pulse store admin API", () => {
       storedState = "readable";
     }
   });
-  test("an admin's OAuth token without the admin scope cannot use any store route", async () => {
+  test("read-scoped administrators can read store metadata but cannot mutate", async () => {
     // Stands in for the OAuth layer: the caller is a Cloud admin, but the token carries only `read`.
     const scoped = new Hono<AuthContext>()
       .use(async (c, next) => {
@@ -276,7 +277,7 @@ suite("Pulse store admin API", () => {
         headers: { cookie: "session_token=admin-fixture", "content-type": "application/json" },
         ...(method === "GET" ? {} : { body: JSON.stringify({ url: saved.url, user: saved.user, password }) }),
       });
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(method === "GET" ? 200 : 403);
     }
     expect(received).toBe(0);
   });
@@ -310,6 +311,6 @@ suite("Pulse store admin API", () => {
     expect(bases.status).toBe(200);
     expect(bases.headers.get("cache-control")).not.toBe("no-store");
     const store = await scoped.request("/admin/store", { headers: { cookie: "session_token=admin-fixture" } });
-    expect(store.status).toBe(403);
+    expect(store.status).toBe(200);
   });
 });

@@ -18,7 +18,7 @@ const authority = (admin = true): RequestAuthority => {
 };
 
 test("administrator authority is required even for an empty or oversized batch", async () => {
-  for (const caller of [authority(false), { ...authority(), credentialKind: "oauth" as const, scopes: ["read"] }]) {
+  for (const caller of [authority(false), { ...authority(), credentialKind: "oauth" as const, scopes: ["write"] }]) {
     for (const ids of [[], ["facts-a"], Array.from({ length: 501 }, () => "facts-a")]) {
       await expect(appAdminFacts(caller, ids)).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
     }
@@ -27,6 +27,7 @@ test("administrator authority is required even for an empty or oversized batch",
 
 test("empty batches return immediately and the 500 input ID limit includes duplicates", async () => {
   expect(await appAdminFacts(authority(), [])).toEqual(new Map());
+  expect(await appAdminFacts({ ...authority(), credentialKind: "oauth", scopes: ["read"] }, [])).toEqual(new Map());
   await expect(
     appAdminFacts(
       authority(),

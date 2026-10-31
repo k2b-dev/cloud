@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
-import { toPgTextArray } from "@k2b/cloud/services";
+import { audit, toPgTextArray } from "@k2b/cloud/services";
 import { normalizeNetworkHostname, parseNetworkAllowlist } from "@k2b/cloud/shared";
 import { sql } from "bun";
 import { z } from "zod";
@@ -131,7 +131,19 @@ export const updateBaseLimits = async (identity: StoreIdentity, id: string, inpu
     l = v.limits;
   const updated = await sql.begin(async (tx) => {
     await tx`SELECT id FROM pulse.bases WHERE id=${base.id}::uuid FOR UPDATE`;
-    return tx`UPDATE pulse.base_stores SET queries_per_hour=COALESCE(${l?.queriesPerHour ?? null},queries_per_hour),profile=COALESCE(${v.profile ?? null},profile),values_per_minute=COALESCE(${l?.valuesPerMinute ?? null},values_per_minute),bytes_per_minute=COALESCE(${l?.bytesPerMinute ?? null},bytes_per_minute),storage_bytes=COALESCE(${l?.storageBytes ?? null},storage_bytes),max_series=COALESCE(${l?.maxSeries ?? null},max_series),max_event_kinds=COALESCE(${l?.maxEventKinds ?? null},max_event_kinds),max_state_keys=COALESCE(${l?.maxStateKeys ?? null},max_state_keys),reconcile_needed=true,updated_at=now() WHERE base_id=${base.id}::uuid RETURNING base_id`;
+    const rows =
+      await tx`UPDATE pulse.base_stores SET queries_per_hour=COALESCE(${l?.queriesPerHour ?? null},queries_per_hour),profile=COALESCE(${v.profile ?? null},profile),values_per_minute=COALESCE(${l?.valuesPerMinute ?? null},values_per_minute),bytes_per_minute=COALESCE(${l?.bytesPerMinute ?? null},bytes_per_minute),storage_bytes=COALESCE(${l?.storageBytes ?? null},storage_bytes),max_series=COALESCE(${l?.maxSeries ?? null},max_series),max_event_kinds=COALESCE(${l?.maxEventKinds ?? null},max_event_kinds),max_state_keys=COALESCE(${l?.maxStateKeys ?? null},max_state_keys),reconcile_needed=true,updated_at=now() WHERE base_id=${base.id}::uuid RETURNING base_id`;
+    if (rows.length)
+      await audit.record(
+        {
+          action: "pulse.base.limits.update",
+          outcome: "allowed",
+          actor: { userId: identity.accessSubject.type === "user" ? identity.accessSubject.userId : null },
+          target: { type: "pulse_base", id: base.id },
+        },
+        tx,
+      );
+    return rows;
   });
   if (!updated.length) throw new BaseAdminError("BASE_BUSY", 409);
   await submitBaseLifecycleJob(base.id, base.short_id);
@@ -211,9 +223,23 @@ export const addInternalTarget = async (identity: StoreIdentity, input: { baseId
   requireStoreAdmin(identity);
   const base = await publicBase(input.baseId),
     normalized = normalizeInternalTarget(input.entry);
-  const [row] = await sql<
-    { id: string; entry: string; created_at: Date }[]
-  >`INSERT INTO pulse.base_internal_targets(base_id,entry,created_by) VALUES(${base.id}::uuid,${normalized.entry},${identity.accessSubject.type === "user" ? identity.accessSubject.userId : null}::uuid) ON CONFLICT(base_id,entry) DO NOTHING RETURNING *`;
+  const row = await sql.begin(async (tx) => {
+    const [created] = await tx<
+      { id: string; entry: string; created_at: Date }[]
+    >`INSERT INTO pulse.base_internal_targets(base_id,entry,created_by) VALUES(${base.id}::uuid,${normalized.entry},${identity.accessSubject.type === "user" ? identity.accessSubject.userId : null}::uuid) ON CONFLICT(base_id,entry) DO NOTHING RETURNING *`;
+    if (created)
+      await audit.record(
+        {
+          action: "pulse.target.create",
+          outcome: "allowed",
+          actor: { userId: identity.accessSubject.type === "user" ? identity.accessSubject.userId : null },
+          target: { type: "pulse_target", id: created.id },
+          metadata: { baseId: base.id },
+        },
+        tx,
+      );
+    return created;
+  });
   if (!row) throw new BaseAdminError("TARGET_EXISTS", 409);
   const [b] = await sql<{ name: string }[]>`SELECT name FROM pulse.bases WHERE id=${base.id}::uuid`;
   return targetRow({ ...row, short_id: base.short_id, name: b?.name ?? "" });
@@ -221,7 +247,20 @@ export const addInternalTarget = async (identity: StoreIdentity, input: { baseId
 export const removeInternalTarget = async (identity: StoreIdentity, id: string) => {
   requireStoreAdmin(identity);
   if (!z.uuid().safeParse(id).success) throw new BaseAdminError("INVALID_INPUT");
-  const result = await sql`DELETE FROM pulse.base_internal_targets WHERE id=${id}::uuid`;
+  const result = await sql.begin(async (tx) => {
+    const rows = await tx`DELETE FROM pulse.base_internal_targets WHERE id=${id}::uuid`;
+    if (rows.count)
+      await audit.record(
+        {
+          action: "pulse.target.delete",
+          outcome: "allowed",
+          actor: { userId: identity.accessSubject.type === "user" ? identity.accessSubject.userId : null },
+          target: { type: "pulse_target", id },
+        },
+        tx,
+      );
+    return rows;
+  });
   if (!result.count) throw new BaseAdminError("NOT_FOUND", 404);
   return { ok: true as const };
 };

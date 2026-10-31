@@ -1,5 +1,5 @@
 import { type AccessSubject, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { decryptSecret, encryptSecret, logger, serviceAccounts } from "@k2b/cloud/services";
+import { audit, decryptSecret, encryptSecret, logger, serviceAccounts } from "@k2b/cloud/services";
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { CreateSpace, MutationResult, Space, SpaceDetail, UpdateSpace } from "@/contracts";
@@ -505,10 +505,17 @@ export const update = async (params: { id: string; data: UpdateSpace; actor?: Sp
 /**
  * Delete a space
  */
-export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
+export const remove = async (params: { id: string; actorId?: string }): Promise<MutationResult<void>> => {
   const deleted = await sql.begin(async (tx) => {
     const result = await tx`DELETE FROM spaces.spaces WHERE id = ${params.id}`;
-    if (result.count > 0) await publishSpaceChange(tx, { type: "space.deleted", spaceId: params.id });
+    if (result.count > 0) {
+      if (params.actorId)
+        await audit.record(
+          { action: "spaces.delete", outcome: "allowed", actor: { userId: params.actorId }, target: { type: "space", id: params.id } },
+          tx,
+        );
+      await publishSpaceChange(tx, { type: "space.deleted", spaceId: params.id });
+    }
     return result.count > 0;
   });
   if (!deleted) {

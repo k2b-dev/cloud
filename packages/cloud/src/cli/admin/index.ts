@@ -10,6 +10,7 @@ import { defineCliCommands } from "../commands";
 import { type CloudCliContext, localizeCloudCliText } from "../index";
 import { accountAdministrationCommands } from "./account-administration";
 import { accountCategoryCommands } from "./account-categories";
+import { administrationCommands } from "./administration";
 import { agentCommands } from "./agents";
 import { aiModelCommands } from "./ai-models";
 import { aiQuotaCommands } from "./ai-quotas";
@@ -133,6 +134,7 @@ const build = (locale?: string) =>
       ...natsCommands,
       ...syncCommands,
       ...settingsCommands,
+      ...administrationCommands,
     ],
   });
 
