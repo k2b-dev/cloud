@@ -32,7 +32,7 @@ const [
 await import("../../packages/cloud/examples/public-site/src/site");
 
 const host = Bun.env.PUBLIC_SITE_HOST ?? "public-site.localhost";
-const port = Number(Bun.env.PUBLIC_SITE_PORT ?? 3180);
+const port = Number(Bun.env.PUBLIC_SITE_PORT ?? 0);
 
 // Gateway telemetry publishes through Sync, as in production.
 const sync = await startProcessSync({ application: "lighthouse-public-site" });

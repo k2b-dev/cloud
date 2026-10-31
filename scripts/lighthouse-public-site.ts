@@ -25,7 +25,7 @@ request handler as http://public-site.localhost:<port>/, and runs ${LIGHTHOUSE} 
 throttling, Playwright Chromium) on ${PAGES.join(" and ")}. Prints SEO and performance scores and
 exits 1 below SEO ${TARGETS.seo} or performance ${TARGETS.performance}.
 
-  --port <n>   gateway port for the measurement server (default 3180)
+  --port <n>   gateway port for the measurement server (default: a free port)
   --out <dir>  directory for the bundle and Lighthouse JSON reports (default .local/lighthouse-public-site)
 
 Requires CLOUD_TEST_DATABASE_URL, CLOUD_TEST_VALKEY_URL, CLOUD_TEST_NATS_SERVERS and, if needed,
@@ -37,7 +37,7 @@ const option = (name: string, fallback: string) => {
   return index === -1 ? fallback : (args[index + 1] ?? fallback);
 };
 const root = resolve(import.meta.dir, "..");
-const port = option("--port", "3180");
+const port = option("--port", "0");
 const out = resolve(option("--out", join(root, ".local/lighthouse-public-site")));
 const { CLOUD_TEST_DATABASE_URL: database, CLOUD_TEST_VALKEY_URL: valkey, CLOUD_TEST_NATS_SERVERS: servers } = Bun.env;
 if (!database || !valkey || !servers)
@@ -82,6 +82,8 @@ const server = Bun.spawn([process.execPath, "--no-env-file", join(out, "server.j
     NATS_SERVERS: servers,
     NATS_CREDS_FILE: Bun.env.CLOUD_TEST_NATS_CREDS_FILE,
     SYNC_NAMESPACE: namespace,
+    // The test broker is a single node, as for the integration suites.
+    SYNC_REPLICAS: "1",
     PUBLIC_SITE_PORT: port,
   },
   stdout: "pipe",
@@ -118,7 +120,8 @@ try {
         "--output=json",
         `--output-path=${file}`,
         "--quiet",
-        "--chrome-flags=--headless=new",
+        // Same sandbox choice as Playwright's default Chromium launch (chromiumSandbox: false).
+        "--chrome-flags=--headless=new --no-sandbox",
       ],
       { CHROME_PATH: chrome },
     );

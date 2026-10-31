@@ -1083,7 +1083,7 @@ repeats and fails a unique index at random. `bun run check` flags this with the
 
 `bun scripts/lighthouse-public-site.ts` builds
 `packages/cloud/examples/public-site` in production mode and serves it as
-`http://public-site.localhost:3180/` through the gateway's own request handler
+`http://public-site.localhost:<port>/` on a free port through the gateway's own request handler
 (host decision, protections, compression) to the app's `app.public` surface.
 A fixed snapshot replaces only the domain table and the registry. It then runs
 Lighthouse 13.6.0 on Playwright's Chromium with mobile emulation and simulated
