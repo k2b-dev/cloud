@@ -103,6 +103,13 @@ export const listBrowserFiles = async (cwd: string): Promise<string[]> =>
     return browserImport.test(source) && !integrationImport.test(source);
   });
 
+/** Draws real @k2b/ui components once before a --browser run, so the first test does not pay the browser's cold start (#2149). */
+export const browserWarmUp = (workspaceRoot: string): TestSuite => ({
+  name: "browser warm-up",
+  cwd: join(workspaceRoot, "packages", "ui"),
+  command: ["bun", join(workspaceRoot, "packages", "ui", "test", "browser-warm-up.ts")],
+});
+
 export const discoverTestSuites = async (workspaceRoot: string, options: Options = { integration: false }): Promise<TestSuite[]> => {
   const preload = ["--preload", join(workspaceRoot, "scripts", "fixtures", "test-infra.ts")];
   const browser = ["--isolate", "--conditions=browser", "--preload", join(workspaceRoot, "packages", "ui", "test", "solid-dom-preload.ts")];
@@ -415,6 +422,16 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
       remainingMs(),
     );
     if (code !== 0) throw new Error("integration NATS housekeeping failed");
+  }
+
+  // A fresh browser compiles its graphics shaders on its first frames; the warm-up pays that once, in the run's budget (#2149).
+  if (options.browser) {
+    console.log("\n=== browser warm-up ===");
+    const warmUp = browserWarmUp(workspaceRoot);
+    const started = performance.now();
+    const code = await runTestCommand(warmUp, env, remainingMs());
+    console.log(`=== ${warmUp.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
+    if (code !== 0) throw new Error("browser warm-up failed");
   }
 
   try {
