@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, jest, test } from "bun:test";
-import { createAppBootstrapRoutes } from "@k2b/cloud/api";
+import { createAdminAppKeyRoutes, createAppBootstrapRoutes } from "@k2b/cloud/api";
 import { type AppKey, formatAppKey, importAppKeySeed } from "@k2b/cloud/app-key";
-import { cleanupBootstrapProofs } from "@k2b/cloud/services/app-bootstrap";
+import { authenticateAppProof, cleanupBootstrapProofs } from "@k2b/cloud/services/app-bootstrap";
 import { appKeys, getActiveAppKey, getInstallationId } from "@k2b/cloud/services/app-keys";
 import { get as getSetting, set as setSetting } from "@k2b/cloud/services/settings";
 import { SQL } from "bun";
@@ -107,6 +107,250 @@ suiteFor(
       await sql`UPDATE auth.service_account_credentials SET connections_allowed = true WHERE id = ${key.keyId}::uuid`;
     }
     expect((await routes[1].request(BOOTSTRAP_PATH, request(proof))).status).toBe(200);
+  });
+
+  const lastRejectedStart = async () => {
+    const result = await appKeys.list({ actor, appId: key.appId });
+    if (!result.ok) throw new Error(result.error.message);
+    return result.data.lastRejectedStart;
+  };
+  const keyApi = () =>
+    createAdminAppKeyRoutes(async (c, next) => {
+      c.set("user", {
+        ...actor,
+        profile: "user",
+        givenname: "",
+        sn: "",
+        displayName: "Admin",
+        mail: null,
+        avatarHash: null,
+        memberofGroup: [],
+        memberofGroupIds: [],
+        manages: [],
+        managesGroupIds: [],
+        accountExpires: null,
+        lastLoginLocal: null,
+        ipa: null,
+      });
+      await next();
+    });
+  let rejectionNonce = 0;
+  const rejectionProof = async (claims = {}, identity = key, seed = identity.seed) =>
+    new SignJWT({
+      iss: identity.appId,
+      sub: identity.appId,
+      aud: `cloud-core:${identity.installationId}`,
+      iat: NOW / 1000,
+      exp: NOW / 1000 + 30,
+      jti: `rejection-test-${++rejectionNonce}`,
+      htm: "POST",
+      htu: BOOTSTRAP_PATH,
+      bdh: await bootstrapBodyDigest(new TextEncoder().encode(BOOTSTRAP_BODY)),
+      ...claims,
+    })
+      .setProtectedHeader({ alg: "EdDSA", typ: "cloud-app+jwt", kid: identity.keyId })
+      .sign(await importAppKeySeed(seed));
+  const resetKey = async () => {
+    await sql`UPDATE auth.service_account_credentials SET status = 'active', revoked_at = NULL, expires_at = NULL, connections_allowed = true
+      WHERE id = ${key.keyId}::uuid`;
+    await sql`UPDATE auth.service_accounts SET status = 'active' WHERE id = (
+      SELECT service_account_id FROM auth.service_account_credentials WHERE id = ${key.keyId}::uuid)`;
+  };
+
+  test("verified refusals upsert all four reasons, preserve caller responses and clear after successful bootstrap", async () => {
+    expect(await lastRejectedStart()).toBeNull();
+    const empty = await keyApi().request(`/${key.appId}/keys`);
+    expect(empty.status).toBe(200);
+    expect((await empty.json()).lastRejectedStart).toBeNull();
+    for (const reason of ["revoked", "expired", "disabled", "connections_not_permitted"] as const) {
+      await resetKey();
+      const proof = await rejectionProof();
+      if (reason === "revoked")
+        await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now() WHERE id = ${key.keyId}::uuid`;
+      if (reason === "expired")
+        await sql`UPDATE auth.service_account_credentials SET expires_at = now() - interval '1 second' WHERE id = ${key.keyId}::uuid`;
+      if (reason === "disabled")
+        await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = (
+        SELECT service_account_id FROM auth.service_account_credentials WHERE id = ${key.keyId}::uuid)`;
+      if (reason === "connections_not_permitted")
+        await sql`UPDATE auth.service_account_credentials SET connections_allowed = false WHERE id = ${key.keyId}::uuid`;
+      try {
+        const denied = await routes[0].request(BOOTSTRAP_PATH, request(proof));
+        expect(denied.status).toBe(reason === "connections_not_permitted" ? 403 : 401);
+        expect(await denied.json()).toEqual({ code: reason === "connections_not_permitted" ? reason : "invalid_proof" });
+        expect(denied.headers.get("Cache-Control")).toBe("no-store");
+        const rejection = await lastRejectedStart();
+        expect(rejection).toMatchObject({ reason, keyId: key.keyId });
+        expect(new Date(rejection!.at).toISOString()).toBe(rejection!.at);
+        const response = await keyApi().request(`/${key.appId}/keys?page=2&perPage=1`);
+        expect(response.status).toBe(200);
+        expect((await response.json()).lastRejectedStart).toEqual(rejection);
+        expect((await sql`SELECT app_id FROM auth.app_start_rejections WHERE app_id = ${key.appId}`).length).toBe(1);
+        expect(
+          (await sql`SELECT jti FROM auth.app_proof_replays WHERE key_id = ${key.keyId}::uuid AND jti = ${decodeJwt(proof).jti!}`).length,
+        ).toBe(0);
+      } finally {
+        await resetKey();
+      }
+    }
+    expect((await routes[1].request(BOOTSTRAP_PATH, request(await rejectionProof()))).status).toBe(200);
+    expect(await lastRejectedStart()).toBeNull();
+  });
+
+  test("unverified claims, unknown keys and replay cannot create or replace rejection state", async () => {
+    const consumed = await rejectionProof();
+    expect((await routes[0].request(BOOTSTRAP_PATH, request(consumed))).status).toBe(200);
+    await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now() WHERE id = ${key.keyId}::uuid`;
+    try {
+      const variants = [
+        rejectionProof({}, { ...key, keyId: "55555555-5555-4555-8555-555555555555" }),
+        rejectionProof({}, key, APP_KEY_FIXTURES[1].seed),
+        rejectionProof({ iss: "foreign-app", sub: "foreign-app" }),
+        rejectionProof({ sub: "foreign-app" }),
+        rejectionProof({ aud: "cloud-core:44444444-4444-4444-8444-444444444444" }),
+        rejectionProof({ htm: "GET" }),
+        rejectionProof({ htu: "/elsewhere" }),
+        rejectionProof({ bdh: "wrong" }),
+        rejectionProof({ iat: NOW / 1000 + 3 }),
+        rejectionProof({ exp: NOW / 1000 }),
+        rejectionProof({ exp: NOW / 1000 + 31 }),
+        rejectionProof({ jti: "" }),
+        rejectionProof({ jti: "x".repeat(65) }),
+        rejectionProof({ jti: "null\0nonce" }),
+        Promise.resolve("malformed"),
+        Promise.resolve(consumed),
+      ];
+      const proofs = await Promise.all(variants);
+      for (const prior of [null, "recorded"] as const) {
+        if (prior) expect((await routes[0].request(BOOTSTRAP_PATH, request(await rejectionProof()))).status).toBe(401);
+        const before = await lastRejectedStart();
+        for (const proof of proofs) {
+          const denied = await routes[1].request(BOOTSTRAP_PATH, request(proof));
+          expect(denied.status).toBe(401);
+          expect(await denied.json()).toEqual({ code: "invalid_proof" });
+          expect(await lastRejectedStart()).toEqual(before);
+        }
+      }
+    } finally {
+      await resetKey();
+    }
+    expect((await routes[0].request(BOOTSTRAP_PATH, request(await rejectionProof()))).status).toBe(200);
+    expect(await lastRejectedStart()).toBeNull();
+  });
+
+  test("an active connection-denied key must still prove every claim before recording", async () => {
+    await sql`UPDATE auth.service_account_credentials SET connections_allowed = false WHERE id = ${key.keyId}::uuid`;
+    try {
+      const variants = [
+        { proof: await rejectionProof({}, key, APP_KEY_FIXTURES[1].seed), code: "invalid_proof", status: 401 },
+        {
+          proof: await rejectionProof({ aud: "cloud-core:44444444-4444-4444-8444-444444444444" }),
+          code: "wrong_installation",
+          status: 403,
+        },
+        { proof: await rejectionProof({ sub: "foreign-app" }), code: "wrong_app", status: 403 },
+        { proof: await rejectionProof({ bdh: "wrong" }), code: "invalid_proof", status: 401 },
+      ];
+      for (const variant of variants) {
+        const response = await routes[0].request(BOOTSTRAP_PATH, request(variant.proof));
+        expect(response.status).toBe(variant.status);
+        expect(await response.json()).toEqual({ code: variant.code });
+        expect(await lastRejectedStart()).toBeNull();
+      }
+    } finally {
+      await resetKey();
+    }
+  });
+
+  test("a consumed proof with a now-disallowed connection grant does not record a refusal", async () => {
+    const proof = await rejectionProof();
+    expect((await routes[0].request(BOOTSTRAP_PATH, request(proof))).status).toBe(200);
+    await sql`UPDATE auth.service_account_credentials SET connections_allowed = false WHERE id = ${key.keyId}::uuid`;
+    try {
+      const response = await routes[1].request(BOOTSTRAP_PATH, request(proof));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ code: "connections_not_permitted" });
+      expect(await lastRejectedStart()).toBeNull();
+    } finally {
+      await resetKey();
+    }
+  });
+
+  test("signed non-bootstrap requests never record starts or clear a previous refusal", async () => {
+    const body = new TextEncoder().encode(BOOTSTRAP_BODY);
+    await sql`UPDATE auth.service_account_credentials SET connections_allowed = false WHERE id = ${key.keyId}::uuid`;
+    try {
+      await authenticateAppProof(await rejectionProof({ htu: "/api/platform/capabilities" }), {
+        method: "POST",
+        path: "/api/platform/capabilities",
+        body,
+      });
+      expect(await lastRejectedStart()).toBeNull();
+      expect((await routes[0].request(BOOTSTRAP_PATH, request(await rejectionProof()))).status).toBe(403);
+      const before = await lastRejectedStart();
+      await authenticateAppProof(await rejectionProof({ htu: "/api/platform/capabilities" }), {
+        method: "POST",
+        path: "/api/platform/capabilities",
+        body,
+      });
+      expect(await lastRejectedStart()).toEqual(before);
+      await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now() WHERE id = ${key.keyId}::uuid`;
+      await expect(
+        authenticateAppProof(await rejectionProof({ htu: "/api/platform/capabilities" }), {
+          method: "POST",
+          path: "/api/platform/capabilities",
+          body,
+        }),
+      ).rejects.toMatchObject({
+        code: "invalid_proof",
+      });
+      expect(await lastRejectedStart()).toEqual(before);
+    } finally {
+      await resetKey();
+    }
+    expect((await routes[0].request(BOOTSTRAP_PATH, request(await rejectionProof()))).status).toBe(200);
+  });
+
+  test("failed or limited diagnostic admission and failed writes preserve the original refusal", async () => {
+    await sql`UPDATE auth.service_account_credentials SET connections_allowed = false WHERE id = ${key.keyId}::uuid`;
+    try {
+      for (const down of [false, true]) {
+        const route = createAppBootstrapRoutes({
+          db: replicas[0],
+          ingress,
+          admit: async () => {
+            if (down) throw new Error("Admission unavailable");
+            return { limited: true, remaining: 0, resetIn: 1000 };
+          },
+        });
+        const response = await route.request(BOOTSTRAP_PATH, request(await rejectionProof()));
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ code: "connections_not_permitted" });
+        expect(await lastRejectedStart()).toBeNull();
+      }
+      await sql`ALTER TABLE auth.app_start_rejections RENAME TO app_start_rejections_unavailable`;
+      try {
+        const response = await routes[0].request(BOOTSTRAP_PATH, request(await rejectionProof()));
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ code: "connections_not_permitted" });
+      } finally {
+        await sql`ALTER TABLE auth.app_start_rejections_unavailable RENAME TO app_start_rejections`;
+      }
+      expect(await lastRejectedStart()).toBeNull();
+    } finally {
+      await resetKey();
+    }
+  });
+
+  test("a failed diagnostic clear does not block an otherwise successful bootstrap", async () => {
+    await sql`ALTER TABLE auth.app_start_rejections RENAME TO app_start_rejections_unavailable`;
+    try {
+      const response = await routes[0].request(BOOTSTRAP_PATH, request(await rejectionProof()));
+      expect(response.status).toBe(200);
+      expect((await response.json()).identity.keyId).toBe(key.keyId);
+    } finally {
+      await sql`ALTER TABLE auth.app_start_rejections_unavailable RENAME TO app_start_rejections`;
+    }
   });
 
   test("directly inserted app keys on other account kinds or bindings are rejected like unknown keys", async () => {

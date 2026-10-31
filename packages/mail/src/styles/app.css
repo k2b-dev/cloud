@@ -228,20 +228,41 @@
   }
 
   .mail-row-cells .mail-row-time {
-    justify-content: flex-end;
+    display: block;
     margin-left: 0;
     padding-left: 0;
+    text-align: right;
+  }
+
+  /* The time column is as wide as the longest time the locale shows (--mail-time-samples, one per line), measured in
+     the row font at the unread weight: every row and the heading size the column alike, so no time is cut off and no
+     row moves its columns. The samples take no height and stay hidden from assistive technology. */
+  .mail-columns-head-time {
+    display: block;
+    text-align: right;
+  }
+
+  :is(.mail-row-cells .mail-row-time, .mail-columns-head-time)::after {
+    content: var(--mail-time-samples, "");
+    display: block;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    white-space: pre;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   /* The column template: shared mailboxes show who is responsible and the status; personal ones do not. */
   .mail-columns,
   .mail-columns-head {
-    --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) minmax(7rem, 0.9fr) 9rem 4.5rem;
+    --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) minmax(7rem, 0.9fr) 9rem max-content;
   }
 
   .mail-columns.mail-columns-personal,
   .mail-columns-head.mail-columns-personal {
-    --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) 4.5rem;
+    --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) max-content;
   }
 
   /* Same horizontal geometry as a row, so every heading sits above its column. */
@@ -270,14 +291,6 @@
     height: 2rem;
     align-items: flex-end;
     padding: 0 0.625rem 0.25rem 1.3125rem;
-  }
-
-  .mail-day-group h3 {
-    margin: 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-    line-height: 1rem;
-    color: var(--k2b-text-secondary);
   }
 
   /* The day's progress above the list: fixed height, so it never pushes the rows when the count changes. */
@@ -364,6 +377,11 @@
 
     .mail-row-cells .mail-row-time {
       grid-area: time;
+    }
+
+    /* Each phone row fits its own time beside the sender. */
+    .mail-row-cells .mail-row-time::after {
+      content: none;
     }
 
     .mail-row-assignee-cell,
