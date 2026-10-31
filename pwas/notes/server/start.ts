@@ -36,6 +36,7 @@ export const startNotes = async () => {
   try {
     return await serveNotes(db, {
       origin: appEnv.NOTES_PUBLIC_ORIGIN,
+      adminPasswordHash: appEnv.NOTES_ADMIN_PASSWORD_HASH,
       trustedProxy: appEnv.NOTES_TRUSTED_PROXY,
       storageBytes: appEnv.NOTES_STORAGE_BYTES,
       maxConnections: appEnv.NOTES_MAX_CONNECTIONS,
