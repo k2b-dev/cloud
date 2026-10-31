@@ -47,12 +47,13 @@ row, and Markdown as one block; a request without a review asks its sentence.
 Above the card, one quiet line names the owning app, links the chat it waits
 in, and says how long ago Cloud asked and when the request expires. A
 `code_version` request links to its Code instead, labelled **Code “title”**.
-It addresses current Cloud admins and never offers remembered choices.
+It addresses current Cloud admins and never offers remembered choices. For
+the author, approval is disabled with a reason that another admin is needed;
+rejection remains available.
 
 An answer collapses the card at once to one outcome line in its place, with
 the focus on that line; what follows moves up by the answer the person gave.
-**Approved.** says that the chat it came from carries the Action out. A
-Code-version approvals instead say that the approval was recorded for this
+**Approved.** says that the chat it came from carries the Action out. Code-version approvals instead say that the approval was recorded for this
 version; they do not promise a chat continuation. A
 rejection reads as the app's rejected sentence and "You declined.". When
 another tab or channel decided first, or the request expired or was withdrawn,
