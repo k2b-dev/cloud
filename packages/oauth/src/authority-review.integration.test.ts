@@ -1,5 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { createIdentityOAuthIssuanceRoutes } from "../../core/src/api/identity-oauth-issuance";

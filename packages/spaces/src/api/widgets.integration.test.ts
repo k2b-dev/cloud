@@ -4,7 +4,7 @@ import { expect } from "bun:test";
 import { type User, WidgetResponseSchema, type WidgetSettingsDeclaration } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { setWidgetRequest } from "@k2b/cloud/server/widget-request";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { Hono } from "hono";
 import { newShortId } from "../lib/short-id";
 import { dashboardSnapshot } from "../service/items";

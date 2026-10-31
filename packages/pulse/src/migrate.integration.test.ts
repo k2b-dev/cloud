@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { sql } from "bun";
-import { createDisposableDatabase, suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
+import { sql } from "@k2b/cloud";
+import { suiteFor, testInfra, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrate as migratePulse } from "./migrate";
 
 const migrate = () => migratePulse("Europe/Berlin");
 
 const enabled = testInfra.database !== undefined,
   databaseTest = enabled ? test : test.skip;
-let database: Awaited<ReturnType<typeof createDisposableDatabase>> | undefined;
+let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
 const base = "11111111-1111-4111-8111-111111111111",
   source = "22222222-2222-4222-8222-222222222222",
   workload = "55555555-5555-4555-8555-555555555555",
@@ -16,8 +16,7 @@ const base = "11111111-1111-4111-8111-111111111111",
   access = "44444444-4444-4444-8444-444444444444";
 beforeAll(async () => {
   if (!enabled) return;
-  database = await createDisposableDatabase("pulse_schema");
-  process.env.DATABASE_URL = database.url;
+  database = await useFreshDatabase("pulse_schema");
   const [row] = await sql`SELECT current_database() AS name`;
   if (row?.name !== database.name) throw new Error("Schema tests need their own database; run this file in its own process");
 });

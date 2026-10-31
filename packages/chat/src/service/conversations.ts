@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   createAccess,
   deleteAccess,
@@ -13,7 +14,6 @@ import {
 } from "@k2b/cloud/server";
 import { audit, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { ChatComposeInputSchema } from "../commands";
 import { messagePreview } from "../system-messages";

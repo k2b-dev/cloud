@@ -1,6 +1,5 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { BASE_SCHEMA_VERSIONS, LATEST_BASE_SCHEMA_VERSION } from "../store/base-schema";
 import { BaseOperationSuperseded, BaseStoreError, baseStore, loadStoreRow, type StoreRow, storeErrorCode } from "../store/base-store";
 import { acceptCheckpoint, insertCheckpoint, prepareCheckpoint } from "../store/maintenance";

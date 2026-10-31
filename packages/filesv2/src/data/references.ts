@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { entryRefId, parseEntryRefId } from "../resource-ref";
 
 /** Inline refs remain directly resolvable; long paths receive a bounded durable resource identity. */

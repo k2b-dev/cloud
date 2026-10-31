@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { migrateLogMetadataReader } from "./logging-metadata";
 
 export const migrate = async (): Promise<void> => {

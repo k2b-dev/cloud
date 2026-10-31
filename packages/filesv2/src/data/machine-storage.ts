@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export async function migrateMachineStorage() {
   // Keep ownership after account deletion, as with human base claims.

@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 
 export const migrateKnownApps = async (db: SQL = sql): Promise<void> => {
   await db`CREATE SCHEMA IF NOT EXISTS core`.simple();

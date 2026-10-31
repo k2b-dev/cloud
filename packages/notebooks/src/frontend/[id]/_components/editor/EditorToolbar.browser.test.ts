@@ -844,3 +844,19 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
     }
   }, 30_000);
 });
+
+// Each icon a toolbar control shows has one size: the formatting tools and the host's end controls, Book and the detail
+// panel toggle among them (a book icon without its own size class once read smaller than its neighbours).
+test("every control icon in the editor toolbar has the same size", async () => {
+  const page = await open({ viewport: { width: 1280, height: 800 } });
+  try {
+    const sizes = await page.$$eval(".notebooks-editor-toolbar .k2b-button > .k2b-button__label > .ti:first-child", (icons) =>
+      icons.filter((icon) => icon.getClientRects().length > 0).map((icon) => `${icon.className}: ${getComputedStyle(icon).fontSize}`),
+    );
+    expect(sizes.length).toBeGreaterThan(10);
+    expect(sizes).toContain("ti ti-book: 14px");
+    expect(sizes.filter((size) => !size.endsWith(": 14px"))).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+});

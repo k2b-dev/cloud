@@ -1,7 +1,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { createAccess } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { chatService } from "../service";

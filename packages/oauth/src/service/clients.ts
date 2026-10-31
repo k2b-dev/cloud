@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { audit, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type {
   CreateOAuthClient,
   MutationResult,

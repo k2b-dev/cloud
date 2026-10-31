@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { MutationResult } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { noteFavoriteChanged } from "./workspace-events";
 
 export type FavoriteNoteId = {

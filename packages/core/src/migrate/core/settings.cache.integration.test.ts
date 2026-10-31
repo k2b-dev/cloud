@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import { get } from "@k2b/cloud/services/settings";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "./settings";
 

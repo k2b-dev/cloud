@@ -24,8 +24,12 @@ Command shortcuts count inside a text field too.
 Neither attribute exists before its first qualifying event. Server HTML and
 the first browser frame stay identical. A browser cannot tell whether a
 keyboard is attached, so hints wait for a qualifying key press. The keyboard
-flag stays for the document, including after pointer use or controller cleanup.
-A full page load starts without it.
+flag stays for the document, including after pointer use or controller cleanup:
+a person who pressed one shortcut has a keyboard, and hints that come and go
+with every click would flicker. A full page load starts without it. Because a
+single shortcut such as Command C shows every hint for the rest of the page,
+a hint needs its own reserved space; compact icon buttons, such as those in
+`SelectionToolbar`, render none.
 
 ## Start the controller
 

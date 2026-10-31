@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { AccessSubject, RequestActor } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";

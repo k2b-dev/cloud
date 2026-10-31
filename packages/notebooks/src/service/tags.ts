@@ -9,7 +9,7 @@
  * Disambiguation from markdown headings: `# Title` (with space after `#`)
  * is a heading; `#tag` (no space, must start with a letter) is a tag.
  */
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { notebookServiceMessages } from "./messages";
 
 /** `(?:^|\s)` ensures we only match `#tag` at line-start or after whitespace,

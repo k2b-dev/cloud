@@ -1,10 +1,14 @@
-import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { SettingUnreadableError } from "@k2b/cloud/services";
 import { session } from "@k2b/cloud/services/session";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { app } from "../config";
 import { weatherSettingsRouter } from "./settings";
+
+useUnitClients();
 
 const clock = spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-02T03:04:05Z"));
 const user = buildProjectedUser({
@@ -25,10 +29,11 @@ const tx = Object.assign(new SQL("postgres://localhost/unused_test"), {
     throw new Error("Unexpected savepoint");
   },
 });
-const begin = spyOn(sql, "begin").mockImplementation(async (run) => {
-  if (typeof run !== "function") throw new Error("Expected transaction callback");
-  await run(tx);
-});
+const mockBegin = () =>
+  spyOn(sql, "begin").mockImplementation(async (run) => {
+    if (typeof run !== "function") throw new Error("Expected transaction callback");
+    await run(tx);
+  });
 const request = (body: unknown) =>
   weatherSettingsRouter.request("/", {
     method: "PUT",
@@ -36,7 +41,10 @@ const request = (body: unknown) =>
     body: JSON.stringify(body),
   });
 
+let begin: ReturnType<typeof mockBegin>;
+afterEach(() => begin.mockRestore());
 beforeEach(() => {
+  begin = mockBegin();
   read.mockReset().mockResolvedValue({ value: 0, stored: "readable" });
   write.mockReset().mockResolvedValue(undefined);
 });

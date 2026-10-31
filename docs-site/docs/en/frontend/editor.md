@@ -247,7 +247,11 @@ const table = chartTable(chart, "en");
 ```
 
 For CodeMirror table presentation, use `tablesExtension` or
-`createNotebookTablePresentation` from `@k2b/editor/markdown`. Supply
+`createNotebookTablePresentation` from `@k2b/editor/markdown`. With the
+latter, a formula error shows as one flat chip in its cell. While the cell is
+edited, its result or its error with a suggestion appears right below the
+cell, wraps, is never cut by the table's scroll area, and describes the cell
+to screen readers. Supply
 `resolveUrl(kind, ref)` for host note and tag routes. `createBlockPreviews`
 uses a host `load` callback for previews; `localChartPreviews` can implement that
 callback for charts over named tables in the same document, including formulas,

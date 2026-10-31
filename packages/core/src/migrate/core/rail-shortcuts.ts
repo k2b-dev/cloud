@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 
 /** Transactional cache generations also cover directory sync and cascading membership changes. */
 export const migrate = async (db: SQL = sql): Promise<void> => {

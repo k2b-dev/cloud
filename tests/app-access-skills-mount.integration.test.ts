@@ -1,11 +1,11 @@
 import { beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import * as registry from "../packages/cloud/src/_internal/registry";
 import { aiSkills, aiSkillsRoutes } from "../packages/cloud/src/ai/index.ts";
 import { migrateCloudAi } from "../packages/cloud/src/ai/migrate";
 import { createAiOpenAiRoutes, createCoreApiRouter } from "../packages/cloud/src/api/index.ts";
 import type { AppRegistryEntry } from "../packages/cloud/src/contracts/index.ts";
+import { sql } from "../packages/cloud/src/runtime/clients";
 import type { AuthContext, RequestAuthority } from "../packages/cloud/src/server/index.ts";
 import { requireAppAccess } from "../packages/cloud/src/server/middleware/app-access";
 import * as appAccess from "../packages/cloud/src/services/app-access";

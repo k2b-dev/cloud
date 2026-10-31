@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { backfillShortIds, finalizeShortIds, type ShortIdTable, shortIdsFinalized } from "./lib/short-id";
 
 export const migrate = async (): Promise<void> => {

@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { z } from "zod";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
 import {

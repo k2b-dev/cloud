@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";

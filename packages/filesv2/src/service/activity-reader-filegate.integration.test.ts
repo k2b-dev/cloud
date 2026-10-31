@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, type RootClient } from "@k2b/filegate";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { activityFilegate } from "../../test/activity-filegate";
 import { actorId, candidate, otherId } from "../../test/activity-reader-fixture";

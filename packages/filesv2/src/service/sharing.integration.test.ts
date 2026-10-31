@@ -1,9 +1,9 @@
 import { beforeAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import type { RequestActor } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
 import type { ExecutionIdentity, Node, Session, WriteOptions } from "@k2b/filegate";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { testCall } from "../../test/files-call";

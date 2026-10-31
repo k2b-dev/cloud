@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { migrateAppBootstrap } from "./app-bootstrap";
 import { migrateAppKeys } from "./app-keys";
 import { repairEncodedMetadata } from "./jsonb-metadata";
