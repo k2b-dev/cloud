@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.37.0...npm-ui-v0.38.0) (2026-10-31)
+
+
+### Features
+
+* **core:** one Apps page in Administration ([#2197](https://github.com/k2b-dev/cloud/issues/2197)) ([97bfd2b](https://github.com/k2b-dev/cloud/commit/97bfd2be3e218edd6b53f9f73a860511a400d6bb))
+
 ## [0.37.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.36.0...npm-ui-v0.37.0) (2026-10-30)
 
 

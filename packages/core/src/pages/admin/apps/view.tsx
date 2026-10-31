@@ -43,6 +43,8 @@ export type AppPageData = {
   accessRule: string;
   /** Core and Gateway are platform services and have no app keys. */
   keysSupported: boolean;
+  /** Fibel pages for the key hints: recovering a key and switching from the environment to a key. */
+  docs: { recover: string | null; migrate: string | null };
   /** Display names of known apps by ID, for publishers of heard events. */
   appNames: ReadonlyMap<string, string>;
 };
@@ -169,6 +171,10 @@ function hintShort(t: AppsPageMessages, f: AppsFormat, hint: AppHint): string {
       return t.hintRouteMissingShort({ prefix: hint.prefix });
     case "accessUnmanaged":
       return t.hintAccessUnmanagedShort;
+    case "envStart":
+      return t.hintEnvStartShort;
+    case "rotation":
+      return t.hintRotationShort;
     case "runtime":
       return t.hintRuntimeShort({ message: hint.message });
   }
@@ -300,7 +306,16 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
     props.app.details?.hears.find((hearing) => hearing.failedDeliveries.length > 0)?.title ??
     props.app.details?.hears.find((hearing) => hearing.counts.failed > 0)?.eventType ??
     null;
-  const text = (): { lead: string; text: string; action: string } => {
+  /** `create` opens the keys column with the create dialog; `primary` marks the one filled action of the page. */
+  const text = (): {
+    lead: string;
+    text: string;
+    action: string;
+    create?: boolean;
+    primary?: boolean;
+    docs?: string | null;
+    docsLabel?: string;
+  } => {
     const hint = props.hint;
     switch (hint.kind) {
       case "notRunning": {
@@ -318,7 +333,26 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
       case "neverStarted":
         return { lead: t.hintNeverStartedLead, text: t.hintNeverStartedText, action: hint.hasKey ? t.actKeysShow : t.actKeys };
       case "keyRevoked":
-        return { lead: t.hintKeyRevokedLead, text: t.hintKeyRevokedText({ name: props.app.revokedKeyName ?? "" }), action: t.actKeys };
+        return {
+          lead: t.hintKeyRevokedLead,
+          text: t.hintKeyRevokedText({ name: props.app.revokedKeyName ?? "" }),
+          action: t.actNewKey,
+          create: true,
+          primary: true,
+          docs: props.app.docs.recover,
+          docsLabel: t.docsWhatNow,
+        };
+      case "envStart":
+        return {
+          lead: t.hintEnvStartLead,
+          text: t.hintEnvStartText({ name: entry.name }),
+          action: t.actKeys,
+          create: true,
+          docs: props.app.docs.migrate,
+          docsLabel: t.docsMigration,
+        };
+      case "rotation":
+        return { lead: t.hintRotationShort, text: "", action: t.actKeysShow };
       case "errorRate":
         return { lead: t.hintErrorRateLead({ rate: f.percent(hint.rate) }), text: t.hintErrorRateText, action: t.actErrors };
       case "failedDeliveries":
@@ -345,14 +379,28 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
       <span>
         <b>{text().lead}</b> {text().text}
       </span>
-      <span class="mt-1.5 block">
+      <span class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
         <Show
           when={presentation().target !== "remove"}
           fallback={<RemoveApp app={{ id: entry.id, name: entry.name }} variant="button" label={text().action} />}
         >
-          <ButtonLink size="sm" variant="secondary" href={appsHref({ app: entry.id, view: presentation().target as AppView })}>
+          <ButtonLink
+            size="sm"
+            variant={text().primary ? "primary" : "secondary"}
+            href={appsHref({ app: entry.id, view: presentation().target as AppView, create: text().create })}
+          >
+            <Show when={text().create}>
+              <i class="ti ti-plus" aria-hidden="true" />
+            </Show>
             {text().action}
           </ButtonLink>
+        </Show>
+        <Show when={text().docs}>
+          {(href) => (
+            <a class="underline underline-offset-3" href={href()} target="_blank" rel="noopener noreferrer">
+              {text().docsLabel}
+            </a>
+          )}
         </Show>
       </span>
     </NoticeCard>
@@ -481,20 +529,16 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
   };
   const keysValue = (): JSX.Element => {
     const keys = entry.keys;
+    if (!entry.keysKnown) return <span class="text-dimmed">{t.notLoaded}</span>;
     if (keys.active > 0)
       return (
         <>
           <b class="font-medium text-secondary">{t.keysActive({ count: keys.active })}</b>
-          {keys.lastUsedAt ? ` · ${t.keysUsed({ when: f.relative(keys.lastUsedAt) })}` : ""}
+          {keys.active >= 2 ? ` · ${t.keysRotation}` : keys.lastUsedAt ? ` · ${t.keysUsed({ when: f.relative(keys.lastUsedAt) })}` : ""}
         </>
       );
-    if (keys.revoked + keys.expired > 0)
-      return (
-        <>
-          <span class="text-(--k2b-danger-text)">{t.keysNoneActive}</span> · {t.keysRevoked({ count: keys.revoked + keys.expired })}
-        </>
-      );
-    return t.keysNone;
+    if (keys.revoked + keys.expired > 0) return <span class="text-(--k2b-danger-text)">{t.keysNoValid}</span>;
+    return entry.live ? t.keysEnv : t.keysNone;
   };
   const eventsValue = (): JSX.Element => {
     if (neverStarted || providerOnly) return "–";
@@ -528,9 +572,11 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
   const links = entry.numbers.flatMap((item) => item.links).filter((link) => link.kind !== "routes" && link.kind !== "capabilities");
   return (
     <div class="flex flex-col pb-6">
-      <Show when={entry.hints.length > 0 || props.app.providerFailures.length > 0 || !details}>
+      <Show when={entry.hints.some((hint) => hint.kind !== "rotation") || props.app.providerFailures.length > 0 || !details}>
         <div class="mb-2 flex flex-col gap-1.5" data-app-hints>
-          <For each={entry.hints}>{(hint) => <Hint t={t} f={f} app={props.app} hint={hint} />}</For>
+          <For each={entry.hints.filter((hint) => hint.kind !== "rotation")}>
+            {(hint) => <Hint t={t} f={f} app={props.app} hint={hint} />}
+          </For>
           <For each={props.app.providerFailures}>
             {(provider) => (
               <NoticeCard tone="neutral" icon="ti ti-cloud-off" data-hint="provider">
@@ -1219,6 +1265,7 @@ export function AppsView(props: { data: AppsViewData }) {
                     app={columnData.keys.app}
                     active={(columnData.keys.initialKeys ?? []).filter((key) => key.status === "active").length}
                     disabledAccount={columnData.keys.accountStatus === "disabled"}
+                    neverStarted={columnData.keys.neverStarted}
                   />
                 ) : undefined
               }

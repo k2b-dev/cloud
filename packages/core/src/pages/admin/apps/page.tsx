@@ -57,6 +57,8 @@ const unknownApp = (id: string): AppInput => ({
   accessKind: null,
   access: null,
   keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
+  keysSupported: true,
+  keysKnown: true,
   failedDeliveries: 0,
   runtimeIssues: [],
   missingRoutes: [],
@@ -194,6 +196,8 @@ export default ssr<AuthContext>(async (c) => {
         accessKind: (app?.access?.kind as AppInput["accessKind"]) ?? null,
         access: fact?.access ?? null,
         keys: fact ? { ...fact.keys } : { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
+        keysSupported: !RESERVED_KEYS.has(entry.id),
+        keysKnown: Boolean(fact),
         failedDeliveries: fact?.events.failedDeliveries ?? 0,
         runtimeIssues: [
           ...(issue ? [{ severity: "error" as const, message: issue.reason }] : []),
@@ -234,6 +238,8 @@ export default ssr<AuthContext>(async (c) => {
         })
       : null;
   const reservedKeys = entry ? RESERVED_KEYS.has(entry.id) : true;
+  // The documentation link is optional: without the setting, hints and the keys column simply omit it.
+  const documentationBase = entry ? await coreSettings.get<string>("app.documentation_url").catch(() => undefined) : undefined;
   const keyList =
     entry && !reservedKeys
       ? await appKeys
@@ -301,8 +307,7 @@ export default ssr<AuthContext>(async (c) => {
                   hasNext: tokens.hasNext,
                 }
               : null,
-            docsHref:
-              settingsDocumentationHref(await coreSettings.get<string>("app.documentation_url").catch(() => undefined), "app-keys") ?? null,
+            docsHref: settingsDocumentationHref(documentationBase, "app-keys") ?? null,
             timeZone: dateContext.timeZone ?? "UTC",
           },
         };
@@ -401,6 +406,10 @@ export default ssr<AuthContext>(async (c) => {
           revokedKeyName: keyList?.find((key) => key.status === "revoked")?.name ?? null,
           providerFailures,
           keysSupported: !reservedKeys,
+          docs: {
+            recover: settingsDocumentationHref(documentationBase, "app-keys-recover") ?? null,
+            migrate: settingsDocumentationHref(documentationBase, "app-keys-start") ?? null,
+          },
           accessRule: ruleLabel(locale, liveApp?.access ?? localized.get(entry.id)?.access),
           appNames: new Map(entries.map((candidate) => [candidate.id, candidate.name])),
         }
