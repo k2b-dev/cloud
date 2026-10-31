@@ -11,8 +11,17 @@ import {
 import { connections } from "../runtime/connections";
 import { clientIpBucket } from "../server/client-ip";
 import { type RateLimitResult, ratelimit } from "../server/ratelimit";
-import { authenticateBootstrap, BootstrapProofError, bootstrapRateLimit, consumeBootstrapProof } from "../services/app-bootstrap";
+import {
+  authenticateBootstrap,
+  BootstrapProofError,
+  bootstrapRateLimit,
+  clearRejectedBootstrapStart,
+  consumeBootstrapProof,
+  RejectedBootstrapStart,
+  recordRejectedBootstrapStart,
+} from "../services/app-bootstrap";
 import { touchAppKey } from "../services/app-keys";
+import { logger } from "../services/logging";
 
 type BootstrapContext = { Variables: { bootstrapBody: Uint8Array<ArrayBuffer> } };
 
@@ -110,6 +119,14 @@ export const createAppBootstrapRoutes = (dependencies: Dependencies = {}) => {
         try {
           verified = await authenticateBootstrap(header.slice(7), { method: c.req.method, path: url.pathname, body }, dependencies.db);
         } catch (error) {
+          if (error instanceof RejectedBootstrapStart) {
+            try {
+              const rate = dependencies.admit ? await dependencies.admit(error.identity.keyId) : await admit("key", error.identity.keyId);
+              if (!rate.limited) await recordRejectedBootstrapStart(error, dependencies.db);
+            } catch {
+              logger("app-bootstrap").warn("Could not record rejected app start", { appId: error.identity.appId });
+            }
+          }
           if (error instanceof BootstrapProofError) return c.json({ code: error.code }, error.code === "invalid_proof" ? 401 : 403);
           throw error;
         }
@@ -124,6 +141,11 @@ export const createAppBootstrapRoutes = (dependencies: Dependencies = {}) => {
         await touchAppKey(identity, dependencies.db);
         const response = JSON.stringify(BootstrapResponseSchema.parse({ identity, connections: snapshot }));
         if (Buffer.byteLength(response) > BOOTSTRAP_RESPONSE_BYTES) throw new Error("Bootstrap response exceeds protocol budget");
+        try {
+          await clearRejectedBootstrapStart(identity.appId, dependencies.db);
+        } catch {
+          logger("app-bootstrap").warn("Could not clear rejected app start", { appId: identity.appId });
+        }
         c.header("Content-Type", "application/json");
         return c.body(response);
       },
