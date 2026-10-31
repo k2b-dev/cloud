@@ -1,9 +1,9 @@
 import { beforeAll, expect, test } from "bun:test";
 import { type LoopAggregate, type Message, nessi, type Provider, type ProviderRequest } from "@k2b/nessi";
-import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import { sql } from "../runtime/clients";
 import { userResourceContext } from "./projects.test-fixture";
 import { readReviewContent } from "./review-content";
 import "../../../../scripts/fixtures/authorization-preload";

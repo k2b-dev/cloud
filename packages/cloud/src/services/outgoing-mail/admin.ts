@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import {
   type AdminMailFilter,
   type AdminMailRecord,
@@ -6,6 +5,7 @@ import {
   type MailPage,
   type MailPageParams,
 } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import { cleanupMailAttachments, publishMailSettled } from "./dispatcher";
 import { adminMessageRecord, type MessageRow, outgoingMailMessages } from "./messages";

@@ -1,9 +1,8 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeTaskTracker, stopRuntimeJobs } from "@k2b/cloud/services";
 import { toPgTextArray } from "@k2b/cloud/services/postgres";
 import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
-import { sql } from "bun";
 import { z } from "zod";
 import { type CommandState, type MaintenanceCommandInput, maintenanceCommandInputSchema } from "../contracts";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "./command-authorization";

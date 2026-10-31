@@ -32,14 +32,17 @@ import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
 import { appApprovalRuntime } from "./app-approval-runtime";
+import { rememberApps } from "./known-apps";
 import { migrate as migrateAnnouncements } from "./migrate/core/announcements";
 import { migrate as migrateAppApproval } from "./migrate/core/app-approval";
+import { migrate as migrateAppDomains } from "./migrate/core/app-domains";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
 import { migrate as migrateExtensions } from "./migrate/core/extensions";
 import { migrate as migrateGeoIp } from "./migrate/core/geoip";
+import { migrateKnownApps } from "./migrate/core/known-apps";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
 import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
@@ -75,6 +78,7 @@ let appliedAppSkillsAt = 0;
 const refreshAppSkills = async (): Promise<void> => {
   try {
     const apps = await listApps();
+    await rememberApps(apps);
     const state = appSkillsRegistryState(apps);
     if (state === appliedAppSkillsState && Date.now() - appliedAppSkillsAt < APP_REGISTRY_TTL_MS) return;
     const startedAt = Date.now();
@@ -114,6 +118,7 @@ export const runCoreSetup = async (): Promise<void> => {
   const steps = [
     { name: "extensions", run: migrateExtensions },
     { name: "auth", run: migrateAuth },
+    { name: "known-apps", run: migrateKnownApps },
     { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
@@ -128,6 +133,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
+    { name: "app-domains", run: migrateAppDomains },
     { name: "outgoing-mail", run: migrateOutgoingMail },
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },

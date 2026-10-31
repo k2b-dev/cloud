@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CapabilityExecutionContext, capabilityResultSchema, geoContract, geoRouteContract } from "@k2b/cloud/contracts";
 import { coreGeo } from "@k2b/cloud/services";
@@ -139,4 +139,28 @@ test("geo budget refusals show the required credits and shortfall in the request
     ok: false,
     error: { message: expect.stringContaining("Benötigt: 12 Credits; verfügbar: 7; fehlen: 5.") },
   });
+});
+
+test("app-paid geo handler preserves the app actor and exposes budget reset as Retry-After", async () => {
+  setSystemTime(new Date("2030-01-02T03:04:05Z"));
+  const appContext = {
+    actor: { kind: "app" as const, appId: "vendor-web", keyId: "22222222-2222-4222-8222-222222222222" },
+    accessSubject: { type: "none" as const },
+    user: null,
+    locale: "en",
+    requestId: "public-form",
+    origin: "app" as const,
+    signal: new AbortController().signal,
+  };
+  try {
+    const query = aiCapabilities.queries["address.autocomplete"].app;
+    expect(query.permission).toBe("geo:query");
+    const autocomplete = spyOn(coreGeo, "autocomplete").mockRejectedValue(
+      new GeoError("GEO_BUDGET_EXHAUSTED", { scope: "person", resetsAt: "2030-01-02T03:05:05Z" }),
+    );
+    expect(await query.run({ text: "Orle" }, appContext)).toMatchObject({ ok: false, error: { status: 429, details: { retryAfter: 60 } } });
+    expect(autocomplete).toHaveBeenCalledWith({ text: "Orle" }, appContext);
+  } finally {
+    setSystemTime();
+  }
 });

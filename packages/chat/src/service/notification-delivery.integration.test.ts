@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, setSystemTime, spyOn, test } from "bun:test";
+import { redis as platformRedis, redis, sql } from "@k2b/cloud";
 import { ResourceReaderRateLimited } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { browserNotifications, notifications, serviceAccountCredentials, toPgUuidArray } from "@k2b/cloud/services";
 import { processNotificationDelivery } from "@k2b/cloud/services/notifications/dispatcher";
 import type { sendTypedNotification } from "@k2b/cloud/services/notifications/platform";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -75,8 +75,8 @@ suiteFor(
   afterEach(async () => {
     const rateWindow = Math.floor(testInstant.getTime() / 60_000);
     for (const window of [rateWindow - 1, rateWindow]) {
-      await redis.del(`cloud:ratelimit:chat:reader-interactive:chat:${window}`);
-      for (const p of people) await redis.del(`cloud:ratelimit:chat:reader-person:${p.id}:${window}`);
+      await platformRedis.del(`cloud:ratelimit:chat:reader-interactive:chat:${window}`);
+      for (const p of people) await platformRedis.del(`cloud:ratelimit:chat:reader-person:${p.id}:${window}`);
     }
     setSystemTime();
     await redis.del(SYSTEM_READER_HEALTH_KEY);
@@ -944,9 +944,10 @@ suiteFor(
       `cloud:ratelimit:chat:reader-interactive:chat:${part}`,
     ]);
     try {
+      await platformRedis.del(...rateKeys);
       for (let request = 0; request < 12; request++) expect(await badgeCount(recipient.context)).toBe(0);
       expect(reader.mock.calls).toHaveLength(INTERACTIVE_READER_PERSON_LIMIT * 2);
-      const interactive = await redis.get(rateKeys[3]!);
+      const interactive = await platformRedis.get(rateKeys[3]!);
       // Only admitted person checks spend the shared interactive budget; denied traffic never reaches Core.
       expect(Number(interactive ?? 0)).toBeLessThanOrEqual(INTERACTIVE_READER_PERSON_LIMIT);
       await deliverMessage(message.uuid);
@@ -959,7 +960,7 @@ suiteFor(
           .some((call) => call[0].principals.some((principal) => principal.type === "user" && principal.userId === other.id)),
       ).toBe(true);
     } finally {
-      await redis.del(...rateKeys);
+      await platformRedis.del(...rateKeys);
     }
   });
   for (const scope of ["person", "app", "replaced", "unavailable"] as const) {
@@ -982,11 +983,11 @@ suiteFor(
       const appKey = `cloud:ratelimit:chat:reader-interactive:chat:${window}`;
       const keys = [personKey, appKey, `cloud:ratelimit:chat:reader-interactive:chat:${window - 1}`];
       const replacement = crypto.randomUUID();
-      const originalSend = redis.send.bind(redis);
+      const originalSend = platformRedis.send.bind(platformRedis);
       // Replace the reservation between admission and cleanup to exercise compare-and-delete.
       const intercept =
         scope === "replaced" || scope === "unavailable"
-          ? spyOn(redis, "send").mockImplementation(async (command, args) => {
+          ? spyOn(platformRedis, "send").mockImplementation(async (command, args) => {
               if (command === "EVAL" && args.includes(personKey)) {
                 if (scope === "unavailable") throw new Error("Valkey unavailable after reservation");
                 await redis.set(key, replacement, "EX", 60);
@@ -995,8 +996,8 @@ suiteFor(
             })
           : undefined;
       try {
-        await redis.del(...keys);
-        await redis.set(
+        await platformRedis.del(...keys);
+        await platformRedis.set(
           scope === "app" ? appKey : personKey,
           String(scope === "app" ? INTERACTIVE_READER_APP_LIMIT : INTERACTIVE_READER_PERSON_LIMIT),
           "EX",
@@ -1006,7 +1007,7 @@ suiteFor(
         expect(reader.mock.calls).toHaveLength(0);
         expect(await redis.get(key)).toBe(scope === "replaced" ? replacement : null);
         intercept?.mockRestore();
-        await redis.del(...keys);
+        await platformRedis.del(...keys);
         if (scope !== "replaced") {
           expect(await readableSystemRecipients(chat.id, threadId, [recipient.id], sql, "interactive")).toEqual(new Set([recipient.id]));
           expect(reader.mock.calls).toHaveLength(2);
@@ -1014,7 +1015,7 @@ suiteFor(
         }
       } finally {
         intercept?.mockRestore();
-        await redis.del(...keys);
+        await platformRedis.del(...keys);
       }
     });
   }
@@ -1138,11 +1139,11 @@ suiteFor(
       return { state: "checked", readable: [...input.principals] };
     });
     const rateKey = `cloud:ratelimit:chat:reader-interactive:chat:${Math.floor(Date.now() / 60_000)}`;
-    const budgetBefore = await redis.get(rateKey);
+    const budgetBefore = await platformRedis.get(rateKey);
     expect(await sendPush(recipient.id, chat.id)).toBeNull();
     expect(sent).toHaveLength(1);
     expect(sent[0]!.data.text).toBe("First item message");
-    expect(await redis.get(rateKey)).toBe(budgetBefore);
+    expect(await platformRedis.get(rateKey)).toBe(budgetBefore);
     const [pending] = await sql<{ message_id: string; personal_message_id: string; message_count: number }[]>`
       SELECT message_id, personal_message_id, message_count FROM chat.notification_pending
       WHERE user_id = ${recipient.id}::uuid AND conversation_id = ${chat.id}::uuid`;

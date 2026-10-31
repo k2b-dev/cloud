@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { crypto, type DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import { customAppDocumentPreviewSourceIsSafe } from "../custom-apps/document-preview-capability";
 import { customAppFieldConfig, stableCustomAppStringify } from "../custom-apps/stable-value";
 import { parseGridsQueryDsl } from "../query-dsl/parser";

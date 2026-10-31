@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { appAccess } from "../contracts/app-access";
 import type { User } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { canUseApp, usableAppIds } from "./app-access";
 

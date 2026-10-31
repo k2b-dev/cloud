@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import { ServiceAccountSchema, UserSchema } from "@k2b/cloud/contracts";
-import { redis } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { ChatContext } from "./access";
 import { DISCUSSION_BYTE_LIMIT, DISCUSSION_CALL_LIMIT, DiscussionRead } from "./discussion-read";
 import { mockDiscussionCatalog, providerApp } from "./discussions.test-fixture";
@@ -14,6 +15,8 @@ import {
   readerBatch,
   readResource,
 } from "./resource-access";
+
+useUnitClients();
 
 const originalOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
 const now = Date.parse("2026-10-29T12:00:00Z");

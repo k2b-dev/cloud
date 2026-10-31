@@ -1,5 +1,6 @@
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import type { User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { decodeAccountCategoryEnabled } from "../account-category-policy";
 import { buildRoles } from "../accounts/authz";
 import { resolveProviderProfile } from "../accounts/base-user";

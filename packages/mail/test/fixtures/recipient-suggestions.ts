@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import type { MailRequestContext } from "../../src/service/auth";
 import { createMailbox } from "../../src/service/mailboxes";
 

@@ -1,8 +1,8 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { ScheduleContext, Worker } from "@k2b/sync";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import {
   CONTROLLED_DESTRUCTION_BATCH_MAX,
   type ControlledDestructionOverview,

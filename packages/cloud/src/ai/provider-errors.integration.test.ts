@@ -1,8 +1,8 @@
 import { expect, spyOn } from "bun:test";
 import { memoryStore, nessi, type Provider } from "@k2b/nessi";
-import { sql } from "bun";
 import { z } from "zod";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { logger, trace } from "../services/logging";
 import { createAiProvider } from "./provider";

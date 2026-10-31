@@ -29,18 +29,9 @@ test("explicit batch retries retain a wakeup while the previous worker is comple
       throw new Error("Unexpected SQL: " + query);
     };
     sql.begin = async fn => fn(sql);
-    // Bun's native sql export cannot be replaced with mock.module("bun").
-    // Redirect only this module's SQL import to the in-memory fixture.
-    globalThis.batchRetrySql = sql;
-    Bun.plugin({
-      name: "notification-batch-sql-fixture",
-      setup(build) {
-        build.onLoad({ filter: /[\\/]notifications[\\/]batches\\.ts$/ }, async ({ path }) => ({
-          contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.batchRetrySql;'),
-          loader: "ts",
-        }));
-      },
-    });
+    // The worker subprocess owns its in-memory database fixture.
+    const clients = { ...await import(${JSON.stringify(new URL("../../runtime/clients.ts", import.meta.url).pathname)}) };
+    mock.module(${JSON.stringify(new URL("../../runtime/clients.ts", import.meta.url).pathname)}, () => ({ ...clients, sql }));
     mock.module(${JSON.stringify(new URL("../../_internal/process-sync.ts", import.meta.url).pathname)}, () => ({
       lazySync: () => () => ({
         submit: async (input) => {

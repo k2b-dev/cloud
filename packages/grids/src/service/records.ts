@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { ComputedColumnSpec, FilterTree, GroupBySpec, GroupSortSpec, RecordMetaQuery, SearchSpec, SortSpec } from "../contracts";
 import type { Expr } from "../formula/types";
 import { compileDslQueryPlanToSql } from "../query-dsl/sql-compiler-row";

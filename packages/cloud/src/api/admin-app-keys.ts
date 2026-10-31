@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { validateAppKeyAppId } from "../app-key";
-import { type AuthContext, auth, respond, v } from "../server";
+import { type AuthContext, auth, jsonResponse, respond, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 import { appKeys } from "../services/app-keys";
 import { readAppMigrationStatus } from "../services/app-migration";
@@ -22,8 +22,48 @@ const pagination = z.object({
   perPage: z.coerce.number().int().min(1).max(500).default(100),
 });
 const input = z
-  .object({ publicKey: z.string().length(43), name: z.string().trim().min(1).max(120).optional(), expiresAt: z.iso.datetime().optional() })
+  .object({
+    publicKey: z.string().length(43),
+    name: z.string().trim().min(1).max(120).optional(),
+    expiresAt: z.iso.datetime().optional(),
+    grants: z.array(z.literal("oauth:issue")).max(1).optional(),
+  })
   .strict();
+
+const keyListResponse = z.object({
+  installationId: z.uuid(),
+  items: z.array(
+    z.object({
+      keyId: z.uuid(),
+      appId: z.string(),
+      serviceAccountId: z.uuid(),
+      kind: z.literal("app_key"),
+      name: z.string(),
+      publicKey: z.string(),
+      grants: z.array(z.literal("oauth:issue")),
+      fingerprint: z.string(),
+      status: z.enum(["active", "expired", "revoked"]),
+      accountStatus: z.enum(["active", "disabled"]),
+      createdAt: z.iso.datetime(),
+      createdBy: z.uuid().nullable(),
+      expiresAt: z.iso.datetime().nullable(),
+      revokedAt: z.iso.datetime().nullable(),
+      revokedBy: z.uuid().nullable(),
+      lastUsedAt: z.iso.datetime().nullable(),
+    }),
+  ),
+  lastRejectedStart: z
+    .object({
+      at: z.iso.datetime(),
+      reason: z.enum(["revoked", "expired", "disabled", "connections_not_permitted"]),
+      keyId: z.uuid().nullable(),
+    })
+    .nullable(),
+  page: z.number().int(),
+  perPage: z.number().int(),
+  total: z.number().int(),
+  hasNext: z.boolean(),
+});
 
 export const createAdminAppKeyRoutes = (
   authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin"),
@@ -61,7 +101,11 @@ export const createAdminAppKeyRoutes = (
     )
     .get(
       "/:appId/keys",
-      describeRoute({ tags: ["App keys"], summary: "List app public keys and lifecycle metadata" }),
+      describeRoute({
+        tags: ["App keys"],
+        summary: "List app public keys, lifecycle metadata and last rejected start",
+        responses: { 200: jsonResponse(keyListResponse, "App keys and last rejected start") },
+      }),
       v("param", params),
       v("query", pagination),
       (c) => respond(c, () => service.list({ actor: c.get("user"), ...c.req.valid("param"), ...c.req.valid("query") })),

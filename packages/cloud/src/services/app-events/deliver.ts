@@ -40,14 +40,14 @@ async function auditFailure(tx: SQL, row: Delivery, code: string | null) {
 }
 
 export function createEventDelivery(
-  db: SQL,
+  db: () => SQL,
   findApp: typeof getCapability,
   reconcileSubscriptions: () => Promise<void>,
   dependencies: Dependencies,
 ) {
   async function postpone(row: Delivery) {
     const delay = Math.min(30_000 * 2 ** Math.min(row.unreachable_count, 7), 3_600_000);
-    await db`
+    await db()`
       UPDATE events.app_deliveries SET state = 'retrying', code = 'subscriber_unreachable', attempts = attempts - 1,
         unreachable_count = unreachable_count + 1, claimed_until = NULL, claim_token = NULL,
         next_attempt_at = now() + ${delay} * interval '1 millisecond', updated_at = now()
@@ -55,7 +55,7 @@ export function createEventDelivery(
     `;
   }
   const claim = async () =>
-    db.begin(async (tx) => {
+    db().begin(async (tx) => {
       const exhausted = await tx<Delivery[]>`
         UPDATE events.app_deliveries SET state = 'failed', code = 'attempts_exhausted',
           claimed_until = NULL, claim_token = NULL, updated_at = now()
@@ -99,7 +99,7 @@ export function createEventDelivery(
     code: string | null,
     error: string | null = null,
   ) =>
-    db.begin(async (tx) => {
+    db().begin(async (tx) => {
       const delay = APP_EVENT_DELIVERY_BACKOFF_MS[Math.min(row.attempts - 1, APP_EVENT_DELIVERY_BACKOFF_MS.length - 1)] ?? 0;
       const changed = await tx`
         UPDATE events.app_deliveries SET state = ${state}, code = ${code}, last_error = ${error},
@@ -122,7 +122,7 @@ export function createEventDelivery(
 
   const deliver = async (row: Delivery) => {
     try {
-      const [subscription] = await db`
+      const [subscription] = await db()`
         SELECT state, reason FROM events.app_subscriptions WHERE id = ${row.subscription_id}
       `;
       if (subscription?.state === "cancelled") {
@@ -131,7 +131,7 @@ export function createEventDelivery(
       }
       if (subscription?.state !== "active") {
         // A declaration transition can block a subscription after this delivery was claimed.
-        await db`
+        await db()`
           UPDATE events.app_deliveries SET state = 'retrying', code = ${subscription?.reason ?? "subscription_blocked"},
             attempts = attempts - 1, claimed_until = NULL, claim_token = NULL, next_attempt_at = now(), updated_at = now()
           WHERE id = ${row.id}::uuid AND claim_token = ${row.claim_token}::uuid AND state IN ('pending', 'retrying')

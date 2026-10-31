@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import type { WorkflowQueryBinder } from "../workflows/binder";
 import type { SqlClient } from "./audit";

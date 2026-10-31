@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { requireDatabaseUrl } from "../../../scripts/fixtures/test-infra";
 import { migrate } from "../src/migrate";
 import { gridsService } from "../src/service";

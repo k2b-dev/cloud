@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   type AccessEntry,
   buildAccessPrincipalCondition,
@@ -27,7 +28,6 @@ import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { z } from "zod";
 import { permissionFromVenueScopes, type VenueAccessScope } from "./access-control";
 import { buildPublicAvailability, templateOccursOn } from "./availability";

@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Fails unless `integration-preload.ts` claimed a private `filesv2_*_test` database for this process. */
 export const assertPrivateDatabase = async (): Promise<void> => {

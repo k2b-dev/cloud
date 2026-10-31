@@ -1,12 +1,16 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import * as registry from "../_internal/registry";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server";
 import * as users from "../services/accounts/users";
 import * as appAccess from "../services/app-access";
 import { buildProjectedUser } from "../services/session/user";
 import { aiProjects } from "./projects";
 import { aiSkills, type SkillRow } from "./skills";
+
+useUnitClients();
 
 const user = buildProjectedUser({ id: "11111111-1111-4111-8111-111111111111", provider: "local", profile: "user", effective_admin: false });
 const authority: RequestAuthority = {

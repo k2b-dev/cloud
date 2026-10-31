@@ -14,8 +14,9 @@
  * Indexing failures are best-effort: a failure logs and moves on. The
  * next save or the next scheduler tick will reconcile.
  */
+
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
-import { sql } from "bun";
 import * as attachments from "./attachments";
 import * as links from "./links";
 import { repairNoteDataProperties } from "./note-properties";

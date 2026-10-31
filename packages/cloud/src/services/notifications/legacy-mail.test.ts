@@ -32,7 +32,7 @@ test("legacy sends use stable message keys, leave accepted mail pending, and cre
     globalThis.notificationLegacySql = sql;
     Bun.plugin({ name: "notification-legacy-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/]index\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationLegacySql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationLegacySql;'), loader: "ts",
       }));
     }});
     mock.module(${JSON.stringify(new URL("../logging/index.ts", import.meta.url).pathname)}, () => ({ logger: () => ({ error() {}, info() {}, warn() {} }), trace: {} }));

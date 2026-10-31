@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { draftVisibleTo, type MailboxAccess, mailboxAccessPrincipalCondition, messageVisibleTo } from "./access";
 
 type SqlClient = typeof sql;

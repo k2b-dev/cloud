@@ -1,8 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { type AppAccessDeclaration, appAccess } from "../contracts/app-access";
 import * as accessEvents from "../events/app-access";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { canUseApp } from "./app-access";
 import { appAccessGrantCounts, appAccessManagers, canManageAppAccess, changeAppAccess, readAppAccess } from "./app-access-management";

@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../runtime/clients";
 import { type AccessSubject, buildAccessPrincipalCondition } from "../server/services/access";
 import { hasBillableAiPricing } from "../shared/ai-costs";
 import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaIdentity, type AiQuotaSnapshot } from "../shared/ai-quotas";

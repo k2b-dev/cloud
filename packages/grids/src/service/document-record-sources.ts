@@ -1,5 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { err } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import type { WorkflowDocumentDataCapture } from "../workflows/query-contracts";
 import { documentServiceText } from "./document-messages";

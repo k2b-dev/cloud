@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { listApps } from "../../_internal/registry";
 import {
   type AdminMailApp,
@@ -18,6 +18,7 @@ import {
   MailProfileKeySchema,
 } from "../../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../../contracts/registry";
+import { sql } from "../../runtime/clients";
 import { type AuditActor, audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 import { decryptValue, encryptValue } from "../settings/crypto";

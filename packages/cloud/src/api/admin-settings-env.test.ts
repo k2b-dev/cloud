@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { generateKeyPair } from "jose";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import * as registry from "../_internal/registry";
 import type { EnvSettingStatus } from "../contracts/settings-env";
+import { sql } from "../runtime/clients";
 import * as gateways from "../services/gateway";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import * as issuer from "../services/identity/issue-invocation";
@@ -12,6 +13,8 @@ import { buildProjectedUser } from "../services/session/user";
 import * as diagnostics from "../services/settings/env-status";
 import { adminSettingsEnvRoutes } from "./admin-settings-env";
 import { settingsInvocationOperation } from "./settings-ops";
+
+useUnitClients();
 
 const now = Date.parse("2026-10-30T01:00:00Z");
 const row: EnvSettingStatus = {

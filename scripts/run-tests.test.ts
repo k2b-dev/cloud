@@ -380,9 +380,10 @@ test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites w
       command: ["bun", "test", "--preload", preload, "--timeout", "30000", "test/integration/mail-workflow-kernel.integration.test.ts"],
     },
   ]);
-  expect(await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text()).toContain(
-    'import "../../../mail/test/integration-preload";',
-  );
+  const source = await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text();
+  const mailPreload = 'await import("../../../mail/test/integration-preload");';
+  expect(source).toContain(mailPreload);
+  expect(source.indexOf(mailPreload)).toBeLessThan(source.indexOf('await import("../../../mail/src/'));
 });
 
 for (const mode of ["unit", "webkit", "integration"] as const) {

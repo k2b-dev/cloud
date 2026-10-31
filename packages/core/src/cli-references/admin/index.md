@@ -19,6 +19,30 @@ Route hit and error counts are scoped to `--range` (1h, 6h, 24h, 7d, 30d). They 
 
 Use `diagnose` for a bounded troubleshooting bundle. Narrow its time window and included sections before requesting more data. Its `telemetry.failingRoutes` and `jobs` sections name the endpoints and background jobs that are actually failing, which is usually the fastest way into a problem.
 
+## App domains
+
+Assign a domain to an app's public site, then inspect DNS, certificate and
+gateway reachability. New assignments accept known app IDs from the durable
+application package registry, including stopped apps. `active` requires a live
+registry entry with `public: true`.
+
+```bash
+cld --profile operator admin apps domains ls website --json
+cld --profile operator admin apps domains add website example.com
+cld --profile operator admin apps domains add website www.example.com --redirect-to example.com
+cld --profile operator admin apps domains check website example.com --json
+cld --profile operator admin apps domains set website www.example.com --no-redirect
+cld --profile operator admin apps domains rm website www.example.com --yes
+```
+
+`set` takes exactly one of `--redirect-to <host>` or `--no-redirect`. Redirects
+stay within the app, without chains. Remove incoming redirects before removing
+their target; the error names those domains. Changes require an administrator;
+OAuth mutations also require `admin` scope. The initial check runs in the
+background. Checks run at most once per 60 seconds; later stages are `null`
+after a failure. `--json` and `--jsonl` preserve the API payload. A first check
+in progress can return `status: null`; list again shortly.
+
 ## Logs and storage diagnostics
 
 ```bash
@@ -313,7 +337,7 @@ host-run override, configure `CLOUD_APP_CREDENTIAL` only in its owning app and
 `CLOUD_CORE_INTERNAL_ORIGIN` with Core's private origin. Mandates still control
 the allowed background actions. For rotation, create and deploy a replacement,
 verify its calls, then revoke the old credential. The equivalent UI is
-**Administration → App credentials**.
+**Administration → Apps**, then the app and **Keys → Tokens for host operation**.
 
 
 ## Agents
@@ -698,7 +722,8 @@ whole replacement.
 ## Application Ed25519 keys
 
 ```bash
-cld --profile operator admin apps keys create inventory oauth --out-dir ./secrets
+cld --profile operator admin apps keys create inventory --out-dir ./secrets
+cld --profile operator admin apps keys create oauth --grant oauth:issue --out-dir ./secrets
 cld --profile operator admin apps keys create --all --apps ./apps.txt --out-dir ./secrets --format k8s-secret
 cld --profile operator admin apps keys list inventory --json
 cld --profile operator admin apps keys revoke inventory <keyId> --yes
@@ -715,3 +740,11 @@ are allowed. At most two unexpired, unrevoked keys are active per app. Listing
 accepts `--page` and `--per-page` (default 100, maximum 500). Enrollment alone
 does not change runtime configuration. The CLI refuses revoked or expired keys
 and disabled accounts; listings include separate key and account statuses.
+
+New keys have no OAuth issuance grant by default, even for `oauth` and during
+rotation. `--grant oauth:issue` assigns it to each new key named in the command;
+repeat the flag for every issuer rotation. `--no-grant` explicitly selects no
+grants and cannot be combined with `--grant`. Repeating an existing enrollment
+keeps its original grants. To withdraw issuance, create and deploy an ungranted
+replacement, then revoke every granted key for that app. Listings include
+`grants`. Issuance uses clients and grants registered in Cloud's OAuth registry.

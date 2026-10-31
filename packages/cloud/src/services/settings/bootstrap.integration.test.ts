@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../../runtime/clients";
 import { connections } from "../../runtime/connections";
 import { stubConnections } from "../../runtime/connections.test-fixture";
 import { encryptValue } from "./crypto";

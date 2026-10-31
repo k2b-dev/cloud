@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { MAIL_RECIPIENT_NAME_MAX, type MailRecipientSuggestions, mailRecipientSuggestionSchema } from "../contracts";
 import type { MailRequestContext } from "./auth";

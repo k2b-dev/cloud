@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { type LogEntry, logger, get as settingsGet, settingsService } from "@k2b/cloud/services";
 import { isNetworkTargetBlocked, NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
@@ -7,7 +7,6 @@ import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto"
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { app } from "../config";
 import { exportNotebookZip, type NotebookExport } from "./export";
 import { notebookServiceMessages } from "./messages";
@@ -157,11 +156,14 @@ const decryptString = async (encrypted: string): Promise<string> => {
 const S3_PROVIDER_HINT =
   "Provider returned no detailed error message. Check that the endpoint includes the storage location, the region matches it, the bucket exists, and the access key can write objects.";
 
+// Plain text for logs and error messages, never markup. Script and style bodies are noise in a
+// provider page; end tags may carry spaces or attributes. One tag pass can join two halves into a
+// new tag, so every `<` left after it goes too.
 const stripHtml = (value: string): string =>
   value
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+    .replace(/<(script|style)\b[\s\S]*?(?:<\/\1\b[^>]*>|$)/gi, " ")
+    .replace(/<[^<>]*>/g, " ")
+    .replace(/</g, " ")
     .replace(/\s+/g, " ")
     .trim();
 

@@ -1,8 +1,8 @@
 import { afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import * as cloudServer from "@k2b/cloud/server";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { hc } from "hono/client";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";

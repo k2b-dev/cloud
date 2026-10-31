@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { Field } from "../service/types";
 import { canonicalizeDslQuery } from "./canonical";
 import { type DslResolverContext, resolveDslQueryToQueryPlan, resolveDslQueryToRecordQuery } from "./resolver";
@@ -18,6 +19,8 @@ import {
   statusFieldId,
 } from "./resolver-fixtures";
 import { compileDslQueryPlanToSql } from "./sql-compiler";
+
+useUnitClients();
 
 describe("GQL where predicates — first-class per field type", () => {
   test("retains exact decimal AST values for direct and joined numeric membership", () => {

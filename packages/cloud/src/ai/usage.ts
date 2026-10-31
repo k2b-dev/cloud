@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { type AiUsageQuery, AiUsageQuerySchema } from "../shared/ai-usage";
 import { aiQuotas } from "./quotas";
 

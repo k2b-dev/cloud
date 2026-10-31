@@ -1,8 +1,8 @@
 import type { Topic, TopicConfig } from "@k2b/sync";
-import { sql } from "bun";
 import { assertAppEventSize } from "../_internal/app-event-schemas";
 import { lazySync } from "../_internal/process-sync";
 import { type AppEventEnvelope, AppEventEnvelopeSchema } from "../contracts/app-events";
+import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { createPgOutbox } from "../services/outbox";
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { type ProcessSync, redis, sql, startProcessSync } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { type AccessSubject, type AuthContext, auth, type RequestActor, type RequestAuthority, requireInvocation } from "@k2b/cloud/server";
 import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
@@ -7,7 +7,6 @@ import { accounts, coreSettings, serviceAccountCredentials, serviceAccounts } fr
 import { invocationAuthorityFromRequest } from "@k2b/cloud/services/identity/invocation-authority";
 import { issueInvocationToken } from "@k2b/cloud/services/identity/issue-invocation";
 import { Filegate } from "@k2b/filegate";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";

@@ -211,7 +211,13 @@ answer, waits until the status names the pending line, and only then releases
 the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
 
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
-with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
+with a numeric literal in test files and browser suites (`*.test.ts(x)`,
+`*.browser-suite.ts(x)`). It also rejects a polling loop whose attempt count
+decides the outcome, such as
+`for (let i = 0; i < 100 && writes.length < 2; i++) await sleep(20)`. That
+loop is a hidden 2 s budget, and a loaded runner outlasts it
+([#2204](https://github.com/k2b-dev/cloud/issues/2204)). Wake the wait from
+the condition's own signal instead, and let the test's timeout bound it. A line comment
 `// fixed wait: <reason>` on the same line or directly above allows a wait
 whose duration is the subject of the test. The reason must be non-empty.
 Known findings live in `scripts/checks/test-waits.baseline`. Its counts can
@@ -807,12 +813,11 @@ for local credentials. Installation tests in `pulse/src/migrate.integration.test
 keep their own disposable Postgres database and run in the integration runner's
 one-file process, as the previous schema test did.
 
-Run integration tests through `bun run test`: it exports those runtime
-variables into every test process before Bun starts, which is the only moment
-Bun's default `redis` handle reads `REDIS_URL`. A direct `bun test` applies
-them from the preload, too late for that handle; export `REDIS_URL` yourself
-before running it. `tests/integration/test-infra-redis-binding.integration.test.ts`
-proves the binding against a disposable Valkey on a non-default port.
+Run integration tests through `bun run test`: the infrastructure preload selects
+the explicit targets and initializes the platform's native SQL and Redis clients.
+For a direct single-file run, use `BUN_OPTIONS=--no-env-file` and the same
+`CLOUD_TEST_*` targets. `tests/integration/test-infra-redis-binding.integration.test.ts`
+proves that the platform Redis client reaches the explicit Valkey target.
 
 `bun run test` keeps the checkout's `.env` away from tests. The file
 configures the development stack, for example `APP_URL` for a stack served
@@ -1078,6 +1083,25 @@ so fixture IDs stay apart from service-generated IDs.
 Never cut a random UUID or `Math.random()` to short-ID length: the small space
 repeats and fails a unique index at random. `bun run check` flags this with the
 `test-short-ids` rule.
+
+## Measure the public-site example
+
+`bun scripts/lighthouse-public-site.ts` builds
+`packages/cloud/examples/public-site` in production mode and serves it as
+`http://public-site.localhost:<port>/` on a free port through the gateway's own request handler
+(host decision, protections, compression) to the app's `app.public` surface.
+A fixed snapshot replaces only the domain table and the registry. It then runs
+Lighthouse 13.6.0 on Playwright's Chromium with mobile emulation and simulated
+throttling, prints the SEO and performance scores of `/` and `/de/`, and exits
+with 1 below SEO 100 or performance 95. Reports stay in
+`.local/lighthouse-public-site/`.
+
+The run uses the integration variables (`CLOUD_TEST_DATABASE_URL`,
+`CLOUD_TEST_VALKEY_URL`, `CLOUD_TEST_NATS_SERVERS`, and
+`CLOUD_TEST_NATS_CREDS_FILE` where needed): the measurement server starts like
+the gateway process, and its telemetry publishes to its own test namespace,
+which the script deletes. Run it before a release that changes the gateway's
+app-domain path or `app.public`; it is not part of the gate.
 
 ## Request cache checks
 

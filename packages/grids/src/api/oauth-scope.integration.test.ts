@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { assertAdminMutationsRejectReadOAuth, withAdminOAuth } from "../../../../scripts/fixtures/admin-oauth";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId, testUuid } from "../integration-test-utils";

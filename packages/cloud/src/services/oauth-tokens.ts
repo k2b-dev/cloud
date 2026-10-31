@@ -1,6 +1,6 @@
-import { sql } from "bun";
 import { createRemoteJWKSet, decodeProtectedHeader, errors, type JWTPayload, type JWTVerifyGetKey, jwtVerify } from "jose";
 import type { User } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { isAccountExpired } from "./account-model";
 import { IDENTITY_JWKS_MAX_AGE_SECONDS } from "./identity/constants";

@@ -9,7 +9,7 @@ import {
   registerAppKey,
 } from "@k2b/cloud/services/app-keys";
 import { listActiveMigrationKeys } from "@k2b/cloud/services/app-migration";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { APP_KEY_FIXTURES } from "../../../scripts/fixtures/app-key-fixtures";
 import { databaseSuite, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "./migrate/core/audit";

@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { newShortId } from "../lib/short-id";

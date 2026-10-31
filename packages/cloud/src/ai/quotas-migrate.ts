@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 export async function migrateAiQuotas() {
   await sql.begin(async (db) => {
     await db`CREATE TABLE IF NOT EXISTS ai.cost_config (

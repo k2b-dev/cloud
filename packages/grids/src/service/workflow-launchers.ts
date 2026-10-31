@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { WorkflowDiagnostic, WorkflowIrInput } from "@k2b/cloud/workflows";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   CreateGridsWorkflowLauncherInput,
   GridsWorkflow,
@@ -22,7 +22,7 @@ import { workflowInputShapeError } from "./workflow-values";
 
 type DbRow = Record<string, unknown>;
 
-const selectColumns = sql`
+const selectColumns = () => sql`
   id, short_id, base_id, workflow_id, name, kind, config, enabled, validated_revision,
   diagnostics, deleted_at, created_at, updated_at
 `;
@@ -157,7 +157,7 @@ export const validateLauncherConfig = (workflow: GridsWorkflow, config: GridsWor
 
 export const getLauncher = async (id: string, client: SqlClient = sql): Promise<GridsWorkflowLauncher | null> => {
   const [row] = await client<DbRow[]>`
-    SELECT ${selectColumns}
+    SELECT ${selectColumns()}
     FROM grids.workflow_launchers
     WHERE id = ${id}::uuid AND deleted_at IS NULL
   `;
@@ -166,7 +166,7 @@ export const getLauncher = async (id: string, client: SqlClient = sql): Promise<
 
 export const listLaunchers = async (workflowId: string, enabledOnly = false): Promise<GridsWorkflowLauncher[]> => {
   const rows = await sql<DbRow[]>`
-    SELECT ${selectColumns}
+    SELECT ${selectColumns()}
     FROM grids.workflow_launchers
     WHERE workflow_id = ${workflowId}::uuid
       AND deleted_at IS NULL
@@ -182,7 +182,7 @@ export const listLaunchersForBase = async (
   page?: { limit: number; offset: number },
 ): Promise<GridsWorkflowLauncher[]> => {
   const rows = await sql<DbRow[]>`
-    SELECT ${selectColumns}
+    SELECT ${selectColumns()}
     FROM grids.workflow_launchers
     WHERE base_id = ${baseId}::uuid
       AND deleted_at IS NULL
@@ -215,7 +215,7 @@ export const createLauncher = async (
               ${shortId}, ${workflow.baseId}::uuid, ${workflow.id}::uuid, ${input.name.trim()}, ${input.config.kind},
               ${input.config}::jsonb, ${input.enabled ?? true}, ${workflow.revision}, '[]'::jsonb
             )
-            RETURNING ${selectColumns}
+            RETURNING ${selectColumns()}
           `;
           if (!inserted) throw new Error("workflow run option insert failed");
           return inserted;
@@ -260,7 +260,7 @@ export const updateLauncher = async (
         diagnostics = '[]'::jsonb,
         updated_at = now()
     WHERE id = ${launcher.id}::uuid AND deleted_at IS NULL
-    RETURNING ${selectColumns}
+    RETURNING ${selectColumns()}
   `;
   if (!row) return fail({ ...err.notFound("workflow launcher"), message: workflowServiceText(locale).launcherNotFound });
   const updated = mapLauncher(row);

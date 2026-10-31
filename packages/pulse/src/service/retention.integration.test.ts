@@ -1,5 +1,6 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { SQL } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { installFixtureStore } from "../store/base-store.test-fixture";

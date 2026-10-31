@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { normalizedSql } from "../sql-test-utils";
 import { compileDslKeyset } from "./keyset-compiler";
+
+useUnitClients();
 
 describe("compileDslKeyset", () => {
   test("compiles a typed lexicographic cursor with deterministic null ordering", () => {

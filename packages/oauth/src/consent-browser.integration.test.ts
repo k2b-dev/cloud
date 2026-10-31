@@ -7,12 +7,13 @@ import { get, oauthTokens, set } from "@k2b/cloud/services";
 import { invalidateIdentityRuntimeConfig } from "@k2b/cloud/services/identity/runtime-config";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { createConfig } from "@k2b/ssr";
-import { type Server, sql } from "bun";
+import type { Server } from "bun";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
+import { sql } from "@k2b/cloud";
 import { launchBrowser } from "../../ui/test/browser";
 
 // A person approves or denies an MCP client in a real browser: dynamic registration, authorization,

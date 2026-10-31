@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, onTestFinished, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
-import { getProcessSync, lazySync } from "@k2b/cloud";
+import { connections, createSql, getProcessSync, lazySync, redis, sql } from "@k2b/cloud";
 import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
 import {
   claimWorkflowRun,
@@ -13,7 +13,6 @@ import {
   wakeExpiredWorkflowRuns,
   workflowEffectKey,
 } from "@k2b/cloud/workflows/store";
-import { redis, SQL, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
@@ -1700,8 +1699,8 @@ suite("mail lifecycle control plane", () => {
 
   test("a 200-envelope first import avoids redundant database round trips", async () => {
     const fixture = await reconcileFixture({ key: "batch-round-trips", uidValidity: "81", localUids: [] });
-    const counter = await countPostgresRoundTrips(process.env.DATABASE_URL!);
-    const measured = new SQL(counter.url, { max: 1, tls: false });
+    const counter = await countPostgresRoundTrips(connections().database.url);
+    const measured = createSql({ url: counter.url, max: 1, tls: false });
     const messages = Array.from({ length: 200 }, (_, index) => ({
       ...reconcileEnvelope(index + 1, "81", fixture.folderId, "round-trips"),
       subject: `Independent message ${index + 1}`,

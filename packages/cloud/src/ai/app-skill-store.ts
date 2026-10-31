@@ -1,8 +1,9 @@
-import { type SQL, sql, type TransactionSQL } from "bun";
+import type { SQL, TransactionSQL } from "bun";
 import { z } from "zod";
 import { appAudienceRoles } from "../_internal/app-roles";
 import { APP_REGISTRY_TTL_MS } from "../_internal/registry";
 import type { AppRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { type AppSkillDefinition, parseStoredAppSkill } from "./app-skills";

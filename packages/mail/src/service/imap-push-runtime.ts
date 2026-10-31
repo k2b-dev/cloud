@@ -1,7 +1,6 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeLifecycle, logger } from "@k2b/cloud/services";
 import type { Lock, Mutex } from "@k2b/sync";
-import { sql } from "bun";
 import { parseConnectorCapabilities } from "../contracts";
 import { sha256Json } from "./canonical";
 import type { ConnectorChangeHint, ConnectorChangeListener, ConnectorChangeListenerMode } from "./connectors";

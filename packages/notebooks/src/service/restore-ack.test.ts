@@ -107,22 +107,8 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
       }
     },
   });
-  Object.assign(globalThis, { restoreAckSql: fixtureSql });
-  // Bun's native sql export cannot be mocked. Redirect only notes.ts's import;
-  // all service code, including transaction/replay ordering, executes unchanged.
-  Bun.plugin({
-    name: "restore-ack-sql",
-    setup(build) {
-      build.onLoad({ filter: /[\/]notebooks[\/]src[\/]service[\/]notes\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace(
-          'import { sql, type TransactionSQL } from "bun";',
-          "const sql = globalThis.restoreAckSql;",
-        ),
-        loader: "ts",
-      }));
-    },
-  });
-  mock.module("@k2b/cloud", () => ({ lazySync: () => () => ({}) }));
+  // The platform client is mockable; the real service keeps its transaction ordering.
+  mock.module("@k2b/cloud", () => ({ lazySync: () => () => ({}), sql: fixtureSql }));
   mock.module("@k2b/cloud/server", () => ({ REQUEST_IDLE_TIMEOUT_MAX_SECONDS: 240 }));
   mock.module("@k2b/cloud/services", () => ({
     logger: () => ({ debug() {}, info() {}, warn() {}, error() {} }),

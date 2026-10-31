@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 

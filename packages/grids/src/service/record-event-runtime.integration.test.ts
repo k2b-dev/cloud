@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 
 const databaseName = process.env.GRIDS_RECORD_EVENTS_DB_CHILD;

@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { escapeLikePattern } from "@k2b/cloud/services/postgres";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import type { MailSearchExpression, SearchRequest } from "../contracts";
 import { mailFolderPaths } from "../folder-tree";

@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-28
+updated: 2026-10-31
 ---
 
 # Define an application
@@ -35,7 +35,7 @@ export const app = defineApp({
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `id` | Yes | Stable machine identity: `^[a-z][a-z0-9-]{0,79}$` |
-| `package` | No | Shared object-store package; defaults to `id` |
+| `package` | No | Package for shared object storage and one-time links; defaults to `id` |
 | `name` | Yes | Name shown by platform surfaces |
 | `icon` | Yes | Tabler icon class used across Cloud and as the favicon on rendered app pages |
 | `description` | Yes | Short application description |
@@ -45,7 +45,8 @@ export const app = defineApp({
 App IDs and package names contain 1–80 lowercase letters, digits, or hyphens,
 beginning with a letter. `defineApp()` rejects invalid IDs for every app,
 including apps that do not use S3. Related apps can declare the same
-`package: "warenfluss"` to share storage. `storage` is reserved as an app ID and package name. A package name cannot be another
+`package: "warenfluss"` to share storage and
+[one-time links](/en/docs/identity/one-time-links#share-links-within-a-package). `storage` is reserved as an app ID and package name. A package name cannot be another
 app's ID or a built-in app's ID; `app.start()` rejects conflicting durable
 reservations. Choose the package before first startup. See
 [Object store](/en/docs/platform/object-store) for the area and key rules, and
@@ -60,6 +61,15 @@ dark mode. Core pages keep the operator-configured Cloud favicon.
 
 Declare only prefixes the application serves. See
 [Routes and discovery](/en/docs/build/routing).
+
+## Declare a public site
+
+Set `public: true` to serve an app-owned website through `app.public` on
+domains assigned by an administrator. These requests use a separate Hono
+router before Cloud authentication and app access middleware. The normal
+application lifecycle and platform services remain available.
+`app.publicSsr(template)` renders the site's own template and reuses the app's
+single island build. See [Public site of an app](/en/docs/build/public-surface).
 
 ## Set the SSR asset prefix
 
@@ -285,7 +295,7 @@ The remaining options declare application-owned contributions:
 | Option | Contribution | Reference |
 | --- | --- | --- |
 | `settings` | Typed runtime configuration | [Settings](/en/docs/platform/settings) |
-| `platformPermissions` | Requested platform permissions: `"mail:send"` to send outgoing mail, `"mail:read"` to read other apps' mail an operator grants, `"resources:readers"` for app-authority reader checks | [Outgoing mail](/en/docs/platform/outgoing-mail), [App reader checks](/en/docs/platform/app-to-app-queries) |
+| `platformPermissions` | Requested platform permissions: `"mail:send"` to send outgoing mail, `"mail:read"` to read other apps' mail an operator grants, `"resources:readers"` for app-authority reader checks, `"geo:query"` for app-paid geo calls | [Outgoing mail](/en/docs/platform/outgoing-mail), [App reader checks](/en/docs/platform/app-to-app-queries), [App-paid calls](/en/docs/platform/capabilities#call-as-the-application) |
 | `notifications` | Notification definitions the application may send | [Notifications](/en/docs/platform/notifications) |
 | `skills` | Assistant Skills the application ships, from `src/skills.ts` | [Ship Assistant Skills](/en/docs/platform/assistant-skills) |
 | `widgets` | Dashboard widget endpoints | [Dashboard widgets](/en/docs/platform/dashboard-widgets) |

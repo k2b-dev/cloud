@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import * as bun from "bun";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { z } from "zod";
 import { databaseSuite, requireDatabaseUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import * as clients from "../runtime/clients";
+import { sql } from "../runtime/clients";
 import autocompleteFixture from "../services/geo/fixtures/autocomplete.json";
 import { geoTestConfig } from "../services/geo/geo.test-fixture";
 import { GeoapifyAdapter } from "../services/geo/geoapify";
@@ -971,43 +972,39 @@ suite("App-PWA durable service", () => {
         },
       });
       const controller = new AbortController();
-      const nativeSQL = bun.SQL;
+      const nativeCreateSql = clients.createSql;
       let cancellationSent = false;
       let parentReleased = false;
       // Observe the real, separate control connection; do not fake Query.cancel.
       // Release the blocker as soon as PostgreSQL accepts the cancel signal,
       // before cancellation cleanup/ROLLBACK settles. This causally selects the
       // cancellation-won race; releasing before delivery may legitimately commit.
-      Object.defineProperty(bun, "SQL", {
-        value: new Proxy(nativeSQL, {
-          construct(target, args) {
-            const pool: SQL = Reflect.construct(target, args);
-            return new Proxy(pool, {
-              get(target, property) {
-                if (property === "reserve")
-                  return async (options?: { signal?: AbortSignal }) => {
-                    const connection = await target.reserve(options);
-                    return new Proxy(connection, {
-                      apply(target, receiver, args) {
-                        return (async () => {
-                          const rows: { cancelled: boolean }[] = await Reflect.apply(target, receiver, args);
-                          if (Array.isArray(args[0]) && args[0].join("").includes("pg_cancel_backend")) {
-                            cancellationSent = rows[0]?.cancelled === true;
-                            if (mode.endsWith("abort")) {
-                              await blocker`ROLLBACK`;
-                              parentReleased = true;
-                            }
-                          }
-                          return rows;
-                        })();
-                      },
-                    });
-                  };
-                return Reflect.get(target, property, target);
-              },
-            });
+      const createPool = spyOn(clients, "createSql").mockImplementation((options) => {
+        const pool = nativeCreateSql(options);
+        return new Proxy(pool, {
+          get(target, property) {
+            if (property === "reserve")
+              return async (options?: { signal?: AbortSignal }) => {
+                const connection = await target.reserve(options);
+                return new Proxy(connection, {
+                  apply(target, receiver, args) {
+                    return (async () => {
+                      const rows: { cancelled: boolean }[] = await Reflect.apply(target, receiver, args);
+                      if (Array.isArray(args[0]) && args[0].join("").includes("pg_cancel_backend")) {
+                        cancellationSent = rows[0]?.cancelled === true;
+                        if (mode.endsWith("abort")) {
+                          await blocker`ROLLBACK`;
+                          parentReleased = true;
+                        }
+                      }
+                      return rows;
+                    })();
+                  },
+                });
+              };
+            return Reflect.get(target, property, target);
           },
-        }),
+        });
       });
       let running: Promise<PromiseSettledResult<unknown>[]> | undefined;
       try {
@@ -1073,7 +1070,7 @@ suite("App-PWA durable service", () => {
         expect(await saved()).toBe(0);
         expect(await service.attempt(f.boot.credential, f.visit.id, attemptId)).toEqual({ state: "unknown" });
       } finally {
-        Object.defineProperty(bun, "SQL", { value: nativeSQL });
+        createPool.mockRestore();
         controller.abort();
         try {
           await blocker`ROLLBACK`;

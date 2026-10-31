@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
 import { createAppEventBroker } from "@k2b/cloud/services/app-events";
 import { createSync, type TopicDeadLetter } from "@k2b/sync";
-import { sql } from "bun";
 import { z } from "zod";
 import { connectTestNats, suiteFor, testFor, testInfra, testSyncNamespace, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppEvents } from "./migrate/core/app-events";

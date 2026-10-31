@@ -1,4 +1,5 @@
 export { getAppWorkloadCredential } from "../../_internal/workload-credential";
+export { isAppRequestProof, sendAppRequest } from "./app-request";
 export {
   CLOUD_INVOCATION_JWKS_PATH,
   CLOUD_INVOCATION_PROTOCOL_VERSION,

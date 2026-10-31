@@ -1,9 +1,8 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { connections } from "@k2b/cloud";
+import { connections, sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";

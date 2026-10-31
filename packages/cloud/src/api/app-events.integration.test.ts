@@ -1,8 +1,7 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { sql } from "bun";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
-import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { initializeTestPlatform, suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppEvents } from "../../../core/src/migrate/core/app-events";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
@@ -10,6 +9,7 @@ import { compileCapabilities } from "../_internal/capabilities";
 import type { AppEventEnvelope } from "../contracts/app-events";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { LocalUserSchema } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
 import { createAppEventBroker } from "../services/app-events";
 import { createAppEventRoutes } from "./app-events";
@@ -80,6 +80,25 @@ suiteFor("database")("app events administration API", () => {
     await sql`UPDATE events.app_broker_status SET last_sequence=0, state='ready', gap_from=NULL, gap_to=NULL,unseen_sequences='{}'::int8multirange`;
     await sql`DELETE FROM audit.events WHERE action LIKE 'app_events.%'`;
   });
+  test("a service created before startup follows a replacement platform client", async () => {
+    const clock = spyOn(performance, "now").mockReturnValue(1000);
+    try {
+      await broker.reconcileSubscriptions();
+      await sql`TRUNCATE events.app_manifests, events.app_declarations CASCADE`.simple();
+      const previous = sql;
+      await initializeTestPlatform();
+      expect(sql).not.toBe(previous);
+      await broker.reconcileSubscriptions();
+      const declarations = await sql<{ type: string }[]>`SELECT type FROM events.app_declarations`;
+      expect(declarations.map((row) => row.type)).toEqual(["producer.changed"]);
+      await broker.markSeen(23);
+      const [row] = await sql<{ last_sequence: string }[]>`SELECT last_sequence FROM events.app_broker_status`;
+      expect(Number(row?.last_sequence)).toBe(23);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   test("record samples recent events once per distinct value-free shape with stable, distinct fixture IDs", async () => {
     const emit = async (number: number, data: unknown) => {
       const envelope: AppEventEnvelope = {

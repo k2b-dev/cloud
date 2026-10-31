@@ -42,12 +42,16 @@ export const bootstrapBodyDigest = async (body: Uint8Array<ArrayBuffer>): Promis
   Buffer.from(await crypto.subtle.digest("SHA-256", body)).toString("base64url");
 
 /** Call at the HTTP transmission seam, including every retry. */
-export const signBootstrapProof = async (key: AppKey, now = Date.now()): Promise<string> => {
+export const signAppProof = async (
+  key: AppKey,
+  request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
+  now = Date.now(),
+): Promise<string> => {
   const iat = Math.floor(now / 1000);
   return new SignJWT({
-    htm: "POST",
-    htu: BOOTSTRAP_PATH,
-    bdh: await bootstrapBodyDigest(new TextEncoder().encode(BOOTSTRAP_BODY)),
+    htm: request.method,
+    htu: request.path,
+    bdh: await bootstrapBodyDigest(request.body),
   })
     .setProtectedHeader({ alg: "EdDSA", typ: BOOTSTRAP_TYPE, kid: key.keyId })
     .setIssuer(key.appId)
@@ -58,3 +62,6 @@ export const signBootstrapProof = async (key: AppKey, now = Date.now()): Promise
     .setJti(crypto.randomUUID())
     .sign(await importAppKeySeed(key.seed));
 };
+
+export const signBootstrapProof = (key: AppKey, now = Date.now()): Promise<string> =>
+  signAppProof(key, { method: "POST", path: BOOTSTRAP_PATH, body: new TextEncoder().encode(BOOTSTRAP_BODY) }, now);

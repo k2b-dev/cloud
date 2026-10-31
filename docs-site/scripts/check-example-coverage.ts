@@ -12,6 +12,7 @@ export type RecipeFixture = {
 
 export const recipeFixtures: RecipeFixture[] = [
   { page: "platform/object-store.md", fixtures: ["platform-object-store.ts"] },
+  { page: "platform/app-status.md", fixtures: ["platform-app-status.ts"] },
   { page: "platform/calendar-sources.md", fixtures: ["platform-calendar-sources.ts"] },
   { page: "platform/outgoing-mail.md", fixtures: ["platform-outgoing-mail.ts"] },
   { page: "data/migrations-and-transactions.md", fixtures: ["data.ts"] },
@@ -42,7 +43,7 @@ export const recipeFixtures: RecipeFixture[] = [
   },
   {
     page: "platform/capabilities.md",
-    fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts", "browser-navigation.ts"],
+    fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts", "platform-app-caller.ts", "browser-navigation.ts"],
   },
   {
     page: "platform/cli-modules.md",

@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
-import { sql } from "bun";
 import { mailKeywordSchema } from "../contracts";
 import { normalizeEmailAddress } from "./address-normalization";
 import { automatedMailReasons, autoReplyFactsFromProtocol } from "./auto-reply-policy";
@@ -159,7 +159,7 @@ export const normalizeWorkflowKeywords = (keywords: readonly string[]): string[]
     })
     .sort();
 
-const snapshotColumns = sql`
+const snapshotColumns = () => sql`
   rmr.id AS remote_message_ref_id,
   mc.id AS message_id,
   mc.short_id AS message_short_id,
@@ -201,7 +201,7 @@ const snapshotColumns = sql`
   conversation.latest_message_at
 `;
 
-const snapshotJoins = sql`
+const snapshotJoins = () => sql`
   JOIN mail.message_placements mp
     ON mp.remote_message_ref_id = rmr.id
    AND mp.folder_id = rmr.folder_id
@@ -334,9 +334,9 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
  * per-row aggregates for each, and JIT-compile this point lookup on every call.
  */
 export const workflowSnapshotQuery = (params: { mailboxId: string; remoteMessageRefId: string }) => sql`
-    SELECT ${snapshotColumns}
+    SELECT ${snapshotColumns()}
     FROM mail.remote_message_refs rmr
-    ${snapshotJoins}
+    ${snapshotJoins()}
     WHERE resource.mailbox_id = ${params.mailboxId}::uuid
       AND rmr.id = ${params.remoteMessageRefId}::uuid
       AND rmr.stale_at IS NULL
@@ -363,9 +363,9 @@ export const getWorkflowSnapshots = async (params: {
   if (params.remoteMessageRefIds.length === 0) return new Map();
   const db = params.db ?? sql;
   const rows = await db<WorkflowSnapshotRow[]>`
-    SELECT ${snapshotColumns}
+    SELECT ${snapshotColumns()}
     FROM mail.remote_message_refs rmr
-    ${snapshotJoins}
+    ${snapshotJoins()}
     WHERE resource.mailbox_id = ${params.mailboxId}::uuid
       AND rmr.id = ANY(${toPgUuidArray([...params.remoteMessageRefIds])}::uuid[])
       AND rmr.stale_at IS NULL

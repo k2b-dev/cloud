@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { FormulaDecimal, sqrtDecimal } from "../formula/numeric";
 import { isFormulaError } from "../formula/types";
 import { postgresTest } from "../integration-test-utils";

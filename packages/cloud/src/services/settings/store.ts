@@ -13,9 +13,9 @@
  * snapshot exposed via `c.get("settings")` (built by snapshot.ts middleware).
  */
 
-import { sql } from "bun";
 import { HTTPException } from "hono/http-exception";
 import { hasRole, type User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { connections } from "../../runtime/connections";
 import { claimCacheFill, completeCacheFill, MISSING_SETTING } from "../cache-fill";
 import { stripImageDataUrlMetadata } from "../image-metadata";

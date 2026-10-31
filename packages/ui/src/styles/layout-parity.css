@@ -1116,10 +1116,13 @@ html {
 /* One drag cue for every resize handle: the sidebar, the panes, the Detail,
    and the drawer of a workspace, and a standalone `ResizeSeparator` such as
    Cloud's panel. On hover, on keyboard focus, and while it drags, a handle
-   shows a short grip and a soft shadow on the side of the region that it
-   resizes. Both are paint only, so nothing moves. Space, not a line,
-   separates columns; only the drawer, a row with its own top border, also
-   draws its edge. */
+   shows a short grip. A column handle darkens the shadow its boundary
+   already has (see the column boundaries below), so an edge keeps one shadow
+   with one geometry in every state. The drawer and a standalone separator,
+   which have no such shadow, show a soft shadow on the side of the region
+   that they resize. All of it is paint only, so nothing moves. Space, not a
+   line, separates columns; only the drawer, a row with its own top border,
+   also draws its edge. */
 .k2b-ui :is(.k2b-app-workspace__resize, .k2b-resize-separator) {
   --k2b-resize-shadow-edge: rgb(24 24 27 / 0.035);
   --k2b-resize-shadow-mid: rgb(24 24 27 / 0.014);
@@ -1145,7 +1148,8 @@ html {
   transition: opacity 120ms ease-out;
 }
 
-.k2b-ui :is(.k2b-app-workspace__resize[data-workspace-resize-shadow="true"], .k2b-resize-separator)::after {
+.k2b-ui .k2b-app-workspace__resize:where([data-app-workspace-resize="drawer"][data-workspace-resize-shadow="true"])::after,
+.k2b-ui .k2b-resize-separator::after {
   position: absolute;
   top: 0;
   right: 50%;
@@ -1158,11 +1162,7 @@ html {
   transition: opacity 150ms ease-out;
 }
 
-.k2b-ui
-  :is(
-    .k2b-app-workspace__resize[data-workspace-resize-shadow="true"][data-workspace-resize-edge="start"],
-    .k2b-resize-separator[data-resize-edge="start"]
-  )::after {
+.k2b-ui .k2b-resize-separator[data-resize-edge="start"]::after {
   right: auto;
   left: 50%;
   background: linear-gradient(to right, var(--k2b-resize-shadow-edge), var(--k2b-resize-shadow-mid) 45%, transparent);
@@ -1613,16 +1613,92 @@ html {
    absolute pseudo-element whose containing block lies outside its column, so
    a column that clips or scrolls neither cuts nor moves it. A waiting Detail
    keeps the drawer's own shadow, a phone shows one column at a time, and
-   print has no columns. */
+   print has no columns. The boundary's resize handle only darkens this shade
+   while it is hovered, focused, or dragged: the shade is the edge's single
+   geometry, so its top, bottom, and width never change with the state. The
+   registered colours let that change fade. */
+@property --k2b-workspace-shade-edge {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --k2b-workspace-shade-mid {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
 @media screen and (min-width: 48rem) {
   .k2b-ui .k2b-app-workspace__content::before,
   .k2b-ui .k2b-app-workspace__content::after,
   .k2b-ui .k2b-app-workspace__main.has-panes > [data-workspace-main-region]::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-mid);
     position: absolute;
     z-index: 20;
     pointer-events: none;
-    background: linear-gradient(to right, transparent, var(--k2b-shadow-column-mid) 45%, var(--k2b-shadow-column-edge));
+    background: linear-gradient(to right, transparent, var(--k2b-workspace-shade-mid) 45%, var(--k2b-workspace-shade-edge));
     mask-image: linear-gradient(to bottom, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+    transition:
+      --k2b-workspace-shade-edge var(--k2b-motion-fast) var(--k2b-ease-out),
+      --k2b-workspace-shade-mid var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+
+  /* A handle sits on the boundary it resizes: the sidebar's beside the
+     sidebar, a pane's or level's right before the region whose shade marks
+     that boundary, and the Detail's in Content. */
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        ),
+      > :is(solid-island, solid-client)
+        > .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        )
+    )
+    > .k2b-app-workspace__content::before,
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        ),
+      > :is(solid-island, solid-client)
+        > .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        )
+    )
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__content::before,
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__resize[data-app-workspace-resize="detail"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        ),
+      > :is(solid-island, solid-client)
+        > .k2b-app-workspace__resize[data-app-workspace-resize="detail"][data-workspace-resize-shadow="true"]:is(
+          :hover,
+          :focus-visible,
+          [data-workspace-resize-active="true"]
+        )
+    )::after,
+  .k2b-ui
+    .k2b-app-workspace__main.has-panes
+    > .k2b-app-workspace__resize[data-workspace-resize-shadow="true"]:is(:hover, :focus-visible, [data-workspace-resize-active="true"])
+    + [data-workspace-main-region]::before {
+    --k2b-workspace-shade-edge: var(--k2b-shadow-column-active-edge);
+    --k2b-workspace-shade-mid: var(--k2b-shadow-column-active-mid);
   }
 
   /* Content is no containing block, so the workspace grid places these
@@ -2874,7 +2950,7 @@ html {
       .k2b-app-workspace__sidebar-body > .k2b-app-workspace__sidebar-item,
       .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item
     )
-    :is(.k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-context) {
+    :is(.k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-note, .k2b-app-workspace__sidebar-item-context) {
     display: none;
   }
 

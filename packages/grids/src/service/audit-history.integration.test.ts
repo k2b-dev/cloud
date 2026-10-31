@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { projectPublicWorkspaceRecordDetail } from "../frontend/_components/workspace/workspace-public-state";
 import { loadRecordDetailData } from "../frontend/_components/workspace/workspace-record-detail-state";

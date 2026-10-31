@@ -1,8 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { Context } from "hono";
 import { lazySync } from "../_internal/process-sync";
 import { PWA_LIMITS as limits, type PwaDeviceView, type PwaErrorCode, type PwaPairingState, type PwaPlatform } from "../contracts/pwa";
+import { sql } from "../runtime/clients";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { audit } from "./audit";
 import { logger } from "./logging";

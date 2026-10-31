@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export const migrate = async (db: typeof sql = sql): Promise<void> => {
   await db.begin(async (tx) => {

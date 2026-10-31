@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createSync } from "@k2b/sync";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import {
   connectTestNats,
@@ -14,6 +14,7 @@ import { migrate } from "../../../core/src/migrate/core/events";
 import { appEventJsonbBytes } from "../_internal/app-event-schemas";
 import type { AppEventEnvelope } from "../contracts/app-events";
 import { defineCapabilities } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { appEventFromOutbox, appEventOutbox, appEventTopicConfig } from "./app-event-delivery";
 import { appEvents, bindAppEvents } from "./app-events";
 

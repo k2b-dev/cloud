@@ -1,4 +1,4 @@
-import { type BoundNotificationMap, lazySync, listApps, notification } from "@k2b/cloud";
+import { type BoundNotificationMap, lazySync, listApps, notification, sql } from "@k2b/cloud";
 import {
   AI_SHORT_ID_PATTERN,
   CHAT_TASK_REASON_CODES,
@@ -14,7 +14,6 @@ import { toPgTextArray } from "@k2b/cloud/services/postgres";
 import { resolveAppIdentityPresentation } from "@k2b/cloud/shared";
 import { i18n } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { z } from "zod";
 
 const RECOVERY_SCHEDULER_ID = "core-ai-notifications";

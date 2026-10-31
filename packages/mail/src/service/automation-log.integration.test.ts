@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "@k2b/cloud/ai";
 import { encryptSecret, toPgTextArray } from "@k2b/cloud/services";
 import { workflowPathKey } from "@k2b/cloud/workflows";
@@ -11,7 +12,6 @@ import {
 } from "@k2b/cloud/workflows/ai";
 import { deleteWorkflowScope, emitWorkflowEvent, wakeExpiredWorkflowRuns } from "@k2b/cloud/workflows/store";
 import type { Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import type { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";

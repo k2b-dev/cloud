@@ -43,7 +43,7 @@ services. The application owns its domain, permissions, Hono routes, pages,
 and durable data.
 
 - Use `defineApp()` for the declaration, the Hono router for requests, and
-  `app.start()` for registration and lifecycle.
+  `app.start()` for registration and lifecycle. App domains reach only `app.public` of their own app; link `subject`s are not principals.
 - Declare `access` for app use; Cloud applies it before app code and to discovery. Keep resource checks in services.
   Read **App access** (`/en/docs/identity/app-access`) for public routes and migration.
 - Keep declared prefixes, mounted routes, and registration aligned. A running
@@ -58,9 +58,10 @@ and durable data.
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.
 - For one independently installed App-PWA per app, read **App-PWA** (`/en/docs/frontend/app-pwa`) and **App-PWA sessions** (`/en/docs/identity/app-pwa-sessions`). Device and visit actors never become employees; the app authorizes customer actions through the visit. Cloud resource operations intersect device ceilings with current owner grants. Commit domain writes in the supplied transaction; keep private pages and unfinished signatures out of offline storage.
+- For app-paid capabilities without a person, declare `platformPermissions` and use `appCaller()` from `@k2b/cloud/server` with the enrolled app key; it grants no resource access. Public visitors spend the app allowance: use `rateLimit({ keyBy: "ip" })` and `clientIp(c)` for abuse controls. Read **App capabilities**.
 - Durable background work that calls another application stores one revocable
-  mandate for the workload. It authenticates to Core with its app-bound
-  workload credential and never stores the user's session or personal API key.
+  mandate for the workload. The platform signs each Core transmission with the app key; legacy workload credentials remain this release.
+  Never store the user's session or personal API key.
 - Keep transport conversion in handlers and domain rules in the application. Pass `c.req.raw.signal` to costly request work: the gateway cancels the upstream request when the client disconnects. A handler answering more than 10 seconds after the request raises its own idle timeout with `setRequestTimeout(c, seconds)` (at most 240) and restores it once answering; longer work streams or runs as a job.
 - Ship server-side files under `src/assets/` and resolve them with `appAssetPath()` from `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in the bundled image. Import Bun built-ins statically; the minified server
   bundle breaks `await import("bun")`.
@@ -89,7 +90,7 @@ alternative:
 - `@k2b/cloud/workflows` only when work needs a durable, inspectable,
   recoverable process rather than one bounded job.
 
-Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import `sql` or `redis` values from `bun`. Standard entrypoints initialize native clients before app code; separate data processes use `@k2b/cloud/start`. Use `createSql()` and `createRedis()` for owned pools, preserving limits and lifecycle. Read **Platform start and connections** (`/en/docs/build/platform-start`).
+Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import `sql` or `redis` values from `bun`. Standard entrypoints initialize native clients before app code; separate data processes use `@k2b/cloud/start`. Use `createSql()` and `createRedis()` for owned pools, preserving limits and lifecycle; create them after startup, not while importing a module. Read **Platform start and connections** (`/en/docs/build/platform-start`).
 
 Declare Sync handles with `lazySync()`, use them after `app.start()`, start
 workers in lifecycle startup, and drain them before releasing dependencies.
@@ -139,7 +140,6 @@ SolidJS library remains independent of Cloud and application domains.
   root using none of these layouts must install one provider around its returned tree.
 - Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
   Build no back buttons for it; an app with its own header places `PageTrail` there.
-
 ## Ship CLI commands and Assistant Skills with the app
 Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its *Design commands* section before adding `cld` commands.
 Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `module` exports `defineCliCommands()` named

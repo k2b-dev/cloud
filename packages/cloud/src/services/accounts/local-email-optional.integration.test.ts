@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../../runtime/clients";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { createAuthRoutes } from "../../api/auth";
 import { magicLink } from "../auth-flows";

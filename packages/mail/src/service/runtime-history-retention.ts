@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 const DEFAULT_RETENTION_DAYS = 30;
 const DEFAULT_BATCH_SIZE = 1_000;

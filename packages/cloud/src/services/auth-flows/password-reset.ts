@@ -1,5 +1,5 @@
-import { redis, sql } from "bun";
 import type { User } from "../../contracts/shared";
+import { redis, sql } from "../../runtime/clients";
 import { createAuthPasswordResetUrl } from "../../shared/redirect";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { getFreeIpaConfig } from "../freeipa-config";

@@ -1,8 +1,7 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { getEffectivePermission, hasPermission, listUsersWithAccess } from "@k2b/cloud/server";
 import { coreSettings, logger, notifications } from "@k2b/cloud/services";
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import { regularWindowsOn } from "./availability";
 import { app } from "./config";
 import type { DateOverride, OpeningRule, ShiftTemplate, Venue } from "./contracts";

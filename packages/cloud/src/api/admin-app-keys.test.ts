@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
+import { generateSpecs } from "hono-openapi";
 import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../../scripts/fixtures/app-key-fixtures";
 import type { AuthContext } from "../server";
 import { appKeys } from "../services/app-keys";
@@ -42,7 +43,8 @@ const service: typeof appKeys = {
       accountStatus: "active",
     });
   },
-  list: async () => ok({ installationId: INSTALLATION_ID, items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
+  list: async () =>
+    ok({ installationId: INSTALLATION_ID, lastRejectedStart: null, items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
   listApps: async () => ok({ installationId: INSTALLATION_ID, items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
   revoke: async (input) => {
     calls.push(input);
@@ -85,6 +87,10 @@ test("invalid app IDs, reserved IDs, payloads and pagination never reach the ser
     (await routes.request(request("/inventory/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey, seed: "must-not-reach-service" })))
       .status,
   ).toBe(400);
+  for (const grants of [["unknown"], ["oauth:issue", "oauth:issue"], "oauth:issue"])
+    expect((await routes.request(request("/inventory/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey, grants }))).status).toBe(
+      400,
+    );
   expect((await routes.request(request("/keys?perPage=501"))).status).toBe(400);
   expect(calls.length).toBe(before);
 });
@@ -141,4 +147,26 @@ test("migration status validates the explicit inventory, keeps an admin actor, a
   for (const query of ["expect=core", "allowEnv=../bad", "expect=gateway"])
     expect((await routes.request(`/status?${query}`)).status).toBe(400);
   expect(input.length).toBe(1);
+});
+
+test("enrollment passes explicit grant and empty grant choices to the owning service", async () => {
+  const routes = createAdminAppKeyRoutes(authenticate, service);
+  for (const grants of [["oauth:issue"], []]) {
+    const response = await routes.request(request("/acme-oauth/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey, grants }));
+    expect(response.status).toBe(200);
+    expect(calls.at(-1)).toMatchObject({ appId: "acme-oauth", grants });
+  }
+});
+
+test("the admin key-list OpenAPI response declares the nullable rejection and its closed reason enum", async () => {
+  const spec = await generateSpecs(createAdminAppKeyRoutes(authenticate, service));
+  const response = spec.paths?.["/{appId}/keys"]?.get?.responses?.["200"];
+  expect(response).toBeDefined();
+  const schema = JSON.stringify(response);
+  expect(schema).toContain('"lastRejectedStart"');
+  expect(schema).toContain('"connections_not_permitted"');
+  expect(schema).toContain('"revoked"');
+  expect(schema).toContain('"expired"');
+  expect(schema).toContain('"disabled"');
+  expect(schema).toContain('"keyId"');
 });

@@ -1,5 +1,4 @@
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MutationResult } from "../../contracts/shared";
 import {
   NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS,
@@ -9,6 +8,7 @@ import {
   type NotificationQuietState,
   type UpdateNotificationQuietSettings,
 } from "../../contracts/user-notifications";
+import { sql } from "../../runtime/clients";
 import { normalizeTimeZone } from "../../shared/time";
 
 const DAY_MS = 24 * 60 * 60_000;

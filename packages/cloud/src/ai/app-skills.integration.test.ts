@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import * as registry from "../_internal/registry";
 import type { AppRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server";
 import { getRoles } from "../services/accounts/users";
 import { toPgTextArray } from "../services/postgres";

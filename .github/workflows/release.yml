@@ -234,8 +234,8 @@ jobs:
       contents: read
       packages: read
     env:
-      # Production refuses to issue sessions for a non-HTTPS public origin.
-      APP_URL: https://cloud.release-smoke.test
+      # The configured HTTPS issuer also permits the loopback transport Host at the gateway.
+      APP_URL: https://127.0.0.1:3000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

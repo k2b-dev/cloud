@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { type AuthContext, auth, createAccess, deleteAccess } from "@k2b/cloud/server";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { CodeHostBusyError } from "../cli/code-host";

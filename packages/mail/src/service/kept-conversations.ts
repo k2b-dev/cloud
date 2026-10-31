@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit, escapeLikePattern } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import type { KeptConversationExport } from "../kept-conversation-export";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
@@ -42,7 +42,7 @@ type SummaryRow = {
   kept_by_id: string | null;
   display_name: string;
 };
-const summarySelect = sql`SELECT keep.mailbox_id, mailbox.short_id AS mailbox_short_id, mailbox.name AS mailbox_name,
+const summarySelect = () => sql`SELECT keep.mailbox_id, mailbox.short_id AS mailbox_short_id, mailbox.name AS mailbox_name,
   mailbox.deleted_at IS NOT NULL AS mailbox_deleted, keep.conversation_id, conversation.short_id AS conversation_short_id,
   conversation.subject, conversation.latest_message_at,
   (SELECT count(*)::int FROM mail.conversation_messages link WHERE link.conversation_id = conversation.id) AS message_count,
@@ -101,7 +101,7 @@ export const listKeptConversations = async (
       JOIN mail.message_addresses address ON address.message_id = search_link.message_id AND address.role = 'from'
       WHERE search_link.conversation_id = conversation.id AND (address.email ILIKE ${pattern} OR address.display_name ILIKE ${pattern})))`
     : sql`true`;
-  const rows = await sql<SummaryRow[]>`${summarySelect} WHERE ${filter}
+  const rows = await sql<SummaryRow[]>`${summarySelect()} WHERE ${filter}
     ${cursor ? sql`AND (keep.kept_at, keep.conversation_id) < (${cursor.at}::timestamptz, ${cursor.id}::uuid)` : sql``}
     ORDER BY keep.kept_at DESC, keep.conversation_id DESC LIMIT ${limit + 1}`;
   const [count] = await sql<{ total: number }[]>`SELECT count(*)::int AS total FROM mail.conversation_keeps keep
@@ -132,7 +132,7 @@ export const listKeptConversations = async (
 };
 
 const loadKept = async (ref: KeptConversationRef): Promise<SummaryRow | null> => {
-  const [row] = await sql<SummaryRow[]>`${summarySelect}
+  const [row] = await sql<SummaryRow[]>`${summarySelect()}
     WHERE keep.mailbox_id = ${ref.mailboxId}::uuid AND keep.conversation_id = ${ref.conversationId}::uuid`;
   return row ?? null;
 };

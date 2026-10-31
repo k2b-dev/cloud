@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit, logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
 import { isCurrentPlatformAdmin, requireMailboxAccess, requireVisibleConversation } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, capByCredentialScopes, type MailRequestContext } from "./auth";

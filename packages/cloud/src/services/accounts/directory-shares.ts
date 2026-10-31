@@ -1,7 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import type { User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import type { RequestActor } from "../../server/middleware/auth";
 import { audit } from "../audit";
 

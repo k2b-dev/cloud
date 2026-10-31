@@ -205,7 +205,7 @@ export const createPrettyTablePresentation = (data: PrettyTableData, options: Pr
 export const renderPrettyTableHtml = (data: PrettyTableData, options: PrettyTableOptions = {}): string => {
   const presentation = createPrettyTablePresentation(data, options);
   const caption = data.caption
-    ? `<div class="md-block-handle" data-block-name="${escapeHtml(data.caption)}">@${escapeHtml(data.caption)}</div>`
+    ? `<div class="md-block-handle" data-block-name="${escapeHtml(data.caption)}">${escapeHtml(data.caption)}</div>`
     : "";
   const headerHtml = data.headers.map((_, i) => `<th scope="col">${presentation.headerHtml(i)}</th>`).join("");
   // An all-empty GFM header is the approved header-off representation.

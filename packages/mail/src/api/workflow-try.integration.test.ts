@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
 import { unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { createWorkflowInputSchema, workflowTryResultSchema } from "../contracts";

@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
-import { sql } from "bun";
 import { smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
@@ -9,6 +8,7 @@ import { migrate as migrateNotifications } from "../../../../core/src/migrate/co
 import { migrate as migrateMail } from "../../../../core/src/migrate/core/outgoing-mail";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import * as registry from "../../_internal/registry";
+import { sql } from "../../runtime/clients";
 import { parseNetworkAllowlist } from "../../shared/network-address";
 import { processOutgoingMail } from "../outgoing-mail/dispatcher";
 import { drainOutgoingMail } from "../outgoing-mail/drain";

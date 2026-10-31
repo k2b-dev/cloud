@@ -1,6 +1,6 @@
-import { sql } from "bun";
 import { Hono } from "hono";
 import { CAPABILITY_MAX_REQUEST_BYTES } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { resolveLocale } from "../server/locale";
 import { verifyAppQueryInvocation } from "../services/identity/invocation-token";
 import { get } from "../services/settings";

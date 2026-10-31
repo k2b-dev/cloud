@@ -1,10 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type Node } from "@k2b/filegate";
 import { DirectSession } from "@k2b/filegate/utils";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { activityFilegate } from "../../test/activity-filegate";
 import { testActor, testCall } from "../../test/files-call";

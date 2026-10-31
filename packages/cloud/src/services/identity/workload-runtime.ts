@@ -1,6 +1,5 @@
 /** Core-only workload issuer. This module never reads identity signing keys, OAuth secrets, or sessions. */
 import type { NatsConnection } from "@nats-io/transport-node";
-import { sql } from "bun";
 import { getProcessNats } from "../../_internal/process-sync";
 import { APP_REGISTRY_TTL_MS, appInstancePrefix, appInstanceRegistry } from "../../_internal/registry";
 import {
@@ -12,6 +11,7 @@ import {
   type WorkloadResponse,
   workloadSubject,
 } from "../../_internal/workload-protocol";
+import { sql } from "../../runtime/clients";
 import { connections } from "../../runtime/connections";
 import { audit } from "../audit";
 import { logger } from "../logging";

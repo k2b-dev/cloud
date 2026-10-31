@@ -161,6 +161,9 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.locator(".cm-notice-card-widget").first().waitFor();
     await page.locator(".cm-query-block-preview svg").first().waitFor();
     expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
+    // The table's `@kaffee` anchor shows as a quiet label, not as raw Markdown.
+    await page.locator(".cm-named-block-handle", { hasText: /^kaffee$/ }).waitFor();
+    expect(await editor().innerText()).not.toContain("@kaffee");
     // No footer under the editor; the legal pages sit in the note's menu.
     expect(await page.getByRole("contentinfo").count()).toBe(0);
     await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
@@ -431,5 +434,29 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.getByRole("combobox", { name: "Suchbegriff", exact: true }).waitFor();
     // Mockup v4: a rounded square, 56 px with an 18 px radius.
     expect(radius).toBe(18);
+  }, 20_000);
+
+  test("Handy: „Tabelle“ in der Leiste fügt eine Tabelle ein und öffnet in einer Zelle das Tabellenmenü", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await createNote("Sommerfest 2027");
+    await editor().click();
+    await page.keyboard.press("ControlOrMeta+End");
+    const bar = page.locator(".n-accessory");
+    const insert = bar.getByRole("button", { name: "Tabelle", exact: true });
+    const place = await box(insert);
+    await insert.click();
+    const header = page.locator('.k2b-ste-cell[data-r="0"][data-c="0"]');
+    await page.waitForFunction(() => document.activeElement?.matches('.k2b-ste-cell[data-r="0"][data-c="0"]'));
+    // In a cell the same place opens the shared cell menu, as in Notebooks.
+    const menu = bar.getByRole("button", { name: "Tabelle bearbeiten", exact: true });
+    expect(await box(menu)).toEqual(place);
+    expect(await bar.locator(".ti-dots").count()).toBe(0);
+    await menu.click();
+    const sheet = page.locator(".k2b-gesture-menu__sheet-menu");
+    await sheet.getByRole("menuitemcheckbox", { name: "Kopfzeile" }).waitFor();
+    await page.getByRole("button", { name: "Fertig", exact: true }).click();
+    await sheet.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.activeElement?.matches('.k2b-ste-cell[data-r="0"][data-c="0"]'));
+    expect(await header.isVisible()).toBe(true);
   }, 20_000);
 });

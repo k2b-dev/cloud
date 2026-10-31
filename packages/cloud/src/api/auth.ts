@@ -1,10 +1,10 @@
-import { sql } from "bun";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { env } from "../config";
 import { ChangeExpiredPasswordSchema } from "../contracts";
 import { coreUserEventPublisher } from "../events/core-user-created";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, respond, v } from "../server";
 import { accounts, audit, authFlows, getFreeIpaConfig, logger, webauthn } from "../services";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";

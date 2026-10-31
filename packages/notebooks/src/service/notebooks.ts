@@ -1,8 +1,8 @@
+import { sql } from "@k2b/cloud";
 import type { MutationResult } from "@k2b/cloud/contracts";
 import { createAccess, deleteAccess, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { logger, serviceAccounts, get as settingsGet, toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import { publishNotebooksEvent } from "../app-events";
 import { isNoteDeletePermission, type NoteDeletePermission } from "../lib/note-delete-permission";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate, validateNoteTitleTemplate } from "../lib/note-title-template";

@@ -48,6 +48,7 @@ views and filters in the head, the detail beside the content.
 | R4 One surface | Head, filters, and content lie on the same white surface: no gray column trays, no `Paper` box, no line under the head. Space and a clear group heading (dot, name, count) separate groups. |
 | R5 Color from content | Status dots, tag colors, places, and stock carry color. The accent carries only the selection; controls stay platform blue, and only the one main action is filled. See [Colors and selection](/en/ui/surfaces/color). |
 | R6 Space, not lines | Rows and tables have no dividers and no grid; rows are 40–44 px high with a hover fill. |
+| R7 Quiet group headings | A heading that groups list rows by date or kind ("Today", "Yesterday", "This week") uses the `k2b-list-group-heading` class: muted ink, 0.75rem, semibold. It is one step quieter than the rows, the same in every list. |
 
 Three exceptions:
 
@@ -216,6 +217,11 @@ lighter over the final 96 px. No line, fill, or frame separates the columns.
 The shadow is paint only: it does not move content, take pointer input, or
 scroll with a column. A waiting Detail keeps its stronger drawer shadow, and a
 phone, which shows one column at a time, has none.
+
+The boundary's resize handle uses this same shadow. On hover, keyboard focus,
+and drag, the shadow darkens to `--k2b-shadow-column-active-edge` (through
+`--k2b-shadow-column-active-mid`) and keeps its top, bottom, width, and side,
+so an edge never shows a second strip.
 
 Because the shadow marks both edges of a column, a column keeps the same space
 inside both side edges, as the sidebar does. A level body and a
@@ -1215,7 +1221,8 @@ type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
 
 type AppWorkspaceSidebarItemProps = {
   variant?: "row" | "card" | "object"; context?: JSX.Element; contextMeta?: JSX.Element;
-  description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
+  description?: JSX.Element; note?: JSX.Element; noteTone?: "neutral" | "warning" | "danger";
+  preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void; active?: boolean | "ancestor"; activeClass?: string; disabled?: boolean;
@@ -1516,11 +1523,13 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 
 From 48 rem, 12 px of space separates adjacent MainPanes. The last pane has no
 trailing gap. Every resize handle (sidebar, panes, Detail, and drawer) shows the
-same short grip and soft shadow on the region it resizes during hover, keyboard
-focus, and drag, on top of the column shadow. Keyboard focus gives the grip the focus color. Only the drawer
-also draws its edge line. These cues move no content, and their transitions stop
-under reduced motion. Set `resizeShadow={false}` on `Sidebar` or `MainPane` to
-turn its shadow off.
+same short grip during hover, keyboard focus, and drag. The sidebar, pane, and
+Detail handles darken the column shadow of their boundary; the drawer, which
+has no column shadow, shows a soft shadow on the region it resizes. Keyboard
+focus gives the grip the focus color. Only the drawer also draws its edge line.
+These cues move no content, and their transitions stop under reduced motion.
+Set `resizeShadow={false}` on `Sidebar` or `MainPane` to keep its column shadow
+at rest during these states.
 
 A side pane keeps its size while the main region keeps 320 px and gives way
 down to its minimum; the stylesheet applies the same fit as the controller, so
@@ -1537,6 +1546,10 @@ reactive `layoutState`.
 `SidebarItem.description` supplies an optional passive second line. Compose a
 `StatusBadge`, short status text or progress there; keep interactive controls in
 `actions` or the preview. Existing one-line rows keep their compact layout.
+`note` adds a third line for the one fact about the row that needs attention,
+such as "3 deliveries failed"; `noteTone` (`warning`, `danger`) colours it. Keep
+the words complete, because the colour only repeats them. A row with several
+such facts shows the most important one and "+n" after it; the detail names all.
 Compound icon, label, metadata and action props remain reactive. Applications own
 the data source: no socket, task lifecycle or subscription belongs in the library.
 

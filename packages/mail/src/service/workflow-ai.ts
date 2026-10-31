@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { WorkflowActionContext, WorkflowAiScope } from "@k2b/cloud/workflows";
 import { getWorkflowAiBudget } from "@k2b/cloud/workflows/ai";
-import { sql } from "bun";
 
 /** Current authorization is checked by Mail's action port before this callback. */
 export const mailWorkflowAiScope = async (ctx: Pick<WorkflowActionContext, "runId" | "invocation">): Promise<WorkflowAiScope> => {

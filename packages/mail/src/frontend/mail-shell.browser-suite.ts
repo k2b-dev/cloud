@@ -1917,6 +1917,37 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      for (const path of ["/app/mail", boxPath])
+        test(`${path}: a mailbox row's count keeps the same inset from the group's right edge as its icon from the left`, async () => {
+          const page = await open(path);
+          try {
+            const insets = await page.evaluate(() =>
+              [
+                ...document.querySelectorAll<HTMLElement>(".mail-sidebar .k2b-app-workspace__sidebar-desktop .mail-sidebar-mailbox"),
+              ].flatMap((row) => {
+                const count = row.querySelector(".mail-sidebar-needs-action");
+                const icon = row.querySelector(".k2b-app-workspace__sidebar-item-icon");
+                const card = row.closest(".mail-sidebar-mailbox-group") ?? row;
+                if (!count?.textContent || !icon || icon.getBoundingClientRect().width === 0) return [];
+                const range = document.createRange();
+                range.selectNodeContents(count);
+                const frame = card.getBoundingClientRect();
+                return [
+                  {
+                    mailbox: row.dataset.mailbox ?? "",
+                    left: icon.getBoundingClientRect().left - frame.left,
+                    right: frame.right - range.getBoundingClientRect().right,
+                  },
+                ];
+              }),
+            );
+            expect(insets.length).toBeGreaterThan(0);
+            for (const inset of insets) expect(Math.abs(inset.right - inset.left), inset.mailbox).toBeLessThanOrEqual(0.5);
+          } finally {
+            await close(page);
+          }
+        });
+
       // Each URL opens in its own page (testing.md: an in-place goto can stall in WebKit, #1367); reload is the subject.
       for (const theme of ["light", "dark"] as const)
         for (const [width, height] of sizes)

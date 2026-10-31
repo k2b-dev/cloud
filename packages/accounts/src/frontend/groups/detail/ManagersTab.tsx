@@ -1,6 +1,6 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { groupDisplayName } from "@k2b/cloud/shared";
-import { Avatar, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 import AccountAvatar from "@/frontend/AccountAvatar";
 

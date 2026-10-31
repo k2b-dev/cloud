@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { GotenbergRenderError, mergePdfs, type RenderHtmlToPdfResult } from "@k2b/cloud/services";
 import { type DateContext, err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { Document, DocumentArtifact, DocumentTemplate } from "../contracts";
 import { type DocumentReadAuthorizer, loadReadableWorkflowRunDocumentScopes, workflowRunDocumentAccessWhere } from "./document-browse";
 import { type DocumentArtifactContent, type DocumentIssuanceActor, documentIssuanceService } from "./document-issuance";

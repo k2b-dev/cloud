@@ -1,4 +1,5 @@
 import {
+  authenticateSignedAppRequest,
   type CapabilityDispatchDependencies,
   createIdentityChildInvocationRoutes,
   dispatchCapability,
@@ -10,7 +11,7 @@ import {
   CapabilityIdempotencyKeySchema,
   CapabilityLocalIdSchema,
 } from "@k2b/cloud/contracts";
-import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@k2b/cloud/services/identity";
+import { type AuthenticatedWorkload, authenticateWorkloadCredential, isAppRequestProof } from "@k2b/cloud/services/identity";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
@@ -35,6 +36,7 @@ const InvocationMetadataSchema = z
   .strict();
 const InvocationRequestSchema = z
   .object({
+    appCaller: z.literal(true).optional(),
     kind: z.enum(["query", "action"]),
     targetApp: CapabilityAppIdSchema,
     capabilityId: CapabilityLocalIdSchema,
@@ -125,12 +127,16 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
     const token = bearerToken(c.req.header("Authorization"));
     if (!appId.success || !token) return errorResponse(c, 401, "UNAUTHORIZED");
 
-    const workload = await authenticateWorkload({ token, appId: appId.data, scope: "identity:invoke" });
+    const workload = isAppRequestProof(c.req.header("Authorization"))
+      ? await authenticateSignedAppRequest(c, "identity:invoke")
+      : await authenticateWorkload({ token, appId: appId.data, scope: "identity:invoke" });
+    if (workload instanceof Response) return workload;
     if (!workload) return errorResponse(c, 401, "UNAUTHORIZED");
 
     const input = await readRequest(c.req.raw);
     if (!input) return errorResponse(c, 400, "VALIDATION_FAILED");
 
+    if (input.appCaller && (!workload.keyId || input.mandateId)) return errorResponse(c, 401, "UNAUTHORIZED");
     const response = await withCapabilityRequestTimeout(c, input.kind, () =>
       dispatchCapability({
         request: dispatchRequest(c.req.raw, input),
@@ -139,7 +145,8 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
         appId: input.targetApp,
         capabilityId: input.capabilityId,
         input: input.input,
-        workload: input.mandateId ? undefined : workload,
+        appCaller: input.appCaller && workload.keyId ? { appId: workload.appId, keyId: workload.keyId } : undefined,
+        workload: input.appCaller || input.mandateId ? undefined : workload,
         mandate:
           input.mandateId && input.mandateRevision
             ? {

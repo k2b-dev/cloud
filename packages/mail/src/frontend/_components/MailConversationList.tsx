@@ -30,7 +30,7 @@ import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
 import { buildMailListHref, buildMailSearchClearHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { createMailQuickLookLoader, mailQuickLookKey } from "./mail-quick-look";
-import { type MailDayGroup, mailDayGroupStarts } from "./mail-view-mode";
+import { type MailDayGroup, mailDayGroupStarts, mailTimeColumnSamples, mailTimeColumnSizer } from "./mail-view-mode";
 
 /** Width of the fixed quick look card, which opens 8px beside the list and keeps 8px to the frame edge. */
 const QUICK_LOOK_WIDTH_REM = 22;
@@ -210,6 +210,10 @@ export default function MailConversationList(props: {
           ? messages().dayWeek
           : messages().dayEarlier;
   const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
+  /** The columns view's time column fits the longest time the rows' date context shows; the server renders the same samples. */
+  const timeColumnSizer = createMemo(() =>
+    props.columns ? mailTimeColumnSizer(mailTimeColumnSamples(props.dateConfig, new Date())) : undefined,
+  );
 
   const nextHref = () => {
     if (!props.nextCursor) return null;
@@ -252,6 +256,7 @@ export default function MailConversationList(props: {
         element.addEventListener("scroll", cancelPrefetch, true);
       }}
       class="flex h-full min-h-0 flex-col bg-[var(--ui-surface)]"
+      style={{ "--mail-time-samples": timeColumnSizer() }}
       data-mail-conversation-list
     >
       <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="sr-only">
@@ -448,7 +453,7 @@ export default function MailConversationList(props: {
                         <span>{messages().columnAssignees}</span>
                         <span>{messages().columnStatus}</span>
                       </Show>
-                      <span class="text-right">{messages().columnTime}</span>
+                      <span class="mail-columns-head-time">{messages().columnTime}</span>
                     </span>
                   </div>
                 )}
@@ -470,7 +475,7 @@ export default function MailConversationList(props: {
                       <Show when={dayStarts().get(index())}>
                         {(group) => (
                           <div role="listitem" class="mail-day-group" data-mail-day-group={group()}>
-                            <h3>{dayLabel(group())}</h3>
+                            <h3 class="k2b-list-group-heading">{dayLabel(group())}</h3>
                           </div>
                         )}
                       </Show>

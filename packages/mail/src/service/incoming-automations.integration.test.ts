@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
-import { getProcessSync } from "@k2b/cloud";
+import { getProcessSync, sql } from "@k2b/cloud";
 import { encryptSecret, mandates, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import {
@@ -11,7 +11,6 @@ import {
   wakeExpiredWorkflowRuns,
   wakeWorkflowRunsWaitingOn,
 } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";

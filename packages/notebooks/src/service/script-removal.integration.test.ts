@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { SQL } from "bun";
 import { requireDatabaseUrl, testFor } from "../../../../scripts/fixtures/test-infra";
 
 // This suite never migrates the configured development database. The parent

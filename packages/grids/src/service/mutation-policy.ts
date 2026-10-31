@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MutationSource, TableMutationPolicy } from "../contracts";
 import { MutationSourceSchema, TableMutationPolicySchema } from "../contracts";
 import { logAudit, type SqlClient } from "./audit";
@@ -303,7 +303,7 @@ export const update = async (
     }
     await tx`
         UPDATE grids.tables
-        SET mutation_policy = ${parsed.data}::jsonb, updated_at = ${NEXT_TABLE_VERSION}
+        SET mutation_policy = ${parsed.data}::jsonb, updated_at = ${NEXT_TABLE_VERSION()}
         WHERE id = ${tableId}::uuid
       `;
     await logAudit(

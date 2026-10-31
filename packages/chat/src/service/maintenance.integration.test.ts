@@ -1,8 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createAccess } from "@k2b/cloud/server";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { messageFixtures } from "../api/messages.test-fixture";

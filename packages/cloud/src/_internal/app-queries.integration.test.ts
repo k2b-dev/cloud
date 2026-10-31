@@ -1,11 +1,10 @@
 import { afterAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-
 import { APP_QUERY_REQUESTS_PER_MINUTE, dispatchCapability } from "../api/capabilities";
 import * as executions from "../capabilities/executions";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
 import { defineCapabilities } from "../contracts/capabilities";
+import { redis, sql } from "../runtime/clients";
 import { signAppQueryInvocation } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { authenticateWorkloadCredential } from "../services/identity/workload-auth";

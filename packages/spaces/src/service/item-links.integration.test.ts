@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { MAX_ITEM_LINKS } from "../contracts";
 import { newShortId } from "../lib/short-id";

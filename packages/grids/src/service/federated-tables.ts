@@ -1,8 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
+import { sql } from "@k2b/cloud";
 import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { escapeLikePattern, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   FederatedDiagnostic,
   FederatedDraftInput,

@@ -66,7 +66,7 @@ carries application data such as version or activity attribution.
 Bind the store once, next to the table it reads and writes:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 type Saved = { status: "saved" | "overtaken" | "notFound" };
 
@@ -277,9 +277,11 @@ a newer replay cursor to old input would erase the check's context.
 
 The service reconstructs current state and checks structural changes since
 that base before publishing against the captured document head. Ordinary
-Markdown input that changes table scaffolding receives a conservative server
-classification too. Stale input crossing such a change, or a retained event
-whose classification is unavailable, requires visible recovery. It returns
+Markdown input and server `edit` calls receive the same classification: edits
+that preserve table scaffolding remain concurrently mergeable, while changes
+to that scaffolding require conservative recovery. Stale input crossing such
+a change, or a retained event whose classification is unavailable, requires
+visible recovery. It returns
 `accepted` with a cursor only after publication. Queue a covering snapshot
 through the application's existing snapshot workflow.
 

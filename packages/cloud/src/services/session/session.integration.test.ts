@@ -1,7 +1,7 @@
 import { expect, setSystemTime, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../../runtime/clients";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { migrateBrowserSessionCutover } from "../../../../core/src/migrate/core/auth";
 import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";

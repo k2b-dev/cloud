@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { FolderDisplay } from "../contracts";
 import { type InheritedFolderDisplay, inheritFolderDisplays } from "../folder-display-rules";
 import type { MailFolderTreeEntry } from "../folder-tree";

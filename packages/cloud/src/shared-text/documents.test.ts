@@ -804,3 +804,35 @@ test("server edits preserve unchanged identities and a concurrent middle inserti
     saved.destroy();
   }
 });
+
+test("ordinary server edits admit concurrent browser input while table scaffold edits still require recovery", async () => {
+  for (const [before, next, accepted] of [
+    ["# Plan\n\nfirst\n", "# Plan\n\nfirst\nfrom CLI\n", true],
+    ["# Plan\n\nfirst\n", "# Renamed\n\nfirst\n", true],
+    ["| A | B |\n| --- | --- |\n| x | y |\n", "| A | B |\n| --- | --- |\n| new x | y |\n", true],
+    ["| A | B |\n| --- | --- |\n| x | y |\n", "| A |\n| --- |\n| x |\n", false],
+  ] as const) {
+    const f = fixture();
+    await f.append(before);
+    const current = await f.documents.read("doc");
+    const browser = createDoc({ state: current!.state, text: before, cursor: current!.cursor, restoreRevision: "revision" });
+    try {
+      const vector = Y.encodeStateVector(browser);
+      browser.getText(SHARED_TEXT_NAME).insert(0, "browser input\n");
+      expect(await f.documents.edit("doc", { actor: null }, () => next)).toMatchObject({ status: "edited" });
+      expect(
+        await f.documents.accept("doc", {
+          actor: { kind: "user", id: "browser" },
+          update: Y.encodeStateAsUpdate(browser, vector),
+          baseCursor: current!.cursor,
+          restoreRevision: "revision",
+          originNodeId: "browser",
+          originPeerId: "peer",
+        }),
+      ).toMatchObject({ status: accepted ? "accepted" : "recoveryRequired" });
+      if (accepted) expect((await f.documents.read("doc"))?.text).toBe(`browser input\n${next}`);
+    } finally {
+      browser.destroy();
+    }
+  }
+});

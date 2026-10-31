@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import type { DslResolverContext, DslTableSource, DslViewSource } from "../query-dsl/resolver";
 import { resolveDslQueryToQueryPlan, resolveDslQueryToRecordQuery } from "../query-dsl/resolver";

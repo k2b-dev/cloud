@@ -1,6 +1,6 @@
-import { sql } from "bun";
 import type { MutationResult, UserProfile } from "../../../contracts/shared";
 import { coreUserEventPublisher } from "../../../events/core-user-created";
+import { sql } from "../../../runtime/clients";
 import { isAccountCategoryAllowed } from "../../account-category-policy";
 import { writeDeletedAccountAudit } from "../../account-lifecycle/audit";
 import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../../accounts/email-write";

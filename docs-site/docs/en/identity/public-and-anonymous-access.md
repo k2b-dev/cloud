@@ -5,7 +5,7 @@ section: Identity and access
 order: 360
 description: Expose selected routes without creating another identity or permission model.
 tags: [identity, public, anonymous, sharing]
-updated: 2026-07-27
+updated: 2026-10-31
 ---
 
 # Public and anonymous access
@@ -13,6 +13,19 @@ updated: 2026-07-27
 Public access needs both an open route and an explicit domain rule.
 
 Opening a route does not make every resource public.
+
+## Choose share access or a public site
+
+A share route exposes a selected resource on the Cloud host and validates its
+grant or domain share token in the owning service. A
+[public site](/en/docs/build/public-surface) uses `public: true` and
+`app.public` on domains assigned to its app. Visitors enter that separate
+router without Cloud identity or app access middleware; the app owns their
+session and authorization. A site path cannot enter another app's routes.
+
+For one-time sign-in or invitation links, use
+[One-time links](/en/docs/identity/one-time-links). A redeemed subject is
+app-owned data and never becomes a Cloud principal automatically.
 
 ## Allow optional authentication
 

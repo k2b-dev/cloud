@@ -1,5 +1,6 @@
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import type { BaseGroup, GroupMember, MutationResult, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { escapeLikePattern, isUniqueViolation } from "../postgres";
 import { buildBaseGroup, personalOwnerJoin } from "./base-group";
 import { recursiveServiceAccountGroupIdsSubquery } from "./group-sql";

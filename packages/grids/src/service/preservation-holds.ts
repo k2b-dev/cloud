@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { PreservationHold, PreservationHoldInput } from "../preservation-hold-contracts";
 import { logAudit, type SqlClient } from "./audit";
 import { serviceMessagesFor } from "./messages";
@@ -42,7 +42,7 @@ const toHold = (row: HoldRow): PreservationHold => {
   };
 };
 
-const projection = sql`
+const projection = () => sql`
   hold.id, hold.short_id, base.short_id AS base_short_id, hold.scope_type,
   hold.table_short_id, hold.table_name, hold.reason,
   hold.created_by_display_name, hold.created_at, hold.release_reason,
@@ -73,7 +73,7 @@ export const list = async (
       AND (${search} = '' OR strpos(lower(concat_ws(' ', hold.short_id, hold.reason, hold.table_name, hold.created_by_display_name)), ${search}) > 0)
   `;
   const rows = await sql<HoldRow[]>`
-    SELECT ${projection}
+    SELECT ${projection()}
     FROM grids.preservation_holds hold
     JOIN grids.bases base ON base.id = hold.base_id
     WHERE hold.base_id = ${baseId}::uuid

@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { z } from "zod";
+import { sql } from "../runtime/clients";
 import { toPgTextArray } from "../services/postgres";
 import type { AiMap, AiMapCommand } from "./map-contracts";
 import { AiMapSchema, aiMapToolResult } from "./map-contracts";

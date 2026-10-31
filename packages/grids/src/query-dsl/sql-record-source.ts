@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { FilterTree } from "../contracts";
 import type { SqlClient } from "../service/audit";
 import { buildComputedFieldSqlMap } from "../service/computed-projections";
