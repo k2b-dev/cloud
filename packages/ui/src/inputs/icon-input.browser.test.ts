@@ -130,6 +130,7 @@ describe("IconInput picker", () => {
       expect(await labels(page)).toEqual(["Abspielen"]);
       await page.getByRole("radio", { name: "Alle" }).click();
       expect(await labels(page)).toEqual(["Abspielen", "Haus", "Rakete"]);
+      await settled(page);
 
       const after = await geometry(page);
       expect(after.popover.left).toBe(before.popover.left);
