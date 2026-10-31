@@ -1,7 +1,7 @@
 import { validateAppKeyAppId } from "../../app-key";
 import { AppMigrationStatusSchema } from "../../contracts/app-migration";
 import { command, flag, printStructured } from "../index";
-import { apiGet, apiJson } from "./shared";
+import { apiJson } from "./shared";
 
 export const appStatusCommands = [
   command("apps observation begin", {
@@ -43,7 +43,9 @@ export const appStatusCommands = [
           throw new Error("--observation-seconds must be a positive integer");
         query.set("windowSeconds", String(flags.observationSeconds));
       }
-      const result = AppMigrationStatusSchema.parse(await apiGet(ctx, `/api/admin/apps/status${query.size ? `?${query}` : ""}`));
+      const result = AppMigrationStatusSchema.parse(
+        await apiJson(ctx, "POST", `/api/admin/apps/status${query.size ? `?${query}` : ""}`, {}),
+      );
       if (!printStructured(ctx, result)) {
         ctx.table(result.apps, [
           { key: "appId", label: "App" },

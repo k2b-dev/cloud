@@ -2,7 +2,7 @@ import { err, fail, ok } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { APP_INSTANCE_PREFIX, appInstanceRegistry, readAppRegistrySnapshot } from "../_internal/registry";
-import { startBounded } from "../api/fanout";
+import { startBounded, waitWithin } from "../api/fanout";
 import { env } from "../config/env";
 import { APP_MIGRATION_TRIGGER_PATH, AppBootstrapMetadataSchema, type AppMigrationStatus } from "../contracts/app-migration";
 import type { User } from "../contracts/shared";
@@ -10,10 +10,10 @@ import { sql } from "../runtime/clients";
 import { isDevelopmentPublicKey } from "../runtime/development-keys";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import type { LastRejectedStart } from "./app-keys";
-import { readAppMigrationObservation } from "./app-migration-evidence";
+import { coreEvidenceIssues, readAppMigrationObservation } from "./app-migration-evidence";
 import { signMigrationProbe } from "./identity/invocation-token";
 
-export type MigrationInstance = { appId: string; instanceId: string; hostname: string; bootstrap?: unknown };
+export type MigrationInstance = { appId: string; instanceId: string; hostname: string; bootstrap?: unknown; legacyEvidence?: unknown };
 /** A missing process or an old producer cannot prove completion. Check every replica. */
 export const evaluateAppMigration = (input: {
   activeKeys: { appId: string; keyId: string }[];
@@ -21,7 +21,7 @@ export const evaluateAppMigration = (input: {
   instances: MigrationInstance[];
   expect: string[];
   allowEnv: string[];
-  probes?: { appId: string; keyId: string; broker: boolean; oauth: boolean | null }[];
+  probes?: (AppMigrationStatus["apps"][number]["probes"][number] & { appId: string })[];
   observation?: AppMigrationStatus["observation"];
   rejections?: { appId: string; lastRejectedStart: LastRejectedStart }[];
   registryIssues?: { key: string; reason: string }[];
@@ -74,7 +74,12 @@ export const evaluateAppMigration = (input: {
     const liveKeyIds = [...new Set(instances.map((instance) => instance.bootstrap?.keyId).filter((id): id is string => !!id))];
     const probes = liveKeyIds.map((keyId) => {
       const probe = input.probes?.find((probe) => probe.appId === appId && probe.keyId === keyId);
-      return { keyId, broker: probe?.broker ?? false, oauth: probe?.oauth ?? (probe ? null : false) };
+      return {
+        keyId,
+        broker: probe?.broker ?? false,
+        oauth: probe?.oauth ?? (probe ? null : false),
+        ...(probe?.reason ? { reason: probe.reason } : {}),
+      };
     });
     const lastRejectedStart = input.rejections?.find((rejection) => rejection.appId === appId)?.lastRejectedStart ?? null;
     const attentionReasons = [
@@ -85,6 +90,7 @@ export const evaluateAppMigration = (input: {
       probes.some((probe) => !probe.broker || probe.oauth === false)
         ? ["signed_probe_incomplete"]
         : []),
+      ...probes.flatMap((probe) => (probe.reason ? [`${probe.reason}:${probe.keyId}`] : [])),
       ...(!observation.complete ? ["legacy_observation_incomplete"] : []),
       ...(lastRejectedStart ? ["last_rejected_start"] : []),
     ];
@@ -104,7 +110,7 @@ export const evaluateAppMigration = (input: {
       instances,
     };
   });
-  const registryIssues = input.registryIssues ?? [];
+  const registryIssues = [...(input.registryIssues ?? []), ...coreEvidenceIssues(input.instances)];
   return {
     observation,
     needsAttention: !observation.complete || registryIssues.length > 0 || apps.length === 0 || apps.some((a) => a.needsAttention),
@@ -144,46 +150,56 @@ export const readAppMigrationStatus = async (input: {
     instanceId: z.string().min(1),
     hostname: z.string(),
     bootstrap: z.unknown().optional(),
+    legacyEvidence: z.unknown().optional(),
   });
   for (const entry of instances.entries) {
     const parsed = instanceSchema.safeParse(entry.value);
     if (parsed.success) validInstances.push(parsed.data);
     else registryIssues.push({ key: entry.key, version: entry.revision, reason: "Invalid application instance record" });
   }
-  const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_SECONDS * 1000)]);
+  const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), AbortSignal.timeout((REQUEST_IDLE_TIMEOUT_SECONDS - 4) * 1000)]);
   const liveKeys = keys.filter((key) =>
     validInstances.some((instance) => {
       const metadata = AppBootstrapMetadataSchema.safeParse(instance.bootstrap);
       return instance.appId === key.appId && metadata.success && metadata.data.keyId === key.keyId;
     }),
   );
-  // One probe at a time bounds admission. All probes share this request's idle deadline.
+  // Four probes share a six-second budget, leaving time to return JSON before the idle timeout.
   const results = await Promise.all(
     startBounded(
       liveKeys,
-      1,
+      4,
       async (key) => {
-        const nonce = crypto.randomUUID();
-        const app = registry.apps.find((app) => app.id === key.appId);
-        if (!app) throw new Error("Application has no registered endpoint");
-        const token = await signMigrationProbe({ appId: key.appId, keyId: key.keyId, oauth: key.oauthIssueAllowed, nonce });
-        signal.throwIfAborted();
-        const response = await fetch(new URL(`${APP_MIGRATION_TRIGGER_PATH}/probe`, app.baseUrl), {
-          method: "POST",
-          headers: { authorization: `Bearer ${token}` },
-          signal,
-          redirect: "error",
-        });
-        await response.body?.cancel();
-        if (response.status !== 204) throw new Error("Signed migration probe failed");
-        const receipts = await sql<{ scope: string }[]>`SELECT scope FROM auth.app_migration_probes
+        const probeSignal = AbortSignal.any([signal, AbortSignal.timeout(1_500)]);
+        return waitWithin(
+          (async () => {
+            const nonce = crypto.randomUUID();
+            const app = registry.apps.find((app) => app.id === key.appId);
+            if (!app) throw new Error("Application has no registered endpoint");
+            const token = await signMigrationProbe({ appId: key.appId, keyId: key.keyId, oauth: key.oauthIssueAllowed, nonce });
+            probeSignal.throwIfAborted();
+            const response = await fetch(new URL(`${APP_MIGRATION_TRIGGER_PATH}/probe`, app.baseUrl), {
+              method: "POST",
+              headers: { authorization: `Bearer ${token}` },
+              signal: probeSignal,
+              redirect: "error",
+            });
+            await response.body?.cancel();
+            if (response.status !== 204) throw new Error("Signed migration probe failed");
+            const receipts = await sql<{ scope: string }[]>`SELECT scope FROM auth.app_migration_probes
       WHERE key_id = ${key.keyId}::uuid AND nonce = ${nonce}::uuid`;
-        return {
-          appId: key.appId,
-          keyId: key.keyId,
-          broker: receipts.some((receipt) => receipt.scope === "identity:invoke"),
-          oauth: key.oauthIssueAllowed ? receipts.some((receipt) => receipt.scope === "oauth:issue") : null,
-        };
+            const broker = receipts.some((receipt) => receipt.scope === "identity:invoke");
+            const oauth = key.oauthIssueAllowed ? receipts.some((receipt) => receipt.scope === "oauth:issue") : null;
+            return {
+              appId: key.appId,
+              keyId: key.keyId,
+              broker,
+              oauth,
+              ...(!broker || oauth === false ? { reason: "probe_failed" as const } : {}),
+            };
+          })(),
+          probeSignal,
+        );
       },
       signal,
     ),
@@ -198,7 +214,21 @@ export const readAppMigrationStatus = async (input: {
       instances: validInstances,
       registryIssues,
       observation: await readAppMigrationObservation(input.windowSeconds),
-      probes: results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])),
+      probes: liveKeys.map((key, index) => {
+        const result = results[index];
+        return result?.status === "fulfilled"
+          ? result.value
+          : {
+              appId: key.appId,
+              keyId: key.keyId,
+              broker: false,
+              oauth: key.oauthIssueAllowed ? false : null,
+              reason:
+                result?.status === "rejected" && result.reason instanceof Error && result.reason.name === "TimeoutError"
+                  ? ("probe_timeout" as const)
+                  : ("probe_failed" as const),
+            };
+      }),
       rejections: rejections.map((row) => ({
         appId: row.app_id,
         lastRejectedStart: { at: row.rejected_at.toISOString(), reason: row.reason, keyId: row.key_id },

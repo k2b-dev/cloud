@@ -24,15 +24,22 @@ a grant from an app name.
 
 ## Begin a representative observation
 
-Only after every Core replica runs this release, explicitly start observation:
+Only after every Core replica runs this release, explicitly start observation.
+Core refuses to begin while a live Core instance lacks its legacy-evidence
+capability marker. Status also reports `core_legacy_evidence_missing` for
+those instances, even if a previous window was complete:
 
 ```bash
 cld --profile migration admin apps observation begin --json
 ```
 
 This administrator write requires OAuth `write` or `admin` scope when using
-OAuth credentials. Starting again resets elapsed time. Do not restart it while
-waiting for completion.
+OAuth credentials. Core checks administrator access in the service and records
+`app_migration.observation_begin` in the audit trail. Starting again resets elapsed time. Do not restart it while
+waiting for completion. Keep older Core releases stopped for the whole window.
+The capability check sees replicas live at begin and status time; it cannot
+reconstruct a replica that appeared and disappeared between those checks.
+If an older Core runs during the window, upgrade it and begin a new observation.
 
 Choose the clean duration to cover the installation's actual background jobs,
 OAuth issuance and infrequent callers. For example, `OBSERVATION_SECONDS=86400`
@@ -40,7 +47,11 @@ covers one daily cycle; include weekly jobs deliberately or choose a longer
 interval. Exercise those paths with their new keys. Every accepted legacy
 bearer or OAuth broker-secret request restarts the clean interval. Core keeps
 the evidence across restarts and shares it between replicas. If it cannot
-record legacy usage, that request fails rather than silently losing evidence.
+establish new evidence, the request that needs it fails and can be retried.
+Requests covered by a successful evidence write continue without another
+write. Core coalesces writes per legacy path for five seconds and skips row
+locks held by another replica. The stored last-use time conservatively covers
+that interval, so the clean window may start up to five seconds later.
 
 ## Check the complete inventory
 
@@ -61,7 +72,12 @@ For every deployed key, Core asks the application to send a signed broker
 probe. Keys with `oauth:issue` also send a signed OAuth probe. These use the
 same live key/grant, admission and replay checks as signed broker requests;
 they issue no token and perform no domain operation. Core requires fresh,
-matching receipts. Missing endpoints, failed requests, deadlines or untested
+matching receipts. Status uses `POST /api/admin/apps/status` because probes
+write receipts and key activity; OAuth credentials require `write` or `admin`
+scope. Four probes may run at once, each with a 1.5-second timeout and a shared
+six-second budget below the server's ten-second idle timeout. JSON reports
+`probe_timeout:<keyId>` or `probe_failed:<keyId>` in attention reasons.
+Missing endpoints, failed requests, deadlines or untested
 keys keep status nonzero. During rotation, a service endpoint may reach the
 replica using the other key; finish the rollout and retry.
 

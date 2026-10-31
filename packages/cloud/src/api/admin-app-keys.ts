@@ -82,7 +82,7 @@ export const createAdminAppKeyRoutes = (
       if (["POST", "DELETE"].includes(c.req.method)) return auth.requireOAuthScope("write", "admin")(c, next);
       return next();
     })
-    .get(
+    .post(
       "/status",
       describeRoute({
         tags: ["App keys"],
@@ -114,7 +114,7 @@ export const createAdminAppKeyRoutes = (
     .post(
       "/observation",
       describeRoute({ tags: ["App keys"], summary: "Begin a representative legacy-use observation after all Core replicas are upgraded" }),
-      async (c) => c.json(await beginObservation()),
+      (c) => respond(c, () => beginObservation({ actor: c.get("user") })),
     )
     .get(
       "/keys",
