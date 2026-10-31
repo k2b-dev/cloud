@@ -39,10 +39,10 @@ else
       const { dialogCore } = await import("../src/feedback/dialog-core");
       const dispose = render(() => <TextEditor label="Note" initialValue={doc} maxLength={10_000} />, dom.root);
       const cell = (r: number, c: number) => dom.root.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="${r}"][data-c="${c}"]`)!;
+      // Grips, right-click and keys open the cell menu without a trigger; find the open one.
       const menu = () => {
         if (phone) return dom.document.querySelector<HTMLElement>("dialog [role='menu']")!;
-        const trigger = dom.root.querySelector<HTMLElement>(".k2b-dropdown__trigger[aria-expanded='true']");
-        return dom.document.getElementById(trigger?.getAttribute("aria-controls") ?? "")!;
+        return [...dom.document.querySelectorAll<HTMLElement>(".k2b-ste-table-menu")].find((element) => element.matches(":popover-open"))!;
       };
       const item = (label: string) =>
         [...menu().querySelectorAll<HTMLButtonElement>("[role^='menuitem']")].find(
@@ -127,6 +127,16 @@ else
 
         h.dom.root.querySelector<HTMLButtonElement>(".k2b-ste-table-tool")!.click();
         await Promise.resolve();
+        // A row grip shows row and table actions, a column grip column, alignment and table actions;
+        // right-click and keys show everything. No cell or header carries a menu button.
+        const table = inventory.slice(-5);
+        const scoped: Record<string, { entries: string[]; headings: string[] }> = {
+          row: { entries: [...inventory.slice(0, 5), ...table], headings: ["Row 1", "Table"] },
+          column: { entries: [...inventory.slice(5, 13), ...table], headings: ["Column “Name”", "Alignment", "Table"] },
+          context: { entries: inventory, headings: ["Row 1 · Column “Name”", "Row 1", "Column “Name”", "Alignment", "Table"] },
+          keyboard: { entries: inventory, headings: ["Row 1 · Column “Name”", "Row 1", "Column “Name”", "Alignment", "Table"] },
+        };
+        expect(h.dom.root.querySelectorAll(".k2b-ste-table .k2b-dropdown__trigger, .k2b-ste-table .ti-dots")).toHaveLength(0);
         for (const trigger of ["row", "column", "context", "keyboard"]) {
           h.cell(1, 0).focus();
           if (trigger === "row") h.cell(1, 0).parentElement!.querySelector<HTMLButtonElement>(".k2b-ste-rowMenu")!.click();
@@ -134,10 +144,15 @@ else
           else if (trigger === "context") h.cell(1, 0).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
           else h.cell(1, 0).dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }));
           await Promise.resolve();
-          expect(h.menu() !== null, trigger).toBe(true);
-          expect(labels()).toEqual(inventory);
-          h.dom.root.querySelector<HTMLButtonElement>(".k2b-ste-cell-menu")!.click();
+          expect(h.menu() !== undefined, trigger).toBe(true);
+          expect(labels(), trigger).toEqual(scoped[trigger]!.entries);
+          expect(
+            [...h.menu().querySelectorAll(".k2b-dropdown__label")].map((node) => node.textContent),
+            trigger,
+          ).toEqual(scoped[trigger]!.headings);
+          h.menu().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
           await Promise.resolve();
+          expect(h.menu(), trigger).toBeUndefined();
         }
       } finally {
         await h.cleanup();

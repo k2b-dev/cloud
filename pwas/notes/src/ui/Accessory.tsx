@@ -1,8 +1,8 @@
 import type { EditorView } from "@codemirror/view";
 import { files as browserFiles } from "@k2b/stdlib/browser";
 import { IconButton } from "@k2b/ui";
-import { type TextEditorController, textEditorCommands } from "@k2b/ui/text-editor";
-import { createSignal, For, onCleanup } from "solid-js";
+import { type TextEditorController, type TextEditorControls, textEditorCommands } from "@k2b/ui/text-editor";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { t } from "../state";
 import { Icon, type IconName } from "./common";
 
@@ -24,7 +24,13 @@ const toggleTask = (view: EditorView) => {
  * Formatting above the phone keyboard. It shows while the editor has focus on a narrow screen and
  * follows the visual viewport, so it sits on the keyboard instead of behind it.
  */
-export function Accessory(props: { editor: TextEditorController; onUndo: () => void; onFiles: (files: File[]) => void }) {
+export function Accessory(props: {
+  editor: TextEditorController;
+  /** The shared editor's table controls: in a cell, "Table" opens the cell menu as a sheet. */
+  table?: TextEditorControls;
+  onUndo: () => void;
+  onFiles: (files: File[]) => void;
+}) {
   const [on, setOn] = createSignal(false);
   const [bottom, setBottom] = createSignal(0);
   const view = props.editor.view;
@@ -58,6 +64,8 @@ export function Accessory(props: { editor: TextEditorController; onUndo: () => v
     { icon: "ti-h-2", label: () => t().fmtHeading, run: () => textEditorCommands.heading2(view) },
     { icon: "ti-list", label: () => t().fmtList, run: () => textEditorCommands.bulletList(view) },
     { icon: "ti-list-check", label: () => t().fmtTask, run: () => toggleTask(view) },
+  ];
+  const more: { icon: IconName; label: () => string; run: () => void }[] = [
     {
       icon: "ti-hash",
       label: () => t().fmtTag,
@@ -92,6 +100,24 @@ export function Accessory(props: { editor: TextEditorController; onUndo: () => v
       onPointerDown={(event) => event.preventDefault()}
     >
       <For each={actions}>
+        {(action) => (
+          <IconButton variant="ghost" label={action.label()} onClick={action.run}>
+            <Icon name={action.icon} />
+          </IconButton>
+        )}
+      </For>
+      {/* Inserts a table; in a cell the same place opens the cell menu, as in Notebooks. */}
+      <Show
+        when={props.table?.tableActive() ? props.table : undefined}
+        fallback={
+          <IconButton variant="ghost" label={t().fmtTable} onClick={() => textEditorCommands.table(view)}>
+            <Icon name="ti-table" />
+          </IconButton>
+        }
+      >
+        {(table) => table().TableMenu({})}
+      </Show>
+      <For each={more}>
         {(action) => (
           <IconButton variant="ghost" label={action.label()} onClick={action.run}>
             <Icon name={action.icon} />

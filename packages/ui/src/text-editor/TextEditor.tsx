@@ -4,7 +4,14 @@ import { EditorView, keymap } from "@codemirror/view";
 import { clipboard } from "@k2b/stdlib/solid";
 import { createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
-import { Dropdown, type DropdownAction, type DropdownChoice, type DropdownItem, type DropdownPosition } from "../actions/Dropdown";
+import {
+  Dropdown,
+  type DropdownAction,
+  type DropdownAnchor,
+  type DropdownChoice,
+  type DropdownItem,
+  type DropdownPosition,
+} from "../actions/Dropdown";
 import { SegmentedControl } from "../actions/SegmentedControl";
 import { Toolbar } from "../actions/Toolbar";
 import { Kbd } from "../content/Kbd";
@@ -252,6 +259,7 @@ const actionIcons = {
   toggleHeader: "table-row",
   deleteTable: "trash",
 } as const;
+type MenuScope = "row" | "column" | "cell";
 const isInlineCommand = (command: string): command is Extract<InlineFormat, string> => inlineCommands.has(command);
 const shortcuts: Partial<Record<keyof typeof commands, string>> = { bold: "mod+b", italic: "mod+i", link: "mod+k" };
 const inlineCommands = new Set<string>(["bold", "italic", "code", "link", "strike"]);
@@ -273,10 +281,32 @@ export function TextEditor(props: TextEditorProps) {
   const [documentRevision, setDocumentRevision] = createSignal(0);
   const [phoneMenu, setPhoneMenu] = createSignal(false);
   const [platform, setPlatform] = createSignal<KeyboardPlatform>("other");
+  /** What the open cell menu acts on: a row grip, a column grip, or the cell (right-click, keys, toolbar). */
+  const [scope, setScope] = createSignal<MenuScope>("cell");
+  let grip: HTMLElement | undefined;
   createEffect(() => {
     const target = cell();
-    target?.setAttribute("data-active", "");
-    onCleanup(() => target?.removeAttribute("data-active"));
+    const kind = scope();
+    if (!target) return;
+    if (kind === "cell") {
+      target.setAttribute("data-active", "");
+      onCleanup(() => target.removeAttribute("data-active"));
+      return;
+    }
+    // A grip's menu marks its whole row or column, and the grip stays visible while the menu is open.
+    const marked =
+      kind === "row"
+        ? [target.closest("tr")]
+        : [...(target.closest(".k2b-ste-table")?.querySelectorAll<HTMLElement>(`.k2b-ste-cell[data-c="${target.dataset.c}"]`) ?? [])].map(
+            (element) => element.parentElement,
+          );
+    const opener = grip;
+    for (const element of marked) element?.setAttribute("data-marked", "");
+    opener?.setAttribute("data-open", "");
+    onCleanup(() => {
+      for (const element of marked) element?.removeAttribute("data-marked");
+      opener?.removeAttribute("data-open");
+    });
   });
   let disposed = false;
   onCleanup(() => {
@@ -329,8 +359,9 @@ export function TextEditor(props: TextEditorProps) {
     show();
   };
   let menuOpen = false;
-  let pointerAnchor: { left: string; top: string } | undefined;
-  let floatingTrigger: HTMLButtonElement | undefined;
+  let openCellMenu: ((anchor: DropdownAnchor, returnFocus?: () => HTMLElement | undefined) => void) | undefined;
+  let closeCellMenu: (() => void) | undefined;
+  let copyTrigger: HTMLButtonElement | undefined;
   const tableTriggers = new Set<HTMLButtonElement>();
   let frame = 0;
   const [menuPosition, setMenuPosition] = createSignal({ left: "0px", top: "0px" });
@@ -355,21 +386,19 @@ export function TextEditor(props: TextEditorProps) {
     const wrap = target.closest<HTMLElement>(".k2b-ste-table");
     const table = wrap?.querySelector("table");
     if (!target.isConnected || !wrap || !table || mode() !== "formatted") {
+      closeCellMenu?.();
       menuOpen = false;
       setCell(undefined);
       checkFocus();
       return;
     }
-    const rect = target.getBoundingClientRect();
+    // Only the read-only phone copy control sits below its table; every other menu opens beside its anchor.
+    if (!props.readOnly) return;
     const bounds = root.getBoundingClientRect();
-    const right = Math.min(table.getBoundingClientRect().right, wrap.getBoundingClientRect().right);
-    const position = props.readOnly
-      ? {
-          left: `${wrap.getBoundingClientRect().left - bounds.left}px`,
-          top: `${wrap.getBoundingClientRect().bottom - bounds.top - (window.matchMedia("(max-width: 47.999rem)").matches ? 44 : 0)}px`,
-        }
-      : { left: `${right - bounds.left - 24}px`, top: `${rect.top - bounds.top + (rect.height - 24) / 2}px` };
-    setMenuPosition(pointerAnchor ?? position);
+    setMenuPosition({
+      left: `${wrap.getBoundingClientRect().left - bounds.left}px`,
+      top: `${wrap.getBoundingClientRect().bottom - bounds.top - (window.matchMedia("(max-width: 47.999rem)").matches ? 44 : 0)}px`,
+    });
   };
   const schedulePosition = () => {
     if (!frame)
@@ -433,11 +462,18 @@ export function TextEditor(props: TextEditorProps) {
     const header = cell()?.closest(".k2b-ste-table")?.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="0"][data-c="${column}"]`);
     return t().menuColumn(header?.dataset.raw || t().column(column + 1));
   };
-  const menuHeading = () => `${menuRow()} · ${menuColumn()}`;
-  const actionItem = (action: keyof typeof actionIcons, choice?: Pick<DropdownChoice, "choice" | "checked" | "class" | "ariaLabel">) =>
+  const menuHeading = (kind: MenuScope = scope()) =>
+    kind === "row" ? menuRow() : kind === "column" ? menuColumn() : `${menuRow()} · ${menuColumn()}`;
+  const actionItem = (
+    action: keyof typeof actionIcons,
+    choice?: Pick<DropdownChoice, "choice" | "checked" | "class" | "ariaLabel">,
+    kind: MenuScope = "cell",
+  ) =>
     ({
       get label() {
-        return phoneMenu() && action in shortActionLabels ? t()[shortActionLabels[action as keyof typeof shortActionLabels]] : t()[action];
+        // A grip's sheet has no row or column heading over its entries, so deleting keeps its full name.
+        const short = phoneMenu() && action in shortActionLabels && !(kind !== "cell" && action.startsWith("delete"));
+        return short ? t()[shortActionLabels[action as keyof typeof shortActionLabels]] : t()[action];
       },
       icon: `ti ti-${actionIcons[action]}`,
       get disabled() {
@@ -492,28 +528,27 @@ export function TextEditor(props: TextEditorProps) {
       },
     },
   ];
-  const items = (): DropdownItem[] => {
+  /** The row grip shows row and table actions, the column grip column, alignment and table actions; the rest everything. */
+  const items = (kind: MenuScope): DropdownItem[] => {
     if (props.readOnly) return copyItems();
     const align = () => {
       documentRevision();
       return cell()?.parentElement?.style.textAlign || "left";
     };
-    return [
+    const row: DropdownItem[] = [
       {
         get sectionLabel() {
-          return menuHeading();
+          return kind === "cell" ? menuRow() : undefined;
         },
-        items: [],
+        items: (["rowAbove", "rowBelow", "moveRowUp", "moveRowDown", "deleteRow"] as const).map((action) =>
+          actionItem(action, undefined, kind),
+        ),
       },
+    ];
+    const column: DropdownItem[] = [
       {
         get sectionLabel() {
-          return menuRow();
-        },
-        items: (["rowAbove", "rowBelow", "moveRowUp", "moveRowDown", "deleteRow"] as const).map((action) => actionItem(action)),
-      },
-      {
-        get sectionLabel() {
-          return menuColumn();
+          return kind === "cell" ? menuColumn() : undefined;
         },
         items: (["colLeft", "colRight", "moveColLeft", "moveColRight"] as const).map((action) => actionItem(action)),
       },
@@ -529,7 +564,17 @@ export function TextEditor(props: TextEditorProps) {
           }),
         ),
       },
-      { items: [actionItem("deleteCol")] },
+      { items: [actionItem("deleteCol", undefined, kind)] },
+    ];
+    return [
+      {
+        get sectionLabel() {
+          return menuHeading(kind);
+        },
+        items: [],
+      },
+      ...(kind === "column" ? [] : row),
+      ...(kind === "row" ? [] : column),
       {
         sectionLabel: t().table,
         items: [
@@ -560,73 +605,145 @@ export function TextEditor(props: TextEditorProps) {
   const menuChange = (open: boolean) => {
     menuOpen = open;
   };
+  // A press beside an open table menu only closes it: no cell takes focus, no
+  // text is selected and no column is marked. The menu's light dismiss closes it.
+  let tableMenuOpen = false;
+  const tableMenuChange = (open: boolean) => {
+    menuOpen = open;
+    tableMenuOpen = open && !phoneMenu();
+  };
+  let swallow: AbortController | undefined;
+  const pressBesideMenu = (event: PointerEvent) => {
+    swallow?.abort();
+    if (!tableMenuOpen || (event.target instanceof Element && event.target.closest(".k2b-ste-table-menu"))) return;
+    event.stopPropagation();
+    const current = new AbortController();
+    swallow = current;
+    const block = (blocked: Event) => {
+      blocked.preventDefault();
+      blocked.stopPropagation();
+      if (blocked.type === "click" || blocked.type === "contextmenu") current.abort();
+    };
+    for (const type of ["mousedown", "mouseup", "click", "contextmenu"])
+      document.addEventListener(type, block, { capture: true, signal: current.signal });
+    // Only this press is swallowed: its click follows the release in the same task, and a cancelled press never
+    // clicks. A key other than a modifier, which may come with the press, starts new input.
+    const end = () => current.abort();
+    document.addEventListener("pointerup", () => setTimeout(end), { capture: true, once: true, signal: current.signal });
+    document.addEventListener("pointercancel", end, { capture: true, once: true, signal: current.signal });
+    document.addEventListener(
+      "keydown",
+      (key) => {
+        if (!["Shift", "Control", "Alt", "Meta"].includes(key.key)) end();
+      },
+      { capture: true, signal: current.signal },
+    );
+  };
   const menuClose = () => {
     menuOpen = false;
-    pointerAnchor = undefined;
+    tableMenuOpen = false;
+    setScope("cell");
+    grip = undefined;
     schedulePosition();
     queueMicrotask(() => {
       if (disposed) return;
       const focused = document.activeElement;
-      if (focused instanceof HTMLElement && focused.matches(".k2b-ste-cell-menu, .k2b-ste-table-tool")) cell()?.focus();
+      if (focused instanceof HTMLElement && focused.matches(".k2b-ste-copy-menu, .k2b-ste-table-tool")) cell()?.focus();
       checkFocus();
     });
   };
-  const menu = (floating: boolean, trigger?: TableMenuTrigger) => (
-    // A sheet owns its item inventory until it closes. Replace that owner when
-    // edit access changes so an already open sheet cannot retain edit entries.
+  const sheetTop = (kind: () => MenuScope) =>
+    props.readOnly
+      ? undefined
+      : (close: () => void) => (
+          <div class="k2b-ste-table-sheet-heading">
+            <span title={menuHeading(kind())}>{menuHeading(kind())}</span>
+            <Button variant="ghost" onClick={close}>
+              {t().done}
+            </Button>
+          </div>
+        );
+  const menuLabel = () => (props.readOnly ? t().copyTable : t().tableMenu);
+  const menuDisabled = () => menuBlocked() || localSource() || !cell()?.isConnected;
+  // A sheet owns its item inventory until it closes. Replace that owner when
+  // edit access changes so an already open sheet cannot retain edit entries.
+  /** The toolbar's table button: the whole menu for the focused cell. */
+  const menu = (trigger?: TableMenuTrigger) => (
     <Show when={props.readOnly ? "read" : "write"} keyed>
       {(_access) => (
         <Dropdown
-          items={items()}
+          items={items("cell")}
           phone="sheet"
-          sheetTop={
-            props.readOnly
-              ? undefined
-              : (close) => (
-                  <div class="k2b-ste-table-sheet-heading">
-                    <span title={menuHeading()}>{menuHeading()}</span>
-                    <Button variant="ghost" onClick={close}>
-                      {t().done}
-                    </Button>
-                  </div>
-                )
-          }
+          sheetTop={sheetTop(() => "cell")}
           menuClass="k2b-ste-table-menu"
-          position={floating ? "right-start" : (trigger?.position ?? "bottom-right")}
+          position={trigger?.position ?? "bottom-right"}
           width="18rem"
-          label={props.readOnly ? t().copyTable : t().tableMenu}
-          disabled={menuBlocked() || localSource() || !cell()?.isConnected}
-          onOpenChange={menuChange}
+          label={menuLabel()}
+          disabled={menuDisabled()}
+          onOpenChange={tableMenuChange}
           onClose={menuClose}
         >
           <Dropdown.Trigger
             ref={(element) => {
-              if (floating) floatingTrigger = element;
-              else {
-                tableTriggers.add(element);
-                onCleanup(() => tableTriggers.delete(element));
-              }
+              tableTriggers.add(element);
+              onCleanup(() => tableTriggers.delete(element));
             }}
-            class={
-              floating
-                ? props.readOnly
-                  ? "k2b-ste-cell-menu k2b-ste-copy-menu"
-                  : "k2b-ste-cell-menu"
-                : `k2b-ste-tool k2b-ste-table-tool ${trigger?.class ?? ""}`
-            }
+            class={`k2b-ste-tool k2b-ste-table-tool ${trigger?.class ?? ""}`}
             variant="ghost"
             size={trigger?.size ?? "sm"}
-            iconOnly={!trigger?.text && !props.readOnly}
-            label={trigger?.text ?? (props.readOnly ? t().copyTable : t().tableMenu)}
-            aria-pressed={!floating ? true : undefined}
+            iconOnly={!trigger?.text}
+            label={trigger?.text ?? t().tableMenu}
+            aria-pressed={true}
             onMouseDown={preserveSelection}
           >
-            <i class={props.readOnly ? "ti ti-copy" : floating ? "ti ti-dots" : "ti ti-table"} aria-hidden="true" />
-            {trigger?.text ?? (props.readOnly ? t().copyTable : undefined)}
+            <i class="ti ti-table" aria-hidden="true" />
+            {trigger?.text}
             <Show when={trigger?.text}>
               <i class="ti ti-chevron-down" aria-hidden="true" />
             </Show>
           </Dropdown.Trigger>
+        </Dropdown>
+      )}
+    </Show>
+  );
+  /** Grips, right-click and Shift+F10 open this menu beside its anchor; it has no button of its own. */
+  const cellMenu = () => (
+    <Show when={props.readOnly ? "read" : "write"} keyed>
+      {(_access) => (
+        <Dropdown
+          items={items(scope())}
+          phone="sheet"
+          sheetTop={sheetTop(scope)}
+          menuClass="k2b-ste-table-menu"
+          position="bottom-right"
+          width="18rem"
+          label={menuLabel()}
+          disabled={menuDisabled()}
+          onOpenChange={tableMenuChange}
+          onClose={menuClose}
+          openAt={(open) => {
+            openCellMenu = open;
+          }}
+          closeWith={(close) => {
+            closeCellMenu = close;
+          }}
+        >
+          {/* Phones have no right-click: a read-only table keeps a visible copy control below it. */}
+          <Show when={props.readOnly && cell() && mode() === "formatted" && !menuBlocked()}>
+            <Dropdown.Trigger
+              ref={(element) => {
+                copyTrigger = element;
+              }}
+              class="k2b-ste-copy-menu"
+              variant="ghost"
+              size="sm"
+              label={t().copyTable}
+              onMouseDown={preserveSelection}
+            >
+              <i class="ti ti-copy" aria-hidden="true" />
+              {t().copyTable}
+            </Dropdown.Trigger>
+          </Show>
         </Dropdown>
       )}
     </Show>
@@ -642,7 +759,7 @@ export function TextEditor(props: TextEditorProps) {
     // its toggle callback, but Dropdown already exposes its synchronous state.
     if (
       menuOpen ||
-      [...tableTriggers, floatingTrigger].some((trigger) => trigger?.isConnected && trigger.getAttribute("aria-expanded") === "true")
+      [...tableTriggers, copyTrigger].some((trigger) => trigger?.isConnected && trigger.getAttribute("aria-expanded") === "true")
     )
       return;
     const focused = document.activeElement;
@@ -763,7 +880,6 @@ export function TextEditor(props: TextEditorProps) {
     const focus = (event: Event) => {
       if (!(event instanceof CustomEvent) || !(event.detail.cell instanceof HTMLElement)) return;
       setActive(true);
-      if (!menuOpen) pointerAnchor = undefined;
       setCell(event.detail.cell);
       positionMenu();
     };
@@ -790,26 +906,33 @@ export function TextEditor(props: TextEditorProps) {
         pointerCheck = setTimeout(checkFocus);
       }
     };
+    // A grip opens its row's or column's menu below itself; right-click opens
+    // at the pointer and a key below the cell. Focus returns to the cell.
     const keyboardMenu = (event: Event) => {
-      if (menuBlocked()) return;
-      focus(event);
-      if (event instanceof CustomEvent) {
-        const bounds = root.getBoundingClientRect();
-        const anchor = event.detail.anchor instanceof HTMLElement ? event.detail.anchor.getBoundingClientRect() : undefined;
-        if (anchor || typeof event.detail.x === "number") {
-          pointerAnchor = {
-            left: `${(anchor?.left ?? event.detail.x) - bounds.left}px`,
-            top: `${(anchor?.bottom ?? event.detail.y) - bounds.top}px`,
-          };
-          positionMenu();
-        }
+      if (menuBlocked() || menuOpen || !(event instanceof CustomEvent) || !(event.detail.cell instanceof HTMLElement)) return;
+      const target: HTMLElement = event.detail.cell;
+      const opener = event.detail.anchor instanceof HTMLElement ? event.detail.anchor : undefined;
+      const kind: MenuScope = event.detail.scope === "row" || event.detail.scope === "column" ? event.detail.scope : "cell";
+      const { x, y } = event.detail;
+      let anchor: DropdownAnchor = opener ?? target;
+      if (!opener && typeof x === "number" && typeof y === "number") {
+        // Keep the pointer's place inside the cell, so the menu follows it while the page scrolls.
+        const start = target.getBoundingClientRect();
+        anchor = {
+          getBoundingClientRect: () => {
+            const box = target.getBoundingClientRect();
+            const left = box.left + x - start.left;
+            const top = box.top + y - start.top;
+            return { left, top, right: left, bottom: top };
+          },
+        };
       }
+      grip = opener;
+      setScope(kind);
+      focus(event);
+      // Focus returns to the menu's cell as it closes; moving a row or column moves that cell.
       queueMicrotask(() => {
-        if (disposed || !cell()?.isConnected) return;
-        const tableTrigger = [...tableTriggers].find((trigger) => trigger.isConnected);
-        const trigger =
-          (window.matchMedia("(max-width: 47.999rem)").matches && tableTrigger?.isConnected ? tableTrigger : undefined) ?? floatingTrigger;
-        trigger?.click();
+        if (!disposed && cell()?.isConnected) openCellMenu?.(anchor, () => cell());
       });
     };
     const mutations = new MutationObserver(schedulePosition);
@@ -824,21 +947,12 @@ export function TextEditor(props: TextEditorProps) {
     root.addEventListener("mousedown", viewMouseDown);
     document.addEventListener("focusin", focusChange);
     document.addEventListener("pointerdown", pointer);
+    document.addEventListener("pointerdown", pressBesideMenu, true);
     root.addEventListener("k2b-ste-table-structure", structureAnnouncement);
     root.addEventListener("k2b-ste-cell-focus", focus);
     root.addEventListener("k2b-ste-cell-blur", focusChange);
     root.addEventListener("k2b-ste-cell-menu", keyboardMenu);
-    const tableScroll = (event: Event) => {
-      if (
-        menuOpen &&
-        event.target instanceof HTMLElement &&
-        event.target.classList.contains("k2b-ste-table") &&
-        floatingTrigger?.getAttribute("aria-expanded") === "true"
-      )
-        floatingTrigger.click();
-      schedulePosition();
-    };
-    window.addEventListener("scroll", tableScroll, true);
+    window.addEventListener("scroll", schedulePosition, true);
     window.addEventListener("resize", schedulePosition);
     const viewport = window.visualViewport;
     const keyboard = () =>
@@ -853,7 +967,7 @@ export function TextEditor(props: TextEditorProps) {
     updateCheck();
     props.onReady?.(editor, {
       tableActive: () => mode() === "formatted" && !!cell()?.isConnected,
-      TableMenu: (trigger) => menu(false, trigger),
+      TableMenu: (trigger) => menu(trigger),
       formatCell: (format) => !!editor && !blocked() && !!cell()?.isConnected && formatActiveCell(editor.view, format),
       notify: (message) => setNotice({ message }),
     });
@@ -865,11 +979,13 @@ export function TextEditor(props: TextEditorProps) {
       root.removeEventListener("mousedown", viewMouseDown);
       document.removeEventListener("focusin", focusChange);
       document.removeEventListener("pointerdown", pointer);
+      document.removeEventListener("pointerdown", pressBesideMenu, true);
+      swallow?.abort();
       root.removeEventListener("k2b-ste-table-structure", structureAnnouncement);
       root.removeEventListener("k2b-ste-cell-focus", focus);
       root.removeEventListener("k2b-ste-cell-blur", focusChange);
       root.removeEventListener("k2b-ste-cell-menu", keyboardMenu);
-      window.removeEventListener("scroll", tableScroll, true);
+      window.removeEventListener("scroll", schedulePosition, true);
       window.removeEventListener("resize", schedulePosition);
       viewport?.removeEventListener("resize", keyboard);
       viewport?.removeEventListener("scroll", keyboard);
@@ -985,7 +1101,7 @@ export function TextEditor(props: TextEditorProps) {
                             </IconButton>
                           }
                         >
-                          {menu(false)}
+                          {menu()}
                         </Show>
                       )
                     }
@@ -1019,11 +1135,9 @@ export function TextEditor(props: TextEditorProps) {
         </div>
       </Show>
       <div ref={mount} class={props.presentation ? "k2b-ste-app-host" : "k2b-ste-host"} hidden={props.loading || !ready()} />
-      <Show when={cell() && mode() === "formatted" && !menuBlocked()}>
-        <div class="k2b-ste-floating-menu" data-readonly={props.readOnly ? "true" : undefined} style={menuPosition()}>
-          {menu(true)}
-        </div>
-      </Show>
+      <div class="k2b-ste-floating-menu" style={menuPosition()}>
+        {cellMenu()}
+      </div>
       <div role="status" aria-live="polite" aria-atomic="true">
         <Show when={notice() || recovery() !== undefined}>
           <div class="k2b-ste-notice">
