@@ -6,6 +6,7 @@ load-tools:
   - spaces.space.browse
   - spaces.task.list
   - spaces.task.focus
+  - spaces.event.agenda
   - spaces.item.read
   - spaces.task.create
   - spaces.task.update
