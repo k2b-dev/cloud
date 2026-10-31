@@ -48,8 +48,11 @@ Above the card, one quiet line names the owning app, links the chat it waits
 in, and says how long ago Cloud asked and when the request expires. A
 `code_version` request links to its Code instead, labelled **Code “title”**.
 It addresses current Cloud admins and never offers remembered choices. For
-the author, approval is disabled with a reason that another admin is needed;
-rejection remains available.
+the author, approval is disabled with a reason that another admin is needed,
+unless that person is the sole active human admin. In that case the card
+shows the explicit self-approval notice with the `changes_access` reason.
+A required recent sign-in leaves a recovery message to sign in again, return,
+and retry. Rejection remains available.
 
 An answer collapses the card at once to one outcome line in its place, with
 the focus on that line; what follows moves up by the answer the person gave.

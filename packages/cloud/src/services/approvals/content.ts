@@ -20,6 +20,7 @@ export const openRecipientRequests = async (
 ) => {
   const admin = await hasApprovalRoleAccess(approverUserId, roleContext, db);
   return {
+    admin,
     query: sql`SELECT r.* FROM approvals.requests r
     WHERE r.status='pending' AND r.expires_at > now()
       AND (${id ?? null}::uuid IS NULL OR r.id=${id ?? null}::uuid)

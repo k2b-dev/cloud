@@ -13,6 +13,7 @@ import { type PendingApprovalRow, presentPendingApproval } from "./list";
 const row: PendingApprovalRow = {
   kind: "action",
   canApprove: true,
+  soleAdmin: false,
   requesterHref: null,
   id: crypto.randomUUID(),
   appId: "mail",
@@ -142,4 +143,12 @@ test("a standalone Code review links to its owner and never inherits remembered 
   expect(approval.canApprove).toBe(false);
   expect(approval.remember).toEqual({ chat: false, always: false, website: false });
   expect(ApprovalPageSchema.safeParse({ items: [approval], nextCursor: null, count: 1, elsewhere: 0 }).success).toBe(true);
+});
+
+test("the sole-admin presenter exposes the mandatory localized notice without remembered choices", () => {
+  const approval = presentPendingApproval({ ...row, kind: "code_version", soleAdmin: true, canApprove: true }, [], undefined, "de");
+  expect(approval.canApprove).toBe(true);
+  expect(approval.soleAdminNotice).toBe("Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft.");
+  expect(approval.remember).toEqual({ chat: false, always: false, website: false });
+  expect(presentPendingApproval(row, []).soleAdminNotice).toBeUndefined();
 });

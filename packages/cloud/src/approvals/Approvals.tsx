@@ -56,6 +56,8 @@ const useMessages = () => {
 };
 
 const cardInput = (item: PendingApproval) => ({
+  codeVersion: item.requester.kind === "code_version",
+  soleAdminNotice: item.soleAdminNotice,
   sentence: item.sentence,
   action: item.action,
   appName: item.app.name,
@@ -96,6 +98,7 @@ const outcomeLines = (
   words: ReturnType<typeof approvalMessages.resolve>["t"],
   reopen: () => void,
   codeVersion: boolean,
+  reauthenticate: boolean,
 ) => ({
   sending: { tone: "running" as const, text: [{ kind: "text" as const, text: words.sending }] },
   approved: {
@@ -110,7 +113,7 @@ const outcomeLines = (
     tone: "warning" as const,
     icon: "ti ti-alert-triangle",
     text: [{ kind: "text" as const, text: words.notApplied }],
-    detail: words.decisionFailed,
+    detail: reauthenticate ? words.signInAgain : words.decisionFailed,
     action: { label: words.answerAgain, onSelect: reopen },
   },
 });
@@ -130,7 +133,7 @@ function ApprovalCard(props: {
   item: PendingApproval;
   outcome?: Outcome;
   busy: boolean;
-  failed: boolean;
+  failed: boolean | "reauthenticate";
   decide: (input: ApprovalDecisionInput) => void;
   reopen: () => void;
 }) {
@@ -168,6 +171,7 @@ function ApprovalCard(props: {
                 approvalMessages.resolve([card().locale]).t,
                 props.reopen,
                 props.item.requester.kind === "code_version",
+                props.failed === "reauthenticate",
               )}
               current={current()}
             />
@@ -285,7 +289,7 @@ function Row(props: {
   layout: "list" | "band";
   outcome?: Outcome;
   busy: boolean;
-  failed: boolean;
+  failed: boolean | "reauthenticate";
   decide: (input: ApprovalDecisionInput) => void;
   reopen: () => void;
 }) {
@@ -324,7 +328,7 @@ function Row(props: {
           <Show when={props.failed && !props.outcome}>
             <span class="cloud-approval__note" data-tone="danger" role="alert">
               <i class="ti ti-alert-circle" aria-hidden="true" />
-              <span>{t().decisionFailed}</span>
+              <span>{props.failed === "reauthenticate" ? t().signInAgain : t().decisionFailed}</span>
             </span>
           </Show>
           <Show
@@ -359,7 +363,7 @@ export default function Approvals(props: ApprovalsProps) {
   const [items, setItems] = createSignal<PendingApproval[]>(props.initial?.items ?? []);
   const [outcomes, setOutcomes] = createSignal<ReadonlyMap<string, Outcome>>(new Map());
   const [busy, setBusy] = createSignal<ReadonlySet<string>>(new Set());
-  const [failed, setFailed] = createSignal<ReadonlySet<string>>(new Set());
+  const [failed, setFailed] = createSignal<ReadonlyMap<string, true | "reauthenticate">>(new Map());
   const [loadError, setLoadError] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   // A failed next page keeps the rows already shown; the error sits next to the button that retries it.
@@ -410,7 +414,11 @@ export default function Approvals(props: ApprovalsProps) {
   const decide = async (item: PendingApproval, input: ApprovalDecisionInput): Promise<void> => {
     if (busy().has(item.id) || outcomes().has(item.id)) return;
     setBusy((current) => toggle(current, item.id, true));
-    setFailed((current) => toggle(current, item.id, false));
+    setFailed((current) => {
+      const next = new Map(current);
+      next.delete(item.id);
+      return next;
+    });
     try {
       const response = await coreClient.approvals[":id"].decision.$post({ param: { id: item.id }, json: input });
       const outcome: Outcome | null = response.ok
@@ -422,11 +430,30 @@ export default function Approvals(props: ApprovalsProps) {
           : response.status === 404
             ? "gone"
             : null;
-      if (!outcome) throw new Error(`Decision answered ${response.status}`);
+      if (!outcome) {
+        const error: unknown = await response.json();
+        if (
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          error.code === "SELF_APPROVAL" &&
+          item.requester.kind === "code_version"
+        ) {
+          setItems((current) =>
+            current.map((entry) => (entry.id === item.id ? { ...entry, canApprove: false, soleAdminNotice: undefined } : entry)),
+          );
+          return;
+        }
+        if (error && typeof error === "object" && "code" in error && error.code === "REAUTHENTICATE") {
+          setFailed((current) => new Map(current).set(item.id, "reauthenticate"));
+          return;
+        }
+        throw new Error(`Decision answered ${response.status}`);
+      }
       setOutcomes((current) => new Map(current).set(item.id, outcome));
       refreshAppBadges();
     } catch {
-      setFailed((current) => toggle(current, item.id, true));
+      setFailed((current) => new Map(current).set(item.id, true));
     } finally {
       setBusy((current) => toggle(current, item.id, false));
     }
@@ -464,9 +491,15 @@ export default function Approvals(props: ApprovalsProps) {
           layout={layout()}
           outcome={outcomes().get(item.id)}
           busy={busy().has(item.id)}
-          failed={failed().has(item.id)}
+          failed={failed().get(item.id) ?? false}
           decide={(input) => void decide(item, input)}
-          reopen={() => setFailed((current) => toggle(current, item.id, false))}
+          reopen={() =>
+            setFailed((current) => {
+              const next = new Map(current);
+              next.delete(item.id);
+              return next;
+            })
+          }
         />
       )}
     </For>

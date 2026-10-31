@@ -34,8 +34,10 @@ export type ApprovalListQuery = z.infer<typeof ApprovalListQuerySchema>;
 export const PendingApprovalSchema = z
   .object({
     id: z.uuid(),
-    /** False for the Code author: rejection remains available, approval requires another Cloud admin. */
+    /** False for the Code author unless they are the sole active human Cloud admin. Rechecked when deciding. */
     canApprove: z.boolean().optional(),
+    /** Localized mandatory notice for a currently eligible sole-admin self-approval. */
+    soleAdminNotice: z.string().optional(),
     /** The app that owns the effect, named from the registry in the reader's language. */
     app: z.object({ id: z.string(), name: z.string(), icon: z.string().nullable() }).strict(),
     action: z.string(),

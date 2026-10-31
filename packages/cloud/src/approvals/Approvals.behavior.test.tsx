@@ -125,6 +125,52 @@ describe("Approvals", () => {
     }
   });
 
+  test("a sole-admin review shows the notice, allows approval, and explains required reauthentication", async () => {
+    const notice = "You are approving your own Code. There is no second Cloud admin to review it.";
+    const request = item("sole-admin", {
+      sentence: "Approve Report?",
+      review: { message: "Approve the reviewed version?" },
+      canApprove: true,
+      soleAdminNotice: notice,
+      requester: { kind: "code_version", appId: "demo", title: "Report", href: "/code/report/" },
+    });
+    const view = await mount({ initial: page([request]) }, () => Response.json({ code: "REAUTHENTICATE" }, { status: 403 }));
+    try {
+      expect(view.dom.root.textContent).toContain(notice);
+      expect(view.dom.root.textContent).not.toContain("Another Cloud admin must approve your version.");
+      await Bun.sleep(550);
+      view.button("Approve Report?")!.click();
+      await waitFor(() => view.dom.root.textContent?.includes("Sign in to Cloud again") === true, "reauthentication recovery");
+      expect(view.button("Answer again")).toBeDefined();
+      expect(view.requests[0]?.body).toEqual({ approved: true });
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("a second admin appearing replaces the stale sole-admin choice with the required explanation", async () => {
+    const request = item("second-admin", {
+      sentence: "Approve Report?",
+      review: { message: "Approve the reviewed version?" },
+      canApprove: true,
+      soleAdminNotice: "You are approving your own Code. There is no second Cloud admin to review it.",
+      requester: { kind: "code_version", appId: "demo", title: "Report", href: "/code/report/" },
+    });
+    const view = await mount({ initial: page([request]) }, () => Response.json({ code: "SELF_APPROVAL" }, { status: 403 }));
+    try {
+      await Bun.sleep(550);
+      view.button("Approve Report?")!.click();
+      await waitFor(
+        () => view.dom.root.textContent?.includes("Another Cloud admin must approve your version.") === true,
+        "updated eligibility",
+      );
+      expect(view.dom.root.textContent).not.toContain("There is no second Cloud admin");
+      expect(view.button("Don't run")?.disabled).toBe(false);
+    } finally {
+      view.cleanup();
+    }
+  });
+
   test("a Code-version request has its own source and receipt without a chat continuation", async () => {
     const request = item("code1", {
       sentence: "Approve Report?",

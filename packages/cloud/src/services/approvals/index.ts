@@ -5,12 +5,15 @@ import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
 import type { CapabilityActionReviewData } from "../../contracts/capabilities";
 import { CapabilityActionReviewPresentationSchema, CloudResourceHrefSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
-import { isAppSessionActor } from "../../server/actor";
+import { isAppSessionActor, userFromActor } from "../../server/actor";
 import type { RequestActor, RequestAuthority, RequestCredentialKind } from "../../server/middleware/auth";
+import { get as getUser } from "../accounts/users";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
-import { hasApprovalRoleAccess } from "./authority";
+import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "../session/recent";
+import { approvalAdminActor, hasApprovalRoleAccess } from "./authority";
 import { compactApprovalDetailsSql } from "./content";
+import { lockCodeAdminPopulation, soleCodeAdmin } from "./policy";
 
 export type { ApprovalRoleContext } from "./authority";
 export { readApprovalContent } from "./content";
@@ -75,7 +78,7 @@ export type ActionApprovalRequestInput = ApprovalRequestBase & {
  * An immutable version review addressed to Cloud admins, independent of any chat. `input` must contain the owning
  * service's complete version binding (including source and bundle hashes); `review` is the proposed change snapshot.
  * `expiresInMs` is a finite owner-chosen wait; resubmitting an expired question needs a new requester reference.
- * The author cannot approve their own version. Core owns the version state and installs a decision handler.
+ * The author can approve their own version only as the sole active human Cloud admin, with the explicit notice. Core owns the version state and installs a decision handler.
  */
 export type CodeVersionApprovalRequestInput = ApprovalRequestBase & {
   kind: "code_version";
@@ -100,6 +103,8 @@ export type ApprovalRequest = {
   approverRole: ApprovalApproverRole | null;
   authorUserId: string | null;
   decidedByUserId: string | null;
+  /** True only for a winning self-approval under the sole-active-human-admin exception; copy to domain decision/events. */
+  soleAdmin: boolean;
   requesterHref: string | null;
   assurance: ApprovalAssurance;
   sentence: string;
@@ -117,7 +122,7 @@ export type ApprovalRequest = {
 };
 // SQL aliases keep the public row shape identical for reads and locked transaction reads. A function, because a
 // fragment built at import time would bind the default sql handle before a test can choose its database.
-const columns = (compact = false) => sql`id, kind, approver_role AS "approverRole",
+const columns = (compact = false) => sql`id, kind, sole_admin AS "soleAdmin", approver_role AS "approverRole",
   author_user_id AS "authorUserId", decided_by_user_id AS "decidedByUserId", requester_href AS "requesterHref", app_id AS "appId", action, approval_scope AS "approvalScope",
   requester_kind AS "requesterKind", requester_ref AS "requesterRef", requester_app_id AS "requesterAppId",
   requester_title AS "requesterTitle", subject_id AS "subjectId", approver_user_id AS "approverUserId",
@@ -200,11 +205,15 @@ export const get = async (id: string, db?: SQL, compactReview = false): Promise<
 
 export type ApprovalDecisionResult =
   | { ok: true; status: ApprovalStatus; replay: boolean }
-  | { ok: false; code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" | "SELF_APPROVAL" | "UNAVAILABLE" | "NOT_REMEMBERABLE" }
+  | {
+      ok: false;
+      code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" | "SELF_APPROVAL" | "UNAVAILABLE" | "NOT_REMEMBERABLE" | "REAUTHENTICATE" | "BUSY";
+    }
   | { ok: false; code: "ALREADY_DECIDED"; status: ApprovalStatus };
 /**
  * A kind owner updates its durable domain decision in the same transaction as the platform decision. Throwing rolls
  * back both writes. Called exactly once for the winning decision, never on replay. No external effects belong here.
+ * Copy `request.soleAdmin` into the domain decision and events; the platform approval rule alone decides the self-approval exception.
  */
 export type ApprovalDecisionHandler = (tx: SQL, request: ApprovalRequest, actor: ApprovalDecisionActor) => Promise<void>;
 /** A person and their credential channel. Role decisions require request authority, or an active Cloud Login device. */
@@ -229,13 +238,29 @@ export const decide = async (
   db?: SQL,
 ): Promise<ApprovalDecisionResult> => {
   const result = await transaction(db, async (tx): Promise<ApprovalDecisionResult> => {
-    // Lock the approver and device before the request so revocation and decisions serialize.
-    const decider = await lockDecider(tx, actor.userId, actor.deviceId ?? null);
-    if (decider.epoch === null || (actor.deviceId !== undefined && !decider.deviceActive)) return { ok: false, code: "NOT_FOUND" };
-    const [recipient] = await tx<{ kind: ApprovalKind }[]>`SELECT kind FROM approvals.requests
+    // Inspect the immutable recipient before locking. A self-approval locks the full admin population first,
+    // before user/device/request locks, so concurrent promotion wins without a lock-upgrade deadlock.
+    const [recipient] = await tx<
+      { kind: ApprovalKind; authorUserId: string | null; status: ApprovalStatus }[]
+    >`SELECT kind, author_user_id AS "authorUserId", status FROM approvals.requests
       WHERE id=${id}::uuid AND (approver_user_id=${actor.userId}::uuid OR approver_role='admin')`;
     if (!recipient) return { ok: false, code: "NOT_FOUND" };
     const role = recipient.kind === "code_version";
+    const selfApproval = role && decision.approved && recipient.authorUserId === actor.userId && recipient.status === "pending";
+    if (selfApproval) {
+      // Reject ineligible callers before taking population-wide locks; durable checks still run below.
+      const candidate =
+        actor.via === "cloud_login"
+          ? await getUser({ id: actor.userId }, { db: tx })
+          : actor.authority
+            ? userFromActor(approvalAdminActor(actor.userId, actor.authority) ?? undefined)
+            : null;
+      if (!candidate?.roles.includes("admin")) return { ok: false, code: "NOT_FOUND" };
+      const population = await lockCodeAdminPopulation(tx, actor.userId);
+      if (population !== "locked") return { ok: false, code: population === "busy" ? "BUSY" : "SELF_APPROVAL" };
+    }
+    const decider = await lockDecider(tx, actor.userId, actor.deviceId ?? null);
+    if (decider.epoch === null || (actor.deviceId !== undefined && !decider.deviceActive)) return { ok: false, code: "NOT_FOUND" };
     if (role) {
       if (actor.via === "cloud_login" && !actor.deviceId) return { ok: false, code: "NOT_FOUND" };
       const context =
@@ -249,9 +274,25 @@ export const decide = async (
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND (approver_user_id=${actor.userId}::uuid OR approver_role='admin') FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
+    let soleAdmin = false;
     if (role) {
       if (decision.remember) return { ok: false, code: "NOT_REMEMBERABLE" };
-      if (decision.approved && row.authorUserId === actor.userId) return { ok: false, code: "SELF_APPROVAL" };
+      if (decision.approved && row.authorUserId === actor.userId && row.status === "pending") {
+        if (!selfApproval || (await soleCodeAdmin(tx)) !== actor.userId) return { ok: false, code: "SELF_APPROVAL" };
+        if (actor.via !== "cloud_login") {
+          const proof = actor.authority?.credentialProof;
+          if (proof?.kind !== "session" || proof.userId !== actor.userId) return { ok: false, code: "REAUTHENTICATE" };
+          try {
+            await requireConfirmedBrowserSignIn(tx, { userId: actor.userId, sid: proof.sid }, (code) => {
+              throw new ConfirmedBrowserSignInError(code);
+            });
+          } catch (error) {
+            if (error instanceof ConfirmedBrowserSignInError) return { ok: false, code: "REAUTHENTICATE" };
+            throw error;
+          }
+        }
+        soleAdmin = true;
+      }
     }
     const handler = role ? decisionHandlers.get("code_version") : undefined;
     const rejectOnly = decision.approved && row.assurance === "confirm" && actor.via === "acp_bridge";
@@ -262,7 +303,7 @@ export const decide = async (
         ? []
         : await tx<ApprovalRequest[]>`
       UPDATE approvals.requests SET status=${status}, decided_via=${actor.via}, decided_device_id=${actor.deviceId ?? null}::uuid, decided_at=now(),
-        decided_by_user_id=${actor.userId}::uuid, approver_auth_epoch=${decider.epoch}::bigint
+        sole_admin=${soleAdmin}, decided_by_user_id=${actor.userId}::uuid, approver_auth_epoch=${decider.epoch}::bigint
       WHERE id=${id}::uuid AND status='pending' AND expires_at > now()
         AND (${role} OR (approver_user_id=${actor.userId}::uuid AND approver_auth_epoch=${decider.epoch}::bigint))
       RETURNING ${columns()}
@@ -284,6 +325,8 @@ export const decide = async (
           target: { type: "approval_request", id, label: `${won.appId}.${won.action}` },
           metadata: {
             kind: won.kind,
+            ...(won.kind === "code_version" ? { soleAdmin: won.soleAdmin } : {}),
+            ...(won.soleAdmin ? { reason: "self_approved_sole_admin" } : {}),
             appId: won.appId,
             action: won.action,
             assurance: won.assurance,

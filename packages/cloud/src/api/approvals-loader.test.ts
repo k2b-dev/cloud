@@ -15,6 +15,7 @@ const user = buildProjectedUser({ id: "00000000-0000-4000-8000-000000000001", pr
 const row: pending.PendingApprovalRow = {
   kind: "action",
   canApprove: true,
+  soleAdmin: false,
   requesterHref: null,
   id: "00000000-0000-4000-8000-000000000002",
   appId: "demo",

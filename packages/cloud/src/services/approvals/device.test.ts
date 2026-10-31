@@ -19,6 +19,7 @@ import { loadApprovalActionPolicies, pendingApprovalReview } from "./question";
 const row: PendingApprovalRow = {
   kind: "action",
   canApprove: true,
+  soleAdmin: false,
   requesterHref: null,
   id: "ab811792-7476-4a8c-b676-2c6007bb9b5b",
   appId: "mail",
@@ -364,4 +365,17 @@ test("new-shape rows load policy even with their own reason or stored review; le
   } finally {
     capabilities.mockRestore();
   }
+});
+
+test("a sole-admin Code review carries the changes-access reason and notice in the signed device snapshot", async () => {
+  const code = { ...row, kind: "code_version" as const, soleAdmin: true, canApprove: true };
+  const card = pendingApprovalCard(code, options.appName);
+  expect(card.reason.code).toBe("changes_access");
+  expect(card.reason.text).toContain("You are approving your own Code. There is no second Cloud admin to review it.");
+  const view = await appActionView(code, { issuer: "https://cloud.example.test", appName: options.appName });
+  expect(view.message).toBe(card.reason.text);
+  expect(view.truncated).toBe(false);
+  expect(view.digest).not.toBe(
+    (await appActionView({ ...code, soleAdmin: false }, { issuer: "https://cloud.example.test", appName: options.appName })).digest,
+  );
 });

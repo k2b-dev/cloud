@@ -1,19 +1,24 @@
 import { type AiStoredActionReview, storedActionReview } from "../../ai/action-review";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals } from "../../ai/approvals";
 import type { AiTurnRunConfig } from "../../ai/types";
+import { approvalMessages } from "../../approvals/messages";
 import type { RuntimeAppMeta } from "../../contracts/app";
 import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
 import { type CapabilityActionPolicy, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
+import { DEFAULT_LOCALE } from "../../server/locale";
 import type { ApprovalAssurance, ApprovalKind } from ".";
 import type { ApprovalRoleContext } from "./authority";
 import { compactApprovalDetailsSql, openRecipientRequests } from "./content";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
+import { soleCodeAdmin } from "./policy";
 
 export type PendingApprovalRow = {
   id: string;
   kind: ApprovalKind;
   canApprove: boolean;
+  /** Advisory self-approval eligibility; the decision rechecks the population under locks. */
+  soleAdmin: boolean;
   requesterHref: string | null;
   appId: string;
   action: string;
@@ -57,11 +62,13 @@ export const listPending = async (input: {
     const cursor = input.cursor ? decodeApprovalCursor(input.cursor) : null;
     if (input.cursor && !cursor) throw new RangeError("Invalid approval cursor.");
     const open = await openRecipientRequests(input.approverUserId, input.id, input.roleContext, tx);
+    const soleAdmin = open.admin && (await soleCodeAdmin(tx)) === input.approverUserId;
     const [counts] = await tx<{ count: number; elsewhere: number }[]>`WITH open AS (${open.query})
     SELECT count(*) FILTER (WHERE ${matches(input.appId, input.link)})::int AS count,
       count(*) FILTER (WHERE NOT (${matches(input.appId, input.link)}))::int AS elsewhere FROM open r`;
     const rows = await tx<PendingApprovalRow[]>`WITH open AS (${open.query})
-    SELECT r.id, r.kind, (r.kind <> 'code_version' OR r.author_user_id IS DISTINCT FROM ${input.approverUserId}::uuid) AS "canApprove", r.requester_href AS "requesterHref", r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest",
+    SELECT r.id, r.kind, (r.kind <> 'code_version' OR r.author_user_id IS DISTINCT FROM ${input.approverUserId}::uuid OR ${soleAdmin}) AS "canApprove",
+      (r.kind='code_version' AND r.author_user_id IS NOT DISTINCT FROM ${input.approverUserId}::uuid AND ${soleAdmin}) AS "soleAdmin", r.requester_href AS "requesterHref", r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest",
       r.created_at AS "createdAt", r.expires_at AS "expiresAt",
       to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt",
       question.short_id AS "conversationShortId", question.title AS "conversationTitle",
@@ -113,6 +120,7 @@ export const presentPendingApproval = (
   row: PendingApprovalRow,
   apps: readonly Pick<RuntimeAppMeta, "id" | "name" | "icon">[],
   policy?: CapabilityActionPolicy,
+  locale = DEFAULT_LOCALE,
 ): PendingApproval => {
   const app = apps.find((entry) => entry.id === row.appId);
   const review = CapabilityActionReviewPresentationSchema.nullable().safeParse(row.details);
@@ -128,6 +136,7 @@ export const presentPendingApproval = (
   return {
     id: row.id,
     ...(codeVersion ? { canApprove: row.canApprove } : {}),
+    ...(codeVersion && row.soleAdmin ? { soleAdminNotice: approvalMessages.resolve([locale]).t.soleAdminNotice } : {}),
     app: { id: row.appId, name: app?.name ?? row.appId, icon: app?.icon ?? null },
     action: row.action,
     assurance: row.assurance,

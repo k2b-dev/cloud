@@ -138,7 +138,7 @@ export const approvalRoutes = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Open approval not found"),
         409: jsonResponse(ErrorResponseSchema, "Already decided differently"),
         413: jsonResponse(ErrorResponseSchema, "Request body too large"),
-        503: jsonResponse(ErrorResponseSchema, "Version decision service unavailable"),
+        503: jsonResponse(ErrorResponseSchema, "Version decision service unavailable or admin population busy"),
       },
     }),
     v("param", z.object({ id: z.uuid() })),
@@ -159,11 +159,19 @@ export const approvalRoutes = new Hono<AuthContext>()
           }),
         });
         if (result.ok) return respond(c, ok({ status: decision.approved ? ("approved" as const) : ("rejected" as const) }));
+        if (result.code === "BUSY")
+          return c.json({ code: "BUSY", message: "The admin population is changing or another review is in progress. Try again." }, 503);
+        if (result.code === "REAUTHENTICATE")
+          return c.json(
+            { code: "REAUTHENTICATE", message: "Confirm self-approval after a recent full browser sign-in, or use Cloud Login." },
+            403,
+          );
         if (result.code === "NOT_REMEMBERABLE") return c.json({ message: "Code-version approvals cannot be remembered." }, 400);
         if (result.code === "NOT_FOUND") return c.json({ message: "Open approval not found." }, 404);
         if (result.code === "SELF_APPROVAL" || result.code === "REJECT_ONLY")
           return c.json(
             {
+              code: result.code,
               message:
                 result.code === "SELF_APPROVAL" ? "Another Cloud admin must approve this version." : "Approve this request in Cloud.",
             },

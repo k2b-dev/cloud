@@ -43,6 +43,7 @@ export const migrateApprovals = async (): Promise<void> => {
   await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS author_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
   await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS decided_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
   await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS requester_href TEXT`.simple();
+  await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS sole_admin BOOLEAN NOT NULL DEFAULT false`.simple();
   await sql`ALTER TABLE approvals.requests ALTER COLUMN approver_user_id DROP NOT NULL`.simple();
   await sql`ALTER TABLE approvals.requests ALTER COLUMN subject_id DROP NOT NULL`.simple();
   await sql`DO $$ BEGIN

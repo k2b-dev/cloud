@@ -47,13 +47,13 @@ suiteFor(
         ...reviewFixture(),
         content: { kind: "page" as const, title: "Source", body: "+ new code", format: "plain" as const },
       };
-      const ask = async (fullContent = true) => {
+      const ask = async (fullContent = true, authorUserId = author) => {
         const question = fullContent ? review : { message: "Source diff: + report();" };
         const result = await approvals.request({
           kind: "code_version",
           appId: "demo",
           action: "version.approve",
-          authorUserId: author,
+          authorUserId,
           approverRole: "admin",
           requester: { kind: "code_version", ref: crypto.randomUUID(), appId: "demo", title: "Report", href: "/code/report/" },
           sentence: "Approve Report version 2?",
@@ -127,6 +127,44 @@ suiteFor(
       ).toBe(true);
       expect(transitions).toBe(2);
       expect(await approvals.get(complete)).toMatchObject({ status: "approved", decidedByUserId: admin, decidedDeviceId: deviceId });
+
+      // The isolated database may contain bootstrap admins; retain and restore their original flags.
+      const previousAdmins = await sql<{ id: string }[]>`UPDATE auth.users SET admin=false
+        WHERE admin AND id<>${admin}::uuid RETURNING id`;
+      try {
+        const own = await ask(false, admin);
+        const ownPage = ApprovalPageSchema.parse(
+          await (await routes.request("/", { headers: { ...headers, "x-cloud-locale": "de" } })).json(),
+        );
+        expect(ownPage.items.find((item) => item.id === own)).toMatchObject({
+          canApprove: true,
+          soleAdminNotice: "Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft.",
+        });
+        const ownView = await device.view({ userId: admin, issuer: "https://cloud.example.test", actionId: own });
+        expect(ownView?.message).toContain("You are approving your own Code.");
+        const [family] = await sql<{ sid: string; issued_at: Date }[]>`SELECT sid,issued_at FROM auth.session_families
+          WHERE user_id=${admin}::uuid ORDER BY issued_at DESC LIMIT 1`;
+        if (!family) throw new Error("Missing browser family");
+        await sql`UPDATE auth.session_families SET issued_at='2000-01-01' WHERE sid=${family.sid}::uuid`;
+        const decision = () => routes.request(`/${own}/decision`, { method: "POST", headers, body: JSON.stringify({ approved: true }) });
+        const reauthenticate = await decision();
+        expect(reauthenticate.status).toBe(403);
+        expect(await reauthenticate.json()).toMatchObject({ code: "REAUTHENTICATE" });
+        expect(await approvals.get(own)).toMatchObject({ status: "pending", soleAdmin: false });
+        await sql`UPDATE auth.session_families SET issued_at=${family.issued_at} WHERE sid=${family.sid}::uuid`;
+        expect((await decision()).status).toBe(200);
+        expect(await approvals.get(own)).toMatchObject({ status: "approved", soleAdmin: true });
+        await sql`UPDATE auth.users SET admin=true WHERE id=${author}::uuid`;
+        expect(await approvals.get(own)).toMatchObject({ status: "approved", soleAdmin: true });
+        const next = await ask(false, admin);
+        const nextPage = ApprovalPageSchema.parse(await (await routes.request("/", { headers })).json());
+        expect(nextPage.items.find((item) => item.id === next)).toMatchObject({ canApprove: false });
+        expect(nextPage.items.find((item) => item.id === next)?.soleAdminNotice).toBeUndefined();
+        expect(await device.view({ userId: admin, issuer: "https://cloud.example.test", actionId: next })).toBeNull();
+      } finally {
+        await sql`UPDATE auth.users SET admin=false WHERE id=${author}::uuid`;
+        for (const user of previousAdmins) await sql`UPDATE auth.users SET admin=true WHERE id=${user.id}::uuid`;
+      }
     } finally {
       dispose();
       for (const id of requests) await sql`DELETE FROM audit.events WHERE target_type='approval_request' AND target_id=${id}`;

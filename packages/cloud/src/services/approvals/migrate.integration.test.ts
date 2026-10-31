@@ -49,9 +49,10 @@ databaseSuite()("approval role upgrade from the personal schema", () => {
     expect([...twice]).toEqual([...once]);
     expect(
       once.map(({ row }) => {
-        const { kind, approver_role, author_user_id, decided_by_user_id, requester_href, ...personal } = row;
-        expect({ kind, approver_role, author_user_id, decided_by_user_id, requester_href }).toEqual({
+        const { kind, approver_role, author_user_id, decided_by_user_id, requester_href, sole_admin, ...personal } = row;
+        expect({ kind, approver_role, author_user_id, decided_by_user_id, requester_href, sole_admin }).toEqual({
           kind: "action",
+          sole_admin: false,
           approver_role: null,
           author_user_id: null,
           decided_by_user_id: null,

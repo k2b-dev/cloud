@@ -25,6 +25,8 @@ export const approvalMessages = i18n.define({
       fromUntitledCode: "Code version",
       versionApproved: "Approval recorded for this version.",
       anotherAdminRequired: "Another Cloud admin must approve your version. You can reject it here.",
+      soleAdminNotice: "You are approving your own Code. There is no second Cloud admin to review it.",
+      signInAgain: "Sign in to Cloud again in a full browser, then return here and try again to confirm your decision.",
       exactlyThisVersion: "This approval applies only to the reviewed Code version.",
       rejectAllWithVersions: "Each open request will be rejected. Code versions will not be approved.",
       expiresIn: ({ time }: { time: string }) => `Expires ${time}`,
@@ -69,6 +71,9 @@ export const approvalMessages = i18n.define({
       fromUntitledCode: "Code-Version",
       versionApproved: "Die Freigabe wurde für diese Version gespeichert.",
       anotherAdminRequired: "Ein anderer Cloud-Admin muss deine Version freigeben. Du kannst sie hier ablehnen.",
+      soleAdminNotice: "Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft.",
+      signInAgain:
+        "Melde dich erneut in einem vollständigen Browser bei Cloud an. Kehre dann hierher zurück und bestätige deine Entscheidung erneut.",
       exactlyThisVersion: "Diese Freigabe gilt nur für die geprüfte Code-Version.",
       rejectAllWithVersions: "Jede offene Anfrage wird abgelehnt. Code-Versionen werden nicht freigegeben.",
       expiresIn: ({ time }) => `Läuft ab ${time}`,

@@ -104,10 +104,31 @@ cannot. App invocations cannot act as role approvers, even when their
 originating person is an admin. Omitting the context preserves personal Action reads only.
 
 A Cloud admin can approve another author's version or reject any version.
-The author cannot approve their own version, even when they are the only
-admin. The browser shows that another admin is required and keeps rejection
-available; Cloud Login does not offer the author their own question. These requests always use
-`confirm`, never offer remembered choices, and never use chat preferences.
+An author can approve their own version only when they are the sole active
+human Cloud admin. Service and agent accounts, guests, expired accounts, and
+disabled account categories do not count. Cloud counts local and FreeIPA
+admins in the decision transaction. An in-flight account or role change blocks
+self-approval with retryable `BUSY` (HTTP 503); otherwise the population stays
+locked until the decision commits. Self-approvals serialize through this lock,
+including handlers that update accounts. Keep handlers short and free of external effects.
+Adding a second admin blocks new self-approvals and leaves existing approvals valid.
+
+The shared question always uses `ask: changes_access`. For an eligible
+self-approval it also shows: “You are approving your own Code. There is no
+second Cloud admin to review it.” In German: “Du gibst deinen eigenen Code
+frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft.” A browser decision
+requires the existing full sign-in from the last ten minutes; otherwise
+`REAUTHENTICATE` asks the person to sign in again and return to retry. Cloud
+Login reuses its active signed device confirmation. Personal CLI keys and
+OAuth credentials can review another author's version but cannot substitute
+for this self-approval confirmation. Open the review in the full Cloud browser
+session or use Cloud Login; renewing a CLI credential or an app session is not
+a full browser sign-in.
+
+When another admin exists, the browser disables the author's approval with a
+reason and keeps rejection available; Cloud Login does not offer that author
+their own question. These requests always use `confirm`, never offer remembered
+choices, and never use chat preferences.
 Signing out the author does not end a role request; its explicit expiry and
 cancellation still apply. Deleting the author preserves the request. Approving
 records the deciding admin and updates the version through its owning service;
@@ -150,17 +171,28 @@ for the Code version service and administration surfaces:
   writes the durable version-decision evidence on the supplied transaction.
   Throwing rolls back that write, the platform decision and its audit event.
   It runs once for the winning decision, never for a replay. Do not send
-  external effects from it.
+  external effects from it. `ApprovalRequest.soleAdmin` is true only for the
+  winning sole-admin self-approval. Copy it to the domain `version_decisions`
+  row (`sole_admin`) and `version.approved` / `version.rejected` events; the platform approval rule
+  is the sole owner of the exception. Other decisions carry false. Cloud records
+  audit metadata `soleAdmin: true` and reason `self_approved_sole_admin`.
 - `decide(id, { approved }, actor, tx?)` applies the current recipient rules
   and invokes that handler in the same transaction. It returns `NOT_FOUND`
-  to non-admins, `SELF_APPROVAL` for the author approving, `REJECT_ONLY` for
-  an ACP approval, and `UNAVAILABLE` while the version owner is not installed.
+  to non-admins, `SELF_APPROVAL` when the author is not the sole eligible admin,
+  `REAUTHENTICATE` when self-approval needs a recent full sign-in, `REJECT_ONLY` for
+  an ACP approval, `BUSY` during a competing population write or self-approval,
+  and `UNAVAILABLE` while the version owner is not installed.
   No decision is recorded in those cases.
 - `get(id, tx?, compactReview?)` is a trusted server-side snapshot read;
   it does not authorize a caller. HTTP consumers use the shared routes.
   `listPending`, `countPending`, and `readApprovalContent` check recipients
   using their `roleContext`. `PendingApproval.canApprove` is false for the
-  Code author.
+  Code author unless sole-admin eligibility currently applies.
+  `PendingApproval.soleAdminNotice` exposes the localized mandatory notice to
+  administration clients. List eligibility is advisory; decisions recheck it.
+  `presentPendingApproval(row, apps, policy?, locale?)` uses the reader's locale
+  for the notice (English by default). The version-list label belongs to the
+  owning administration surface: “selbst freigegeben (einziger Admin)”.
   `consume` accepts personal Action requests only; version decisions are
   durable evidence in the owning version service.
 
@@ -168,8 +200,10 @@ Platform rows are pruned 90 days after expiry. Durable version evidence belongs
 to the version service and must be written by its decision handler.
 
 Passing a transaction to `request` or `decide` joins that transaction; the
-caller must commit or roll it back. Without one, the service owns the
-transaction. The version service must install its handler in every Core
+caller must commit or roll it back. Sole-admin self-approval requires
+`READ COMMITTED` isolation so the population read sees changes committed before
+its lock; a caller retaining an older snapshot receives `SELF_APPROVAL`.
+Without a supplied transaction, the service owns the transaction. The version service must install its handler in every Core
 process that serves approval decisions. Without it, the HTTP decision returns
 `503` with a retry message and the request stays pending. Existing Action
 approvals work without a kind handler.
@@ -391,7 +425,8 @@ Each item contains `id`, `app` (`id`, localized `name`, nullable `icon`),
 `action`, `assurance`, `sentence`, nullable `review`, `requester`
 (`kind: "chat" | "code_version"`, `appId`, nullable `title`, `href`), `remember`
 (`chat`, `always`, `website` booleans), `createdAt`, and `expiresAt`.
-Code-version items also include `canApprove`; it is false for their author.
+Code-version items also include `canApprove` and, for eligible sole-admin
+self-approval, `soleAdminNotice`.
 The timestamps use ISO strings. `apps` maps app IDs to positive open counts.
 An approval can count for both its effect owner and requester app.
 `total` counts each request once.
@@ -406,9 +441,9 @@ A Code-version decision calls the version owner without a chat continuation.
 | --- | --- |
 | `200` | Decision accepted, or the same decision repeated |
 | `400` | Invalid ID or body, or a choice that cannot be remembered |
-| `403` | No user-backed actor, self-approval of a Code version, or the ACP bridge tried to approve an open `confirm` request |
+| `403` | No user-backed actor, disallowed Code self-approval, required recent sign-in (`code: "REAUTHENTICATE"`), or the ACP bridge tried to approve an open `confirm` request |
 | `404` | No request for this person, an expired request, or the chat no longer waits |
-| `503` | Code-version decision owner is unavailable; retry later |
+| `503` | Code-version decision owner is unavailable or the admin population is busy (`code: "BUSY"`); retry later |
 | `409` | The request already has a different decision |
 | `429` | Too many requests from this person; retry after `Retry-After` seconds |
 

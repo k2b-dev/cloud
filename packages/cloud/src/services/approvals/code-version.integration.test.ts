@@ -6,6 +6,7 @@ import { migrateCloudAi } from "../../ai/migrate";
 import { sql } from "../../runtime/clients";
 import type { RequestAuthority } from "../../server/middleware/auth";
 import { get as getUser } from "../accounts/users";
+import { createTestBrowserSignIn } from "../session/session.test-fixture";
 import { encryptValue } from "../settings/crypto";
 import {
   approvalReviewDigest,
@@ -17,6 +18,7 @@ import {
   registerApprovalDecisionHandler,
 } from ".";
 import { readApprovalContent } from "./content";
+import { soleCodeAdmin } from "./policy";
 
 // Each suite receives an isolated test database from the shared infrastructure gate.
 databaseSuite()("independent Code-version approvals", () => {
@@ -29,9 +31,11 @@ databaseSuite()("independent Code-version approvals", () => {
   let dispose: (() => void) | undefined;
   let failTransition = false;
   let transitions = 0;
+  let transitionSoleAdmin = false;
   const install = () =>
     registerApprovalDecisionHandler("code_version", async (tx, request) => {
       transitions++;
+      transitionSoleAdmin = request.soleAdmin;
       await tx`UPDATE auth.users SET display_name=${`version:${request.status}`} WHERE id=${author}::uuid`;
       if (failTransition) throw new Error("Version transition failed");
     });
@@ -95,6 +99,334 @@ databaseSuite()("independent Code-version approvals", () => {
       },
     );
 
+  // Roll back population fixtures and the decisions together; no admin state leaks to other cases.
+  const withSoleAdmin = async (run: (tx: SQL) => Promise<void>) => {
+    const rollback = new Error("sole admin fixture rollback");
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`UPDATE auth.users SET admin=false WHERE id<>${author}::uuid AND admin`;
+        await run(tx);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+  };
+  const signedAuthor = async (sid: string, tx: SQL): Promise<RequestAuthority> => ({
+    ...(await authorityFor(author, tx)),
+    credentialProof: { kind: "session", userId: author, sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+  });
+  const selfDecide = async (id: string, tx: SQL, authority: RequestAuthority) =>
+    approvals.decide(id, { approved: true }, { userId: author, via: "web_session", authority }, tx);
+
+  test("the sole human admin self-approves with durable decision evidence and an audit reason", async () => {
+    const { id } = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withSoleAdmin(async (tx) => {
+      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toEqual({ ok: true, status: "approved", replay: false });
+      expect(transitionSoleAdmin).toBe(true);
+      expect(await approvals.get(id, tx)).toMatchObject({ status: "approved", soleAdmin: true, decidedByUserId: author });
+      const [event] = await tx`SELECT metadata FROM audit.events WHERE target_type='approval_request' AND target_id=${id}`;
+      expect(event?.metadata).toMatchObject({ soleAdmin: true, reason: "self_approved_sole_admin" });
+    });
+  });
+
+  test("a second admin blocks new self-approvals while old evidence and replays remain valid", async () => {
+    const old = await ask(),
+      next = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withSoleAdmin(async (tx) => {
+      const authority = await signedAuthor(signIn.sid, tx);
+      expect(await selfDecide(old.id, tx, authority)).toMatchObject({ ok: true, replay: false });
+      await tx`UPDATE auth.users SET admin=true WHERE id=${admin}::uuid`;
+      expect(await selfDecide(next.id, tx, authority)).toEqual({ ok: false, code: "SELF_APPROVAL" });
+      expect(await selfDecide(old.id, tx, authority)).toEqual({ ok: true, status: "approved", replay: true });
+      expect(await approvals.get(old.id, tx)).toMatchObject({ status: "approved", soleAdmin: true });
+      expect(await approvals.get(next.id, tx)).toMatchObject({ status: "pending", soleAdmin: false });
+    });
+  });
+
+  test("expired, guest and disabled-category admins do not enter the human population", async () => {
+    const { id } = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withSoleAdmin(async (tx) => {
+      await tx`UPDATE auth.users SET admin=true,account_expires='2000-01-01' WHERE id=${admin}::uuid`;
+      await tx`UPDATE auth.users SET provider='ipa',admin=false,profile='guest' WHERE id=${otherAdmin}::uuid`;
+      await tx`UPDATE auth.users SET provider='ipa' WHERE id=${outsider}::uuid`;
+      await tx`INSERT INTO auth.ipa_user_effective_groups VALUES(${outsider}::uuid,'code-review-admins'),(${otherAdmin}::uuid,'code-review-admins')`;
+      await tx`INSERT INTO settings.entries(key,value) VALUES
+        ('freeipa.groups.admin',${await encryptValue(["code-review-admins"])}),
+        ('user.category.freeipa.enabled',${await encryptValue(false)})
+        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toMatchObject({ ok: true });
+    });
+  });
+
+  test("active FreeIPA persons count as admins through the configured effective groups", async () => {
+    const { id } = await ask();
+    await withSoleAdmin(async (tx) => {
+      await tx`UPDATE auth.users SET provider='ipa' WHERE id=${outsider}::uuid`;
+      await tx`INSERT INTO auth.ipa_user_effective_groups VALUES(${outsider}::uuid,'code-review-admins')`;
+      await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
+        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+      expect(await soleCodeAdmin(tx)).toBeNull();
+      expect(await selfDecide(id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
+    });
+  });
+
+  test("service and agent accounts with admin credential scope never count or become a sole human admin", async () => {
+    const { id } = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withSoleAdmin(async (tx) => {
+      for (const kind of ["standalone", "agent"] as const) {
+        const [machine] = await tx<
+          { id: string }[]
+        >`INSERT INTO auth.service_accounts(name,kind) VALUES(${`Code ${kind}`},${kind}) RETURNING id`;
+        if (!machine) throw new Error("Missing machine");
+        const authority: RequestAuthority = {
+          credentialKind: "api_key",
+          scopes: ["admin"],
+          accessSubject: { type: "service_account", serviceAccountId: machine.id },
+          actor: {
+            kind: "service_account",
+            delegatedUser: null,
+            scopes: ["admin"],
+            serviceAccount: {
+              id: machine.id,
+              name: kind,
+              kind,
+              status: "active",
+              delegatedUserId: null,
+              appId: null,
+              resourceType: null,
+              resourceId: null,
+              createdBy: null,
+              createdAt: "2026-10-31T00:00:00Z",
+            },
+          },
+        };
+        expect(await approvals.decide(id, { approved: true }, { userId: machine.id, via: "api_key", authority }, tx)).toEqual({
+          ok: false,
+          code: "NOT_FOUND",
+        });
+      }
+      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toMatchObject({ ok: true });
+      await tx`UPDATE auth.users SET admin=false WHERE id=${author}::uuid`;
+      expect(await soleCodeAdmin(tx)).toBeNull();
+    });
+  });
+
+  test("sole self-approval reuses recent browser sign-in or the active signed device path", async () => {
+    const { id } = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    const deviceId = crypto.randomUUID();
+    await withSoleAdmin(async (tx) => {
+      expect(await selfDecide(id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "REAUTHENTICATE" });
+      await tx`UPDATE auth.session_families SET issued_at='2000-01-01' WHERE sid=${signIn.sid}::uuid`;
+      expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toEqual({ ok: false, code: "REAUTHENTICATE" });
+      await tx`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
+        VALUES(${deviceId}::uuid,'https://cloud.example.test',${author}::uuid,'Phone','{}'::jsonb,false)`;
+      expect(await approvals.decide(id, { approved: true }, { userId: author, via: "cloud_login", deviceId }, tx)).toMatchObject({
+        ok: true,
+      });
+      expect(await approvals.get(id, tx)).toMatchObject({ soleAdmin: true, decidedDeviceId: deviceId });
+    });
+  });
+
+  test("a caller retaining an older transaction snapshot cannot self-approve", async () => {
+    const { id } = await ask();
+    const rollback = new Error("isolation fixture rollback");
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
+        await tx`UPDATE auth.users SET admin=false WHERE admin AND id<>${author}::uuid`;
+        expect(await soleCodeAdmin(tx)).toBe(author);
+        expect(await selfDecide(id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+  });
+
+  test("an in-flight second-admin promotion wins without aborting or stalling the decision transaction", async () => {
+    const { id } = await ask();
+    const authority = await authorityFor(author);
+    await withSoleAdmin(async (tx) => {
+      let promoted!: () => void, release!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        promoted = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const rollback = new Error("promotion rollback");
+      const promotion = sql
+        .begin(async (writer) => {
+          await writer`UPDATE auth.users SET admin=true WHERE id=${outsider}::uuid`;
+          promoted();
+          await released;
+          throw rollback;
+        })
+        .catch((error: unknown) => {
+          if (error !== rollback) throw error;
+        });
+      try {
+        await Promise.race([
+          ready,
+          promotion.then(() => {
+            throw new Error("Promotion never acquired its lock");
+          }),
+        ]);
+        expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
+        expect(await approvals.get(id, tx)).toMatchObject({ status: "pending" });
+        // A denied NOWAIT lock is contained in a savepoint, so this transaction remains usable.
+        expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
+      } finally {
+        release();
+        await promotion;
+      }
+    });
+  });
+
+  test("an author row lock fails busy before a waiting writer can cause a lock upgrade deadlock", async () => {
+    const { id } = await ask();
+    const authority = await authorityFor(author);
+    await withSoleAdmin(async (tx) => {
+      let locked!: () => void, release!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const rollback = new Error("row writer rollback");
+      const writer = sql
+        .begin(async (connection) => {
+          await connection`SELECT id FROM auth.users WHERE id=${author}::uuid FOR UPDATE`;
+          locked();
+          await released;
+          await connection`UPDATE auth.users SET display_name='row-writer' WHERE id=${author}::uuid`;
+          throw rollback;
+        })
+        .catch((error: unknown) => {
+          if (error !== rollback) throw error;
+        });
+      try {
+        await Promise.race([
+          ready,
+          writer.then(() => {
+            throw new Error("Writer never acquired its row lock");
+          }),
+        ]);
+        expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
+        expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
+      } finally {
+        release();
+        await writer;
+      }
+    });
+  });
+
+  // These conflict tests need committed population fixtures: an uncommitted fixture UPDATE would itself cause BUSY.
+  const withCommittedSoleAdmin = async (run: () => Promise<void>) => {
+    const previous = await sql<{ id: string }[]>`UPDATE auth.users SET admin=false WHERE admin AND id<>${author}::uuid RETURNING id`;
+    try {
+      await run();
+    } finally {
+      for (const user of previous) await sql`UPDATE auth.users SET admin=true WHERE id=${user.id}::uuid`;
+    }
+  };
+
+  test("overlapping self-approvals serialize before either handler writes accounts", async () => {
+    const first = await ask(),
+      next = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withCommittedSoleAdmin(async () => {
+      let reached!: () => void, release!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const rollback = new Error("overlap rollback");
+      dispose?.();
+      dispose = registerApprovalDecisionHandler("code_version", async (tx, request) => {
+        if (request.id !== first.id) return;
+        reached();
+        await released;
+        await tx`UPDATE auth.users SET display_name='overlap-handler' WHERE id=${author}::uuid`;
+      });
+      const firstDecision = sql
+        .begin(async (tx) => {
+          expect(await selfDecide(first.id, tx, await signedAuthor(signIn.sid, tx))).toMatchObject({ ok: true });
+          throw rollback;
+        })
+        .catch((error: unknown) => {
+          if (error !== rollback) throw error;
+        });
+      try {
+        await Promise.race([
+          ready,
+          firstDecision.then(() => {
+            throw new Error("First decision never reached its handler");
+          }),
+        ]);
+        // No account write has run in the first decision: only the population lock can reject this overlap.
+        expect(await decide(next.id, author)).toEqual({ ok: false, code: "BUSY" });
+      } finally {
+        release();
+        try {
+          await firstDecision;
+        } finally {
+          dispose?.();
+          dispose = install();
+        }
+      }
+    });
+  });
+
+  test("an ordinary role decision's retained settings lock blocks concurrent self-approval", async () => {
+    const first = await ask(),
+      next = await ask();
+    await withCommittedSoleAdmin(async () => {
+      dispose?.();
+      dispose = registerApprovalDecisionHandler("code_version", async () => {});
+      const rollback = new Error("role lock rollback");
+      try {
+        await expect(
+          sql.begin(async (tx) => {
+            expect(
+              await approvals.decide(
+                first.id,
+                { approved: false },
+                {
+                  userId: author,
+                  via: "web_session",
+                  authority: await authorityFor(author, tx),
+                },
+                tx,
+              ),
+            ).toMatchObject({ ok: true });
+            expect(await decide(next.id, author)).toEqual({ ok: false, code: "BUSY" });
+            throw rollback;
+          }),
+        ).rejects.toBe(rollback);
+      } finally {
+        dispose?.();
+        dispose = install();
+      }
+    });
+  });
+
+  test("a non-admin author is refused before taking population locks", async () => {
+    const { id } = await ask({ ...snapshot(), authorUserId: outsider });
+    await sql.begin(async (writer) => {
+      await writer`LOCK TABLE auth.users IN ROW EXCLUSIVE MODE`;
+      expect(await decide(id, outsider)).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+  });
+
   test("adds the role without rewriting existing personal approval rows", async () => {
     const input = snapshot();
     const result = await approvals.request({
@@ -118,10 +450,19 @@ databaseSuite()("independent Code-version approvals", () => {
 
   test("the database permits exactly one personal or role recipient and keeps Code confirmation mandatory", async () => {
     const { id } = await ask();
-    await expect(sql`UPDATE approvals.requests SET approver_user_id=${admin}::uuid WHERE id=${id}::uuid`).rejects.toThrow();
-    await expect(sql`UPDATE approvals.requests SET approver_role=NULL WHERE id=${id}::uuid`).rejects.toThrow();
-    await expect(sql`UPDATE approvals.requests SET assurance='standard' WHERE id=${id}::uuid`).rejects.toThrow();
-    await expect(sql`UPDATE approvals.requests SET requester_kind='assistant_turn' WHERE id=${id}::uuid`).rejects.toThrow();
+    // Bun SQL is lazy: the matcher alone does not start a raw Query. Execute it before asserting rejection.
+    await expect(sql`UPDATE approvals.requests SET approver_user_id=${admin}::uuid WHERE id=${id}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23514",
+    });
+    await expect(sql`UPDATE approvals.requests SET approver_role=NULL WHERE id=${id}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23514",
+    });
+    await expect(sql`UPDATE approvals.requests SET assurance='standard' WHERE id=${id}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23514",
+    });
+    await expect(sql`UPDATE approvals.requests SET requester_kind='assistant_turn' WHERE id=${id}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23514",
+    });
     expect(await approvals.get(id)).toMatchObject({ approverRole: "admin", approverUserId: null, assurance: "confirm", status: "pending" });
   });
 
