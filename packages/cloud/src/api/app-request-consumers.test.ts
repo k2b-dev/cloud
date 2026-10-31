@@ -98,7 +98,7 @@ test("Core authentication refusals stay permanent in Mail after capability respo
       ),
     );
     try {
-      const result = await createSpaceEventOnce({}, "effect-1", {
+      const result = await createSpaceEventOnce({ spaceId: "Space1" }, "effect-1", {
         mandate: { id: "33333333-3333-4333-8333-333333333333", revision: 1, callingAppId: "consumer" },
       });
       expect(transport).toHaveBeenCalledTimes(1);
