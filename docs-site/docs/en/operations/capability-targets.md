@@ -54,15 +54,12 @@ remain supported. New generated Actions carry `unattended: false`, so older
 Core readers omit them instead of stripping that restriction.
 
 Keep the adapter available while its app has Code grants to remove. Core must
-finish target cleanup before deleting the Code account; account deletion then
-removes the platform's replay index for that account. An unavailable target
-returns a retryable cleanup failure rather than reporting successful removal.
+finish target cleanup before deleting the Code account. Live grants prevent
+account deletion; removing them releases that reference and preserves replay
+tombstones. An unavailable target returns a retryable cleanup failure.
+Core can inspect and remove a disabled Code account's grants; setting new
+grants requires an active account. Generated access calls require explicit
+operation-bound Core editor admission.
+
 See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
 for the adapter and Core proof contracts.
-
-
-Code access adapters add a platform replay/routing ledger. Live rows prevent
-deleting the Code account before target cleanup succeeds. Cleanup clears that
-reference and preserves revocation tombstones. Core can inspect and remove a
-disabled Code account's grants; setting new grants requires an active account.
-Generated access calls require explicit operation-bound Core editor admission.

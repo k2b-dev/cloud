@@ -589,7 +589,7 @@ Core calls `invokeCodeAccess({ request, appId, operation, input, authority, loca
 from `@k2b/cloud/capabilities/server` after checking owner/editor authority.
 Only that explicit Core path issues the signed, operation-bound `code_access`
 invocation claim. Generic HTTP, AI, MCP and sandbox transports never issue it;
-these operations are excluded from their person catalogs. App reader-check
+the `code.access.*` namespace is reserved and excluded from their person catalogs. App reader-check
 authority (`resources:readers`) cannot use them. Code-origin calls, including
 personal Code acting under a mandate, and mobile app sessions are refused.
 `set` and `rm` declare `policy: { ask: "changes_access" }`, `unattended: false`
@@ -597,8 +597,8 @@ and `code: false`. Their proof/grant identity supplies retry safety, so they do
 not accept a separate idempotency key.
 
 `set` verifies Core's proof and the person's current manager authority, with a
-Cloud-admin override requiring a session or the OAuth `admin` scope. Permission writes and access audit events commit in one
-transaction. Retrying the same `grantId` returns its existing grant. Removing
+Cloud-admin override requiring a session or the OAuth `admin` scope. Permission
+writes and access audit events commit in one transaction. Retrying the same `grantId` returns its existing grant. Removing
 access leaves a tombstone, so replaying an activation proof cannot restore it;
 restoration requires a new activation and grant identity. Real `set` refusals
 have a separate denied audit event; dry runs create no permission or access-audit
@@ -647,8 +647,8 @@ after checking the person's authority at the Code's owner, then posts
 `{ principal }` with that bearer token to
 `/api/_internal/capabilities/v1/code-authority/queries/code.access.list`.
 `verifyCodeAccessList` accepts only this separate `code_access_list` token use.
-It returns all current grants of that account, including disabled Code accounts and unchanged foreign
-targets the person no longer manages. It cannot grant or remove access. This
+It returns all current grants of that account, even when it is disabled, including
+unchanged foreign targets the person no longer manages. It cannot grant or remove access. This
 keeps existing permissions reusable while new or broader permissions still
 require current target-manager authority.
 
