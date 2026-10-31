@@ -94,10 +94,12 @@ postgresTest("places before, after, first, last, and at a clamped index without 
     const c = await newNote(notebookId, "C");
     const child = await newNote(notebookId, "Child", a.id);
     const updatedAt = new Map((await list({ notebookId })).map((note) => [note.id, note.updatedAt]));
-    const published = spyOn(workspaceEvents, "noteUpdated").mockImplementation(async (note) => {
-      // The event observes committed positions, including the siblings.
-      expect((await get({ id: note.id }))?.position).toBeGreaterThan(0);
-      expect((await level(notebookId)).map((note) => note.position)).toEqual([1, 2, 3]);
+    const published = spyOn(workspaceEvents, "noteUpdated").mockImplementation(async (note, tx) => {
+      // The hint is enqueued in the transaction with the new sibling positions.
+      const rows = await tx<{ id: string; position: number }[]>`SELECT id, position FROM notebooks.notes
+        WHERE notebook_id = ${notebookId}::uuid AND parent_id IS NULL ORDER BY position`;
+      expect(rows.find((row) => row.id === note.id)?.position).toBeGreaterThan(0);
+      expect(rows.map((row) => row.position)).toEqual([1, 2, 3]);
     });
     await placed(c.id, { before: b.id });
     await expectOrder(notebookId, [a.id, c.id, b.id]);
@@ -167,7 +169,8 @@ postgresTest("create with position renumbers, PATCH shares placement semantics, 
     expect((await resetOrder({ notebookId, parentId: parent.id })).ok).toBe(true);
     expect((await level(notebookId, parent.id)).map((note) => [note.id, note.position])).toEqual([a, b, c, d].map((note) => [note.id, 0]));
     expect((await get({ id: parent.id }))?.position).toBe(1);
-    expect(invalidated).toHaveBeenCalledWith({ notebookId, reason: "bulk", scopes: ["tree"] });
+    // The hint is written in the reset's own transaction.
+    expect(invalidated).toHaveBeenCalledWith({ notebookId, reason: "bulk", scopes: ["tree"] }, expect.anything());
     await resetOrder({ notebookId, parentId: parent.id });
     expect(invalidated).toHaveBeenCalledTimes(1);
     expect((await newNote(notebookId, "E", parent.id)).position).toBe(0);

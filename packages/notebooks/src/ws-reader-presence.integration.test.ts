@@ -70,6 +70,7 @@ if (process.env.NOTEBOOKS_READER_PRESENCE_CHILD !== "1") {
     createAppEventTestHarness("notebooks", notebooksCapabilities);
     const { migrate } = await import("./migrate");
     const { notebooksService } = await import("./service");
+    const { workspaceTransaction } = await import("./service/workspace-events");
     const { default: app, drainNotebookConnections } = await import("./ws");
     const connection = await connectTestNats();
     const namespace = testSyncNamespace("reader-presence");
@@ -218,19 +219,25 @@ if (process.env.NOTEBOOKS_READER_PRESENCE_CHILD !== "1") {
         else await sql`UPDATE notebooks.notes SET notebook_id = ${otherNotebookId}::uuid WHERE id = ${lost.id}::uuid`;
         // Deletion exercises the timer backstop; movement exercises immediate invalidation.
         if (loss === "moved")
-          await notebooksService.workspaceEvents.invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] });
+          await workspaceTransaction((tx) =>
+            notebooksService.workspaceEvents.invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx),
+          );
         await waitFor(() => returning.people(lost.shortId).length === 0, loss === "deleted" ? 15_000 : 5_000);
         expect(returning.socket.readyState).toBe(WebSocket.OPEN);
         expect((await notebooksService.presence.snapshot({ noteId: lost.id })).participants).toEqual([]);
         const priorEvents = returning.messages.filter((m) => m.type === "notes.workspace.event").length;
-        await notebooksService.workspaceEvents.invalidated({ notebookId, reason: "bulk", scopes: ["tree"] });
+        await workspaceTransaction((tx) =>
+          notebooksService.workspaceEvents.invalidated({ notebookId, reason: "bulk", scopes: ["tree"] }, tx),
+        );
         await waitFor(() => returning.messages.filter((m) => m.type === "notes.workspace.event").length > priorEvents);
       }
 
       watch(returning, first.shortId, alicePeer);
       await waitFor(() => writer.people(first.shortId).some((p) => p.userId === alice.id));
       await sql`DELETE FROM notebooks.notebook_access WHERE access_id = ${grants[0]!}::uuid`;
-      await notebooksService.workspaceEvents.invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] });
+      await workspaceTransaction((tx) =>
+        notebooksService.workspaceEvents.invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx),
+      );
       await waitFor(() => returning.messages.some((m) => m.type === "notes.workspace.revoked"));
       await waitFor(() => !writer.people(first.shortId).some((p) => p.userId === alice.id));
     } finally {
