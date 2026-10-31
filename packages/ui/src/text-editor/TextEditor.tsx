@@ -626,12 +626,18 @@ export function TextEditor(props: TextEditorProps) {
     };
     for (const type of ["mousedown", "mouseup", "click", "contextmenu"])
       document.addEventListener(type, block, { capture: true, signal: current.signal });
-    // Only this press is swallowed: its click follows the release in the same task, a cancelled or dragged press
-    // never clicks, and a key starts new input.
+    // Only this press is swallowed: its click follows the release in the same task, and a cancelled press never
+    // clicks. A key other than a modifier, which may come with the press, starts new input.
     const end = () => current.abort();
     document.addEventListener("pointerup", () => setTimeout(end), { capture: true, once: true, signal: current.signal });
     document.addEventListener("pointercancel", end, { capture: true, once: true, signal: current.signal });
-    document.addEventListener("keydown", end, { capture: true, once: true, signal: current.signal });
+    document.addEventListener(
+      "keydown",
+      (key) => {
+        if (!["Shift", "Control", "Alt", "Meta"].includes(key.key)) end();
+      },
+      { capture: true, signal: current.signal },
+    );
   };
   const menuClose = () => {
     menuOpen = false;

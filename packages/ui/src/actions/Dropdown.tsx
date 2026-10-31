@@ -709,8 +709,10 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
         signal: current.signal,
       }).finally(() => {
         sheet = undefined;
+        // An entry that moved focus elsewhere, such as into a field, keeps it.
         const target = anchored ? originElement() : undefined;
-        if (target?.isConnected) returnFocus(target, ring);
+        const focused = document.activeElement;
+        if (target?.isConnected && (!focused || focused === document.body)) returnFocus(target, ring);
         setInternalOpen(false);
         props.onOpenChange?.(false);
         props.onClose?.();
