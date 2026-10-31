@@ -95,3 +95,21 @@ for (const focused of [false, true])
       await page.close();
     }
   });
+
+// The place to hold is where the reader is now: after another person's edit above moved the text, and after the
+// column changed inside the same scroller and the reader scrolled on.
+for (const before of ["edit", "column"] as const)
+  test(`a resize after ${before === "edit" ? "an edit above the view" : "a column change and scrolling"} keeps the text the reader sees`, async () => {
+    const page = await open("?prose");
+    try {
+      const widths = Array.from({ length: 30 }, (_, index) => 1180 - index * 9);
+      const moved = await page.evaluate(
+        ({ widths, before }) =>
+          (window as unknown as { harness: NoteScrollerHarness }).harness.resizeColumn("Paragraph 50 ", widths, false, before),
+        { widths, before },
+      );
+      expect(moved.filter((distance) => Math.abs(distance) > 1)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });

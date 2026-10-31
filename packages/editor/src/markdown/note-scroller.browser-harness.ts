@@ -84,33 +84,64 @@ const harness = {
   },
   /**
    * Scrolls the page so the given paragraph starts at its top edge, then sets the column width once per frame. Reports,
-   * for every painted frame, how far that paragraph's first line moved from the edge.
+   * for every painted frame, how far the reading point at the top edge moved: the line there and how far into it the
+   * edge fell before the resize.
+   *
+   * `before` happens first: `edit` inserts paragraphs at the start of the note, as another person would, without
+   * scrolling; `column` narrows the column inside the same scroller, as "Full width" does, and the reader then
+   * scrolls on to the given paragraph.
    */
-  resizeColumn: async (text: string, widths: number[], focused: boolean) => {
+  resizeColumn: async (text: string, widths: number[], focused: boolean, before?: "edit" | "column") => {
     if (focused) view.focus();
     else view.contentDOM.blur();
-    const from = view.state.doc.toString().indexOf(text);
     // The drawn line itself: asking the editor for coordinates would make it measure first.
-    const offset = () => {
-      const { node } = view.domAtPos(from);
+    const offset = (target = text) => {
+      const { node } = view.domAtPos(view.state.doc.toString().indexOf(target));
       const line = (node instanceof Element ? node : node.parentElement)!.closest(".cm-line")!;
       return Math.round(line.getBoundingClientRect().top - port.getBoundingClientRect().top);
     };
     // Scrolling draws the lines with their real heights, so the line reaches the edge in a few steps.
-    port.scrollTop += view.documentTop + view.lineBlockAt(from).top - port.getBoundingClientRect().top;
-    for (let step = 0; step < 3; step++) {
+    const reach = async (target: string) => {
+      const from = view.state.doc.toString().indexOf(target);
+      port.scrollTop += view.documentTop + view.lineBlockAt(from).top - port.getBoundingClientRect().top;
+      for (let step = 0; step < 3; step++) {
+        for (let index = 0; index < 4; index++) await frame();
+        port.scrollTop += offset(target);
+      }
       for (let index = 0; index < 4; index++) await frame();
-      port.scrollTop += offset();
+    };
+    if (before === "column") {
+      await reach("Paragraph 20 ");
+      view.contentDOM.style.maxWidth = "640px";
+      for (let index = 0; index < 4; index++) await frame();
     }
-    for (let index = 0; index < 4; index++) await frame();
-    const start = offset();
+    await reach(text);
+    if (before === "edit") {
+      view.dispatch({ changes: { from: 0, insert: `${words.join(" ")}\n\n`.repeat(3) } });
+      for (let index = 0; index < 4; index++) await frame();
+    }
+    // The reading point: the line at the top edge and how far into it the edge falls.
+    const portTop = port.getBoundingClientRect().top;
+    const content = view.contentDOM.getBoundingClientRect();
+    const hit = document.elementFromPoint(content.left + 2, portTop + 1)!.closest(".cm-line")!;
+    const pos = view.posAtDOM(hit);
+    const lineAt = () => {
+      const { node } = view.domAtPos(pos);
+      return (node instanceof Element ? node : node.parentElement)!.closest(".cm-line")!.getBoundingClientRect();
+    };
+    const share = (portTop - lineAt().top) / lineAt().height;
+    const point = () => {
+      const line = lineAt();
+      return Math.round(line.top + share * line.height - port.getBoundingClientRect().top);
+    };
+    const start = point();
     const moved: number[] = [];
     for (const width of widths) {
       port.style.width = `${width}px`;
       // Callbacks run in the order they were requested: this one reads what the last frame painted, before the editor
       // measures again.
       await frame();
-      moved.push(offset() - start);
+      moved.push(point() - start);
     }
     return moved;
   },
