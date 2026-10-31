@@ -6,6 +6,12 @@ describe("derivePathTemplate", () => {
     expect(derivePathTemplate("/api/grids/bases/20838fd2-8c26-42fa-a22d-904cfccda342")).toBe("/api/grids/bases/:id");
   });
 
+  test("redacts lowercase one-time links in fallback telemetry paths", () => {
+    const token = `cl_${"a".repeat(43)}`;
+    expect(derivePathTemplate(`/portal/${token}?code=${token}`)).toBe("/portal/:token");
+    expect(derivePathTemplate(`/portal/%63%6c%5f${"a".repeat(43)}`)).toBe("/portal/:token");
+  });
+
   test("collapses numeric segments", () => {
     expect(derivePathTemplate("/api/notifications/4711")).toBe("/api/notifications/:n");
   });

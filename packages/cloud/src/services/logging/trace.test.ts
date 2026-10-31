@@ -338,17 +338,19 @@ suite("logging.trace", () => {
     const suffix = crypto.randomUUID();
     const source = `test:trace:${suffix}`;
     const spanKey = `test:trace:${suffix}`;
+    const link = `cl_${"a".repeat(43)}`;
     const span = await trace.start({
-      name: "Trace test",
+      name: `Trace test ${link}`,
       source,
       spanKey,
-      attributes: { apiKey: "secret", safe: "ok" },
+      attributes: { apiKey: "secret", safe: "ok", address: `/confirm?code=${link}` },
     });
 
     try {
       await trace.record({
         context: span,
-        event: "test.step",
+        event: `test.step ${link}`,
+        body: `Redeem ${link}`,
         attributes: { accessToken: "token", count: 1 },
       });
       await trace.end({
@@ -364,12 +366,15 @@ suite("logging.trace", () => {
         status: "ok",
         eventCount: 1,
       });
-      expect(result.spans[0]?.attributes).toMatchObject({ apiKey: "[REDACTED]", safe: "ok" });
+      expect(result.spans[0]?.name).toBe("Trace test [REDACTED]");
+      expect(result.spans[0]?.attributes).toMatchObject({ apiKey: "[REDACTED]", safe: "ok", address: "/confirm?code=[REDACTED]" });
       expect(result.spans[0]?.summary).toMatchObject({ password: "[REDACTED]", kept: "yes" });
 
       const events = await trace.events({ traceId: span.traceId, spanId: span.spanId });
       expect(events).toHaveLength(1);
       expect(events[0]?.attributes).toMatchObject({ accessToken: "[REDACTED]", count: 1 });
+      expect(events[0]?.name).toBe("test.step [REDACTED]");
+      expect(events[0]?.body).toBe("Redeem [REDACTED]");
 
       const groups = await trace.sourceGroups({ filter: { source } });
       expect(groups).toHaveLength(1);

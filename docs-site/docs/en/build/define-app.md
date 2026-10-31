@@ -35,7 +35,7 @@ export const app = defineApp({
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `id` | Yes | Stable machine identity: `^[a-z][a-z0-9-]{0,79}$` |
-| `package` | No | Shared object-store package; defaults to `id` |
+| `package` | No | Package for shared object storage and one-time links; defaults to `id` |
 | `name` | Yes | Name shown by platform surfaces |
 | `icon` | Yes | Tabler icon class used across Cloud and as the favicon on rendered app pages |
 | `description` | Yes | Short application description |
@@ -45,7 +45,8 @@ export const app = defineApp({
 App IDs and package names contain 1–80 lowercase letters, digits, or hyphens,
 beginning with a letter. `defineApp()` rejects invalid IDs for every app,
 including apps that do not use S3. Related apps can declare the same
-`package: "warenfluss"` to share storage. `storage` is reserved as an app ID and package name. A package name cannot be another
+`package: "warenfluss"` to share storage and
+[one-time links](/en/docs/identity/one-time-links#share-links-within-a-package). `storage` is reserved as an app ID and package name. A package name cannot be another
 app's ID or a built-in app's ID; `app.start()` rejects conflicting durable
 reservations. Choose the package before first startup. See
 [Object store](/en/docs/platform/object-store) for the area and key rules, and
