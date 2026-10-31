@@ -135,7 +135,7 @@ test("a confirmed all-invalid registry snapshot removes the previous App-PWA rou
     mock.module(${stats}, () => ({ stats: {}, getRouteTable: () => table, setRouteTable: (value) => { table = value; } }));
     mock.module(${JSON.stringify(new URL("./config.ts", import.meta.url).pathname)}, () => ({ gatewayRouter: { id: "gateway-test", baseUrl: "http://gateway.test", internalUrls: ["http://gateway.test"] } }));
     let rejected = false;
-    mock.module(${cloud}, () => ({ buildRuntimeFromRegistry: () => ({}), startProcessSync: async () => ({}), watchAppRegistry: async () => {}, readAppRegistrySnapshot: async () => ({
+    mock.module(${cloud}, () => ({ sql: () => Promise.reject(new Error("offline")), buildRuntimeFromRegistry: () => ({}), startProcessSync: async () => ({}), watchAppRegistry: async () => {}, readAppRegistrySnapshot: async () => ({
       apps: rejected ? [] : [{ id: "inventory", name: "Inventory", icon: "ti ti-box", description: "", baseUrl: "http://inventory.invalid", routes: ["/app/inventory"], installable: ${JSON.stringify(surface("inventory"))} }],
       issues: rejected ? [{ key: "apps/inventory", reason: "invalid installable", version: "2" }] : []
     }) }));
