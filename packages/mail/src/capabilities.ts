@@ -3382,6 +3382,8 @@ const actionDefinitions = {
       const mailboxId = target.data;
       const conversation = await requireConversationForReview(mailboxId, input.target.conversationId, context);
       if (!conversation.ok) return conversation;
+      const sourceFolder = await resolveMailboxResource("folders", conversation.data.mailboxInternalId, input.target.sourceFolderId);
+      if (!sourceFolder.ok) return sourceFolder;
       const keep = await conversationKeeps.getConversationKeep({
         context: requestContext(context),
         mailboxId: conversation.data.mailboxInternalId,
@@ -3494,6 +3496,11 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveConversationScope(mailboxId, input.conversationId);
       if (!scope.ok) return scope;
+      const [addTagIds, removeTagIds] = await Promise.all([
+        publicResources.resolveMailboxPublicIds("tags", scope.data.mailbox.id, input.addTagIds),
+        publicResources.resolveMailboxPublicIds("tags", scope.data.mailbox.id, input.removeTagIds),
+      ]);
+      if (!addTagIds || !removeTagIds) return fail(err.notFound("Mail resource"));
       const [conversation, tags] = await Promise.all([
         requireConversationForReview(mailboxId, input.conversationId, context),
         localTags.listLocalTags(requestContext(context), scope.data.mailbox.id),

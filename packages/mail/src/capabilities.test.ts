@@ -131,7 +131,12 @@ const publicIdsByTable = {
 const internalIdsByTable = {
   reminders: new Map([[reminderId, internalReminderId]]),
   mailboxes: new Map([[mailboxId, internalMailboxId]]),
-  folders: new Map([[folderId, internalFolderId]]),
+  folders: new Map([
+    [folderId, internalFolderId],
+    [folderAId, internalFolderAId],
+    [folderBId, internalFolderBId],
+    [folderCId, internalFolderCId],
+  ]),
   conversations: new Map([
     [conversationId, internalConversationId],
     [relatedConversationId, internalRelatedConversationId],
@@ -377,6 +382,38 @@ describe("mail capabilities", () => {
       expect(update).not.toHaveBeenCalled();
     },
   );
+
+  test("conversation.move refuses a foreign source folder in review and execution", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+    } as never);
+    const mutation = spyOn(triage, "createConversationTriageCommands");
+    const action = mailCapabilities.actions["conversation.move"];
+    const input = action.input.parse({
+      target: { conversationId, sourceFolderId: "Other1" },
+      destination: { kind: "role", role: "archive" },
+    });
+    for (const call of [action.review, action.run])
+      expect(await call(input, { ...context, idempotencyKey: "foreign-folder" })).toMatchObject({
+        ok: false,
+        error: { code: "NOT_FOUND" },
+      });
+    expect(mutation).not.toHaveBeenCalled();
+  });
+
+  test.each(["addTagIds", "removeTagIds"] as const)("conversation.tag.update refuses foreign %s in review and execution", async (field) => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+    } as never);
+    const mutation = spyOn(localTags, "setConversationLocalTags");
+    const action = mailCapabilities.actions["conversation.tag.update"];
+    const input = action.input.parse({ conversationId, expectedRevision: 2, [field]: ["Other1"] });
+    for (const call of [action.review, action.run])
+      expect(await call(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    expect(mutation).not.toHaveBeenCalled();
+  });
 
   test.each(["conversation.assign.batch", "conversation.status.update.batch"] as const)(
     "%s checks every member before review or any mutation",
