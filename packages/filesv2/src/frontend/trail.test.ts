@@ -44,28 +44,36 @@ describe("Files reports its current page to the shell", () => {
     }
   });
 
-  test("a document leads up to its folder with its row selected, or to the storage at the top", () => {
-    const editor = (path: string) => ({
-      source: "/app/filesv2?base=b1&view=edit",
-      bases,
-      directory: null,
-      editor: {
+  test("an open document is one level: its editor's close is the way back, so the shell shows no way up", () => {
+    const entry = (path: string) => ({ name: path.split("/").at(-1)!, path, directory: false, size: 0, modified: "2026-10-01T00:00:00Z" });
+    const launches = {
+      markdown: (path: string) => ({
         kind: "markdown" as const,
         managed: false,
         base,
-        entry: { name: path.split("/").at(-1)!, path, directory: false, size: 0, modified: "2026-10-01T00:00:00Z" },
+        entry: entry(path),
         canWrite: true,
         url: "/document",
-      },
+      }),
+      office: (path: string) => ({
+        base,
+        entry: entry(path),
+        action: "https://office.invalid/cool.html",
+        token: "t",
+        tokenTtl: 0,
+        canWrite: true,
+      }),
+    };
+    const editor = (path: string, kind: keyof typeof launches) => ({
+      source: "/app/filesv2?base=b1&view=edit",
+      bases,
+      directory: null,
+      editor: launches[kind](path),
     });
-    expect(trailOf(editor("Projects/plan.md"))).toEqual({
-      title: "plan.md",
-      ancestors: [{ title: "Projects", href: "/app/filesv2?base=b1&path=Projects&file=Projects%2Fplan.md" }],
-    });
-    expect(trailOf(editor("notes.md"))).toEqual({
-      title: "notes.md",
-      ancestors: [{ title: "Personal", href: "/app/filesv2?base=b1&file=notes.md" }],
-    });
+    for (const kind of ["markdown", "office"] as const) {
+      expect(trailOf(editor("Projects/Offers/plan.ods", kind))).toEqual({ title: "plan.ods", ancestors: [] });
+      expect(trailOf(editor("notes.md", kind))).toEqual({ title: "notes.md", ancestors: [] });
+    }
   });
 
   test("an authorized moved-folder notice keeps the opened folder as the current title", () => {

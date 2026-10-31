@@ -1,8 +1,8 @@
-import { openCommand } from "@k2b/cloud/browser/commands";
+import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
+import { captureScroll, navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
 import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
@@ -51,6 +51,16 @@ const ancestors = (path: string) => {
   return parts.map((_, index) => parts.slice(0, index + 1).join("/"));
 };
 const viewOf = (source: string) => new URL(source, "https://files.invalid").searchParams.get("view");
+/**
+ * An editor's history entry opened from a page of this workspace names that page. Its entry lies right below the
+ * editor's, also after a reload, so closing the document goes back to it as the person left it.
+ */
+const OPENED_FROM = "filesv2:openedFrom";
+const openedFrom = (): string | undefined => {
+  const state: unknown = window.history.state;
+  const from = state && typeof state === "object" && OPENED_FROM in state ? state[OPENED_FROM] : undefined;
+  return typeof from === "string" ? from : undefined;
+};
 const viewUrl = (baseId: string | null | undefined, view: "trash" | "shares" | "recent" | "favorites") =>
   `${filesUrl(baseId ?? undefined)}${baseId ? "&" : "?"}view=${view}`;
 /** Listings are polled while the tab is visible; Filegate has no change feed yet. */
@@ -300,6 +310,8 @@ export default function Workspace(props: {
     await workspace.navigate(first, () => commitHistory(first, { replace: true, scroll: "manual" }));
   };
   let editorGuard: (() => Promise<boolean>) | null = null;
+  /** Set while closing a document goes back: its guard has already asked about unsaved changes. */
+  let closingEditor = false;
   const onNavigate = async (event: LinkNavigateEvent) => {
     workspace.cancelNavigationActions();
     if (editorGuard && !(await editorGuard())) return;
@@ -321,7 +333,11 @@ export default function Workspace(props: {
     if (editorGuard && !(await editorGuard())) return;
     if (signal?.aborted) return;
     setCursorNotice(false);
-    await workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual" }));
+    // The page being left is shown until its replacement loaded; its scroll is recorded now, before the swap.
+    const departure = replace ? {} : { scrollSnapshot: captureScroll() };
+    const opensEditor = !replace && viewOf(target) === "edit" && currentView() !== "edit";
+    const state = opensEditor ? { state: { [OPENED_FROM]: `${window.location.pathname}${window.location.search}` } } : {};
+    await workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual", ...departure, ...state }));
     await resetCursor(target);
   };
   const currentBrowse = () =>
@@ -396,22 +412,22 @@ export default function Workspace(props: {
   });
   onMount(() =>
     onCleanup(
-      listenPopState(async ({ url }) => {
+      listenPopState(async ({ url, deferScrollRestore }) => {
         workspace.cancelNavigationActions();
+        const closing = closingEditor;
+        closingEditor = false;
         if (url.pathname !== "/app/filesv2") return;
         const target = `${url.pathname}${url.search}`;
         if (target === workspace.committedSource() && !workspace.pending()) return;
+        // The listing scrolls back to where it was left once its rows are on the page again.
+        const restoreScroll = deferScrollRestore();
         const previous = workspace.committedSource();
-        if (editorGuard && !(await editorGuard())) {
+        if (!closing && editorGuard && !(await editorGuard())) {
           commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false });
           return;
         }
         void workspace
-          .navigate(
-            target,
-            () => {},
-            () => commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false }),
-          )
+          .navigate(target, restoreScroll, () => commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false }))
           .then(() => resetCursor(target));
       }),
     ),
@@ -696,8 +712,20 @@ export default function Workspace(props: {
   const centered = (content: () => ReturnType<typeof Placeholder>) => (
     <div class="flex min-h-0 flex-1 items-center justify-center">{content()}</div>
   );
-  const editorBack = (launch: NonNullable<WorkspaceSnapshot["editor"]>) =>
-    filesUrl(launch.base.id, launch.entry.path.split("/").slice(0, -1).join("/"), null, launch.entry.path);
+  /**
+   * Closing a document returns to where the person came from: back to the page this workspace opened it from, with
+   * its selection and scroll position, or else in place of the editor to its folder with its row selected.
+   */
+  const closeEditor = async (launch: NonNullable<WorkspaceSnapshot["editor"]>) => {
+    if (!openedFrom()) {
+      await go(filesUrl(launch.base.id, launch.entry.path.split("/").slice(0, -1).join("/"), null, launch.entry.path), true);
+      return;
+    }
+    workspace.cancelNavigationActions();
+    if (editorGuard && !(await editorGuard())) return;
+    closingEditor = true;
+    window.history.back();
+  };
   // The shell shows the folder path, or the open document below its folder, and follows every in-page navigation.
   createEffect(
     on(
@@ -751,19 +779,30 @@ export default function Workspace(props: {
             </AppWorkspace.Main>
           }
         >
-          {(launch) =>
-            launch.kind === "markdown" ? (
+          {(launch) => {
+            // Alt+↑ leaves the document like its close does; the shell offers no way up for it (see `snapshotTitle`).
+            onCleanup(
+              registerContextAwareCommand({
+                id: "filesv2.close-document",
+                title: b().backToFolder,
+                description: b().parentFolderUp(launch.entry.path.split("/").at(-2) ?? baseLabel(launch.base, b(), locale())),
+                icon: "ti ti-folder-up",
+                shortcut: "alt+arrowup",
+                action: () => void closeEditor(launch),
+              }),
+            );
+            return launch.kind === "markdown" ? (
               <MarkdownDocument
                 launch={launch}
                 onGuard={(guard) => {
                   editorGuard = guard;
                 }}
-                onBack={() => void go(editorBack(launch))}
+                onBack={() => void closeEditor(launch)}
               />
             ) : (
-              <Editor launch={launch} onBack={() => void go(editorBack(launch))} />
-            )
-          }
+              <Editor launch={launch} onBack={() => void closeEditor(launch)} />
+            );
+          }}
         </Show>
       </AppWorkspace.Content>
     </AppWorkspace>
