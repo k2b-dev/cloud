@@ -195,6 +195,22 @@ an unknown app and requires administrator authority on both paths. See
 [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for fields, offline behavior and bounds.
 
+`appAdminFacts(authority, appIds)` and `AppAdminFacts` from `@k2b/cloud/services`
+provide Core's administrator-only batch summary for up to 500 input app IDs.
+Each distinct ID receives persisted grant-entry counts (not expanded group membership) and effective managers,
+key and workload-token counts, active subscriptions, non-retired event
+declarations, active notification kinds, and failed or waiting deliveries.
+Credential counts exclude revoked or expired credentials from `active`,
+independently of account status; key revocation takes precedence over expiry.
+Account status comes from the oldest app-bound account. Missing access state
+and grants yield `access: null`; other missing counts are zero. `firstKnownAt`
+is the earliest app-bound account, credential, grant creation, or access
+configuration timestamp available in Core; an unconfigured empty access state
+has no timestamp. Waiting deliveries are `pending` or `retrying`; failures are
+`failed`, matching `appDetails`. The service throws `AppAccessManagementError`
+with status 403 for missing administration authority or 400 for more than 500
+input IDs, including duplicates. This is a platform administration read, not an application API.
+
 `linuxIdentities` is a platform-owned administration service from this barrel.
 It checks administrator access on reads and writes. See
 [Linux identities](/en/docs/operations/linux-identities) for configuration,
