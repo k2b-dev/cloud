@@ -9,8 +9,9 @@ import {
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { aiCapabilities } from "../capabilities";
-import { codePerson, readCodeOwner } from "./access";
+import { CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
 import { CodeOwnerSchema, CodeRunCursorSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
+import { runCodeQuery } from "./queries";
 import { codeSourceHash, codeTextChunk } from "./store";
 
 const user: User = {
@@ -154,4 +155,15 @@ test("run content chunks and precise keyset cursors are validated", () => {
   expect(codeQueryContracts.runRead.input.safeParse({ ...input, content: { kind: "result", ordinal: 0 } }).success).toBe(false);
   expect(CodeRunCursorSchema.safeParse(`2026-10-31T12:00:00.123456Z|${user.id}`).success).toBe(true);
   expect(CodeRunCursorSchema.safeParse(`2026-13-31T12:00:00.123456Z|${user.id}`).success).toBe(false);
+});
+
+test("owner-provider failures return a recoverable Query error", async () => {
+  const result = await runCodeQuery(context, async () => {
+    throw new CodeOwnerUnavailableError("offline");
+  });
+  expect(result.ok).toBe(false);
+  if (!result.ok) {
+    expect(result.error.code).toBe("INTERNAL");
+    expect(result.error.message).toContain("Try again");
+  }
 });
