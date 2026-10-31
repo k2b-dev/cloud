@@ -67,8 +67,11 @@ activation owns those grants.
 A version stores all source files, the exact UTF-8 bundle, `sourceHash`,
 `bundleHash` and a checked-version manifest slot. Source paths are relative
 POSIX paths. Source, bundle and jsonb inputs reject NUL characters and malformed Unicode
-with `BAD_INPUT`. Results preserve their exact JSON text, including escaped NUL. The source hash is SHA-256 of compact JSON containing the sorted
-`[path, content]` pairs; the bundle hash is SHA-256 of the exact bundle bytes.
+with `BAD_INPUT`. Results preserve their exact JSON text, including escaped NUL.
+Submitted versions use the checker's entry-bound source hash, described in
+[Code versions and approval](/en/docs/platform/code-versions#checker-manifest).
+Unsubmitted storage snapshots hash compact JSON of sorted `[path, content]`
+pairs. The bundle hash is SHA-256 of the exact bundle bytes.
 
 The source, bundle, hashes and manifest are immutable. The checker and
 submission services supply the final manifest when inserting a version. The
