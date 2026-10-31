@@ -1184,6 +1184,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0.375rem 0.25rem 0.125rem 0.5rem;
 }
 
+/* A heading that groups the rows of a list, such as Today or Yesterday: one step quieter than the rows it names, in
+   every list with groups. Its container owns spacing and height. */
+.k2b-ui .k2b-list-group-heading {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+}
+
 .k2b-ui .k2b-app-workspace__sidebar-section-header > h2 {
   min-width: 0;
   margin: 0;
@@ -5348,6 +5358,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     position: absolute;
     inset-block: 0;
     inset-inline-end: 0;
+  }
+
+  /* An overlaying action takes no room, so the row's content keeps its usual end inset, the same as its icon's start
+     inset: a count ends where the row's padding does, not under the action's edge. Tree rows end with their chevron. */
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item:is(
+      :has(> .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child),
+      :has(> .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]):not(
+          :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
+        )
+    ):not(:has(> .k2b-app-workspace__sidebar-item-main > .k2b-app-workspace__nav-tree-toggle))
+    > .k2b-app-workspace__sidebar-item-main {
+    padding-inline-end: 0.5625rem;
   }
 
   /* The chevron is 1.5rem wide and the row ends 0.125rem after it. */

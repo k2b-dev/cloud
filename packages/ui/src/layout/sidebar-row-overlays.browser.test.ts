@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Whether a revealed row control covers another one depends on layout and
 // paint, which happy-dom does not model, so a
@@ -315,6 +315,35 @@ describe("@k2b/ui sidebar row controls", () => {
       }
     });
   }
+
+  for (const mode of ["fine", "hybrid"] as const)
+    test(`${mode} pointer: a count beside hover actions keeps the row's end inset, equal to its start inset`, async () => {
+      const page = await load(mode);
+      try {
+        await settled(page);
+        const insets = await page.evaluate(() =>
+          ["Count and hover action", "Count and hover group"].map((label) => {
+            const owner = Array.from(document.querySelectorAll(".k2b-app-workspace__sidebar-item")).find(
+              (element) => element.querySelector(".k2b-app-workspace__sidebar-item-label")?.textContent?.trim() === label,
+            )!;
+            const row = owner.getBoundingClientRect();
+            const text = (element: Element) => {
+              const range = document.createRange();
+              range.selectNodeContents(element);
+              return range.getBoundingClientRect();
+            };
+            return {
+              label,
+              start: text(owner.querySelector(".k2b-app-workspace__sidebar-item-label")!).left - row.left,
+              end: row.right - text(owner.querySelector(".k2b-app-workspace__sidebar-item-meta")!).right,
+            };
+          }),
+        );
+        for (const inset of insets) expect(Math.abs(inset.end - inset.start), inset.label).toBeLessThanOrEqual(0.5);
+      } finally {
+        await page.close();
+      }
+    });
 
   test("the label fades on the side where a right-to-left row reveals its action", async () => {
     const page = await load("fine", { rtl: true });

@@ -1,3 +1,5 @@
+import { type DateContext, dates } from "@k2b/stdlib";
+
 /** F2: what a person sees in one mailbox on a large screen. "auto" shows columns until a conversation is open. */
 export type MailLargeView = "auto" | "columns" | "split";
 /** F2 on phones: today's three-line rows, or a denser one-line list. */
@@ -62,3 +64,35 @@ export const mailDayGroupStarts = <T extends { latestMessageAt: string }>(
   });
   return starts;
 };
+
+const MINUTE = 60_000;
+const DAY = 24 * 60 * MINUTE;
+
+/**
+ * The longest relative times a row can show in this locale: the most seconds, minutes, and hours, yesterday, every
+ * weekday, and a date in every month. The columns view sizes its time column to the widest of them, measured in the
+ * row's own font, so no time is cut off and every row keeps the same column.
+ */
+export const mailTimeColumnSamples = (dateConfig: DateContext, now: Date): string[] => {
+  const base = now.getTime();
+  const relative = (time: number, from = base) => dates.formatDateTimeRelative(new Date(time), { ...dateConfig, base: new Date(from) });
+  const samples = [
+    relative(base),
+    relative(base - 59_000),
+    relative(base - 59 * MINUTE),
+    relative(base - 23 * 60 * MINUTE),
+    relative(base - DAY - 60 * MINUTE),
+    // Each weekday, three days before its base.
+    ...Array.from({ length: 7 }, (_, day) => relative(base + day * DAY, base + (day + 3) * DAY)),
+    // Two-digit days of every month, with the year a date shows.
+    ...Array.from({ length: 12 }, (_, month) => relative(Date.UTC(now.getUTCFullYear(), month, 28, 12), base + 400 * DAY)),
+  ];
+  const unique = [...new Set(samples)];
+  // Characters are not widths, so every sample near the longest one takes part in the measurement.
+  const longest = Math.max(...unique.map((sample) => sample.length));
+  return unique.filter((sample) => sample.length >= longest - 3);
+};
+
+/** A CSS string of the samples, one per line, for `content` in the time column's sizer. */
+export const mailTimeColumnSizer = (samples: readonly string[]): string =>
+  `"${samples.map((sample) => sample.replace(/["\\]/gu, "\\$&").replace(/\n/gu, " ")).join("\\A ")}"`;

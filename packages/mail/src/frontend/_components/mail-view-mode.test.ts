@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { mailDayGroup, mailDayGroupStarts, resolveMailLargeLayout, toggleMailLargeView } from "./mail-view-mode";
+import {
+  mailDayGroup,
+  mailDayGroupStarts,
+  mailTimeColumnSamples,
+  mailTimeColumnSizer,
+  resolveMailLargeLayout,
+  toggleMailLargeView,
+} from "./mail-view-mode";
 
 test("auto shows columns until a conversation opens, then the list beside the reader", () => {
   expect(resolveMailLargeLayout("auto", false)).toEqual({ rows: "columns", list: "full", reader: false });
@@ -51,4 +58,17 @@ test("a heading goes before the first item of every group", () => {
     [3, "week"],
     [4, "earlier"],
   ]);
+});
+
+test("the time column samples hold the longest relative times and dates the locale shows", () => {
+  const samples = mailTimeColumnSamples({ locale: "de", timeZone: zone }, now);
+  expect(samples).toContain("vor 23 Stunden");
+  expect(samples).toContain("vor 59 Sekunden");
+  expect(samples).toContain("28. Sept. 2026");
+  expect(samples).not.toContain("gestern");
+  expect(mailTimeColumnSamples({ locale: "en", timeZone: zone }, now)).toContain("23 hours ago");
+});
+
+test("the time column sizer is one CSS string with one sample per line", () => {
+  expect(mailTimeColumnSizer(["vor 23 Stunden", 'a "quoted" \\ value'])).toBe('"vor 23 Stunden\\A a \\"quoted\\" \\\\ value"');
 });
