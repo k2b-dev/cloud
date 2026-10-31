@@ -166,10 +166,10 @@ export type BoardOrderEntry = { kind: "column"; id: string } | { kind: SpaceVirt
 
 const selectVirtual = (db: typeof sql, spaceId: string) =>
   db<SpaceVirtualColumn[]>`
-    SELECT kind, rank::text AS rank
-    FROM spaces.virtual_columns
-    WHERE space_id = ${spaceId}
-    ORDER BY rank, kind
+    SELECT v.kind, v.rank::text AS rank
+    FROM spaces.virtual_columns v
+    WHERE v.space_id = ${spaceId}
+    ORDER BY v.rank, v.kind
   `;
 
 /**
