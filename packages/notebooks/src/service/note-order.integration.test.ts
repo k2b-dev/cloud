@@ -169,7 +169,8 @@ postgresTest("create with position renumbers, PATCH shares placement semantics, 
     expect((await resetOrder({ notebookId, parentId: parent.id })).ok).toBe(true);
     expect((await level(notebookId, parent.id)).map((note) => [note.id, note.position])).toEqual([a, b, c, d].map((note) => [note.id, 0]));
     expect((await get({ id: parent.id }))?.position).toBe(1);
-    expect(invalidated).toHaveBeenCalledWith({ notebookId, reason: "bulk", scopes: ["tree"] });
+    // The hint is written in the reset's own transaction.
+    expect(invalidated).toHaveBeenCalledWith({ notebookId, reason: "bulk", scopes: ["tree"] }, expect.anything());
     await resetOrder({ notebookId, parentId: parent.id });
     expect(invalidated).toHaveBeenCalledTimes(1);
     expect((await newNote(notebookId, "E", parent.id)).position).toBe(0);
