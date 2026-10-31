@@ -98,6 +98,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
       if (!definition) throw new Error(`Unexpected setting ${key}`);
       return definition.default;
     });
+    ownerState.set(ids.admin, { title: "Mailbox today", admin: true });
     ownerSpy = spyOn(access, "readCodeOwner").mockImplementation(async (owner, context) => {
       if (owner.kind === "person")
         return owner.userId === (context.authority.accessSubject.type === "user" ? context.authority.accessSubject.userId : null)
@@ -317,11 +318,11 @@ databaseSuite()("Core Code data and Query authorization", () => {
     ).rejects.toThrow();
   });
   test("creator deletion erases attribution without deleting resource Code, its account or immutable versions", async () => {
+    ownerState.set(ids.creator, { title: "Survives", admin: true });
     const resource = await createCode(
       { owner: { kind: "resource", ref: { type: "example.mailbox", id: "creator-deletion" } }, title: "Survives" },
       ctx(ids.creator, true),
     );
-    ownerState.set(ids.creator, { title: "Survives", admin: true });
     const version = await createCodeVersion(
       { codeId: resource.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null },
       ctx(ids.creator, true),
@@ -374,6 +375,12 @@ databaseSuite()("Core Code data and Query authorization", () => {
       code: "NOT_FOUND",
     });
   });
+  test("creation requires actual owner administration even for Cloud administrators", async () => {
+    ownerSpy.mockResolvedValueOnce({ title: "Existing owner", admin: false });
+    await expect(
+      createCode({ owner: { kind: "resource", ref: { type: "example.mailbox", id: "not-admin" } }, title: "Denied" }, ctx(ids.admin, true)),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
   test("shares upsert one principal and permission changes take effect", async () => {
     const first = await addCodeShare(code.id, { type: "user", userId: ids.editor }, "reader", ctx(ids.owner));
     const second = await addCodeShare(code.id, { type: "user", userId: ids.editor }, "editor", ctx(ids.owner));
@@ -401,11 +408,16 @@ databaseSuite()("Core Code data and Query authorization", () => {
       { owner: { kind: "resource", ref: { type: "example.mailbox", id: "reader-outage" } }, title: "Readable" },
       ctx(ids.admin, true),
     );
-    ownerState.set(ids.admin, { title: "Mailbox", admin: true });
     await addCodeShare(resource.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.admin, true));
-    ownerState.delete(ids.admin);
     ownerSpy.mockRejectedValueOnce(new access.CodeOwnerUnavailableError("Provider offline"));
     expect((await readCode(resource.id, ctx(ids.reader))).permission).toBe("reader");
+    ownerSpy.mockRejectedValueOnce(new access.CodeOwnerUnavailableError("Provider offline"));
+    await expect(
+      createCodeVersion(
+        { codeId: resource.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null },
+        ctx(ids.reader),
+      ),
+    ).rejects.toBeInstanceOf(access.CodeOwnerUnavailableError);
   });
   test("unfiltered lists avoid remote owner scans; exact owners check live administration", async () => {
     const resource = await createCode(
@@ -416,6 +428,9 @@ databaseSuite()("Core Code data and Query authorization", () => {
     ownerSpy.mockClear();
     const unfiltered = await listCodes({ limit: 20 }, ctx(ids.stranger));
     expect(unfiltered.items.some((item) => item.id === resource.id)).toBe(false);
+    expect(ownerSpy).not.toHaveBeenCalled();
+    const adminList = await listCodes({ limit: 20 }, ctx(ids.admin, true));
+    expect(adminList.items.some((item) => item.id === resource.id)).toBe(true);
     expect(ownerSpy).not.toHaveBeenCalled();
     const filtered = await listCodes({ owner: resource.owner, limit: 20 }, ctx(ids.stranger));
     expect(filtered.items.some((item) => item.id === resource.id)).toBe(true);
@@ -442,7 +457,12 @@ databaseSuite()("Core Code data and Query authorization", () => {
   });
   test("valid large results finish and remain readable in full through bounded chunks", async () => {
     const largeRun = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "large-result", input: null });
-    const result = { rows: "ä😀".repeat(20000), numbers: Array.from({ length: 1000 }, () => 1e100), escaped: "NUL\u0000" };
+    const result = {
+      rows: "ä😀".repeat(20000),
+      numbers: Array.from({ length: 1000 }, () => 1e100),
+      escaped: "NUL\u0000",
+      surrogate: "\ud800",
+    };
     await sql.begin(async (tx) => {
       const ordinal = await appendCodeCall(
         { runId: largeRun, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },

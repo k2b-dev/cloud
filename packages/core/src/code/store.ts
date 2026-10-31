@@ -4,7 +4,7 @@ import { type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
 import type { SQL, TransactionSQL } from "bun";
 import type { z } from "zod";
-import { type CodeContext, CodeDataError, codePerson, readCodeOwner, requireCodePermission } from "./access";
+import { type CodeContext, CodeDataError, codePermission, codePerson, readCodeOwner, requireCodePermission } from "./access";
 import {
   CODE_INLINE_JSON_BYTES,
   CODE_RESULT_STORAGE_BYTES,
@@ -96,11 +96,8 @@ export const listCodes = async (input: { owner?: CodeOwner; limit: number; curso
   const items = [];
   for (const row of rows.slice(0, input.limit)) {
     const code = mapCode(row);
-    try {
-      items.push({ code, permission: await requireCodePermission(code, context) });
-    } catch (error) {
-      if (!(error instanceof CodeDataError && error.code === "NOT_FOUND")) throw error;
-    }
+    const permission = await codePermission(code, context, sql, input.owner ? "read" : "skip");
+    if (permission) items.push({ code, permission });
   }
   return {
     items: items.map(({ code, permission }) => ({ ...code, permission })),
@@ -133,7 +130,7 @@ const jsonbBytes = async (text: string, db: CodeDb): Promise<number> => {
   if (!row) throw new Error("JSON size query returned no row");
   return row.bytes;
 };
-/** Read complete text in bounded UTF-16 chunks, preserving surrogate pairs. */
+/** Bounded UTF-16 chunks preserve pairs; a one-unit request may return one two-unit pair to make progress. */
 export const codeTextChunk = (text: string, offset: number, length: number) => {
   if (offset > 0 && /[\uD800-\uDBFF]/.test(text[offset - 1] ?? "") && /[\uDC00-\uDFFF]/.test(text[offset] ?? ""))
     throw new CodeDataError("BAD_INPUT", "Offset splits a surrogate pair.");
@@ -164,7 +161,7 @@ export const createCode = async (input: { owner: CodeOwner; title: string }, con
   } else {
     const presentation = await readCodeOwner(owner, context);
     if (!presentation) throw new CodeDataError("NOT_FOUND", "Code owner not found.");
-    if (!user.roles.includes("admin") && !presentation.admin) throw new CodeDataError("FORBIDDEN", "Owner administration required.");
+    if (!presentation.admin) throw new CodeDataError("FORBIDDEN", "Owner administration required.");
   }
   const title = input.title.trim();
   jsonText(title, true);

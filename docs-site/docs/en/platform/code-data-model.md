@@ -24,7 +24,9 @@ type CodeOwner =
   | { kind: "app"; appId: string };
 ```
 
-A person creates their own personal Code and can own several Codes. A resource or an application can own at most
+A person creates their own personal Code and can own several Codes.
+Creating resource or application Code requires current owner administration,
+including for Cloud administrators. A resource or an application can own at most
 one. Resource identity uses `CloudResourceRef`; Core does not interpret the
 owning application's domain IDs.
 
@@ -88,7 +90,9 @@ check current permissions in Core's Code service.
 
 Without an owner filter, a normal caller lists their personal and explicitly
 shared Code. To discover Code through live owner administration, supply the
-exact resource or application owner. Cloud administrators list all Code.
+exact resource or application owner. Unfiltered pages never call owner
+providers, including for Cloud administrators, who list all Code. Open the
+Code or filter its exact owner to resolve live editor rights.
 Code IDs provide the list cursor; run history uses a cursor containing the
 exact creation timestamp and run ID, so newer runs do not shift later pages.
 Treat both cursors as opaque. If an owner provider is unavailable, an explicit
@@ -103,7 +107,8 @@ insufficient credential scopes return `FORBIDDEN`.
 For version text, select `content: { kind: "source", path: "code.ts" }`,
 `{ kind: "bundle" }` or `{ kind: "manifest" }`. `offset` defaults to zero;
 `length` defaults to and cannot exceed 16,384 UTF-16 code units. Follow
-`content.nextOffset` until null. Chunks preserve surrogate pairs. Without a
+`content.nextOffset` until null. Chunks preserve surrogate pairs; a one-unit
+request can return one two-unit pair to make progress. Without a
 content selector, the Query returns metadata and `content: null`.
 
 `run.read` returns `contents: null` for readers. For editors, `contents`

@@ -66,7 +66,10 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
     const app = await getApp(owner.appId);
     if (!app) return null;
     const entries =
-      app.access?.kind === "grants" ? await sql<{ access_id: string }[]>`SELECT access_id FROM auth.app_access WHERE app_id=${app.id}` : [];
+      app.access?.kind === "grants"
+        ? await sql<{ access_id: string }[]>`SELECT j.access_id FROM auth.app_access j JOIN auth.access a ON a.id=j.access_id
+        WHERE j.app_id=${app.id} AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)`
+        : [];
     const permission = await getEffectivePermission({
       accessIds: entries.map((entry) => entry.access_id),
       subject: context.authority.accessSubject,
@@ -93,8 +96,15 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
   return { title: result.data.data.view.title, admin: result.data.data.view.permission === "admin" };
 };
 
-/** Default editors are the personal owner or live owner administrators; explicit shares add editors/readers. */
-export const codePermission = async (code: Code, context: CodeContext, db: SQL = sql): Promise<CodePermission | null> => {
+/** Default editors are the personal owner or live owner administrators; explicit shares add editors/readers.
+ * Unfiltered lists skip owner providers; edits fail visibly when live owner authority cannot be checked.
+ */
+export const codePermission = async (
+  code: Code,
+  context: CodeContext,
+  db: SQL = sql,
+  ownerCheck: "read" | "edit" | "skip" = "read",
+): Promise<CodePermission | null> => {
   const user = codePerson(context);
   const cloudAdmin = user.roles.includes("admin");
   if (code.owner.kind === "person" && code.owner.userId === user.id) return "editor";
@@ -107,11 +117,11 @@ export const codePermission = async (code: Code, context: CodeContext, db: SQL =
     db,
   );
   if (permission === "write" || permission === "admin") return "editor";
-  if (code.owner.kind !== "person") {
+  if (code.owner.kind !== "person" && ownerCheck !== "skip") {
     try {
       if ((await readCodeOwner(code.owner, context))?.admin) return "editor";
     } catch (error) {
-      if (!(error instanceof CodeOwnerUnavailableError) || (permission !== "read" && !cloudAdmin)) throw error;
+      if (!(error instanceof CodeOwnerUnavailableError) || ownerCheck === "edit" || (permission !== "read" && !cloudAdmin)) throw error;
       logger("core:code-owner").warn("Code owner unavailable; retaining existing reader access", { codeId: code.id });
     }
   }
@@ -119,7 +129,7 @@ export const codePermission = async (code: Code, context: CodeContext, db: SQL =
 };
 /** Missing and inaccessible Code have the same result. */
 export const requireCodePermission = async (code: Code, context: CodeContext, editor = false, db: SQL = sql): Promise<CodePermission> => {
-  const permission = await codePermission(code, context, db);
+  const permission = await codePermission(code, context, db, editor ? "edit" : "read");
   if (!permission || (editor && permission !== "editor")) throw new CodeDataError("NOT_FOUND", "Code not found.");
   if (editor) codePerson(context, true);
   return permission;

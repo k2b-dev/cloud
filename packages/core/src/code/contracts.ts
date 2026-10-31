@@ -135,7 +135,13 @@ const pageInput = {
 const page = { nextCursor: z.string().nullable() };
 const textChunkInput = {
   offset: z.number().int().min(0).default(0).describe("UTF-16 offset, starting at zero or returned as nextOffset."),
-  length: z.number().int().min(1).max(16_384).default(16_384).describe("Maximum UTF-16 code units in this text chunk."),
+  length: z
+    .number()
+    .int()
+    .min(1)
+    .max(16_384)
+    .default(16_384)
+    .describe("Target UTF-16 code units; a single surrogate pair may use two units."),
 };
 const textChunk = z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).strict();
 /** Exact timestamp precision is retained in the cursor, including Postgres microseconds. */
@@ -181,7 +187,13 @@ export const codeQueryContracts = {
           .optional()
           .describe("Select version text to read; omit for metadata only."),
         offset: z.number().int().min(0).default(0).describe("UTF-16 offset, starting at zero or returned as nextOffset."),
-        length: z.number().int().min(1).max(16_384).default(16_384).describe("Maximum UTF-16 code units in this text chunk."),
+        length: z
+          .number()
+          .int()
+          .min(1)
+          .max(16_384)
+          .default(16_384)
+          .describe("Target UTF-16 code units; a single surrogate pair may use two units."),
       })
       .strict(),
     data: z
