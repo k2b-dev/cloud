@@ -145,6 +145,8 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         appId: invocation.appId,
         capabilityId: invocation.capabilityId,
         input: invocation.input,
+        ...(invocation.target ? { target: invocation.target } : {}),
+        ...(invocation.refs ? { refs: invocation.refs } : {}),
         authority: caller.authority,
         locale: caller.locale ?? undefined,
         origin: caller.origin ?? "app",
@@ -175,6 +177,8 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
               targetApp: invocation.appId,
               capabilityId: invocation.capabilityId,
               input: invocation.input,
+              ...(invocation.target ? { target: invocation.target } : {}),
+              ...(invocation.refs ? { refs: invocation.refs } : {}),
               ...(caller.mandate ? { mandateId: caller.mandate.id, mandateRevision: caller.mandate.revision } : {}),
               ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
               ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
@@ -188,7 +192,11 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
                   }
                 : {}),
             }
-          : { input: invocation.input },
+          : {
+              input: invocation.input,
+              ...(invocation.target ? { target: invocation.target } : {}),
+              ...(invocation.refs ? { refs: invocation.refs } : {}),
+            },
       ),
     });
     const workloadAppId = caller.app?.appId ?? caller.mandate?.callingAppId ?? caller.workload?.appId;

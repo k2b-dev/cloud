@@ -1,5 +1,7 @@
+import { capabilityToolInputSchema, normalizeCapabilityCall } from "../capabilities/calls";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "../contracts/app-events";
 import { appStatusIssues } from "../contracts/app-status";
+import type { CapabilityInvocationBody } from "../contracts/capabilities";
 import {
   CapabilityAppStatusManifestSchema,
   type CapabilityEventManifest,
@@ -133,6 +135,8 @@ const TYPE_FIELDS = {
   access: true,
 } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
+  target: true,
+  refs: true,
   app: true,
   appOnly: true,
   title: true,
@@ -145,6 +149,9 @@ const QUERY_FIELDS = {
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
+  target: true,
+  refs: true,
+  code: true,
   app: true,
   title: true,
   description: true,
@@ -698,6 +705,9 @@ const compileOperationSchemas = (definition: QueryDefinition | CapabilityActionD
     schemaHash: capabilityHash({
       inputSchema,
       dataSchema,
+      ...(definition.target !== undefined ? { target: definition.target } : {}),
+      ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
+      ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...("appOnly" in definition && definition.appOnly !== undefined ? { appOnly: definition.appOnly } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
@@ -834,6 +844,13 @@ export const compileCapabilities = (
     if (definition.stream?.direction === "write" && "idempotency" in definition && definition.idempotency !== "required")
       throw new Error(`${label}: write streams require idempotency`);
     const schemas = compileOperationSchemas(definition, label);
+    if (definition.target !== undefined && !typeIds.has(qualifiedId(appId, definition.target)))
+      throw new Error(`${label} target must name a declared type of the same app: ${definition.target}`);
+    for (const [field, type] of Object.entries(definition.refs ?? {})) {
+      if (!field || field.length > 100 || !typeIds.has(qualifiedId(appId, type)))
+        throw new Error(`${label} ref ${field} must name a declared type of the same app: ${type}`);
+    }
+
     if (definition.universalSearch) {
       const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
       const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
@@ -851,6 +868,9 @@ export const compileCapabilities = (
       inputSchema: schemas.inputSchema,
       dataSchema: schemas.dataSchema,
       schemaHash: schemas.schemaHash,
+      ...(definition.target !== undefined ? { target: definition.target } : {}),
+      ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
+      ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       openWorld: definition.openWorld,
@@ -860,6 +880,12 @@ export const compileCapabilities = (
     for (const type of manifest.universalSearch?.scopeTypes ?? []) {
       if (!typeIds.has(qualifiedId(appId, type))) throw new Error(`${label} declares an unknown search scope type ${type}`);
     }
+    if (
+      (manifest.target !== undefined || manifest.refs !== undefined) &&
+      (manifest.universalSearch || capabilityQueryChecksActionOutcome(manifest))
+    )
+      throw new Error(`${label}: platform search and Action-check contracts do not supply target or refs`);
+    capabilityToolInputSchema(manifest);
     queries.set(localId, {
       definition,
       manifest,
@@ -871,6 +897,8 @@ export const compileCapabilities = (
     const reader = queries.get(type.reader);
     if (!reader) throw new Error(`Resource type ${type.localId} reader ${type.reader} must name an existing Query`);
     if (reader.manifest.appOnly) throw new Error(`Resource type ${type.localId} reader cannot be app-only`);
+    if (reader.manifest.target !== undefined || reader.manifest.refs !== undefined)
+      throw new Error(`Resource type ${type.localId} reader contract does not supply target or refs`);
     assertCanonicalReaderInput(reader.manifest.inputSchema, `Resource type ${type.localId} reader ${type.reader} input`);
   }
   const actions = new Map<string, CompiledCapabilityAction>();
@@ -929,6 +957,13 @@ export const compileCapabilities = (
     if (definition.stream?.direction === "write" && "idempotency" in definition && definition.idempotency !== "required")
       throw new Error(`${label}: write streams require idempotency`);
     const schemas = compileOperationSchemas(definition, label);
+    if (definition.target !== undefined && !typeIds.has(qualifiedId(appId, definition.target)))
+      throw new Error(`${label} target must name a declared type of the same app: ${definition.target}`);
+    for (const [field, type] of Object.entries(definition.refs ?? {})) {
+      if (!field || field.length > 100 || !typeIds.has(qualifiedId(appId, type)))
+        throw new Error(`${label} ref ${field} must name a declared type of the same app: ${type}`);
+    }
+
     const manifest = {
       localId,
       title: definition.title.trim(),
@@ -936,6 +971,9 @@ export const compileCapabilities = (
       inputSchema: schemas.inputSchema,
       dataSchema: schemas.dataSchema,
       schemaHash: schemas.schemaHash,
+      ...(definition.target !== undefined ? { target: definition.target } : {}),
+      ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
+      ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       destructive: definition.destructive,
@@ -950,6 +988,7 @@ export const compileCapabilities = (
           : {}),
       ...(definition.review ? { review: true as const } : {}),
     } satisfies CapabilityActionManifest;
+    capabilityToolInputSchema(manifest);
     actions.set(localId, {
       definition,
       manifest,
@@ -1287,9 +1326,19 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
     throw new Error(`Operation ${operation.localId} write streams require an idempotent Action`);
   }
   if ("appOnly" in operation && operation.appOnly !== undefined && operation.stream) throw new Error("App-only queries cannot use streams");
+  capabilityToolInputSchema(operation);
+  if (
+    !("idempotency" in operation) &&
+    (operation.target !== undefined || operation.refs !== undefined) &&
+    (operation.appOnly || operation.universalSearch || capabilityQueryChecksActionOutcome(operation))
+  )
+    throw new Error("Platform search and Action-check contracts do not supply target or refs");
   const expectedSchemaHash = capabilityHash({
     inputSchema: operation.inputSchema,
     dataSchema: operation.dataSchema,
+    ...(operation.target !== undefined ? { target: operation.target } : {}),
+    ...(operation.refs !== undefined ? { refs: operation.refs } : {}),
+    ...("code" in operation && operation.code !== undefined ? { code: operation.code } : {}),
     ...(operation.appPermission ? { appPermission: operation.appPermission } : {}),
     ...("appOnly" in operation && operation.appOnly !== undefined ? { appOnly: operation.appOnly } : {}),
     ...(operation.stream ? { stream: operation.stream } : {}),
@@ -1371,7 +1420,12 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
     ...manifest,
     types: manifest.types.map((type) => {
       const reader = type.reader === undefined ? undefined : queries.get(type.reader);
-      if (!reader || passes(() => assertCanonicalReaderInput(reader.inputSchema, `Resource type ${type.localId} reader input`)))
+      if (
+        !reader ||
+        (reader.target === undefined &&
+          reader.refs === undefined &&
+          passes(() => assertCanonicalReaderInput(reader.inputSchema, `Resource type ${type.localId} reader input`)))
+      )
         return type;
       const { reader: _unusable, ...withoutReader } = type;
       return withoutReader;
@@ -1555,6 +1609,8 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
       if (!currentSearchTokens.has(token)) issues.push(`Query ${operation.localId} removed Universal Search token ${token}`);
     }
     issues.push(...schemaEvolutionIssues(operation.inputSchema, current.inputSchema, `Query ${operation.localId} input`, "input"));
+    if (operation.target !== current.target || !sameSchema(operation.refs ?? {}, current.refs ?? {}))
+      issues.push(`Query ${operation.localId} changed its target contract`);
     issues.push(...schemaEvolutionIssues(operation.dataSchema, current.dataSchema, `Query ${operation.localId} data`, "data"));
   }
   for (const operation of previous.actions) {
@@ -1570,6 +1626,9 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
     if (operation.idempotency !== current.idempotency) issues.push(`Action ${operation.localId} idempotency changed`);
     if (operation.review && !current.review) issues.push(`Action ${operation.localId} review was removed`);
     issues.push(...schemaEvolutionIssues(operation.inputSchema, current.inputSchema, `Action ${operation.localId} input`, "input"));
+    if (operation.target !== current.target || !sameSchema(operation.refs ?? {}, current.refs ?? {}))
+      issues.push(`Action ${operation.localId} changed its target contract`);
+    if (operation.code !== current.code) issues.push(`Action ${operation.localId} changed Code availability`);
     issues.push(...schemaEvolutionIssues(operation.dataSchema, current.dataSchema, `Action ${operation.localId} data`, "data"));
   }
   return issues;
@@ -1678,10 +1737,28 @@ const isAppCapabilityContext = (
   context: CapabilityExecutionContext | CapabilityAppExecutionContext,
 ): context is CapabilityAppExecutionContext => context.actor.kind === "app";
 
+const callContext = (appId: string, operation: CapabilityQueryManifest | CapabilityActionManifest, params: CapabilityInvocationBody) => {
+  try {
+    const call = normalizeCapabilityCall(appId, operation, { input: params.input, target: params.target, refs: params.refs });
+    return { ok: true as const, target: call.target ?? undefined, refs: call.refs };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: {
+        code: "VALIDATION_FAILED",
+        message: error instanceof Error ? error.message : "Invalid capability target",
+        status: 400 as const,
+      },
+    };
+  }
+};
+
 export const invokeCompiledCapability = async (params: {
   compiled: CompiledCapabilities;
   kind: "query" | "action";
   localId: string;
+  target?: CapabilityInvocationBody["target"];
+  refs?: CapabilityInvocationBody["refs"];
   input: unknown;
   expectedSchemaHash: string | null;
   context: CapabilityExecutionContext | CapabilityAppExecutionContext;
@@ -1713,8 +1790,12 @@ export const invokeCompiledCapability = async (params: {
       },
     };
   }
+  const coordinates = callContext(params.compiled.manifest.appId, operation.manifest, params);
+  if (!coordinates.ok) return coordinates;
   let context: CapabilityExecutionContext | CapabilityAppExecutionContext = {
     ...params.context,
+    target: coordinates.target,
+    refs: coordinates.refs,
     via: capabilityVia(params.context.origin),
   };
   if (params.kind === "action") {
@@ -1846,6 +1927,8 @@ export const invokeCompiledCapability = async (params: {
 export const reviewCompiledCapability = async (params: {
   compiled: CompiledCapabilities;
   localId: string;
+  target?: CapabilityInvocationBody["target"];
+  refs?: CapabilityInvocationBody["refs"];
   input: unknown;
   expectedSchemaHash: string | null;
   context: CapabilityExecutionContext;
@@ -1883,6 +1966,8 @@ export const reviewCompiledCapability = async (params: {
       },
     };
   }
+  const coordinates = callContext(params.compiled.manifest.appId, operation.manifest, params);
+  if (!coordinates.ok) return coordinates;
   const input = operation.definition.input.safeParse(params.input);
   if (!input.success) {
     return {
@@ -1899,6 +1984,8 @@ export const reviewCompiledCapability = async (params: {
   try {
     const reviewed = await operation.definition.review(input.data, {
       ...params.context,
+      target: coordinates.target,
+      refs: coordinates.refs,
       via: capabilityVia(params.context.origin),
     });
     if (!reviewed.ok) {

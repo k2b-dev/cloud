@@ -48,3 +48,38 @@ describe("background capability authorization errors", () => {
     });
   });
 });
+
+test("legacy task grants require target-aware support for resource-bound operations", async () => {
+  const { compileCapabilities } = await import("../_internal/capabilities");
+  const registry = await import("../_internal/registry");
+  const { z } = await import("zod");
+  const manifest = compileCapabilities("demo", {
+    protocolVersion: 2,
+    types: { book: { title: "Book", description: "A book." } },
+    actions: {
+      write: {
+        title: "Write",
+        description: "Write a book.",
+        target: "book",
+        approval: "none",
+        idempotency: "none",
+        destructive: false,
+        openWorld: false,
+        input: z.object({ title: z.string().describe("Title.") }).strict(),
+        data: z.object({}).strict(),
+        run: () => ({ ok: true, data: { data: {} } }),
+      },
+    },
+  }).manifest;
+  spyOn(registry, "getCapability").mockResolvedValue({
+    appId: "demo",
+    appName: "Demo",
+    appIcon: "ti ti-book",
+    appDescription: "Demo",
+    endpoint: "http://demo.test",
+    manifest,
+  });
+  await expect(aiChatTasks.validateGrants([{ appId: "demo", capabilityId: "write", kind: "action", fixedInput: {} }])).rejects.toThrow(
+    "target-aware mandate",
+  );
+});

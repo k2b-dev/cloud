@@ -10,8 +10,13 @@ import {
   type ToolCallBlock,
   type ToolStreamIssue,
 } from "@k2b/nessi";
+import { z } from "zod";
+import { compileCapabilities } from "../_internal/capabilities";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import { capabilityCallDigest } from "../capabilities/calls";
 import type { CapabilityActionReview } from "../contracts/capabilities";
+import { defineCapabilities } from "../contracts/capabilities";
+import { approvalArgsDigest } from "../services/approvals";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiTurnAllowsRememberedApprovals,
@@ -19,6 +24,7 @@ import {
   aiWebsiteApprovalScope,
   parseAiWebsiteApprovalScope,
 } from "./approvals";
+import { buildAiCapabilityCatalog } from "./capabilities";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import {
   buildMalformedToolCallRepairText,
@@ -1631,4 +1637,59 @@ test("the pipeline keeps the review and check after an approval and execution en
     save.mockRestore();
     publish.mockRestore();
   }
+});
+
+test("chat approval snapshots use the loaded target contract and exclude model-only wording", () => {
+  const manifest = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { book: { title: "Book", description: "A book." } },
+      actions: {
+        move: {
+          title: "Move",
+          description: "Move a contact.",
+          target: "book",
+          refs: { destination: "book" },
+          input: z.object({ contactId: z.string().describe("Contact ID.") }).strict(),
+          data: z.object({}).strict(),
+          destructive: false,
+          openWorld: false,
+          idempotency: "none",
+          approval: "rememberable",
+          review: () => ({ ok: true, data: { message: "Move contact?", approvalScope: "move-contact" } }),
+          run: () => ({ ok: true, data: { data: {} } }),
+        },
+      },
+    }),
+  ).manifest;
+  const entry = buildAiCapabilityCatalog([
+    {
+      appId: "demo",
+      appName: "Demo",
+      appIcon: "ti ti-book",
+      appDescription: "Demo",
+      endpoint: "http://demo.test",
+      manifest,
+    },
+  ])[0]!;
+  const args = { book: "source", destination: "destination", contactId: "contact", approvalReason: "Needed for this task." };
+  const call = __aiExecutorTest.capabilityApprovalArgs(entry, args);
+  expect(call).toEqual({
+    capability: "demo.move",
+    target: { type: "demo.book", id: "source" },
+    refs: { destination: { type: "demo.book", id: "destination" } },
+    input: { contactId: "contact" },
+  });
+  const normalized = {
+    capability: "demo.move",
+    target: { type: "demo.book", id: "source" },
+    refs: { destination: { type: "demo.book", id: "destination" } },
+    input: { contactId: "contact" },
+  };
+  expect(approvalArgsDigest(call)).toBe(capabilityCallDigest(normalized));
+  expect(approvalArgsDigest(__aiExecutorTest.capabilityApprovalArgs(entry, { ...args, book: "other" }))).not.toBe(approvalArgsDigest(call));
+  const legacy = { ...entry, operation: { ...entry.operation, target: undefined, refs: undefined } };
+  expect(__aiExecutorTest.capabilityApprovalArgs(legacy, args)).toBe(args);
+  expect(__aiExecutorTest.capabilityApprovalArgs(undefined, args)).toBe(args);
 });

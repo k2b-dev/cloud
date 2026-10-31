@@ -4,7 +4,12 @@ import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { createCapabilityDeadline, withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import { authorizeCodeExecution } from "../ai/code-execution";
-import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityAppIdSchema, CapabilityLocalIdSchema } from "../contracts/capabilities";
+import {
+  CAPABILITY_MAX_REQUEST_BYTES,
+  CapabilityAppIdSchema,
+  CapabilityInvocationBodySchema,
+  CapabilityLocalIdSchema,
+} from "../contracts/capabilities";
 import {
   isNestedSourceCurrent,
   matchesInvocationSubject,
@@ -18,7 +23,7 @@ const Input = z
   .object({
     targetApp: CapabilityAppIdSchema,
     capabilityId: CapabilityLocalIdSchema,
-    input: z.unknown(),
+    ...CapabilityInvocationBodySchema.shape,
   })
   .strict()
   .refine((value) => Object.hasOwn(value, "input"));
@@ -118,6 +123,8 @@ export function createIdentityChildInvocationRoutes(
           appId: input.data.targetApp,
           capabilityId: input.data.capabilityId,
           input: input.data.input,
+          target: input.data.target,
+          refs: input.data.refs,
           ...(parent.credential_kind === "mandate"
             ? {
                 mandate: {

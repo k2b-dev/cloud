@@ -109,6 +109,9 @@ type UpstreamFetch = (input: string | URL | Request, init?: RequestInit) => Prom
 
 const invoke = async (options: {
   key: string;
+  entry?: CapabilityRegistryEntry;
+  target?: { type: string; id: string };
+  refs?: Record<string, { type: string; id: string }>;
   input?: unknown;
   fetch: UpstreamFetch;
   actionTimeoutMs?: number;
@@ -123,9 +126,11 @@ const invoke = async (options: {
     appId: "demo",
     capabilityId: "add",
     input: options.input ?? { name: "first" },
+    target: options.target,
+    refs: options.refs,
     authority,
     dependencies: {
-      getCapability: async () => registryEntry,
+      getCapability: async () => options.entry ?? registryEntry,
       fetch: options.fetch,
       withActiveSigner,
       ...(options.actionTimeoutMs === undefined ? {} : { actionTimeoutMs: options.actionTimeoutMs }),
@@ -201,6 +206,31 @@ suite("platform capability idempotency claims", () => {
     const conflict = await invoke({ key, input: { name: "second" }, fetch: succeeds });
     expect(conflict.status).toBe(409);
     expect(conflict.body).toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+  });
+
+  test("the same key cannot replay an effect at another target or additional ref", async () => {
+    const entry = {
+      ...registryEntry,
+      manifest: {
+        ...compiled.manifest,
+        actions: compiled.manifest.actions.map((action) => ({ ...action, target: "item", refs: { destination: "item" } })),
+      },
+    };
+    const key = `target-conflict-${crypto.randomUUID()}`;
+    let forwarded = 0;
+    const fetch: UpstreamFetch = async (...args) => {
+      forwarded++;
+      return succeeds(...args);
+    };
+    const first = { entry, key, target: { type: "demo.item", id: "one" }, refs: { destination: { type: "demo.item", id: "two" } }, fetch };
+    expect((await invoke(first)).status).toBe(200);
+    expect((await invoke(first)).status).toBe(200);
+    for (const changed of [
+      { ...first, target: { type: "demo.item", id: "other" } },
+      { ...first, refs: { destination: { type: "demo.item", id: "other" } } },
+    ])
+      expect(await invoke(changed)).toMatchObject({ status: 409, body: { code: "IDEMPOTENCY_CONFLICT" } });
+    expect(forwarded).toBe(1);
   });
 
   test("hashes input independently of key order", async () => {

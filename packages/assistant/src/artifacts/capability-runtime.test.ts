@@ -8,7 +8,7 @@ import { z } from "zod";
 import { runtimeCapabilities } from "./capability-runtime";
 import { testIdentity } from "./test-identity";
 
-for (const outcome of ["no scope", "review throws", "review unavailable", "no review", "mandate denied"] as const) {
+for (const outcome of ["no scope", "review throws", "review unavailable", "no review", "mandate denied", "bound target"] as const) {
   test(`background runtime capability ${outcome} refuses before inserting a call or invoking the app`, async () => {
     const identity = testIdentity("00000000-0000-4000-8000-000000000001");
     const conversationId = "00000000-0000-4000-8000-000000000002";
@@ -18,8 +18,10 @@ for (const outcome of ["no scope", "review throws", "review unavailable", "no re
       "demo",
       defineCapabilities({
         protocolVersion: 2,
+        types: { book: { title: "Book", description: "A book." } },
         actions: {
           write: {
+            ...(outcome === "bound target" ? { target: "book" } : {}),
             title: "Aufgabe zuweisen",
             description: "Assign a task.",
             input: z.object({}).strict(),
@@ -83,6 +85,15 @@ for (const outcome of ["no scope", "review throws", "review unavailable", "no re
         { locale: "de", signal: new AbortController().signal },
         { turnId, mandate },
       );
+      if (outcome === "bound target") {
+        await expect(call).rejects.toThrow("target-aware mandate");
+        expect(authorize).not.toHaveBeenCalled();
+        expect(marker).not.toHaveBeenCalled();
+        expect(review).not.toHaveBeenCalled();
+        expect(invoke).not.toHaveBeenCalled();
+        expect(order).toEqual([]);
+        return;
+      }
       if (outcome === "mandate denied") {
         await expect(call).rejects.toBe(denied);
         expect(marker).not.toHaveBeenCalled();

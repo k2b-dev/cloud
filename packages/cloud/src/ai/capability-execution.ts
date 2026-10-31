@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ToolContext } from "@k2b/nessi";
 import { capabilityActionReceiptIssues, capabilityQueryChecksActionOutcome } from "../_internal/capability-reviews";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
+import { capabilityCallFromTool, capabilityInvocationBody } from "../capabilities/calls";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   type CapabilityActionCallReview,
@@ -112,6 +113,10 @@ const dispatchAiCapability = async (
   if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.authority.actor.user.id) {
     throw new Error("Cloud capability authority is inconsistent.");
   }
+  const body =
+    input.entry.operation.target !== undefined || input.entry.operation.refs !== undefined
+      ? capabilityInvocationBody(capabilityCallFromTool(input.entry.appId, input.entry.operation, input.args))
+      : { input: input.args };
   const dispatch = input.dependencies?.dispatch ?? dispatchCapability;
   const headers = new Headers();
   if (input.locale) headers.set(LOCALE_HEADER, input.locale);
@@ -149,7 +154,7 @@ const dispatchAiCapability = async (
     review,
     appId: input.entry.appId,
     capabilityId: input.entry.operation.localId,
-    input: input.args,
+    ...body,
     authority: input.authority,
     mandate: input.mandate
       ? {

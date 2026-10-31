@@ -102,6 +102,8 @@ export const reviewCapabilityAction = async <TInput = unknown>(
         appId: invocation.appId,
         capabilityId: invocation.capabilityId,
         input: invocation.input,
+        ...(invocation.target ? { target: invocation.target } : {}),
+        ...(invocation.refs ? { refs: invocation.refs } : {}),
         authority: caller.authority,
         locale: caller.locale ?? undefined,
         origin: caller.origin ?? "app",
@@ -121,7 +123,13 @@ export const reviewCapabilityAction = async <TInput = unknown>(
           undefined,
           invocation.signal,
         ),
-        { body: JSON.stringify({ input: invocation.input }) },
+        {
+          body: JSON.stringify({
+            input: invocation.input,
+            ...(invocation.target ? { target: invocation.target } : {}),
+            ...(invocation.refs ? { refs: invocation.refs } : {}),
+          }),
+        },
       ),
     );
     return await readCapabilityResponse(
@@ -166,6 +174,7 @@ export async function transferCapabilityStream(
   return caller.transport ? caller.transport(request) : fetch(request, { redirect: "error" });
 }
 
+export type { CapabilityInvocationBody, NormalizedCapabilityCall } from "../contracts/capabilities";
 export {
   CALENDAR_VIEW_MAX_RANGE_MS,
   type CalendarReadResult,
@@ -182,6 +191,13 @@ export {
   listCalendarSources,
   readCalendarEvents,
 } from "./calendar-sources";
+export {
+  capabilityCallDigest,
+  capabilityCallFromTool,
+  capabilityInvocationBody,
+  capabilityToolInputSchema,
+  normalizeCapabilityCall,
+} from "./calls";
 export { type DiscussionProvider, discussionProviders } from "./discussion-providers";
 export { ResourceReaderRateLimited, type ResourceReadersResult, readResourcePrincipals } from "./resource-readers";
 export {

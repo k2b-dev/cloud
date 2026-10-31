@@ -15,7 +15,7 @@ import { sql } from "../runtime/clients";
 import { stubConnections } from "../runtime/connections.test-fixture";
 import { auth, type RequestAuthority } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { type CloudInvocationClaims, signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import {
   createCapabilityRoutes as buildCapabilityRoutes,
@@ -1996,5 +1996,133 @@ test("calendar sources are discovered and read through Core's normal capability 
   } finally {
     Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: previous, configurable: true });
     setSystemTime();
+  }
+});
+
+test("resource target and refs traverse HTTP, dispatcher, review and provider without entering input", async () => {
+  const { invokeCompiledCapability, reviewCompiledCapability } = await import("../_internal/capabilities");
+  const built = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { folder: { title: "Folder", description: "A folder." } },
+      actions: {
+        move: {
+          target: "folder",
+          refs: { destination: "folder" },
+          title: "Move",
+          description: "Move an item between folders.",
+          input: z.object({ id: z.string().describe("Item in the folder.") }).strict(),
+          data: z.object({ from: z.string(), to: z.string() }).strict(),
+          destructive: false,
+          openWorld: false,
+          idempotency: "none",
+          review: (_, context) => ok({ message: `Move from ${context.target?.id} to ${context.refs?.destination?.id}.` }),
+          run: (_, context) => ok({ data: { from: context.target?.id ?? "missing", to: context.refs?.destination?.id ?? "missing" } }),
+        },
+      },
+    }),
+  );
+  const app = { ...entry(), manifest: built.manifest };
+  const body = {
+    target: { type: "demo.folder", id: "source" },
+    refs: { destination: { type: "demo.folder", id: "destination" } },
+    input: { id: "item" },
+  };
+  const calls: unknown[] = [];
+  const routes = createCapabilityRoutes({
+    authenticate,
+    getCapability: async () => app,
+    fetch: async (url, init) => {
+      const forwarded = JSON.parse(String(init?.body));
+      calls.push(forwarded);
+      const request = new Request(url, init);
+      const invocation = {
+        compiled: built,
+        localId: "move",
+        ...forwarded,
+        expectedSchemaHash: request.headers.get("x-cloud-capability-schema-hash"),
+        context: {
+          actor: resourceAuthority.actor,
+          accessSubject: resourceAuthority.accessSubject,
+          user: null,
+          requestId: "target-wire",
+          locale: "en",
+          origin: "http" as const,
+          signal: request.signal,
+        },
+      };
+      const result = String(url).endsWith("/review")
+        ? await reviewCompiledCapability(invocation)
+        : await invokeCompiledCapability({ ...invocation, kind: "action" });
+      return result.ok ? Response.json(result.data) : Response.json(result.error, { status: result.error.status });
+    },
+  });
+  for (const suffix of ["/review", ""]) {
+    const response = await routes.request(`/capabilities/v1/actions/demo/move${suffix}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(
+      suffix ? { message: "Move from source to destination." } : { data: { from: "source", to: "destination" } },
+    );
+  }
+  expect(calls).toEqual([body, body]);
+  const invalid = await routes.request("/capabilities/v1/actions/demo/move", {
+    method: "POST",
+    body: JSON.stringify({ ...body, target: { type: "other.folder", id: "source" } }),
+  });
+  expect(invalid.status).toBe(400);
+  expect(calls).toHaveLength(2);
+  const parentInvocation: CloudInvocationClaims = {
+    iss: "https://cloud.example.test",
+    aud: "app:demo",
+    token_use: "invocation",
+    sub: "11111111-1111-4111-8111-111111111111",
+    principal_type: "service_account",
+    access_subject_type: "service_account",
+    access_subject_id: "11111111-1111-4111-8111-111111111111",
+    act: { sub: "app:core" },
+    credential_kind: "mandate",
+    mandate_id: "22222222-2222-4222-8222-222222222222",
+    mandate_revision: 1,
+    scopes: ["read", "write"],
+    op: "capability.action:move",
+    schema_hash: app.manifest.actions[0]!.schemaHash,
+    ver: 1,
+    jti: "33333333-3333-4333-8333-333333333333",
+    iat: 1793404800,
+    nbf: 1793404800,
+    exp: 1793404860,
+  };
+  for (const targetId of ["source", "other"]) {
+    for (const source of ["direct", "parent"] as const) {
+      for (const review of [true, false]) {
+        const response = await dispatchCapability({
+          request: new Request("http://cloud.test/api/capabilities"),
+          origin: "app",
+          kind: "actions",
+          appId: "demo",
+          capabilityId: "move",
+          ...body,
+          target: { type: "demo.folder", id: targetId },
+          review,
+          authority: resourceAuthority,
+          ...(source === "direct"
+            ? { mandate: { mandateId: "11111111-1111-4111-8111-111111111111", mandateRevision: 1, ownerAppId: "core" } }
+            : { parentInvocation }),
+          dependencies: {
+            getCapability: async () => app,
+            fetch: async () => {
+              throw new Error("Must not forward");
+            },
+          },
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ code: "MANDATE_POLICY_DENIED" });
+      }
+    }
   }
 });

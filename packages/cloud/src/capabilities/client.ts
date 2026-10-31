@@ -83,7 +83,11 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
       method: "POST",
       credentials: "same-origin",
       headers,
-      body: JSON.stringify({ input: invocation.input }),
+      body: JSON.stringify({
+        input: invocation.input,
+        ...(invocation.target ? { target: invocation.target } : {}),
+        ...(invocation.refs ? { refs: invocation.refs } : {}),
+      }),
       signal: invocation.signal,
     });
     const result = await readCapabilityResponse(response, capabilityResultSchema(dataSchema, { consumer: true }));
@@ -144,7 +148,11 @@ export const reviewCapabilityAction = async <TInput = unknown>(
       method: "POST",
       credentials: "same-origin",
       headers,
-      body: JSON.stringify({ input: invocation.input }),
+      body: JSON.stringify({
+        input: invocation.input,
+        ...(invocation.target ? { target: invocation.target } : {}),
+        ...(invocation.refs ? { refs: invocation.refs } : {}),
+      }),
       signal: invocation.signal,
     });
     return await readCapabilityResponse(

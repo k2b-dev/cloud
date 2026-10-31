@@ -1166,6 +1166,81 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
+  test("resource-bound script calls persist one normalized approval through execution", async () => {
+    const applet = await artifacts.create({ title: "Target capability", source }, owner);
+    const manifest = compileCapabilityManifest(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        types: { book: { title: "Book", description: "A book." } },
+        actions: {
+          move: {
+            title: "Move",
+            description: "Move a contact.",
+            target: "book",
+            refs: { destination: "book" },
+            input: z.object({ contactId: z.string().describe("Contact ID.") }).strict(),
+            data: z.unknown(),
+            approval: "rememberable",
+            idempotency: "required",
+            destructive: false,
+            openWorld: false,
+            review: async () => ok({ message: "Move contact?" }),
+            run: async () => ok({ data: {} }),
+          },
+        },
+      }),
+    );
+    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { appId: "demo", appName: "Demo", appIcon: "ti ti-book", appDescription: "Demo", manifest },
+    });
+    const review = spyOn(capabilityClient, "reviewCapabilityAction").mockResolvedValue({ ok: true, data: { message: "Move contact?" } });
+    const execute = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: {} } });
+    const wording = spyOn(capabilityClient, "getCapabilityActionWording").mockResolvedValue(null);
+    const caller = { cookie: "test-cookie", locale: "en" };
+    const request = {
+      id: crypto.randomUUID(),
+      name: "demo.move",
+      input: { book: "source", destination: "destination", contactId: "contact" },
+      artifactId: applet.id,
+    };
+    const call = {
+      capability: "demo.move",
+      target: { type: "demo.book", id: "source" },
+      refs: { destination: { type: "demo.book", id: "destination" } },
+      input: { contactId: "contact" },
+    };
+    try {
+      expect(await runtimeCapabilities.prepare(request, owner, caller)).toMatchObject({ status: "approval", call });
+      const [saved] = await sql<
+        { approval_id: string; prepared: { call: unknown } }[]
+      >`SELECT approval_id,prepared FROM assistant.capability_calls WHERE id=${request.id}::uuid`;
+      expect(saved?.prepared.call).toEqual(call);
+      const approval = await approvals.get(saved!.approval_id);
+      expect(approval?.argsDigest).toBe(capabilityClient.capabilityCallDigest(call));
+      expect(await runtimeCapabilities.resolve(request.id, { approved: true }, owner, caller)).toMatchObject({ status: "completed" });
+      expect(await approvals.get(saved!.approval_id)).toMatchObject({ status: "consumed" });
+      expect(review).toHaveBeenCalledTimes(2);
+      for (const [invocation] of review.mock.calls)
+        expect(invocation).toMatchObject({ appId: "demo", capabilityId: "move", ...capabilityClient.capabilityInvocationBody(call) });
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0]?.[0]).toMatchObject({
+        appId: "demo",
+        capabilityId: "move",
+        ...capabilityClient.capabilityInvocationBody(call),
+        idempotencyKey: `code-${request.id}`,
+      });
+      await runtimeCapabilities.resolve(request.id, { approved: true }, owner, caller);
+      expect(execute).toHaveBeenCalledTimes(1);
+    } finally {
+      catalog.mockRestore();
+      review.mockRestore();
+      execute.mockRestore();
+      wording.mockRestore();
+    }
+  });
+
   test("script capabilities require real approval, remember scopes and never execute twice", async () => {
     const applet = await artifacts.create({ title: "Capability app", source }, owner);
     const definitions = defineCapabilities({
