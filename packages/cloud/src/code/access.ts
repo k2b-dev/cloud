@@ -138,6 +138,8 @@ export const setCodeAccess = async (
     return decisionNo(reasonCode, reason);
   };
   if (!claims) return deny("proof_invalid", "Invalid or expired Code access proof");
+  if (input.operations.length === 0 && !input.dryRun)
+    return deny("operations_invalid", "An empty operation set is only valid for an owner dry run");
   if (!operationsAllowed()) return deny("operations_invalid", "Operations do not belong to this target");
   const adapter = targetAdapter(bindings, appId, input.target);
   if (!adapter) return deny("unsupported_target", "Target does not support Code access");
@@ -157,6 +159,8 @@ export const setCodeAccess = async (
     const result = await dependencies.db.begin(async (tx) => {
       // The same transaction lock serializes set/rm for this proof across all app instances.
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${appId}:${claims.grantId}`}, 0))`;
+      // Serialize account budget admission as well as individual proof retries.
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${appId}:account:${claims.principal}`}, 0))`;
       if (!(await accountIsCode(tx, claims.principal))) return decisionNo("account_inactive", "An active Code account is required");
       const existing = await find(tx, appId, claims.grantId);
       if (existing && (existing.binding_hash !== bindingHash || existing.revoked))
@@ -188,7 +192,25 @@ export const setCodeAccess = async (
       const result: CodeAccessSetData = decision.granted
         ? { ...decision, grantId: claims.grantId }
         : { ...decision, reasonCode: "adapter_refused" };
-      if (input.dryRun || !decision.granted) throw new RollbackDecision(result);
+      if (!decision.granted) throw new RollbackDecision(result);
+      const previous = await tx<
+        GrantRow[]
+      >`SELECT * FROM capabilities.code_access_grants WHERE app_id = ${appId} AND principal = ${claims.principal}::uuid AND NOT revoked LIMIT ${maxListGrants + 1}`;
+      const projected = previous.map((row) => ({
+        grantId: row.grant_id,
+        principal: row.principal,
+        target: { type: row.target_type, id: row.target_id },
+        level: row.level,
+      }));
+      projected.push({ grantId: claims.grantId, principal: claims.principal, target: input.target, level: decision.level });
+      if (
+        previous.length >= maxListGrants ||
+        new TextEncoder().encode(JSON.stringify({ data: projected })).byteLength > CAPABILITY_MAX_RESULT_BYTES
+      )
+        throw new RollbackDecision(
+          decisionNo("capacity_exceeded", "Code account grant list is full; remove unused grants before retrying"),
+        );
+      if (input.dryRun) throw new RollbackDecision(result);
       await tx`INSERT INTO capabilities.code_access_grants (app_id, grant_id, principal, target_type, target_id, binding_hash, level, live_principal) VALUES (${appId}, ${claims.grantId}::uuid, ${claims.principal}::uuid, ${input.target.type}, ${input.target.id}, ${bindingHash}, ${decision.level}, ${claims.principal}::uuid)`;
       await writeAudit(tx, appId, "set", context, claims.grantId, claims.principal, input.target, "allowed");
       return result;
@@ -219,7 +241,7 @@ export const listCodeAccess = async (
     if (indexed.length > maxListGrants) throw new Error("Code access list exceeds the capability result budget");
     const indexedById = new Map(indexed.map((entry) => [entry.grant_id, entry]));
     const result: CodeAccessGrant[] = [];
-    let bytes = 2;
+    let bytes = 11;
     for (const [type, adapter] of bindings) {
       const entries = z
         .array(CodeAccessEntrySchema)

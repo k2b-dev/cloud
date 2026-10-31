@@ -6,6 +6,7 @@ import {
   CLOUD_INVOCATION_TOKEN_TTL_SECONDS,
   IDENTITY_JWKS_MAX_AGE_SECONDS,
   IDENTITY_REFRESH_TIMEOUT_MS,
+  INVOCATION_CLOCK_TOLERANCE_SECONDS,
 } from "../services/identity/constants";
 import { type PreparedIdentitySigner, prepareIdentitySigner } from "../services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../services/identity/runtime-config";
@@ -130,7 +131,7 @@ const verify = async (token: string, targetAppId: string, options: CodeAccessVer
       issuer: options.issuer ?? runtime!.issuer,
       audience: `app:${appId.parse(targetAppId)}`,
       currentDate: options.now,
-      clockTolerance: 0,
+      clockTolerance: INVOCATION_CLOCK_TOLERANCE_SECONDS,
     });
     if (payload.exp !== Number(payload.iat) + CODE_ACCESS_PROOF_TTL_SECONDS || payload.nbf !== payload.iat) return null;
     return payload;

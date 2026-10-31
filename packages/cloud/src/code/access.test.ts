@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { SQL } from "bun";
 import { createCodeAccessAuthorityRoutes } from "../_internal/code-access-authority";
-import type { CapabilityExecutionContext } from "../contracts/capabilities";
+import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "../contracts/capabilities";
 import type { CodeAccessAdapter } from "../contracts/code-access";
 import type { User } from "../contracts/shared";
 import { audit } from "../services/audit";
@@ -350,4 +350,41 @@ test("denied real changes are audited, dry runs never write an audit row", async
 test("unindexed adapter rows never appear as removable platform grants", async () => {
   grants = [{ grantId, id: target.id, level: "write" }];
   expect(await listCodeAccess("inventory", bindings(), principal, { listPrincipal: principal }, deps.db)).toEqual([]);
+});
+
+test("an empty operation set only checks the owner in dryRun", async () => {
+  const empty = { ...input, operations: [] };
+  expect(await setCodeAccess("inventory", bindings(), empty, context, deps)).toMatchObject({
+    granted: false,
+    reasonCode: "operations_invalid",
+  });
+  expect(grants).toHaveLength(0);
+  expect(await setCodeAccess("inventory", bindings(), { ...empty, dryRun: true }, context, deps)).toMatchObject({ granted: true });
+  expect(grants).toHaveLength(0);
+});
+test("grant admission refuses overflow before an account list becomes unreadable", async () => {
+  await setCodeAccess("inventory", bindings(), input, context, deps);
+  const prototype = rows[0]!;
+  const largeTarget = { ...target, id: "x".repeat(512) };
+  const level = "x".repeat(120);
+  const entryBytes = new TextEncoder().encode(JSON.stringify({ grantId, principal, target: largeTarget, level })).byteLength + 1;
+  const count = Math.floor((CAPABILITY_MAX_RESULT_BYTES - 11) / entryBytes);
+  rows = Array.from({ length: count }, (_, index) => ({
+    ...prototype,
+    grant_id: `33333333-3333-4333-8333-${String(index).padStart(12, "0")}`,
+    target_id: largeTarget.id,
+    level,
+  }));
+  deps.verifyProof = async () => ({ ...claims, target: largeTarget });
+  adapter.grant = (_tx, value) => {
+    grants.push({ grantId: value.grantId, id: value.id, level });
+    writes++;
+    return { granted: true, level };
+  };
+  const snapshot = structuredClone({ rows, grants, writes });
+  expect(await setCodeAccess("inventory", bindings(), { ...input, target: largeTarget }, context, deps)).toMatchObject({
+    granted: false,
+    reasonCode: "capacity_exceeded",
+  });
+  expect({ rows, grants, writes }).toEqual(snapshot);
 });

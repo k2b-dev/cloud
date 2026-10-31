@@ -90,6 +90,7 @@ export const CodeAccessRefusalCodeSchema = z.enum([
   "unsupported_target",
   "operations_invalid",
   "adapter_refused",
+  "capacity_exceeded",
 ]);
 export type CodeAccessRefusalCode = z.infer<typeof CodeAccessRefusalCodeSchema>;
 

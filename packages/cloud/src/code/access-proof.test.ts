@@ -46,8 +46,9 @@ test("Core proof is bound to person, account, code, version, activation, grant, 
   ])
     expect(await verifyCodeAccessProof(token, { ...expected, ...binding }, options())).toBeNull();
   expect(await verifyCodeAccessProof(`${token.slice(0, -8)}aaaaaaaa`, expected, options())).toBeNull();
-  expect(await verifyCodeAccessProof(token, expected, { ...options(), now: new Date(now.getTime() + 30_000) })).toBeNull();
-  expect(await verifyCodeAccessProof(token, expected, { ...options(), now: new Date(now.getTime() - 1000) })).toBeNull();
+  expect(await verifyCodeAccessProof(token, expected, { ...options(), now: new Date(now.getTime() + 32_000) })).toBeNull();
+  expect(await verifyCodeAccessProof(token, expected, { ...options(), now: new Date(now.getTime() - 1000) })).toMatchObject(input);
+  expect(await verifyCodeAccessProof(token, expected, { ...options(), now: new Date(now.getTime() - 3000) })).toBeNull();
   expect(await verifyCodeAccessProof("x".repeat(64 * 1024 + 1), expected, options())).toBeNull();
 });
 test("cleanup proof is account scoped, target app bound and never an activation proof", async () => {

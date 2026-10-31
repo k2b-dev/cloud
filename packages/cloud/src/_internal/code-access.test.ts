@@ -106,3 +106,20 @@ test("target operations belong to the app and their declared target or refs", ()
   }
   expect(codeAccessOperationsAllowed("inventory", manifest, { type: "inventory.other", id: "1" }, ["inventory.item.read"])).toBe(false);
 });
+
+test("targetless Queries rely on adapter grants; explicit Query targets still match", () => {
+  const source: CapabilityDefinitions = { ...definitions, queries: { "item.search": reader } };
+  expect(codeAccessOperationsAllowed("inventory", source, { type: "inventory.item", id: "1" }, ["inventory.item.search"])).toBe(true);
+  const blocked: CapabilityDefinitions = {
+    ...definitions,
+    actions: {
+      blocked: {
+        ...reader,
+        code: false,
+        destructive: false,
+        idempotency: "none",
+      },
+    },
+  };
+  expect(codeAccessOperationsAllowed("inventory", blocked, { type: "app", id: "inventory" }, ["inventory.blocked"])).toBe(false);
+});

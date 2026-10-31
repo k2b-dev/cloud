@@ -57,12 +57,14 @@ export const codeAccessOperationsAllowed = (
     if (!id.startsWith(`${appId}.`)) return false;
     const localId = id.slice(appId.length + 1);
     if (localId.startsWith("code.access.")) return false;
-    const operation = definitions.queries?.[localId] ?? definitions.actions?.[localId];
-    if (!operation) return false;
+    const query = definitions.queries?.[localId];
+    const operation = query ?? definitions.actions?.[localId];
+    if (!operation || ("code" in operation && operation.code === false)) return false;
     if (target.type === "app") return target.id === appId;
     const localType = target.type.slice(appId.length + 1);
     return (
-      target.type.startsWith(`${appId}.`) && (operation.target === localType || Object.values(operation.refs ?? {}).includes(localType))
+      target.type.startsWith(`${appId}.`) &&
+      ((query && query.target === undefined) || operation.target === localType || Object.values(operation.refs ?? {}).includes(localType))
     );
   });
 
