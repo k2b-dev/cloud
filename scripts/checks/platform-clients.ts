@@ -5,7 +5,7 @@ import { listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
 // Transitional source contents only; each package migration removes its entries.
-export const baseline: Readonly<Record<string, readonly string[]>> = {};
+export const baseline: Record<string, string[]> = {};
 
 const delivered = new Set([
   "DATABASE_URL",
