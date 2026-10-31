@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { sql } from "../../runtime/clients";
 import { toPgTextArray } from "../postgres";
-import { APPROVAL_MAX_WAIT_MS, type ApprovalRequestInput, approvals, migrateApprovals, pruneApprovalRequests } from ".";
+import { type ActionApprovalRequestInput, APPROVAL_MAX_WAIT_MS, approvals, migrateApprovals, pruneApprovalRequests } from ".";
 
 databaseSuite()("platform approvals", () => {
   let userId = "",
@@ -26,7 +26,7 @@ databaseSuite()("platform approvals", () => {
     await sql`DELETE FROM audit.events WHERE target_type='approval_request' AND target_id=ANY(${toPgTextArray(ids)}::text[])`;
     await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid,${strangerId}::uuid,${epochUserId}::uuid)`;
   });
-  const input = (): ApprovalRequestInput => ({
+  const input = (): ActionApprovalRequestInput => ({
     appId: "demo",
     action: "write",
     approvalScope: "item:one",

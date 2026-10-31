@@ -3,10 +3,11 @@ import { capabilityRequestHash } from "../../capabilities/claims";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
 import type { CapabilityActionReviewData } from "../../contracts/capabilities";
-import { CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
+import { CapabilityActionReviewPresentationSchema, CloudResourceHrefSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import { isAppSessionActor } from "../../server/actor";
 import type { RequestActor, RequestCredentialKind } from "../../server/middleware/auth";
+import { get as getUser } from "../accounts/users";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 import { compactApprovalDetailsSql } from "./content";
@@ -18,7 +19,11 @@ export { type ApprovalActionPolicy, loadApprovalActionPolicies, pendingApprovalC
 // Derived from chat's AI_ACTION_BUDGET_MS and Studio's one-day abandonment of pending calls.
 export const APPROVAL_MAX_WAIT_MS = 24 * 60 * 60_000;
 export type ApprovalDecisionChannel = "web_session" | "app_session" | "oauth" | "api_key" | "invocation" | "acp_bridge" | "cloud_login";
-export type ApprovalRequesterKind = "assistant_turn" | "studio_app";
+/** Action consent belongs to one person; a Code version is reviewed by the Cloud-admin role. */
+export type ApprovalKind = "action" | "code_version";
+/** The only platform role that can decide Code-version requests. */
+export type ApprovalApproverRole = "admin";
+export type ApprovalRequesterKind = "assistant_turn" | "studio_app" | "code_version";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
 export type ApprovalAssurance = "standard" | "confirm";
 
@@ -47,21 +52,39 @@ export const approvalScopeFromToolName = (name: string): { appId: string; action
   return dot < 0 ? { appId: "assistant", action: name } : { appId: name.slice(0, dot), action: name.slice(dot + 1) };
 };
 
-export type ApprovalRequestInput = {
+type ApprovalRequestBase = {
   appId: string;
   action: string;
   approvalScope?: string | null;
-  requester: { kind: ApprovalRequesterKind; ref: string; appId: string; title?: string | null };
-  subjectId: string;
-  approverUserId: string;
-  assurance: ApprovalAssurance;
   sentence: string;
   review?: CapabilityActionReviewData | null;
   input: unknown;
   expiresInMs: number;
 };
+/** Existing Action requests keep their personal recipient and snapshot semantics. */
+export type ActionApprovalRequestInput = ApprovalRequestBase & {
+  kind?: "action";
+  subjectId: string;
+  requester: { kind: "assistant_turn" | "studio_app"; ref: string; appId: string; title?: string | null };
+  approverUserId: string;
+  assurance: ApprovalAssurance;
+};
+/**
+ * An immutable version review addressed to Cloud admins, independent of any chat. `input` must contain the owning
+ * service's complete version binding (including source and bundle hashes); `review` is the proposed change snapshot.
+ * The author cannot approve their own version. Core owns the version state and installs a decision handler.
+ */
+export type CodeVersionApprovalRequestInput = ApprovalRequestBase & {
+  kind: "code_version";
+  requester: { kind: "code_version"; ref: string; appId: string; title?: string | null; href: string };
+  approverRole: ApprovalApproverRole;
+  authorUserId: string;
+};
+/** Input for the platform request service; omitting `kind` preserves the existing Action contract. */
+export type ApprovalRequestInput = ActionApprovalRequestInput | CodeVersionApprovalRequestInput;
 export type ApprovalRequest = {
   id: string;
+  kind: ApprovalKind;
   appId: string;
   action: string;
   approvalScope: string | null;
@@ -69,8 +92,12 @@ export type ApprovalRequest = {
   requesterRef: string;
   requesterAppId: string;
   requesterTitle: string | null;
-  subjectId: string;
-  approverUserId: string;
+  subjectId: string | null;
+  approverUserId: string | null;
+  approverRole: ApprovalApproverRole | null;
+  authorUserId: string | null;
+  decidedByUserId: string | null;
+  requesterHref: string | null;
   assurance: ApprovalAssurance;
   sentence: string;
   details: CapabilityActionReviewData | null;
@@ -87,7 +114,8 @@ export type ApprovalRequest = {
 };
 // SQL aliases keep the public row shape identical for reads and locked transaction reads. A function, because a
 // fragment built at import time would bind the default sql handle before a test can choose its database.
-const columns = (compact = false) => sql`id, app_id AS "appId", action, approval_scope AS "approvalScope",
+const columns = (compact = false) => sql`id, kind, approver_role AS "approverRole",
+  author_user_id AS "authorUserId", decided_by_user_id AS "decidedByUserId", requester_href AS "requesterHref", app_id AS "appId", action, approval_scope AS "approvalScope",
   requester_kind AS "requesterKind", requester_ref AS "requesterRef", requester_app_id AS "requesterAppId",
   requester_title AS "requesterTitle", subject_id AS "subjectId", approver_user_id AS "approverUserId",
   assurance, sentence, ${compact ? compactApprovalDetailsSql("approvals.requests") : sql`details`} AS details, args_digest AS "argsDigest", review_digest AS "reviewDigest", status,
@@ -116,6 +144,11 @@ export type ApprovalRequestResult = { ok: true; id: string } | { ok: false; code
  * is a conflict.
  */
 export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<ApprovalRequestResult> => {
+  const role = input.kind === "code_version";
+  if (role && !CloudResourceHrefSchema.safeParse(input.requester.href).success)
+    throw new TypeError("Approval requester href must be a same-origin path.");
+  const recipient = role ? null : input.approverUserId;
+  const subjectId = role ? null : input.subjectId;
   // Zero or less records a request that is already expired, such as a call that waited too long before the upgrade.
   const expiresInMs = Number.isNaN(input.expiresInMs)
     ? APPROVAL_MAX_WAIT_MS
@@ -123,24 +156,30 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
   return transaction(db, async (tx): Promise<ApprovalRequestResult> => {
     const [row] = await tx<{ id: string }[]>`
       INSERT INTO approvals.requests (app_id, action, approval_scope, requester_kind, requester_ref, requester_app_id,
-        requester_title, subject_id, approver_user_id, approver_auth_epoch, assurance, sentence, details, args_digest, review_digest, expires_at)
+        requester_title, subject_id, approver_user_id, approver_auth_epoch, assurance, sentence, details, args_digest, review_digest, expires_at,
+        kind, approver_role, author_user_id, requester_href)
       VALUES (${input.appId}, ${input.action}, ${input.approvalScope ?? null}, ${input.requester.kind}, ${input.requester.ref},
-        ${input.requester.appId}, ${input.requester.title ?? null}, ${input.subjectId}::uuid, ${input.approverUserId}::uuid,
-        (SELECT auth_epoch FROM auth.users WHERE id=${input.approverUserId}::uuid), ${input.assurance}, ${input.sentence}, ${serializeReviewSnapshot(input.review ?? null)}::text::jsonb,
-        ${approvalArgsDigest(input.input)}, ${approvalReviewDigest(input.review)}, now() + (${expiresInMs} * interval '1 millisecond'))
+        ${input.requester.appId}, ${input.requester.title ?? null}, ${subjectId}::uuid, ${recipient}::uuid,
+        (SELECT auth_epoch FROM auth.users WHERE id=${recipient}::uuid), ${role ? "confirm" : input.assurance}, ${input.sentence}, ${serializeReviewSnapshot(input.review ?? null)}::text::jsonb,
+        ${approvalArgsDigest(input.input)}, ${approvalReviewDigest(input.review)}, now() + (${expiresInMs} * interval '1 millisecond'),
+        ${input.kind ?? "action"}, ${role ? input.approverRole : null}, ${role ? input.authorUserId : null}::uuid, ${role ? input.requester.href : null})
       ON CONFLICT (requester_kind, requester_ref) DO NOTHING
       RETURNING id
     `;
     if (row) return { ok: true, id: row.id };
     const [open] = await tx<{ id: string }[]>`SELECT id FROM approvals.requests
       WHERE requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref}
-        AND status='pending' AND expires_at > now() AND subject_id=${input.subjectId}::uuid
-        AND approver_auth_epoch=(SELECT auth_epoch FROM auth.users WHERE id=${input.approverUserId}::uuid)
-        AND approver_user_id=${input.approverUserId}::uuid AND app_id=${input.appId} AND action=${input.action}`;
+        AND status='pending' AND expires_at > now() AND subject_id IS NOT DISTINCT FROM ${subjectId}::uuid
+        AND kind=${input.kind ?? "action"} AND app_id=${input.appId} AND action=${input.action}
+        AND ((${role} AND approver_role='admin' AND author_user_id=${role ? input.authorUserId : null}::uuid
+          AND args_digest=${approvalArgsDigest(input.input)} AND review_digest=${approvalReviewDigest(input.review)})
+          OR (NOT ${role} AND approver_auth_epoch=(SELECT auth_epoch FROM auth.users WHERE id=${recipient}::uuid)
+            AND approver_user_id=${recipient}::uuid))`;
     return open ? { ok: true, id: open.id } : { ok: false, code: "CONFLICT" };
   });
 };
 
+/** Read the recorded snapshot for trusted server-side callers; HTTP readers must check the recipient. */
 export const get = async (id: string, db?: SQL, compactReview = false): Promise<ApprovalRequest | null> =>
   transaction(db, async (tx) => {
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns(compactReview)} FROM approvals.requests WHERE id=${id}::uuid`;
@@ -154,32 +193,73 @@ export const get = async (id: string, db?: SQL, compactReview = false): Promise<
 
 export type ApprovalDecisionResult =
   | { ok: true; status: ApprovalStatus; replay: boolean }
-  | { ok: false; code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" }
+  | { ok: false; code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" | "SELF_APPROVAL" | "UNAVAILABLE" | "NOT_REMEMBERABLE" }
   | { ok: false; code: "ALREADY_DECIDED"; status: ApprovalStatus };
+/**
+ * A kind owner updates its durable domain decision in the same transaction as the platform decision. Throwing rolls
+ * back both writes. Called exactly once for the winning decision, never on replay. No external effects belong here.
+ */
+export type ApprovalDecisionHandler = (tx: SQL, request: ApprovalRequest, actor: ApprovalDecisionActor) => Promise<void>;
+/** A person and their credential channel; role membership is always resolved from the current account. */
+export type ApprovalDecisionActor = { userId: string; via: ApprovalDecisionChannel; deviceId?: string };
+const decisionHandlers = new Map<"code_version", ApprovalDecisionHandler>();
+/**
+ * Install the Code version owner's transactional transition during service startup. Returns a disposer for tests
+ * and shutdown. Role decisions fail closed with `UNAVAILABLE` until the owner is installed.
+ */
+export const registerApprovalDecisionHandler = (kind: "code_version", handler: ApprovalDecisionHandler): (() => void) => {
+  if (decisionHandlers.has(kind)) throw new Error(`Approval decision handler already installed: ${kind}`);
+  decisionHandlers.set(kind, handler);
+  return () => {
+    if (decisionHandlers.get(kind) === handler) decisionHandlers.delete(kind);
+  };
+};
+/** Decide once under the current recipient policy, recording the decider and the owner's transition atomically. */
 export const decide = async (
   id: string,
-  decision: { approved: boolean },
-  actor: { userId: string; via: ApprovalDecisionChannel; deviceId?: string },
+  decision: { approved: boolean; remember?: "chat" | "always" },
+  actor: ApprovalDecisionActor,
   db?: SQL,
 ): Promise<ApprovalDecisionResult> => {
   const result = await transaction(db, async (tx): Promise<ApprovalDecisionResult> => {
     // Lock the approver and device before the request so revocation and decisions serialize.
     const decider = await lockDecider(tx, actor.userId, actor.deviceId ?? null);
-    if (actor.deviceId !== undefined && !decider.deviceActive) return { ok: false, code: "NOT_FOUND" };
+    if (decider.epoch === null || (actor.deviceId !== undefined && !decider.deviceActive)) return { ok: false, code: "NOT_FOUND" };
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
-      WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid FOR UPDATE`;
+      WHERE id=${id}::uuid AND (approver_user_id=${actor.userId}::uuid OR approver_role='admin') FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
+    const role = row.kind === "code_version";
+    if (role) {
+      if (actor.via === "cloud_login" && !actor.deviceId) return { ok: false, code: "NOT_FOUND" };
+      const user = await getUser({ id: actor.userId }, { db: tx });
+      if (!user?.roles.includes("admin") || (user.accountExpires && new Date(user.accountExpires).getTime() <= Date.now()))
+        return { ok: false, code: "NOT_FOUND" };
+      if (decision.remember) return { ok: false, code: "NOT_REMEMBERABLE" };
+      if (decision.approved && row.authorUserId === actor.userId) return { ok: false, code: "SELF_APPROVAL" };
+    }
+    const handler = role ? decisionHandlers.get("code_version") : undefined;
     const rejectOnly = decision.approved && row.assurance === "confirm" && actor.via === "acp_bridge";
     const status = decision.approved ? "approved" : "rejected";
-    const [won] = rejectOnly
-      ? []
-      : await tx<ApprovalRequest[]>`
-      UPDATE approvals.requests SET status=${status}, decided_via=${actor.via}, decided_device_id=${actor.deviceId ?? null}::uuid, decided_at=now()
-      WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid AND status='pending' AND expires_at > now()
-        AND approver_auth_epoch=${decider.epoch}::bigint
+    const unavailable = role && !handler;
+    const [won] =
+      rejectOnly || unavailable
+        ? []
+        : await tx<ApprovalRequest[]>`
+      UPDATE approvals.requests SET status=${status}, decided_via=${actor.via}, decided_device_id=${actor.deviceId ?? null}::uuid, decided_at=now(),
+        decided_by_user_id=${actor.userId}::uuid, approver_auth_epoch=${decider.epoch}::bigint
+      WHERE id=${id}::uuid AND status='pending' AND expires_at > now()
+        AND (${role} OR (approver_user_id=${actor.userId}::uuid AND approver_auth_epoch=${decider.epoch}::bigint))
       RETURNING ${columns()}
     `;
     if (won) {
+      await handler?.(
+        tx,
+        {
+          ...won,
+          details: won.details === null ? null : CapabilityActionReviewPresentationSchema.parse(restoreReviewSnapshot(won.details)),
+        },
+        actor,
+      );
       await audit.record(
         {
           action: decision.approved ? "auth.action.approve" : "auth.action.deny",
@@ -187,6 +267,7 @@ export const decide = async (
           actor: { userId: actor.userId },
           target: { type: "approval_request", id, label: `${won.appId}.${won.action}` },
           metadata: {
+            kind: won.kind,
             appId: won.appId,
             action: won.action,
             assurance: won.assurance,
@@ -203,8 +284,8 @@ export const decide = async (
     if (row.status === "pending") {
       const [expired] = await tx<{ id: string }[]>`UPDATE approvals.requests SET status='expired'
         WHERE id=${id}::uuid AND status='pending'
-          AND (expires_at <= now() OR approver_auth_epoch IS DISTINCT FROM ${decider.epoch}::bigint) RETURNING id`;
-      return { ok: false, code: expired || !rejectOnly ? "EXPIRED" : "REJECT_ONLY" };
+          AND (expires_at <= now() OR (kind='action' AND approver_auth_epoch IS DISTINCT FROM ${decider.epoch}::bigint)) RETURNING id`;
+      return { ok: false, code: expired ? "EXPIRED" : unavailable ? "UNAVAILABLE" : rejectOnly ? "REJECT_ONLY" : "EXPIRED" };
     }
     if (
       (decision.approved && (row.status === "approved" || row.status === "consumed")) ||
@@ -220,6 +301,7 @@ export const decide = async (
 export type ApprovalConsumeResult =
   | { ok: true }
   | { ok: false; code: "NOT_FOUND" | "NOT_APPROVED" | "ALREADY_CONSUMED" | "INPUT_CHANGED" | "REVIEW_CHANGED" | "REVOKED" };
+/** Consume one personal Action approval; Code-version decisions are durable version evidence, never chat consent. */
 export const consume = async (
   id: string,
   input: { input: unknown; review: CapabilityActionReviewData | null; requester: { kind: ApprovalRequesterKind; ref: string } },
@@ -230,7 +312,7 @@ export const consume = async (
   return transaction(db, async (tx): Promise<ApprovalConsumeResult> => {
     const [initial] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref}`;
-    if (!initial) return { ok: false, code: "NOT_FOUND" };
+    if (!initial || initial.kind !== "action" || !initial.approverUserId) return { ok: false, code: "NOT_FOUND" };
     if (initial.status === "consumed") return { ok: false, code: "ALREADY_CONSUMED" };
     if (initial.status !== "approved") return { ok: false, code: "NOT_APPROVED" };
     const decider = await lockDecider(tx, initial.approverUserId, initial.decidedDeviceId);

@@ -37,6 +37,26 @@ export const migrateApprovals = async (): Promise<void> => {
     END IF;
   END $$`.simple();
   await sql`CREATE INDEX IF NOT EXISTS approvals_requests_pending ON approvals.requests(approver_user_id, created_at) WHERE status='pending'`.simple();
+  // Add a role recipient without rewriting any existing Action request or Assistant data.
+  await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'action'`.simple();
+  await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS approver_role TEXT`.simple();
+  await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS author_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
+  await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS decided_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
+  await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS requester_href TEXT`.simple();
+  await sql`ALTER TABLE approvals.requests ALTER COLUMN approver_user_id DROP NOT NULL`.simple();
+  await sql`ALTER TABLE approvals.requests ALTER COLUMN subject_id DROP NOT NULL`.simple();
+  await sql`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='approvals.requests'::regclass AND conname='requests_recipient_check') THEN
+      ALTER TABLE approvals.requests ADD CONSTRAINT requests_recipient_check CHECK (
+        (kind='action' AND subject_id IS NOT NULL AND approver_user_id IS NOT NULL AND approver_role IS NULL)
+        OR (kind='code_version' AND subject_id IS NULL AND approver_user_id IS NULL AND approver_role IS NOT NULL AND approver_role='admin' AND assurance='confirm')
+      );
+      ALTER TABLE approvals.requests DROP CONSTRAINT requests_requester_kind_check;
+      ALTER TABLE approvals.requests ADD CONSTRAINT requests_requester_kind_check
+        CHECK ((kind='action' AND requester_kind IN ('assistant_turn','studio_app')) OR (kind='code_version' AND requester_kind='code_version'));
+    END IF;
+  END $$`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS approvals_requests_role_pending ON approvals.requests(approver_role, created_at) WHERE status='pending'`.simple();
   await sql`CREATE INDEX IF NOT EXISTS approvals_requests_expiry ON approvals.requests(expires_at)`.simple();
   await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS decided_device_id UUID`.simple();
   // Backfill pending rows once at column creation; approved rows and older-release rows keep NULL and count as ended.

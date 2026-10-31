@@ -5,12 +5,14 @@ import type { RuntimeAppMeta } from "../../contracts/app";
 import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
 import { type CapabilityActionPolicy, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
-import type { ApprovalAssurance } from ".";
+import type { ApprovalAssurance, ApprovalKind } from ".";
 import { compactApprovalDetailsSql, openRequests } from "./content";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
 
 export type PendingApprovalRow = {
   id: string;
+  kind: ApprovalKind;
+  requesterHref: string | null;
   appId: string;
   action: string;
   argsDigest: string;
@@ -24,7 +26,7 @@ export type PendingApprovalRow = {
   createdAt: Date;
   expiresAt: Date;
   cursorCreatedAt: string;
-  conversationShortId: string;
+  conversationShortId: string | null;
   conversationTitle: string | null;
   allowChat: boolean | null;
   allowAlways: boolean;
@@ -37,6 +39,7 @@ const matches = (appId?: string, link?: string) => sql`
   (${appId ?? null}::text IS NULL OR r.app_id=${appId ?? null} OR r.requester_app_id=${appId ?? null})
   AND (${link ?? null}::text IS NULL OR COALESCE(r.details->'links' @> jsonb_build_array(jsonb_build_object('href', ${link ?? null}::text)),false))`;
 
+/** List personal chat waits and independent Code-version requests addressed to the current Cloud-admin role. */
 export const listPending = async (input: {
   approverUserId: string;
   id?: string;
@@ -49,18 +52,19 @@ export const listPending = async (input: {
   if (!Number.isInteger(limit) || limit < 1 || limit > APPROVALS_PAGE_SIZE) throw new RangeError("Invalid approval page size.");
   const cursor = input.cursor ? decodeApprovalCursor(input.cursor) : null;
   if (input.cursor && !cursor) throw new RangeError("Invalid approval cursor.");
-  const [counts] = await sql<{ count: number; elsewhere: number }[]>`WITH open AS (${openRequests(input.approverUserId, input.id)})
+  const open = await openRequests(input.approverUserId, input.id);
+  const [counts] = await sql<{ count: number; elsewhere: number }[]>`WITH open AS (${open.query})
     SELECT count(*) FILTER (WHERE ${matches(input.appId, input.link)})::int AS count,
       count(*) FILTER (WHERE NOT (${matches(input.appId, input.link)}))::int AS elsewhere FROM open r`;
-  const rows = await sql<PendingApprovalRow[]>`WITH open AS (${openRequests(input.approverUserId, input.id)})
-    SELECT r.id, r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest",
+  const rows = await sql<PendingApprovalRow[]>`WITH open AS (${open.query})
+    SELECT r.id, r.kind, r.requester_href AS "requesterHref", r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest",
       r.created_at AS "createdAt", r.expires_at AS "expiresAt",
       to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt",
       question.short_id AS "conversationShortId", question.title AS "conversationTitle",
-      question.allow_chat AS "allowChat", question.allow_always AS "allowAlways",
-      question.remember_tool_name AS "rememberToolName", question.tool_name AS "toolName", question.run_config AS "runConfig",
+      question.allow_chat AS "allowChat", COALESCE(question.allow_always,false) AS "allowAlways",
+      question.remember_tool_name AS "rememberToolName", COALESCE(question.tool_name,r.action) AS "toolName", question.run_config AS "runConfig",
       question.stored_review AS "storedReview"
-    FROM open r JOIN LATERAL (
+    FROM open r LEFT JOIN LATERAL (
       SELECT c.short_id, c.title, p.allow_chat, p.allow_always, p.remember_tool_name, p.tool_name, t.run_config,
         (SELECT (m.meta->'toolReviews'->review.call_id) - 'content' - 'contentRef' FROM (
           SELECT meta, conversation_id, loop_id, role, seq FROM ai.messages
@@ -88,8 +92,10 @@ export const listPending = async (input: {
   };
 };
 
+/** Count the same current personal and role requests as `listPending`, including requests without a chat. */
 export const countPending = async (input: { approverUserId: string }): Promise<ApprovalCounts> => {
-  const [row] = await sql<ApprovalCounts[]>`WITH open AS MATERIALIZED (${openRequests(input.approverUserId)}),
+  const open = await openRequests(input.approverUserId);
+  const [row] = await sql<ApprovalCounts[]>`WITH open AS MATERIALIZED (${open.query}),
     app_requests AS (SELECT DISTINCT r.id AS request_id, app.id AS app_id FROM open r
       CROSS JOIN LATERAL unnest(ARRAY[r.app_id,r.requester_app_id]) app(id)),
     app_counts AS (SELECT app_id AS id,count(*)::int AS count FROM app_requests GROUP BY app_id)
@@ -112,7 +118,8 @@ export const presentPendingApproval = (
         ? { ...originalReview, ask: originalReview.ask ?? row.storedReview.ask }
         : storedActionReview(originalReview, policy)
       : originalReview;
-  const remember = row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
+  const codeVersion = row.kind === "code_version";
+  const remember = !codeVersion && row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
   return {
     id: row.id,
     app: { id: row.appId, name: app?.name ?? row.appId, icon: app?.icon ?? null },
@@ -120,16 +127,23 @@ export const presentPendingApproval = (
     assurance: row.assurance,
     sentence: row.sentence,
     review: displayReview && "legacy" in displayReview ? originalReview : displayReview,
-    requester: {
-      kind: "chat",
-      appId: row.requesterAppId,
-      title: row.conversationTitle,
-      href: `/app/assistant?conversation=${encodeURIComponent(row.conversationShortId)}`,
-    },
+    requester: codeVersion
+      ? {
+          kind: "code_version",
+          appId: row.requesterAppId,
+          title: row.requesterTitle,
+          href: row.requesterHref ?? "/me/approvals",
+        }
+      : {
+          kind: "chat",
+          appId: row.requesterAppId,
+          title: row.conversationTitle,
+          href: `/app/assistant?conversation=${encodeURIComponent(row.conversationShortId ?? "")}`,
+        },
     remember: {
       chat: remember && (row.allowChat ?? row.allowAlways),
       always: remember && row.allowAlways,
-      website: (row.rememberToolName ?? row.toolName) === AI_WEBSITE_APPROVAL_TOOL,
+      website: !codeVersion && (row.rememberToolName ?? row.toolName) === AI_WEBSITE_APPROVAL_TOOL,
     },
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),

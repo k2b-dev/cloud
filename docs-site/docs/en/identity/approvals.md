@@ -5,7 +5,7 @@ section: Identity and access
 order: 357
 description: How Cloud records, decides, and uses one approval for exactly the Action a person saw.
 tags: [identity, approvals, capabilities, audit]
-updated: 2026-10-20
+updated: 2026-10-31
 ---
 
 # Action approvals
@@ -81,13 +81,80 @@ page does not recover content omitted from the snapshot. The app must make
 the complete proposed content available at that link. A saved resource that
 does not yet contain the proposed edits cannot serve as that complete review.
 
-The lists contain only open, unexpired requests that a chat still waits for.
+For Action consent, the lists contain only open, unexpired requests that a chat still waits for.
 They include Assistant chats and Studio code that asked through a chat.
 A Studio request answered in an open Studio page is not listed.
 Each page holds up to 20 requests, newest first. An app filter includes
 requests whose effect belongs to that app or that the app asked for.
 
 The rail and app grid add each app's open approvals to its icon count.
+
+## Code-version approvals
+
+`code_version` requests address the **Cloud-admin role**, independently of a
+chat or Studio call. Current Cloud admins see them in the shared list and
+counts and can read the complete review. Other people cannot read or decide
+them, including the author when that person is not a Cloud admin. Cloud checks
+current local or FreeIPA administrator membership on every decision.
+
+A Cloud admin can approve another author's version or reject any version.
+The author cannot approve their own version. These requests always use
+`confirm`, never offer remembered choices, and never use chat preferences.
+Signing out the author does not end a role request; its explicit expiry and
+cancellation still apply. Deleting the author preserves the request. Approving
+records the deciding admin and updates the version through its owning service;
+it does not continue a chat or consume personal Action consent.
+
+Cloud Login uses the same role checks and records its active deciding device.
+A device receives a Code question only when the complete question fits its
+existing display limits. Reviews with separately loaded content or truncated
+text stay in the browser. Role questions appear when the admin polls the
+inbox; the existing chat notification and device wake-up jobs remain for
+personal Action requests.
+
+### Connect the version service
+
+The following server-only exports live at
+`@k2b/cloud/services/approvals`. They are platform-owned integration points
+for the Code version service and administration surfaces:
+
+- `ApprovalKind` is `"action" | "code_version"`; `ApprovalApproverRole` is
+  `"admin"`.
+- `ActionApprovalRequestInput` preserves the existing personal request shape.
+  `CodeVersionApprovalRequestInput` requires `kind: "code_version"`,
+  `approverRole: "admin"`, `authorUserId`, and a `code_version` requester with
+  a stable `ref`, an `appId`, and a same-origin `href` to the Code.
+- `request(input, tx?)` records an immutable question. For a version, its
+  `input` contains the complete version binding, including Code ID, version
+  ID, source hash, bundle hash, and comparison revision. The owning service
+  supplies that binding and the review snapshot. Reusing a version reference
+  with different input or review digests returns `CONFLICT`.
+- `registerApprovalDecisionHandler("code_version", handler)` installs the
+  owning service's transition once at startup and returns a disposer. Its
+  `ApprovalDecisionHandler` receives `(tx, request, actor)`, where
+  `ApprovalDecisionActor` identifies the deciding person and channel. The
+  handler checks the current version, its author, hashes and comparison, and
+  writes the durable version-decision evidence on the supplied transaction.
+  Throwing rolls back that write, the platform decision and its audit event.
+  It runs once for the winning decision, never for a replay. Do not send
+  external effects from it.
+- `decide(id, { approved }, actor, tx?)` applies the current recipient rules
+  and invokes that handler in the same transaction. It returns `NOT_FOUND`
+  to non-admins, `SELF_APPROVAL` for the author approving, `REJECT_ONLY` for
+  an ACP approval, and `UNAVAILABLE` while the version owner is not installed.
+  No decision is recorded in those cases.
+- `get(id, tx?, compactReview?)` is a trusted server-side snapshot read;
+  it does not authorize a caller. HTTP consumers use the shared routes.
+  `listPending`, `countPending`, and `readApprovalContent` check recipients.
+  `consume` accepts personal Action requests only; version decisions are
+  durable evidence in the owning version service.
+
+Passing a transaction to `request` or `decide` joins that transaction; the
+caller must commit or roll it back. Without one, the service owns the
+transaction. The version service must install its handler in every Core
+process that serves approval decisions. Without it, the HTTP decision returns
+`503` with a retry message and the request stays pending. Existing Action
+approvals work without a kind handler.
 
 ## Decision channels
 
@@ -274,7 +341,8 @@ navigation example, and decision states.
 ## Approval routes
 
 Core serves these routes for authenticated, user-backed actors only.
-Each route reads or decides that person's own requests.
+Each route reads or decides that person's requests, including role requests
+when the person is currently a Cloud admin.
 An actor without a user gets `403`. An unauthenticated caller gets `401`.
 
 | Route | Input | Success response |
@@ -287,7 +355,8 @@ An actor without a user gets `403`. An unauthenticated caller gets `401`.
 
 Full-content readers require the matching snapshot digest and normal user
 credentials. The pending-request reader also checks the approver, pending
-execution, expiry and current sign-out epoch. Historical chat reads require
+execution, expiry and current sign-out epoch for personal Actions; Code-version
+reads check current Cloud-admin membership and expiry. Historical chat reads require
 ownership of an unarchived conversation and the exact turn and call; they
 remain available after the approval is consumed. Missing or inaccessible
 snapshots return `404`. Responses are private and use `Cache-Control: no-store`.
@@ -302,7 +371,7 @@ Invalid query fields or cursors return `400`.
 
 Each item contains `id`, `app` (`id`, localized `name`, nullable `icon`),
 `action`, `assurance`, `sentence`, nullable `review`, `requester`
-(`kind: "chat"`, `appId`, nullable `title`, `href`), `remember`
+(`kind: "chat" | "code_version"`, `appId`, nullable `title`, `href`), `remember`
 (`chat`, `always`, `website` booleans), `createdAt`, and `expiresAt`.
 The timestamps use ISO strings. `apps` maps app IDs to positive open counts.
 An approval can count for both its effect owner and requester app.
@@ -311,14 +380,16 @@ An approval can count for both its effect owner and requester app.
 `approved` is a boolean. `remember` is optional and accepts `"chat"` or
 `"always"` only where the request allows it. Website remembering requires
 `"chat"` and a signed-in browser session.
-A successful decision continues the waiting chat, like its approval card.
+A successful Action decision continues the waiting chat, like its approval card.
+A Code-version decision calls the version owner without a chat continuation.
 
 | Decision status | Meaning |
 | --- | --- |
 | `200` | Decision accepted, or the same decision repeated |
 | `400` | Invalid ID or body, or a choice that cannot be remembered |
-| `403` | No user-backed actor, or the ACP bridge tried to approve an open `confirm` request |
+| `403` | No user-backed actor, self-approval of a Code version, or the ACP bridge tried to approve an open `confirm` request |
 | `404` | No request for this person, an expired request, or the chat no longer waits |
+| `503` | Code-version decision owner is unavailable; retry later |
 | `409` | The request already has a different decision |
 | `429` | Too many requests from this person; retry after `Retry-After` seconds |
 

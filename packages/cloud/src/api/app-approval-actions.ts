@@ -3,7 +3,7 @@ import { aiConversations } from "../ai/store";
 import { APP_ACTION_LIMITS, type AppActionSummary } from "../contracts/app-approval";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import type { AppDeviceActions } from "../services/app-approval";
-import { listPending, loadApprovalActionPolicies, pendingApprovalCard } from "../services/approvals";
+import { approvals, listPending, loadApprovalActionPolicies, pendingApprovalCard } from "../services/approvals";
 import { appActionOffered, appActionSummary, appActionView } from "../services/approvals/device";
 
 /** Pages of open requests one inbox poll reads at most while it skips browser-only questions. */
@@ -16,6 +16,7 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
     if (!row) return null;
     const policy = (await loadApprovalActionPolicies([row]))(row);
     const mapped = await appActionView(row, { issuer, appName, policy });
+    if (row.kind === "code_version" && mapped.truncated) return null;
     return appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy) ? mapped : null;
   };
   return {
@@ -32,7 +33,11 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
         for (const row of result.items) {
           const policy = policyOf(row);
           const mapped = await appActionView(row, { issuer, appName, policy });
-          if (appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy)) actions.push(appActionSummary(mapped));
+          if (
+            !(row.kind === "code_version" && mapped.truncated) &&
+            appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy)
+          )
+            actions.push(appActionSummary(mapped));
           if (actions.length === APP_ACTION_LIMITS.inboxActions) break;
         }
         if (!result.nextCursor) break;
@@ -44,6 +49,12 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
     decide: async ({ userId, deviceId, issuer, actionId, digest, approved }) => {
       const current = await view({ userId, issuer, actionId });
       if (!current || current.digest !== digest) return false;
+      const record = await approvals.get(actionId, undefined, true);
+      if (record?.kind === "code_version") {
+        if (approved && current.truncated) return false;
+        const result = await approvals.decide(actionId, { approved }, { userId, via: "cloud_login", deviceId });
+        return result.ok;
+      }
       const pending = await aiConversations.findPendingTurnActionByApproval({ approvalId: actionId, ownerUserId: userId });
       if (!pending) return false;
       const result = await submitAiTurnAction({

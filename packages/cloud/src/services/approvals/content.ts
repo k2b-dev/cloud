@@ -1,13 +1,22 @@
 import { parseStoredReviewContent } from "../../capabilities/review-storage";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
+import { get as getUser } from "../accounts/users";
 
-// Start with this person's indexed pending rows; a Studio page alone cannot continue a chat.
-export const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r
-  WHERE r.approver_user_id=${approverUserId}::uuid AND r.status='pending' AND r.expires_at > now()
-    AND r.approver_auth_epoch=(SELECT auth_epoch FROM auth.users WHERE id=${approverUserId}::uuid)
-    AND (${id ?? null}::uuid IS NULL OR r.id=${id ?? null}::uuid)
-    AND EXISTS (SELECT 1 FROM ai.pending_actions p WHERE p.approval_id=r.id AND p.status='pending')`;
+/** Open personal Actions retain their chat wait; role requests have their own lifecycle. */
+export const openRequests = async (approverUserId: string, id?: string) => {
+  const user = await getUser({ id: approverUserId });
+  const admin = !!user?.roles.includes("admin") && (!user.accountExpires || new Date(user.accountExpires).getTime() > Date.now());
+  return {
+    query: sql`SELECT r.* FROM approvals.requests r
+    WHERE r.status='pending' AND r.expires_at > now()
+      AND (${id ?? null}::uuid IS NULL OR r.id=${id ?? null}::uuid)
+      AND ((r.kind='action' AND r.approver_user_id=${approverUserId}::uuid
+        AND r.approver_auth_epoch=(SELECT auth_epoch FROM auth.users WHERE id=${approverUserId}::uuid)
+        AND EXISTS (SELECT 1 FROM ai.pending_actions p WHERE p.approval_id=r.id AND p.status='pending'))
+        OR (r.kind='code_version' AND r.approver_role='admin' AND ${admin}))`,
+  };
+};
 
 /** Keep the original approval's digest and reader even when the turn has moved to a newer question. */
 export const compactApprovalDetailsSql = (row = "r") => {
@@ -17,11 +26,12 @@ export const compactApprovalDetailsSql = (row = "r") => {
   ) ELSE '{}'::jsonb END ELSE ${details} END`;
 };
 
-/** Open requests retain the existing approver, pending-action, expiry and sign-out-epoch requirements. */
+/** Read one complete snapshot under the current personal or Cloud-admin recipient policy. */
 export const readApprovalContent = async (input: { id: string; approverUserId: string; digest: string; signal?: AbortSignal }) => {
   input.signal?.throwIfAborted();
+  const open = await openRequests(input.approverUserId, input.id);
   const query = sql<{ content: unknown }[]>`
-    SELECT r.details->'content' AS content FROM (${openRequests(input.approverUserId, input.id)}) r
+    SELECT r.details->'content' AS content FROM (${open.query}) r
     WHERE r.review_digest=${input.digest}
       AND octet_length((r.details->'content')::text) <= ${2 * CAPABILITY_MAX_REVIEW_CONTENT_BYTES + 2} LIMIT 1`;
   const abort = () => query.cancel();

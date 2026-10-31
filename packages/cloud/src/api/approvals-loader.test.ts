@@ -13,6 +13,8 @@ import { loadPendingApprovals } from "./approvals-loader";
 
 const user = buildProjectedUser({ id: "00000000-0000-4000-8000-000000000001", provider: "local", profile: "user" });
 const row: pending.PendingApprovalRow = {
+  kind: "action",
+  requesterHref: null,
   id: "00000000-0000-4000-8000-000000000002",
   appId: "demo",
   action: "send",

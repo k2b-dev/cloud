@@ -11,6 +11,8 @@ import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
 import { type PendingApprovalRow, presentPendingApproval } from "./list";
 
 const row: PendingApprovalRow = {
+  kind: "action",
+  requesterHref: null,
   id: crypto.randomUUID(),
   appId: "mail",
   action: "draft.send",
@@ -116,4 +118,25 @@ test("a missing stored call review falls back to current policy", () => {
     ask: "sends",
   });
   expect(presentPendingApproval({ ...row, details: review, storedReview: null }, []).review).toEqual(review);
+});
+
+test("a standalone Code review links to its owner and never inherits remembered chat choices", () => {
+  const approval = presentPendingApproval(
+    {
+      ...row,
+      kind: "code_version",
+      requesterHref: "/code/report/",
+      requesterTitle: "Report version 2",
+      conversationShortId: null,
+      conversationTitle: null,
+      assurance: "confirm",
+      allowAlways: true,
+      allowChat: true,
+      rememberToolName: "website:read",
+    },
+    [],
+  );
+  expect(approval.requester).toEqual({ kind: "code_version", appId: "assistant", title: "Report version 2", href: "/code/report/" });
+  expect(approval.remember).toEqual({ chat: false, always: false, website: false });
+  expect(ApprovalPageSchema.safeParse({ items: [approval], nextCursor: null, count: 1, elsewhere: 0 }).success).toBe(true);
 });

@@ -6,7 +6,7 @@ export { APPROVAL_COUNTS_PATH, APPROVALS_API_PATH, APPROVALS_PAGE_PATH } from ".
 
 /**
  * Pending Action approvals as every app lists and decides them: one Core route under `/api/approvals` and the
- * `Approvals` component from `@k2b/cloud/approvals/ui`. A list shows only the signed-in person's own open requests.
+ * `Approvals` component from `@k2b/cloud/approvals/ui`. A list shows the signed-in person's own open requests and Code-version reviews for current Cloud admins.
  */
 
 /** One page of a list, the same as a Cloud Login inbox page. */
@@ -44,7 +44,9 @@ export const PendingApprovalSchema = z
     /** The owning app's review as the person saw it when Cloud asked. */
     review: CapabilityActionReviewPresentationSchema.nullable(),
     /** Where the request waits. The title is chat content, written by a person or a model, never Cloud's own words. */
-    requester: z.object({ kind: z.literal("chat"), appId: z.string(), title: z.string().nullable(), href: z.string() }).strict(),
+    requester: z
+      .object({ kind: z.enum(["chat", "code_version"]), appId: z.string(), title: z.string().nullable(), href: z.string() })
+      .strict(),
     /** Ways the person may remember this approval, the same the chat card offers. */
     remember: z.object({ chat: z.boolean(), always: z.boolean(), website: z.boolean() }).strict(),
     createdAt: z.string(),
