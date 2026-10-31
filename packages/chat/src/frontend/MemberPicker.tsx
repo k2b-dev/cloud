@@ -88,6 +88,7 @@ export default function MemberPicker(props: {
               allowAuthenticated={false}
               disabled={props.disabled || full()}
               onSelect={(principal, display) => {
+                if (display.serviceAccountKind === "code") return;
                 if (principal.type === "user" || principal.type === "group" || principal.type === "service_account")
                   choose(principal, display.displayName, display.serviceAccountKind);
               }}

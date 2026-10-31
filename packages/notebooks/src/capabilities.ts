@@ -14,7 +14,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { type AuditActor, audit, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
@@ -155,7 +155,7 @@ const scopedNotebookId = (context: CapabilityExecutionContext, required: Permiss
     return context.accessSubject.type === "user" && context.user ? ok(null) : fail(err.forbidden(t.accessDenied));
   }
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (isStandaloneServiceAccountKind(account.kind)) {
+  if (serviceAccountUsesOwnGrants(account.kind)) {
     return context.accessSubject.type === "service_account" &&
       context.accessSubject.serviceAccountId === account.id &&
       hasPermission(permissionFromScopes(context.actor.scopes), required)

@@ -100,6 +100,7 @@ export async function validateMachineGrant(db: SQL, id: string, accountId: strin
   if (
     !account ||
     account.status !== "active" ||
+    account.kind === "code" ||
     account.kind === "user_delegated" ||
     (account.kind === "resource_bound" &&
       (account.appId !== "assistant" || account.resourceType !== "artifact" || account.resourceId !== id))
