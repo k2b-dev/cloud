@@ -41,6 +41,11 @@ export type AppPageData = {
   details: AppDetails | null;
   /** Name of the newest revoked key, for the "key revoked" hint. */
   revokedKeyName: string | null;
+  /**
+   * Whether a key exists that Core would take at the next start: active and not the refused one (for a refusal while
+   * background access was off, any active key). Null when the keys could not be read; counts then stand in.
+   */
+  startKeyReady: boolean | null;
   /** Providers that did not answer for this app. */
   providerFailures: readonly string[];
   /** The app's access rule as one phrase, for a rule the app fixes itself. */
@@ -162,6 +167,8 @@ function Tile(props: { icon: string; accent: string | null }) {
 /** The one-line version of a hint, for the list. */
 function hintShort(t: AppsPageMessages, f: AppsFormat, hint: AppHint): string {
   switch (hint.kind) {
+    case "startRejected":
+      return t.hintStartRejectedShort({ reason: hint.reason });
     case "notRunning":
       return t.hintNotRunningShort({ since: hint.since ? f.moment(hint.since) : t.unknown });
     case "providerOnly":
@@ -325,6 +332,21 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
   } => {
     const hint = props.hint;
     switch (hint.kind) {
+      case "startRejected": {
+        // The refusal stays until the next successful start, so its cause may be gone in Core by now. The way out
+        // follows what still blocks a start: background access, then a key Core would accept.
+        const off = entry.keys.accountStatus === "disabled";
+        const keyReady =
+          props.app.startKeyReady ??
+          (hint.reason === "disabled" ? entry.keys.active > 0 : entry.keys.active > (hint.reason === "connections_not_permitted" ? 1 : 0));
+        const next = off ? "reenable" : keyReady ? "restart" : "newKey";
+        const lead = t.hintStartRejectedLead({ name: entry.name, live: entry.live });
+        const text = `${t.hintStartRejectedText({ reason: hint.reason, when: f.relative(hint.at), off })} ${t.hintStartRejectedNext({ next })}`;
+        const docs = { docs: props.app.docs.recover, docsLabel: t.docsWhatNow };
+        if (next === "reenable") return { lead, text, action: t.actReenable, primary: true };
+        if (next === "restart") return { lead, text, action: t.actKeysShow, ...docs };
+        return { lead, text, action: t.actNewKey, create: true, primary: true, ...docs };
+      }
       case "notRunning": {
         const since = hint.since ? f.moment(hint.since) : t.unknown;
         return { lead: t.hintNotRunningLead({ since }), text: t.hintNotRunningText({ name: entry.name }), action: t.actErrors };
@@ -352,9 +374,9 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
       case "envStart":
         return {
           lead: t.hintEnvStartLead,
-          text: t.hintEnvStartText({ name: entry.name }),
-          action: t.actKeys,
-          create: true,
+          text: hint.hasKey ? t.hintEnvStartKeyText({ name: entry.name }) : t.hintEnvStartText({ name: entry.name }),
+          action: hint.hasKey ? t.actKeysShow : t.actKeys,
+          create: !hint.hasKey,
           docs: props.app.docs.migrate,
           docsLabel: t.docsMigration,
         };
@@ -561,7 +583,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
         </>
       );
     if (keys.revoked + keys.expired > 0) return <span class="text-(--k2b-danger-text)">{t.keysNoValid}</span>;
-    return entry.live ? t.keysEnv : t.keysNone;
+    return entry.live && entry.startsWithEnv !== false ? t.keysEnv : t.keysNone;
   };
   const eventsValue = (): JSX.Element => {
     if (neverStarted || providerOnly) return "–";

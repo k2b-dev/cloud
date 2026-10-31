@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 

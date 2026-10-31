@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { create, move } from "./contacts";

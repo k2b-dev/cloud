@@ -2,6 +2,7 @@ import { managerEligibility } from "../_internal/app-access-manager-sql";
 import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { AppAccessManagementError, canRepairAppAccess } from "./app-access-management";
+import type { LastRejectedStart } from "./app-keys";
 
 export type AppAdminFacts = {
   access: { people: number; groups: number; serviceAccounts: number; managers: number; configured: boolean } | null;
@@ -14,12 +15,14 @@ export type AppAdminFacts = {
     accountStatus: "active" | "disabled" | null;
   };
   tokens: { active: number; total: number };
+  /** Core's last refusal of a start with a verified proof; cleared by the next successful start. */
+  lastRejectedStart: Omit<LastRejectedStart, "keyId"> | null;
   events: { hears: number; sends: number | null; failedDeliveries: number; waitingDeliveries: number };
   notifications: number | null;
   firstKnownAt: string | null;
 };
 
-/** Core-owned administration summary: at most 500 input IDs and four batched SQL reads. */
+/** Core-owned administration summary: at most 500 input IDs and five batched SQL reads. */
 export const appAdminFacts = async (authority: RequestAuthority, appIds: readonly string[]): Promise<Map<string, AppAdminFacts>> => {
   if (!canRepairAppAccess(authority)) throw new AppAccessManagementError("FORBIDDEN", "Cloud administration authority is required.");
   if (appIds.length > 500) throw new AppAccessManagementError("TOO_MANY_APPS", "At most 500 application IDs may be read at once.", 400);
@@ -31,6 +34,7 @@ export const appAdminFacts = async (authority: RequestAuthority, appIds: readonl
         access: null,
         keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, firstCreatedAt: null, accountStatus: null },
         tokens: { active: 0, total: 0 },
+        lastRejectedStart: null,
         events: { hears: 0, sends: 0, failedDeliveries: 0, waitingDeliveries: 0 },
         notifications: 0,
         firstKnownAt: null,
@@ -39,7 +43,7 @@ export const appAdminFacts = async (authority: RequestAuthority, appIds: readonl
   );
   if (!ids.length) return facts;
 
-  const [access, credentials, events, notifications] = await Promise.all([
+  const [access, credentials, events, notifications, rejections] = await Promise.all([
     sql<
       {
         app_id: string;
@@ -125,6 +129,9 @@ export const appAdminFacts = async (authority: RequestAuthority, appIds: readonl
       SELECT app_id, count(*)::int AS count FROM notifications.definitions
       WHERE app_id IN ${sql(ids)} AND active = true GROUP BY app_id
     `,
+    sql<{ app_id: string; rejected_at: Date; reason: LastRejectedStart["reason"] }[]>`
+      SELECT app_id, rejected_at, reason FROM auth.app_start_rejections WHERE app_id IN ${sql(ids)}
+    `,
   ]);
 
   for (const row of access) {
@@ -156,5 +163,6 @@ export const appAdminFacts = async (authority: RequestAuthority, appIds: readonl
     facts.get(row.app_id)!.events = { hears: row.hears, sends: row.sends, failedDeliveries: row.failed, waitingDeliveries: row.waiting };
   }
   for (const row of notifications) facts.get(row.app_id)!.notifications = row.count;
+  for (const row of rejections) facts.get(row.app_id)!.lastRejectedStart = { at: row.rejected_at.toISOString(), reason: row.reason };
   return facts;
 };

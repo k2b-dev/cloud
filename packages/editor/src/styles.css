@@ -1,6 +1,14 @@
 /* Generate utility classes for the source package in the consuming Tailwind build. */
 @source "./**/*.{ts,tsx}";
 
+/* One icon size for every control of an editor toolbar, the host's start and end controls included, so an icon a
+   host adds matches the formatting icons without its own size class. A utility on one icon still wins. */
+@layer components {
+  [data-k2b-editor-toolbar] .k2b-button > .k2b-button__label > .ti:first-child {
+    font-size: 0.875rem;
+  }
+}
+
 /* ── Slash-command autocomplete palette ─────────────────────────────────
    The CodeMirror autocomplete tooltip is portaled outside the editor
    surface AND its theme is injected as a runtime `<style>` after this file

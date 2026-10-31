@@ -1,0 +1,6 @@
+### Dragging the navigation made an open note jump on every rewrap
+
+- **What happened:** Resizing the Notebooks navigation beside an open note made the whole note flicker: whenever the narrower or wider column rewrapped a line above the page's top edge, the text being read jumped by a line or more.
+- **Root cause:** The note scrolls in the page's scroll area, not in CodeMirror's own scroller. CodeMirror corrects such a scroll parent only while the editor has focus, which the drag moves away, and only in the frame after the browser painted the rewrap, because its resize observer schedules the measure for the next frame.
+- **Error class:** An editor that renders inside an outer scroller relies on the editor's own scroll anchoring, which covers only its own scroller and its focused state.
+- **Guard:** `noteScroller` in `@k2b/editor` measures the editor in the frame the scroll area resizes and keeps the line at its top edge in place. `note-scroller.browser.test.ts` resizes the column frame by frame with and without focus, and `navigation-resize.browser.test.ts` drags the real navigation handle beside the Notebook editor and checks that the editor stays mounted, keeps its rendered blocks, and holds the text in every painted frame.

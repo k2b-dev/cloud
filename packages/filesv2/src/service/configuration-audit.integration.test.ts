@@ -1,8 +1,8 @@
 import { afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import type { RequestActor } from "@k2b/cloud/server";
 import { settings } from "@k2b/cloud/services";
 import * as settingsCache from "@k2b/cloud/services/settings";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { testActor, testCall } from "../../test/files-call";

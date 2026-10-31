@@ -1,6 +1,9 @@
 import { i18n } from "@k2b/stdlib";
+import type { StartRejection } from "./model";
 
 type N = { count: number };
+type StartRejectionReason = StartRejection["reason"];
+type StartRejectionNext = "restart" | "reenable" | "newKey";
 
 export const appsPageMessages = i18n.define({
   baseLocale: "en",
@@ -107,6 +110,25 @@ export const appsPageMessages = i18n.define({
       hintEnvStartText: ({ name }: { name: string }) =>
         `${name} takes its database, Valkey and NATS from its own environment. With a key, it fetches them from Core when it starts.`,
       hintEnvStartShort: "Still starts with its environment",
+      hintEnvStartKeyText: ({ name }: { name: string }) =>
+        `${name} still takes its database, Valkey and NATS from its own environment although it has a key. Put the key into the deployment; then it fetches them from Core when it starts.`,
+      hintStartRejectedShort: ({ reason }: { reason: StartRejectionReason }) =>
+        `Start refused · ${{ revoked: "key revoked", expired: "key expired", disabled: "background access off", connections_not_permitted: "key may not fetch connections" }[reason]}`,
+      hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
+        live ? `A start of ${name} was refused.` : `${name} does not start.`,
+      /** Why Core refused the start; `off` says whether background access is still off. */
+      hintStartRejectedText: ({ reason, when, off }: { reason: StartRejectionReason; when: string; off: boolean }) =>
+        reason === "disabled"
+          ? `Core refused the start ${when} because the app's background access ${off ? "is" : "was"} off.`
+          : `Core refused the key ${when} because it ${{ revoked: "was revoked", expired: "has expired", connections_not_permitted: "may not fetch connections" }[reason]}.`,
+      /** What still stands between the app and its next start, as Core sees it now. */
+      hintStartRejectedNext: ({ next }: { next: StartRejectionNext }) =>
+        ({
+          restart: "A valid key exists and background access is on: put the key into the deployment and restart the app.",
+          reenable: "Turn background access on again and restart the app.",
+          newKey: "Create a new key and replace it in the deployment.",
+        })[next],
+      actReenable: "Turn on again",
       hintRotationShort: "Rotation in progress",
       actNewKey: "Create new key",
       docsWhatNow: "What to do? (documentation)",
@@ -333,6 +355,24 @@ export const appsPageMessages = i18n.define({
       hintEnvStartText: ({ name }: { name: string }) =>
         `${name} holt Datenbank, Valkey und NATS aus der eigenen Env. Mit einem Schlüssel holt die App sie beim Start von Core.`,
       hintEnvStartShort: "Startet noch mit Env",
+      hintEnvStartKeyText: ({ name }: { name: string }) =>
+        `${name} holt Datenbank, Valkey und NATS noch aus der eigenen Env, obwohl es einen Schlüssel gibt. Hinterlege den Schlüssel im Deployment, dann holt die App sie beim Start von Core.`,
+      hintStartRejectedShort: ({ reason }: { reason: StartRejectionReason }) =>
+        `Start abgelehnt · ${{ revoked: "Schlüssel widerrufen", expired: "Schlüssel abgelaufen", disabled: "Hintergrundzugriff aus", connections_not_permitted: "Schlüssel darf keine Verbindungen holen" }[reason]}`,
+      hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
+        live ? `Ein Start von ${name} wurde abgelehnt.` : `${name} startet nicht.`,
+      hintStartRejectedText: ({ reason, when, off }: { reason: StartRejectionReason; when: string; off: boolean }) =>
+        reason === "disabled"
+          ? `Core hat den Start ${when} abgelehnt, weil der Hintergrundzugriff der App aus ${off ? "ist" : "war"}.`
+          : `Core hat den Schlüssel ${when} beim Start abgelehnt, weil er ${{ revoked: "widerrufen ist", expired: "abgelaufen ist", connections_not_permitted: "keine Verbindungen holen darf" }[reason]}.`,
+      hintStartRejectedNext: ({ next }: { next: StartRejectionNext }) =>
+        ({
+          restart:
+            "Ein gültiger Schlüssel existiert und der Hintergrundzugriff ist an: Hinterlege den Schlüssel im Deployment und starte die App neu.",
+          reenable: "Aktiviere den Hintergrundzugriff wieder und starte die App neu.",
+          newKey: "Erzeuge einen neuen Schlüssel und tausche ihn im Deployment aus.",
+        })[next],
+      actReenable: "Wieder aktivieren",
       hintRotationShort: "Rotation läuft",
       actNewKey: "Neuen Schlüssel erzeugen",
       docsWhatNow: "Was tun? (Fibel)",

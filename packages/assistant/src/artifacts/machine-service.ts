@@ -1,6 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { getAccess, resolveDisplayNames } from "@k2b/cloud/server";
 import { requestPublicHttps, secrets } from "@k2b/cloud/services";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { LIMITS } from "./contracts";
 import { HeaderValue, HTTP_BYTES, HTTP_TIMEOUT_MS, HttpRequest, SecretSave, SecretView } from "./http-contracts";

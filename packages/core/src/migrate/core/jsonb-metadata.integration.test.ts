@@ -1,5 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as audit } from "./audit";
 import { migrate as auth } from "./auth";

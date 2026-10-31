@@ -1,4 +1,5 @@
 import { beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { createMcpRoutes } from "@k2b/cloud/api";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
@@ -6,7 +7,6 @@ import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
 import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
-import { sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
 import { z } from "zod";

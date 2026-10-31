@@ -813,12 +813,11 @@ for local credentials. Installation tests in `pulse/src/migrate.integration.test
 keep their own disposable Postgres database and run in the integration runner's
 one-file process, as the previous schema test did.
 
-Run integration tests through `bun run test`: it exports those runtime
-variables into every test process before Bun starts, which is the only moment
-Bun's default `redis` handle reads `REDIS_URL`. A direct `bun test` applies
-them from the preload, too late for that handle; export `REDIS_URL` yourself
-before running it. `tests/integration/test-infra-redis-binding.integration.test.ts`
-proves the binding against a disposable Valkey on a non-default port.
+Run integration tests through `bun run test`: the infrastructure preload selects
+the explicit targets and initializes the platform's native SQL and Redis clients.
+For a direct single-file run, use `BUN_OPTIONS=--no-env-file` and the same
+`CLOUD_TEST_*` targets. `tests/integration/test-infra-redis-binding.integration.test.ts`
+proves that the platform Redis client reaches the explicit Valkey target.
 
 `bun run test` keeps the checkout's `.env` away from tests. The file
 configures the development stack, for example `APP_URL` for a stack served

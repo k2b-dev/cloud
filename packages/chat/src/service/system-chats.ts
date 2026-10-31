@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok } from "@k2b/cloud/server";
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 import { boundConversation, type ChatContext, type ConversationRow, capPermission, messages, subjectPrincipal } from "./access";
 import { type SystemChatPageSchema, SystemChatParamSchema, SystemChatQuerySchema } from "./contracts";
 import { conversations } from "./conversations";

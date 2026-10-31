@@ -53,5 +53,96 @@ const lockHeightWhileRendering = ViewPlugin.fromClass(
   },
 );
 
+/** The nearest ancestor that scrolls vertically: the page's scroll area. */
+const scrollParent = (element: HTMLElement) => {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement)
+    if (/^(auto|scroll|overlay)$/.test(getComputedStyle(parent).overflowY)) return parent;
+  return null;
+};
+
+/**
+ * The line block at the scroller's top edge and how far into it the edge falls, in its heights, with the column and
+ * scroller widths it was read at.
+ */
+type ReadingAnchor = { width: number; port: number } & ({ from: number; within: number } | { from: null });
+
+/**
+ * A sidebar, panel or window resize changes the column width on every frame and rewraps lines above the page's top
+ * edge. CodeMirror keeps the text in place in a page scroller only while it has focus, which the drag took away, and
+ * only from the frame after the browser painted the rewrap. Either way the note jumps on every rewrap. This measures
+ * the editor in the frame the scroller resizes, before the paint, and keeps the line at the top edge where it was.
+ */
+const holdReadingPosition = ViewPlugin.fromClass(
+  class {
+    private scroller: HTMLElement | null = null;
+    private anchor: ReadingAnchor | null = null;
+    private readonly resize = new ResizeObserver(() => this.hold());
+    private readonly capture = { key: this, read: () => this.readAnchor() };
+    private readonly onScroll = () => this.view.requestMeasure(this.capture);
+
+    constructor(private readonly view: EditorView) {}
+
+    update({ view, docChanged, heightChanged, changes }: ViewUpdate) {
+      if (this.anchor?.from != null && docChanged) this.anchor.from = changes.mapPos(this.anchor.from);
+      // An edit or a block that changed its height moves the text without a scroll: read the place again.
+      if (this.scroller && (docChanged || heightChanged)) view.requestMeasure(this.capture);
+      if (this.scroller || !view.dom.isConnected) return;
+      this.scroller = scrollParent(view.dom);
+      if (!this.scroller) return;
+      this.resize.observe(this.scroller);
+      this.scroller.addEventListener("scroll", this.onScroll, { passive: true });
+      view.requestMeasure(this.capture);
+    }
+
+    destroy() {
+      this.resize.disconnect();
+      this.scroller?.removeEventListener("scroll", this.onScroll);
+    }
+
+    /**
+     * Records where the reader is. A resized scroller keeps the old place for its resize callback; a column that
+     * changed inside an unchanged scroller, such as for "Full width", is not this plugin's to hold.
+     */
+    private readAnchor() {
+      const width = this.view.contentDOM.getBoundingClientRect().width;
+      const port = this.scroller!.clientWidth;
+      const { anchor } = this;
+      if (!anchor || Math.abs(anchor.width - width) < 0.5 || anchor.port === port) this.anchor = this.measureAnchor(width);
+    }
+
+    private measureAnchor(width: number): ReadingAnchor {
+      const port = this.scroller!.clientWidth;
+      const edge = this.scroller!.getBoundingClientRect().top - this.view.documentTop;
+      // Nothing above the top edge can move while the note starts below it.
+      if (edge <= 0) return { width, port, from: null };
+      const block = this.view.lineBlockAtHeight(edge);
+      return { width, port, from: block.from, within: (edge - block.top) / Math.max(1, block.height) };
+    }
+
+    private hold() {
+      const { view, scroller, anchor } = this;
+      if (!scroller || !view.dom.isConnected) return;
+      const width = view.contentDOM.getBoundingClientRect().width;
+      if (anchor?.from != null && Math.abs(anchor.width - width) >= 0.5) {
+        // Reading the layout runs the requested measure now. A focused editor corrects part of the rewrap itself;
+        // this adds only the rest. A correction onto lines it had not drawn lands on estimated heights; the next pass
+        // draws them, and three passes settle.
+        for (let pass = 0; pass < 3; pass++) {
+          view.requestMeasure();
+          // Any layout read runs the requested measure first; the block is then at its new place.
+          view.lineBlockAtHeight(0);
+          const block = view.lineBlockAt(Math.min(anchor.from, view.state.doc.length));
+          const edge = scroller.getBoundingClientRect().top - view.documentTop;
+          // WebKit drops a fraction of a pixel from the scroll offset.
+          const delta = Math.round(block.top + anchor.within * block.height - edge);
+          if (delta === 0) break;
+          scroller.scrollTop += delta;
+        }
+      }
+      this.anchor = this.measureAnchor(width);
+    }
+  },
+);
+
 /** The page scrolls the note; CodeMirror only renders it. */
-export const noteScroller = [noteScrollerTheme, lockHeightWhileRendering];
+export const noteScroller = [noteScrollerTheme, lockHeightWhileRendering, holdReadingPosition];

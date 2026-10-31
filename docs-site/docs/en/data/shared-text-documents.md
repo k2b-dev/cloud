@@ -66,7 +66,7 @@ carries application data such as version or activity attribution.
 Bind the store once, next to the table it reads and writes:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 type Saved = { status: "saved" | "overtaken" | "notFound" };
 

@@ -59,7 +59,7 @@ test("native constructors and target reads are allowed in test fixtures and the 
   expect(checkSource("packages/example/src/data.test.ts", 'import { sql } from "bun";')).toHaveLength(1);
 });
 
-test("the repository guard includes root tests and PWA workspaces", async () => {
+test("the repository guard includes root tests and skips standalone PWA services", async () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), "platform-clients-guard-"));
   const paths = ["tests/client.test.ts", "pwas/example/server/data.ts"];
   try {
@@ -69,7 +69,7 @@ test("the repository guard includes root tests and PWA workspaces", async () => 
       writeFileSync(file, 'import { sql } from "bun";');
     }
     const findings = await rule.run({ workspaceRoot, fix: false, flags: new Set() });
-    expect(findings.map(({ file }) => file).sort()).toEqual(paths.map((path) => join(workspaceRoot, path)).sort());
+    expect(findings.map(({ file }) => file)).toEqual([join(workspaceRoot, "tests/client.test.ts")]);
     expect(findings.every(({ message }) => message.includes("@k2b/cloud"))).toBe(true);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
@@ -114,7 +114,7 @@ test.each([
   "packages/example/src/data.test.ts",
   "packages/example/src/View.test.tsx",
   "packages/cloud/scripts/platform-start.test-fixture.ts",
-  "pwas/pwa-auth/test/server.ts",
+  "scripts/scale-acceptance.ts",
 ])("known test targets allow native pools and target reads: %s", (file) => {
   expect(checkSource(file, "new SQL(process.env.DATABASE_URL)")).toEqual([]);
 });
@@ -146,7 +146,6 @@ test.each([
   'import { SQL } from "bun"; Reflect.construct(SQL, []);',
   'import { SQL } from "bun"; new Wrapper(SQL);',
   'import { SQL } from "bun"; const value = { SQL };',
-  'import { SQL } from "bun"; error instanceof SQL.PostgresError;',
   'import { SQL } from "bun"; export { SQL as Pool };',
   'const native = require("bun"); Reflect.construct(native.RedisClient, []);',
   "const Pool = Bun.SQL; new Pool();",
@@ -181,8 +180,9 @@ test.each(["packages/cloud/src/runtime/clients.ts", "packages/example/test/nativ
 
 test("a new finding before a baselined finding reports the new source line", async () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), "platform-clients-baseline-"));
-  const entry = Object.entries(baseline).find(([, contents]) => contents.length === 1 && contents[0]!.startsWith("import "))!;
-  const [path, [content]] = entry;
+  const path = "packages/example/src/baselined.ts";
+  const content = 'import { sql } from "bun";';
+  baseline[path] = [content];
   const file = join(workspaceRoot, path);
   try {
     mkdirSync(dirname(file), { recursive: true });
@@ -198,6 +198,24 @@ test("a new finding before a baselined finding reports the new source line", asy
     writeFileSync(file, lines.join("\n"));
     expect(await rule.run({ workspaceRoot, fix: false, flags: new Set() })).toEqual([]);
   } finally {
+    delete baseline[path];
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
+});
+
+// Inspecting a native error class cannot create a pool or bypass its target.
+test("allows native Postgres error classification without allowing constructor escapes", () => {
+  expect(checkSource(path, 'import { SQL as Pool } from "bun"; error instanceof Pool.PostgresError;')).toEqual([]);
+  expect(checkSource(path, 'import { RedisClient as Pool } from "bun"; const create = Pool.PostgresError;')).toHaveLength(1);
+  expect(checkSource(path, 'import { SQL as Pool } from "bun"; new Pool();')).toHaveLength(1);
+});
+
+test.each([
+  ["scripts/prod-upgrade-preflight.ts", "process.env.SYNC_NAMESPACE"],
+  ["packages/cloud/scripts/sync-recovery-smoke.ts", "env.NATS_SERVERS; env.SYNC_REPLICAS"],
+])("connection-only operator tools can read their inputs but cannot construct clients: %s", (file, source) => {
+  expect(checkSource(file, source)).toEqual([]);
+  expect(checkSource(file, "process.env.DATABASE_URL")).toHaveLength(1);
+  expect(checkSource(file, 'import { SQL } from "bun"; new SQL();')).toHaveLength(1);
+  expect(checkSource(file, 'import { sql } from "bun";')).toHaveLength(1);
 });

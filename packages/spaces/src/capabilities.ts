@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CalendarEventsDataSchema,
@@ -25,7 +26,6 @@ import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/clo
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { spacesEvents } from "./app-events";

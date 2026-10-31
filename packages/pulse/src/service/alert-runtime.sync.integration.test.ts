@@ -1,7 +1,7 @@
 import { expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { notifications, settings } from "@k2b/cloud/services";
 import { createSync, type ScheduleDefinition, type Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { z } from "zod";
 import { connectTestNats, testFor, testSyncNamespace, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";

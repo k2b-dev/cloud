@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { MutationResult } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import { buildNotePaths, type NotePathNode, noteSlug, parseNotePath } from "../lib/note-path";
 import { createInitialNoteMarkdown, deriveNoteTitle, hasUsableNoteTitle } from "../lib/note-title";
 import type * as activity from "./activity";

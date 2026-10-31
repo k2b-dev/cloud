@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
@@ -23,7 +24,7 @@ import {
 } from "@k2b/cloud/services";
 import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { publishSpaceChange, spacesLive } from "./live";
 
 // ==========================

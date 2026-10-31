@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { toPgTextArray } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
-import { sql } from "bun";
 import { decodeJwt, generateKeyPair, jwtVerify } from "jose";
 import { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";

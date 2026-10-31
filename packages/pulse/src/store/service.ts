@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { hasRole } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import { checkStore } from "./check";

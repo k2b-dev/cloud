@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { hasRole } from "@k2b/cloud/contracts";
 import { invalidateSettingsCache, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
-import { sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import { ArtifactError, type ArtifactIdentity, user } from "./service";
