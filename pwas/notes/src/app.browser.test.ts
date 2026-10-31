@@ -161,6 +161,9 @@ describe("k2b notes · Produktions-SPA", () => {
     await page.locator(".cm-notice-card-widget").first().waitFor();
     await page.locator(".cm-query-block-preview svg").first().waitFor();
     expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
+    // The table's `@kaffee` anchor shows as a quiet label, not as raw Markdown.
+    await page.locator(".cm-named-block-handle", { hasText: /^kaffee$/ }).waitFor();
+    expect(await editor().innerText()).not.toContain("@kaffee");
     // No footer under the editor; the legal pages sit in the note's menu.
     expect(await page.getByRole("contentinfo").count()).toBe(0);
     await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
