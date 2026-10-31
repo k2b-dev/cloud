@@ -357,7 +357,6 @@ export const NoteEditOperationSchema = z.union([SetContentEditOperationSchema, S
 
 export const NoteCreateInputSchema = z
   .object({
-    notebookId: ResourceShortIdSchema.describe("Writable notebook ID."),
     parentId: ResourceShortIdSchema.optional().describe("Optional parent note ID in the same notebook."),
     position: z
       .number()

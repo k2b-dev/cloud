@@ -186,6 +186,8 @@ const activityActor = (context: CapabilityExecutionContext) =>
 
 const authorizeNotebook = async (notebook: Notebook, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const t = capabilityMessages(context);
+  if (context.target && (context.target.type !== "notebooks.notebook" || context.target.id !== notebook.shortId))
+    return capabilityNotFound(t.notebookNotFound);
   const scope = scopedNotebookId(context, required);
   if (!scope.ok) return scope;
   if (scope.data && scope.data !== notebook.id) return capabilityNotFound(t.notebookNotFound);
@@ -921,7 +923,7 @@ const noteMutationResult = async (result: MutationResult<Note>, notebook: Notebo
 
 const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, context: CapabilityExecutionContext) => {
   const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
-  const access = await requireNotebookByShortId(input.notebookId, context, "write");
+  const access = await requireNotebookByShortId(context.target?.id ?? "", context, "write");
   if (!access.ok) return access;
   let parentId: string | undefined;
   if (input.parentId) {
@@ -1347,6 +1349,7 @@ export const notebooksCapabilities = defineCapabilities({
   actions: {
     ...annotationActions,
     "comment.update": {
+      target: "notebook",
       title: "Edit page discussion post",
       description: "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentUpdateInputSchema,
@@ -1367,6 +1370,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentUpdate,
     },
     "comment.delete": {
+      target: "notebook",
       title: "Delete page discussion post",
       description: "Delete the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentDeleteInputSchema,
@@ -1387,6 +1391,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentDelete,
     },
     "comment.create": {
+      target: "notebook",
       title: "Add page discussion post",
       description: "Add Markdown discussion context to one writable note as the current user.",
       input: CommentCreateInputSchema,
@@ -1413,6 +1418,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentCreate,
     },
     "note.create": {
+      target: "notebook",
       title: "Create note",
       description: "Create one Markdown note in an explicitly selected writable notebook.",
       input: NoteCreateInputSchema,
@@ -1423,7 +1429,7 @@ export const notebooksCapabilities = defineCapabilities({
       approval: "rememberable",
       review: async (input, context) => {
         const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
-        const access = await requireNotebookByShortId(input.notebookId, context, "write");
+        const access = await requireNotebookByShortId(context.target?.id ?? "", context, "write");
         if (!access.ok) return access;
         let parentTitle = t.notebookRoot;
         if (input.parentId) {
@@ -1459,6 +1465,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runNoteCreate,
     },
     "note.edit": {
+      target: "notebook",
       title: "Edit note",
       description: "Apply conflict-aware structural Markdown edits through the collaborative note service.",
       input: NoteEditInputSchema,
@@ -1483,6 +1490,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runNoteEdit,
     },
     "note.move": {
+      target: "notebook",
       title: "Move note",
       description:
         "Move a note to another parent and/or place it among its siblings; placing switches that level to a hand order that the sidebar and Book follow.",

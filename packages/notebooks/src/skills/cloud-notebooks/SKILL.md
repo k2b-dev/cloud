@@ -43,3 +43,5 @@ Before editing `:::data`, `:::query`, `:::toc`, `:::chart`, table formulas or Bo
 Tags stay in Markdown. These capabilities cannot upload attachments, export PDFs, manage notebook settings/permissions, restore versions or copy/delete notes. Locked bodies still allow discussion. Book is the read-only handbook; editing never changes the preferred view.
 
 For tasks/events, consider Spaces and keep the source-note link. Use Contacts for ambiguous people, Mail only for explicitly requested external messages; avoid unrelated cross-app work.
+
+All note, comment and annotation Actions select a `notebooks.notebook` target (`notebook` in flat tools). Keep note, parent, anchor and annotation IDs in input; they must belong to that notebook. `note.create` no longer accepts `notebookId` in input.

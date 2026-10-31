@@ -106,15 +106,16 @@ export const SavedQueryDataSchema = z
   .strict();
 export const SavedQueryListInputSchema = z.object({ baseId: BaseSelectorSchema, ...PageInputShape }).strict();
 export const SavedQueryListDataSchema = z.array(SavedQueryDataSchema).max(100);
-export const SavedQuerySaveInputSchema = SqlRunInputSchema.extend({
-  pinned: z.boolean().optional().describe("Show this query on the overview, at most four per base."),
-  queryId: z.string().min(1).max(36).optional().describe("Saved query ID for an update; omit to create."),
-  expectedRevision: z.number().int().positive().optional().describe("Current revision, required when queryId is supplied."),
-  name: z.string().trim().min(1).max(120).describe("Name unique within the base."),
-}).strict();
+export const SavedQuerySaveInputSchema = SqlRunInputSchema.omit({ baseId: true })
+  .extend({
+    pinned: z.boolean().optional().describe("Show this query on the overview, at most four per base."),
+    queryId: z.string().min(1).max(36).optional().describe("Saved query ID for an update; omit to create."),
+    expectedRevision: z.number().int().positive().optional().describe("Current revision, required when queryId is supplied."),
+    name: z.string().trim().min(1).max(120).describe("Name unique within the base."),
+  })
+  .strict();
 export const SavedQueryDeleteInputSchema = z
   .object({
-    baseId: BaseSelectorSchema,
     queryId: z.string().min(1).max(36).describe("Saved query ID returned by saved_query.list."),
     expectedRevision: z.number().int().positive().describe("Revision returned by saved_query.list; deletion fails if it changed."),
   })
@@ -129,7 +130,6 @@ export const AlertReadInputSchema = z
   })
   .strict();
 export const AlertSaveInputSchema = AlertSaveSchema.safeExtend({
-  baseId: BaseSelectorSchema,
   ruleId: ShortIdSchema.optional().describe("Rule ID to update; omit to create."),
   expectedRevision: z.number().int().positive().optional().describe("Current revision; required with ruleId."),
   name: AlertSaveSchema.shape.name.describe("Name of the alert rule."),
@@ -141,7 +141,7 @@ export const AlertSaveInputSchema = AlertSaveSchema.safeExtend({
   minDurationSeconds: AlertSaveSchema.shape.minDurationSeconds.describe("Continuous breach duration before firing, in seconds."),
   intervalSeconds: AlertSaveSchema.shape.intervalSeconds.describe("Evaluation interval in seconds, at least 300."),
 });
-export const AlertDeleteInputSchema = AlertReadInputSchema.extend({
+export const AlertDeleteInputSchema = AlertReadInputSchema.omit({ baseId: true }).extend({
   expectedRevision: z.number().int().positive().describe("Current revision; deletion fails if it changed."),
 });
 export const AlertDataSchema = AlertRuleSchema;
@@ -149,7 +149,6 @@ export const AlertListDataSchema = z.array(AlertDataSchema).max(100);
 // Capability actions never accept or return an ingest token or endpoint bearer token.
 export const SourceCreateInputSchema = CreateSourceSchema.omit({ bearerToken: true })
   .extend({
-    baseId: ShortIdSchema.describe("Base ID returned by base.list."),
     kind: CreateSourceSchema.shape.kind.describe("HTTP push source or metrics scrape source."),
     name: CreateSourceSchema.shape.name.describe("Source name."),
     endpointUrl: CreateSourceSchema.shape.endpointUrl.describe("Public HTTPS scrape endpoint for metrics; null for HTTP push."),
@@ -167,7 +166,6 @@ export const SourceCreateInputSchema = CreateSourceSchema.omit({ bearerToken: tr
   .strict();
 export const SourceUpdateInputSchema = UpdateSourceSchema.omit({ bearerToken: true })
   .extend({
-    baseId: ShortIdSchema.describe("Base ID returned by base.list."),
     sourceId: ShortIdSchema.describe("Source ID returned by source.list."),
     expectedRevision: z.number().int().positive().describe("Current source configuration revision from source.read."),
     name: UpdateSourceSchema.shape.name.describe("New source name."),
@@ -187,14 +185,12 @@ export const BaseCreateInputSchema = CreateBaseSchema.extend({
   description: CreateBaseSchema.shape.description.describe("Optional base description."),
 }).strict();
 export const BaseDestroyInputSchema = z.strictObject({
-  baseId: ShortIdSchema.describe("Base ID from base.list."),
   expectedUpdatedAt: TimestampSchema.describe("Exact updatedAt from a fresh base.read; rejects changed bases."),
 });
 export const BaseOperationDataSchema = z.strictObject({ started: z.literal(true) });
 export const INGEST_CAPABILITY_MAX_BYTES = 192 * 1024;
 export const IngestWriteInputSchema = z
   .strictObject({
-    baseId: ShortIdSchema.describe("Base ID from base.list."),
     sourceId: ShortIdSchema.describe("HTTP ingest source created by the current access subject."),
     expectedRevision: z.number().int().positive().describe("Current source revision from source.read."),
     batch: IngestBatchSchema.describe("Telemetry batch; the complete Action input must fit 192 KiB."),

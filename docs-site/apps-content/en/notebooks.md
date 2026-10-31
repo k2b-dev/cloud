@@ -681,3 +681,14 @@ declares `note` inside `notebook`, lists authorized containers through
 Activity accepts `container` alongside the published `notebook` alias; when
 both are supplied they must identify the same notebook. The existing list
 and activity results remain compatible.
+
+## Capability action targets
+
+All note, page-comment and text-annotation Actions target `notebooks.notebook`.
+Pass the notebook ref as `target`; `note.create` no longer accepts `notebookId`
+in `input`. Chat tools and MCP use the flat field `notebook`.
+
+Note, comment, annotation, reply, parent and placement-anchor IDs remain in
+`input`. Each must belong to the target notebook; a mismatch returns
+`NOT_FOUND` in both review and execution. Moving a note stays within its
+notebook. Search and reader Queries retain their existing inputs.
