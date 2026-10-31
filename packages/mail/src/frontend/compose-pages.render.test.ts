@@ -229,7 +229,7 @@ for (const page of pages) {
 
 for (const page of pages) {
   test(`${page.island} answers 404 for a mailbox the caller may not read, as for an unknown address`, async () => {
-    spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "write", userId: user.id })));
+    spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
     spies.push(spyOn(mailboxes, "getMailbox").mockResolvedValue(fail(err.forbidden("Access denied"))));
     const response = await request(page.path);
     expect(response.status).toBe(404);
@@ -237,9 +237,9 @@ for (const page of pages) {
   });
 }
 
-test("a draft the caller may not read answers 404 on its compose page", async () => {
-  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "write", userId: user.id })));
-  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(fail(err.forbidden("Access denied"))));
+test("a draft hidden from a member of the mailbox answers 404 on its compose page", async () => {
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "assigned", permission: "write", userId: user.id })));
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(fail(err.notFound("Draft"))));
   const response = await request("Drf001");
   expect(response.status).toBe(404);
   expect(await response.text()).not.toContain("MailComposerPage");

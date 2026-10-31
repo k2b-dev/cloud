@@ -52,8 +52,8 @@ export default ssr<AuthContext>(async (c) => {
       composeTemplates.listComposeTemplates(context, mailboxId),
       composeTemplates.listComposeSignatureDefaults(context, mailboxId),
     ]);
-  if (!mailbox.ok) return ssr.error(c, pageReadStatus(mailbox.error.status));
-  if (!draft.ok) return ssr.error(c, pageReadStatus(draft.error.status));
+  if (!mailbox.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, mailbox.error.status));
+  if (!draft.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, draft.error.status));
   if (!access.ok) return ssr.error(c, 403);
   const publicData = await projectComposeData({
     mailbox: mailbox.data,

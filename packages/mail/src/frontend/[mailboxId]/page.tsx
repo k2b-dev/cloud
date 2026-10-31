@@ -42,7 +42,7 @@ export default ssr<AuthContext>(async (c) => {
     loadMailSidebarData(context),
     coreSettings.get<string>("app.url"),
   ]);
-  if (!internalData.ok) return ssr.error(c, pageReadStatus(internalData.error.status));
+  if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
   const data = await projectMailboxPageData(internalData.data);
   const dateConfig = getDateConfig(c);
 

@@ -10,6 +10,7 @@ import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { createConfig } from "@k2b/ssr";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
+import * as access from "../service/access";
 import * as automationWorkspace from "../service/automation-workspace";
 import * as publicResources from "../service/public-resources";
 
@@ -60,11 +61,19 @@ const pages = [
 for (const page of pages) {
   test(`${page.path} answers 404 for a mailbox the caller may not read, as for an unknown address`, async () => {
     const load = spyOn(automationWorkspace, page.loader).mockResolvedValue(fail(err.forbidden("Access denied")));
-    spies.push(load);
+    spies.push(load, spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
     const response = await request(page.path);
     expect(load).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(404);
     expect(await response.text()).toContain("Page not found");
+  });
+
+  test(`${page.path} keeps 403 for a member who may read the mailbox but not administer its automations`, async () => {
+    spies.push(
+      spyOn(automationWorkspace, page.loader).mockResolvedValue(fail(err.forbidden("Mailbox administration permission required"))),
+      spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "read", userId })),
+    );
+    expect((await request(page.path)).status).toBe(403);
   });
 
   test(`${page.path} keeps other refusals, such as a server failure`, async () => {

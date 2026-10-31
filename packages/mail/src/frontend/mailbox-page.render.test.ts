@@ -7,11 +7,13 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as layoutHelp from "@k2b/cloud/ssr/help";
 import { createConfig } from "@k2b/ssr";
+import { err, fail } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { selectHtml } from "../../../../tests/fixtures/select-html";
 import { resolveMailSearchRoute } from "../search-state";
 import { focus, mailboxes, mailboxPreferences } from "../service";
+import * as access from "../service/access";
 import * as integrations from "../service/app-integrations";
 import * as publicResources from "../service/public-resources";
 import type { MailboxPageData } from "../service/workspace";
@@ -128,6 +130,8 @@ test("an active mailbox the caller may not read answers the shared no-store 404 
   });
   spies.push(resolve, load, integration);
 
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
+
   const response = await request();
 
   expect(resolve).toHaveBeenCalledWith(mailboxShortId);
@@ -177,6 +181,7 @@ test.each([
       context: false,
     }),
   );
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
   const response = await request(query);
   expect(response.status).toBe(404);
   expect(load.mock.calls[0]?.[0].publicSearch).toEqual(

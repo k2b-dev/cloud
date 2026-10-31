@@ -25,7 +25,7 @@ export default ssr<AuthContext>(async (c) => {
     requestId: c.req.header("x-request-id") ?? null,
   };
   const result = await loadMailAutomationOverview(context, mailboxId, locale);
-  if (!result.ok) return ssr.error(c, pageReadStatus(result.error.status));
+  if (!result.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, result.error.status));
   const data = await projectAutomationWorkspace(result.data);
 
   const directory = await requestContactDirectory(c);

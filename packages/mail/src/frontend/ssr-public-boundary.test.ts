@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { buildProjectedUser } from "@k2b/cloud/services/session/user";
+import { err, fail, ok } from "@k2b/stdlib";
+import * as access from "../service/access";
+import type { MailRequestContext } from "../service/auth";
 import type { MailAutomationAccessData } from "../service/automation-workspace";
 import type { MailboxPageData, MailConversationDetailData } from "../service/workspace";
 import {
@@ -271,7 +275,22 @@ describe("Mail SSR public boundary", () => {
   });
 });
 
-test("a refused read answers as for an unknown address; every other status stays", () => {
-  expect(pageReadStatus(403)).toBe(404);
-  for (const status of [400, 404, 409, 500, 503] as const) expect(pageReadStatus(status)).toBe(status);
+test("a refusal answers 404 only when the caller cannot read the mailbox; every other status stays", async () => {
+  const user = buildProjectedUser({ id: "11111111-1111-4111-8111-111111111111", provider: "local", profile: "user", uid: "reader" });
+  const context: MailRequestContext = { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id }, requestId: null };
+  const mailboxId = "22222222-2222-4222-8222-222222222222";
+  const read = spyOn(access, "requireMailboxAccess");
+  try {
+    read.mockResolvedValue(fail(err.forbidden("Access denied")));
+    expect(await pageReadStatus(context, mailboxId, 403)).toBe(404);
+    expect(read).toHaveBeenCalledWith(context, mailboxId, "read");
+    // A member refused by a feature permission, such as automation administration, keeps 403.
+    read.mockResolvedValue(ok({ scope: "mailbox", permission: "read", userId: "11111111-1111-4111-8111-111111111111" }));
+    expect(await pageReadStatus(context, mailboxId, 403)).toBe(403);
+    read.mockClear();
+    for (const status of [400, 404, 409, 500, 503] as const) expect(await pageReadStatus(context, mailboxId, status)).toBe(status);
+    expect(read).not.toHaveBeenCalled();
+  } finally {
+    read.mockRestore();
+  }
 });
