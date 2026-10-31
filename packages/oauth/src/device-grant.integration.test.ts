@@ -184,8 +184,9 @@ suite("OAuth device authorization grant", () => {
       const approval = await confirmRequest(who, started.user_code);
       expect(approval.scopes).toContain("admin");
       await decide(who, approval.request, "approve");
+      await allowNextPoll(started.device_code);
       const issued = await poll(started.device_code);
-      expect(issued.status).toBe(200);
+      expect(issued.status, JSON.stringify(issued.body)).toBe(200);
       expect(String(issued.body.scope).split(" ")).toContain("admin");
       const token = String(issued.body.access_token);
       expect(await oauthTokens.verifyAccessToken(token, ["cloud", "cloud-cli"])).toMatchObject({

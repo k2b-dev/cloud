@@ -259,9 +259,9 @@ export const removeInternalTarget = async (identity: StoreIdentity, id: string) 
         },
         tx,
       );
-    return rows;
+    return rows.count;
   });
-  if (!result.count) throw new BaseAdminError("NOT_FOUND", 404);
+  if (!result) throw new BaseAdminError("NOT_FOUND", 404);
   return { ok: true as const };
 };
 const reservedDatabases = async (candidates: string[], prefix: string): Promise<string[]> => {

@@ -272,14 +272,17 @@ suite("Pulse store admin API", () => {
       .route("/api/pulse/admin", baseAdminRoutes);
     received = 0;
     for (const [method, path] of paths) {
+      const before = received;
       const response = await scoped.request(path, {
         method,
         headers: { cookie: "session_token=admin-fixture", "content-type": "application/json" },
         ...(method === "GET" ? {} : { body: JSON.stringify({ url: saved.url, user: saved.user, password }) }),
       });
       expect(response.status).toBe(method === "GET" ? 200 : 403);
+      expect(await response.text()).not.toContain(password);
+      // Status reads may probe the backend; denied mutations must never do so.
+      if (method !== "GET") expect(received).toBe(before);
     }
-    expect(received).toBe(0);
   });
   test("setup gate leaves admin store and policy available without a connection", async () => {
     const before = current["pulse.clickhouse_connection"];

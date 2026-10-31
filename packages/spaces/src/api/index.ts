@@ -3199,6 +3199,26 @@ const adminApp = new Hono<AuthContext>()
   .get(
     "/",
     auth.requireOAuthScope("read", "admin"),
+    describeRoute({
+      tags: ["Spaces Admin"],
+      summary: "List Spaces for access recovery",
+      description: "Lists Space metadata and access counts without calendar export tokens. Requires Cloud admin.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({
+            items: z.array(SpaceSchema.omit({ icalToken: true }).extend({ permissionCount: z.number() })),
+            page: z.number(),
+            perPage: z.number(),
+            total: z.number(),
+            hasNext: z.boolean(),
+            summary: z.object({ total: z.number(), orphaned: z.number(), totalPermissions: z.number() }),
+          }),
+          "Space metadata and access counts",
+        ),
+        403: jsonResponse(ErrorResponseSchema, "Cloud admin required"),
+      },
+    }),
     v("query", PaginationQuerySchema.extend({ search: z.string().max(200).optional() })),
     async (c) => {
       c.header("Cache-Control", "private, no-store");
@@ -3208,7 +3228,10 @@ const adminApp = new Hono<AuthContext>()
         spacesService.space.admin.list({ pagination: parsePagination(query), filter }),
         spacesService.space.admin.summary({ filter }),
       ]);
-      return respond(c, ok({ ...spaces, items: await projectSpaces(spaces.items), summary }));
+      return respond(
+        c,
+        ok({ ...spaces, items: await projectSpaces(spaces.items.map(({ icalToken: _icalToken, ...item }) => item)), summary }),
+      );
     },
   )
   .get(

@@ -126,6 +126,16 @@ const app = new Hono<AuthContext>()
   .put(
     "/admin/settings/:key",
     auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Chat Admin"],
+      summary: "Update a Chat setting",
+      ...requiresAuth,
+      responses: {
+        200: { description: "Setting updated" },
+        400: jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Invalid setting or value"),
+        403: jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Cloud admin required"),
+      },
+    }),
     validator("json", z.object({ value: z.unknown(), replaceUnreadable: z.boolean().optional() })),
     async (c) => {
       const key = c.req.param("key") ?? "";
