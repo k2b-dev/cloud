@@ -5,7 +5,7 @@
  */
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors } from "../../../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../../../ui/test/browser";
 import { startNotebookEditorFixture } from "./shared-text-editor.browser-fixture";
 
 let browser: Browser;
@@ -110,7 +110,7 @@ test("another person's caret stays on its character in text", async () => {
     await onCharacter(page, "Zielwort");
 
     await page.setViewportSize({ width: 900, height: 700 });
-    await page.evaluate(() => window.noteHarness.settle());
+    await settled(page);
     await onCharacter(page, "Zielwort");
     expect(errors).toEqual([]);
   } finally {
