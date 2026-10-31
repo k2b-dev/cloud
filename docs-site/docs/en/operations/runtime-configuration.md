@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 
 # Runtime configuration
@@ -278,8 +278,13 @@ never falls back to a bearer credential.
 
 All app keys carry `identity:invoke`. OAuth issuance also requires the
 operator-owned `oauth_issue_allowed` credential grant, checked directly on
-every request regardless of app ID. Setup and migration grant built-in `oauth`
-keys permission by default; operators can assign it to third-party app keys.
+every request regardless of app ID. Every new issuer key, including rotations,
+needs explicit `--grant oauth:issue` (or API `grants: ["oauth:issue"]`). Setup
+and development tooling must pass it for the built-in OAuth app's first
+enrollment; the one-time migration grants only keys enrolled before the grant
+existed. Grants are never inherited. Issuance serves clients and grants in
+Cloud's OAuth registry; separate third-party identity-provider registries are
+not supported.
 See [App keys](/en/docs/operations/app-keys#background-and-oauth-authority) for
 grant storage and administration. Mandates and OAuth grant checks stay unchanged.
 `connections_allowed=false` prevents startup connection delivery but still

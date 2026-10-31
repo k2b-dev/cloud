@@ -52,11 +52,11 @@ databaseSuite()("Core app-key registry and admin API", () => {
     c.set("user", actor);
     await next();
   });
-  const post = (appId: string, publicKey: string) =>
+  const post = (appId: string, publicKey: string, grants?: "oauth:issue"[]) =>
     routes.request(`/${appId}/keys`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ publicKey, name: "Deployment" }),
+      body: JSON.stringify({ publicKey, name: "Deployment", grants }),
     });
 
   test("installation ID is one durable DB row across repeat migrations", async () => {
@@ -143,6 +143,43 @@ databaseSuite()("Core app-key registry and admin API", () => {
     const bearerRevoke = await serviceAccountCredentials.revoke({ actor, credentialId: key.keyId });
     expect(!bearerRevoke.ok && bearerRevoke.error.status).toBe(404);
     expect(await getActiveAppKey({ appId: "not-yet-installed", keyId: key.keyId })).not.toBeNull();
+  });
+
+  test("every new key needs an explicit grant, including built-in and third-party rotation", async () => {
+    const builtin = await (await post("oauth", first.publicKey, [])).json();
+    expect((await getActiveAppKey({ appId: "oauth", keyId: builtin.keyId }))?.oauthIssueAllowed).toBe(false);
+    const builtinRotation = await (await post("oauth", second.publicKey)).json();
+    expect((await getActiveAppKey({ appId: "oauth", keyId: builtinRotation.keyId }))?.oauthIssueAllowed).toBe(false);
+    for (const keyId of [builtin.keyId, builtinRotation.keyId]) await appKeys.revoke({ actor, appId: "oauth", keyId });
+
+    const granted = await (await post("acme-oauth", first.publicKey, ["oauth:issue"])).json();
+    expect((await getActiveAppKey({ appId: "acme-oauth", keyId: granted.keyId }))?.oauthIssueAllowed).toBe(true);
+    const rotation = await (await post("acme-oauth", second.publicKey)).json();
+    expect((await getActiveAppKey({ appId: "acme-oauth", keyId: rotation.keyId }))?.oauthIssueAllowed).toBe(false);
+  });
+
+  test("explicit grants and empty grants enroll distinct authority; retries preserve the original choice", async () => {
+    const appId = "grant-override";
+    const granted = await (await post(appId, first.publicKey, ["oauth:issue"])).json();
+    const withdrawn = await (await post(appId, second.publicKey, [])).json();
+    expect((await getActiveAppKey({ appId, keyId: withdrawn.keyId }))?.oauthIssueAllowed).toBe(false);
+    const repeated = await post(appId, second.publicKey, ["oauth:issue"]);
+    expect(await repeated.json()).toEqual(withdrawn);
+    expect((await getActiveAppKey({ appId, keyId: withdrawn.keyId }))?.oauthIssueAllowed).toBe(false);
+    await appKeys.revoke({ actor, appId, keyId: granted.keyId });
+    const rotation = await (await post(appId, third.publicKey)).json();
+    expect((await getActiveAppKey({ appId, keyId: rotation.keyId }))?.oauthIssueAllowed).toBe(false);
+    const listed = await appKeys.list({ actor, appId });
+    expect(listed.ok && listed.data.items.find((item) => item.keyId === withdrawn.keyId)?.grants).toEqual([]);
+  });
+
+  test("expired keys do not pass their grant to a new enrollment", async () => {
+    const appId = "expired-grant";
+    const granted = await (await post(appId, first.publicKey, ["oauth:issue"])).json();
+    await sql`UPDATE auth.service_account_credentials SET expires_at = now() - interval '1 minute'
+      WHERE id = ${granted.keyId}::uuid`;
+    const replacement = await (await post(appId, second.publicKey)).json();
+    expect((await getActiveAppKey({ appId, keyId: replacement.keyId }))?.oauthIssueAllowed).toBe(false);
   });
 
   test("concurrent distinct creates cannot exceed two active keys, while concurrent repeats return one key", async () => {

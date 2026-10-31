@@ -6,7 +6,7 @@ import { authenticateBootstrap } from "@k2b/cloud/services/app-bootstrap";
 import { appKeys, getActiveAppKey } from "@k2b/cloud/services/app-keys";
 import { SQL, sql } from "bun";
 import { Hono } from "hono";
-import { createLocalJWKSet, decodeJwt, exportJWK, generateKeyPair, jwtVerify } from "jose";
+import { createLocalJWKSet, decodeJwt, exportJWK, generateKeyPair } from "jose";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { requireInfra, suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { createIdentityInvocationRoutes } from "../../../core/src/api/identity-invocation";
@@ -16,7 +16,11 @@ import { migrateAppBootstrap } from "../../../core/src/migrate/core/app-bootstra
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
+import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
+import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
+import { migrate as migrateOAuth } from "../../../oauth/src/migrate";
 import { BOOTSTRAP_PATH, signAppProof, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
+import { verifyAccessToken } from "../../src/services/oauth-tokens";
 
 const NOW = Date.UTC(2030, 0, 2, 3, 4, 5);
 const actor = {
@@ -45,15 +49,18 @@ suiteFor(
     await migrateAuth();
     await migrateAudit();
     await migrateSettings();
+    await migrateRailPreferences();
+    await migrateRailShortcuts();
+    await migrateOAuth();
     await migrateAppBootstrap();
     await sql`INSERT INTO auth.users (id, uid, provider, profile, admin) VALUES (${actor.id}::uuid, ${actor.uid}, 'local', 'user', true)`;
-    const enroll = async (appId: string, fixture: { seed: string; publicKey: string } = APP_KEY_FIXTURES[0]) => {
-      const result = await appKeys.register({ actor, appId, publicKey: fixture.publicKey });
+    const enroll = async (appId: string, fixture: { seed: string; publicKey: string } = APP_KEY_FIXTURES[0], grants?: "oauth:issue"[]) => {
+      const result = await appKeys.register({ actor, appId, publicKey: fixture.publicKey, grants });
       if (!result.ok) throw new Error(result.error.message);
       return { appId, keyId: result.data.keyId, installationId: result.data.installationId, seed: fixture.seed };
     };
     key = await enroll("mail");
-    oauthKey = await enroll("oauth", APP_KEY_FIXTURES[1]);
+    oauthKey = await enroll("oauth", APP_KEY_FIXTURES[1], ["oauth:issue"]);
     thirdPartyKey = await enroll("acme-oauth");
     replicas = [new SQL(database.url), new SQL(database.url)];
     const makeRoutes = (db: SQL) =>
@@ -143,6 +150,24 @@ suiteFor(
     }
   });
 
+  test("a newly enrolled key without an explicit grant cannot issue, including the built-in app and its rotation", async () => {
+    const result = await appKeys.register({ actor, appId: "oauth", publicKey: APP_KEY_FIXTURES[2].publicKey });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error.message);
+    const ungranted = { ...oauthKey, keyId: result.data.keyId, seed: APP_KEY_FIXTURES[2].seed };
+    const target = "/api/_internal/identity/v1/oauth/token";
+    const issuance = new Hono().route("/api/_internal/identity/v1", createIdentityOAuthIssuanceRoutes());
+    try {
+      for (const appKey of [key, thirdPartyKey, ungranted]) {
+        expect((await getActiveAppKey(appKey))?.oauthIssueAllowed).toBe(false);
+        const denied = await signed(appKey, "{}", "POST", target);
+        expect((await issuance.request(target, denied.init)).status).toBe(403);
+      }
+    } finally {
+      await appKeys.revoke({ actor, appId: "oauth", keyId: ungranted.keyId });
+    }
+  });
+
   test("only apps with the grant carry oauth:issue, independent of app ID", async () => {
     const target = "/api/_internal/identity/v1/oauth/token";
     for (const appKey of [key, thirdPartyKey]) {
@@ -188,34 +213,17 @@ suiteFor(
           expect(purpose).toBe("oauth");
           return use({ kid, key: privateKey, signUntil: new Date(NOW + 60_000), issuer }, sql);
         },
-        resolve: async () => ({
-          authEpoch: 0,
-          clientId: "test-client",
-          clientScopes: ["read"],
-          clientAudiences: ["cloud"],
-          clientServiceAccountId: "44444444-4444-4444-8444-444444444444",
-          registrationKind: "managed",
-          allowedProfiles: [],
-          accessMode: "profiles",
-          specificAccess: false,
-          grantedScopes: ["read"],
-          grantedAudiences: ["cloud"],
-          resource: null,
-          nonce: null,
-          notAfter: null,
-          user: null,
-          serviceAccount: {
-            id: "44444444-4444-4444-8444-444444444444",
-            kind: "standalone",
-            status: "active",
-            delegatedUserId: null,
-            appId: null,
-            resourceType: null,
-            resourceId: null,
-          },
-        }),
       }),
     );
+    const clientId = "third-party-registry-client";
+    const serviceAccountId = "44444444-4444-4444-8444-444444444444";
+    const grantId = "55555555-5555-4555-8555-555555555555";
+    const nonce = "66666666-6666-4666-8666-666666666666";
+    await sql`INSERT INTO auth.service_accounts (id, name, kind) VALUES (${serviceAccountId}::uuid, 'Registry client', 'standalone')`;
+    await sql`INSERT INTO oauth.clients (client_id, name, redirect_uris, scopes, audiences, service_account_id)
+      VALUES (${clientId}, 'Third-party registry client', ARRAY[]::text[], ARRAY['read'], ARRAY['cloud'], ${serviceAccountId}::uuid)`;
+    await sql`INSERT INTO oauth.client_credentials_authority_grants (id, nonce, client_id, scopes, audiences)
+      VALUES (${grantId}::uuid, ${nonce}::uuid, ${clientId}, ARRAY['read'], ARRAY['cloud'])`;
     const target = "/api/_internal/identity/v1/oauth/token";
     const body = JSON.stringify({
       tokens: [
@@ -224,8 +232,8 @@ suiteFor(
           expiresIn: 60,
           grant: {
             kind: "client_credentials",
-            grantId: "55555555-5555-4555-8555-555555555555",
-            nonce: "66666666-6666-4666-8666-666666666666",
+            grantId,
+            nonce,
           },
         },
       ],
@@ -238,12 +246,21 @@ suiteFor(
       const { tokens } = await response.json();
       const keys = await issuance.request("/api/_internal/identity/v1/oauth/jwks");
       expect(keys.status).toBe(200);
-      const verified = await jwtVerify(tokens[0], createLocalJWKSet(await keys.json()), {
-        issuer,
-        audience: "cloud",
-        currentDate: new Date(NOW),
+      const verification = { issuer, key: createLocalJWKSet(await keys.json()), groupsAdmin: [], query: sql };
+      const verified = await verifyAccessToken(tokens[0], "cloud", verification);
+      expect(verified).toMatchObject({
+        kind: "service_account",
+        serviceAccount: { id: serviceAccountId },
+        oauthClientId: clientId,
+        scopes: ["read"],
+        payload: { token_use: "access", principal_type: "service_account" },
       });
-      expect(verified.payload).toMatchObject({ token_use: "access", principal_type: "service_account", scope: "read" });
+      const [grant] = await sql`SELECT consumed_at FROM oauth.client_credentials_authority_grants WHERE id = ${grantId}::uuid`;
+      expect(grant?.consumed_at).toBeInstanceOf(Date);
+      const replay = await signed(thirdPartyKey, body, "POST", target);
+      expect((await issuance.request(target, replay.init)).status).toBe(403);
+      await sql`DELETE FROM oauth.clients WHERE client_id = ${clientId}`;
+      expect(await verifyAccessToken(tokens[0], "cloud", verification)).toBeNull();
       await sql`UPDATE auth.service_account_credentials SET oauth_issue_allowed = false WHERE id = ${thirdPartyKey.keyId}::uuid`;
       const denied = await signed(thirdPartyKey, body, "POST", target);
       expect((await issuance.request(target, denied.init)).status).toBe(403);

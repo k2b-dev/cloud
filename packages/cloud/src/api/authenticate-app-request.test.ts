@@ -161,6 +161,7 @@ test("signed admission errors retain their envelope and Retry-After through the 
         kind: "app_key",
         name: "Fixture",
         publicKey: APP_KEY_FIXTURES[0].publicKey,
+        grants: [],
         fingerprint: "fixture",
         status: "active",
         accountStatus: "active",
