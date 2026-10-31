@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { MailAutomationAccessData } from "../service/automation-workspace";
 import type { MailboxPageData, MailConversationDetailData } from "../service/workspace";
 import {
+  pageReadStatus,
   projectAutomationWorkspace,
   projectComposeData,
   projectMailboxPageData,
@@ -268,4 +269,9 @@ describe("Mail SSR public boundary", () => {
       draft: { id: "Draft1", signatureTemplateId: "Sign01", conversationId: "Conv01", attachments: [{ id: "Attach" }] },
     });
   });
+});
+
+test("a refused read answers as for an unknown address; every other status stays", () => {
+  expect(pageReadStatus(403)).toBe(404);
+  for (const status of [400, 404, 409, 500, 503] as const) expect(pageReadStatus(status)).toBe(status);
 });

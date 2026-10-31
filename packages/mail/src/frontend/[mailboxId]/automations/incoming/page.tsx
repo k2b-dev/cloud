@@ -7,7 +7,7 @@ import { requestContactDirectory } from "../../../../service/contact-directory";
 import type { IncomingAutomationPreset } from "../../../_components/MailIncomingAutomationSettings";
 import MailIncomingAutomationsPage from "../../../MailIncomingAutomationsPage.island";
 import { mailPageMessages } from "../../../pages-messages";
-import { projectAutomationWorkspace, resolveSsrMailboxId } from "../../../ssr-public-boundary";
+import { pageReadStatus, projectAutomationWorkspace, resolveSsrMailboxId } from "../../../ssr-public-boundary";
 
 const presets = new Set<IncomingAutomationPreset>(["blank", "ai-route", "ai-tag", "ai-draft"]);
 
@@ -26,7 +26,7 @@ export default ssr<AuthContext>(async (c) => {
     requestId: c.req.header("x-request-id") ?? null,
   };
   const result = await loadMailIncomingAutomationsWorkspace(context, mailboxId);
-  if (!result.ok) return ssr.error(c, result.error.status);
+  if (!result.ok) return ssr.error(c, pageReadStatus(result.error.status));
   const data = await projectAutomationWorkspace(result.data);
   const requested = c.req.query("new") ?? "";
   const openPreset = presets.has(requested as IncomingAutomationPreset)

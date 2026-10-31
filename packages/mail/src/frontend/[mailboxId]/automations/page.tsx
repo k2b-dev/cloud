@@ -6,7 +6,7 @@ import { loadMailAutomationOverview } from "../../../service/automation-workspac
 import { requestContactDirectory } from "../../../service/contact-directory";
 import MailAutomationOverview from "../../MailAutomationOverview.island";
 import { mailPageMessages } from "../../pages-messages";
-import { projectAutomationWorkspace, resolveSsrMailboxId } from "../../ssr-public-boundary";
+import { pageReadStatus, projectAutomationWorkspace, resolveSsrMailboxId } from "../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
@@ -25,7 +25,7 @@ export default ssr<AuthContext>(async (c) => {
     requestId: c.req.header("x-request-id") ?? null,
   };
   const result = await loadMailAutomationOverview(context, mailboxId, locale);
-  if (!result.ok) return ssr.error(c, result.error.status);
+  if (!result.ok) return ssr.error(c, pageReadStatus(result.error.status));
   const data = await projectAutomationWorkspace(result.data);
 
   const directory = await requestContactDirectory(c);

@@ -114,7 +114,7 @@ test("missing or deleted active mailbox renders shared HTML 404 before loading w
   expect(html).not.toContain("MailWorkspace");
 });
 
-test("active mailbox denied by workspace preserves 403 in the shared no-store HTML page", async () => {
+test("an active mailbox the caller may not read answers the shared no-store 404 page, as for an unknown address", async () => {
   const resolve = spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId);
   const load = spyOn(workspace, "loadMailboxPageData").mockResolvedValue({
     ok: false,
@@ -145,12 +145,12 @@ test("active mailbox denied by workspace preserves 403 in the shared no-store HT
       accessSubject: { type: "user", userId: user.id },
     },
   });
-  expect(response.status).toBe(403);
+  expect(response.status).toBe(404);
   expect(response.headers.get("content-type")).toContain("text/html");
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(response.headers.get("location")).toBeNull();
   const html = await response.text();
-  expect(html).toContain("Access denied");
+  expect(html).toContain("Page not found");
   expect(html).toContain("Go to home page");
   expect(html).not.toContain("Internal mailbox permission details");
   expect(html).not.toContain(mailboxId);
@@ -178,7 +178,7 @@ test.each([
     }),
   );
   const response = await request(query);
-  expect(response.status).toBe(403);
+  expect(response.status).toBe(404);
   expect(load.mock.calls[0]?.[0].publicSearch).toEqual(
     resolveMailSearchRoute(new URL(`https://cloud.example.test/app/mail/${mailboxShortId}${query}`)),
   );

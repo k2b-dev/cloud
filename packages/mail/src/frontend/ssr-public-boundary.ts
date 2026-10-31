@@ -352,3 +352,9 @@ export const projectComposeData = async <
   }
   return projectSsrPaths(data, paths, loadPublicIds);
 };
+
+/**
+ * The status a Mail page answers when a read fails. A refused read (403) answers as for an unknown address, so no page
+ * tells that a mailbox or one of its drafts exists; every other status stays.
+ */
+export const pageReadStatus = <S extends number>(status: S): S | 404 => (status === 403 ? 404 : status);
