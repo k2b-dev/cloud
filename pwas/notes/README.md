@@ -97,3 +97,44 @@ transfers. Admission and edit-link checks happen before reading upload bodies.
 Body reads are cancelled on disconnect or after one 30-second heartbeat interval,
 so stalled uploads release their slots. Excess transfers return 503
 `transfers_full`; clients can retry.
+
+## Reports and moderation
+
+`POST /api/reports` accepts `{linkId, reason, text, email?, confirmed:true}`.
+Reasons are `abuse`, `illegal`, `copyright`, `privacy`, or `fraud`; the specific
+explanation has 10–10,000 characters. The response carries an intake `number`.
+Ten report attempts per hour and five admin logins per 15 minutes are allowed
+per connection; they have independent windows.
+
+`admin/AdminPage.tsx` supplies the SPA's `/admin` view. It inherits the UI locale
+and supports German and English. Set `NOTES_ADMIN_PASSWORD_HASH` to an Argon2id
+hash from `Bun.password.hash`. Without it all admin endpoints are disabled.
+A session lasts 12 hours, rotates on login, and is stored as a hash in Postgres.
+The `__Host-notes-admin` cookie is Secure, HttpOnly, SameSite=Strict, and Path=/.
+Password rotation invalidates previous sessions. Expired sessions are pruned in
+bounded batches.
+
+The admin API starts with `GET /api/admin/session` (`authenticated`, `csrf`).
+`POST /api/admin/login` takes `{password}`; it also requires the pre-login
+cookie and `x-csrf-token` from the session response. All admin mutations require
+the configured Origin, the session cookie, and `x-csrf-token`. `logout` ends the
+session. `GET /api/admin/reports?before=<number>` pages through 50 reports;
+`GET /api/admin/status` shows storage and maintenance failures.
+`POST /api/admin/reports/:number/decision` takes
+`{action:"keep"|"block"|"delete", reason}`. Repeating an identical decision is
+idempotent; changing it returns 409. Decisions and reasons are audited, affected
+sockets close, and blocked/deleted content is removed atomically. Owner deletion
+and expiry also produce audit entries. Tombstones retain only capability lookup data,
+status and dates for the gone/blocked response.
+
+When the reporter provided an email, the decision stays visibly pending. The
+operator prepares and sends the email using the admin view, then explicitly
+confirms it through `POST /api/admin/reports/:number/notified`. Preparing an email
+is not recorded as delivery. Notes requires no mail server or mail credentials.
+Before public launch, name the responsible moderator and deputy and agree the
+appeal and authority-reporting process with legal counsel.
+
+Administrative sessions, decisions and removal audits remain available when the
+application budget is full. Their bounded records are still accounted for and
+may exceed the application threshold so the operator can free storage. Public
+note creation, uploads, reports and updates remain subject to their thresholds.
