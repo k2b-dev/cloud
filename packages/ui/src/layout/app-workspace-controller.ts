@@ -506,7 +506,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       const root = workspaceRoot(toggle);
       const sidebar = root ? sidebarElement(root) : null;
       if (!root || !sidebar) continue;
-      const expanded = String(sidebarShown(root, sidebar));
+      // The head's button only opens the overlay; an application's button also shows and hides the column.
+      const expanded = String(
+        toggle.closest(".k2b-app-workspace__head") ? root.dataset.sidebarOverlay === "open" : sidebarShown(root, sidebar),
+      );
       if (toggle.getAttribute("aria-expanded") !== expanded) toggle.setAttribute("aria-expanded", expanded);
     }
   };
