@@ -162,7 +162,7 @@ export const createAppDomainService = (dependencies: Dependencies = {}) => {
       }
       const status = await (dependencies.probe ?? checkAppDomain)(host);
       // A removed/reassigned domain must never inherit an earlier owner's in-flight result.
-      await db`UPDATE settings.app_domains SET status = ${JSON.stringify(status)}::jsonb
+      await db`UPDATE settings.app_domains SET status = (${JSON.stringify(status)}::text)::jsonb
         WHERE host = ${host} AND app_id = ${input.appId} AND check_started_at = ${claimed.check_started_at}::timestamptz`;
       return ok({ status });
     },
