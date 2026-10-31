@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   CreateSavedConversationView,
   MailSearchExpression,
@@ -108,7 +108,7 @@ const mapView = (row: SavedViewRow): Result<SavedConversationView> => {
   });
 };
 
-const viewColumns = sql`
+const viewColumns = () => sql`
   id,
   mailbox_id,
   scope,
@@ -200,7 +200,7 @@ const loadVisibleView = async (params: {
   const db = params.db ?? sql;
   const rows = params.forUpdate
     ? await db<SavedViewRow[]>`
-        SELECT ${viewColumns}
+        SELECT ${viewColumns()}
         FROM mail.saved_conversation_views
         WHERE id = ${params.viewId}::uuid
           AND mailbox_id = ${params.mailboxId}::uuid
@@ -209,7 +209,7 @@ const loadVisibleView = async (params: {
         FOR UPDATE
       `
     : await db<SavedViewRow[]>`
-        SELECT ${viewColumns}
+        SELECT ${viewColumns()}
         FROM mail.saved_conversation_views
         WHERE id = ${params.viewId}::uuid
           AND mailbox_id = ${params.mailboxId}::uuid
@@ -227,7 +227,7 @@ export const listSavedConversationViews = async (params: {
   if (!allowed.ok) return allowed;
   const userId = userBackedActor(params.context)?.id ?? null;
   const rows = await sql<SavedViewRow[]>`
-    SELECT ${viewColumns}
+    SELECT ${viewColumns()}
     FROM mail.saved_conversation_views
     WHERE mailbox_id = ${params.mailboxId}::uuid
       AND disabled_at IS NULL
@@ -295,7 +295,7 @@ export const createSavedConversationView = async (params: {
           ${actor.kind},
           ${actor.id}::uuid
         )
-        RETURNING ${viewColumns}
+        RETURNING ${viewColumns()}
       `,
       );
       const [row] = rows;
@@ -355,7 +355,7 @@ export const updateSavedConversationView = async (params: {
         UPDATE mail.saved_conversation_views
         SET name = ${params.input.name ?? current.name}, filter = ${filter}::jsonb, revision = ${revision}
         WHERE id = ${current.id}::uuid
-        RETURNING ${viewColumns}
+        RETURNING ${viewColumns()}
       `;
       if (!row) return fail(err.internal("Updated saved conversation view could not be loaded"));
       if (row.scope === "mailbox") {

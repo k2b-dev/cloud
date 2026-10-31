@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import * as Y from "yjs";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type DraftEditableContent, draftEditableContentInputSchema } from "../contracts";

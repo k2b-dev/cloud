@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { accounts, coreSettings, logger, notifications } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { app } from "../config";
 
 import { requireDraftAccess } from "./access";

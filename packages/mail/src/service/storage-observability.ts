@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { type MailStorageSummary, mailStorageSummarySchema } from "../contracts";
 import { isCurrentPlatformAdmin } from "./access";
 import type { MailRequestContext } from "./auth";

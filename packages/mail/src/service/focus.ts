@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MailFocusView } from "../contracts";
 import { conversationVisibleTo, isCurrentActorActive, readableMailboxGrants } from "./access";
 import { capByCredentialScopes, type MailRequestContext, personalPrincipal } from "./auth";
@@ -104,7 +104,7 @@ export const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_
   WHERE (${boundMailboxId(context)}::uuid IS NULL OR grants.mailbox_id = ${boundMailboxId(context)}::uuid)
 `;
 
-const visibleNow = sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
+const visibleNow = () => sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
 
 /** Conversations of a readable mailbox that the request may see: all of them, or only those assigned to the person. */
 const conversationReadable = (context: MailRequestContext) =>
@@ -123,10 +123,10 @@ const assignedTo = (userId: string | null) =>
  * conversations whose mail stays inside its folder; Unassigned and All leave them out with `aggregated`.
  */
 const viewCondition = (view: MailFocusView, userId: string | null, unassigned: SqlFragment, aggregated: SqlFragment) => {
-  if (view === "mine") return sql`c.work_status = 'needs_action' AND ${visibleNow} AND ${assignedTo(userId)}`;
-  if (view === "waiting") return sql`c.work_status = 'waiting' AND ${visibleNow} AND ${assignedTo(userId)}`;
-  if (view === "unassigned") return sql`c.work_status = 'needs_action' AND ${visibleNow} AND ${aggregated} AND ${unassigned}`;
-  return sql`c.work_status <> 'done' AND ${visibleNow} AND ${aggregated}`;
+  if (view === "mine") return sql`c.work_status = 'needs_action' AND ${visibleNow()} AND ${assignedTo(userId)}`;
+  if (view === "waiting") return sql`c.work_status = 'waiting' AND ${visibleNow()} AND ${assignedTo(userId)}`;
+  if (view === "unassigned") return sql`c.work_status = 'needs_action' AND ${visibleNow()} AND ${aggregated} AND ${unassigned}`;
+  return sql`c.work_status <> 'done' AND ${visibleNow()} AND ${aggregated}`;
 };
 
 type DbFocusStats = {
@@ -162,7 +162,7 @@ const loadFocusStats = (params: FocusReader) =>
         COUNT(*) FILTER (WHERE c.follow_up AND ${viewCondition("waiting", params.userId, params.unassigned, sql`c.aggregated`)})::int AS waiting,
         COUNT(*) FILTER (WHERE c.follow_up AND ${viewCondition("all", params.userId, params.unassigned, sql`c.aggregated`)})::int AS all,
         COUNT(*) FILTER (WHERE c.aggregated AND c.unread)::int AS unread,
-        COUNT(*) FILTER (WHERE c.aggregated AND c.follow_up AND c.work_status = 'needs_action' AND ${visibleNow})::int AS needs_action,
+        COUNT(*) FILTER (WHERE c.aggregated AND c.follow_up AND c.work_status = 'needs_action' AND ${visibleNow()})::int AS needs_action,
         COUNT(*) FILTER (WHERE c.aggregated)::int AS aggregated
       FROM (
         SELECT

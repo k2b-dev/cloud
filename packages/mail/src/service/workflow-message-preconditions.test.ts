@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
-import { sql } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { RemoteMessagePrecondition } from "../contracts";
 import {
   loadIncomingAutomationSiblingTransitions,
@@ -317,3 +318,5 @@ describe("Mail workflow conversation link views", () => {
     expect(mailWorkflowConversationLinkView(contextFor({ ...valid, seq: null }), conversationId)).toBeNull();
   });
 });
+
+useUnitClients();

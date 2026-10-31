@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { escapeLikePattern } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import {
   type MailboxHealth,

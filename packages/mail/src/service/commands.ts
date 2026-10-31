@@ -1,8 +1,8 @@
+import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import {
   type ActorCommandInput,
@@ -70,7 +70,7 @@ type DbCommand = {
   updated_at: Date | string;
 };
 
-const commandColumns = sql`
+const commandColumns = () => sql`
   c.id,
   c.mailbox_id,
   c.kind,
@@ -752,7 +752,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${params.mailboxId}:${prepared.kind}:${stableTargetKey(prepared.target)}`}, 0))`;
 
   const [existing] = await tx<DbCommand[]>`
-    SELECT ${commandColumns}
+    SELECT ${commandColumns()}
     FROM mail.commands c
     WHERE c.mailbox_id = ${params.mailboxId}::uuid AND c.idempotency_key = ${prepared.idempotencyKey}
     FOR UPDATE
@@ -837,7 +837,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
       ${credential.credentialId}::uuid,
       ${credential.credentialExpiresAt}::timestamptz
     )
-    RETURNING ${commandColumns}
+    RETURNING ${commandColumns()}
   `;
   if (!row) throw new Error("Mail command insert returned no row");
   let command = mapCommand(row);
@@ -1027,7 +1027,7 @@ export const adoptWorkflowSendCommand = async (params: {
     )
       return fail(err.internal("Workflow command must use its current step's effect key"));
     const [existing] = await tx<DbCommand[]>`
-      SELECT ${commandColumns} FROM mail.commands c
+      SELECT ${commandColumns()} FROM mail.commands c
       WHERE c.mailbox_id=${params.mailboxId}::uuid AND c.idempotency_key=${input.idempotencyKey}
       FOR UPDATE`;
     if (!existing) return ok(null);
@@ -1173,7 +1173,7 @@ export const createMaintenanceCommand = async (params: {
       const requestHash = sha256Json({ kind: input.kind, target: prepared.target, payload: prepared.payload });
 
       const [existing] = await tx<DbCommand[]>`
-        SELECT ${commandColumns}
+        SELECT ${commandColumns()}
         FROM mail.commands c
         WHERE c.mailbox_id = ${params.mailboxId}::uuid AND c.idempotency_key = ${input.idempotencyKey.trim()}
         FOR UPDATE
@@ -1214,7 +1214,7 @@ export const createMaintenanceCommand = async (params: {
           ${credential.credentialId}::uuid,
           ${credential.credentialExpiresAt}::timestamptz
         )
-        RETURNING ${commandColumns}
+        RETURNING ${commandColumns()}
       `;
       if (!row) throw new Error("Mail maintenance command insert returned no row");
       await tx`
@@ -1295,7 +1295,7 @@ export const queueSenderVerification = async (params: {
       `;
       if (!identity) return fail(err.notFound("Sender identity or provider binding"));
       const [pending] = await tx<DbCommand[]>`
-        SELECT ${commandColumns}
+        SELECT ${commandColumns()}
         FROM mail.commands c
         WHERE c.mailbox_id = ${request.mailboxId}::uuid
           AND c.kind = 'verify_sender_identity'
@@ -1336,7 +1336,7 @@ export const queueSenderVerification = async (params: {
           ${credential.credentialId}::uuid,
           ${credential.credentialExpiresAt}::timestamptz
         )
-        RETURNING ${commandColumns}
+        RETURNING ${commandColumns()}
       `;
       if (!row) throw new Error("Sender verification command insert returned no row");
       await tx`
@@ -1399,7 +1399,7 @@ export const getCommand = async (context: MailRequestContext, mailboxId: string,
   const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true });
   if (!execution.ok) return execution;
   const [row] = await sql<DbCommand[]>`
-    SELECT ${commandColumns}
+    SELECT ${commandColumns()}
     FROM mail.commands c
     WHERE c.id = ${commandId}::uuid AND c.mailbox_id = ${mailboxId}::uuid
       AND ${commandVisibleTo(access.data, mailboxId)}
@@ -1451,7 +1451,7 @@ export const listCommands = async (
   }
   const boundedLimit = Math.min(Math.max(Math.floor(query.limit ?? 50), 1), 100);
   const rows = await sql<DbCommand[]>`
-    SELECT ${commandColumns}
+    SELECT ${commandColumns()}
     FROM mail.commands c
     WHERE c.mailbox_id = ${mailboxId}::uuid
       AND ${commandVisibleTo(access.data, mailboxId)}

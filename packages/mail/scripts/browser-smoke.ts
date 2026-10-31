@@ -9,7 +9,7 @@
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { parseArgs } from "node:util";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { newShortId } from "../src/lib/short-id";
 import type { ConnectorEnvelope } from "../src/service/connectors";
@@ -1083,6 +1083,8 @@ const cleanup = async (fixture: Fixture | null) => {
 let fixture: Fixture | null = null;
 try {
   assertLocalTarget();
+  const { initializePlatform } = await import("@k2b/cloud/start");
+  await initializePlatform({ appId: "mail", source: "env" });
   fixture = await createFixture();
   await runSmoke(fixture);
 } catch (error) {

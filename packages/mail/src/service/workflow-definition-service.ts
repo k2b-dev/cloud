@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { audit } from "@k2b/cloud/services";
 import type { WorkflowBoundPlan, WorkflowDiagnostic, WorkflowIr, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { compileWorkflow } from "@k2b/cloud/workflows/language";
@@ -8,7 +9,6 @@ import {
   type WorkflowActivationInput,
 } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   ActivateWorkflowInput,
   AutocompleteWorkflowInput,
@@ -83,7 +83,8 @@ type DbActivation = {
 const parseJson = <T>(value: T | string): T => (typeof value === "string" ? (JSON.parse(value) as T) : value);
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
 
-const WORKFLOW_SELECT = sql.unsafe(`
+const WORKFLOW_SELECT = () =>
+  sql.unsafe(`
   workflow.id::text AS id,
   profile.mailbox_id::text AS mailbox_id,
   workflow.name,
@@ -96,7 +97,8 @@ const WORKFLOW_SELECT = sql.unsafe(`
   profile.created_at,
   profile.updated_at
 `);
-const WORKFLOW_FROM = sql.unsafe(`
+const WORKFLOW_FROM = () =>
+  sql.unsafe(`
   FROM mail.workflow_profile profile
   JOIN workflows.workflow workflow ON workflow.id = profile.id
   JOIN LATERAL (
@@ -108,7 +110,8 @@ const WORKFLOW_FROM = sql.unsafe(`
   ) latest ON TRUE
 `);
 
-const VERSION_SELECT = sql.unsafe(`
+const VERSION_SELECT = () =>
+  sql.unsafe(`
   version.id::text AS id,
   version.workflow_id::text AS workflow_id,
   profile.mailbox_id::text AS mailbox_id,
@@ -123,7 +126,8 @@ const VERSION_SELECT = sql.unsafe(`
   version.manifest_hash,
   version.created_at
 `);
-const VERSION_FROM = sql.unsafe(`
+const VERSION_FROM = () =>
+  sql.unsafe(`
   FROM workflows.version version
   JOIN mail.workflow_profile profile ON profile.id = version.workflow_id
 `);
@@ -271,8 +275,8 @@ const loadActivations = async (workflowId: string, db: SqlClient = sql): Promise
 
 const loadWorkflowRow = async (mailboxId: string, workflowId: string, db: SqlClient = sql, lock = false): Promise<DbWorkflow | null> => {
   const [row] = await db<DbWorkflow[]>`
-    SELECT ${WORKFLOW_SELECT}
-    ${WORKFLOW_FROM}
+    SELECT ${WORKFLOW_SELECT()}
+    ${WORKFLOW_FROM()}
     WHERE workflow.id = ${workflowId}::uuid AND profile.mailbox_id = ${mailboxId}::uuid
     ${lock ? sql`FOR UPDATE OF profile` : sql``}
   `;
@@ -288,8 +292,8 @@ export const loadWorkflowVersion = async (params: {
 }): Promise<DbWorkflowVersion | null> => {
   const db = params.db ?? sql;
   const [row] = await db<DbWorkflowVersion[]>`
-    SELECT ${VERSION_SELECT}
-    ${VERSION_FROM}
+    SELECT ${VERSION_SELECT()}
+    ${VERSION_FROM()}
     WHERE version.id = ${params.versionId}::uuid
       AND version.workflow_id = ${params.workflowId}::uuid
       AND profile.mailbox_id = ${params.mailboxId}::uuid
@@ -467,8 +471,8 @@ export const listWorkflows = async (context: MailRequestContext, mailboxId: stri
   const allowed = await requireMailboxPermission(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<DbWorkflow[]>`
-    SELECT ${WORKFLOW_SELECT}
-    ${WORKFLOW_FROM}
+    SELECT ${WORKFLOW_SELECT()}
+    ${WORKFLOW_FROM()}
     WHERE profile.mailbox_id = ${mailboxId}::uuid
       AND profile.managed_by IS NULL
     ORDER BY profile.priority, lower(workflow.name), workflow.id
@@ -500,8 +504,8 @@ export const listWorkflowVersions = async (params: {
   const visible = await rejectManagedWorkflow(params.mailboxId, params.workflowId, sql, true);
   if (!visible.ok) return visible;
   const rows = await sql<DbWorkflowVersion[]>`
-    SELECT ${VERSION_SELECT}
-    ${VERSION_FROM}
+    SELECT ${VERSION_SELECT()}
+    ${VERSION_FROM()}
     WHERE profile.mailbox_id = ${params.mailboxId}::uuid
       AND version.workflow_id = ${params.workflowId}::uuid
     ORDER BY version.revision DESC
