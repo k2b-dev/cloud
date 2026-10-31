@@ -246,6 +246,7 @@ databaseSuite()("Scheduled Code Mode", () => {
             "assistant.storage_file_mib": 50,
             "assistant.rsql_url": requireInfraUrl("rsql"),
             "assistant.rsql_api_token": "artifact-test-only",
+            "assistant.rsql_allowed_targets": targets,
           })[key],
       );
       let resourceId: string | undefined;
