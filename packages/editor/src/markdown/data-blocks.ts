@@ -53,8 +53,9 @@ class DataBlockWidget extends WidgetType {
 
   override get estimatedHeight() {
     const rows = Math.max(1, this.body.split("\n").filter((line) => line.trim().length > 0).length);
-    // 12px / 16px cells + 16px padding + divider; the handle and outer padding round up to 44px.
-    return 44 + rows * 33;
+    // 12px / 16px cells + 16px padding + divider per row; the anchor label (18px line), its margins and the outer
+    // padding take 43–44px depending on subpixel rounding, so the estimate sits in the middle.
+    return 43.5 + rows * 33;
   }
 
   override ignoreEvent() {
