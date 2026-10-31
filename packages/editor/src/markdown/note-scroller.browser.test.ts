@@ -38,9 +38,9 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const open = async () => {
+const open = async (search = "") => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(server.url.href);
+  await page.goto(server.url.href + search);
   await page.waitForFunction(() => "harness" in window);
   await page.evaluate(() => (window as unknown as { harness: NoteScrollerHarness }).harness.settle());
   return page;
@@ -74,3 +74,24 @@ test("a note shortened above the view keeps a focused editor at the bottom", asy
     await page.close();
   }
 });
+
+// A sidebar or panel drag changes the column width on every frame and rewraps lines above the page's top edge. The
+// text being read stays where it is in every painted frame, also while the drag holds focus away from the editor.
+for (const focused of [false, true])
+  test(`a column resized frame by frame keeps the text at the top edge in place (${focused ? "focused" : "not focused"})`, async () => {
+    const page = await open("?prose");
+    try {
+      const widths = [
+        ...Array.from({ length: 40 }, (_, index) => 1180 - index * 9),
+        ...Array.from({ length: 40 }, (_, index) => 829 + index * 9),
+      ];
+      const moved = await page.evaluate(
+        ({ widths, focused }) =>
+          (window as unknown as { harness: NoteScrollerHarness }).harness.resizeColumn("Paragraph 40 ", widths, focused),
+        { widths, focused },
+      );
+      expect(moved.filter((distance) => Math.abs(distance) > 1)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
