@@ -1354,6 +1354,9 @@ const app = new Hono<AuthContext>().get(
     // browser, which puts the full credential into the page HTML.
     const sessionToken = await auth.session.resolveToken(c);
     const locale = getLocale(c);
+    const expected = c.req.queries("expectedUserId");
+    const actor = c.get("actor");
+    const accountChanged = expected && (expected.length !== 1 || actor?.kind !== "user" || actor.user.id !== expected[0]);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();
     let pendingMessages = 0;
@@ -1381,6 +1384,10 @@ const app = new Hono<AuthContext>().get(
     return guardAppAccessSocket(c, "notebooks", {
       onOpen(_, ws) {
         ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, locale);
+        if (accountChanged) {
+          void fatal(ctx, ERROR_CODE.accessDenied, ctx.messages.accessDenied);
+          return;
+        }
         if (stoppingConnections) {
           void close();
           return;

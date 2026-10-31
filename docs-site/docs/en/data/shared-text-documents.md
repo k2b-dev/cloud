@@ -687,6 +687,18 @@ copy pending text. Call `close()` on disposal. `forget()` explicitly removes
 this document's record. A memory-only choice bypasses IndexedDB; explain that
 closing the tab then loses input which has not reached the server.
 
+Notebooks prepares an authorized device session and Y.Doc before enabling
+editing, while keeping its WebSocket connection lazy until the first edit.
+First edits and later unsent input therefore use the same device record.
+Reopening merges pending input from the current generation through Yjs and
+resends it with its original base cursor. A committed snapshot that already
+covers the record clears it before recovery is considered. An older generation,
+a locked note, or input rejected by the history validator stays available for
+copying, keeping on the device, or explicit discard. Read mode also offers a
+pending copy to a person who still has write access. Storage failures show a
+retry and copy action; an unexpected IndexedDB connection closure does not stop
+the live server connection. Sign-out still fences both paths.
+
 `logoutSharedTextOffline(userId)` advances the user's epoch and erases their
 records in one transaction. It also notifies other tabs. The transaction
 check fences stale writers even if a tab misses that notification. Custom
