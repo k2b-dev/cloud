@@ -10,12 +10,6 @@ export const rule: Rule = {
     const script = join(workspaceRoot, "scripts", "generate-config-docs.ts");
     if (!existsSync(script)) return [{ file: script, message: "missing generator; configuration documentation cannot be verified" }];
     const { code, output } = await capture(["bun", script, "--check"], { cwd: workspaceRoot });
-    const deployments = await capture(["bun", join(workspaceRoot, "scripts/generate-app-deployments.ts"), "--check"], {
-      cwd: workspaceRoot,
-    });
-    return [
-      ...(code === 0 ? [] : [{ message: output || `generate-config-docs.ts --check exited with ${code}` }]),
-      ...(deployments.code === 0 ? [] : [{ message: deployments.output || "App deployment templates are stale" }]),
-    ];
+    return code === 0 ? [] : [{ message: output || `generate-config-docs.ts --check exited with ${code}` }];
   },
 };

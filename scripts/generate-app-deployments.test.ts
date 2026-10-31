@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { renderAppDeployment } from "./generate-app-deployments";
+import { renderAppDeployment, renderDevelopmentKeys } from "./generate-app-deployments";
 import { appIds, devServiceName } from "./workspace";
 
 test("production and dev templates wire only app key and Core origin into every application", async () => {
@@ -42,4 +42,36 @@ test("app-owned development environment survives generation", async () => {
   expect(rendered).toContain("      CLOUD_CLI_CHROMIUM: /usr/bin/chromium");
   expect(rendered).toContain("      NATS_ADMIN_NKEY_SEED_FILE: /run/secrets/nats-admin.seed");
   expect(() => renderAppDeployment(source.replace("      CLOUD_CLI_CHROMIUM:", "      CLOUD_APP_KEY:"), true)).toThrow("generator-owned");
+});
+
+test("development key generation preserves explicit grants independently of app names", async () => {
+  const existing = [
+    {
+      appId: "acme",
+      keyId: "11111111-1111-4111-8111-111111111111",
+      seed: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      grants: ["oauth:issue"],
+    },
+    { appId: "oauth", keyId: "22222222-2222-4222-8222-222222222222", seed: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", grants: [] },
+  ];
+  const rendered = await renderDevelopmentKeys(["acme", "oauth", "new-app"], existing);
+  const fixture = JSON.parse(rendered.fixtures);
+  expect(fixture.keys.find((key: { appId: string }) => key.appId === "acme").grants).toEqual(["oauth:issue"]);
+  expect(fixture.keys.find((key: { appId: string }) => key.appId === "oauth").grants).toEqual([]);
+  expect(fixture.keys.find((key: { appId: string }) => key.appId === "new-app").grants).toEqual([]);
+  const module = await import(
+    `data:text/javascript,${encodeURIComponent(new Bun.Transpiler({ loader: "ts" }).transformSync(rendered.publicKeys))}`
+  );
+  expect(module.DEVELOPMENT_APP_KEYS.find((key: { appId: string }) => key.appId === "acme").grants).toEqual(["oauth:issue"]);
+  expect(module.DEVELOPMENT_APP_KEYS.find((key: { appId: string }) => key.appId === "oauth").grants).toEqual([]);
+});
+
+test("development key generation rejects unknown or duplicate fixture grants", async () => {
+  for (const grants of [["oauth-issue"], ["oauth:issue", "oauth:issue"]])
+    await expect(
+      renderDevelopmentKeys(
+        ["acme"],
+        [{ appId: "acme", keyId: "11111111-1111-4111-8111-111111111111", seed: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", grants }],
+      ),
+    ).rejects.toThrow("Invalid development key grants for acme");
 });

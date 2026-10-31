@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { SQL } from "bun";
 import { enrollAppKey } from "../packages/cloud/src/cli/admin/app-keys";
+import { DEVELOPMENT_APP_KEYS } from "../packages/cloud/src/runtime/development-keys";
 // Reuse Notebooks' installed Yjs dependency; this harness adds no package dependency.
 import * as Y from "../packages/notebooks/node_modules/yjs";
 import type { SmtpSinkMessage } from "./fixtures/smtp-sink";
@@ -554,7 +555,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         server: ORIGIN,
         outDir: keyDirectory,
         format: "file",
-        grants: appId === "oauth" ? ["oauth:issue"] : [],
+        grants: [...(DEVELOPMENT_APP_KEYS.find((key) => key.appId === appId)?.grants ?? [])],
         register: async (body) => (await http(gateway, `/api/admin/apps/${appId}/keys`, "POST", body, token)).json(),
       });
       // Disposable credentials in a host directory with mode 0700. File-backed

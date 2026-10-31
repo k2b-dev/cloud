@@ -19,7 +19,7 @@ import { enrollDevelopmentAppKeys } from "./migrate/core/development-app-keys";
 databaseSuite()("isolated development app enrollment", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   beforeAll(async () => {
-    database = await useFreshDatabase("cloud_app_key_migration");
+    database = await useFreshDatabase("cloud_app_key_dev_r3");
     await migrateAuth();
     await migrateAudit();
   });
@@ -30,8 +30,19 @@ databaseSuite()("isolated development app enrollment", () => {
   const enroll = () => enrollDevelopmentAppKeys(sql, { enabled: true, mode: "development" });
   test("fresh and preexisting databases enroll once, retain their data, and preserve revoked or disabled state", async () => {
     await sql`INSERT INTO auth.users (id, uid, provider, profile, admin) VALUES ('11111111-1111-4111-8111-111111111111'::uuid, 'kept-user', 'local', 'user', true)`;
-    await enroll();
-    await enroll();
+    const custom = DEVELOPMENT_APP_KEYS[0]!;
+    const oauth = DEVELOPMENT_APP_KEYS.find((key) => key.appId === "oauth")!;
+    const customGrants = Object.getOwnPropertyDescriptor(custom, "grants")!;
+    const oauthGrants = Object.getOwnPropertyDescriptor(oauth, "grants")!;
+    Object.defineProperty(custom, "grants", { value: ["oauth:issue"], configurable: true });
+    Object.defineProperty(oauth, "grants", { value: [], configurable: true });
+    try {
+      await enroll();
+      await enroll();
+    } finally {
+      Object.defineProperty(custom, "grants", customGrants);
+      Object.defineProperty(oauth, "grants", oauthGrants);
+    }
     expect((await sql<{ id: string }[]>`SELECT id FROM auth.installation`)[0]?.id).toBe(DEVELOPMENT_INSTALLATION_ID);
     expect(
       (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.service_account_credentials WHERE kind = 'app_key'`)[0]
@@ -40,7 +51,8 @@ databaseSuite()("isolated development app enrollment", () => {
     expect((await sql`SELECT uid FROM auth.users WHERE uid = 'kept-user'`).length).toBe(1);
     const grants = await sql<{ app_id: string; oauth_issue_allowed: boolean }[]>`SELECT sa.app_id, c.oauth_issue_allowed
       FROM auth.service_account_credentials c JOIN auth.service_accounts sa ON sa.id = c.service_account_id WHERE c.kind = 'app_key'`;
-    expect(grants.filter((row) => row.oauth_issue_allowed).map((row) => row.app_id)).toEqual(["oauth"]);
+    for (const key of DEVELOPMENT_APP_KEYS)
+      expect(grants.find((row) => row.app_id === key.appId)?.oauth_issue_allowed).toBe(key.appId === custom.appId);
     const key = DEVELOPMENT_APP_KEYS[0]!;
     await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now() WHERE id = ${key.keyId}::uuid`;
     await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE app_id = ${key.appId}`;
