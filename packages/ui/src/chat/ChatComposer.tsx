@@ -605,7 +605,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const fixed = new Set((props.commandSections ?? []).filter((section) => section.fixedWhileOpen).map((section) => section.id));
     return commands.filter((command) => !fixed.has(command.section ?? "") || keys.has(chatCommandKey(command)));
   });
-  const commandModel = createMemo(() =>
+  // While a pointer is down on a row, the list keeps the rows it showed at the press: rows arriving then would move the
+  // pressed row away from under the pointer, and the release would land beside it (#2079). They show after the release.
+  const [holdingRows, setHoldingRows] = createSignal(false);
+  const liveCommandModel = createMemo(() =>
     chatCommandListModel({
       query: commandQuery()?.query ?? "",
       scopes: props.commandScopes,
@@ -617,6 +620,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       searching: searching(),
       fallback: commandFallbackRow(),
     }),
+  );
+  const commandModel = createMemo<ReturnType<typeof liveCommandModel>>((previous) =>
+    holdingRows() && previous ? previous : liveCommandModel(),
   );
   const commandMatches = createMemo(() => (commandQuery() ? commandModel().rows.map((row) => row.command) : []));
   /** Rows that matched; an unscoped fallback row only follows them. */
@@ -2124,10 +2130,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   // the browser then sends the click to a common ancestor (#2140). A release on the same command's new row runs it.
   let pressedCommand: { key: string; row: HTMLElement } | undefined;
   onMount(() => {
-    const release = (event: PointerEvent) => {
+    const release = (event: PointerEvent | FocusEvent) => {
       const pressed = pressedCommand;
       pressedCommand = undefined;
-      if (!pressed || pressed.row.isConnected || event.type !== "pointerup") return;
+      // After this release's click, which the browser dispatches in the same task.
+      if (holdingRows()) setTimeout(() => setHoldingRows(false));
+      if (!pressed || pressed.row.isConnected || !(event instanceof PointerEvent) || event.type !== "pointerup") return;
       const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-command-key]");
       if (!under || under.dataset.commandKey !== pressed.key || !shellRef?.contains(under)) return;
       const command = commandRowMap().get(pressed.key)?.command;
@@ -2135,9 +2143,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     };
     window.addEventListener("pointerup", release, true);
     window.addEventListener("pointercancel", release, true);
+    window.addEventListener("blur", release);
     onCleanup(() => {
       window.removeEventListener("pointerup", release, true);
       window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("blur", release);
     });
   });
   // Rows are keyed by the command's key, not its object: hosts rebuild their command objects whenever their inputs change,
@@ -2168,6 +2178,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         data-command-key={key}
         onPointerDown={(event) => {
           pressedCommand = { key, row: event.currentTarget };
+          setHoldingRows(true);
         }}
         onMouseDown={keepFieldFocus}
         onClick={(event) => {
