@@ -158,7 +158,12 @@ export default ssr<AuthContext>(async (c) => {
           ownsSearchNavigation={!selectedNote || isVersionsMode || isGraphMode}
         />
         {/* Live changes reach the page through one workspace socket; a note connects its own only while it is edited. */}
-        <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} />
+        <WorkspaceEventBridge
+          notebookId={notebook.id}
+          appUrl={appUrl}
+          initialCursor={ctx.workspaceCursor}
+          initialNoteId={!isVersionsMode && !isGraphMode ? selectedNote?.id : null}
+        />
 
         {/* The writable editor is the one with the toolbar and its navigation toggle. */}
         <NotebookSidebar

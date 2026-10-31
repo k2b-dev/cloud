@@ -3,7 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
-import { EDITOR_INSERT_ATTACHMENT_EVENT, PRESENCE_EVENT, SYNC_STATE_REQUEST_EVENT } from "../detail/events";
+import { EDITOR_INSERT_ATTACHMENT_EVENT } from "../detail/events";
 import { NOTE_EDITOR_MAX_LENGTH } from "./table-structure";
 
 const load = async () => {
@@ -143,31 +143,6 @@ describe("Notebook attachment and recovery surface integration", () => {
       expect(app.view.state.doc.toString()).toBe(`Intro\n\n${table}\n\n[invoice.pdf](attach://File01)\n\nFollowing prose.`);
     },
   );
-
-  test("a detail panel that mounts after the presence snapshot still learns who is here", async () => {
-    await using app = mount("Intro");
-    const here = [
-      {
-        userId: "0198e2a4-1c2b-7c3d-8e4f-5a6b7c8d9e0f",
-        displayName: "Paul",
-        avatarHash: null,
-        color: "#0a7f5a",
-        peerCount: 1,
-        joinedAt: "2026-01-01T00:00:00Z",
-      },
-    ];
-    app.provider().onPresenceChange?.(here);
-    // The panel listens only from now on and asks the editor for the current state, as it does when it mounts.
-    const received: unknown[] = [];
-    const listen = (event: Event) => received.push((event as CustomEvent).detail);
-    window.addEventListener(PRESENCE_EVENT, listen);
-    try {
-      window.dispatchEvent(new CustomEvent(SYNC_STATE_REQUEST_EVENT));
-    } finally {
-      window.removeEventListener(PRESENCE_EVENT, listen);
-    }
-    expect(received).toEqual([here]);
-  });
 
   test("the attachment picker remains available while a table cell has focus", async () => {
     await using app = mount("| Item | Cost |\n| --- | ---: |\n| Paper | 4 |");

@@ -21,6 +21,7 @@ export const TOC_SCROLL_EVENT = "notebooks.editor.scrollToHeading";
 export const TASKS_UPDATE_EVENT = "notebooks.tasks.updated";
 /** The note's detail panel (`AppWorkspace.Detail` id), for controls that open it. */
 export const NOTEBOOK_DETAIL_ID = "notebook-detail";
+/** Workspace socket → panel: participants of the opened note, including readers. */
 export const PRESENCE_EVENT = "notebooks.presence.changed";
 
 /**
@@ -68,7 +69,7 @@ export const NOTE_TITLE_CHANGED_EVENT = "notebooks.note.titleChanged";
 export const SYNC_STATE_EVENT = "notebooks.editor.syncState";
 /** `ended`: the session stopped for good (access or storage); the editor's recovery bar owns what comes next. */
 export type SyncStateEventDetail = { connected: boolean; lastSavedAt: string | null; ended?: boolean };
-/** Panel → editor: request current sync, active heading and presence locations on mount. */
+/** Panel → editor and workspace bridge: request sync, heading, participants and cursor locations on mount. */
 export const SYNC_STATE_REQUEST_EVENT = "notebooks.editor.syncStateRequest";
 export type SyncStateRequestEventDetail = undefined;
 /** Panel → editor: retry a dropped connection; terminal sync-ended states stay stopped. */
