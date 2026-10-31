@@ -184,6 +184,7 @@ const load = async (
     toolbarActions?: MailListHarnessOptions["toolbarActions"];
     deletedOnServer?: boolean;
     plainText?: string;
+    columns?: MailListHarnessOptions["columns"];
     /** Serves this stylesheet in place of the compiled one. */
     css?: string;
   } = {},
@@ -222,6 +223,7 @@ const load = async (
     toolbarActions: options.toolbarActions,
     deletedOnServer: options.deletedOnServer,
     plainText: options.plainText,
+    columns: options.columns,
   } satisfies MailListHarnessOptions);
   await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
@@ -1290,6 +1292,85 @@ describe("Mail row actions", () => {
       }, 30_000);
     });
   }
+});
+
+describe("Mail columns view time column", () => {
+  /** The page renders shortly after NOW; each time is the longest of its kind in German or English. */
+  const longest = (unread: boolean): MailListItem[] => [
+    item(1, { latestMessageAt: new Date(NOW - 50_000).toISOString(), unread }),
+    item(2, { latestMessageAt: new Date(NOW - 59 * 60_000).toISOString(), unread }),
+    item(3, { latestMessageAt: new Date(NOW - 23.5 * 3_600_000).toISOString(), unread }),
+    item(4, { latestMessageAt: new Date(NOW - 30 * 3_600_000).toISOString(), unread }),
+    item(5, { latestMessageAt: "2025-09-28T08:00:00.000Z", unread }),
+    item(6, { latestMessageAt: "2025-05-02T08:00:00.000Z", unread: !unread }),
+  ];
+  /** Every time cell and the heading's: whether its text fits, and where the column starts and ends. */
+  const timeColumn = (page: Page) =>
+    page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".mail-row-cells .mail-row-time, .mail-columns-head-time")].map((cell) => {
+        const range = document.createRange();
+        range.selectNodeContents(cell.firstChild ?? cell);
+        const text = range.getBoundingClientRect();
+        const { left, right } = cell.getBoundingClientRect();
+        return { label: cell.textContent ?? "", left, right, textLeft: text.left, textRight: text.right };
+      }),
+    );
+
+  for (const locale of ["de", "en"] as const)
+    for (const columns of ["personal", "shared"] as const)
+      test(`${locale} ${columns}: the longest times fit at the narrowest list, and every row keeps one column`, async () => {
+        // 300 px is the list's smallest width; the shared columns need their fixed tracks beside it.
+        const page = await load({
+          locale,
+          columns,
+          listSize: columns === "personal" ? 300 : 620,
+          items: [
+            ...longest(true),
+            ...longest(false).map((entry) => ({ ...entry, id: `${entry.id}r`, conversationId: `${entry.conversationId}r` })),
+          ],
+        });
+        await page.locator(".mail-columns-head-time").waitFor();
+        const cells = await timeColumn(page);
+        expect(cells.length).toBe(13);
+        if (locale === "de") expect(cells.map((cell) => cell.label)).toContain("vor 23 Stunden");
+        for (const cell of cells) {
+          // The whole text lies inside its cell: nothing is cut off at either side.
+          expect(cell.textLeft, cell.label).toBeGreaterThanOrEqual(cell.left - 0.5);
+          expect(cell.textRight, cell.label).toBeLessThanOrEqual(cell.right + 0.5);
+          // Heading and rows share one column.
+          expect(Math.abs(cell.left - cells[0]!.left), cell.label).toBeLessThanOrEqual(0.5);
+          expect(Math.abs(cell.right - cells[0]!.right), cell.label).toBeLessThanOrEqual(0.5);
+        }
+        // A live update with another time moves no column.
+        await page.evaluate(() => window.setMailItems(window.mailItems().map((entry) => ({ ...entry, unread: !entry.unread }))));
+        await page.waitForFunction(
+          () => !document.querySelector('[data-conversation-id="Cv0001"]')?.classList.contains("mail-list-entry-unread"),
+        );
+        expect(await timeColumn(page)).toEqual(cells);
+        expect(page.errors).toEqual([]);
+        await close(page);
+      }, 30_000);
+});
+
+test("day group headings use the muted ink of every list group heading, not the rows' ink", async () => {
+  const page = await load({ locale: "de" });
+  await page.locator(".mail-day-group h3").first().waitFor();
+  const colors = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--k2b-text-muted)";
+    document.querySelector(".mail-day-group")!.append(probe);
+    const heading = document.querySelector(".mail-day-group h3")!;
+    return {
+      label: heading.textContent,
+      heading: getComputedStyle(heading).color,
+      muted: getComputedStyle(probe).color,
+      sender: getComputedStyle(document.querySelector(".mail-list-entry-unread .mail-row-sender")!).color,
+    };
+  });
+  expect(colors.label).toBe("Heute");
+  expect(colors.heading).toBe(colors.muted);
+  expect(colors.heading).not.toBe(colors.sender);
+  await close(page);
 });
 
 describe("Mail rows that an action takes out of the list", () => {
