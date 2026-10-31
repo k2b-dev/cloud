@@ -354,7 +354,7 @@ const humanizeKey = (key: string): string =>
 export const renderDataBlockHtml = (name: string | null, src: string): string => {
   const entries = parseNamedDataBlock(src);
   const handle = name
-    ? `<div class="md-block-handle" data-block-name="${escapeHtml(name)}">@${escapeHtml(name)}</div>`
+    ? `<div class="md-block-handle" data-block-name="${escapeHtml(name)}">${escapeHtml(name)}</div>`
     : `<div class="md-data-handle-row"><div class="md-block-handle">data</div></div>`;
   const rows =
     entries.length > 0
@@ -392,7 +392,7 @@ export const renderNamedBlockHandlesMarkdown = (md: string | null | undefined): 
   }
   for (const block of extractNamedBlocks(md)) {
     if (block.type === "data") continue;
-    const handle = `<div class="md-block-handle" data-block-name="${escapeHtml(block.name)}">@${escapeHtml(block.name)}</div>`;
+    const handle = `<div class="md-block-handle" data-block-name="${escapeHtml(block.name)}">${escapeHtml(block.name)}</div>`;
     replacements.push({ from: block.handleStart, to: block.handleEnd, html: handle });
   }
 
