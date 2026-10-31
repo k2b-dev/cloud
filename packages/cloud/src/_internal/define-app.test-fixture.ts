@@ -3,6 +3,7 @@ import type { Sync } from "@k2b/sync";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { User } from "../contracts/shared";
 import { stubConnections } from "../runtime/connections.test-fixture";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -52,6 +53,7 @@ export const publishedEntry = async (options: AppOptions, inspect?: (server: Sta
   const sync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
     stubConnections(),
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);

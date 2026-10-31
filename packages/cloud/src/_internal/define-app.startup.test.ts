@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import { stubConnections } from "../runtime/connections.test-fixture";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -11,7 +12,7 @@ import * as watcher from "./runtime-watcher";
 import * as workload from "./workload-credential";
 
 describe("application startup readiness", () => {
-  for (const mode of ["package", "setup", "start", "ready", "advertise", "workload", "calendar", null, "skip"] as const) {
+  for (const mode of ["package", "links", "setup", "start", "ready", "advertise", "workload", "calendar", null, "skip"] as const) {
     const skipSetup = mode === "skip";
     const failure = skipSetup ? null : mode;
     test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
@@ -45,6 +46,12 @@ describe("application startup readiness", () => {
           },
         })),
         stubConnections(),
+        spyOn(linksRuntime, "startLinksRuntime").mockImplementation(async () => {
+          await step("links");
+          return async () => {
+            events.push("stop-links");
+          };
+        }),
         spyOn(applicationPackage, "registerApplicationPackage").mockImplementation(() => step("package")),
         spyOn(processSync, "startProcessSync").mockImplementation(async () => {
           processSync.bindProcessSync(sync);
@@ -117,12 +124,12 @@ describe("application startup readiness", () => {
           expect(() => processSync.getProcessSync()).toThrow("not available");
         } else if (failure) {
           await expect(started).rejects.toThrow(`failed:${failure}`);
-          expect(events).toContain("setup-lock-release");
+          if (failure !== "links") expect(events).toContain("setup-lock-release");
           expect(events.at(-1)).toBe("disconnect");
           expect(events).toContain("stop-lifecycle");
           expect(events).toContain("stop-watch");
           expect(events).toContain("unregister");
-          if (failure !== "setup") expect(events).toContain("stop-notifications");
+          if (failure !== "setup" && failure !== "links") expect(events).toContain("stop-notifications");
           if (failure !== "advertise" && failure !== "workload") expect(events).not.toContain("advertise");
           if (failure === "workload") {
             expect(events.indexOf("stop-lifecycle")).toBeLessThan(events.indexOf("stop-workload"));

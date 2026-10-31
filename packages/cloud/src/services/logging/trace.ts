@@ -4,7 +4,7 @@ import { sql } from "bun";
 import { getProcessApplicationId } from "../../_internal/process-identity";
 import type { PaginationParams } from "../../contracts/shared";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
-import { isSensitiveMetadataKey, REDACTED, redactMetadata } from "./redaction";
+import { isSensitiveMetadataKey, REDACTED, redactLinkTokens, redactMetadata } from "./redaction";
 
 export type TraceAttributeValue = string | number | boolean | null | undefined;
 export type TraceAttributes = Record<string, TraceAttributeValue>;
@@ -499,10 +499,10 @@ const start = async (params: TraceStartParams, preservePresentation = false): Pr
     VALUES (
       ${context.traceId},
       ${context.spanId},
-      ${params.spanKey ?? null},
+      ${params.spanKey ? redactLinkTokens(params.spanKey) : null},
       ${params.parent?.spanId ?? null},
-      ${params.name},
-      ${params.source},
+      ${redactLinkTokens(params.name)},
+      ${redactLinkTokens(params.source)},
       ${params.appId ?? null},
       ${params.category ?? "custom"},
       ${params.kind ?? "internal"},
@@ -567,10 +567,10 @@ const complete = async (params: TraceCompleteParams, preservePresentation = fals
     VALUES (
       ${context.traceId},
       ${context.spanId},
-      ${params.spanKey ?? null},
+      ${params.spanKey ? redactLinkTokens(params.spanKey) : null},
       ${params.parent?.spanId ?? null},
-      ${params.name},
-      ${params.source},
+      ${redactLinkTokens(params.name)},
+      ${redactLinkTokens(params.source)},
       ${params.appId ?? null},
       ${params.category ?? "custom"},
       ${params.kind ?? "internal"},
@@ -636,7 +636,7 @@ const record = async (params: TraceRecordParams, preservePresentation = false): 
     VALUES (
       ${context.traceId},
       ${context.spanId},
-      ${params.event},
+      ${redactLinkTokens(params.event)},
       ${params.severity ?? "info"},
       (${attributesJson}::text)::jsonb,
       ${body},
