@@ -211,7 +211,7 @@ export const listCodeAccess = async (
 ): Promise<CodeAccessGrant[]> => {
   const coreInspection = "listPrincipal" in authority;
   if (coreInspection ? authority.listPrincipal !== principal : !codeAccessPersonAllowed(authority, "list")) return [];
-  const candidates = await db.begin(async (tx) => {
+  const candidates = await db.begin(async (tx): Promise<CodeAccessGrant[]> => {
     if (!(await accountIsCode(tx, principal, false))) return [];
     const indexed = await tx<
       GrantRow[]

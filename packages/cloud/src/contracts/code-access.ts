@@ -1,6 +1,6 @@
 import type { SQL } from "bun";
 import { z } from "zod";
-import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "./capabilities";
+import type { CapabilityExecutionContext } from "./capabilities";
 
 /** A Code target is either a qualified resource type or the whole receiving application. */
 export const CodeAccessTargetSchema = z
@@ -101,12 +101,7 @@ export type CodeAccessSetData = z.infer<typeof CodeAccessSetDataSchema>;
 export const CodeAccessListInputSchema = z
   .object({ principal: z.uuid().describe("Code service-account ID whose explicit grants are requested.") })
   .strict();
-export const CodeAccessListDataSchema = z
-  .array(CodeAccessGrantSchema)
-  .refine(
-    (grants) => new TextEncoder().encode(JSON.stringify(grants)).byteLength <= CAPABILITY_MAX_RESULT_BYTES,
-    "Code access list exceeds the capability result budget",
-  );
+export const CodeAccessListDataSchema = z.array(CodeAccessGrantSchema);
 export const CodeAccessRemoveInputSchema = z.object({ grantId: z.uuid().describe("Explicit Code grant identity to remove.") }).strict();
 export const CodeAccessRemoveDataSchema = z.object({ removed: z.boolean() }).strict();
 
