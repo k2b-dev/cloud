@@ -11,7 +11,9 @@
     "./test/island-props-csp/**/*.ts",
     "./test/island-props-csp/**/*.tsx",
     "./examples/app-pwa/src/**/*.ts",
-    "./examples/app-pwa/src/**/*.tsx"
+    "./examples/app-pwa/src/**/*.tsx",
+    "./examples/public-site/src/**/*.ts",
+    "./examples/public-site/src/**/*.tsx"
   ],
   "exclude": ["./dist", "./node_modules"],
   "compilerOptions": {
