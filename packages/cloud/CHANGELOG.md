@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.50.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.49.0...npm-cloud-v0.50.0) (2026-10-31)
+
+
+### Features
+
+* **core:** the Apps page says when Core refused an app's start and how to recover ([#2230](https://github.com/k2b-dev/cloud/issues/2230)) ([f9eef29](https://github.com/k2b-dev/cloud/commit/f9eef29a112d46569b833a9de580b5d052466075))
+
+
+### Bug Fixes
+
+* **notebooks:** show CLI edits live in open notes ([#2227](https://github.com/k2b-dev/cloud/issues/2227)) ([9ce093c](https://github.com/k2b-dev/cloud/commit/9ce093ced8e2d2d8f381ee71d85a7b167f410872))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.38.1 to 0.39.0
+    * @k2b/editor bumped from 0.2.0 to 0.3.0
+
 ## [0.49.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.48.0...npm-cloud-v0.49.0) (2026-10-31)
 
 
