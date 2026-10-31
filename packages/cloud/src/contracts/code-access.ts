@@ -114,3 +114,38 @@ export const CapabilityCodeManifestSchema = z
   })
   .strict();
 export type CapabilityCodeManifest = z.infer<typeof CapabilityCodeManifestSchema>;
+
+/** One request presents at most this many Code accounts, the same batch bound as `access.readable` principals. */
+export const CODE_ACCESS_ACCOUNTS_MAX = 500;
+/** Rights-editor presentation: which Code accounts appear in a share list. */
+export const CodeAccessAccountsInputSchema = z
+  .object({ ids: z.array(z.uuid()).min(1).max(CODE_ACCESS_ACCOUNTS_MAX).describe("Code service-account IDs from a share list.") })
+  .strict();
+/**
+ * A Code account as a person sees it: its owner's current title, read through the owner's reader under
+ * the person's own authority. `ownerTitle` is null for an unknown account or an owner the person cannot
+ * read; both look the same. `appId`, `icon` and `accent` describe the owning application.
+ */
+export const CodeAccessAccountSchema = z
+  .object({
+    id: z.uuid(),
+    ownerTitle: z.string().min(1).max(500).nullable(),
+    appId: z.string().min(1).max(100).nullable(),
+    icon: z.string().min(1).max(200).nullable(),
+    accent: z.string().min(1).max(50).nullable(),
+  })
+  .strict();
+export type CodeAccessAccount = z.infer<typeof CodeAccessAccountSchema>;
+export const CodeAccessAccountsDataSchema = z.object({ items: z.array(CodeAccessAccountSchema).max(CODE_ACCESS_ACCOUNTS_MAX) }).strict();
+/** Remove one Code grant at the target application through Core; the target still checks that the person manages it. */
+export const CodeAccessRemoveRequestSchema = z
+  .object({
+    appId: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[a-z][a-z0-9-]*$/)
+      .describe("Application that owns the target and its generated code.access.rm."),
+    grantId: z.uuid().describe("grantId of the Code entry in the target's share list."),
+  })
+  .strict();
