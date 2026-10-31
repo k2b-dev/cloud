@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import * as Y from "yjs";
 import {
@@ -166,7 +167,9 @@ export const instantiate = async (
       finalNotebook = requireResult(await notebooks.update({ id: notebook.id, data: { homepageNoteId: homepage.id } }));
     }
 
-    await invalidated({ notebookId: finalNotebook.id, reason: "template", scopes: ["notebook", "tree", "tags", "references"] });
+    await sql.begin((tx) =>
+      invalidated({ notebookId: notebook.id, reason: "template", scopes: ["notebook", "tree", "tags", "references"] }, tx),
+    );
     return ok(finalNotebook);
   } catch (error) {
     await notebooks.remove({ id: notebook.id });

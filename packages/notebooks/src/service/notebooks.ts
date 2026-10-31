@@ -18,9 +18,8 @@ import {
 } from "./access";
 import * as activity from "./activity";
 import helloMd from "./hello.md" with { type: "text" };
-import { reindexNoteRefsSafe } from "./note-refs";
 import * as notes from "./notes";
-import { invalidated, notebookUpdated, noteCreated } from "./workspace-events";
+import { invalidated, notebookUpdated } from "./workspace-events";
 
 // ==========================
 // Types
@@ -482,7 +481,7 @@ export const create = async (params: {
 
   const shortId = await generateUniqueShortId("notebook");
   try {
-    const { row, welcome } = await sql.begin(async (tx) => {
+    const row = await sql.begin(async (tx) => {
       const [row] = await tx<DbNotebook[]>`
     INSERT INTO notebooks.notebooks (short_id, name, description, icon, created_by)
     VALUES (${shortId}, ${data.name}, ${data.description ?? null}, ${data.icon ?? null}, ${creatorId}::uuid)
@@ -507,22 +506,16 @@ export const create = async (params: {
       await tx`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${row.id}::uuid, ${access.data.id}::uuid)`;
       await activity.record({ notebookId: row.id, actor: { kind: "user", id: creatorId }, action: "notebook.created" }, tx);
       await publishNotebooksEvent(tx, "notebook.created", row.short_id, row.short_id);
-      let welcome: notes.Note | null = null;
       if (seedWelcome) {
         const created = await notes.create({ data: { notebookId: row.id, contentMd: helloMd }, creatorId, exactContent: true, tx });
         if (!created.ok) throw new NotebookCreateRefusal(created);
-        welcome = created.data;
       }
-      return { row, welcome };
+      await invalidated({ notebookId: row.id, reason: "permissions", scopes: ["permissions"] }, tx);
+      await notebookUpdated({ id: row.id }, tx);
+      return row;
     });
-    await invalidated({ notebookId: row.id, reason: "permissions", scopes: ["permissions"] });
-    if (welcome) {
-      await reindexNoteRefsSafe({ noteId: welcome.id, notebookId: row.id, contentMd: helloMd });
-      await noteCreated(welcome);
-    }
 
     const notebook = mapToNotebook(row);
-    await notebookUpdated(notebook);
     return { ok: true, data: notebook };
   } catch (error) {
     if (error instanceof NotebookCreateRefusal) return error.result;
@@ -622,6 +615,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
     ) {
       await publishNotebooksEvent(tx, "notebook.updated", row.short_id, row.short_id);
     }
+    if (row) await notebookUpdated({ id: row.id }, tx);
     return row;
   });
 
@@ -630,7 +624,6 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
   }
 
   const notebook = (await get({ id: row.id })) ?? mapToNotebook(row);
-  await notebookUpdated(notebook);
   return { ok: true, data: notebook };
 };
 
@@ -639,10 +632,12 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
  */
 export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
   const accessEntries = await listNotebookAccess(params.id);
-  const result = await sql`
-    DELETE FROM notebooks.notebooks
-    WHERE id = ${params.id}::uuid
-  `;
+  const result = await sql.begin(async (tx) => {
+    const result = await tx`DELETE FROM notebooks.notebooks WHERE id = ${params.id}::uuid`;
+    if (result.count > 0)
+      await invalidated({ notebookId: params.id, reason: "bulk", scopes: ["notebook", "tree", "tags", "references", "permissions"] }, tx);
+    return result;
+  });
 
   if (result.count === 0) {
     return { ok: false, error: "Notebook not found", status: 404 };
@@ -665,6 +660,5 @@ export const remove = async (params: { id: string }): Promise<MutationResult<voi
     resourceId: params.id,
   });
 
-  await invalidated({ notebookId: params.id, reason: "bulk", scopes: ["notebook", "tree", "tags", "references", "permissions"] });
   return { ok: true, data: undefined };
 };

@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { migrate } from "../migrate";
 
-const natsTest = testFor("nats");
+const natsTest = testFor("database", "nats");
 
 natsTest(
   "a quiet notebook has a replay cursor, and stored hints stay small and readable by older replicas",
@@ -37,12 +39,16 @@ natsTest(
         historyIncomplete: true,
         contentMd: "x".repeat(100_000),
         createdBy: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: "2026-10-31T12:00:00.000Z",
+        updatedAt: "2026-10-31T12:00:00.000Z",
         lockedAt: null,
       };
-      await workspaceEvents.noteUpdated(note);
-      await workspaceEvents.notebookUpdated({ id: notebookId });
+      await migrate();
+      await sql.begin(async (tx) => {
+        await workspaceEvents.noteUpdated(note, tx);
+        await workspaceEvents.notebookUpdated({ id: notebookId }, tx);
+      });
+      await workspaceEvents.workspaceOutbox.reconcile();
 
       const events = workspaceEvents.live({ notebookId, after: cursor, signal: abort.signal })[Symbol.asyncIterator]();
       const next = async () => {

@@ -283,11 +283,13 @@ export const listNotebookAccessPage = async (
  */
 export const addNotebookAccess = async (notebookId: string, accessId: string): Promise<Result<void>> => {
   try {
-    await sql`
+    await sql.begin(async (tx) => {
+      await tx`
       INSERT INTO notebooks.notebook_access (notebook_id, access_id)
       VALUES (${notebookId}::uuid, ${accessId}::uuid)
     `;
-    await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] });
+      await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
+    });
     return ok();
   } catch (e: unknown) {
     const error = e as { code?: string };
@@ -345,9 +347,9 @@ const mutateNotebookAccess = async (params: {
       params.permission === undefined
         ? await deleteAccess({ id: params.accessId }, tx)
         : await updateAccess({ id: params.accessId, permission: params.permission }, tx);
+    if (changed.ok) await invalidated({ notebookId: params.notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
     return changed;
   });
-  if (result.ok) await invalidated({ notebookId: params.notebookId, reason: "permissions", scopes: ["permissions"] });
   return result;
 };
 
@@ -427,10 +429,10 @@ export const grantNotebookAccess = async (params: {
     const created = await createAccess({ principal, permission }, tx);
     if (!created.ok) return created;
     await tx`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebookId}::uuid, ${created.data.id}::uuid)`;
+    await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
     return ok(created.data.id);
   });
   if (!result.ok) return result;
-  await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] });
   const created = (await listNotebookAccess(notebookId)).find((entry) => entry.id === result.data);
   return created ? ok(created) : fail(err.internal("Failed to retrieve created access entry"));
 };

@@ -58,9 +58,14 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
   };
   const fixtureSql = async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const query = parts.join("?");
-    if (query.includes("FOR UPDATE") || query.includes("FOR SHARE")) {
+    if (query.includes("FROM notebooks.notebooks") && query.includes("FOR KEY SHARE")) {
       expect(locked).toBe(true);
-      lockKind = query.includes("FOR UPDATE") ? "exclusive" : "shared";
+      expect(lockKind).toBeNull();
+      return [{ id: "book" }];
+    }
+    if (query.includes("FOR NO KEY UPDATE") || query.includes("FOR SHARE")) {
+      expect(locked).toBe(true);
+      lockKind = query.includes("FOR NO KEY UPDATE") ? "exclusive" : "shared";
       underLock?.();
       if (!row) return [];
       return query.includes("AS revision") ? [{ revision: row.yjs_restore_revision }] : [{ ...row }];
