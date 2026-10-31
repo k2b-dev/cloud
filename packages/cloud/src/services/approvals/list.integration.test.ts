@@ -7,7 +7,7 @@ import { createDeviceActions } from "../../api/app-approval-actions";
 import { APPROVALS_PAGE_SIZE } from "../../contracts/approvals";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
-import { type ApprovalRequestInput, approvalReviewDigest, approvals, countPending, listPending, presentPendingApproval } from ".";
+import { type ActionApprovalRequestInput, approvalReviewDigest, approvals, countPending, listPending, presentPendingApproval } from ".";
 import { readApprovalContent } from "./content";
 
 const insertUser = async () => {
@@ -34,9 +34,9 @@ databaseSuite()("pending approval lists", () => {
       runConfig: { kind: "chat", input: "Write a letter" },
       userMessage: { role: "user", content: [{ type: "text", text: "Write a letter" }] },
     });
-    const ask = async (extra: Partial<ApprovalRequestInput> = {}, linked = true) => {
+    const ask = async (extra: Partial<ActionApprovalRequestInput> = {}, linked = true) => {
       const callId = crypto.randomUUID();
-      const input: ApprovalRequestInput = {
+      const input: ActionApprovalRequestInput = {
         appId: "mail",
         action: "draft.send",
         requester: { kind: "assistant_turn", appId: "assistant", ref: `${turn.id}/${callId}` },
