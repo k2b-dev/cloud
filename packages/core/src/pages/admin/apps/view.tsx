@@ -162,6 +162,8 @@ function Tile(props: { icon: string; accent: string | null }) {
 /** The one-line version of a hint, for the list. */
 function hintShort(t: AppsPageMessages, f: AppsFormat, hint: AppHint): string {
   switch (hint.kind) {
+    case "startRejected":
+      return t.hintStartRejectedShort({ reason: hint.reason });
     case "notRunning":
       return t.hintNotRunningShort({ since: hint.since ? f.moment(hint.since) : t.unknown });
     case "providerOnly":
@@ -325,6 +327,20 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
   } => {
     const hint = props.hint;
     switch (hint.kind) {
+      case "startRejected": {
+        // The refusal stays until the next successful start, so its cause may already be gone in Core: a valid key
+        // exists or background access is on again. Then only the deployment and a restart remain.
+        const resolved =
+          hint.reason === "disabled"
+            ? entry.keys.accountStatus === "active"
+            : hint.reason !== "connections_not_permitted" && entry.keys.active > 0;
+        const lead = t.hintStartRejectedLead({ name: entry.name, live: entry.live });
+        const text = t.hintStartRejectedText({ reason: hint.reason, when: f.relative(hint.at), resolved });
+        const docs = { docs: props.app.docs.recover, docsLabel: t.docsWhatNow };
+        if (resolved) return { lead, text, action: t.actKeysShow, ...docs };
+        if (hint.reason === "disabled") return { lead, text, action: t.actReenable, primary: true };
+        return { lead, text, action: t.actNewKey, create: true, primary: true, ...docs };
+      }
       case "notRunning": {
         const since = hint.since ? f.moment(hint.since) : t.unknown;
         return { lead: t.hintNotRunningLead({ since }), text: t.hintNotRunningText({ name: entry.name }), action: t.actErrors };
@@ -352,9 +368,9 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
       case "envStart":
         return {
           lead: t.hintEnvStartLead,
-          text: t.hintEnvStartText({ name: entry.name }),
-          action: t.actKeys,
-          create: true,
+          text: hint.hasKey ? t.hintEnvStartKeyText({ name: entry.name }) : t.hintEnvStartText({ name: entry.name }),
+          action: hint.hasKey ? t.actKeysShow : t.actKeys,
+          create: !hint.hasKey,
           docs: props.app.docs.migrate,
           docsLabel: t.docsMigration,
         };
@@ -561,7 +577,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
         </>
       );
     if (keys.revoked + keys.expired > 0) return <span class="text-(--k2b-danger-text)">{t.keysNoValid}</span>;
-    return entry.live ? t.keysEnv : t.keysNone;
+    return entry.live && entry.startsWithEnv !== false ? t.keysEnv : t.keysNone;
   };
   const eventsValue = (): JSX.Element => {
     if (neverStarted || providerOnly) return "–";

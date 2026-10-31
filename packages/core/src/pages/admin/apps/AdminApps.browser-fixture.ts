@@ -8,7 +8,15 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { ADMIN_ID, FIXTURE_NOW, fixtureApps, fixtureDetails, fixtureDomains, fixtureKeys } from "./AdminApps.fixture-data";
+import {
+  ADMIN_ID,
+  FIXTURE_NOW,
+  fixtureApps,
+  fixtureDetails,
+  fixtureDomains,
+  fixtureKeys,
+  fixtureRejection,
+} from "./AdminApps.fixture-data";
 
 /** States the captures and tests switch with `?state=`, next to the page's own `app`, `view`, `window` and `moved`. */
 export type AdminAppsFixtureState =
@@ -23,10 +31,14 @@ export type AdminAppsFixtureState =
   | "keys-off"
   | "keys-error"
   | "keys-two"
+  | "start-disabled"
   | "slow"
   | "domains-empty"
   | "domains-error"
   | "domains-partial";
+
+const rejectionFor = (state: AdminAppsFixtureState, id: string) =>
+  fixtureRejection(id, state === "start-disabled" ? "disabled" : "revoked");
 
 const user: User = {
   id: ADMIN_ID,
@@ -131,7 +143,12 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     const inputs = fixtureApps()
       // Without its provider, an app only the provider knows is not listed at all.
       .filter((app) => !removed.has(app.id) && !(state === "removed" && app.id === "pulse") && !(state === "provider" && !app.coreKnows))
-      .map((app) => (state === "provider" ? { ...app, numbers: [], numbersUnavailable: true } : app));
+      .map((app) => (state === "provider" ? { ...app, numbers: [], numbersUnavailable: true } : app))
+      .map((app) =>
+        state === "start-disabled" && app.id === "pulse"
+          ? { ...app, startRejected: rejectionFor(state, app.id), keys: { ...app.keys, accountStatus: "disabled" as const } }
+          : app,
+      );
     const apps = sortApps(inputs.map(deriveApp), locale);
     const entry = apps.find((app) => app.id === query.app);
     const details = entry && state !== "core-fail" && entry.coreKnows && !entry.neverStarted ? fixtureDetails(entry.id, entry.name) : null;
@@ -160,8 +177,9 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
             app: { id: entry.id, name: entry.name },
             neverStarted: entry.neverStarted,
             initialKeys: state === "keys-error" ? null : keys,
+            initialRejection: rejectionFor(state, entry.id),
             people: { [ADMIN_ID]: "Alex Berger" },
-            accountStatus: state === "keys-off" ? ("disabled" as const) : ("active" as const),
+            accountStatus: state === "keys-off" || state === "start-disabled" ? ("disabled" as const) : ("active" as const),
             tokens: {
               items: entry.neverStarted
                 ? []
@@ -387,6 +405,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
       return Response.json({
         installationId: "66666666-6666-4666-8666-666666666666",
         items: fixtureKeys(keyList[1]!),
+        lastRejectedStart: rejectionFor(state, keyList[1]!),
         page: 1,
         perPage: 100,
         total: 2,

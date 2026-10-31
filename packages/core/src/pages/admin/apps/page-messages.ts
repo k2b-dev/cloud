@@ -1,6 +1,8 @@
 import { i18n } from "@k2b/stdlib";
+import type { StartRejection } from "./model";
 
 type N = { count: number };
+type StartRejectionReason = StartRejection["reason"];
 
 export const appsPageMessages = i18n.define({
   baseLocale: "en",
@@ -107,6 +109,22 @@ export const appsPageMessages = i18n.define({
       hintEnvStartText: ({ name }: { name: string }) =>
         `${name} takes its database, Valkey and NATS from its own environment. With a key, it fetches them from Core when it starts.`,
       hintEnvStartShort: "Still starts with its environment",
+      hintEnvStartKeyText: ({ name }: { name: string }) =>
+        `${name} still takes its database, Valkey and NATS from its own environment although it has a key. Put the key into the deployment; then it fetches them from Core when it starts.`,
+      hintStartRejectedShort: ({ reason }: { reason: StartRejectionReason }) =>
+        `Start refused · ${{ revoked: "key revoked", expired: "key expired", disabled: "background access off", connections_not_permitted: "key may not fetch connections" }[reason]}`,
+      hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
+        live ? `A start of ${name} was refused.` : `${name} does not start.`,
+      /** `resolved`: Core no longer has the cause (a valid key exists, background access is on again); a restart remains. */
+      hintStartRejectedText: ({ reason, when, resolved }: { reason: StartRejectionReason; when: string; resolved: boolean }) =>
+        reason === "disabled"
+          ? resolved
+            ? `Core refused the start ${when} because the app's background access was off. It is on again: restart the app.`
+            : `Core refused the start ${when} because the app's background access is off. Turn it on again and restart the app.`
+          : reason === "connections_not_permitted"
+            ? `Core refused the key ${when} because it may not fetch connections. Create a key for the app's start and replace it in the deployment.`
+            : `Core refused the key ${when} because it ${reason === "revoked" ? "was revoked" : "has expired"}. ${resolved ? "A valid key exists: put it into the deployment and restart the app." : "Create a new key and replace it in the deployment."}`,
+      actReenable: "Turn on again",
       hintRotationShort: "Rotation in progress",
       actNewKey: "Create new key",
       docsWhatNow: "What to do? (documentation)",
@@ -333,6 +351,21 @@ export const appsPageMessages = i18n.define({
       hintEnvStartText: ({ name }: { name: string }) =>
         `${name} holt Datenbank, Valkey und NATS aus der eigenen Env. Mit einem Schlüssel holt die App sie beim Start von Core.`,
       hintEnvStartShort: "Startet noch mit Env",
+      hintEnvStartKeyText: ({ name }: { name: string }) =>
+        `${name} holt Datenbank, Valkey und NATS noch aus der eigenen Env, obwohl es einen Schlüssel gibt. Hinterlege den Schlüssel im Deployment, dann holt die App sie beim Start von Core.`,
+      hintStartRejectedShort: ({ reason }: { reason: StartRejectionReason }) =>
+        `Start abgelehnt · ${{ revoked: "Schlüssel widerrufen", expired: "Schlüssel abgelaufen", disabled: "Hintergrundzugriff aus", connections_not_permitted: "Schlüssel darf keine Verbindungen holen" }[reason]}`,
+      hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
+        live ? `Ein Start von ${name} wurde abgelehnt.` : `${name} startet nicht.`,
+      hintStartRejectedText: ({ reason, when, resolved }: { reason: StartRejectionReason; when: string; resolved: boolean }) =>
+        reason === "disabled"
+          ? resolved
+            ? `Core hat den Start ${when} abgelehnt, weil der Hintergrundzugriff der App aus war. Er ist wieder an: Starte die App neu.`
+            : `Core hat den Start ${when} abgelehnt, weil der Hintergrundzugriff der App aus ist. Aktiviere ihn wieder und starte die App neu.`
+          : reason === "connections_not_permitted"
+            ? `Core hat den Schlüssel ${when} beim Start abgelehnt, weil er keine Verbindungen holen darf. Erzeuge einen Schlüssel für den Start der App und tausche ihn im Deployment aus.`
+            : `Core hat den Schlüssel ${when} beim Start abgelehnt, weil er ${reason === "revoked" ? "widerrufen" : "abgelaufen"} ist. ${resolved ? "Ein gültiger Schlüssel existiert: Hinterlege ihn im Deployment und starte die App neu." : "Erzeuge einen neuen Schlüssel und tausche ihn im Deployment aus."}`,
+      actReenable: "Wieder aktivieren",
       hintRotationShort: "Rotation läuft",
       actNewKey: "Neuen Schlüssel erzeugen",
       docsWhatNow: "Was tun? (Fibel)",

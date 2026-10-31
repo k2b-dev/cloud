@@ -237,6 +237,34 @@ test("key states: no valid key carries the page's one filled action; rotation na
   expect(await page.locator('[data-hint="rotation"]').count()).toBe(0);
 }, 20_000);
 
+test("key states: a refused start leads the list and the app page, and the keys column marks the refused key", async () => {
+  await open("");
+  expect(await page.locator('[data-app="pulse"]').innerText()).toContain("Start abgelehnt · Schlüssel widerrufen · +1");
+  await open("?app=pulse");
+  const notice = page.locator('[data-hint="startRejected"]');
+  expect(await notice.innerText()).toContain(
+    "Pulse startet nicht. Core hat den Schlüssel vor 3 Minuten beim Start abgelehnt, weil er widerrufen ist.",
+  );
+  // The refusal already says there is no valid key; the page keeps one filled action.
+  expect(await page.locator('[data-hint="keyRevoked"]').count()).toBe(0);
+  const action = notice.getByRole("link", { name: "Neuen Schlüssel erzeugen" });
+  expect(await action.getAttribute("href")).toBe("/admin/apps?app=pulse&view=keys&create=1");
+  expect(await action.getAttribute("data-variant")).toBe("primary");
+  expect(await notice.getByRole("link", { name: "Was tun? (Fibel)" }).count()).toBe(1);
+  await open("?app=pulse&view=keys");
+  const key = page.locator('[data-keys="pulse"] [data-key="pulse-prod"]');
+  expect(await key.isVisible()).toBe(true);
+  expect(await key.innerText()).toContain("Start abgelehnt vor 3 Minuten");
+
+  // Background access off: the way out is turning it on again, in the keys column.
+  await open("?app=pulse&state=start-disabled");
+  const disabled = page.locator('[data-hint="startRejected"]');
+  expect(await disabled.innerText()).toContain("weil der Hintergrundzugriff der App aus ist");
+  expect(await disabled.getByRole("link", { name: "Wieder aktivieren" }).getAttribute("href")).toBe("/admin/apps?app=pulse&view=keys");
+  await open("?app=pulse&view=keys&state=start-disabled");
+  expect(await page.locator("[data-background-off]").getByRole("button", { name: "Wieder aktivieren" }).isVisible()).toBe(true);
+}, 20_000);
+
 test("domains: only an app with public pages has a Domains row; its column shows each domain's checks and redirect", async () => {
   await open("?app=mail");
   expect(await page.locator('[data-row="Domains"]').count()).toBe(0);
