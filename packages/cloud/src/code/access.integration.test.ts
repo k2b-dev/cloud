@@ -31,7 +31,13 @@ const person: User = {
 const actor = {
   kind: "user" as const,
   user: person,
-  delegation: { kind: "invocation" as const, callingAppId: "core", credentialKind: "session" as const, invocationId: "invocation" },
+  delegation: {
+    kind: "invocation" as const,
+    callingAppId: "core",
+    credentialKind: "session" as const,
+    invocationId: "invocation",
+    codeAccess: "set" as const,
+  },
 };
 const context: CapabilityExecutionContext = {
   actor,
@@ -42,6 +48,14 @@ const context: CapabilityExecutionContext = {
   requestId: "code-access-integration",
   origin: "app",
   signal: new AbortController().signal,
+};
+const listContext: CapabilityExecutionContext = {
+  ...context,
+  actor: { ...actor, delegation: { ...actor.delegation, codeAccess: "list" } },
+};
+const removeContext: CapabilityExecutionContext = {
+  ...context,
+  actor: { ...actor, delegation: { ...actor.delegation, codeAccess: "rm" } },
 };
 const principal = "22222222-2222-4222-8222-222222222222";
 const grantId = "33333333-3333-4333-8333-333333333333";
@@ -94,6 +108,7 @@ beforeEach(async () => {
   if (!testInfra.database) return;
   await sql`DELETE FROM capabilities.code_access_fixture`;
   await sql`DELETE FROM capabilities.code_access_grants WHERE app_id = 'inventory'`;
+  await sql`INSERT INTO auth.service_accounts (id, name, kind) VALUES (${principal}::uuid, 'Code access fixture', 'code') ON CONFLICT (id) DO UPDATE SET status = 'active'`;
   await sql`DELETE FROM audit.events WHERE request_id = ${context.requestId}`;
 });
 
@@ -108,9 +123,9 @@ suite("parallel retries create one grant, list is live, and target removal canno
   expect(results.every((result) => result.granted)).toBe(true);
   expect(await sql`SELECT * FROM capabilities.code_access_fixture`).toHaveLength(1);
   expect(await sql`SELECT * FROM audit.events WHERE request_id = ${context.requestId} AND action = 'code.access.set'`).toHaveLength(1);
-  expect(await listCodeAccess("inventory", bindings, principal, context)).toEqual([{ grantId, principal, target, level: "write" }]);
-  expect(await removeCodeAccess("inventory", bindings, grantId, { context })).toBe(true);
-  expect(await listCodeAccess("inventory", bindings, principal, context)).toEqual([]);
+  expect(await listCodeAccess("inventory", bindings, principal, listContext)).toEqual([{ grantId, principal, target, level: "write" }]);
+  expect(await removeCodeAccess("inventory", bindings, grantId, { context: removeContext })).toBe(true);
+  expect(await listCodeAccess("inventory", bindings, principal, listContext)).toEqual([]);
   expect(await setCodeAccess("inventory", bindings, input, context, dependencies)).toMatchObject({ granted: false });
   expect(await sql`SELECT * FROM capabilities.code_access_fixture`).toHaveLength(0);
 });
@@ -130,4 +145,14 @@ suite("cleanup cannot remove another account, and adapter failure rolls back eve
   expect(await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: person.id, requestId: "cleanup" })).toBe(false);
   expect(await sql`SELECT * FROM capabilities.code_access_fixture`).toHaveLength(1);
   expect(await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" })).toBe(true);
+});
+
+suite("live grants block account deletion, cleanup releases the account and preserves replay tombstones", async () => {
+  await setCodeAccess("inventory", bindings, input, context, dependencies);
+  await expect(sql`DELETE FROM auth.service_accounts WHERE id = ${principal}::uuid`).rejects.toThrow();
+  await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${principal}::uuid`;
+  expect(await listCodeAccess("inventory", bindings, principal, { listPrincipal: principal })).toHaveLength(1);
+  await removeCodeAccess("inventory", bindings, grantId, { cleanupPrincipal: principal, requestId: "cleanup" });
+  await sql`DELETE FROM auth.service_accounts WHERE id = ${principal}::uuid`;
+  expect(await sql`SELECT * FROM capabilities.code_access_grants WHERE app_id = 'inventory' AND revoked`).toHaveLength(1);
 });

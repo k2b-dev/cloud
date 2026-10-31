@@ -16,7 +16,7 @@ import { capabilityMessages } from "../shared/capability-messages";
 import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
 import { capabilityVia } from "./capability-origin";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
-import { generatedCodeAccess } from "./code-access";
+import { codeAccessPresentation, generatedCodeAccess } from "./code-access";
 
 export { capabilityHash } from "./capability-schemas";
 
@@ -86,7 +86,11 @@ import {
 import { activeResourcePrincipals } from "./resource-principals";
 
 /** App-only queries never enter a person catalog. */
-export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): boolean => query.appOnly !== true;
+export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): boolean =>
+  query.appOnly !== true && !query.localId.startsWith("code.access.");
+
+/** Platform access controls are available only to explicit Core editors, never general-purpose tools. */
+export const isPersonVisibleCapabilityAction = (action: CapabilityActionManifest): boolean => !action.localId.startsWith("code.access.");
 
 type JsonSchema = Record<string, unknown>;
 const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
@@ -1164,7 +1168,10 @@ export const compileCapabilities = (
   if (manifestBytes > MAX_CAPABILITY_MANIFEST_BYTES) {
     throw new Error(`Capability manifest exceeds the ${MAX_CAPABILITY_MANIFEST_BYTES}-byte registry limit`);
   }
-  const presentation = compileCapabilityPresentation(manifest, definitions.presentation);
+  const presentation = compileCapabilityPresentation(
+    manifest,
+    Object.keys(codeAccess.actions).length ? codeAccessPresentation(definitions.presentation) : definitions.presentation,
+  );
   return { manifest, presentation, typeIds, queries, actions, events, subscribes };
 };
 

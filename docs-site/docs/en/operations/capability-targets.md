@@ -59,3 +59,10 @@ removes the platform's replay index for that account. An unavailable target
 returns a retryable cleanup failure rather than reporting successful removal.
 See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
 for the adapter and Core proof contracts.
+
+
+Code access adapters add a platform replay/routing ledger. Live rows prevent
+deleting the Code account before target cleanup succeeds. Cleanup clears that
+reference and preserves revocation tombstones. Core can inspect and remove a
+disabled Code account's grants; setting new grants requires an active account.
+Generated access calls require explicit operation-bound Core editor admission.

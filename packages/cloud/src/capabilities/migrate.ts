@@ -98,7 +98,9 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
     CREATE TABLE IF NOT EXISTS capabilities.code_access_grants (
       app_id TEXT NOT NULL,
       grant_id UUID NOT NULL,
-      principal UUID NOT NULL REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      principal UUID NOT NULL,
+      live_principal UUID REFERENCES auth.service_accounts(id) ON DELETE RESTRICT,
+      CONSTRAINT code_access_live_account CHECK ((revoked AND live_principal IS NULL) OR (NOT revoked AND live_principal IS NOT NULL AND live_principal = principal)),
       target_type TEXT NOT NULL,
       target_id TEXT NOT NULL,
       binding_hash TEXT NOT NULL,

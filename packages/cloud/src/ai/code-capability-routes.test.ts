@@ -385,3 +385,12 @@ test("Code Mode keeps its JSON socket raised until dispatch settles and resets a
     expect(calls).toEqual([55, 10]);
   }
 });
+
+test("interactive code callbacks refuse all platform Code access operations before dispatch", async () => {
+  const f = fixture();
+  const jwt = await token();
+  for (const operation of ["queries/demo/code.access.list", "actions/demo/code.access.set", "actions/demo/code.access.rm"]) {
+    expect((await f.app.fetch(request(jwt, operation))).status).toBe(403);
+  }
+  expect(f.dispatch).not.toHaveBeenCalled();
+});

@@ -50,6 +50,9 @@ export type CodeAccessProofInput = Omit<CodeAccessProofClaims, "ver" | "iss" | "
 /** Cleanup authority permits only removing grants of this one Code account at the receiving app. */
 export const CodeAccessCleanupClaimsSchema = base.extend({ token_use: z.literal("code_access_cleanup"), principal: z.uuid() }).strict();
 export type CodeAccessCleanupClaims = z.infer<typeof CodeAccessCleanupClaimsSchema>;
+/** Core reconciles one account's existing grants without requiring fresh target-manager authority. */
+export const CodeAccessListClaimsSchema = base.extend({ token_use: z.literal("code_access_list"), principal: z.uuid() }).strict();
+export type CodeAccessListClaims = z.infer<typeof CodeAccessListClaimsSchema>;
 
 type SignOptions = { issuer?: string; signer?: PreparedIdentitySigner; now?: Date };
 export type CodeAccessVerifyOptions = { issuer?: string; key?: JWTVerifyGetKey; now?: Date };
@@ -91,6 +94,10 @@ export const signCodeAccessProof = async (targetAppId: string, input: CodeAccess
 /** Core's durable cleanup worker reissues this short-lived authority for one account per app. */
 export const signCodeAccessCleanup = (targetAppId: string, principal: string, options: SignOptions = {}): Promise<string> =>
   sign(targetAppId, { token_use: "code_access_cleanup", principal: z.uuid().parse(principal) }, options);
+
+/** Core-only inspection authority, after checking the person's access to the owning Code. */
+export const signCodeAccessList = (targetAppId: string, principal: string, options: SignOptions = {}): Promise<string> =>
+  sign(targetAppId, { token_use: "code_access_list", principal: z.uuid().parse(principal) }, options);
 
 const verify = async (token: string, targetAppId: string, options: CodeAccessVerifyOptions) => {
   if (Buffer.byteLength(token) > 64 * 1024) return null;
@@ -154,5 +161,15 @@ export const verifyCodeAccessCleanup = async (
   options: CodeAccessVerifyOptions = {},
 ): Promise<CodeAccessCleanupClaims | null> => {
   const parsed = CodeAccessCleanupClaimsSchema.safeParse(await verify(token, targetAppId, options));
+  return parsed.success ? parsed.data : null;
+};
+
+/** Inspection authority lists only its bound account; it grants and removes nothing. */
+export const verifyCodeAccessList = async (
+  token: string,
+  targetAppId: string,
+  options: CodeAccessVerifyOptions = {},
+): Promise<CodeAccessListClaims | null> => {
+  const parsed = CodeAccessListClaimsSchema.safeParse(await verify(token, targetAppId, options));
   return parsed.success ? parsed.data : null;
 };

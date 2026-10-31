@@ -4,7 +4,7 @@ import type { CapabilityDefinitions } from "../contracts/capabilities";
 import { CapabilityManifestSchema, CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import type { CodeAccessAdapter } from "../contracts/code-access";
 import { compileCapabilities, invokeCompiledCapability } from "./capabilities";
-import { validateCodeAccess } from "./code-access";
+import { codeAccessOperationsAllowed, validateCodeAccess } from "./code-access";
 
 const adapter: CodeAccessAdapter = {
   manages: () => true,
@@ -15,7 +15,7 @@ const adapter: CodeAccessAdapter = {
 const reader = {
   title: "Read item",
   description: "Read the authorized item.",
-  input: z.object({ id: z.string().min(1).max(512) }).strict(),
+  input: z.object({ id: z.string().min(1).max(512).describe("Resource ID.") }).strict(),
   data: z.object({ view: CloudResourceReaderViewSchema }),
   openWorld: false,
   run: async () => ({ ok: true as const, data: { data: { view: { title: "Item", permission: "read" as const } } } }),
@@ -30,6 +30,7 @@ test("generates one set/list/rm and advertises target and owner contracts", () =
   const compiled = compileCapabilities("inventory", definitions);
   expect([...compiled.actions.keys()]).toEqual(["code.access.rm", "code.access.set"]);
   expect([...compiled.queries.keys()]).toEqual(["code.access.list", "item.read", "item.readable"]);
+  expect(compiled.presentation?.translations.de?.actions?.["code.access.set"]?.title).toBe("Code-Zugriff gewähren");
   expect(compiled.manifest.code).toEqual({ access: { app: true, types: ["item"] }, owners: ["item"] });
   expect(CapabilityManifestSchema.parse(compiled.manifest).code).toEqual(compiled.manifest.code);
   expect(compiled.queries.get("item.readable")?.manifest.appOnly).toBe(true);
@@ -90,4 +91,14 @@ test("an app with resources:readers authority cannot call the Code functions", a
       await invokeCompiledCapability({ compiled, kind, localId, input, expectedSchemaHash: op.manifest.schemaHash, context }),
     ).toMatchObject({ ok: false, error: { status: 403 } });
   }
+});
+
+test("target operations belong to the app and their declared target or refs", () => {
+  const manifest: CapabilityDefinitions = { ...definitions, queries: { "item.read": { ...reader, target: "item" } } };
+  const target = { type: "inventory.item", id: "1" };
+  expect(codeAccessOperationsAllowed("inventory", manifest, target, ["inventory.item.read"])).toBe(true);
+  for (const operation of ["foreign.item.read", "inventory.missing", "inventory.code.access.rm"]) {
+    expect(codeAccessOperationsAllowed("inventory", manifest, target, [operation])).toBe(false);
+  }
+  expect(codeAccessOperationsAllowed("inventory", manifest, { type: "inventory.other", id: "1" }, ["inventory.item.read"])).toBe(false);
 });

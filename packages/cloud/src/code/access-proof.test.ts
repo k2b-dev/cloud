@@ -4,8 +4,10 @@ import {
   CODE_ACCESS_PROOF_TYPE,
   type CodeAccessProofInput,
   signCodeAccessCleanup,
+  signCodeAccessList,
   signCodeAccessProof,
   verifyCodeAccessCleanup,
+  verifyCodeAccessList,
   verifyCodeAccessProof,
 } from "./access-proof";
 
@@ -90,4 +92,15 @@ test("wrong signer, token use, header, lifetime and malformed bindings fail clos
     expect(await verifyCodeAccessProof(token, expected, options())).toBeNull();
   }
   await expect(signCodeAccessProof("inventory", input, { issuer, signer: { ...signer, signUntil: now }, now })).rejects.toThrow("expires");
+});
+
+test("Core list authority cannot be used for cleanup or activation", async () => {
+  const token = await signCodeAccessList("inventory", input.principal, { issuer, signer, now });
+  expect(await verifyCodeAccessList(token, "inventory", options())).toMatchObject({ principal: input.principal });
+  expect(await verifyCodeAccessList(token, "other", options())).toBeNull();
+  expect(await verifyCodeAccessCleanup(token, "inventory", options())).toBeNull();
+  expect(await verifyCodeAccessProof(token, expected, options())).toBeNull();
+  expect(
+    await verifyCodeAccessList(await signCodeAccessCleanup("inventory", input.principal, { issuer, signer, now }), "inventory", options()),
+  ).toBeNull();
 });

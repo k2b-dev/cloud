@@ -425,6 +425,8 @@ export type InvocationProvenance = {
   callingAppId: string;
   credentialKind: "session" | "oauth" | "api_key" | "mandate";
   invocationId: string;
+  /** Core-signed, operation-bound admission for the activation or rights editor. */
+  codeAccess?: "set" | "list" | "rm";
   parentInvocationId?: string;
   requestId?: string | null;
   mandateId?: string;

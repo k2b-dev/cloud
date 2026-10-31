@@ -1,6 +1,6 @@
 import type { SQL } from "bun";
 import { z } from "zod";
-import type { CapabilityExecutionContext } from "./capabilities";
+import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "./capabilities";
 
 /** A Code target is either a qualified resource type or the whole receiving application. */
 export const CodeAccessTargetSchema = z
@@ -8,8 +8,9 @@ export const CodeAccessTargetSchema = z
     type: z
       .string()
       .max(200)
-      .regex(/^(app|[a-z][a-z0-9-]*\.[a-z][a-z0-9._-]*)$/),
-    id: z.string().min(1).max(512),
+      .regex(/^(app|[a-z][a-z0-9-]*\.[a-z][a-z0-9._-]*)$/)
+      .describe("Qualified resource type, or app for the whole receiving application."),
+    id: z.string().min(1).max(512).describe("Resource ID, or the receiving application ID for an app target."),
   })
   .strict();
 export type CodeAccessTarget = z.infer<typeof CodeAccessTargetSchema>;
@@ -47,7 +48,11 @@ export type CodeAccessGrant = z.infer<typeof CodeAccessGrantSchema>;
  * Use only the supplied transaction for reads and writes; no external effects.
  * grant chooses the smallest non-manager level covering all operations, or refuses.
  * dryRun must return the same decision without effects (the platform also rolls back).
+ * Normal target share lists must expose grantId on each Code share so the rights editor
+ * can call code.access.rm directly; ordinary shares never carry it.
  * A grantId identifies an explicit Code-only grant; revoke never removes ordinary shares.
+ * Keep grants with different IDs independent, including overlapping grants for the same
+ * account and target. Activation rollback removes only its new IDs, preserving older grants.
  */
 export type CodeAccessAdapter = {
   manages: (context: CapabilityExecutionContext, id: string) => boolean | Promise<boolean>;
@@ -67,20 +72,42 @@ export const CodeAccessSetInputSchema = z
     proof: z
       .string()
       .min(1)
-      .max(64 * 1024),
-    target: CodeAccessTargetSchema,
-    operations: CodeAccessOperationsSchema,
-    dryRun: z.boolean().optional(),
+      .max(64 * 1024)
+      .describe("Short-lived Core-signed activation proof."),
+    target: CodeAccessTargetSchema.describe("Exact target bound by the activation proof."),
+    operations: CodeAccessOperationsSchema.describe("Complete set of qualified operations requested at this target."),
+    dryRun: z.boolean().optional().describe("Check availability without committing any permission changes."),
   })
   .strict();
+/** Stable platform refusal codes for activation and rights-editor recovery. Adapter copy remains separate. */
+export const CodeAccessRefusalCodeSchema = z.enum([
+  "origin_forbidden",
+  "proof_invalid",
+  "not_manager",
+  "removed",
+  "binding_conflict",
+  "account_inactive",
+  "unsupported_target",
+  "operations_invalid",
+  "adapter_refused",
+]);
+export type CodeAccessRefusalCode = z.infer<typeof CodeAccessRefusalCodeSchema>;
+
 export const CodeAccessSetDataSchema = z.discriminatedUnion("granted", [
   z.object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema }).strict(),
-  z.object({ granted: z.literal(false), reason: z.string().min(1).max(1000) }).strict(),
+  z.object({ granted: z.literal(false), reasonCode: CodeAccessRefusalCodeSchema, reason: z.string().min(1).max(1000) }).strict(),
 ]);
 export type CodeAccessSetData = z.infer<typeof CodeAccessSetDataSchema>;
-export const CodeAccessListInputSchema = z.object({ principal: z.uuid() }).strict();
-export const CodeAccessListDataSchema = z.array(CodeAccessGrantSchema);
-export const CodeAccessRemoveInputSchema = z.object({ grantId: z.uuid() }).strict();
+export const CodeAccessListInputSchema = z
+  .object({ principal: z.uuid().describe("Code service-account ID whose explicit grants are requested.") })
+  .strict();
+export const CodeAccessListDataSchema = z
+  .array(CodeAccessGrantSchema)
+  .refine(
+    (grants) => new TextEncoder().encode(JSON.stringify(grants)).byteLength <= CAPABILITY_MAX_RESULT_BYTES,
+    "Code access list exceeds the capability result budget",
+  );
+export const CodeAccessRemoveInputSchema = z.object({ grantId: z.uuid().describe("Explicit Code grant identity to remove.") }).strict();
 export const CodeAccessRemoveDataSchema = z.object({ removed: z.boolean() }).strict();
 
 /** Discoverable Code targets and owners; functions remain local to the receiving app. */

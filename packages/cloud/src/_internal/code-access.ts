@@ -1,6 +1,11 @@
 import { actionReview } from "../capabilities/reviews";
 import { codeAccessBindings, codeAccessPersonAllowed, listCodeAccess, removeCodeAccess, setCodeAccess } from "../code/access";
-import type { CapabilityActionDefinition, CapabilityDefinitions, CapabilityQueryDefinition } from "../contracts/capabilities";
+import type {
+  CapabilityActionDefinition,
+  CapabilityDefinitions,
+  CapabilityPresentationCatalog,
+  CapabilityQueryDefinition,
+} from "../contracts/capabilities";
 import {
   CodeAccessListDataSchema,
   CodeAccessListInputSchema,
@@ -9,6 +14,7 @@ import {
   CodeAccessSetDataSchema,
   CodeAccessSetInputSchema,
 } from "../contracts/code-access";
+import { codeAccessMessages } from "../shared/code-access-messages";
 
 /** Author mistakes fail startup, including dynamically assembled or JavaScript declarations. */
 export const validateCodeAccess = (definitions: CapabilityDefinitions): void => {
@@ -39,6 +45,26 @@ export const validateCodeAccess = (definitions: CapabilityDefinitions): void => 
   }
 };
 
+/** Reject unknown, foreign and unrelated operations before an application chooses a level. */
+export const codeAccessOperationsAllowed = (
+  appId: string,
+  definitions: CapabilityDefinitions,
+  target: { type: string; id: string },
+  operations: readonly string[],
+): boolean =>
+  operations.every((id) => {
+    if (!id.startsWith(`${appId}.`)) return false;
+    const localId = id.slice(appId.length + 1);
+    if (localId.startsWith("code.access.")) return false;
+    const operation = definitions.queries?.[localId] ?? definitions.actions?.[localId];
+    if (!operation) return false;
+    if (target.type === "app") return target.id === appId;
+    const localType = target.type.slice(appId.length + 1);
+    return (
+      target.type.startsWith(`${appId}.`) && (operation.target === localType || Object.values(operation.refs ?? {}).includes(localType))
+    );
+  });
+
 /** Generated capabilities share ordinary schemas, policy, validation, routing and execution auditing. */
 export const generatedCodeAccess = (
   appId: string,
@@ -46,30 +72,33 @@ export const generatedCodeAccess = (
 ): { queries: Record<string, CapabilityQueryDefinition>; actions: Record<string, CapabilityActionDefinition> } => {
   validateCodeAccess(definitions);
   const bindings = codeAccessBindings(appId, definitions);
+  const copy = codeAccessMessages(definitions.presentation?.baseLocale ?? "en");
   if (!bindings.size) return { queries: {}, actions: {} };
   const forbidden = () => ({
     ok: false as const,
     error: { code: "FORBIDDEN", message: "Core person authority required; Code origin is forbidden", status: 403 as const },
   });
-  const review = (remove: boolean) =>
-    actionReview(
+  const review = (remove: boolean, locale: string) => {
+    const copy = codeAccessMessages(locale);
+    return actionReview(
       {
-        locale: "en",
+        locale: locale.toLowerCase().startsWith("de") ? "de" : "en",
         sentence: {
-          action: remove ? "Remove Code access" : "Grant Code access",
-          running: remove ? "Removing Code access" : "Granting Code access",
-          done: remove ? "Code access removed" : "Code access granted",
-          confirm: remove ? "Remove access" : "Grant access",
-          decline: "Cancel",
+          action: remove ? copy.rmTitle : copy.setTitle,
+          running: remove ? copy.rmRunning : copy.setRunning,
+          done: remove ? copy.rmDone : copy.setDone,
+          confirm: remove ? copy.rmConfirm : copy.setConfirm,
+          decline: copy.cancel,
         },
       },
       {},
       { ask: "changes_access" },
     );
+  };
   const actions: Record<string, CapabilityActionDefinition> = {
     "code.access.set": {
-      title: "Grant Code access",
-      description: "Core activates explicit Code access at a target with a signed activation proof.",
+      title: copy.setTitle,
+      description: copy.setDescription,
       input: CodeAccessSetInputSchema,
       data: CodeAccessSetDataSchema,
       destructive: false,
@@ -78,22 +107,26 @@ export const generatedCodeAccess = (
       code: false,
       unattended: false,
       policy: { ask: "changes_access" },
-      review: (_input, context) => (codeAccessPersonAllowed(context) ? { ok: true, data: review(false) } : forbidden()),
+      review: (_input, context) =>
+        codeAccessPersonAllowed(context, "set") ? { ok: true, data: review(false, context.locale) } : forbidden(),
       run: async (input, context) => {
-        if (!codeAccessPersonAllowed(context)) return forbidden();
-        const data = await setCodeAccess(appId, bindings, input, context);
+        if (!codeAccessPersonAllowed(context, "set")) return forbidden();
+        const copy = codeAccessMessages(context.locale);
+        const data = await setCodeAccess(appId, bindings, input, context, undefined, () =>
+          codeAccessOperationsAllowed(appId, definitions, input.target, input.operations),
+        );
         return {
           ok: true,
           data: {
             data,
-            receipt: { text: data.granted ? (input.dryRun ? "Code access is available" : "Code access granted") : data.reason },
+            receipt: { text: data.granted ? (input.dryRun ? copy.setAvailable : copy.setDone) : data.reason },
           },
         };
       },
     },
     "code.access.rm": {
-      title: "Remove Code access",
-      description: "Remove an explicit Code grant with current target manager authority.",
+      title: copy.rmTitle,
+      description: copy.rmDescription,
       input: CodeAccessRemoveInputSchema,
       data: CodeAccessRemoveDataSchema,
       destructive: false,
@@ -102,29 +135,51 @@ export const generatedCodeAccess = (
       code: false,
       unattended: false,
       policy: { ask: "changes_access" },
-      review: (_input, context) => (codeAccessPersonAllowed(context) ? { ok: true, data: review(true) } : forbidden()),
+      review: (_input, context) =>
+        codeAccessPersonAllowed(context, "rm") ? { ok: true, data: review(true, context.locale) } : forbidden(),
       run: async (input, context) => {
-        if (!codeAccessPersonAllowed(context)) return forbidden();
+        if (!codeAccessPersonAllowed(context, "rm")) return forbidden();
+        const copy = codeAccessMessages(context.locale);
         const removed = await removeCodeAccess(appId, bindings, input.grantId, { context });
         return {
           ok: true,
-          data: { data: { removed }, receipt: { text: removed ? "Code access removed" : "Code access could not be removed" } },
+          data: { data: { removed }, receipt: { text: removed ? copy.rmDone : copy.rmFailed } },
         };
       },
     },
   };
   const queries: Record<string, CapabilityQueryDefinition> = {
     "code.access.list": {
-      title: "List Code access",
-      description: "List current explicit Code grants at targets this person manages.",
+      title: copy.listTitle,
+      description: copy.listDescription,
       input: CodeAccessListInputSchema,
       data: CodeAccessListDataSchema,
       openWorld: false,
       run: async (input, context) =>
-        codeAccessPersonAllowed(context)
+        codeAccessPersonAllowed(context, "list")
           ? { ok: true, data: { data: await listCodeAccess(appId, bindings, input.principal, context) } }
           : forbidden(),
     },
   };
   return { queries, actions };
+};
+
+/** Generated copy belongs to the platform; apps may override its presentation like other operations. */
+export const codeAccessPresentation = (presentation?: CapabilityPresentationCatalog): CapabilityPresentationCatalog => {
+  const translations = { ...presentation?.translations };
+  for (const locale of ["en", "de"]) {
+    if (locale === (presentation?.baseLocale ?? "en")) continue;
+    const copy = codeAccessMessages(locale);
+    const existing = translations[locale];
+    translations[locale] = {
+      ...existing,
+      queries: { "code.access.list": { title: copy.listTitle, description: copy.listDescription }, ...existing?.queries },
+      actions: {
+        "code.access.set": { title: copy.setTitle, description: copy.setDescription },
+        "code.access.rm": { title: copy.rmTitle, description: copy.rmDescription },
+        ...existing?.actions,
+      },
+    };
+  }
+  return { ...presentation, baseLocale: presentation?.baseLocale ?? "en", translations };
 };

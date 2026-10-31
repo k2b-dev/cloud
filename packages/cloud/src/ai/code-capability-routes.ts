@@ -43,6 +43,7 @@ export function createCodeCapabilityRoutes(
       const conversation = await store.getConversation({ conversationId: c.req.param("conversationId")! });
       const appId = c.req.param("appId")!;
       const capabilityId = c.req.param("capabilityId")!;
+      if (capabilityId.startsWith("code.access.")) return denied();
       if (conversation?.allowedTools && !conversation.allowedTools.includes(`${appId}.${capabilityId}`)) return denied();
       const config = await store.getTurnRunConfig({ conversationId: c.req.param("conversationId")!, turnId: c.req.param("turnId")! });
       if (!config || config.kind === "compact") return denied();

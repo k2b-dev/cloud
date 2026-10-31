@@ -3,7 +3,11 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { type CatalogSubscription, projectAppEventCatalog, readCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { isPersonVisibleCapabilityQuery, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import {
+  isPersonVisibleCapabilityAction,
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityManifestPresentation,
+} from "../_internal/capabilities";
 import {
   capabilityActionReceiptIssues,
   capabilityActionReviewIssues,
@@ -238,7 +242,11 @@ export const loadCapabilityCatalogPage = async (
       appName: presentedEntry.name,
       appIcon: capability.appIcon,
       appDescription: presentedEntry.description,
-      manifest: { ...manifest, queries: manifest.queries.filter(isPersonVisibleCapabilityQuery) },
+      manifest: {
+        ...manifest,
+        queries: manifest.queries.filter(isPersonVisibleCapabilityQuery),
+        actions: manifest.actions.filter(isPersonVisibleCapabilityAction),
+      },
       ...(manifest.events ? { events: projectAppEventCatalog(manifest, manifest.events.length ? await loadSubscribers() : []) } : {}),
     };
     const projectedBytes = new TextEncoder().encode(JSON.stringify(projected)).byteLength;
@@ -279,6 +287,8 @@ const capabilityJsonResponse = (body: unknown, status: number): Response => {
 };
 
 export type CapabilityDispatchParams = {
+  /** Explicit Core activation/rights-editor admission. Never populated by generic API, AI, MCP or Code routes. */
+  codeAccess?: "set" | "list" | "rm";
   /** Trusted Core continuation binding; never read from client headers. */
   continuation?: string;
   request: Request;
@@ -361,6 +371,20 @@ const runCapabilityDispatch = async (
 
   const operations = params.kind === "queries" ? entry.manifest.queries : entry.manifest.actions;
   const operation = operations.find((candidate) => candidate.localId === params.capabilityId);
+  if (
+    params.capabilityId.startsWith("code.access.") &&
+    (!params.codeAccess ||
+      params.capabilityId !== `code.access.${params.codeAccess}` ||
+      params.origin !== "app" ||
+      params.parentInvocation ||
+      params.assistantTurn ||
+      params.continuation ||
+      params.mandate ||
+      params.workload ||
+      params.appCaller ||
+      (params.callingAppId && params.callingAppId !== "core"))
+  )
+    return errorResponse("FORBIDDEN", "Explicit Core Code access admission required", 403);
   if (operation && "destructive" in operation) observed.destructive = operation.destructive;
   if (!operation) {
     const label = params.kind === "queries" ? messages.query : messages.action;
@@ -674,6 +698,7 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     callingAppId: params.callingAppId ?? "core",
                     operation: invocationOperation,
+                    codeAccess: params.codeAccess,
                     schemaHash: operation.schemaHash,
                     authority: params.parentInvocation
                       ? authorityFromParentInvocation(params.parentInvocation)

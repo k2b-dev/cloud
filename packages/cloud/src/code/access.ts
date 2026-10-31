@@ -1,13 +1,14 @@
 import type { SQL } from "bun";
 import { z } from "zod";
 import { capabilityValueDigest } from "../capabilities/calls";
-import type { CapabilityDefinitions, CapabilityExecutionContext } from "../contracts/capabilities";
+import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityDefinitions, type CapabilityExecutionContext } from "../contracts/capabilities";
 import {
   type CodeAccessAdapter,
   CodeAccessDecisionSchema,
   CodeAccessEntrySchema,
   type CodeAccessGrant,
   CodeAccessGrantSchema,
+  type CodeAccessRefusalCode,
   type CodeAccessSetData,
   type CodeAccessTarget,
 } from "../contracts/code-access";
@@ -16,16 +17,30 @@ import { audit } from "../services/audit";
 import { verifyCodeAccessProof } from "./access-proof";
 
 /** Core-mediated person calls only. In particular, personal Code's mandate is still Code origin. */
-export const codeAccessPersonAllowed = (context: CapabilityExecutionContext): boolean =>
+export const codeAccessPersonAllowed = (context: CapabilityExecutionContext, operation?: "set" | "list" | "rm"): boolean =>
   context.authority?.credentialKind === "invocation" &&
   context.actor.kind === "user" &&
   context.actor.sessionKind !== "app" &&
   context.actor.delegation?.callingAppId === "core" &&
-  context.actor.delegation.credentialKind !== "mandate" &&
+  ["session", "oauth"].includes(context.actor.delegation.credentialKind) &&
+  Boolean(context.actor.delegation.codeAccess) &&
+  (!operation || context.actor.delegation.codeAccess === operation) &&
   !context.actor.delegation.workloadType &&
   !context.actor.delegation.parentInvocationId &&
   context.accessSubject.type === "user" &&
   context.accessSubject.userId === context.actor.user.id;
+
+// Even the smallest serialized output row consumes these bytes; derive the work bound
+// from the existing public result budget instead of inventing an independent quota.
+const minGrantBytes = new TextEncoder().encode(
+  JSON.stringify({
+    grantId: "0".repeat(36),
+    principal: "0".repeat(36),
+    target: { type: "app", id: "x" },
+    level: "x",
+  }),
+).byteLength;
+const maxListGrants = Math.floor(CAPABILITY_MAX_RESULT_BYTES / minGrantBytes);
 
 export type CodeAccessBindings = ReadonlyMap<string, CodeAccessAdapter>;
 export const codeAccessBindings = (appId: string, definitions: CapabilityDefinitions): CodeAccessBindings => {
@@ -39,7 +54,7 @@ export const codeAccessBindings = (appId: string, definitions: CapabilityDefinit
   return result;
 };
 
-const decisionNo = (reason: string): CodeAccessSetData => ({ granted: false, reason });
+const decisionNo = (reasonCode: CodeAccessRefusalCode, reason: string): CodeAccessSetData => ({ granted: false, reasonCode, reason });
 type GrantRow = {
   app_id: string;
   grant_id: string;
@@ -47,31 +62,35 @@ type GrantRow = {
   target_type: string;
   target_id: string;
   binding_hash: string;
-  level: string | null;
+  level: string;
   revoked: boolean;
 };
 /** Dependencies are supplied by focused tests; production always uses the platform database/verifier. */
 export type CodeAccessDependencies = { db: SQL; verifyProof: typeof verifyCodeAccessProof };
-const defaults: CodeAccessDependencies = { db: sql, verifyProof: verifyCodeAccessProof };
 const find = async (tx: SQL, appId: string, grantId: string) =>
   (
     await tx<GrantRow[]>`SELECT * FROM capabilities.code_access_grants WHERE app_id = ${appId} AND grant_id = ${grantId}::uuid FOR UPDATE`
   )[0];
-const accountIsCode = async (tx: SQL, principal: string) =>
+const accountIsCode = async (tx: SQL, principal: string, activeOnly = true) =>
   Boolean(
-    (await tx`SELECT id FROM auth.service_accounts WHERE id = ${principal}::uuid AND kind = 'code' AND status = 'active' FOR SHARE`)[0],
+    (
+      await tx`SELECT id FROM auth.service_accounts WHERE id = ${principal}::uuid AND kind = 'code' AND (NOT ${activeOnly} OR status = 'active') FOR SHARE`
+    )[0],
   );
 const targetAdapter = (bindings: CodeAccessBindings, appId: string, target: CodeAccessTarget) =>
   target.type === "app" && target.id !== appId ? undefined : bindings.get(target.type);
 const manages = async (adapter: CodeAccessAdapter, context: CapabilityExecutionContext, id: string) =>
-  context.actor.kind === "user" && (context.actor.user.roles.includes("admin") || (await adapter.manages(context, id)));
+  context.actor.kind === "user" &&
+  ((context.actor.user.roles.includes("admin") &&
+    (context.actor.delegation?.credentialKind === "session" || context.authority?.scopes.includes("admin"))) ||
+    (await adapter.manages(context, id)));
 const writeAudit = (
   tx: SQL,
   appId: string,
   action: string,
   context: CapabilityExecutionContext | { requestId: string },
-  grantId: string,
-  principal: string,
+  grantId: string | undefined,
+  principal: string | undefined,
   target: CodeAccessTarget,
   outcome: "allowed" | "denied",
   reason?: string,
@@ -85,7 +104,7 @@ const writeAudit = (
       target,
       requestId: context.requestId,
       reason,
-      metadata: { appId, grantId, principal },
+      metadata: { appId, grantId, principal, ...(!("actor" in context) ? { authority: "core_cleanup" } : {}) },
     },
     tx,
   );
@@ -101,19 +120,28 @@ export const setCodeAccess = async (
   bindings: CodeAccessBindings,
   input: { proof: string; target: CodeAccessTarget; operations: string[]; dryRun?: boolean },
   context: CapabilityExecutionContext,
-  dependencies = defaults,
+  overrides?: CodeAccessDependencies,
+  operationsAllowed: () => boolean = () => true,
 ): Promise<CodeAccessSetData> => {
-  if (!codeAccessPersonAllowed(context) || context.actor.kind !== "user")
-    return decisionNo("Core person authority required; Code origin is forbidden");
+  const dependencies = overrides ?? { db: sql, verifyProof: verifyCodeAccessProof };
+  if (!codeAccessPersonAllowed(context, "set") || context.actor.kind !== "user")
+    return decisionNo("origin_forbidden", "Core person authority required; Code origin is forbidden");
   const claims = await dependencies.verifyProof(input.proof, {
     appId,
     target: input.target,
     operations: input.operations,
     activatingPerson: context.actor.user.id,
   });
-  if (!claims) return decisionNo("Invalid or expired Code access proof");
+  const deny = async (reasonCode: CodeAccessRefusalCode, reason: string): Promise<CodeAccessSetData> => {
+    if (!input.dryRun)
+      await writeAudit(dependencies.db, appId, "set", context, claims?.grantId, claims?.principal, input.target, "denied", reasonCode);
+    return decisionNo(reasonCode, reason);
+  };
+  if (!claims) return deny("proof_invalid", "Invalid or expired Code access proof");
+  if (!operationsAllowed()) return deny("operations_invalid", "Operations do not belong to this target");
   const adapter = targetAdapter(bindings, appId, input.target);
-  if (!adapter) return decisionNo("Target does not support Code access");
+  if (!adapter) return deny("unsupported_target", "Target does not support Code access");
+  if (!(await manages(adapter, context, input.target.id))) return deny("not_manager", "Target manager authority required");
   // Issuance times change on retries; the durable identity and its complete binding do not.
   const bindingHash = capabilityValueDigest({
     codeId: claims.codeId,
@@ -126,14 +154,14 @@ export const setCodeAccess = async (
     operations: [...claims.operations].sort(),
   });
   try {
-    return await dependencies.db.begin(async (tx) => {
+    const result = await dependencies.db.begin(async (tx) => {
       // The same transaction lock serializes set/rm for this proof across all app instances.
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${appId}:${claims.grantId}`}, 0))`;
-      if (!(await accountIsCode(tx, claims.principal))) return decisionNo("An active Code account is required");
-      if (!(await manages(adapter, context, input.target.id))) return decisionNo("Target manager authority required");
+      if (!(await accountIsCode(tx, claims.principal))) return decisionNo("account_inactive", "An active Code account is required");
       const existing = await find(tx, appId, claims.grantId);
       if (existing && (existing.binding_hash !== bindingHash || existing.revoked))
         return decisionNo(
+          existing.revoked ? "removed" : "binding_conflict",
           existing.revoked ? "Code access was removed; activate again to restore it" : "Grant identity is bound to another activation",
         );
       if (existing) {
@@ -142,9 +170,11 @@ export const setCodeAccess = async (
           .parse(await adapter.list(tx, { principal: claims.principal }))
           .find((entry) => entry.grantId === claims.grantId && entry.id === claims.target.id);
         // Never silently recreate a grant removed at the target, even on a lost-response retry.
-        return live
-          ? { granted: true, grantId: claims.grantId, level: live.level }
-          : decisionNo("Code access was removed; activate again to restore it");
+        const result = live
+          ? { granted: true as const, grantId: claims.grantId, level: live.level }
+          : decisionNo("removed", "Code access was removed; activate again to restore it");
+        if (input.dryRun) throw new RollbackDecision(result);
+        return result;
       }
       const decision = CodeAccessDecisionSchema.parse(
         await adapter.grant(tx, {
@@ -155,40 +185,70 @@ export const setCodeAccess = async (
           dryRun: input.dryRun === true,
         }),
       );
-      const result: CodeAccessSetData = decision.granted ? { ...decision, grantId: claims.grantId } : decision;
+      const result: CodeAccessSetData = decision.granted
+        ? { ...decision, grantId: claims.grantId }
+        : { ...decision, reasonCode: "adapter_refused" };
       if (input.dryRun || !decision.granted) throw new RollbackDecision(result);
-      await tx`INSERT INTO capabilities.code_access_grants (app_id, grant_id, principal, target_type, target_id, binding_hash, level) VALUES (${appId}, ${claims.grantId}::uuid, ${claims.principal}::uuid, ${input.target.type}, ${input.target.id}, ${bindingHash}, ${decision.level})`;
+      await tx`INSERT INTO capabilities.code_access_grants (app_id, grant_id, principal, target_type, target_id, binding_hash, level, live_principal) VALUES (${appId}, ${claims.grantId}::uuid, ${claims.principal}::uuid, ${input.target.type}, ${input.target.id}, ${bindingHash}, ${decision.level}, ${claims.principal}::uuid)`;
       await writeAudit(tx, appId, "set", context, claims.grantId, claims.principal, input.target, "allowed");
       return result;
     });
+    if (!result.granted) return deny(result.reasonCode, result.reason);
+    return result;
   } catch (error) {
-    if (error instanceof RollbackDecision) return error.data;
+    if (error instanceof RollbackDecision) return error.data.granted ? error.data : deny(error.data.reasonCode, error.data.reason);
     throw error;
   }
 };
 
-/** Core lists current explicit grants; the target still filters what the person may manage. */
+/** Core inspection sees one account; person invocations see only targets they currently manage. */
 export const listCodeAccess = async (
   appId: string,
   bindings: CodeAccessBindings,
   principal: string,
-  context: CapabilityExecutionContext,
+  authority: CapabilityExecutionContext | { listPrincipal: string },
   db = sql,
 ): Promise<CodeAccessGrant[]> => {
-  if (!codeAccessPersonAllowed(context)) return [];
-  return db.begin(async (tx) => {
-    if (!(await accountIsCode(tx, principal))) return [];
+  const coreInspection = "listPrincipal" in authority;
+  if (coreInspection ? authority.listPrincipal !== principal : !codeAccessPersonAllowed(authority, "list")) return [];
+  const candidates = await db.begin(async (tx) => {
+    if (!(await accountIsCode(tx, principal, false))) return [];
+    const indexed = await tx<
+      GrantRow[]
+    >`SELECT * FROM capabilities.code_access_grants WHERE app_id = ${appId} AND principal = ${principal}::uuid AND NOT revoked LIMIT ${maxListGrants + 1}`;
+    if (indexed.length > maxListGrants) throw new Error("Code access list exceeds the capability result budget");
+    const indexedById = new Map(indexed.map((entry) => [entry.grant_id, entry]));
     const result: CodeAccessGrant[] = [];
+    let bytes = 2;
     for (const [type, adapter] of bindings) {
-      const entries = z.array(CodeAccessEntrySchema).parse(await adapter.list(tx, { principal }));
+      const entries = z
+        .array(CodeAccessEntrySchema)
+        .max(maxListGrants)
+        .parse(await adapter.list(tx, { principal }));
+      if (new TextEncoder().encode(JSON.stringify(entries)).byteLength > CAPABILITY_MAX_RESULT_BYTES)
+        throw new Error("Code access list exceeds the capability result budget");
       for (const entry of entries) {
+        const row = indexedById.get(entry.grantId);
+        if (!row || row.target_type !== type || row.target_id !== entry.id) continue;
         const target = { type, id: entry.id };
-        if (targetAdapter(bindings, appId, target) && (await manages(adapter, context, entry.id)))
-          result.push(CodeAccessGrantSchema.parse({ grantId: entry.grantId, level: entry.level, target, principal }));
+        if (targetAdapter(bindings, appId, target)) {
+          const grant = CodeAccessGrantSchema.parse({ grantId: entry.grantId, level: entry.level, target, principal });
+          bytes += new TextEncoder().encode(JSON.stringify(grant)).byteLength + 1;
+          if (bytes > CAPABILITY_MAX_RESULT_BYTES) throw new Error("Code access list exceeds the capability result budget");
+          result.push(grant);
+        }
       }
     }
     return result;
   });
+  if (coreInspection) return candidates;
+  const visible: CodeAccessGrant[] = [];
+  // Domain manager checks may acquire their own connection; never hold a transaction while waiting.
+  for (const grant of candidates) {
+    const adapter = targetAdapter(bindings, appId, grant.target);
+    if (adapter && (await manages(adapter, authority, grant.target.id))) visible.push(grant);
+  }
+  return visible;
 };
 
 /**
@@ -203,7 +263,14 @@ export const removeCodeAccess = async (
   authority: { context: CapabilityExecutionContext } | { cleanupPrincipal: string; requestId: string },
   db = sql,
 ): Promise<boolean> => {
-  if ("context" in authority && !codeAccessPersonAllowed(authority.context)) return false;
+  if ("context" in authority) {
+    if (!codeAccessPersonAllowed(authority.context, "rm")) return false;
+    const existing = await find(db, appId, grantId);
+    if (!existing) return false;
+    const target = { type: existing.target_type, id: existing.target_id };
+    const adapter = targetAdapter(bindings, appId, target);
+    if (!adapter || !(await manages(adapter, authority.context, target.id))) return false;
+  }
   return db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${appId}:${grantId}`}, 0))`;
     const existing = await find(tx, appId, grantId);
@@ -211,18 +278,13 @@ export const removeCodeAccess = async (
     const target = { type: existing.target_type, id: existing.target_id };
     const adapter = targetAdapter(bindings, appId, target);
     if (!adapter) throw new Error(`Code access cleanup requires the declared adapter for ${target.type}`);
-    if (
-      "cleanupPrincipal" in authority
-        ? existing.principal !== authority.cleanupPrincipal
-        : !(await manages(adapter, authority.context, target.id))
-    )
-      return false;
+    if ("cleanupPrincipal" in authority && existing.principal !== authority.cleanupPrincipal) return false;
     if (existing.revoked) return true;
     const removed = await adapter.revoke(tx, { id: target.id, grantId });
     if (!removed && (await adapter.list(tx, { principal: existing.principal })).some((entry) => entry.grantId === grantId))
       throw new Error("Code access adapter refused to remove an existing grant");
     // Keep a tombstone: a still-valid activation proof must never restore removed access.
-    await tx`UPDATE capabilities.code_access_grants SET revoked = true WHERE app_id = ${appId} AND grant_id = ${grantId}::uuid`;
+    await tx`UPDATE capabilities.code_access_grants SET revoked = true, live_principal = NULL WHERE app_id = ${appId} AND grant_id = ${grantId}::uuid`;
     await writeAudit(
       tx,
       appId,

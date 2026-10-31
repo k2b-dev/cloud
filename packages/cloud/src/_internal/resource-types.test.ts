@@ -152,12 +152,14 @@ test("generated readability requires expected container and only returns active 
   const principal: ResourcePrincipal = { type: "service_account", serviceAccountId: "11111111-1111-4111-8111-111111111111" };
   const instance = compileCapabilities("inventory", {
     protocolVersion: 2,
+    queries: { "item.read": reader(true) },
     types: {
       collection: { title: "Collection", description: "Collection." },
       item: {
         title: "Item",
         description: "Item.",
         container: "collection",
+        reader: "item.read",
         access: {
           readable: async (input) =>
             input.id === "invalid-subset" ? [principal] : input.container?.id === "current" ? input.principals : [],

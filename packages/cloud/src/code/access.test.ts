@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { SQL } from "bun";
+import { createCodeAccessAuthorityRoutes } from "../_internal/code-access-authority";
 import type { CapabilityExecutionContext } from "../contracts/capabilities";
 import type { CodeAccessAdapter } from "../contracts/code-access";
 import type { User } from "../contracts/shared";
 import { audit } from "../services/audit";
+import * as accessService from "./access";
 import { type CodeAccessDependencies, codeAccessPersonAllowed, listCodeAccess, removeCodeAccess, setCodeAccess } from "./access";
 import type { CodeAccessProofClaims } from "./access-proof";
+import * as accessProof from "./access-proof";
 
 const person: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -29,7 +32,13 @@ const person: User = {
 const actor = {
   kind: "user" as const,
   user: person,
-  delegation: { kind: "invocation" as const, callingAppId: "core", credentialKind: "session" as const, invocationId: "invocation" },
+  delegation: {
+    kind: "invocation" as const,
+    callingAppId: "core",
+    credentialKind: "session" as const,
+    invocationId: "invocation",
+    codeAccess: "set" as const,
+  },
 };
 const context: CapabilityExecutionContext = {
   actor,
@@ -40,6 +49,14 @@ const context: CapabilityExecutionContext = {
   requestId: "request-1",
   origin: "app",
   signal: new AbortController().signal,
+};
+const listContext: CapabilityExecutionContext = {
+  ...context,
+  actor: { ...actor, delegation: { ...actor.delegation, codeAccess: "list" } },
+};
+const removeContext: CapabilityExecutionContext = {
+  ...context,
+  actor: { ...actor, delegation: { ...actor.delegation, codeAccess: "rm" } },
 };
 const principal = "22222222-2222-4222-8222-222222222222";
 const grantId = "33333333-3333-4333-8333-333333333333";
@@ -80,9 +97,11 @@ beforeEach(() => {
   auditSpy = spyOn(audit, "record").mockResolvedValue(undefined);
   const query = async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const statement = strings.join("?");
-    if (statement.includes("auth.service_accounts")) return activeCode ? [{ id: principal }] : [];
+    if (statement.includes("auth.service_accounts")) return activeCode || values[1] === false ? [{ id: principal }] : [];
     if (statement.includes("SELECT * FROM capabilities.code_access_grants"))
-      return rows.filter((row) => row.app_id === values[0] && row.grant_id === values[1]);
+      return statement.includes("AND principal")
+        ? rows.filter((row) => row.app_id === values[0] && row.principal === values[1] && !row.revoked)
+        : rows.filter((row) => row.app_id === values[0] && row.grant_id === values[1]);
     if (statement.includes("INSERT INTO capabilities.code_access_grants")) {
       rows.push({
         app_id: values[0],
@@ -143,7 +162,11 @@ test("dryRun rolls back even an adapter that writes; a refusal rolls back too", 
     writes++;
     return { granted: false, reason: "No suitable level" };
   };
-  expect(await setCodeAccess("inventory", bindings(), input, context, deps)).toEqual({ granted: false, reason: "No suitable level" });
+  expect(await setCodeAccess("inventory", bindings(), input, context, deps)).toEqual({
+    granted: false,
+    reasonCode: "adapter_refused",
+    reason: "No suitable level",
+  });
   expect(writes).toBe(0);
 });
 test("set is idempotent, rejects changed bindings, and removed access never returns on retry", async () => {
@@ -154,7 +177,7 @@ test("set is idempotent, rejects changed bindings, and removed access never retu
   deps.verifyProof = async () => ({ ...claims, versionId: "other-version" });
   expect(await setCodeAccess("inventory", bindings(), input, context, deps)).toMatchObject({ granted: false });
   deps.verifyProof = async () => claims;
-  expect(await removeCodeAccess("inventory", bindings(), grantId, { context }, deps.db)).toBe(true);
+  expect(await removeCodeAccess("inventory", bindings(), grantId, { context: removeContext }, deps.db)).toBe(true);
   expect(await setCodeAccess("inventory", bindings(), input, context, deps)).toMatchObject({ granted: false });
   expect(grants).toEqual([]);
 });
@@ -171,11 +194,12 @@ test("proof, live account, target manager and app boundaries are enforced before
   const adminActor = { ...actor, user: { ...person, roles: ["admin" as const] } };
   const admin = { ...context, actor: adminActor };
   expect(await setCodeAccess("inventory", bindings(), input, admin, deps)).toMatchObject({ granted: true });
-  expect(await listCodeAccess("inventory", bindings(), principal, context, deps.db)).toEqual([]);
-  expect(await removeCodeAccess("inventory", bindings(), grantId, { context }, deps.db)).toBe(false);
+  expect(await listCodeAccess("inventory", bindings(), principal, listContext, deps.db)).toEqual([]);
+  expect(await removeCodeAccess("inventory", bindings(), grantId, { context: removeContext }, deps.db)).toBe(false);
 });
 test("code and personal-Code origin, foreign apps, direct credentials, and phone sessions are refused", async () => {
   for (const invalid of [
+    { ...context, actor: { ...actor, delegation: { ...actor.delegation, codeAccess: undefined } } },
     { ...context, authority: undefined },
     { ...context, actor: { ...actor, delegation: { ...actor.delegation, callingAppId: "consumer" } } },
     { ...context, actor: { ...actor, delegation: { ...actor.delegation, credentialKind: "mandate" as const, workloadType: "code.run" } } },
@@ -202,4 +226,128 @@ test("cleanup removes only its account's code grants; retries stay safe", async 
   );
   expect(grants).toEqual([]);
   expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({ action: "code.access.rm", requestId: "cleanup" }), deps.db);
+});
+
+test("Core account inspection preserves unchanged foreign grants without target-manager authority", async () => {
+  await setCodeAccess("inventory", bindings(), input, context, deps);
+  canManage = false;
+  expect(await listCodeAccess("inventory", bindings(), principal, listContext, deps.db)).toEqual([]);
+  expect(await listCodeAccess("inventory", bindings(), principal, { listPrincipal: principal }, deps.db)).toEqual([
+    { grantId, principal, target, level: "write" },
+  ]);
+  expect(await listCodeAccess("inventory", bindings(), principal, { listPrincipal: person.id }, deps.db)).toEqual([]);
+});
+test("audit failures roll back permission writes and a refused removal remains retryable", async () => {
+  auditSpy.mockRejectedValueOnce(new Error("audit unavailable"));
+  await expect(setCodeAccess("inventory", bindings(), input, context, deps)).rejects.toThrow("audit unavailable");
+  expect({ rows, grants, writes }).toEqual({ rows: [], grants: [], writes: 0 });
+  await setCodeAccess("inventory", bindings(), input, context, deps);
+  adapter.revoke = () => false;
+  await expect(removeCodeAccess("inventory", bindings(), grantId, { context: removeContext }, deps.db)).rejects.toThrow("refused");
+  expect(rows[0]?.revoked).toBe(false);
+  expect(grants).toHaveLength(1);
+});
+
+test("app-wide adapters use the receiving app ID and never accept another app target", async () => {
+  const appBindings = new Map([["app", adapter]]);
+  const appTarget = { type: "app", id: "inventory" };
+  deps.verifyProof = async () => ({ ...claims, target: appTarget });
+  expect(await setCodeAccess("inventory", appBindings, { ...input, target: appTarget }, context, deps)).toMatchObject({ granted: true });
+  expect(await listCodeAccess("inventory", appBindings, principal, listContext, deps.db)).toEqual([
+    { grantId, level: "write", principal, target: appTarget },
+  ]);
+  expect(await setCodeAccess("inventory", appBindings, { ...input, target: { type: "app", id: "other" } }, context, deps)).toMatchObject({
+    granted: false,
+  });
+});
+
+test("Core authority transport admits only the exact account-scoped token use", async () => {
+  const cleanup = spyOn(accessProof, "verifyCodeAccessCleanup").mockResolvedValue(null);
+  const inspection = spyOn(accessProof, "verifyCodeAccessList").mockResolvedValue(null);
+  const remove = spyOn(accessService, "removeCodeAccess").mockResolvedValue(true);
+  const list = spyOn(accessService, "listCodeAccess").mockResolvedValue([]);
+  try {
+    const router = createCodeAccessAuthorityRoutes("inventory", { protocolVersion: 2, code: { access: { app: adapter } } });
+    const request = (path: string, body: object) =>
+      router.request(path, {
+        method: "POST",
+        headers: { authorization: "Bearer fixture", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    expect((await request("/actions/code.access.rm", { grantId })).status).toBe(403);
+    expect(remove).not.toHaveBeenCalled();
+    cleanup.mockResolvedValue({
+      ver: 1,
+      iss: claims.iss,
+      aud: claims.aud,
+      iat: 1,
+      nbf: 1,
+      exp: 31,
+      token_use: "code_access_cleanup",
+      principal,
+    });
+    expect((await request("/actions/code.access.rm", { grantId })).status).toBe(200);
+    expect(remove).toHaveBeenCalledWith("inventory", expect.anything(), grantId, {
+      cleanupPrincipal: principal,
+      requestId: expect.any(String),
+    });
+    expect((await request("/queries/code.access.list", { principal })).status).toBe(403);
+    inspection.mockResolvedValue({
+      ver: 1,
+      iss: claims.iss,
+      aud: claims.aud,
+      iat: 1,
+      nbf: 1,
+      exp: 31,
+      token_use: "code_access_list",
+      principal,
+    });
+    expect((await request("/queries/code.access.list", { principal: person.id })).status).toBe(403);
+    expect(list).not.toHaveBeenCalled();
+    expect((await request("/queries/code.access.list", { principal })).status).toBe(200);
+    expect(list).toHaveBeenCalledWith("inventory", expect.anything(), principal, { listPrincipal: principal });
+    expect((await request("/actions/code.access.set", input)).status).toBe(404);
+    remove.mockRejectedValue(new Error("target unavailable"));
+    expect((await request("/actions/code.access.rm", { grantId })).status).toBe(503);
+  } finally {
+    cleanup.mockRestore();
+    inspection.mockRestore();
+    remove.mockRestore();
+    list.mockRestore();
+  }
+});
+
+test("Cloud admin repair requires a session or the OAuth admin scope", async () => {
+  canManage = false;
+  const adminActor = {
+    ...actor,
+    user: { ...person, roles: ["admin" as const] },
+    delegation: { ...actor.delegation, credentialKind: "oauth" as const },
+  };
+  const admin = { ...context, actor: adminActor, authority: { ...context.authority!, actor: adminActor, scopes: ["write"] } };
+  expect(await setCodeAccess("inventory", bindings(), input, admin, deps)).toMatchObject({ granted: false, reasonCode: "not_manager" });
+  admin.authority.scopes = ["admin"];
+  expect(await setCodeAccess("inventory", bindings(), input, admin, deps)).toMatchObject({ granted: true });
+});
+test("inactive Code accounts remain inspectable and removable; only active accounts receive grants", async () => {
+  await setCodeAccess("inventory", bindings(), input, context, deps);
+  activeCode = false;
+  expect(await listCodeAccess("inventory", bindings(), principal, { listPrincipal: principal }, deps.db)).toHaveLength(1);
+  expect(await setCodeAccess("inventory", bindings(), input, context, deps)).toMatchObject({
+    granted: false,
+    reasonCode: "account_inactive",
+  });
+  expect(await removeCodeAccess("inventory", bindings(), grantId, { context: removeContext }, deps.db)).toBe(true);
+});
+test("denied real changes are audited, dry runs never write an audit row", async () => {
+  deps.verifyProof = async () => null;
+  expect(await setCodeAccess("inventory", bindings(), input, context, deps)).toMatchObject({ granted: false, reasonCode: "proof_invalid" });
+  expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({ outcome: "denied", reason: "proof_invalid" }), deps.db);
+  auditSpy.mockClear();
+  await setCodeAccess("inventory", bindings(), { ...input, dryRun: true }, context, deps);
+  expect(auditSpy).not.toHaveBeenCalled();
+});
+test("unindexed adapter rows never appear as removable platform grants", async () => {
+  grants = [{ grantId, id: target.id, level: "write" }];
+  expect(await listCodeAccess("inventory", bindings(), principal, { listPrincipal: principal }, deps.db)).toEqual([]);
 });

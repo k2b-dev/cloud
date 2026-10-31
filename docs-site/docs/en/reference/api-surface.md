@@ -663,11 +663,12 @@ model class and interpret the resolved variant. See
 ### Code access adapters and Core proofs
 
 `CodeAccessAdapter`, `CodeAccessDecision`, `CodeAccessEntry`,
-`CodeAccessGrant`, `CodeAccessTarget` and `CapabilityCodeDefinition` are
+`CodeAccessGrant`, `CodeAccessTarget`, `CodeAccessRefusalCode` and `CapabilityCodeDefinition` are
 application-facing types from `@k2b/cloud`; their schemas also come from
 `@k2b/cloud/contracts`.
 
-Core owns `signCodeAccessProof`, `verifyCodeAccessProof`, `CodeAccessProofInput`,
+Core owns `invokeCodeAccess`, `signCodeAccessProof`, `verifyCodeAccessProof`, `CodeAccessProofInput`,
 `CodeAccessProofClaims`, `signCodeAccessCleanup`, `verifyCodeAccessCleanup` and
-`CodeAccessCleanupClaims` from `@k2b/cloud/capabilities/server`. Target adapters
+`CodeAccessCleanupClaims`, `signCodeAccessList`, `verifyCodeAccessList` and
+`CodeAccessListClaims` from `@k2b/cloud/capabilities/server`. Target adapters
 do not issue proofs. See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
