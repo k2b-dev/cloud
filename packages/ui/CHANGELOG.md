@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.38.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.38.0...npm-ui-v0.38.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **mail:** keep list times whole, quiet date headings, and even sidebar counts ([#2223](https://github.com/k2b-dev/cloud/issues/2223)) ([965fa2b](https://github.com/k2b-dev/cloud/commit/965fa2ba10c9001b42f1c92118a44dac878f8e5e))
+* **ui:** give every column edge one shadow in every state ([#2216](https://github.com/k2b-dev/cloud/issues/2216)) ([cdd8ffd](https://github.com/k2b-dev/cloud/commit/cdd8ffdaea8f72d4d25081c68b4da7a6e51e5838))
+
 ## [0.38.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.37.0...npm-ui-v0.38.0) (2026-10-31)
 
 
