@@ -5,7 +5,7 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-10-28
+updated: 2026-10-31
 ---
 
 # Shared text documents
@@ -277,9 +277,11 @@ a newer replay cursor to old input would erase the check's context.
 
 The service reconstructs current state and checks structural changes since
 that base before publishing against the captured document head. Ordinary
-Markdown input that changes table scaffolding receives a conservative server
-classification too. Stale input crossing such a change, or a retained event
-whose classification is unavailable, requires visible recovery. It returns
+Markdown input and server `edit` calls receive the same classification: edits
+that preserve table scaffolding remain concurrently mergeable, while changes
+to that scaffolding require conservative recovery. Stale input crossing such
+a change, or a retained event whose classification is unavailable, requires
+visible recovery. It returns
 `accepted` with a cursor only after publication. Queue a covering snapshot
 through the application's existing snapshot workflow.
 
@@ -684,6 +686,31 @@ Observe `session.signal` and expose storage failures with retry and a way to
 copy pending text. Call `close()` on disposal. `forget()` explicitly removes
 this document's record. A memory-only choice bypasses IndexedDB; explain that
 closing the tab then loses input which has not reached the server.
+
+By default, Notebooks prepares an authorized device session and Y.Doc before
+enabling editing, while keeping its WebSocket connection lazy until the first edit.
+First edits and later unsent input therefore use the same device record.
+Reopening merges pending input from the current generation through Yjs and
+resends it with its original base cursor. A committed snapshot that already
+covers the record clears it before recovery is considered. An older generation,
+a locked note, or input rejected by the history validator stays available for
+copying, keeping on the device, or explicit discard. Read mode also offers a
+pending copy to a person who still has write access. Storage failures show a
+retry and copy action; an unexpected IndexedDB connection closure does not stop
+the live server connection. Sign-out still fences device storage and server access.
+
+If device storage cannot open, or the document request fails, Notebooks offers
+**Retry saving** and **Edit in this tab only**. Tab-only editing bypasses
+IndexedDB without reading or erasing an older pending copy. A persistent notice
+explains that closing the tab loses changes that have not reached the server.
+Leaving with unsent changes still asks for confirmation.
+
+While the document request fails, tab-only input and Undo stay in the editor.
+Retry loads the authorized committed document before carrying those edits onto
+it. If merging fails, the editor keeps the typed text visible for copying and
+recovery. A failed retry remains visible alongside the tab-only notice. Account
+and access failures (401, 403, 404) keep the note read-only and do not offer
+tab-only editing.
 
 `logoutSharedTextOffline(userId)` advances the user's epoch and erases their
 records in one transaction. It also notifies other tabs. The transaction

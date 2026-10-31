@@ -139,7 +139,7 @@ export function SyncEndedBar(props: {
     props.sync.allowLeave();
     refreshCurrentPath();
   };
-  // The unsent text exists only in this tab: closing it or following a link asks first, like Reload does.
+  // Preserve the warning for input the server has not confirmed; device storage also protects discarded tabs.
   createEffect(() => {
     if (!props.sync.shouldConfirmLeave()) return;
     const beforeUnload = (event: BeforeUnloadEvent) => {
