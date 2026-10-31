@@ -1164,8 +1164,6 @@ export const baseline: Readonly<Record<string, readonly string[]>> = {
   "packages/core/src/app-domains.integration.test.ts": ['import { sql as nativeSql } from "bun";'],
   "packages/gateway/src/handler.ts": ['import { redis } from "bun";'],
   "packages/gateway/src/runtime.ts": ['import { sql } from "bun";'],
-  "packages/gateway/src/app-domains.test.ts": ['import { redis } from "bun";'],
-  "packages/gateway/src/public-protections.test.ts": ['import { redis } from "bun";'],
 };
 
 const delivered = new Set([
