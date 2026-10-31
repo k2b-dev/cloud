@@ -59,7 +59,7 @@ test("native constructors and target reads are allowed in test fixtures and the 
   expect(checkSource("packages/example/src/data.test.ts", 'import { sql } from "bun";')).toHaveLength(1);
 });
 
-test("the repository guard includes root tests and PWA workspaces", async () => {
+test("the repository guard includes root tests and skips standalone PWA services", async () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), "platform-clients-guard-"));
   const paths = ["tests/client.test.ts", "pwas/example/server/data.ts"];
   try {
@@ -69,7 +69,7 @@ test("the repository guard includes root tests and PWA workspaces", async () => 
       writeFileSync(file, 'import { sql } from "bun";');
     }
     const findings = await rule.run({ workspaceRoot, fix: false, flags: new Set() });
-    expect(findings.map(({ file }) => file).sort()).toEqual(paths.map((path) => join(workspaceRoot, path)).sort());
+    expect(findings.map(({ file }) => file)).toEqual([join(workspaceRoot, "tests/client.test.ts")]);
     expect(findings.every(({ message }) => message.includes("@k2b/cloud"))).toBe(true);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
@@ -114,7 +114,6 @@ test.each([
   "packages/example/src/data.test.ts",
   "packages/example/src/View.test.tsx",
   "packages/cloud/scripts/platform-start.test-fixture.ts",
-  "pwas/pwa-auth/test/server.ts",
   "scripts/scale-acceptance.ts",
 ])("known test targets allow native pools and target reads: %s", (file) => {
   expect(checkSource(file, "new SQL(process.env.DATABASE_URL)")).toEqual([]);

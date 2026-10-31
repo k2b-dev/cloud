@@ -1,16 +1,10 @@
-import { createSql } from "@k2b/cloud";
-import { initializePlatform } from "@k2b/cloud/start";
+import { env } from "@k2b/cloud/config";
+import { SQL } from "bun";
 import { migrate } from "./database";
 import { appEnv } from "./env";
 import { serveNotes } from "./runtime";
 
-const startupCodes = new Set([
-  "database_url_missing",
-  "platform_start_failed",
-  "notes_schema_newer_than_server",
-  "database_start_failed",
-  "listener_start_failed",
-]);
+const startupCodes = new Set(["database_url_missing", "notes_schema_newer_than_server", "database_start_failed", "listener_start_failed"]);
 export const startupCode = (error: unknown): string => {
   if (error instanceof Error && startupCodes.has(error.message)) return error.message;
   if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" && /^[A-Z0-9]{5}$/.test(error.code))
@@ -19,13 +13,8 @@ export const startupCode = (error: unknown): string => {
 };
 
 export const startNotes = async () => {
-  try {
-    await initializePlatform({ appId: "notes", source: "env" });
-  } catch (error) {
-    if (error instanceof Error && error.message === "DATABASE_URL is required for platform start") throw new Error("database_url_missing");
-    throw new Error("platform_start_failed");
-  }
-  const db = createSql();
+  if (!env.DATABASE_URL) throw new Error("database_url_missing");
+  const db = new SQL(env.DATABASE_URL);
   try {
     await migrate(db);
   } catch (error) {

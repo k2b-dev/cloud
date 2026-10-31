@@ -324,11 +324,7 @@ const delivered = new Set([
 ]);
 // Test targets and native mock objects intentionally need constructors and env.
 // Client value imports still go through the platform in these files.
-const fixtureFiles = new Set([
-  "packages/cloud/scripts/platform-start.test-fixture.ts",
-  "pwas/pwa-auth/test/server.ts",
-  "scripts/scale-acceptance.ts",
-]);
+const fixtureFiles = new Set(["packages/cloud/scripts/platform-start.test-fixture.ts", "scripts/scale-acceptance.ts"]);
 const fixture = (file: string) =>
   /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file) ||
   /^(?:scripts\/fixtures\/|tests\/|packages\/[^/]+\/(?:test|bench)\/)/.test(file) ||
@@ -518,7 +514,9 @@ export const rule: Rule = {
   description: "database/cache clients and delivered connections belong to the platform startup snapshot",
   run: async ({ workspaceRoot }) => {
     const findings: Finding[] = [];
-    for (const file of ["packages", "scripts", "tests", "pwas", "docs-site/examples"]
+    // pwas/* are standalone services outside a Cloud installation. They own their
+    // connections; platform start would add Valkey as an unrelated prerequisite.
+    for (const file of ["packages", "scripts", "tests", "docs-site/examples"]
       .flatMap((root) => listFiles(join(workspaceRoot, root), sourceFilePattern))
       .sort()) {
       const path = relative(workspaceRoot, file).replaceAll("\\", "/");

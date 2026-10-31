@@ -1,9 +1,10 @@
 import { createECDH } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
-import { connections, sql } from "@k2b/cloud";
-import { initializePlatform } from "@k2b/cloud/start";
+import { env } from "@k2b/cloud/config";
 import { createSync } from "@k2b/sync";
 import { connect, credsAuthenticator } from "@nats-io/transport-node";
+import { sql } from "bun";
 import { appEnv } from "./env";
 import { createPushService, migrate, type Vapid } from "./push";
 
@@ -29,26 +30,25 @@ const vapid = (): Vapid | undefined => {
 export const startPush = async () => {
   const keys = vapid();
   if (!keys) return undefined;
-  await initializePlatform({ appId: "cloud-login", source: "env" });
-  const nats = connections().nats;
-  if (nats.servers.length === 0) throw new Error("Push needs NATS_SERVERS (NATS JetStream).");
-  if (!nats.namespace.trim()) throw new Error("Push needs SYNC_NAMESPACE, e.g. cloud-login.");
+  if (!env.DATABASE_URL) throw new Error("Push needs DATABASE_URL (Postgres).");
+  if (env.NATS_SERVERS.length === 0) throw new Error("Push needs NATS_SERVERS (NATS JetStream).");
+  if (!env.SYNC_NAMESPACE.trim()) throw new Error("Push needs SYNC_NAMESPACE, e.g. cloud-login.");
   await migrate();
   const connection = await connect({
-    servers: nats.servers,
+    servers: env.NATS_SERVERS,
     name: `cloud-login@${hostname()}`,
-    ignoreClusterUpdates: nats.ignoreClusterUpdates,
+    ignoreClusterUpdates: env.NATS_IGNORE_CLUSTER_UPDATES,
     reconnect: true,
     maxReconnectAttempts: -1,
     reconnectTimeWait: 2_000,
-    ...(nats.creds ? { authenticator: credsAuthenticator(new TextEncoder().encode(nats.creds)) } : {}),
-    ...(nats.ca ? { tls: { ca: nats.ca } } : {}),
+    ...(env.NATS_CREDS_FILE ? { authenticator: credsAuthenticator(readFileSync(env.NATS_CREDS_FILE)) } : {}),
+    ...(env.NATS_TLS_CA_FILE ? { tls: { caFile: env.NATS_TLS_CA_FILE } } : {}),
   });
   const sync = createSync({
     connection,
-    namespace: nats.namespace,
+    namespace: env.SYNC_NAMESPACE,
     application: "cloud-login",
-    defaults: { replicas: nats.replicas },
+    defaults: { replicas: env.SYNC_REPLICAS },
   });
   const push = createPushService({ sync, vapid: keys });
   try {

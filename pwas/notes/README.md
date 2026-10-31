@@ -1,11 +1,10 @@
 # k2b notes server
 
 This standalone Bun/Hono service uses its own Postgres database. It does not
-register with Cloud and needs no Core, gateway, or NATS. Its platform client
-initialization requires a Valkey URL (`REDIS_URL`); note data stays in Postgres.
+register with Cloud and needs no Core, gateway, NATS, or Valkey.
 
 Run `bun run --cwd pwas/notes start` with `DATABASE_URL` pointing at the Notes
-database and `REDIS_URL` set to the installation’s Valkey endpoint. Startup applies the versioned SQL migrations in one transaction.
+database. Startup applies the versioned SQL migrations in one transaction.
 Port 3000 serves `/healthz` for process liveness and `/readyz` for database and
 schema readiness. A readiness failure returns 503 without database details.
 

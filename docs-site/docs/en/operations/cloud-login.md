@@ -81,15 +81,11 @@ Generate the key pair once and keep it stable:
 bunx web-push generate-vapid-keys
 ```
 
-Server startup initializes the platform clients from the environment. Supply
-`DATABASE_URL` and `REDIS_URL`, even when this server uses only Postgres.
-
 | Variable | Value |
 | --- | --- |
 | `CLOUD_LOGIN_VAPID_PUBLIC_KEY` | Public key from the command above. |
 | `CLOUD_LOGIN_VAPID_PRIVATE_KEY` | Private key. Store it as a secret. |
 | `CLOUD_LOGIN_VAPID_SUBJECT` | Operator contact for push services, `mailto:ops@example.org` or an `https://` URL. |
-| `REDIS_URL` | Valkey URL required for platform initialization. |
 | `DATABASE_URL` | Postgres connection. Cloud Login creates the `cloud_login` schema at startup. |
 | `NATS_SERVERS` | NATS JetStream servers, as for Cloud. `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE` work the same way. |
 | `SYNC_NAMESPACE` | For example `cloud-login`. Use a namespace of its own when sharing a NATS cluster with a Cloud. |
