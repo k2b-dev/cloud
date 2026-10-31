@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import type { User } from "@k2b/cloud/contracts";
+import { CapabilityActionCallReviewSchema, type User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
@@ -61,10 +61,17 @@ const ctx = (id: string): CodeContext => ({
 const admin = ctx(adminId);
 const versionId = (n: number) => `88888888-8888-4888-8888-${String(n).padStart(12, "0")}`;
 const codeId = (n: number) => `c_p${String(n).padStart(4, "0")}`;
-async function active(n: number, rows: CodePolicyRow[], covered: CodePolicyRow[] = []) {
-  await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at) VALUES(${codeId(n)},'person',${ownerId}::uuid,${`Code ${n}`},${ownerId}::uuid,${now})`;
+async function active(n: number, rows: CodePolicyRow[] | null, covered: CodePolicyRow[] = [], resource = false) {
+  if (resource) {
+    const accountId = `99999999-9999-4999-8999-${String(n).padStart(12, "0")}`;
+    await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by,created_at) VALUES(${accountId}::uuid,${`code:example.owner:${codeId(n)}`},'code',${ownerId}::uuid,${now})`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,created_by,created_at)
+      VALUES(${codeId(n)},'resource','example.owner',${codeId(n)},${accountId}::uuid,${`Code ${n}`},${ownerId}::uuid,${now})`;
+  } else {
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at) VALUES(${codeId(n)},'person',${ownerId}::uuid,${`Code ${n}`},${ownerId}::uuid,${now})`;
+  }
   await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by,created_at)
-    VALUES(${versionId(n)}::uuid,${codeId(n)},1,'{}','',${"a".repeat(64)},${"b".repeat(64)},${JSON.stringify({ policyRows: rows })}::jsonb,0,0,${ownerId}::uuid,${now})`;
+    VALUES(${versionId(n)}::uuid,${codeId(n)},1,'{}','',${"a".repeat(64)},${"b".repeat(64)},${rows === null ? null : JSON.stringify({ policyRows: rows })}::jsonb,0,0,${ownerId}::uuid,${now})`;
   await sql`UPDATE code.codes SET state='active',active_version_id=${versionId(n)}::uuid WHERE id=${codeId(n)}`;
   await sql.begin((tx) => replaceCodePolicyCoverage(versionId(n), covered, tx));
 }
@@ -121,6 +128,36 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     definition.rules.push({ groupId: ipa1, row: "read", value: "admin" });
     expect(effective("read", { kind: "person", userId: ownerId }, definition, groups).value).toBe("admin");
   });
+  test("missing defaults remain readable and can be repaired by a revision-checked replacement", async () => {
+    await sql`DELETE FROM code.policy_rules WHERE group_id IS NULL AND row='read'`;
+    const current = await readCodePolicySnapshot();
+    expect((await effectiveCodePolicy({}, ctx(ownerId))).rows.find((row) => row.row === "read")?.value).toBe("never");
+    await updateCodePolicy({ revision: current.revision, definition: codePolicyPreset("open") }, admin);
+    expect((await readCodePolicySnapshot()).definition.rules).toHaveLength(14);
+  });
+  test("the Action review contains the complete localized proposal at the reviewed revision", async () => {
+    const current = await readCodePolicySnapshot();
+    const result = await aiCapabilities.actions["code.policy.update"].review(
+      { revision: current.revision, definition: change("read", "admin") },
+      {
+        authority: admin.authority,
+        actor: admin.authority.actor,
+        accessSubject: admin.authority.accessSubject,
+        user: user(adminId),
+        locale: "de",
+        origin: "http",
+        requestId: "policy-review",
+        signal: new AbortController().signal,
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Review failed");
+    const review = CapabilityActionCallReviewSchema.parse(result.data);
+    expect(review.locale).toBe("de");
+    expect(review.content).toMatchObject({ kind: "page", baseRevision: current.revision });
+    expect(review.content?.body).toContain("Lesen (read)\nStandard: Admin gibt frei (admin)");
+    expect(review.content?.body).toContain("Internet (internet)");
+  });
   test("stale concurrent updates reject one writer and enqueue exactly one job", async () => {
     const previous = await readCodePolicySnapshot();
     const results = await Promise.allSettled([
@@ -139,15 +176,20 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     await active(1, ["read"]);
     await active(2, ["read"], ["read"]);
     await active(3, ["ai"]);
+    await active(4, ["read"]);
+    await active(5, ["read"]);
+    await sql`UPDATE code.codes SET state='draft' WHERE id=${codeId(5)}`;
+    await active(6, ["read"]);
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId(6)}`;
     const old = await readCodePolicySnapshot();
     const definition = change("read", "admin");
-    const preview = await previewCodePolicy({ revision: old.revision, definition, limit: 2 }, admin);
-    expect(preview.total).toBe(1);
+    const preview = await previewCodePolicy({ revision: old.revision, definition, limit: 1 }, admin);
+    expect(preview.total).toBe(2);
     expect(preview.items.map((i) => i.codeId)).toEqual([codeId(1)]);
-    expect(preview.nextCursor).toBe(codeId(2));
-    expect((await previewCodePolicy({ revision: old.revision, definition, limit: 2, cursor: preview.nextCursor! }, admin)).items).toEqual(
-      [],
-    );
+    expect(preview.nextCursor).toBe(codeId(1));
+    const second = await previewCodePolicy({ revision: old.revision, definition, limit: 1, cursor: preview.nextCursor! }, admin);
+    expect(second.items.map((item) => item.codeId)).toEqual([codeId(4)]);
+    expect(second.nextCursor).toBeNull();
     expect(await sql`SELECT id FROM code.policy_pause_outbox`).toHaveLength(0);
     const result = await updateCodePolicy({ revision: old.revision, definition }, admin);
     expect((await readCode(codeId(1), ctx(ownerId))).code.state).toBe("active");
@@ -160,6 +202,19 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     });
     expect((await readCode(codeId(2), ctx(ownerId))).code.state).toBe("active");
     expect((await readCode(codeId(3), ctx(ownerId))).code.state).toBe("active");
+    expect((await readCode(codeId(4), ctx(ownerId))).code.state).toBe("paused");
+    expect((await readCode(codeId(5), ctx(ownerId))).code.state).toBe("draft");
+    expect((await readCode(codeId(6), ctx(ownerId))).code.pauseReason).toBeNull();
+    const [event] =
+      await sql`SELECT metadata FROM audit.events WHERE action='core.code.policy.updated' AND metadata->>'revision'=${String(result.policy.revision)}`;
+    expect(event.metadata).toMatchObject({
+      expectedPauseCount: 2,
+      changes: { default: { read: { before: "automatic", after: "admin" } } },
+    });
+    const [applied] =
+      await sql`SELECT metadata FROM audit.events WHERE action='core.code.policy.pauses_applied' AND metadata->>'revision'=${String(result.policy.revision)}`;
+    expect(applied.metadata.pausedCount).toBe(2);
+
     const never = await previewCodePolicy({ revision: result.policy.revision, definition: change("read", "never"), limit: 20 }, admin);
     expect(never.items.map((i) => i.codeId)).toEqual([codeId(2)]);
   });
@@ -190,6 +245,44 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     await updateCodePolicy({ revision: current.revision, definition: codePolicyPreset("open") }, admin);
     await codePolicyPauseOutbox.reconcile();
     expect((await readCode(codeId(1), ctx(ownerId))).code.state).toBe("active");
+  });
+  test("resource Code keeps default rows despite author loosening, and retains author vetoes", async () => {
+    await active(71, ["read"], [], true);
+    await active(72, ["read"], ["read"], true);
+    await active(73, ["read"]);
+    let current = await readCodePolicySnapshot();
+    const definition = change("read", "admin");
+    definition.rules.push({ groupId: child, row: "read", value: "automatic" });
+    const preview = await previewCodePolicy({ revision: current.revision, definition, limit: 20 }, admin);
+    expect(preview.items.map((item) => item.codeId)).toEqual([codeId(71)]);
+    await updateCodePolicy({ revision: current.revision, definition }, admin);
+    await codePolicyPauseOutbox.reconcile();
+    expect(await sql`SELECT id FROM code.codes WHERE state='paused'`).toMatchObject([{ id: codeId(71) }]);
+    current = await readCodePolicySnapshot();
+    const veto = codePolicyPreset("open");
+    veto.preset = "custom";
+    veto.rules.push({ groupId: child, row: "read", value: "never" });
+    expect(
+      (await previewCodePolicy({ revision: current.revision, definition: veto, limit: 20 }, admin)).items.map((item) => item.codeId),
+    ).toEqual([codeId(72), codeId(73)]);
+    await updateCodePolicy({ revision: current.revision, definition: veto }, admin);
+    await codePolicyPauseOutbox.reconcile();
+    expect(await sql`SELECT id FROM code.codes WHERE state='active'`).toHaveLength(0);
+  });
+  test("missing classifications fail closed during tightening; a newly active different version is evaluated afresh", async () => {
+    await active(81, null);
+    await active(82, ["read"]);
+    const current = await readCodePolicySnapshot();
+    const definition = change("read", "never");
+    const preview = await previewCodePolicy({ revision: current.revision, definition, limit: 20 }, admin);
+    expect(preview.items.find((item) => item.codeId === codeId(81))?.reason).toBe("policy_rows_unavailable");
+    await updateCodePolicy({ revision: current.revision, definition }, admin);
+    await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by,created_at)
+      VALUES(${versionId(83)}::uuid,${codeId(82)},2,'{}','',${"c".repeat(64)},${"d".repeat(64)},'{"policyRows":["ai"]}'::jsonb,0,0,${ownerId}::uuid,${now})`;
+    await sql`UPDATE code.codes SET active_version_id=${versionId(83)}::uuid WHERE id=${codeId(82)}`;
+    await codePolicyPauseOutbox.reconcile();
+    expect((await readCode(codeId(81), ctx(ownerId))).code.pauseReason).toBe("policy_rows_unavailable");
+    expect((await readCode(codeId(82), ctx(ownerId))).code.state).toBe("active");
   });
   test("own views cannot impersonate another owner; policy mutations reject ordinary users, narrow scopes and phone sessions", async () => {
     expect((await effectiveCodePolicy({}, ctx(ownerId))).rows).toHaveLength(14);

@@ -58,6 +58,10 @@ export const CODE_TABLES = {
   versions: "code.versions",
   runs: "code.runs",
   calls: "code.calls",
+  policy: "code.policy",
+  policyRules: "code.policy_rules",
+  policyCoverage: "code.policy_coverage",
+  policyPauseOutbox: "code.policy_pause_outbox",
 } as const;
 const timestamp = z.iso.datetime();
 const hash = z.string().regex(/^[a-f0-9]{64}$/);

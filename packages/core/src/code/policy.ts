@@ -14,6 +14,7 @@ import {
   type CodePolicyRow,
   CodePolicyRowSchema,
   CodePolicySchema,
+  type CodePolicyValue,
   type codePolicyContracts,
 } from "./policy-contracts";
 import { type CodePolicyGroups, effective } from "./policy-effective";
@@ -25,18 +26,16 @@ export function requireCodePolicyAdmin(context: CodeContext, write = false) {
     throw new CodeDataError("FORBIDDEN", "Cloud Code administration authority is required.");
   return user;
 }
-/** Internal authoritative snapshot; callers sharing a transaction see policy and group membership together. No cache. */
+/** One authoritative statement binds revision to rules. Callers control the shared policy/group snapshot with transaction isolation. No cache. */
 export async function readCodePolicySnapshot(db: SQL = sql): Promise<CodePolicy> {
-  const [row] = await db<
-    { revision: number; preset: string; updated_by: string | null; updated_at: Date }[]
-  >`SELECT * FROM code.policy WHERE singleton`;
+  const [row] = await db<{ revision: number; preset: string; updated_by: string | null; updated_at: Date; rules: unknown }[]>`
+    SELECT p.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('groupId',group_id,'row',row,'value',value)
+      ORDER BY group_id NULLS FIRST,row) FROM code.policy_rules),'[]'::jsonb) AS rules
+    FROM code.policy p WHERE singleton`;
   if (!row) throw new Error("Code policy unavailable");
-  const rules = await db<
-    { group_id: string | null; row: string; value: string }[]
-  >`SELECT group_id,row,value FROM code.policy_rules ORDER BY group_id NULLS FIRST,row`;
   return CodePolicySchema.parse({
     revision: row.revision,
-    definition: { preset: row.preset, rules: rules.map((rule) => ({ groupId: rule.group_id, row: rule.row, value: rule.value })) },
+    definition: { preset: row.preset, rules: row.rules },
     updatedBy: row.updated_by,
     updatedAt: row.updated_at.toISOString(),
   });
@@ -97,11 +96,14 @@ export async function effectiveCodePolicy(input: z.infer<typeof codePolicyContra
 }
 
 /** C8 calls only after verifying and recording a Cloud-admin approval of this immutable version, in that same transaction.
+ * Locks the owning Code; callers that read policy must lock policy first.
  * This internal storage seam grants no activation or execution authority. Rejection/revocation removes coverage.
  */
 export async function replaceCodePolicyCoverage(versionId: string, rows: readonly CodePolicyRow[], db: SQL): Promise<void> {
   for (const row of rows) CodePolicyRowSchema.parse(row);
-  await db`SELECT id FROM code.versions WHERE id=${versionId}::uuid FOR UPDATE`;
+  const code = await db`SELECT c.id FROM code.codes c JOIN code.versions v ON v.code_id=c.id
+    WHERE v.id=${versionId}::uuid FOR UPDATE OF c`;
+  if (!code.length) throw new CodeDataError("NOT_FOUND", "Code version not found.");
   await db`DELETE FROM code.policy_coverage WHERE version_id=${versionId}::uuid`;
   for (const row of new Set(rows)) await db`INSERT INTO code.policy_coverage(version_id,row) VALUES(${versionId}::uuid,${row})`;
 }
@@ -131,9 +133,10 @@ export async function codePolicyImpact(
   before: CodePolicyDefinition,
   after: CodePolicyDefinition,
   db: SQL,
+  membership?: CodePolicyGroups,
 ): Promise<z.infer<typeof CodePolicyImpactSchema> | null> {
   const owner = ownerFor(candidate);
-  const groups = await readCodePolicyGroups(owner.kind === "person" ? owner.userId : candidate.author_id, db);
+  const groups = membership ?? (await readCodePolicyGroups(owner.kind === "person" ? owner.userId : candidate.author_id, db));
   const manifest = CodePolicyManifestSchema.safeParse(candidate.manifest);
   // Active versions without checker classifications cannot be established as allowed.
   const used = manifest.success ? new Set(manifest.data.policyRows) : new Set(CODE_POLICY_ROWS);
@@ -171,33 +174,67 @@ export async function codePolicyCandidates(db: SQL, cursor: string | null, limit
     }
     ORDER BY c.id LIMIT ${limit}`;
 }
-/** Preview uses a consistent snapshot, returns an exact count and a bounded candidate page. Empty pages may have a cursor. */
+/** One bounded-memory scan supplies a count and an affected-only page. Membership cache is bounded by the 50-Code batch budget. */
+async function scanCodePolicyImpacts(
+  before: CodePolicyDefinition,
+  after: CodePolicyDefinition,
+  db: SQL,
+  input: { cursor?: string; limit: number },
+  context: CodeContext,
+) {
+  const items: z.infer<typeof CodePolicyImpactSchema>[] = [];
+  const memberships = new Map<string | null, CodePolicyGroups>();
+  let cursor: string | null = null;
+  let total = 0;
+  let more = false;
+  while (true) {
+    context.signal?.throwIfAborted();
+    const batch = await codePolicyCandidates(db, cursor, 50);
+    for (const candidate of batch) {
+      context.signal?.throwIfAborted();
+      const userId = candidate.owner_kind === "person" ? candidate.owner_user_id : candidate.author_id;
+      let membership = memberships.get(userId);
+      if (!membership) {
+        membership = await readCodePolicyGroups(userId, db);
+        if (memberships.size === 50) memberships.delete(memberships.keys().next().value ?? null);
+        memberships.set(userId, membership);
+      }
+      const impact = await codePolicyImpact(candidate, before, after, db, membership);
+      if (!impact) continue;
+      total++;
+      if (!input.cursor || impact.codeId > input.cursor) {
+        if (items.length < input.limit) items.push(impact);
+        else more = true;
+      }
+    }
+    if (batch.length < 50) break;
+    cursor = batch.at(-1)!.id;
+  }
+  return { total, items, nextCursor: more ? (items.at(-1)?.codeId ?? null) : null };
+}
+/** Preview uses a consistent snapshot, with an exact total and a bounded page of affected Codes. */
 export async function previewCodePolicy(input: z.infer<typeof codePolicyContracts.preview.input>, context: CodeContext) {
   requireCodePolicyAdmin(context);
   const definition = CodePolicyDefinitionSchema.parse(input.definition);
   return snapshot(async (db) => {
     const policy = await readCodePolicySnapshot(db);
     if (policy.revision !== input.revision) throw new CodeDataError("CONFLICT", "Code policy changed; read and preview it again.");
-    const items: z.infer<typeof CodePolicyImpactSchema>[] = [];
-    let cursor: string | null = null;
-    let total = 0;
-    const candidates = await codePolicyCandidates(db, input.cursor ?? null, input.limit);
-    const visibleIds = new Set(candidates.map((row) => row.id));
-    while (true) {
-      context.signal?.throwIfAborted();
-      const batch = await codePolicyCandidates(db, cursor, 50);
-      for (const candidate of batch) {
-        const impact = await codePolicyImpact(candidate, policy.definition, definition, db);
-        if (impact) {
-          total++;
-          if (visibleIds.has(candidate.id)) items.push(impact);
-        }
-      }
-      if (batch.length < 50) break;
-      cursor = batch.at(-1)!.id;
-    }
-    return { revision: policy.revision, total, items, nextCursor: candidates.length === input.limit ? candidates.at(-1)!.id : null };
+    return { revision: policy.revision, ...(await scanCodePolicyImpacts(policy.definition, definition, db, input, context)) };
   });
+}
+/** Audit dictionaries preserve all changes without the audit service's 50-item array truncation. */
+function policyChanges(before: CodePolicyDefinition, after: CodePolicyDefinition) {
+  const changes: Record<string, Partial<Record<CodePolicyRow, { before: CodePolicyValue | null; after: CodePolicyValue | null }>>> = {};
+  for (const rule of [...before.rules, ...after.rules]) {
+    const previous = before.rules.find((old) => old.groupId === rule.groupId && old.row === rule.row)?.value ?? null;
+    const next = after.rules.find((item) => item.groupId === rule.groupId && item.row === rule.row)?.value ?? null;
+    if (previous !== next) {
+      const key = rule.groupId ?? "default";
+      changes[key] ??= {};
+      changes[key][rule.row] = { before: previous, after: next };
+    }
+  }
+  return changes;
 }
 /** Atomically replace the table using optimistic concurrency, and enqueue a durable batch pause scan. */
 export async function updateCodePolicy(input: z.infer<typeof codePolicyContracts.update.input>, context: CodeContext) {
@@ -212,6 +249,10 @@ export async function updateCodePolicy(input: z.infer<typeof codePolicyContracts
       const found = await tx`SELECT id FROM auth.groups WHERE id=ANY(${tx.array(ids, "uuid")}) FOR KEY SHARE`;
       if (found.length !== ids.length) throw new CodeDataError("BAD_INPUT", "Policy group not found.");
     }
+    const changes = policyChanges(previous.definition, definition);
+    const expectedPauseCount = Object.keys(changes).length
+      ? (await scanCodePolicyImpacts(previous.definition, definition, tx, { limit: 0 }, context)).total
+      : 0;
     await tx`DELETE FROM code.policy_rules`;
     for (const rule of definition.rules)
       await tx`INSERT INTO code.policy_rules(group_id,row,value) VALUES(${rule.groupId}::uuid,${rule.row},${rule.value})`;
@@ -231,7 +272,15 @@ export async function updateCodePolicy(input: z.infer<typeof codePolicyContracts
             : { uid: `service-account:${actor.serviceAccount.id}`, provider: "service_account", roles: actor.scopes },
         target: { type: "code.policy", id: "default" },
         requestId: context.requestId,
-        metadata: { revision: policy.revision, previousRevision: previous.revision, preset: policy.definition.preset, pauseJobId: job!.id },
+        metadata: {
+          revision: policy.revision,
+          previousRevision: previous.revision,
+          preset: policy.definition.preset,
+          previousPreset: previous.definition.preset,
+          pauseJobId: job!.id,
+          changes,
+          expectedPauseCount,
+        },
       },
       tx,
     );

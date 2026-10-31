@@ -60,14 +60,16 @@ groups. For each row, Core applies these rules in order:
 
 Specificity follows ancestry, rather than the number of levels in a tree.
 Ancestry stays inside one identity provider. FreeIPA effective memberships are
-resolved by name against current group UUIDs. Since Cloud does not store their
-hierarchy, FreeIPA groups are peers. They have the same policy rank as local
-groups.
+resolved by name against current group UUIDs. Policy deliberately treats FreeIPA groups as peers, even when identity data
+contains IPA hierarchy edges. They have the same policy rank as local groups.
 
 Resource and application Code use the default rows. Their version author's
 applicable `never` rules also veto execution. Other author group overrides do
 not replace the default. A group's automatic rule therefore cannot loosen the
-installation policy for shared resource Code.
+installation policy for shared resource Code. If the author is deleted, its
+attribution becomes null and policy uses the default without author group
+rules. Resource Code continues under its own identity, as required by its
+owner lifecycle.
 
 ## Read, preview and save
 
@@ -84,7 +86,11 @@ A policy contains `revision`, `definition`, `updatedBy` and `updatedAt`.
 A definition contains `preset` and `rules`; each rule is
 `{ groupId: string | null, row, value }`. A null group is the default. Supply
 exactly one default for every row. Omit a group row to inherit; duplicate rules
-and unknown groups are rejected. The complete table accepts at most 200 rules
+and unknown groups are rejected. Stored historical preset values remain readable if a later release changes
+a preset. An absent stored default resolves to `never`; administrators can
+repair it by saving a complete replacement. Reads never rewrite a stored table.
+
+The complete table accepts at most 200 rules
 so it fits the capability input budget.
 
 Read the latest revision, preview the complete proposed table, then update
@@ -97,9 +103,11 @@ review and cannot be called by Code.
 Preview checks active versions against their used rows and existing approval
 coverage. It counts only rows that become stricter and either become `never`
 or require an approval the version lacks. A looser table pauses nothing.
-`total` covers all active candidates in one database snapshot; `items` checks
-at most `limit` candidates (default 20, maximum 50). An empty page can still
-have `nextCursor`. Follow it until null.
+`total` covers all active candidates in one database snapshot; `items` returns
+at most `limit` affected Codes (default 20, maximum 50). `nextCursor` is the
+last returned affected Code when another affected item remains. Follow it
+until null. The scan retains only one candidate batch, the result page and at
+most 50 membership snapshots.
 
 ## Recognize a policy pause
 
@@ -136,20 +144,23 @@ Other applications use the capabilities rather than Core imports or tables.
 - `readCodePolicySnapshot(db)` reads authoritative policy without a cache.
   Dispatch and activation must read it, current groups and approval in the same
   transaction snapshot. When taking locks, lock `code.policy` before Code rows.
-- Checked version manifests include `policyRows: CodePolicyRow[]`, validated by
+- Checked version manifests include a unique `policyRows: CodePolicyRow[]` list, validated by
   `CodePolicyManifestSchema`. The list covers every used classification,
   including AI and external requests. Missing or invalid rows are evaluated
   conservatively against all classifications during a tightening, with
   `pauseReason: "policy_rows_unavailable"` when paused.
 - C8 writes `replaceCodePolicyCoverage(versionId, rows, tx)` in the same
   transaction as its verified Cloud-admin approval decision. The version ID
-  binds coverage to immutable source, bundle and manifest. Lock the owning Code
-  before changing active-version coverage; remove coverage on rejection or
+  binds coverage to immutable source, bundle and manifest. The helper locks the owning Code; lock the policy first
+  when approval also reads policy. Remove coverage on rejection or
   revocation. This storage helper supplies no approval or execution authority.
 - `CODE_SETTINGS` and `codeSettings` register and read storage and execution
   budgets. The execution host enforces the runtime settings described in
   [Code operations](/en/docs/operations/code-policy).
 
+`CODE_TABLES` names the policy tables alongside the data tables.
 Core owns `code.policy`, `code.policy_rules`, `code.policy_coverage` and
 `code.policy_pause_outbox`. Policy updates record `core.code.policy.updated`
-with the revision and pause job ID in the same transaction.
+with old/new revisions, presets, the complete changed-rule dictionary, an
+expected pause count and pause job ID in the same transaction. Each applied
+batch records `core.code.policy.pauses_applied` with the actual pause count.

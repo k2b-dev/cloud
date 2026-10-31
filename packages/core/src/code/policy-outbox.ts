@@ -1,7 +1,8 @@
 import { sql } from "@k2b/cloud";
+import { audit } from "@k2b/cloud/services";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import { codePolicyCandidates, codePolicyImpact, readCodePolicySnapshot } from "./policy";
-import { CodePolicyDefinitionSchema } from "./policy-contracts";
+import { StoredCodePolicyDefinitionSchema } from "./policy-contracts";
 
 type PauseRow = OutboxRow & { revision: number; previous: unknown; cursor: string | null };
 /** One transaction evaluates at most 50 active versions; continuation and visible pauses commit together.
@@ -15,14 +16,27 @@ export async function processCodePolicyPauseBatch(row: PauseRow): Promise<void> 
     // Serialize with policy updates, and take this lock before Code rows (activation uses the same order).
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     const current = await readCodePolicySnapshot(tx);
-    const before = CodePolicyDefinitionSchema.parse(row.previous);
+    const before = StoredCodePolicyDefinitionSchema.parse(row.previous);
     const candidates = await codePolicyCandidates(tx, row.cursor, 50, true);
+    let pausedCount = 0;
     for (const candidate of candidates) {
       const impact = await codePolicyImpact(candidate, before, current.definition, tx);
       if (!impact) continue;
+      pausedCount++;
       await tx`UPDATE code.codes SET state='paused',pause_reason=${impact.reason},pause_rows=${impact.rows}::text[],
         pause_policy_revision=${current.revision} WHERE id=${candidate.id} AND state='active' AND active_version_id IS NOT DISTINCT FROM ${candidate.active_version_id}::uuid`;
     }
+    if (pausedCount)
+      await audit.record(
+        {
+          action: "core.code.policy.pauses_applied",
+          outcome: "allowed",
+          actor: { uid: "core-code-policy", provider: "system" },
+          target: { type: "code.policy", id: "default" },
+          metadata: { revision: current.revision, jobRevision: row.revision, cursor: row.cursor, pausedCount },
+        },
+        tx,
+      );
     if (candidates.length === 50)
       await tx`INSERT INTO code.policy_pause_outbox(revision,previous,cursor) VALUES(${row.revision},${JSON.stringify(before)}::jsonb,${candidates.at(-1)!.id}) ON CONFLICT DO NOTHING`;
   });

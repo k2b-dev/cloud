@@ -43,7 +43,6 @@ export async function migrate(db: SQL = sql): Promise<void> {
       claimed_until TIMESTAMPTZ, last_error TEXT
     )`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS policy_pause_cursor ON code.policy_pause_outbox(revision,COALESCE(cursor,''))`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS policy_pause_sequence ON code.policy_pause_outbox(sequence)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS policy_pause_busy ON code.policy_pause_outbox(revision,sequence)
       WHERE claimed_until IS NOT NULL OR attempts>0`.simple();
   });

@@ -1224,19 +1224,37 @@ export const aiCapabilities = defineCapabilities({
       async review(input: z.infer<typeof codePolicyContracts.update.input>, context: CapabilityExecutionContext) {
         const preview = await runCodeQuery(context, (ctx) => previewCodePolicy({ ...input, limit: 20 }, ctx));
         if (!preview.ok) return preview;
-        const de = context.locale?.startsWith("de");
+        const { t, locale } = coreCapabilityMessages(context.locale);
+        const groupIds = [...new Set(input.definition.rules.flatMap((rule) => (rule.groupId ? [rule.groupId] : [])))];
+        const names = await resolveDisplayNames(groupIds.map((groupId) => ({ principal: { type: "group", groupId } })));
+        const labels = new Map(groupIds.map((id, index) => [id, `${principalLabel(names[index]!, locale)} (${id})`]));
         return ok({
-          message: de
-            ? `Code-Richtlinie ändern (Stand ${input.revision}); ${preview.data.data.total} Codes pausieren.`
-            : `Update Code policy (revision ${input.revision}); ${preview.data.data.total} Codes pause.`,
-          details: CODE_POLICY_ROWS.map((row) => ({
-            label: row,
-            display: "block" as const,
-            value: input.definition.rules
-              .filter((rule) => rule.row === row)
-              .map((rule) => `${rule.groupId ?? (de ? "Standard" : "Default")}: ${rule.value}`)
-              .join("\n"),
-          })),
+          locale,
+          ask: "changes_access" as const,
+          slots: {},
+          sentence: {
+            action: t.codePolicyReview({ revision: input.revision, count: preview.data.data.total }),
+            running: t.codePolicyRunning,
+            done: t.codePolicyDone,
+            confirm: t.codePolicyConfirm,
+            decline: t.codePolicyDecline,
+          },
+          content: {
+            kind: "page" as const,
+            baseRevision: input.revision,
+            title: t.codePolicyTitle,
+            format: "plain" as const,
+            body: CODE_POLICY_ROWS.map(
+              (row) =>
+                `${t.codePolicyRows[row]} (${row})\n${input.definition.rules
+                  .filter((rule) => rule.row === row)
+                  .map(
+                    (rule) =>
+                      `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValues[rule.value]} (${rule.value})`,
+                  )
+                  .join("\n")}`,
+            ).join("\n\n"),
+          },
         });
       },
       run: (input, context) => runCodeQuery(context, (ctx) => updateCodePolicy(input, ctx)),

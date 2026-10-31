@@ -59,6 +59,10 @@ backoff capped at five minutes. Keep failed rows intact so Core can retry.
 The dispatcher must check policy on each call even while visible pause work
 is pending.
 
+The policy update audit preserves changed rules and the expected pause count.
+Completed batches record `core.code.policy.pauses_applied` with actual counts,
+including both the job revision and the policy revision used.
+
 A successful pause is visible through Code list/read as `state: "paused"`,
 `pauseReason`, `pauseRows` and `pausePolicyRevision`. Replacing the table with a
 looser preset does not resume Code automatically. Resume follows the current

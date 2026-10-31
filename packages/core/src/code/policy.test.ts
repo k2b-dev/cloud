@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { CAPABILITY_ASK_REASONS } from "@k2b/cloud/contracts";
-import { CodePolicyDefinitionSchema, type CodePolicyValue, codePolicyPreset, codePolicyRow } from "./policy-contracts";
+import {
+  CodePolicyDefinitionSchema,
+  CodePolicyManifestSchema,
+  type CodePolicyValue,
+  codePolicyPreset,
+  codePolicyRow,
+  StoredCodePolicyDefinitionSchema,
+} from "./policy-contracts";
 import { type CodePolicyGroups, effective } from "./policy-effective";
 
 const owner = { kind: "person" as const, userId: "person" };
@@ -132,6 +139,14 @@ describe("Code policy group resolution", () => {
     expect(CodePolicyDefinitionSchema.safeParse({ ...policy, preset: "open" }).success).toBe(false);
     expect(codePolicyPreset("off").rules.every((rule) => rule.value === "never")).toBe(true);
     expect(codePolicyPreset("open").rules.every((rule) => rule.value === "automatic")).toBe(true);
+  });
+  test("stored historical presets stay readable, missing defaults deny, and checked rows are unique", () => {
+    const historical = codePolicyPreset("open");
+    historical.rules = historical.rules.filter((rule) => rule.row !== "read");
+    expect(StoredCodePolicyDefinitionSchema.safeParse(historical).success).toBe(true);
+    expect(CodePolicyDefinitionSchema.safeParse(historical).success).toBe(false);
+    expect(effective("read", owner, historical, { groups: [], ancestors: [] }).value).toBe("never");
+    expect(CodePolicyManifestSchema.safeParse({ policyRows: ["read", "read"] }).success).toBe(false);
   });
   test("classifies every public call category and defaults missing Action policy conservatively", () => {
     expect(codePolicyRow("query")).toBe("read");

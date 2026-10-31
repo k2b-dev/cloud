@@ -1,7 +1,7 @@
 import type { CodeOwner } from "./contracts";
 import type { CodePolicyDefinition, CodePolicyRow, CodePolicyValue } from "./policy-contracts";
 
-/** Live group membership and same-provider strict ancestry. IPA groups have no hierarchy and are peers. */
+/** Live group membership and same-provider strict ancestry. IPA groups are deliberately peers for policy, independently of stored IPA edges. */
 export type CodePolicyGroups = {
   groups: { id: string; provider: string }[];
   ancestors: { groupId: string; ancestorId: string }[];

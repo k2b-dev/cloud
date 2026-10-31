@@ -35,34 +35,34 @@ export type CodePolicyRule = z.infer<typeof CodePolicyRuleSchema>;
 export const CodePolicyPresetSchema = z.enum(["off", "admin", "open", "custom"]);
 export type CodePolicyPreset = z.infer<typeof CodePolicyPresetSchema>;
 export type CodePolicyDefinition = { preset: CodePolicyPreset; rules: CodePolicyRule[] };
-/** One complete replacement; one default per row and at most one rule per group/row. */
-export const CodePolicyDefinitionSchema = z
+/** Stored table shape. Historical presets remain readable; absent defaults resolve to never. */
+export const StoredCodePolicyDefinitionSchema = z
   .object({
     preset: CodePolicyPresetSchema.describe("Off, admin, open, or a customized table."),
     // Fits within the 32 KiB capability input budget even with UUID group identities.
     rules: z.array(CodePolicyRuleSchema).max(200).describe("Complete default and group rules; missing group rules inherit."),
   })
-  .strict()
-  .superRefine((value, ctx) => {
-    const seen = new Set<string>();
-    for (const rule of value.rules) {
-      const key = `${rule.groupId ?? "default"}:${rule.row}`;
-      if (seen.has(key)) ctx.addIssue({ code: "custom", message: "Duplicate policy rule" });
-      seen.add(key);
-    }
-    for (const row of CODE_POLICY_ROWS)
-      if (!seen.has(`default:${row}`)) ctx.addIssue({ code: "custom", message: `Missing default: ${row}` });
-    if (
-      value.preset !== "custom" &&
-      JSON.stringify([...value.rules].sort(ruleOrder)) !== JSON.stringify(codePolicyPreset(value.preset).rules.sort(ruleOrder))
-    )
-      ctx.addIssue({ code: "custom", message: "Preset does not match its rules; use custom for edits" });
-  });
+  .strict();
+/** Complete replacement: validate current presets and require one default per row. */
+export const CodePolicyDefinitionSchema = StoredCodePolicyDefinitionSchema.superRefine((value, ctx) => {
+  const seen = new Set<string>();
+  for (const rule of value.rules) {
+    const key = `${rule.groupId ?? "default"}:${rule.row}`;
+    if (seen.has(key)) ctx.addIssue({ code: "custom", message: "Duplicate policy rule" });
+    seen.add(key);
+  }
+  for (const row of CODE_POLICY_ROWS) if (!seen.has(`default:${row}`)) ctx.addIssue({ code: "custom", message: `Missing default: ${row}` });
+  if (
+    value.preset !== "custom" &&
+    JSON.stringify([...value.rules].sort(ruleOrder)) !== JSON.stringify(codePolicyPreset(value.preset).rules.sort(ruleOrder))
+  )
+    ctx.addIssue({ code: "custom", message: "Preset does not match its rules; use custom for edits" });
+});
 const ruleOrder = (a: CodePolicyRule, b: CodePolicyRule) => `${a.groupId ?? ""}:${a.row}`.localeCompare(`${b.groupId ?? ""}:${b.row}`);
 export const CodePolicySchema = z
   .object({
     revision: z.number().int().positive(),
-    definition: CodePolicyDefinitionSchema,
+    definition: StoredCodePolicyDefinitionSchema,
     updatedBy: z.uuid().nullable(),
     updatedAt: z.iso.datetime(),
   })
@@ -89,12 +89,17 @@ export function codePolicyRow(kind: "query" | "action" | "ai" | "internet", poli
   return reason ? CodePolicyRowSchema.parse(`ask_${reason}`) : "ask_app_asks";
 }
 /** Required checked-manifest field. Missing/invalid classifications fail closed in the pause sweep. */
-export const CodePolicyManifestSchema = z.object({ policyRows: z.array(CodePolicyRowSchema).max(CODE_POLICY_ROWS.length) });
+export const CodePolicyManifestSchema = z.object({
+  policyRows: z
+    .array(CodePolicyRowSchema)
+    .max(CODE_POLICY_ROWS.length)
+    .refine((rows) => new Set(rows).size === rows.length, "Policy classifications must be unique"),
+});
 export type CodePolicyManifest = z.infer<typeof CodePolicyManifestSchema>;
 const revision = z.number().int().positive().describe("Revision from policy.read; stale drafts are rejected.");
 const pageInput = {
-  cursor: CodeIdSchema.optional().describe("Last candidate Code ID from nextCursor."),
-  limit: z.number().int().min(1).max(50).default(20).describe("Maximum active Code candidates checked in this page."),
+  cursor: CodeIdSchema.optional().describe("Last affected Code ID from nextCursor."),
+  limit: z.number().int().min(1).max(50).default(20).describe("Maximum affected Codes returned in this page."),
 };
 export const CodePolicyImpactSchema = z
   .object({
