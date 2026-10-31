@@ -58,6 +58,32 @@ databaseSuite()("platform approvals", () => {
       VALUES (${id}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone',${JSON.stringify({ id })}::text::jsonb,false,${revoked ? new Date() : null})`;
     return id;
   };
+  test("approved normalized calls cannot change their target or refs before consumption", async () => {
+    const call = {
+      capability: "demo.write",
+      target: { type: "demo.folder", id: "one" },
+      refs: { destination: { type: "demo.folder", id: "two" } },
+      input: { value: "unchanged" },
+    };
+    for (const changed of [
+      { ...call, target: { type: "demo.folder", id: "other" } },
+      { ...call, refs: { destination: { type: "demo.folder", id: "other" } } },
+    ]) {
+      const record = await ask({ ...input(), input: call });
+      expect((await approve(record.id)).ok).toBe(true);
+      expect(
+        await approvals.consume(record.id, {
+          input: changed,
+          review: record.snapshot.review ?? null,
+          requester: record.snapshot.requester,
+        }),
+      ).toMatchObject({ ok: false, code: "INPUT_CHANGED" });
+    }
+    const unchanged = await ask({ ...input(), input: call });
+    expect((await approve(unchanged.id)).ok).toBe(true);
+    expect((await consume(unchanged)).ok).toBe(true);
+  });
+
   test("upgrades the phase-one CHECK once and accepts the ACP channel", async () => {
     const [original] = await sql<{ conname: string }[]>`SELECT conname FROM pg_constraint
       WHERE conrelid='approvals.requests'::regclass AND conname='requests_decided_via_check'`;

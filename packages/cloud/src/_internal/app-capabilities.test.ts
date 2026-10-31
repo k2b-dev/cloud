@@ -449,3 +449,73 @@ test("person and OAuth authority keep the ordinary handler; legacy app contexts 
   expect(legacy).toMatchObject({ ok: false, error: { status: 403 } });
   expect(appCalls).toBe(0);
 });
+
+for (const kind of ["query", "action"] as const) {
+  test(`signed app ${kind} binds the normalized target and refs through dispatch and provider`, async () => {
+    const bound = compileCapabilities("core", {
+      ...definitions,
+      types: { book: { title: "Book", description: "A book." } },
+      queries: { echo: { ...definitions.queries.echo, target: "book", refs: { destination: "book" } } },
+      actions: { "echo-action": { ...definitions.actions["echo-action"], target: "book", refs: { destination: "book" } } },
+    });
+    const body = {
+      target: { type: "core.book", id: "source" },
+      refs: { destination: { type: "core.book", id: "destination" } },
+      input: { text: "hello" },
+    };
+    const realVerify = invocation.verifyAppCapabilityInvocation;
+    const verify = spyOn(invocation, "verifyAppCapabilityInvocation").mockImplementation((token, expected) =>
+      realVerify(token, expected, options),
+    );
+    const active = spyOn(appKeys, "getActiveAppKey").mockResolvedValue({ keyId } as never);
+    const locale = spyOn(settings, "get").mockResolvedValue("en");
+    const record = spyOn(executions, "recordCapabilityExecution").mockResolvedValue("recorded");
+    try {
+      const routes = createAppCapabilityRoutes(bound);
+      const capabilityId = kind === "query" ? "echo" : "echo-action";
+      let token: string | undefined;
+      const result = await dispatchCapability({
+        request: new Request("http://core.test/invoke"),
+        kind: kind === "query" ? "queries" : "actions",
+        appId: "core",
+        capabilityId,
+        ...body,
+        appCaller: { appId: "mail", keyId },
+        origin: "app",
+        dependencies: {
+          getCapability: async () => ({ ...entry, manifest: bound.manifest }),
+          getApp: async () => ({
+            id: "mail",
+            name: "Mail",
+            description: "Caller",
+            icon: "ti ti-box",
+            baseUrl: "http://mail.test",
+            routes: [],
+            platformPermissions: ["geo:query"],
+          }),
+          checkAppCapabilityRate: async () => ({ limited: false, resetIn: 1_000 }),
+          withActiveSigner: async (_, callback) => callback(signer, {} as never),
+          fetch: async (_, init) => {
+            token = new Headers(init?.headers).get("authorization") ?? undefined;
+            expect(JSON.parse(String(init?.body))).toEqual(body);
+            return routes.request(`http://provider.test/${kind === "query" ? "queries" : "actions"}/${capabilityId}`, init);
+          },
+        },
+      });
+      expect(result.status).toBe(200);
+      expect(seen).toMatchObject({ target: body.target, refs: body.refs });
+      expect(token).toBeDefined();
+      const changed = await routes.request(`http://provider.test/${kind === "query" ? "queries" : "actions"}/${capabilityId}`, {
+        method: "POST",
+        headers: { authorization: token! },
+        body: JSON.stringify({ ...body, target: { ...body.target, id: "other" } }),
+      });
+      expect(changed.status).toBe(403);
+    } finally {
+      verify.mockRestore();
+      active.mockRestore();
+      locale.mockRestore();
+      record.mockRestore();
+    }
+  });
+}

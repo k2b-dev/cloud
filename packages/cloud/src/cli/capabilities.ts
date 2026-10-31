@@ -8,6 +8,7 @@ import {
   CapabilityActionReviewDataSchema,
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
+  CapabilityInvocationBodySchema,
   type CapabilityManifest,
   CapabilitySemanticLinkSchema,
   CapabilityStreamSchema,
@@ -31,6 +32,27 @@ const parseInput = async (input: CliInputFlagValue): Promise<unknown> => {
   } catch {
     throw new Error("Capability input must be valid JSON.");
   }
+};
+
+const coordinateFlags = {
+  target: flag.string({ description: 'Resource target as JSON: {"type":"app.type","id":"resource-id"}' }),
+  refs: flag.string({ description: 'Named additional resources as JSON: {"field":{"type":"app.type","id":"resource-id"}}' }),
+};
+const parseCoordinates = (flags: { target?: string; refs?: string }) => {
+  const parse = <T extends z.ZodType>(flag: "target" | "refs", schema: T): z.output<T> | undefined => {
+    const value = flags[flag];
+    if (value === undefined) return undefined;
+    try {
+      return schema.parse(JSON.parse(value));
+    } catch {
+      throw new Error(
+        `--${flag} must be ${flag === "target" ? "a resource reference JSON object" : "a JSON object of named resource references"}.`,
+      );
+    }
+  };
+  const target = parse("target", CapabilityInvocationBodySchema.shape.target);
+  const refs = parse("refs", CapabilityInvocationBodySchema.shape.refs);
+  return { ...(target !== undefined ? { target } : {}), ...(refs !== undefined ? { refs } : {}) };
 };
 
 const printGenericResult = (ctx: CloudCliContext, value: unknown): void => {
@@ -100,9 +122,12 @@ const invoke = async (config: {
   inputValue?: unknown;
   manifest?: CapabilityManifest;
   idempotencyKey?: string;
+  target?: string;
+  refs?: string;
 }) => {
   const headers = new Headers({ "content-type": "application/json" });
   if (config.idempotencyKey) headers.set("idempotency-key", config.idempotencyKey);
+  const coordinates = parseCoordinates(config);
   let response: Response;
   try {
     response = await config.ctx.fetch(
@@ -110,7 +135,7 @@ const invoke = async (config: {
       {
         method: "POST",
         headers,
-        body: JSON.stringify({ input: config.inputValue ?? (await parseInput(config.input!)) }),
+        body: JSON.stringify({ input: config.inputValue ?? (await parseInput(config.input!)), ...coordinates }),
       },
     );
   } catch (error) {
@@ -291,6 +316,7 @@ export default defineCliCommands({
           required: true,
           description: "Strict JSON input; supports --input-file or --stdin",
         }),
+        ...coordinateFlags,
       },
       run: ({ ctx, args, flags }) =>
         invoke({
@@ -299,6 +325,8 @@ export default defineCliCommands({
           appId: args.appId,
           capabilityId: args.queryId,
           input: flags.input,
+          target: flags.target,
+          refs: flags.refs,
         }),
     }),
     command("read", {
@@ -321,14 +349,17 @@ export default defineCliCommands({
     command("review", {
       summary: "Read the complete proposed Action without executing it",
       args: { appId: arg.required({ description: "Owning app id" }), actionId: arg.required({ description: "App-local action id" }) },
-      flags: { input: flag.input({ required: true, description: "Strict JSON input; supports --input-file or --stdin" }) },
+      flags: {
+        input: flag.input({ required: true, description: "Strict JSON input; supports --input-file or --stdin" }),
+        ...coordinateFlags,
+      },
       run: async ({ ctx, args, flags }) => {
         const response = await ctx.fetch(
           `/api/capabilities/v1/actions/${encodeURIComponent(args.appId)}/${encodeURIComponent(args.actionId)}/review`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ input: await parseInput(flags.input) }),
+            body: JSON.stringify({ input: await parseInput(flags.input), ...parseCoordinates(flags) }),
           },
         );
         const review = CapabilityActionReviewDataSchema.parse(await readCapabilityJson(response, CAPABILITY_MAX_REVIEW_RESPONSE_BYTES));
@@ -346,6 +377,7 @@ export default defineCliCommands({
           required: true,
           description: "Strict JSON input; supports --input-file or --stdin",
         }),
+        ...coordinateFlags,
         idempotencyKey: flag.string({
           name: "idempotency-key",
           description: "Stable retry key for an Action whose manifest requires idempotency",
@@ -358,6 +390,8 @@ export default defineCliCommands({
           appId: args.appId,
           capabilityId: args.actionId,
           input: flags.input,
+          target: flags.target,
+          refs: flags.refs,
           idempotencyKey: flags.idempotencyKey,
         }),
     }),

@@ -4,6 +4,7 @@ import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
 import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/settings-ops";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
+import { CapabilityInvocationBodySchema } from "../contracts/capabilities";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
@@ -969,29 +970,17 @@ export const defineApp = <
               const message = parsedBody.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
               return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message }, 400);
             }
-            if (
-              typeof parsedBody.data !== "object" ||
-              parsedBody.data === null ||
-              Array.isArray(parsedBody.data) ||
-              !Object.hasOwn(parsedBody.data, "input") ||
-              Object.keys(parsedBody.data).length !== 1
-            ) {
-              return c.json(
-                {
-                  code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed,
-                  message: messages.requestInputOnly,
-                },
-                400,
-              );
-            }
-            const body = parsedBody.data as { input: unknown };
+            const parsedCall = CapabilityInvocationBodySchema.safeParse(parsedBody.data);
+            if (!parsedCall.success)
+              return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message: messages.requestInputOnly }, 400);
+            const body = parsedCall.data;
             const actor = c.get("actor");
             const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
             const idempotencyKey = c.req.header("idempotency-key") || undefined;
             const invocation = {
               compiled: compiledCapabilities,
               localId: c.req.param("capabilityId") ?? "",
-              input: body.input,
+              ...body,
               expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
               context: {
                 query: createNestedCapabilityQuery(c.req.raw),

@@ -13,6 +13,7 @@ import {
 } from "../_internal/capability-sentences";
 import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
 import type { listApps } from "../_internal/registry";
+import { capabilityToolInputSchema } from "../capabilities/calls";
 import {
   type CapabilityActionManifest,
   type CapabilityActionReviewData,
@@ -617,8 +618,12 @@ const withApprovalReason = (schema: Record<string, unknown>): Record<string, unk
   },
 });
 
-const withoutApprovalReason = (entry: AiCapabilityCatalogEntry, args: unknown): unknown => {
-  if (!offersApprovalReason(entry) || !args || typeof args !== "object" || Array.isArray(args)) return args;
+/** Removes model-only approval wording before normalizing review, approval and execution arguments. */
+export const aiCapabilityArguments = (operation: CapabilityActionManifest | CapabilityQueryManifest, args: unknown): unknown => {
+  if (!("idempotency" in operation) || operation.approval === "none" || !args || typeof args !== "object" || Array.isArray(args))
+    return args;
+  const properties = operation.inputSchema.properties;
+  if (!properties || typeof properties !== "object" || Object.hasOwn(properties, CAPABILITY_APPROVAL_REASON_FIELD)) return args;
   const { [CAPABILITY_APPROVAL_REASON_FIELD]: _reason, ...appArgs } = args as Record<string, unknown>;
   return appArgs;
 };
@@ -798,14 +803,16 @@ export const createLoadedAiCapabilityTools = (input: {
         canonicalName: entry.name,
         description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL. Never retry IDEMPOTENCY_UNCERTAIN or IDEMPOTENCY_IN_PROGRESS. After ACTION_NOT_DONE, ask the person before trying again. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
         inputSchema: aiCapabilityInputSchema(
-          offersApprovalReason(entry) ? withApprovalReason(entry.operation.inputSchema) : entry.operation.inputSchema,
+          offersApprovalReason(entry)
+            ? withApprovalReason(capabilityToolInputSchema(entry.operation))
+            : capabilityToolInputSchema(entry.operation),
         ),
         outputSchema: z.unknown(),
         // Capability Actions request a custom approval after their optional
         // live review has resolved. The review may supply an app-owned scope.
         approval: "never",
       }).server(async (modelArgs, context) => {
-        const args = withoutApprovalReason(entry, modelArgs);
+        const args = aiCapabilityArguments(entry.operation, modelArgs);
         await input.authorizeBackground?.(entry, args, context);
         if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;

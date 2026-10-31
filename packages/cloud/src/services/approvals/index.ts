@@ -27,6 +27,11 @@ export type ApprovalAssurance = "standard" | "confirm";
  * review names a scope for these arguments, a tool whose policy allows remembering, or a website. Otherwise `confirm`.
  */
 export const approvalAssurance = (rememberable: boolean): ApprovalAssurance => (rememberable ? "standard" : "confirm");
+/**
+ * Hash the exact proposal. Resource-bound capability callers pass a NormalizedCapabilityCall,
+ * so this equals capabilityCallDigest and a changed target or ref needs a new approval.
+ * Other tools and historical app-wide calls retain their input-only digest.
+ */
 export const approvalArgsDigest = (input: unknown): string => capabilityRequestHash(input);
 export const approvalReviewDigest = (review: CapabilityActionReviewData | null | undefined): string =>
   capabilityRequestHash(review ?? null);
@@ -57,6 +62,7 @@ export type ApprovalRequestInput = {
   assurance: ApprovalAssurance;
   sentence: string;
   review?: CapabilityActionReviewData | null;
+  /** NormalizedCapabilityCall for resource-bound capabilities; ordinary arguments for other tools. */
   input: unknown;
   expiresInMs: number;
 };

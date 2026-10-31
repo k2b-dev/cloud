@@ -365,6 +365,8 @@ export const capabilityContractIssues = (
     return [{ code: "kind", path: "$", message: `Expected ${contract.kind === "query" ? "a Query" : "an Action"}` }];
   }
   const issues: CapabilityContractIssue[] = [];
+  if (candidate.operation.target !== undefined || candidate.operation.refs !== undefined)
+    issues.push({ code: "input", path: "$", message: "This consumer contract does not supply target or refs" });
   const direction = candidate.operation.stream?.direction;
   if (contract.stream && direction !== contract.stream) {
     issues.push({ code: "stream", path: "$", message: `Expected a ${contract.stream} stream` });
