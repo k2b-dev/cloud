@@ -60,9 +60,11 @@ directory, even if the secret provider presents it as `0444`. The entrypoint
 passes the copy through `CLOUD_APP_KEY_FILE`, removes the temporary capability
 from its permitted and effective sets, and enables `no-new-privileges` before
 executing the supervisor. The supervisor's ownership and exact `0400` check is
-unchanged. Temporary copies disappear with the container's tmpfs. For Docker
-user-namespace remapping, use a mount readable within the container's mapped
-user namespace; the image does not change the host file's metadata.
+unchanged. Custom deployments must also provide the private `/tmp` tmpfs from
+the templates; temporary copies disappear when it is unmounted. The image does
+not change the host file's metadata. With Docker user-namespace remapping, the
+host file must be owned by the host UID mapped to container root; keep its
+private mode rather than making it readable by other host users.
 
 Only Core and runner share the internal
 `runner-core` network. Runner has no published port, writable root filesystem,
@@ -124,8 +126,9 @@ privileged namespace setup or `SYS_ADMIN`. They protect against a native escape
 inside workerd; they do not replace the host kernel and container boundary.
 The engine refuses startup if its mandatory launcher or UID transition fails.
 
-CI runs the native engine, entrypoint and shutdown tests inside the image with
-the same startup path and restrictions as Compose. Its image smoke mounts an
+CI runs the native engine and shutdown tests inside the image through the same
+startup path and restrictions as Compose. Entrypoint tests invoke the launcher
+themselves with its startup capability envelope. Its image smoke mounts an
 operator-owned `0600` fixture at `/run/runner-key/source` and uses the default
 entrypoint, then verifies the private copy and supervisor capability set. The isolation probe starts in the
 actual workerd process's UID, session and filter, tries to read the key and

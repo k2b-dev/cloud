@@ -24,9 +24,10 @@ test("entrypoint stages mounted key bytes privately and permanently drops startu
         `
         const path = process.env.CLOUD_APP_KEY_FILE;
         const status = await Bun.file('/proc/self/status').text();
-        const reader = Bun.spawn([${JSON.stringify(join(import.meta.dir, "runner-isolate"))}, '30000', ${JSON.stringify(join(directory, "probe.sock"))}, '/bin/cat', ${JSON.stringify(source)}, path], {stdout:'pipe',stderr:'ignore'});
+        const reader = Bun.spawn([${JSON.stringify(join(import.meta.dir, "runner-isolate"))}, '30000', ${JSON.stringify(join(directory, "probe.sock"))}, '/bin/cat', ${JSON.stringify(source)}, path], {stdout:'pipe',stderr:'pipe'});
         const output = await new Response(reader.stdout).text();
-        console.log(JSON.stringify({path, status, readExit: await reader.exited, output}));
+        const errors = await new Response(reader.stderr).text();
+        console.log(JSON.stringify({path, status, readExit: await reader.exited, output, errors}));
       `,
       ],
       { env: { CLOUD_APP_KEY_FILE: source }, stdout: "pipe", stderr: "pipe" },
@@ -42,7 +43,10 @@ test("entrypoint stages mounted key bytes privately and permanently drops startu
     expect((await lstat(dirname(copy!))).mode & 0o7777).toBe(0o700);
     for (const field of ["CapEff", "CapPrm"]) expect(BigInt(`0x${new RegExp(`${field}:\\s+(\\w+)`).exec(result.status)?.[1]}`)).toBe(0xe1n);
     expect(result.status).toMatch(/NoNewPrivs:\s+1/);
-    expect(result.readExit).not.toBe(0);
+    expect(result.readExit).toBe(1);
+    expect(result.errors.match(/Permission denied/g)).toHaveLength(2);
+    expect(result.errors).toContain(source);
+    expect(result.errors).toContain(copy!);
     expect(result.output).toBe("");
     expect((await lstat(source)).mode & 0o7777).toBe(0o444);
   } finally {

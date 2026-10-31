@@ -723,6 +723,7 @@ jobs:
             --no-env-file test /app/entrypoint.test.js
           # Local Compose secrets keep the host user's UID and mode. Exercise that
           # exact mount path, including a 0600 file not owned by container root.
+          # RFC 8032 public test vector, never an installation credential.
           install -m 0600 packages/runner/test/runner-key.fixture "$RUNNER_TEMP/runner-smoke.key"
           docker run "${runner_limits[@]}" \
             --env CLOUD_APP_KEY_FILE=/run/runner-key/source \
