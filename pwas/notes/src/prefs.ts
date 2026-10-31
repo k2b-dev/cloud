@@ -3,7 +3,14 @@ import type { AppLocale } from "./i18n";
 
 export type ThemeChoice = "system" | "light" | "dark";
 
-type Stored = { name?: string; theme?: ThemeChoice; locale?: AppLocale; firstShareSeen?: boolean; guestNameSeen?: boolean };
+type Stored = {
+  name?: string;
+  theme?: ThemeChoice;
+  locale?: AppLocale;
+  firstShareSeen?: boolean;
+  guestNameSeen?: boolean;
+  welcomeCreated?: boolean;
+};
 
 const KEY = "k2b-notes.preferences";
 
@@ -64,6 +71,7 @@ const read = (): Stored => {
     locale: locale === "de" || locale === "en" ? locale : undefined,
     firstShareSeen: field("firstShareSeen") === true,
     guestNameSeen: field("guestNameSeen") === true,
+    welcomeCreated: field("welcomeCreated") === true,
   };
 };
 
@@ -111,6 +119,9 @@ export const preferences = {
   markFirstShareSeen: () => save({ firstShareSeen: true }),
   guestNameSeen: () => prefs().guestNameSeen === true,
   markGuestNameSeen: () => save({ guestNameSeen: true }),
+  /** Set once the welcome note exists; it never comes back, also not after deleting it. */
+  welcomeCreated: () => prefs().welcomeCreated === true,
+  markWelcomeCreated: () => save({ welcomeCreated: true }),
   clear: () => {
     try {
       localStorage.removeItem(KEY);

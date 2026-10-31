@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import { type AccessSubject, buildAccessPrincipalCondition, createAccess } from "../server/services/access";
 import { toPgTextArray } from "../services/postgres";
 import type { AiModelAccessDraft } from "../shared/ai-models";

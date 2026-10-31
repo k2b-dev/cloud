@@ -81,11 +81,18 @@ const pinPageClock = (at: number) => {
   globalThis.Date = PinnedDate as DateConstructor;
 };
 
-const openContext = async (serviceWorkers: "allow" | "block") => {
+/** Marks the welcome note as done, so a test starts on the empty start page instead of in the welcome note. */
+const skipWelcome = () => {
+  if (!localStorage.getItem("k2b-notes.preferences"))
+    localStorage.setItem("k2b-notes.preferences", JSON.stringify({ welcomeCreated: true }));
+};
+
+const openContext = async (serviceWorkers: "allow" | "block", firstVisit = false) => {
   context = await browser.newContext({ locale: "de-DE", viewport: { width: 1280, height: 900 }, reducedMotion: "reduce", serviceWorkers });
   context.setDefaultTimeout(5_000);
   context.setDefaultNavigationTimeout(10_000);
   await context.addInitScript(pinPageClock, NOW);
+  if (!firstVisit) await context.addInitScript(skipWelcome);
   page = await context.newPage();
   errors = pageErrors(page);
 };
@@ -143,7 +150,43 @@ async function box(locator: Locator) {
 }
 
 describe("k2b notes · Produktions-SPA", () => {
-  test("erster Besuch: Entwurf wird gespeichert und bleibt nach Reload und Rückkehr sichtbar", async () => {
+  test("erster Besuch: die Willkommensnotiz öffnet sich im Editor und kommt nach dem Löschen nicht wieder", async () => {
+    await context.close();
+    await openContext("block", true);
+    await page.goto(origin);
+    await page.waitForURL(/\/n\/[A-Za-z0-9]{22}$/);
+    await page.getByRole("textbox", { name: "Willkommen", exact: true }).waitFor();
+    expect(await editor().innerText()).toContain("Tippe / für mehr.");
+    // A real note, rendered like any other: notice, chart from its table, checklist boxes and a tag pill.
+    await page.locator(".cm-notice-card-widget").first().waitFor();
+    await page.locator(".cm-query-block-preview svg").first().waitFor();
+    expect(await page.locator(".custom-list-task-marker").count()).toBe(3);
+    // The table's `@kaffee` anchor shows as a quiet label, not as raw Markdown.
+    await page.locator(".cm-named-block-handle", { hasText: /^kaffee$/ }).waitFor();
+    expect(await editor().innerText()).not.toContain("@kaffee");
+    // No footer under the editor; the legal pages sit in the note's menu.
+    expect(await page.getByRole("contentinfo").count()).toBe(0);
+    await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+    expect(await page.getByRole("menuitem", { name: "Datenschutz", exact: true }).isVisible()).toBe(true);
+    await page.keyboard.press("Escape");
+    await page.locator(".n-tagpill", { hasText: "#start" }).click();
+    await page.waitForURL(`${origin}/?tag=start`);
+    await page.getByText("1 Notiz in diesem Browser", { exact: true }).waitFor();
+    await page.reload();
+    await page.getByText("1 Notiz in diesem Browser", { exact: true }).waitFor();
+    // Deleted, the welcome note does not come back; the empty start page opens a plain draft.
+    await cards().first().click();
+    await page.getByRole("textbox", { name: "Willkommen", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Weitere Aktionen", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Notiz löschen", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Löschen", exact: true }).click();
+    await page.getByRole("textbox", { name: "Neue Notiz", exact: true }).waitFor();
+    await page.reload();
+    await page.getByRole("textbox", { name: "Neue Notiz", exact: true }).waitFor();
+    expect(page.url()).toBe(`${origin}/`);
+  }, 25_000);
+
+  test("leere Startseite: Entwurf wird gespeichert und bleibt nach Reload und Rückkehr sichtbar", async () => {
     await page.goto(origin);
     const draft = page.getByRole("textbox", { name: "Neue Notiz", exact: true });
     await draft.waitFor();
@@ -155,7 +198,6 @@ describe("k2b notes · Produktions-SPA", () => {
         return copy.textContent?.trim();
       }),
     ).toBe("");
-    expect(await page.getByRole("link", { name: "Beispiel ansehen", exact: true }).isVisible()).toBe(true);
     const text = "Mein erster Gedanke";
     await draft.fill(text);
     await page.waitForURL(/\/n\/[A-Za-z0-9]{22}$/);
@@ -208,26 +250,6 @@ describe("k2b notes · Produktions-SPA", () => {
     await search.fill("kürbis");
     await page.getByText("Nichts zu „kürbis“", { exact: true }).waitFor();
     expect(await page.getByRole("button", { name: "Notiz „kürbis“ anlegen", exact: true }).isVisible()).toBe(true);
-  }, 20_000);
-
-  test("Beispiel: Änderungen bleiben ungespeichert", async () => {
-    await importNotes();
-    const previousCount = await cards().count();
-    await page.goto(`${origin}/beispiel`);
-    await page.getByRole("status").filter({ hasText: "Beispiel · nichts wird gespeichert" }).waitFor();
-    // The Notebooks presentation renders the example's notice instead of its `:::note` source.
-    await page.locator(".cm-notice-card-widget").first().waitFor();
-    await editor().fill("Diese Beispieländerung darf nicht gespeichert werden");
-    await back().click();
-    await page.getByText("9 Notizen in diesem Browser", { exact: true }).waitFor();
-    expect(await cards().count()).toBe(previousCount);
-    expect(await cards().filter({ hasText: "Diese Beispieländerung" }).count()).toBe(0);
-    await page.goto(`${origin}/beispiel`);
-    await editor().waitFor();
-    expect(await editor().innerText()).not.toContain("Diese Beispieländerung");
-    // A tag shows as a pill; a click opens the overview filtered by it.
-    await page.locator(".n-tagpill", { hasText: "#ideen" }).click();
-    await page.waitForURL(`${origin}/?tag=ideen`);
   }, 20_000);
 
   test("Teilen: Zustimmung, sichtbarer 503-Fehler, Retry mit Links und einmaligem Cloud-Hinweis", async () => {
@@ -375,8 +397,8 @@ describe("k2b notes · Produktions-SPA", () => {
         expect(await cards().filter({ hasText: title }).first().isVisible()).toBe(true);
       }
       // The editor presentation is part of the offline app, not only the plain editor.
-      await page.goto(`${origin}/beispiel`);
-      await page.locator(".cm-notice-card-widget").first().waitFor();
+      await cards().filter({ hasText: "Lauftraining Herbst" }).first().click();
+      await page.locator(".n-tagpill", { hasText: "#sport" }).waitFor();
     } finally {
       await context.setOffline(false);
     }

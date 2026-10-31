@@ -1,6 +1,6 @@
 import { isPromise } from "node:util/types";
 import type { ReservedSQL, SQL, TransactionSQL } from "bun";
-import * as bun from "bun";
+import { createSql } from "../runtime/clients";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { boundTransaction } from "./authority";
 import { AppPwaError } from "./contracts";
@@ -22,8 +22,9 @@ const cancellationPool = (db: SQL) => {
   const connection: Record<string, string | number> = {};
   for (let index = 0; index + 1 < parts.length; index += 2) connection[parts[index]!] = parts[index + 1]!;
   connection.statement_timeout = requestBudget;
-  return new bun.SQL(`postgres://localhost?sslmode=${modes[sslMode]}`, {
+  return createSql({
     ...options,
+    adapter: "postgres",
     // Bun adds SNI to normalized prefer options. Passing that generated object
     // back as explicit TLS upgrades prefer to require. Recreate its default SNI
     // from hostname instead; explicit verification options remain unchanged.
@@ -35,6 +36,7 @@ const cancellationPool = (db: SQL) => {
     maxLifetime: REQUEST_IDLE_TIMEOUT_SECONDS,
     onconnect: undefined,
     onclose: undefined,
+    url: `postgres://localhost?sslmode=${modes[sslMode]}`,
   });
 };
 

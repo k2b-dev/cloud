@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { createAccess } from "../server/services/access";
 import { processAiDictation } from "./dictation-runtime";
 import { aiDictations } from "./dictations";

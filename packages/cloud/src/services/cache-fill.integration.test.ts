@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
-import { redis } from "bun";
 import { valkeySuite } from "../../../../scripts/fixtures/test-infra";
+import { redis } from "../runtime/clients";
 import { claimCacheFill, completeCacheFill } from "./cache-fill";
 
 const suite = valkeySuite();

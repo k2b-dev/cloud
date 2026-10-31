@@ -11,7 +11,8 @@
  * is an event. Nothing needs its own registration path.
  */
 import { Buffer } from "node:buffer";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import type { WorkflowJsonValue } from "../contracts";
 import { createWorkflowRun } from "./runs";
 import { withTransaction } from "./transaction";

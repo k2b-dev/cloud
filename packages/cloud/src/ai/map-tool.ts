@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { CapabilityCaller } from "../capabilities/server";
+import { sql } from "../runtime/clients";
 import { resolveAiCapabilityActor } from "./capability-execution";
 import { AiMapToolInputSchema, AiMapToolResultSchema, aiMapToolResult } from "./map-contracts";
 import { executeStoredAiMap } from "./map-execution";

@@ -5,7 +5,7 @@ import { type SQL, sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { CoreNotificationSender } from "../notifications";
-import { authenticateOAuthBroker, notifyOAuthNewAccessFamily, oauthBrokerBearer } from "./identity-oauth-issuance";
+import { authorizeOAuthRequest, notifyOAuthNewAccessFamily } from "./identity-oauth-issuance";
 
 const Scope = z.string().regex(/^[a-z][a-z0-9_:.-]{0,39}$/);
 const RequestSchema = z
@@ -98,7 +98,8 @@ export const createIdentityOAuthDeviceApprovalRoutes = (
     })
     .post("/oauth/device-approval", async (c) => {
       c.header("Cache-Control", "no-store");
-      if (!authenticateOAuthBroker(oauthBrokerBearer(c.req.header("authorization")))) return c.json({ code: "UNAUTHORIZED" }, 401);
+      const denied = await authorizeOAuthRequest(c);
+      if (denied) return denied;
       const contentLength = Number(c.req.header("content-length") ?? 0);
       if (Number.isFinite(contentLength) && contentLength > 262_144) return c.json({ code: "INVALID_REQUEST" }, 413);
       let body: unknown;

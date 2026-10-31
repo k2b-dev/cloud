@@ -1,12 +1,12 @@
 import { beforeAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import type { Provider } from "@k2b/nessi";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../../src/runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { aiLive, aiLiveChannels } from "../../src/ai/live";
 import { aiModelAccess } from "../../src/ai/model-access";

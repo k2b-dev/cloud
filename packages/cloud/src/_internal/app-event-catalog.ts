@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { CapabilityEventCatalogEntry, CapabilityManifest } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 
 export type CatalogSubscription = CapabilityEventCatalogEntry["subscribers"][number] & { eventType: string; version: number };
 

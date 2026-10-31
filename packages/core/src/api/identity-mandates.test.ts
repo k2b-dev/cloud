@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { env } from "@k2b/cloud/config/env";
 import { CAPABILITY_MAX_REQUEST_BYTES } from "@k2b/cloud/contracts";
+import { sendAppRequest } from "@k2b/cloud/services/identity";
 import type { Mandate } from "@k2b/cloud/services/mandates";
 import { ok } from "@k2b/stdlib";
 import { createIdentityMandateRoutes } from "./identity-mandates";
@@ -247,4 +249,45 @@ describe("owner mandate lifecycle routes", () => {
     }
     expect(calls.map(({ action }) => action)).toEqual(["confirm", "policy", "pause", "revoke"]);
   });
+});
+
+test("the shared keyless sender confirms a mandate through the owner route", async () => {
+  const originalKey = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_KEY")!;
+  Object.defineProperty(env, "CLOUD_APP_KEY", { value: undefined, configurable: true });
+  let confirmations = 0;
+  const routes = createIdentityMandateRoutes({
+    authenticateWorkload: async (input) => {
+      expect(input).toEqual({ token: "workload-secret", appId: "mail", scope: "identity:invoke" });
+      return { appId: input.appId, serviceAccountId: SERVICE_ACCOUNT_ID, credentialId: CREDENTIAL_ID, scope: "identity:invoke" };
+    },
+    service: {
+      get: async () => mandate,
+      confirm: async (input) => {
+        confirmations++;
+        expect(input.authority).toEqual({ kind: "workload", ownerAppId: "mail" });
+        return ok(mandate);
+      },
+      updatePolicy: async () => ok(mandate),
+      pause: async () => ok(mandate),
+      revoke: async () => ok(mandate),
+    },
+  });
+  try {
+    const response = await sendAppRequest(
+      new Request(`http://core.test/mandates/${MANDATE_ID}/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedRevision: 3 }),
+      }),
+      {
+        appId: "mail",
+        bearer: () => "workload-secret",
+        transport: async (request) => routes.request(request),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(confirmations).toBe(1);
+  } finally {
+    Object.defineProperty(env, "CLOUD_APP_KEY", originalKey);
+  }
 });

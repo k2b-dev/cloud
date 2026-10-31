@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
-import { env } from "../../config/env";
+import { redis, sql } from "../../runtime/clients";
+import { connections } from "../../runtime/connections";
+import { stubConnections } from "../../runtime/connections.test-fixture";
 import { encryptValue } from "./crypto";
 import { registerSettings, SETTINGS } from "./defaults";
 import { readEnvSettingsStatus } from "./env-status";
@@ -112,7 +113,7 @@ suite("environment-backed settings", () => {
   });
 
   test("startup never overwrites a stored row that this APP_SECRET cannot decrypt", async () => {
-    const original = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
+    const original = connections();
     const adminValue = "http://renderer.saved-under-a.test:3000";
     const ciphertext = await encryptValue(adminValue);
     await sql`
@@ -123,7 +124,7 @@ suite("environment-backed settings", () => {
     await redis.del(`settings:${key}`);
     environment = "http://renderer.environment-of-b.test:3000";
     const warn = spyOn(console, "warn");
-    Object.defineProperty(env, "APP_SECRET", { value: "a-different-secret-b", configurable: true });
+    const secretStub = stubConnections({ ...original, appSecret: { current: "a-different-secret-b" } });
     try {
       await settings.loadCache();
       const [row] = await sql<{ value: string; updated_at: Date }[]>`SELECT value, updated_at FROM settings.entries WHERE key = ${key}`;
@@ -141,7 +142,7 @@ suite("environment-backed settings", () => {
       }
     } finally {
       warn.mockRestore();
-      Object.defineProperty(env, "APP_SECRET", original);
+      secretStub.mockRestore();
       await redis.del(`settings:${key}`);
     }
     // The application with the original key still reads the saved value.

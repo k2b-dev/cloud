@@ -31,7 +31,7 @@ test("preferences expose localized exclusions, discard older selections, and rej
     globalThis.notificationUserSql = sql;
     Bun.plugin({ name: "notification-user-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/]user\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationUserSql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationUserSql;'), loader: "ts",
       }));
     }});
     mock.module(${JSON.stringify(new URL("./channels.ts", import.meta.url).pathname)}, () => ({ listNotificationChannels: () => ["browser", "email"] }));

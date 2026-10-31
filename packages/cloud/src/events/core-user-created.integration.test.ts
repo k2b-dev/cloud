@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
 import { migrate as migrateLogging } from "../../../core/src/migrate/core/logging";
 import type { AppEventEnvelope } from "../contracts/app-events";
+import { sql } from "../runtime/clients";
 import { freeipa } from "../server/services";
 import * as freeIpaConfig from "../services/freeipa-config";
 import { syncFromIpa } from "../services/ipa/sync";
@@ -14,6 +14,7 @@ import { startAppEventDelivery } from "./app-event-delivery";
 import { coreUserEventPublisher } from "./core-user-created";
 
 let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
+
 beforeAll(async () => {
   if (!testInfra.database) return;
   database = await useFreshDatabase("user_created_events");

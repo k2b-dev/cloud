@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { AiModelAccessConflict, aiModelAccess } from "../../src/ai/model-access";
 import { migrateAiModelAccess } from "../../src/ai/model-access-migrate";
 import type { Principal } from "../../src/contracts/shared";
+import { sql } from "../../src/runtime/clients";
 
 const suite = databaseSuite();
 const draft = <T extends Principal>(principal: T) => ({ principal, permission: "read" as const });

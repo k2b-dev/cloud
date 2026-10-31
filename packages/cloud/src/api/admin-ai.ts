@@ -1,4 +1,3 @@
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { setAiCredential } from "../ai/credentials";
@@ -15,6 +14,7 @@ import {
   testAiProvider,
 } from "../ai/provider-connections";
 import { getAiRequestHeaders, setAiRequestHeaders } from "../ai/request-headers";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, v } from "../server";
 import { ConfigConflict } from "../services/config-conflict";
 import { ImageMetadataError } from "../services/image-metadata";

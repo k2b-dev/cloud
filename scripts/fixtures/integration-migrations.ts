@@ -3,9 +3,10 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { sql } from "bun";
 import { appIds, workspaceRoot } from "../workspace";
-import { requireInfra } from "./test-infra";
+import { initializeTestPlatform, requireInfra } from "./test-infra";
 
 export const migrateIntegrationDatabase = async (): Promise<void> => {
+  await initializeTestPlatform();
   const { runCoreSetup } = await import("../../packages/core/src/runtime-helpers");
   await runCoreSetup();
 

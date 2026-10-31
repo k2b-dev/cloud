@@ -15,8 +15,8 @@ const Metadata = z.object({
   version: Envelope.shape.version.catch(1),
 });
 
-export function createEventAcceptance(db: SQL, reconcile: () => Promise<void>) {
-  const markSeen = async (sequence: number, tx: SQL = db) => {
+export function createEventAcceptance(db: () => SQL, reconcile: () => Promise<void>) {
+  const markSeen = async (sequence: number, tx: SQL = db()) => {
     // Keep holes until replay or the periodic DLQ/retention check accounts for them.
     // Advancing the high watermark alone would hide eviction before the next tick.
     await tx`
@@ -36,7 +36,7 @@ export function createEventAcceptance(db: SQL, reconcile: () => Promise<void>) {
       return;
     }
     const { id, type, source, version } = metadata.data;
-    await db.begin(async (tx) => {
+    await db().begin(async (tx) => {
       // Invalid or oversized input is represented by metadata only, never a second failing payload insert.
       await tx`
         INSERT INTO events.app_events(id, type, version, source, subject_key, envelope, state, code)
@@ -61,7 +61,7 @@ export function createEventAcceptance(db: SQL, reconcile: () => Promise<void>) {
     } catch {
       log.warn("Declaration refresh failed; accepting against persisted declarations", { sequence });
     }
-    const [declaration] = await db<StoredDeclaration[]>`
+    const [declaration] = await db()<StoredDeclaration[]>`
       SELECT * FROM events.app_declarations
       WHERE app_id = ${envelope.source} AND type = ${envelope.type} AND version = ${envelope.version}
     `;
@@ -85,7 +85,7 @@ export function createEventAcceptance(db: SQL, reconcile: () => Promise<void>) {
     }
     const subjectKey = `${envelope.subject.type}:${envelope.subject.id}`;
     try {
-      await db.begin(async (tx) => {
+      await db().begin(async (tx) => {
         const inserted = await tx`
           INSERT INTO events.app_events(id, type, version, source, subject_key, envelope, state, code)
           VALUES (${envelope.id}::uuid, ${envelope.type}, ${envelope.version}, ${envelope.source}, ${subjectKey},

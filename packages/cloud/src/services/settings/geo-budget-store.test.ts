@@ -1,6 +1,9 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import routes from "../../api/admin-core-settings";
+import { sql } from "../../runtime/clients";
+import { stubConnections } from "../../runtime/connections.test-fixture";
 import { session } from "../session";
 import { buildProjectedUser } from "../session/user";
 import { decryptValue, encryptValue } from "./crypto";
@@ -9,19 +12,19 @@ import { assertGeoBudgetPair } from "./geo-budget";
 import * as settings from "./index";
 import * as store from "./store";
 
-const previousSecret = process.env.APP_SECRET;
+useUnitClients();
+
+let secretStub: ReturnType<typeof stubConnections> | undefined;
 const month = "geo.monthly_budget_credits",
   day = "geo.person_daily_credits";
 const clients: SQL[] = [];
 const actorId = "00000000-0000-4000-8000-000000000003";
-beforeAll(() => {
-  process.env.APP_SECRET = "test-only-geo-budget";
-});
+
 afterAll(() => {
-  if (previousSecret === undefined) delete process.env.APP_SECRET;
-  else process.env.APP_SECRET = previousSecret;
+  secretStub?.mockRestore();
 });
 beforeEach(() => {
+  secretStub = stubConnections({ appSecret: { current: "test-only-geo-budget" } });
   spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-02T03:04:05Z"));
   const user = buildProjectedUser({
     id: actorId,

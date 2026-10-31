@@ -14,7 +14,7 @@ Die Kontoeinstellungen verlinken mit **Dokumentation** die passende englische An
 
 :::reference
 - **Übersicht:** Listet die registrierten Apps mit Administrationsseiten. Sie zählt außerdem die registrierten Apps, die Administrationsseiten, die du öffnen kannst, und die Navigationseinträge, die Personen sehen.
-- **App-Schlüssel:** Erstelle einen benannten Schlüssel, mit dem eine App im Hintergrund andere Apps aufruft. Nutzermandate begrenzen weiterhin die Aktionen, die mit dem Schlüssel erlaubt sind.
+- **Apps:** Jede App mit Zustand, Zugriff, Schlüsseln und Ereignissen. Öffne eine App, um zu sehen, warum sie Aufmerksamkeit braucht und was zu tun ist. Unter **Schlüssel** stehen auch die Tokens für Apps, die auf dem Host laufen. Nutzermandate begrenzen weiterhin die Aktionen, die ein Schlüssel oder Token ausführen darf.
 - **Ankündigungen:** Erstelle und bearbeite Ankündigungen oder Banner. Ein Eintrag ist aktiv, geplant oder abgelaufen, je nach Veröffentlichungszeit und Ablaufzeit.
 - **Einstellungen:** Bearbeite die Einstellungen nach Gruppen. Jedes Feld zeigt seinen aktuellen Wert. Wo der Einstellungsdienst sie bereitstellt, zeigt es auch die Quelle des Werts.
 :::
@@ -69,22 +69,22 @@ FreeIPA und die Gruppenzuordnung für die Administration richtest du in den Eins
 
 ## App-Schlüssel rotieren {icon="key"}
 
-Core stellt App-Schlüssel automatisch aus und rotiert sie. **App-Schlüssel**
-zeigt sie als `Runtime <Instanz>` an. Wenn du einen automatischen Schlüssel
+Core stellt App-Schlüssel automatisch aus und rotiert sie. Öffne unter **Apps** die App,
+dann **Schlüssel → Tokens für Host-Betrieb**. Dort stehen sie als `Runtime <Instanz>`. Wenn du einen automatischen Schlüssel
 widerrufst, wird der Hintergrundzugriff aller Instanzen dieser App deaktiviert,
-auch nach einem Neustart. Wähle in derselben Tabelle **App-Hintergrundzugriff
+auch nach einem Neustart. Wähle oben unter **Schlüssel** **Wieder
 aktivieren**, um ihn wieder freizugeben. Die App erhält dann automatisch einen
 neuen Schlüssel. Bei einem Host-Override muss ein widerrufener Schlüssel
 weiterhin manuell ersetzt werden. Die folgenden Schritte dienen einem optionalen
 Override für eine App auf dem Host.
 
-Unter **App-Schlüssel** findest du die vorhandenen Schlüssel in einer Tabelle.
+Unter **Schlüssel → Tokens für Host-Betrieb** findest du die vorhandenen Tokens.
 
 :::steps
-1. Öffne **App-Schlüssel → Schlüssel erstellen**.
-2. Wähle im Dialog die **Anwendung**.
+1. Öffne unter **Apps** die App und dann **Schlüssel**.
+2. Klappe **Tokens für Host-Betrieb** auf und wähle **Token erstellen**.
 3. Gib unter **Name** einen Namen und bei Bedarf die Ablaufzeit ein.
-4. Wähle im Dialog **Schlüssel erstellen**.
+4. Wähle im Dialog **Token erstellen**.
 5. Kopiere den Token. Cloud zeigt ihn nur einmal; danach bleiben nur seine Metadaten und **Widerrufen** verfügbar.
 :::
 

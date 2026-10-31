@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
 import { testFor } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { audit, sanitizeAuditMetadata, sanitizeAuditText } from "./index";
 
 describe("sanitizeAuditMetadata", () => {

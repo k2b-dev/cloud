@@ -8,3 +8,6 @@ export const initializeTestPlatform = async (appId = hasConnections() ? connecti
   const { initializePlatform } = await import("../../packages/cloud/src/start");
   await initializePlatform({ appId, source: "env" });
 };
+
+export { connectNats } from "../../packages/cloud/src/_internal/nats-connection";
+export { stubConnections } from "../../packages/cloud/src/runtime/connections.test-fixture";

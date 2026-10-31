@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
 import webpush from "web-push";
 import { z } from "zod";
 import { notificationGroupTag } from "../../contracts/notification-group";
 import { isSafeNotificationTargetHref } from "../../contracts/notification-types";
 import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "../../contracts/user-notifications";
+import { sql } from "../../runtime/clients";
 import { decryptSecret, encryptSecret } from "../secrets";
 import { coreSettings } from "../settings/api";
 import { SettingUnreadableError } from "../settings/store";

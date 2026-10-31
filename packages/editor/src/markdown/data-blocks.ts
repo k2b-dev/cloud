@@ -2,6 +2,7 @@ import { type EditorState, type Extension, Prec, type Range, RangeSet, StateFiel
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
 import { holdsDecorations, refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 import { type DataBlock, extractDataBlocks, namedBlockBody, renderDataBlockHtml } from "./lib/named-blocks";
+import { blockAnchorsDrawnElsewhere } from "./named-blocks";
 
 type DataBlockRange = {
   from: number;
@@ -52,8 +53,10 @@ class DataBlockWidget extends WidgetType {
 
   override get estimatedHeight() {
     const rows = Math.max(1, this.body.split("\n").filter((line) => line.trim().length > 0).length);
-    // 12px / 16px cells + 16px padding + divider; the handle and outer padding round up to 44px.
-    return 44 + rows * 33;
+    // 12px / 16px cells + 16px padding + divider per row; the anchor label (18px line), its margins and the outer
+    // padding take just under 44px. Chromium and WebKit round the rows differently (one and two rows measured
+    // 75.98 / 109.19px and 109.89px), so the base keeps the estimate at most 1px above both.
+    return 43.95 + rows * 33;
   }
 
   override ignoreEvent() {
@@ -76,6 +79,8 @@ export const dataBlocksExtension = (): Extension => {
     },
     provide(field) {
       return [
+        // The data block widget draws its anchor label together with the block.
+        blockAnchorsDrawnElsewhere.of("data"),
         EditorView.decorations.from(field, (value) => value.decorations),
         EditorView.atomicRanges.of((view) => view.state.field(field).blockWidgetDecorations),
       ];

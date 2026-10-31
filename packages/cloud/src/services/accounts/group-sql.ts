@@ -1,4 +1,5 @@
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
+import { sql } from "../../runtime/clients";
 
 type SqlFragment = SQLQuery;
 type SqlValue = SQLQuery | string;

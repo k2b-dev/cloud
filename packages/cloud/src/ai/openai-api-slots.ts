@@ -1,4 +1,5 @@
-import { redis } from "bun";
+import { redis } from "../runtime/clients";
+
 import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
 

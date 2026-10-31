@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
-import { redis } from "bun";
 import { valkeySuite } from "../../../../scripts/fixtures/test-infra";
+import { redis } from "../runtime/clients";
 import { RateLimitError, ratelimit } from "./ratelimit";
 
 const suite = valkeySuite();

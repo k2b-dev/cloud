@@ -1,5 +1,6 @@
 import { domainToUnicode } from "node:url";
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { toPgTextArray } from "../services/postgres";
 
 /** The longest address web_extract and fetch_file accept; a longer one can never be read, so it is never recorded. */

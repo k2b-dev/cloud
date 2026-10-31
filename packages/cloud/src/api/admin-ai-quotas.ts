@@ -1,9 +1,9 @@
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { AiBackgroundCostError, backgroundCostState, releaseBackgroundCostStop } from "../ai/inference-calls";
 import { quotaAdminConfig, quotaReport } from "../ai/quota-report";
 import { AiQuotaError, aiQuotas } from "../ai/quotas";
 import { readAiSettingsState } from "../ai/settings";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, v } from "../server";
 import { hasBillableAiPricing } from "../shared/ai-costs";
 import {

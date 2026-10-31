@@ -1,11 +1,23 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
-import * as bun from "bun";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { SQL, type TransactionSQL } from "bun";
+import * as clients from "../runtime/clients";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import { boundTransaction } from "./authority";
 import { withAppPwaTransaction, withAppPwaTransactionLease } from "./transaction";
 
+let snapshot: ReturnType<typeof stubConnections>;
+beforeEach(() => {
+  snapshot = stubConnections();
+});
+afterEach(() => snapshot.mockRestore());
+
 const NativeSQL = SQL;
-afterEach(() => Object.defineProperty(bun, "SQL", { value: NativeSQL }));
+const nativeCreateSql = clients.createSql;
+let restoreFactory: (() => void) | undefined;
+afterEach(() => {
+  restoreFactory?.();
+  restoreFactory = undefined;
+});
 
 const fixture = () => {
   const statements: string[] = [];
@@ -243,19 +255,15 @@ const lifecycleFixture = (sslMode = "verify-full") => {
       controlEvents.push("pool close");
     },
   });
-  Object.defineProperty(bun, "SQL", {
-    value: new Proxy(NativeSQL, {
-      construct(_target, args) {
-        controlOptions.push(args);
-        // Exercise the real installed constructor; constructing options does not
-        // open a socket. The returned pool below still supplies only fake SQL.
-        const parsed: unknown = Reflect.construct(NativeSQL, args);
-        if (typeof parsed !== "function" || !("options" in parsed)) throw new Error("Expected native SQL options");
-        controlNormalized.push(parsed.options);
-        return pool;
-      },
-    }),
+  const factory = spyOn(clients, "createSql").mockImplementation((options) => {
+    controlOptions.push([options]);
+    // Exercise the platform factory and native option normalization without a socket.
+    const parsed = nativeCreateSql(options);
+    controlNormalized.push(parsed.options);
+    void parsed.close();
+    return pool;
   });
+  restoreFactory = () => factory.mockRestore();
   return {
     db,
     statements,
@@ -342,8 +350,8 @@ test.each(["SET CONSTRAINTS ALL IMMEDIATE", "COMMIT"])(
     expect(f.controlCalls[0]?.statement).toContain("extract(epoch FROM backend_start)::text");
     expect(f.controlOptions).toMatchObject([
       [
-        "postgres://localhost?sslmode=verify-full",
         {
+          url: "postgres://localhost?sslmode=verify-full",
           adapter: "postgres",
           hostname: "invalid.test",
           database: "unused_test",

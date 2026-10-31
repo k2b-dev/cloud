@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { logger } from "../services/logging";
 
 const log = logger("capabilities:claims");

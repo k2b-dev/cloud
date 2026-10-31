@@ -17,9 +17,18 @@ export type PlatformConnectionValues = {
 export type PlatformConnectionSources = {
   [Group in keyof PlatformConnectionValues]: { [Key in keyof PlatformConnectionValues[Group]]: ConnectionSource };
 };
+/** Credential-free capability metadata; absent on older processes means unknown. */
+export type PlatformBootstrapMetadata = {
+  keyId?: string;
+  mode: "core" | "env";
+  sources: PlatformConnectionSources;
+  keyFormat: "cloud-app-key-v1";
+  protocol: 1;
+};
 export type PlatformConnections = PlatformConnectionValues & {
   appId: string;
   sources: PlatformConnectionSources;
+  bootstrap?: PlatformBootstrapMetadata;
 };
 
 let current: PlatformConnections | undefined;

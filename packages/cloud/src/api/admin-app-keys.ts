@@ -21,7 +21,12 @@ const pagination = z.object({
   perPage: z.coerce.number().int().min(1).max(500).default(100),
 });
 const input = z
-  .object({ publicKey: z.string().length(43), name: z.string().trim().min(1).max(120).optional(), expiresAt: z.iso.datetime().optional() })
+  .object({
+    publicKey: z.string().length(43),
+    name: z.string().trim().min(1).max(120).optional(),
+    expiresAt: z.iso.datetime().optional(),
+    grants: z.array(z.literal("oauth:issue")).max(1).optional(),
+  })
   .strict();
 
 export const createAdminAppKeyRoutes = (

@@ -49,6 +49,26 @@ export const CORE_SETTINGS = {
       },
     },
   },
+  "gateway.ingress_cert_resolver": {
+    kind: "string",
+    default: "le",
+    label: "App domain certificate resolver",
+    description:
+      "Traefik certificate resolver used by app domain routers. Must name a configured ACME resolver; changes apply within five seconds.",
+    validate: (value: unknown) =>
+      typeof value === "string" && /^[a-zA-Z0-9_-]+$/.test(value)
+        ? undefined
+        : "Use a Traefik certificate resolver name (letters, digits, underscores or hyphens).",
+    presentation: {
+      translations: {
+        de: {
+          label: "Zertifikatsresolver für App-Domains",
+          description:
+            "Traefik-Zertifikatsresolver der App-Domains. Muss einen konfigurierten ACME-Resolver benennen; Änderungen wirken innerhalb von fünf Sekunden.",
+        },
+      },
+    },
+  },
   "gateway.trusted_proxies": {
     kind: "string_list",
     default: DEFAULT_TRUSTED_PROXIES,

@@ -31,6 +31,7 @@ export const platformStartFixture = async ({
   nats,
   creds,
   namespace,
+  bootstrap,
 }: {
   appId?: string;
   lifecycle?: boolean;
@@ -39,6 +40,8 @@ export const platformStartFixture = async ({
   nats?: string;
   creds?: string;
   namespace?: string;
+  /** Custom-server seam; full app.start key-only operation waits for the import migration. */
+  bootstrap?: { key: string; origin: string; now: number };
 } = {}): Promise<void> => {
   const root = await mkdtemp(join(tmpdir(), "cloud-platform-start-"));
   let runtime: ReturnType<typeof Bun.spawn> | undefined;
@@ -71,10 +74,15 @@ export const platformStartFixture = async ({
       const reference = new SQL({ url: connections().database.url });
       if (Object.getPrototypeOf(sql) !== Object.getPrototypeOf(reference) || !(redis instanceof RedisClient)) throw new Error("app imported before native clients");
       await reference.close();
+      if (process.env.FIXTURE_BOOTSTRAP === "true") {
+        await sql\`SELECT 1\`;
+        await redis.ping();
+      }
       const callback = () => {}; redis.onconnect = callback;
       const native = typeof sql.listen === "function" && redis.onconnect === callback;
       const fetch = async (request, server) => {
         if (new URL(request.url).pathname === "/socket" && server.upgrade(request)) return;
+        if (new URL(request.url).pathname === "/_cloud/ready") return Response.json({ status: "ready", appId: connections().appId });
         return Response.json({ native, appId: connections().appId });
       };
       const started = process.env.FIXTURE_LIFECYCLE === "true"
@@ -83,6 +91,9 @@ export const platformStartFixture = async ({
       export default { ...started, websocket: { message(socket, message) { socket.send(message); } } };
     `,
     );
+    // A fixed clock keeps proofs deterministic across the parent Core and child runtime.
+    const clock = join(appDir, "clock.ts");
+    if (bootstrap) await writeFile(clock, `Date.now = () => ${bootstrap.now};`);
     // Production config/plugin discovery must remain offline, even with no infrastructure values.
     const env = { PATH: process.env.PATH, NODE_ENV: "production", APP_ID: appId, APP_DIR: appDir };
     if (appId === "inventory") {
@@ -115,29 +126,38 @@ export const platformStartFixture = async ({
     for (const dev of [false, true]) {
       runtime = Bun.spawn(
         dev
-          ? [process.execPath, "--no-env-file", "--preload", join(packageDir, "scripts/preload.ts"), join(appDir, "src/index.ts")]
-          : [process.execPath, "--no-env-file", bundle],
+          ? [
+              process.execPath,
+              "--no-env-file",
+              ...(bootstrap ? ["--preload", clock] : []),
+              "--preload",
+              join(packageDir, "scripts/preload.ts"),
+              join(appDir, "src/index.ts"),
+            ]
+          : [process.execPath, "--no-env-file", ...(bootstrap ? ["--preload", clock] : []), bundle],
         {
           cwd: dev ? appDir : dirname(bundle),
           env: {
             ...env,
             FIXTURE_PORT: String(port),
-            CLOUD_APP_KEY: appId === "core" || appId === "gateway" ? "fixture-key-must-be-ignored" : undefined,
-            DATABASE_URL: lifecycle ? database! : "postgres://127.0.0.1:1/unused_test",
-            REDIS_URL: lifecycle ? valkey! : "redis://127.0.0.1:1",
-            NATS_SERVERS: lifecycle ? nats! : "",
+            CLOUD_APP_KEY: bootstrap?.key,
+            CLOUD_CORE_INTERNAL_ORIGIN: bootstrap?.origin,
+            DATABASE_URL: bootstrap ? undefined : lifecycle ? database! : "postgres://127.0.0.1:1/unused_test",
+            REDIS_URL: bootstrap ? undefined : lifecycle ? valkey! : "redis://127.0.0.1:1",
+            NATS_SERVERS: bootstrap ? undefined : lifecycle ? nats! : "",
             NATS_CREDS_FILE: lifecycle ? creds : undefined,
-            SYNC_NAMESPACE: lifecycle ? namespace! : "",
-            SYNC_REPLICAS: "1",
-            APP_SECRET: process.env.APP_SECRET ?? "fixture-only-secret",
+            SYNC_NAMESPACE: bootstrap ? undefined : lifecycle ? namespace! : "",
+            SYNC_REPLICAS: bootstrap ? undefined : "1",
+            APP_SECRET: bootstrap ? undefined : (process.env.APP_SECRET ?? "fixture-only-secret"),
             FIXTURE_LIFECYCLE: String(lifecycle),
+            FIXTURE_BOOTSTRAP: String(!!bootstrap),
           },
           stdout: "pipe",
           stderr: "pipe",
         },
       );
       const address = `http://127.0.0.1:${port}`;
-      const deadline = Date.now() + 15_000;
+      const deadline = performance.now() + 15_000;
       while (true) {
         if (runtime.exitCode !== null) {
           const stderr = runtime.stderr;
@@ -149,7 +169,7 @@ export const platformStartFixture = async ({
           await fetch(address, { signal: AbortSignal.timeout(500) });
           break;
         } catch {
-          if (Date.now() >= deadline) throw new Error("Fixture did not listen");
+          if (performance.now() >= deadline) throw new Error("Fixture did not listen");
           await Bun.sleep(50);
         }
       }
@@ -176,7 +196,7 @@ export const platformStartFixture = async ({
         clearTimeout(socketTimer);
         socket.close();
       }
-      if (lifecycle) {
+      if (lifecycle || bootstrap) {
         const readiness = await fetch(`${address}/_cloud/ready`);
         expect(readiness.status).toBe(200);
         expect(await readiness.json()).toMatchObject({ status: "ready", appId });

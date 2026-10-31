@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import {
   buildAccessPrincipalCondition,
   getEffectiveGroupIds,

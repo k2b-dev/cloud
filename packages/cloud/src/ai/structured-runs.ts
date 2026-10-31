@@ -1,5 +1,6 @@
 import type { Usage } from "@k2b/nessi";
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { logger } from "../services/logging";
 
 export type AiUsageAttribution = {

@@ -6,7 +6,12 @@ export const storageView = {
   totalMiB: 250,
   unreadable: { "assistant.storage_file_mib": true, "assistant.storage_total_mib": false },
 };
-export const databaseView = { url: "", tokenSet: false, unreadable: { "assistant.rsql_url": true, "assistant.rsql_api_token": true } };
+export const databaseView = {
+  url: "",
+  tokenSet: false,
+  allowedTargets: [] as string[],
+  unreadable: { "assistant.rsql_url": true, "assistant.rsql_api_token": true, "assistant.rsql_allowed_targets": false },
+};
 export const retentionView = {
   contentDays: 30,
   recordDays: 90,
@@ -40,7 +45,7 @@ export const previewViews = (late: boolean) => ({
     ...databaseView,
     url: late ? "https://database.example.test" : "",
     tokenSet: late,
-    unreadable: { "assistant.rsql_url": !late, "assistant.rsql_api_token": !late },
+    unreadable: { "assistant.rsql_url": !late, "assistant.rsql_api_token": !late, "assistant.rsql_allowed_targets": false },
   },
   linux: { ...linuxOverview, config: { ...linuxOverview.config, unreadable: !late } },
   outgoing: { ...retentionView, unreadable: { ...retentionView.unreadable, "outgoing_mail.content_retention_days": !late } },

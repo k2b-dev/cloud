@@ -1,4 +1,4 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type {
   BaseUser,
   MutationResult,
@@ -9,6 +9,7 @@ import type {
   UserProfile,
   UserProvider,
 } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { createAuthLoginUrl } from "../../shared/redirect";
 import { isAccountCategoryAllowed } from "../account-category-policy";

@@ -7,7 +7,6 @@ import type { TableHost } from "@k2b/ui/text-editor";
 import { displayCell, findTables, type Table } from "@k2b/ui/text-editor/model";
 import { isFormula } from "../formula";
 import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
-import { extractNamedBlocks } from "./lib/named-blocks";
 import { applyLigatures } from "./ligatures";
 import { createPrettyTablePresentation, formatFormulaValue, type PrettyTableData, type PrettyTableOptions } from "./pretty-table";
 import { formulaPreviewWidget } from "./tables";
@@ -32,30 +31,6 @@ const presentationData = (table: Table): PrettyTableData => {
     Array.from({ length: width }, (_, column) => displayCell(line?.cells[column]?.text ?? ""));
   return { headers: values(table.lines[0]), rows: table.lines.slice(2).map(values), align: table.align };
 };
-
-const captionDecorations = (state: EditorState): DecorationSet => {
-  const source = state.doc.toString();
-  const starts = new Set(findTables(source).map((table) => table.from));
-  return Decoration.set(
-    extractNamedBlocks(source)
-      .filter((block) => block.type === "table" && starts.has(block.blockStart))
-      .map((block) =>
-        // Keep the actual handle editable. namedBlocksExtension skips table handles;
-        // tableGrid starts on the header, so neither extension renders a second caption.
-        Decoration.mark({ class: "md-block-handle cm-notebook-table-caption", attributes: { "data-block-name": block.name } }).range(
-          block.handleStart,
-          block.handleEnd,
-        ),
-      ),
-    true,
-  );
-};
-
-const tableCaptions = StateField.define<DecorationSet>({
-  create: captionDecorations,
-  update: (value, tr) => (tr.docChanged ? captionDecorations(tr.state) : value),
-  provide: (field) => EditorView.decorations.from(field),
-});
 
 const presentationTheme = EditorView.theme({
   ".k2b-ste-table .cm-notebook-formula-editor": {
@@ -85,7 +60,6 @@ const presentationTheme = EditorView.theme({
 
   ".k2b-ste-table .k2b-ste-cell > .md-table-cell": { padding: "0", minHeight: "0" },
   ".k2b-ste-table tr:has([data-notebook-total]) > td": { borderTop: "1px solid var(--ui-border-strong)", fontWeight: "600" },
-  ".cm-notebook-table-caption": { margin: "0" },
   ".cm-notebook-formula-copy": {
     display: "inline-flex",
     alignItems: "center",
@@ -216,7 +190,7 @@ export const createNotebookTablePresentation = (
 } => {
   const snapshots = new WeakMap<Table, { locale: string; presentation: ReturnType<typeof createPrettyTablePresentation> }>();
   return {
-    extension: [tableCaptions, presentationTheme, activeFormulaPreview(options)],
+    extension: [presentationTheme, activeFormulaPreview(options)],
     renderCell(element, _raw, table, row, column) {
       const locale = options.locale?.() ?? (element.ownerDocument.documentElement.lang || "en");
       let snapshot = snapshots.get(table);

@@ -64,6 +64,7 @@ export { createRedis, createSql, redis, type SqlPoolOptions, sql } from "./runti
 export {
   type ConnectionSource,
   connections,
+  type PlatformBootstrapMetadata,
   type PlatformConnectionSources,
   type PlatformConnections,
   type PlatformConnectionValues,

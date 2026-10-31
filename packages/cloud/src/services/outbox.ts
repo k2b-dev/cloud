@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { logger } from "./logging";
 
 /**
@@ -66,9 +67,9 @@ export type PgOutbox<Row extends OutboxRow> = {
   stop(): Promise<void>;
 };
 
-const identifier = (name: string, label: string): ReturnType<typeof sql.unsafe> => {
+const identifier = (name: string, label: string) => {
   if (!name.split(".").every((part) => IDENTIFIER.test(part))) throw new Error(`Invalid outbox ${label}: ${name}`);
-  return sql.unsafe(name);
+  return name;
 };
 
 export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row>): PgOutbox<Row> => {
@@ -81,7 +82,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const log = logger(config.name);
   const filters = Object.entries(config.where ?? {}).map(([column, value]) => ({ column: identifier(column, "filter column"), value }));
   const matches = (alias: "current" | "busy") =>
-    filters.reduce((fragment, { column, value }) => sql`${fragment} AND ${sql.unsafe(alias)}.${column} = ${value}`, sql``);
+    filters.reduce((fragment, { column, value }) => sql`${fragment} AND ${sql.unsafe(alias)}.${sql.unsafe(column)} = ${value}`, sql``);
   // Sorted, so the order of the `where` entries cannot give one outbox two locks. Descending keeps the
   // lock that live outboxes (`kind`, `app_id`) always took, so replicas of two releases share it.
   const where = Object.entries(config.where ?? {}).sort(([left], [right]) => (left < right ? 1 : -1));
@@ -115,28 +116,28 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       return tx<Row[]>`
         WITH candidates AS MATERIALIZED (
           SELECT current.id
-          FROM ${table} current
+          FROM ${sql.unsafe(table)} current
           WHERE (current.attempts = 0 OR current.next_attempt_at <= now())
             AND (current.claimed_until IS NULL OR current.claimed_until <= now())
             ${matches("current")}
             AND NOT EXISTS (
               SELECT
-              FROM ${table} busy
-              WHERE busy.${runColumn} = current.${runColumn}
+              FROM ${sql.unsafe(table)} busy
+              WHERE busy.${sql.unsafe(runColumn)} = current.${sql.unsafe(runColumn)}
                 AND (busy.claimed_until > now() OR (busy.attempts > 0 AND busy.next_attempt_at > now()))
                 ${matches("busy")}
               OFFSET 0
             )
-          ORDER BY current.${sequence}
+          ORDER BY current.${sql.unsafe(sequence)}
           LIMIT ${cap}
           FOR UPDATE SKIP LOCKED
         ), claimed AS (
-          UPDATE ${table} outbox
+          UPDATE ${sql.unsafe(table)} outbox
           SET claimed_until = now() + (${claimMs} * interval '1 millisecond')
           WHERE outbox.id = ANY(ARRAY(SELECT id FROM candidates))
           RETURNING outbox.*
         )
-        SELECT * FROM claimed ORDER BY ${sequence}
+        SELECT * FROM claimed ORDER BY ${sql.unsafe(sequence)}
       `;
     });
 
@@ -145,7 +146,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     const message = error instanceof Error ? error.message : String(error);
     const delaySeconds = Math.min(300, 2 ** Math.min(attempts, 8));
     await sql`
-      UPDATE ${table}
+      UPDATE ${sql.unsafe(table)}
       SET attempts = ${attempts},
           next_attempt_at = now() + (${delaySeconds} * interval '1 second'),
           claimed_until = NULL,
@@ -158,7 +159,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const dispatch: PgOutbox<Row>["dispatch"] = async (row, publish = config.publish) => {
     try {
       await publish(row);
-      await sql`DELETE FROM ${table} WHERE id = ${row.id}::uuid AND attempts = ${row.attempts}`;
+      await sql`DELETE FROM ${sql.unsafe(table)} WHERE id = ${row.id}::uuid AND attempts = ${row.attempts}`;
     } catch (error) {
       await retryLater(row, error);
     }
@@ -182,7 +183,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
             const rest = run.slice(index + 1).map((later) => later.id);
             // Past the claim, the rest is free already, and releasing it could end another replica's claim.
             if (rest.length > 0 && performance.now() < claimEnds) {
-              await sql`UPDATE ${table} SET claimed_until = NULL WHERE id = ANY(${sql.array(rest, "uuid")})`;
+              await sql`UPDATE ${sql.unsafe(table)} SET claimed_until = NULL WHERE id = ANY(${sql.array(rest, "uuid")})`;
             }
             return;
           }
@@ -190,7 +191,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
         }
       }),
     );
-    if (delivered.length > 0) await sql`DELETE FROM ${table} WHERE id = ANY(${sql.array(delivered, "uuid")})`;
+    if (delivered.length > 0) await sql`DELETE FROM ${sql.unsafe(table)} WHERE id = ANY(${sql.array(delivered, "uuid")})`;
     for (const result of results) if (result.status === "rejected") throw result.reason;
   };
 

@@ -1,4 +1,4 @@
-import { redis } from "bun";
+import { redis } from "../../../runtime/clients";
 
 /** Requested by email or username on the login page; resolves the account through its email at use. */
 export type EmailLoginTokenPayload = { email: string; category?: "guest" | "login" };

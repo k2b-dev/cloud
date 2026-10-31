@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { sql } from "bun";
-import { suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { initializeTestPlatform, suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { createGeoAdmin, GeoAdminError } from "./admin";
 import { GEO_TEST_NOW, geoTestConfig, geoTestContext } from "./geo.test-fixture";
 import { createGeoLedger } from "./ledger";
@@ -20,7 +20,8 @@ suiteFor("database", "valkey")("Core geo administration", () => {
     if (apiKey.startsWith("bad-")) throw new GeoAdminError({ code: "geo_key_rejected" }, 422);
     if (!apiKey.startsWith("ok-")) throw new GeoAdminError({ code: "geo_key_unverified" }, 502);
   };
-  const service = () => createGeoAdmin({ verify, now: () => GEO_TEST_NOW });
+  const instance = createGeoAdmin({ verify, now: () => GEO_TEST_NOW });
+  const service = () => instance;
   const storedKey = async () => (await import("../settings")).readStates(["geo.api_key"]).then((states) => states.get("geo.api_key"));
 
   beforeAll(async () => {
@@ -50,6 +51,15 @@ suiteFor("database", "valkey")("Core geo administration", () => {
     await database?.drop();
     if (previousSecret === undefined) delete process.env.APP_SECRET;
     else process.env.APP_SECRET = previousSecret;
+    await initializeTestPlatform();
+  });
+
+  test("the imported geo admin singleton follows a replacement platform client", async () => {
+    const { geoAdmin } = await import("./admin");
+    const previous = sql;
+    await initializeTestPlatform();
+    expect(sql).not.toBe(previous);
+    expect((await geoAdmin.status(admin)).key.state).toBe("none");
   });
 
   test("a verified key is stored and named with its admin; a refused or unverifiable replacement keeps the old key", async () => {

@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 export const migrate = async (db: SQL = sql): Promise<void> => {
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.geo.migrations', 0))`;

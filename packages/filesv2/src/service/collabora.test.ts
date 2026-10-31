@@ -1,4 +1,14 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
+
+let connectionStub: ReturnType<typeof stubConnections>;
+beforeAll(() => {
+  connectionStub = stubConnections();
+});
+afterAll(() => {
+  connectionStub.mockRestore();
+});
+
 import { DISCOVERY_CACHE_MS, discoverEditor, parseDiscovery, resetDiscoveryCache, signEditorToken, verifyEditorToken } from "./collabora";
 
 const DISCOVERY = `<?xml version="1.0"?><wopi-discovery><net-zone name="external-http">

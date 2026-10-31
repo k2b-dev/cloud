@@ -83,6 +83,8 @@ export type AppRuntimeMetadata = {
 };
 
 export type AppRegistryEntry = {
+  /** Opt-in public site, served only through the app public router. */
+  public?: true;
   access?: AppAccessRule;
   platformPermissions?: readonly PlatformPermission[];
   id: string;

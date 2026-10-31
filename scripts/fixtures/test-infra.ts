@@ -135,6 +135,7 @@ const applyMappings = (): Record<InfraKind, string | undefined> => {
 
 /** Resolved `CLOUD_TEST_*` targets; `undefined` means the suite must skip. */
 export const testInfra: Readonly<Record<InfraKind, string | undefined>> = applyMappings();
+if (Object.values(testInfra).some(Boolean)) await initializeTestPlatform();
 
 const tcpReachable = async (url: string): Promise<void> => {
   const parsed = new URL(url);
@@ -287,12 +288,19 @@ export const useMigratedDatabase = async (prefix: string) => bindDefaultDatabase
 const bindDefaultDatabase = async (prefix: string, database: Awaited<ReturnType<typeof createDisposableDatabase>>) => {
   process.env.DATABASE_URL = database.url;
   ownTestDatabase(database.name);
-  const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
-  if (row?.name !== database.name) {
-    await database.drop();
-    throw new Error(
-      `${prefix}: the default sql handle is already bound to "${row?.name}"; run this file in its own process (bun test --isolate)`,
-    );
+  await initializeTestPlatform();
+  const { sql: platformSql } = await import("../../packages/cloud/src/runtime/clients");
+  for (const [label, client] of [
+    ["platform", platformSql],
+    ["Bun default", sql],
+  ] as const) {
+    const [row] = await client<{ name: string }[]>`SELECT current_database() AS name`;
+    if (row?.name !== database.name) {
+      await database.drop();
+      throw new Error(
+        `${prefix}: the ${label} sql handle is already bound to "${row?.name}"; run this file in its own process (bun test --isolate)`,
+      );
+    }
   }
   return database;
 };

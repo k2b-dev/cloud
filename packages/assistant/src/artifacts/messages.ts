@@ -105,6 +105,8 @@ export const artifactMessages = i18n.define({
       loadLatest: "Load latest source",
       DB_TARGET_BLOCKED:
         "The rsql server address is on an internal network that the operator has not allowed. An operator can allow it with assistant.rsql_allowed_targets.",
+      DB_TARGETS_INVALID:
+        "Enter exact host names, IP addresses or CIDR ranges. A /0 range is not allowed; host:port and [ipv6]:port limit an entry to one port.",
       DB_UNREACHABLE: "The database server is unreachable. Ask an administrator to check the rsql connection.",
       DB_TIMEOUT: "The database server did not respond in time. Retry or ask an administrator to check the rsql server.",
       DB_AUTH_FAILED: "The database server rejected its credentials. Ask an administrator to check the stored rsql token.",
@@ -128,6 +130,8 @@ export const artifactMessages = i18n.define({
       database: "Database",
       settings: "Database settings",
       serverUrl: "rsql server URL",
+      allowedTargets: "rsql allowed targets",
+      allowedTargetsHint: "Exact internal rsql hosts, IPs or CIDRs. Changes apply to new requests.",
       token: "API token",
       tokenHint: "Leave blank to keep the stored token.",
       remove: "Delete",
@@ -327,6 +331,8 @@ export const artifactMessages = i18n.define({
       loadLatest: "Aktuellen Quelltext laden",
       DB_TARGET_BLOCKED:
         "Die rsql-Serveradresse liegt in einem internen Netzwerk, das der Betreiber noch nicht freigegeben hat. Der Betreiber kann es mit assistant.rsql_allowed_targets freigeben.",
+      DB_TARGETS_INVALID:
+        "Gib exakte Hostnamen, IP-Adressen oder CIDR-Bereiche an. Ein /0-Bereich ist nicht erlaubt; host:port und [ipv6]:port beschränken einen Eintrag auf einen Port.",
       DB_UNREACHABLE: "Der Datenbankserver ist nicht erreichbar. Ein Administrator sollte die rsql-Verbindung prüfen.",
       DB_TIMEOUT:
         "Der Datenbankserver hat nicht rechtzeitig geantwortet. Versuche es erneut oder bitte einen Administrator, den rsql-Server zu prüfen.",
@@ -354,6 +360,8 @@ export const artifactMessages = i18n.define({
       database: "Datenbank",
       settings: "Datenbank-Einstellungen",
       serverUrl: "rsql-Serveradresse",
+      allowedTargets: "Erlaubte rsql-Ziele",
+      allowedTargetsHint: "Exakte interne rsql-Hosts, IPs oder CIDRs. Änderungen gelten für neue Anfragen.",
       token: "API-Token",
       tokenHint: "Leer lassen, um das gespeicherte Token beizubehalten.",
       remove: "Löschen",

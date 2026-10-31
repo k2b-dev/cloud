@@ -6,14 +6,18 @@ import { HealthCheckView } from "./view";
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
-  const [attention, schedule] = await Promise.all([readAttention(), read("gateway.health_check_schedule")]);
+  const [attention, schedule, targets] = await Promise.all([
+    readAttention(),
+    read("gateway.health_check_schedule"),
+    read("gateway.webhook_allowed_targets"),
+  ]);
   return () => (
     <HealthCheckView
       c={c}
       locale={locale}
       attention={attention}
-      schedule={String(schedule.value)}
-      unreadable={schedule.stored === "unreadable"}
+      values={{ schedule: String(schedule.value), targets: Array.isArray(targets.value) ? targets.value.map(String) : [] }}
+      unreadable={{ schedule: schedule.stored === "unreadable", targets: targets.stored === "unreadable" }}
     />
   );
 });

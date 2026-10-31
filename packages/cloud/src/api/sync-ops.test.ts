@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { UserSchema } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { syncInvocationOperation } from "../services/identity/invocation-operations";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createSyncOpsProxyRoutes } from "./sync-ops";
+
+useUnitClients();
 
 const user = UserSchema.parse({
   id: "11111111-1111-4111-8111-111111111111",

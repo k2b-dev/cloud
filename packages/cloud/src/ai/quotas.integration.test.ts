@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import type { AiQuotaRule } from "../shared/ai-quotas";
 import { backgroundCostState, beginAiCall, finishAiCall, releaseBackgroundCostStop } from "./inference-calls";
 import { drainQueuedMessages } from "./message-queue";

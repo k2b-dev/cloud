@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { Socket } from "node:net";
 import { Readable } from "node:stream";
-import { sql } from "bun";
 import { z } from "zod";
 import { listApps } from "../../_internal/registry";
+import { sql } from "../../runtime/clients";
 import { DownstreamBusyError, downstreamBudget } from "../downstream-budget";
 import { parsePgJsonValue } from "../postgres";
 import { get } from "../settings";

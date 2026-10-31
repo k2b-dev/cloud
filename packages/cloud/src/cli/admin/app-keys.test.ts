@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../../../scripts/fixtures/app-key-fixtures";
 import { formatAppKey, importAppKeySeed, importAppPublicKey } from "../../app-key";
-import { enrollAppKey, renderAppKeyArtifact, resolveAppKeyApps } from "./app-keys";
+import { defineCliCommands } from "../commands";
+import type { CloudCliContext, CloudCliFlags } from "../index";
+import { appKeyCommands, enrollAppKey, renderAppKeyArtifact, resolveAppKeyApps } from "./app-keys";
 
 const fixture = APP_KEY_FIXTURES[0];
 const tempDirs: string[] = [];
@@ -192,3 +194,44 @@ for (const state of [{ status: "revoked" }, { status: "expired" }, { accountStat
     await expect(enrollAppKey({ ...input(outDir), register: async () => ({ ...registration, ...state }) })).rejects.toThrow();
     expect(await readdir(outDir)).toEqual([".inventory.enrollment.json"]);
   });
+
+test("create accepts explicit issuance or no grants, defaults to none, and rejects contradictory or unknown flags", async () => {
+  const outDir = await directory();
+  await seedState(outDir);
+  const requests: unknown[] = [];
+  const module = defineCliCommands({ name: "admin", summary: "App keys", commands: appKeyCommands });
+  const invoke = async (flags: CloudCliFlags) => {
+    const ctx: CloudCliContext = {
+      args: ["apps", "keys", "create", "inventory"],
+      flags: { "out-dir": outDir, ...flags },
+      options: { profile: "test", server: "https://cloud.example.test", token: "fixture", output: "json" },
+      getDefault: async () => undefined,
+      setDefault: async () => {},
+      createApiClient: () => {
+        throw new Error("Unused");
+      },
+      fetch: async (_path, init) => {
+        requests.push(JSON.parse(String(init?.body)));
+        return Response.json(registration);
+      },
+      readJson: async (response) => response.json(),
+      print: () => {},
+      write: async () => {},
+      error: () => {},
+      json: () => {},
+      jsonLine: () => {},
+      table: () => {},
+    };
+    await module.run(ctx);
+  };
+  await invoke({ grant: "oauth:issue" });
+  expect(requests.at(-1)).toEqual({ publicKey: fixture.publicKey, grants: ["oauth:issue"] });
+  await invoke({ "no-grant": true });
+  expect(requests.at(-1)).toEqual({ publicKey: fixture.publicKey, grants: [] });
+  await invoke({});
+  expect(requests.at(-1)).toEqual({ publicKey: fixture.publicKey });
+  const before = requests.length;
+  await expect(invoke({ grant: "oauth:issue", "no-grant": true })).rejects.toThrow("Choose either");
+  await expect(invoke({ grant: "unknown" })).rejects.toThrow();
+  expect(requests.length).toBe(before);
+});

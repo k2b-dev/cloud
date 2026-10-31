@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../../runtime/clients";
 import { MISSING_SETTING } from "../cache-fill";
 import { getIdentityRuntimeConfig, invalidateIdentityRuntimeConfig } from "../identity/runtime-config";
 import { buildProjectedUser } from "../session/user";

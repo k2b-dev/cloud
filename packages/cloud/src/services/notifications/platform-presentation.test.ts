@@ -27,7 +27,7 @@ test("send validates browser metadata before persistence and normalizes previews
     globalThis.notificationPresentationSql = sql;
     Bun.plugin({ name: "notification-presentation-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/]platform\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationPresentationSql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationPresentationSql;'), loader: "ts",
       }));
     }});
     mock.module(${JSON.stringify(new URL("./catalog.ts", import.meta.url).pathname)}, () => ({ ensureNotificationDefinition: async () => {} }));

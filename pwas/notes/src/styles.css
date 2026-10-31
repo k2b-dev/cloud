@@ -597,18 +597,9 @@ body.k2b-ui {
   padding: 2.75rem 1.25rem 8rem;
   flex: 1;
 }
-.n-doc[data-first] {
-  padding-top: 4.5rem;
-  padding-bottom: 2rem;
-  flex: none;
-}
 .n-editor {
   --notes-title-size: 2.375rem;
   min-height: 12rem;
-}
-.n-doc[data-first] .n-editor {
-  --notes-title-size: 2.75rem;
-  min-height: 0;
 }
 .n-editor .cm-editor {
   background: transparent;
@@ -641,71 +632,6 @@ body.k2b-ui {
 }
 .n-readonly .cm-content {
   caret-color: transparent;
-}
-.n-ph {
-  color: var(--k2b-placeholder-color);
-}
-.n-first-body {
-  margin-top: 0.9rem;
-  font-size: 1.0625rem;
-  line-height: 1.6;
-}
-.n-md-hint {
-  margin-top: 0.5rem;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.2rem 1rem;
-  font-size: 0.875rem;
-  color: var(--k2b-text-muted);
-}
-.n-md-hint code {
-  font-family: var(--k2b-font-mono);
-  font-size: 0.8125rem;
-  color: var(--k2b-text-secondary);
-}
-.n-example-link {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  margin-top: 1.5rem;
-  font-size: 0.9375rem;
-}
-.n-example-link a {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  height: 34px;
-  padding: 0 0.8rem;
-  border-radius: 99px;
-  background: var(--ink-fill);
-  color: var(--ink);
-  font-weight: 500;
-  text-decoration: none;
-}
-.n-example-link a:hover {
-  background: color-mix(in srgb, var(--ink) 15%, var(--k2b-surface));
-}
-.n-example-link span {
-  color: var(--k2b-text-muted);
-  font-size: 0.875rem;
-}
-.n-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
-  margin-top: 3.5rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.875rem;
-}
-.n-facts span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-.n-facts .ti {
-  font-size: 17px;
-  color: var(--ink);
 }
 .n-callout {
   display: flex;
@@ -1454,12 +1380,6 @@ body.k2b-ui {
   .n-editor {
     --notes-title-size: 1.875rem;
   }
-  .n-doc[data-first] {
-    padding-top: 2.5rem;
-  }
-  .n-doc[data-first] .n-editor {
-    --notes-title-size: 2.125rem;
-  }
   .n-face {
     width: 26px;
     height: 26px;
@@ -1506,18 +1426,9 @@ body.k2b-ui {
 .k2b-ui .n-doc {
   padding-top: calc(2.75rem - 24px);
 }
-.k2b-ui .n-doc[data-first] {
-  padding-top: calc(4.5rem - 24px);
-}
-.k2b-ui .n-doc[data-first] .k2b-ste-host {
-  min-height: 0;
-}
 @container page (max-width: 640px) {
   .k2b-ui .n-doc {
     padding-top: calc(1.5rem - 24px);
-  }
-  .k2b-ui .n-doc[data-first] {
-    padding-top: calc(2.5rem - 24px);
   }
 }
 
@@ -1627,4 +1538,9 @@ body.k2b-ui {
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* Checklist boxes take the site ink, as in mockup v4. */
+.n-editor .custom-list-task-marker {
+  accent-color: var(--ink);
 }

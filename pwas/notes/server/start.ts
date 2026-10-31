@@ -1,7 +1,8 @@
 import { env } from "@k2b/cloud/config";
 import { SQL } from "bun";
-import { createNotesApp } from "./app";
-import { databaseReady, migrate } from "./database";
+import { migrate } from "./database";
+import { appEnv } from "./env";
+import { serveNotes } from "./runtime";
 
 const startupCodes = new Set(["database_url_missing", "notes_schema_newer_than_server", "database_start_failed", "listener_start_failed"]);
 export const startupCode = (error: unknown): string => {
@@ -21,27 +22,18 @@ export const startNotes = async () => {
     if (startupCode(error) !== "startup_failed") throw error;
     throw new Error("database_start_failed");
   }
-  let stopping = false;
-  const app = createNotesApp(async () => !stopping && (await databaseReady(db)));
-  let server: ReturnType<typeof Bun.serve>;
   try {
-    server = Bun.serve({ port: 3000, fetch: app.fetch });
-  } catch {
+    return await serveNotes(db, {
+      origin: appEnv.NOTES_PUBLIC_ORIGIN,
+      trustedProxy: appEnv.NOTES_TRUSTED_PROXY,
+      storageBytes: appEnv.NOTES_STORAGE_BYTES,
+      maxConnections: appEnv.NOTES_MAX_CONNECTIONS,
+      maxOpenPads: appEnv.NOTES_MAX_OPEN_PADS,
+    });
+  } catch (error) {
     await db.close();
-    throw new Error("listener_start_failed");
+    throw error;
   }
-  return {
-    server,
-    stop: async () => {
-      if (stopping) return;
-      stopping = true;
-      try {
-        await server.stop();
-      } finally {
-        await db.close();
-      }
-    },
-  };
 };
 
 if (import.meta.main) {

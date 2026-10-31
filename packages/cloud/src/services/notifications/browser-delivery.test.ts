@@ -32,7 +32,7 @@ test("browser delivery carries localized previews, namespaces groups, and preser
     globalThis.notificationBrowserSql = sql;
     Bun.plugin({ name: "notification-browser-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/](?:browser|platform)\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationBrowserSql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationBrowserSql;'), loader: "ts",
       }));
     }});
     mock.module("web-push", () => ({ default: { setVapidDetails: () => {} } }));

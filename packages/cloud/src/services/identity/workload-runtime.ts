@@ -1,6 +1,5 @@
 /** Core-only workload issuer. This module never reads identity signing keys, OAuth secrets, or sessions. */
 import type { NatsConnection } from "@nats-io/transport-node";
-import { sql } from "bun";
 import { getProcessNats } from "../../_internal/process-sync";
 import { APP_REGISTRY_TTL_MS, appInstancePrefix, appInstanceRegistry } from "../../_internal/registry";
 import {
@@ -12,7 +11,8 @@ import {
   type WorkloadResponse,
   workloadSubject,
 } from "../../_internal/workload-protocol";
-import { env } from "../../config/env";
+import { sql } from "../../runtime/clients";
+import { connections } from "../../runtime/connections";
 import { audit } from "../audit";
 import { logger } from "../logging";
 import { serviceAccountCredentials } from "../service-account-credentials";
@@ -204,7 +204,7 @@ export const startAppWorkloadBroker = async (
   let stopped = false;
   let maintenance: Promise<void> | undefined;
   let timer: Timer | undefined;
-  const subscription = connection.subscribe(workloadSubject(options.namespace ?? env.SYNC_NAMESPACE), {
+  const subscription = connection.subscribe(workloadSubject(options.namespace ?? connections().nats.namespace), {
     queue: "core-workload-v1",
     callback: (error, message) => {
       if (error || !message.reply) return;

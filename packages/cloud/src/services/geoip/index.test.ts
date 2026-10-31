@@ -1,12 +1,16 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { Reader } from "mmdb-lib";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import { GEOIP_MAX_DATABASE_BYTES, GEOIP_MAX_REQUEST_BYTES } from "../../contracts/geoip";
+import { sql } from "../../runtime/clients";
 import { createGeoIp, openGeoIpDatabase } from "../../server/request-context/geoip";
 import { FIXTURE_EPOCH, mmdbFixture } from "../../server/request-context/geoip.test-fixture";
 import { audit } from "../audit";
 import { createGeoIpService, type GeoIpUploadInfo, geoIpAdminStatus } from ".";
 import { parseGeoIpUpload, readGeoIpUpload } from "./upload";
+
+useUnitClients();
 
 const buildDate = new Date(FIXTURE_EPOCH * 1000);
 const bundled = { city: openGeoIpDatabase("city", mmdbFixture("city"))!.info, asn: null };

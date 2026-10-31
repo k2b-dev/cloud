@@ -5,7 +5,6 @@
  */
 
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
@@ -42,6 +41,7 @@ import {
   WebAuthnPasskeySchema,
 } from "../contracts";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, getTimeZone, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";

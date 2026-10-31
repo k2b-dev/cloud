@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 
 # API surface
@@ -68,6 +68,11 @@ import { defineApp } from "@k2b/cloud";
 The returned application's `ssr` renders pages and exposes `ssr.access` for
 browser-route rejections and `ssr.error(c, status, options?)` for terminal HTML
 errors. See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
+
+For an app-owned website, declare `public: true` and add Hono routes to
+`app.public`. `app.publicSsr<T>(template)` returns `{ html: HtmlFn<T> }` and
+mounts public island assets while keeping one app plugin/build. See
+[Public site of an app](/en/docs/build/public-surface).
 
 The root also exports the types bound to an application declaration. This
 includes typed settings and notification definitions, and `skill()` with
@@ -171,10 +176,12 @@ Use the capability guide to choose the narrow API:
 - [Saved maps](/en/docs/platform/saved-map-documents): `GeoDocumentSchema`, pin/link schemas and `serializeGeoDocument` from `@k2b/cloud/geo/document` save Geo results and complete routes as Notebook blocks.
 - [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, `geoRouteContract`, geo input/result schemas, route plans/updates, and provenance types come from `@k2b/cloud/contracts`.
 - [Object store](/en/docs/platform/object-store): `storage` from `@k2b/cloud/services` supplies app-bound private documents and permanent public image URLs.
+- [One-time links](/en/docs/identity/one-time-links): `links.create(input, { tx }?)`, `links.peek(token, { purpose }, { tx }?)`, and `links.redeem(token, { purpose }, { tx }?)` from `@k2b/cloud/services` share single-use credentials within an application package; synchronous `appKey(name): string` from `@k2b/cloud/server` derives app-specific signing keys.
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
 - [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
+- [Background mandates](/en/docs/identity/background-mandates): `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core, with legacy workload credentials retained for this release.
 - [Resource types and discussions](/en/docs/platform/resource-types-and-discussions): `resolveResourceReaders` and `ResourceReader` from `@k2b/cloud/services/identity` resolve current account subjects and resource bindings for provider-owned reader checks.
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)
@@ -194,6 +201,22 @@ Its HTTP route is
 an unknown app and requires administrator authority on both paths. See
 [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for fields, offline behavior and bounds.
+
+`appAdminFacts(authority, appIds)` and `AppAdminFacts` from `@k2b/cloud/services`
+provide Core's administrator-only batch summary for up to 500 input app IDs.
+Each distinct ID receives persisted grant-entry counts (not expanded group membership) and effective managers,
+key and workload-token counts, active subscriptions, non-retired event
+declarations, active notification kinds, and failed or waiting deliveries.
+Credential counts exclude revoked or expired credentials from `active`,
+independently of account status; key revocation takes precedence over expiry.
+Account status comes from the oldest app-bound account. Missing access state
+and grants yield `access: null`; other missing counts are zero. `firstKnownAt`
+is the earliest app-bound account, credential, grant creation, or access
+configuration timestamp available in Core; an unconfigured empty access state
+has no timestamp. Waiting deliveries are `pending` or `retrying`; failures are
+`failed`, matching `appDetails`. The service throws `AppAccessManagementError`
+with status 403 for missing administration authority or 400 for more than 500
+input IDs, including duplicates. This is a platform administration read, not an application API.
 
 `linuxIdentities` is a platform-owned administration service from this barrel.
 It checks administrator access on reads and writes. See
@@ -497,7 +520,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Entry point | Status | Meaning |
 | --- | --- | --- |
-| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router, including `createAiOpenAiRoutes` for Core’s models-only [OpenAI-compatible API](/en/docs/ai/openai-compatible-api) |
+| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router, including `createAppBootstrapRoutes` for [signed startup bootstrap](/en/docs/build/platform-start#bootstrap-v1-transport) and `createAiOpenAiRoutes` for Core’s models-only [OpenAI-compatible API](/en/docs/ai/openai-compatible-api) |
 | `@k2b/cloud/services/help` | Platform-owned | Core Help migration and shared publication/read service |
 | `@k2b/cloud/services/approvals` | Platform-owned | Platform requests, decisions, consumption, lists, and counts; see [Action approvals](/en/docs/identity/approvals) |
 | `@k2b/cloud/ssr/help` | Supported, server-only | Request-scoped Help metadata for specialized embedded readers |

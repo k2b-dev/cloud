@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { DashboardWidget } from "../_internal/registry";
 import { CAPABILITY_QUALIFIED_ID_MAX_LENGTH, CLOUD_RESOURCE_ID_MAX_LENGTH } from "../contracts/capabilities";
 import type { AppRegistryEntry } from "../contracts/registry";
@@ -16,12 +16,15 @@ import {
   type WidgetStreamLine,
   widgetKey,
 } from "../contracts/widgets";
+import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH } from "../server/widget-request";
 import { type signInvocationToken, signInvocationToken as signRealInvocation } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createWidgetRoutes as buildWidgetRoutes, WIDGET_CONCURRENCY } from "./widgets";
+
+useUnitClients();
 
 const user = { id: "11111111-1111-4111-8111-111111111111", roles: ["user"] } as AuthContext["Variables"]["user"];
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {

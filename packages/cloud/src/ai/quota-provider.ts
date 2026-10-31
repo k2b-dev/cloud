@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { estimateTokens, type Provider } from "@k2b/nessi";
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
 import type { AiResolvedModelRef } from "../shared/ai-models";

@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { MailRetention } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import { toPgUuidArray } from "../postgres";
 import { get, read } from "../settings";
 import { deleteMailObjects } from "./attachments";

@@ -1,6 +1,7 @@
 {
-  ".": "0.53.0",
-  "packages/cloud": "0.46.0",
-  "packages/ui": "0.36.0",
-  "packages/ssr": "0.20.1"
+  ".": "0.55.0",
+  "packages/cloud": "0.48.0",
+  "packages/ui": "0.38.0",
+  "packages/ssr": "0.20.2",
+  "packages/editor": "0.1.1"
 }

@@ -46,6 +46,16 @@ if (process.env.NOTEBOOKS_ADMIN_SETTINGS_TEST !== "1") {
   const update = spyOn(settingsService.entry, "update");
   const reschedule = spyOn(snapshotRuntime, "reschedule").mockResolvedValue(undefined);
 
+  test("Notebooks answers a refused value with the setting's own reason, which the dialog shows at the field", async () => {
+    const response = await router.request("/admin/settings/notebooks.snapshot_allowed_targets", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Cookie: "session_token=test" },
+      body: JSON.stringify({ value: ["minio.internal", "0.0.0.0/0"] }),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { message: string }).message).toContain("/0 is forbidden");
+  });
+
   test("Notebooks forwards replacement through ordinary and snapshot-cron writes without swallowing 409", async () => {
     try {
       for (const [key, value] of [

@@ -1,7 +1,12 @@
 import type { SQL } from "bun";
 import initial from "../migrations/001-initial.sql" with { type: "text" };
 
-const migrations = [{ version: 1, sql: initial }];
+import runtimeOwner from "../migrations/002-runtime-owner.sql" with { type: "text" };
+
+const migrations = [
+  { version: 1, sql: initial },
+  { version: 2, sql: runtimeOwner },
+];
 export const schemaVersion = migrations.at(-1)!.version;
 
 /** Migrations share one transaction and a database-scoped lock, including first boot. */

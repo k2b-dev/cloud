@@ -202,6 +202,7 @@ expects the host to load KaTeX’s stylesheet and fonts.
 | `imageExtension` | `foreignImagesAsLinks: true` renders images from other origins as links without fetching them. The default renders images as before. |
 | `mermaidExtension` | Required `configuration({ dark })` returns a Mermaid configuration. Optional `title(markdown)` names fullscreen views and exports; `locale` sets the detached preview's locale. Rendering is serialized, and cached SVGs are separated by configuration callback and theme. |
 | `infoBlocksExtension` | Pass the current locale for untitled notice labels. |
+| `namedBlocksExtension` | No options. The anchor line `@name` above a table, list, or other named block reads as a quiet label `name` until the caret enters that line. Data block anchors stay with `dataBlocksExtension` when the host adds it; without it they get the same label. |
 
 For application directive ranges, the subpath exports `extractDataBlocks` and
 `extractNotebookDirectiveRanges`. The latter scans `query`, `toc`, `chart`, and

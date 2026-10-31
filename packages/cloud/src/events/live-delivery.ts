@@ -1,7 +1,8 @@
 import type { Topic, TopicConfig } from "@k2b/sync";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { z } from "zod";
 import { lazySync } from "../_internal/process-sync";
+import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { createPgOutbox } from "../services/outbox";
 import type { LiveEnvelope } from "./live-engine";
