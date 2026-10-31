@@ -30,7 +30,7 @@ test("SIGTERM stops acquisition while an accepted sandbox finishes and reports c
       if (path === RUNNER_PATHS.call) {
         entered.resolve();
         await finish.promise;
-        return Response.json(null);
+        return Response.json({ ok: true, data: null });
       }
       if (path === RUNNER_PATHS.complete) {
         completed.push(await request.json());

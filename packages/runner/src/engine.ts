@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunnerConfig, RunnerJsonValue, RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
+import { RunnerCallError } from "@k2b/cloud/code/runner";
 import { z as schema } from "zod";
 import { readBytes } from "./bridge";
 
@@ -14,7 +15,15 @@ export interface RunnerEngine {
   kill(runId: string): Promise<void>;
   close(): Promise<void>;
 }
-type Loaded = { lease: RunnerLease; source: string; config: RunnerConfig; call: SandboxCall; signal: AbortSignal; group?: Group };
+type Loaded = {
+  lease: RunnerLease;
+  source: string;
+  config: RunnerConfig;
+  call: SandboxCall;
+  signal: AbortSignal;
+  calls: number;
+  group?: Group;
+};
 type Group = {
   process: Bun.Subprocess<"ignore", "pipe", "ignore">;
   origin: string;
@@ -26,6 +35,7 @@ type Group = {
   runs: Set<string>;
   outcome?: RunnerOutcome;
   closing?: Promise<void>;
+  retire: () => void;
 };
 const CallSchema = schema.object({ runId: schema.string(), operation: schema.string().min(1), input: schema.json() }).strict();
 
@@ -37,14 +47,15 @@ export class WorkerdEngine implements RunnerEngine {
   async load(lease: RunnerLease, source: string, config: RunnerConfig, call: SandboxCall, signal: AbortSignal) {
     signal.throwIfAborted();
     if (this.#loaded.has(lease.runId)) throw new Error("runner_already_loaded");
-    this.#loaded.set(lease.runId, { lease, source, config, call, signal });
+    this.#loaded.set(lease.runId, { lease, source, config, call, signal, calls: 0 });
   }
-  async #spawn(config: RunnerConfig): Promise<Group> {
+  async #spawn(config: RunnerConfig, retire: () => void): Promise<Group> {
     const capability = crypto.randomUUID();
     const members = new Set<string>();
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
+      idleTimeout: 0,
       maxRequestBodySize: config.bridgeBytes,
       fetch: async (request) => {
         if (request.method !== "POST" || new URL(request.url).pathname !== "/call" || request.headers.get("Authorization") !== capability)
@@ -54,12 +65,20 @@ export class WorkerdEngine implements RunnerEngine {
           const call = CallSchema.parse(JSON.parse(new TextDecoder().decode(bytes)));
           const loaded = this.#loaded.get(call.runId);
           if (!members.has(call.runId) || !loaded || loaded.signal.aborted) return new Response(null, { status: 409 });
-          const result = await loaded.call(call.operation, call.input);
-          const body = JSON.stringify(result);
+          // Reject overload immediately; there is no unbounded per-worker queue of HTTP calls.
+          if (loaded.calls >= config.bridgeConcurrency) return Response.json({ ok: false, error: { code: "runner_bridge_busy" } });
+          loaded.calls++;
+          let result: RunnerJsonValue;
+          try {
+            result = await loaded.call(call.operation, call.input);
+          } finally {
+            loaded.calls--;
+          }
+          const body = JSON.stringify({ ok: true, data: result });
           if (Buffer.byteLength(body) > config.bridgeBytes) throw new Error("runner_call_too_large");
           return new Response(body, { headers: { "Content-Type": "application/json" } });
-        } catch {
-          return new Response(null, { status: 502 });
+        } catch (error) {
+          return Response.json({ ok: false, error: { code: error instanceof RunnerCallError ? error.code : "runner_bridge_unavailable" } });
         }
       },
     });
@@ -129,6 +148,7 @@ const config :Workerd.Config = (
         lastPing: performance.now(),
         checking: false,
         runs: members,
+        retire,
         watchdog: setInterval(() => {
           void this.#check(group, config);
         }, 100),
@@ -150,8 +170,6 @@ const config :Workerd.Config = (
       await this.#terminate(group, "stalled");
       return;
     }
-    if (group.checking) return;
-    group.checking = true;
     try {
       if (process.platform === "linux") {
         const status = await readFile(`/proc/${group.process.pid}/status`, "utf8");
@@ -161,11 +179,17 @@ const config :Workerd.Config = (
           return;
         }
       }
-      const response = await fetch(`${group.origin}/ping`, { signal: AbortSignal.timeout(1000) });
+    } catch {
+      /* A dead child also fails the independent ping budget. */
+    }
+    if (group.checking || group.closing) return;
+    group.checking = true;
+    try {
+      const response = await fetch(`${group.origin}/ping`, { signal: AbortSignal.timeout(1000), timeout: false });
       await response.body?.cancel();
       if (response.ok) group.lastPing = performance.now();
     } catch {
-      /* The next 100ms tick enforces the one-second stall budget, including a pending ping. */
+      /* The independent 100ms tick enforces the stall budget. */
     } finally {
       group.checking = false;
     }
@@ -176,6 +200,7 @@ const config :Workerd.Config = (
   }
   async #terminate(group: Group, outcome: RunnerOutcome) {
     if (!group.closing) {
+      group.retire();
       group.outcome = outcome;
       clearInterval(group.watchdog);
       group.closing = (async () => {
@@ -193,39 +218,35 @@ const config :Workerd.Config = (
     const key = JSON.stringify([lease.organizationId, lease.trustTier]);
     let pending = this.#groups.get(key);
     if (!pending) {
-      pending = this.#spawn(loaded.config);
+      pending = this.#spawn(loaded.config, () => {
+        if (this.#groups.get(key) === pending) this.#groups.delete(key);
+      });
       this.#groups.set(key, pending);
     }
     let group: Group;
     try {
       group = await pending;
     } catch {
-      this.#groups.delete(key);
+      if (this.#groups.get(key) === pending) this.#groups.delete(key);
       throw new Error("runner_workerd_start_failed");
     }
     if (group.closing) {
-      this.#groups.delete(key);
-      return "failed";
+      return this.run(lease, signal);
     }
     loaded.group = group;
     group.runs.add(lease.runId);
-    const abort = () => {
-      void this.#terminate(group, "failed");
-    };
-    signal.addEventListener("abort", abort, { once: true });
     try {
       signal.throwIfAborted();
       const response = await fetch(`${group.origin}/run`, {
         method: "POST",
         body: JSON.stringify({ runId: lease.runId, source: loaded.source, entrypoint: lease.entrypoint, input: lease.input }),
         signal,
+        timeout: false,
       });
       await response.body?.cancel();
       return response.ok ? "succeeded" : "failed";
     } catch {
       return group.outcome ?? "failed";
-    } finally {
-      signal.removeEventListener("abort", abort);
     }
   }
   async kill(runId: string) {
@@ -236,7 +257,6 @@ const config :Workerd.Config = (
     group.runs.delete(runId);
     if (group.runs.size === 0) {
       await this.#terminate(group, "failed");
-      for (const [key, pending] of this.#groups) if ((await pending.catch(() => undefined)) === group) this.#groups.delete(key);
     }
   }
   async close() {

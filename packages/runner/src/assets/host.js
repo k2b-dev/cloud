@@ -8,8 +8,10 @@ export class Cloud extends WorkerEntrypoint {
       headers: { "Content-Type": "application/json", Authorization: this.env.CAPABILITY },
       body: JSON.stringify({ runId: this.ctx.props.runId, operation, input }),
     });
-    if (!response.ok) throw new Error("bridge_call_failed");
-    return response.json();
+    if (!response.ok) throw new Error("runner_bridge_unavailable");
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error.code);
+    return result.data;
   }
 }
 

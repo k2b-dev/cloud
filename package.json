@@ -33,14 +33,14 @@
       "packages/pwa",
       "packages/proxy-auth",
       "packages/quotes",
+      "packages/runner",
       "packages/spaces",
       "packages/ssr",
       "packages/tools",
       "packages/ui",
       "packages/venue",
       "packages/weather",
-      "fixtures/ui-ssr",
-      "packages/runner"
+      "fixtures/ui-ssr"
     ],
     "catalog": {
       "@firecrawl/anydoc": "0.2.4",

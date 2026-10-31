@@ -9,6 +9,7 @@ export const config: RunnerConfig = {
   bundleBytes: 64 * 1024,
   cacheBytes: 128 * 1024,
   bridgeBytes: 64 * 1024,
+  bridgeConcurrency: 1,
   processMemoryBytes: 128 * 1024 * 1024,
 };
 export const source = 'export async function main(input, cloud) { await cloud.call("echo", input); }';

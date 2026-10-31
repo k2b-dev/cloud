@@ -5,7 +5,7 @@ import { RUNNER_PATHS } from "@k2b/cloud/code/runner";
 import { jwtVerify } from "jose";
 import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../scripts/fixtures/app-key-fixtures";
 import { CoreBridge, readBytes } from "../src/bridge";
-import { runnerEnvironment } from "../src/env";
+import { runnerEnvironment } from "../src/config";
 import { config } from "./fixtures";
 
 const NOW = Date.UTC(2030, 0, 2);
@@ -75,8 +75,32 @@ test("response limits count chunked bytes and caller cancellation closes a stall
 });
 
 test("runner refuses foreign app keys, conflicting key sources and non-origin Core addresses", async () => {
-  await expect(runnerEnvironment({ CLOUD_APP_KEY: "x", CLOUD_APP_KEY_FILE: "/never-read" })).rejects.toThrow("not both");
+  const priorKey = process.env.CLOUD_APP_KEY;
+  const priorFile = process.env.CLOUD_APP_KEY_FILE;
+  try {
+    process.env.CLOUD_APP_KEY = "x";
+    process.env.CLOUD_APP_KEY_FILE = "/never-read";
+    await expect(runnerEnvironment()).rejects.toThrow("must not both");
+  } finally {
+    if (priorKey === undefined) delete process.env.CLOUD_APP_KEY;
+    else process.env.CLOUD_APP_KEY = priorKey;
+    if (priorFile === undefined) delete process.env.CLOUD_APP_KEY_FILE;
+    else process.env.CLOUD_APP_KEY_FILE = priorFile;
+  }
   expect(() => new CoreBridge({ ...key, appId: "inventory" }, "http://core")).toThrow("runner app key");
   for (const origin of ["file:///etc", "http://core/path", "http://user:password@core", "http://core?query"])
     expect(() => new CoreBridge(key, origin)).toThrow();
+});
+
+test("Core calls use the explicit abort budget rather than Bun's five-minute idle timeout", async () => {
+  let timeout: unknown;
+  const send: typeof fetch = Object.assign(
+    async (_url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      timeout = init && "timeout" in init ? init.timeout : undefined;
+      return Response.json(config);
+    },
+    { preconnect: fetch.preconnect },
+  );
+  await new CoreBridge(key, "http://core", send).configure(new AbortController().signal);
+  expect(timeout).toBe(false);
 });

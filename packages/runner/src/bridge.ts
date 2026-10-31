@@ -3,12 +3,13 @@ import { signAppProof } from "@k2b/cloud/app-proof";
 import {
   RUNNER_PATHS,
   type RunnerBridge,
+  RunnerCallResponseSchema,
   type RunnerConfig,
   RunnerConfigSchema,
   RunnerFetchResponseSchema,
   RunnerHeartbeatResponseSchema,
+  RunnerLeaseLostError,
 } from "@k2b/cloud/code/runner";
-import { z } from "zod";
 
 /** Read bounded bytes, including chunked responses. A timeout also bounds body consumption. */
 export const readBytes = async (response: Response, max: number, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> => {
@@ -71,11 +72,13 @@ export class CoreBridge implements RunnerBridge {
       method: "POST",
       headers: { Authorization: `Bearer ${proof}`, "Content-Type": "application/json" },
       body,
+      timeout: false,
       redirect: "error",
       signal: bounded,
     });
     if (!response.ok) {
       void response.body?.cancel().catch(() => undefined);
+      if (response.status === 409) throw new RunnerLeaseLostError();
       throw new Error(`runner_core_http_${response.status}`);
     }
     return new TextDecoder("utf-8", { fatal: true }).decode(await readBytes(response, max, bounded));
@@ -109,6 +112,8 @@ export class CoreBridge implements RunnerBridge {
   async call(request: Parameters<RunnerBridge["call"]>[0], signal: AbortSignal) {
     const config = this.#settings();
     if (Buffer.byteLength(JSON.stringify(request)) > config.bridgeBytes) throw new Error("runner_call_too_large");
-    return z.json().parse(JSON.parse(await this.#post(RUNNER_PATHS.call, request, signal, config.bridgeBytes, config.transportMs)));
+    return RunnerCallResponseSchema.parse(
+      JSON.parse(await this.#post(RUNNER_PATHS.call, request, signal, config.bridgeBytes, config.transportMs)),
+    );
   }
 }

@@ -26,6 +26,7 @@ export const RunnerConfigSchema = z
     bundleBytes: positive,
     cacheBytes: positive,
     bridgeBytes: positive,
+    bridgeConcurrency: positive,
     processMemoryBytes: positive,
   })
   .strict();
@@ -70,13 +71,37 @@ export type RunnerHeartbeatRequest = RunnerLeaseProof;
 export const RunnerHeartbeatResponseSchema = z.object({ leaseExpiresAt: positive }).strict();
 export type RunnerHeartbeatResponse = z.infer<typeof RunnerHeartbeatResponseSchema>;
 /** Fetch immutable UTF-8 ESM by hash, authorized through the current lease. The runner verifies SHA-256 before caching. */
-export type RunnerBundleRequest = RunnerLeaseProof & { bundleHash: string };
+export const RunnerBundleRequestSchema = RunnerLeaseProofSchema.extend({ bundleHash: hash }).strict();
+export type RunnerBundleRequest = z.infer<typeof RunnerBundleRequestSchema>;
 /** Core records these bounded, payload-free terminal outcomes; lease_lost stays owned by Core's lease reconciler. */
 export const RunnerOutcomeSchema = z.enum(["succeeded", "failed", "wall_clock_limit", "memory_limit", "stalled", "lease_lost"]);
 export type RunnerOutcome = z.infer<typeof RunnerOutcomeSchema>;
-export type RunnerCompleteRequest = RunnerLeaseProof & { outcome: RunnerOutcome };
+/** Terminal reports carry no exception text or result payload. */
+export const RunnerCompleteRequestSchema = RunnerLeaseProofSchema.extend({ outcome: RunnerOutcomeSchema }).strict();
+export type RunnerCompleteRequest = z.infer<typeof RunnerCompleteRequestSchema>;
 /** The only sandbox binding. The supervisor attaches identity; code cannot select a token, run or generation. */
-export type RunnerCallRequest = RunnerLeaseProof & { operation: string; input: RunnerJsonValue };
+export const RunnerCallRequestSchema = RunnerLeaseProofSchema.extend({ operation: id, input: z.json() }).strict();
+export type RunnerCallRequest = z.infer<typeof RunnerCallRequestSchema>;
+/** Stable codes only: exception messages and transport payloads never enter the sandbox. */
+export const RunnerCallErrorSchema = z.object({ code: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/) }).strict();
+/** Domain refusals use this envelope even when HTTP succeeds; non-2xx responses indicate transport failure. */
+export const RunnerCallResponseSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), data: z.json() }).strict(),
+  z.object({ ok: z.literal(false), error: RunnerCallErrorSchema }).strict(),
+]);
+export type RunnerCallResponse = z.infer<typeof RunnerCallResponseSchema>;
+/** A verified lease has expired or its generation was replaced. Core also uses HTTP 409 on heartbeat. */
+export class RunnerLeaseLostError extends Error {
+  constructor() {
+    super("runner_lease_lost");
+  }
+}
+/** A validated, payload-free Core refusal, preserved as the sandbox Error.message. */
+export class RunnerCallError extends Error {
+  constructor(readonly code: string) {
+    super(RunnerCallErrorSchema.parse({ code }).code);
+  }
+}
 /** Transport-neutral seam used by C13 and the C14/C17 mock bridge. No database or queue client belongs here. */
 export interface RunnerBridge {
   configure(signal: AbortSignal): Promise<RunnerConfig>;
@@ -84,5 +109,5 @@ export interface RunnerBridge {
   bundle(request: RunnerBundleRequest, signal: AbortSignal): Promise<string>;
   heartbeat(request: RunnerHeartbeatRequest, signal: AbortSignal): Promise<RunnerHeartbeatResponse>;
   complete(request: RunnerCompleteRequest, signal: AbortSignal): Promise<void>;
-  call(request: RunnerCallRequest, signal: AbortSignal): Promise<RunnerJsonValue>;
+  call(request: RunnerCallRequest, signal: AbortSignal): Promise<RunnerCallResponse>;
 }

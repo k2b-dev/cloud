@@ -1,5 +1,5 @@
-import type { RunnerBridge, RunnerConfig, RunnerLease, RunnerLeaseProof, RunnerOutcome } from "@k2b/cloud/code/runner";
-import { RunnerLeaseSchema } from "@k2b/cloud/code/runner";
+import type { RunnerBridge, RunnerCallResponse, RunnerConfig, RunnerLease, RunnerLeaseProof, RunnerOutcome } from "@k2b/cloud/code/runner";
+import { RunnerCallError, RunnerLeaseLostError, RunnerLeaseSchema } from "@k2b/cloud/code/runner";
 import { BundleCache } from "./cache";
 import type { RunnerEngine } from "./engine";
 
@@ -88,8 +88,10 @@ export class Runner {
       clearTimeout(expiry);
       expiry = setTimeout(
         () => {
-          outcome = "lease_lost";
-          controller.abort();
+          if (!controller.signal.aborted) {
+            outcome = "lease_lost";
+            controller.abort();
+          }
         },
         Math.max(0, expiresAt - Date.now()),
       );
@@ -101,15 +103,20 @@ export class Runner {
         if (renewed.leaseExpiresAt <= Date.now() || renewed.leaseExpiresAt > lease.deadlineAt) throw new Error("runner_invalid_lease");
         expiresAt = renewed.leaseExpiresAt;
         expire();
-      } catch {
-        if (!controller.signal.aborted) this.log("runner_heartbeat_unavailable");
+      } catch (error) {
+        if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) {
+          outcome = "lease_lost";
+          controller.abort();
+        } else if (!controller.signal.aborted) this.log("runner_heartbeat_unavailable");
       }
       if (!controller.signal.aborted) heartbeat = setTimeout(beat, Math.min(lease.heartbeatMs, Math.max(1, expiresAt - Date.now())));
     };
     const deadline = setTimeout(
       () => {
-        outcome = "wall_clock_limit";
-        controller.abort();
+        if (!controller.signal.aborted) {
+          outcome = "wall_clock_limit";
+          controller.abort();
+        }
       },
       Math.max(0, lease.deadlineAt - Date.now()),
     );
@@ -129,7 +136,26 @@ export class Runner {
         lease,
         source,
         this.#config,
-        (operation, input) => this.bridge.call({ ...proof(lease), operation, input }, controller.signal),
+        async (operation, input) => {
+          let result: RunnerCallResponse;
+          try {
+            result = await this.bridge.call({ ...proof(lease), operation, input }, controller.signal);
+          } catch (error) {
+            if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) {
+              outcome = "lease_lost";
+              controller.abort();
+            }
+            throw error;
+          }
+          if (!result.ok) {
+            if (result.error.code === "runner_lease_lost" && !controller.signal.aborted) {
+              outcome = "lease_lost";
+              controller.abort();
+            }
+            throw new RunnerCallError(result.error.code);
+          }
+          return result.data;
+        },
         controller.signal,
       );
       controller.signal.throwIfAborted();

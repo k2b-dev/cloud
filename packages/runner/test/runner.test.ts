@@ -40,7 +40,7 @@ function mockBridge(runs: RunnerLease[]) {
     complete: async (request) => {
       completions.push(request);
     },
-    call: async () => null,
+    call: async () => ({ ok: true, data: null }),
   };
   return { bridge, completions, fetched, beats, bundles: () => bundles };
 }
@@ -153,4 +153,34 @@ test("bundle cache rejects hash mismatch, bounds memory and evicts least recentl
   expect(reads).toBe(4);
   await expect(cache.get(bundleHash("x"), () => read("z"))).rejects.toThrow("runner_invalid_bundle");
   await expect(cache.get(bundleHash("long"), () => read("long"))).rejects.toThrow("runner_invalid_bundle");
+});
+
+test("a fenced heartbeat immediately ends its attempt before the previous lease expires", async () => {
+  const { RunnerLeaseLostError } = await import("@k2b/cloud/code/runner");
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([lease({ heartbeatMs: 5 })]);
+  mock.bridge.heartbeat = async () => {
+    throw new RunnerLeaseLostError();
+  };
+  const engine: RunnerEngine = {
+    load: async () => {},
+    run: async (_, signal) => {
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      return "failed";
+    },
+    kill: async () => {},
+    close: async () => {},
+  };
+  const runner = new Runner(mock.bridge, engine);
+  const running = runner.start();
+  try {
+    await waitFor(() => mock.completions.length > 0);
+    runner.stop();
+    await running;
+    expect(mock.completions[0]?.outcome).toBe("lease_lost");
+  } finally {
+    runner.stop();
+    await running;
+    jest.useRealTimers();
+  }
 });

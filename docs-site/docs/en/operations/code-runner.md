@@ -35,6 +35,18 @@ rejects a bootstrap request signed by any `runner` key with
 `connections_not_permitted`, even if the key's connection grant is enabled.
 The same key can still sign runner requests.
 
+For development, first start Core, sign in with the workspace CLI, then enroll
+and write the key through that CLI (use the development profile explicitly):
+
+```sh
+bun run dev:cld -- --profile dev admin apps keys create runner --out-dir ./.local/app-keys --uid 1000
+```
+
+The image runs as UID 1000. Mounted key files must be readable by that user;
+keep them private (`0600`) and ensure their parent directories can be traversed.
+For production, use your explicit administrator profile with
+`cld --profile operator admin apps keys create runner --out-dir ./secrets --uid 1000`.
+
 The development template reads `./.local/app-keys/runner.key`; production reads
 `./secrets/runner.key`. Neither file belongs in Git. Both templates mount it at
 `/run/secrets/runner-app-key`. Only Core and runner share the internal
@@ -45,8 +57,11 @@ configuration lives in a bounded `/tmp` tmpfs; bundles never go to disk.
 The image pins workerd to `1.20261028.1` and runs as an unprivileged user. Its
 Compose cgroup memory budget is 1 GiB with 256 process slots. These are host
 resource allocations, not Code execution settings. Budget replicas accordingly.
-Core supplies each replica's concurrency, process memory, cache, transport,
+Core supplies each replica's run and bridge concurrency, process memory, cache, transport,
 and bundle budgets from administration settings; the runner adds no limit env.
+Configuration is read once per process; restart replicas after changing these
+budgets. Keep Core and runner host clocks synchronized, since leases and run
+deadlines use Unix milliseconds.
 
 ## Add replicas
 
@@ -56,7 +71,9 @@ From the deployment directory, with Core already running and the app key mounted
 docker compose -f compose.prod.yml up -d --scale runner=3 runner
 ```
 
-For development, use `compose.dev.yml` with `--profile extra` and `--build`.
+For development, use `compose.dev.yml` with `--profile runner` and `--build`.
+This separate opt-in profile keeps `dev:full` usable before the runner key has
+been provisioned; start the runner directly with Compose.
 The runner has no `container_name`, instance-specific key, disk cache, or
 host-port mapping. Its random process ID is telemetry; ownership always comes
 from the lease and generation Core returns.
@@ -90,7 +107,8 @@ attempt may be scheduled again.
 Each organization and trust tier gets a separate workerd process. Every
 attempt loads a fresh dynamic worker through the Loader API, with
 `globalOutbound: null` and only a `cloud.call(operation, input)` RPC binding.
-Core credentials and run tokens remain in the supervisor. The supervisor
+Core credentials and run tokens remain in the supervisor. Bridge calls above
+the per-run concurrency budget fail immediately, without queuing. The supervisor
 checks process RSS and pings workerd every 100 ms; a process that stops
 responding for one second is killed along with its active attempts. Other
 process groups continue. The container cgroup also bounds aggregate memory.
@@ -117,8 +135,17 @@ milliseconds. `RunnerHeartbeatRequest` carries the lease proof;
 `RunnerHeartbeatResponse` extends only `leaseExpiresAt`, never `deadlineAt`.
 `RunnerBundleRequest` includes the hash; its response is exact UTF-8 ESM.
 `RunnerCompleteRequest` carries a payload-free `RunnerOutcome`.
+`RunnerBundleRequestSchema`, `RunnerCompleteRequestSchema`, and
+`RunnerCallRequestSchema` validate the same exported request types in Core.
+`RunnerCallResponse` uses `{ ok: true, data }` or
+`{ ok: false, error: { code } }`. Only a bounded stable code crosses a domain
+refusal; the sandbox receives it as `Error.message`, with no exception details.
+Non-2xx call responses are transport failures. HTTP 409 on a lease route, or
+the domain code `runner_lease_lost`, immediately fences local execution.
 `RunnerCallRequest` attaches the supervisor-held proof to the sandbox's
-operation and JSON input. Responses are bounded JSON; streams are unsupported.
+operation and JSON input. Responses are bounded JSON; streams are unsupported. Native Bun idle timeouts
+are disabled: explicit transport signals, lease expiry, and the original run
+deadline own cancellation.
 
 For the engine and test kit, a bundle exports named async entry functions.
 The loader calls the selected export as `entrypoint(input, cloud)`, discards

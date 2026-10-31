@@ -47,7 +47,7 @@ services:
     build:
       context: .
       dockerfile: packages/runner/Dockerfile
-    profiles: [extra]
+    profiles: [runner]
     restart: unless-stopped
     environment:
       CLOUD_APP_KEY_FILE: /run/secrets/runner-app-key
