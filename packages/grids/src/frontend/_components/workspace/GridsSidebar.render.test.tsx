@@ -122,7 +122,7 @@ describe("GridsSidebar workflows", () => {
     expect(html).toContain("/app/grids/BASE01/workflows/FLOW01");
   });
 
-  test("marks All workflows as the current page on the workflow overview, and a workflow on its own page", () => {
+  test("marks the empty workflow overview in the sidebar, and a workflow on its own page", () => {
     const state = workflowState();
     const route = (activeWorkflow: PublicWorkflow | null): PublicOkWorkspaceState["route"] => ({
       kind: "workflows",
@@ -159,20 +159,24 @@ describe("GridsSidebar workflows", () => {
     const current = (html: string) =>
       /<a [^>]*href="([^"]+)"[^>]*aria-current="page"|<a [^>]*aria-current="page"[^>]*href="([^"]+)"/.exec(html)?.slice(1).find(Boolean);
 
+    // The overview exists only without workflows: with one, `/workflows` opens it.
+    state.catalog.workflows = [];
     state.route = route(null);
     const overview = renderToString(() => createComponent(GridsSidebar, { state }));
     expect(overview).toContain("All workflows");
     expect(current(overview)).toBe("/app/grids/BASE01/workflows");
 
-    state.route = route(state.catalog.workflows[0]!);
-    expect(current(renderToString(() => createComponent(GridsSidebar, { state })))).toBe("/app/grids/BASE01/workflows/FLOW01");
-
-    // Curated groups list every workflow under All resources, with the same entry first.
-    state.navigation = { revision: 1, groups: [{ id: "GROUP1", name: "Loan desk", entries: [{ type: "workflow", id: workflow.id }] }] };
-    state.route = route(null);
+    state.navigation = { revision: 1, groups: [{ id: "GROUP1", name: "Loan desk", entries: [] }] };
     const grouped = renderToString(() => createComponent(GridsSidebar, { state }));
     expect(grouped).toContain("All workflows");
     expect(current(grouped)).toBe("/app/grids/BASE01/workflows");
+
+    // A workflow's own page lists the workflows and marks it; there is no overview entry to lead elsewhere.
+    const withWorkflow = workflowState();
+    withWorkflow.route = route(withWorkflow.catalog.workflows[0]!);
+    const page = renderToString(() => createComponent(GridsSidebar, { state: withWorkflow }));
+    expect(page).not.toContain("All workflows");
+    expect(current(page)).toBe("/app/grids/BASE01/workflows/FLOW01");
   });
 
   test("shows workflow creation in the sidebar only for base admins in Edit mode", () => {

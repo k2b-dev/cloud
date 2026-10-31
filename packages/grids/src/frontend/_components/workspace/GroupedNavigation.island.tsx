@@ -34,7 +34,10 @@ export default function GroupedNavigation(props: {
     customApp: workspaceText.apps,
   };
   const types = NavigationResourceTypeSchema.options.filter(
-    (type) => type === "documentTemplate" || (props.groups.length > 0 && props.resources.some((item) => item.type === type)),
+    (type) =>
+      type === "documentTemplate" ||
+      (props.groups.length > 0 &&
+        (props.resources.some((item) => item.type === type) || (type === "workflow" && props.active === "workflow:all"))),
   );
   const [expanded, setExpanded] = createSignal(initialNavigationExpansion(props.groups, props.initialExpanded, props.active, types));
   onMount(() => {
@@ -133,7 +136,8 @@ export default function GroupedNavigation(props: {
                   navigation="document"
                 />
               )}
-              {type === "workflow" && (
+              {/* Only the empty workflow overview is a page of its own; with workflows, it opens the first one. */}
+              {type === "workflow" && props.active === "workflow:all" && (
                 <AppWorkspace.NavTree.Item
                   id="type:workflow/workflow:all"
                   label={workspaceText.allWorkflows}
