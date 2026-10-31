@@ -570,7 +570,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   });
   createEffect(
     on(
-      () => [trailTitle(), archived(), filter()] as const,
+      () => [trailTitle(), archived(), filter(), !!(route().channels || route().forYou)] as const,
       ([title]) => layout.update({ breadcrumbs: breadcrumbs(title) }),
       { defer: true },
     ),
