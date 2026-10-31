@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppEvents } from "../../../core/src/migrate/core/app-events";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
 import { migrate as migrateNotifications } from "../../../core/src/migrate/core/notifications";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { appAccessManagers } from "./app-access-management";
 import { appAdminFacts } from "./app-admin-facts";

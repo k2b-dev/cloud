@@ -1,9 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { type Server, sql } from "bun";
+import type { Server } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { withActiveIdentitySigner } from "./identity";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";

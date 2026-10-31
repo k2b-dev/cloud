@@ -1,5 +1,6 @@
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import type { EntityKind, EntityListItem, UserProfile, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { escapeLikePattern, toPgTextArray, toPgUuidArray } from "../postgres";
 import type { ServiceAccountKind, ServiceAccountStatus } from "../service-accounts";

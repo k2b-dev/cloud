@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { managerEligibility } from "../_internal/app-access-manager-sql";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { AppAccessManagementError, canRepairAppAccess } from "./app-access-management";
 

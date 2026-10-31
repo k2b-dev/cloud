@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import * as registry from "../_internal/registry";
 import type { AppRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { AuthContext, RequestAuthority } from "../server";
 import { requireAppAccess } from "../server/middleware/app-access";
 import * as appAccess from "../services/app-access";

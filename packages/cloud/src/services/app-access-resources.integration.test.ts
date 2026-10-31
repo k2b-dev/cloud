@@ -1,6 +1,5 @@
 import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
@@ -13,6 +12,7 @@ import { createSearchRoutes } from "../api/search";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
 import type { AppRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import { requireAppAccess } from "../server/middleware/app-access";
 import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
 import * as authMiddleware from "../server/middleware/auth";

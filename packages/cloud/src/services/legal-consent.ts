@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { sql } from "../runtime/clients";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { isAccountExpired } from "./account-model";
 import { verifySessionToken } from "./identity";

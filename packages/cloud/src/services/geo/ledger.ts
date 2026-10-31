@@ -1,6 +1,7 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { AppPwaActor } from "../../app-pwa/contracts";
 import type { AccessSubject, CapabilityExecutionContext } from "../../contracts";
+import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import { GeoError } from "./errors";
 import type { GeoConfig } from "./settings";
@@ -44,112 +45,115 @@ const rowsFor = (subject: AccessSubject, config: GeoBudgetConfig, now: Date) => 
     { scope: "person", subject: geoSubjectKey(subject), ...periods.person, limit: config.personDailyCredits * 1000 },
   ] satisfies GeoReservation["rows"];
 };
-export const createGeoLedger = (db: SQL = sql) => ({
-  async reserve(subject: AccessSubject, config: GeoBudgetConfig, cost: number, group: string, now: Date): Promise<GeoReservation> {
-    if (!Number.isSafeInteger(cost) || cost < 0) throw new Error("Invalid geo reservation");
-    const rows = rowsFor(subject, config, now);
-    await db.begin(async (tx) => {
-      // Fixed order across upserts, updates, shares and settlement: Cloud first, person second.
-      for (const row of rows)
-        await tx`INSERT INTO geo.usage(scope,subject,period) VALUES(${row.scope},${row.subject},${row.period}) ON CONFLICT DO NOTHING`;
-      for (const row of rows) {
-        // Keep the refusal's available/shortfall numbers in the same row-lock snapshot as admission.
-        const [balance] = await tx<{ used: number }[]>`SELECT used::float8 AS used FROM geo.usage
+export const createGeoLedger = (injectedDb?: SQL) => {
+  const db = () => injectedDb ?? sql;
+  return {
+    async reserve(subject: AccessSubject, config: GeoBudgetConfig, cost: number, group: string, now: Date): Promise<GeoReservation> {
+      if (!Number.isSafeInteger(cost) || cost < 0) throw new Error("Invalid geo reservation");
+      const rows = rowsFor(subject, config, now);
+      await db().begin(async (tx) => {
+        // Fixed order across upserts, updates, shares and settlement: Cloud first, person second.
+        for (const row of rows)
+          await tx`INSERT INTO geo.usage(scope,subject,period) VALUES(${row.scope},${row.subject},${row.period}) ON CONFLICT DO NOTHING`;
+        for (const row of rows) {
+          // Keep the refusal's available/shortfall numbers in the same row-lock snapshot as admission.
+          const [balance] = await tx<{ used: number }[]>`SELECT used::float8 AS used FROM geo.usage
           WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period} FOR UPDATE`;
-        const changed = await tx`UPDATE geo.usage SET used=used+${cost} WHERE scope=${row.scope} AND subject=${row.subject}
+          const changed = await tx`UPDATE geo.usage SET used=used+${cost} WHERE scope=${row.scope} AND subject=${row.subject}
           AND period=${row.period} AND used+${cost}<=${row.limit} RETURNING used`;
-        if (!changed.length) {
-          const available = row.limit - (balance?.used ?? 0);
-          throw new GeoError("GEO_BUDGET_EXHAUSTED", {
-            scope: row.scope,
-            resetsAt: row.resetsAt,
-            requiredCredits: cost / 1000,
-            availableCredits: available / 1000,
-            shortfallCredits: (cost - available) / 1000,
-          });
+          if (!changed.length) {
+            const available = row.limit - (balance?.used ?? 0);
+            throw new GeoError("GEO_BUDGET_EXHAUSTED", {
+              scope: row.scope,
+              resetsAt: row.resetsAt,
+              requiredCredits: cost / 1000,
+              availableCredits: available / 1000,
+              shortfallCredits: (cost - available) / 1000,
+            });
+          }
         }
-      }
-      for (const row of rows)
-        await tx`INSERT INTO geo.shares(scope,subject,period,function_group,used)
+        for (const row of rows)
+          await tx`INSERT INTO geo.shares(scope,subject,period,function_group,used)
         VALUES(${row.scope},${row.subject},${row.period},${group},${cost})
         ON CONFLICT(scope,subject,period,function_group) DO UPDATE SET used=geo.shares.used+EXCLUDED.used`;
-    });
-    return { cost, group, rows };
-  },
-  async settle(reservation: GeoReservation, referenceCost: number) {
-    const refund = reservation.cost - referenceCost;
-    if (!Number.isSafeInteger(referenceCost) || referenceCost < 0 || !Number.isSafeInteger(refund))
-      throw new Error("Invalid geo settlement");
-    if (!refund) return;
-    // Negative refunds truthfully debit known routing overruns. Admission still uses the original
-    // bounded CAS transaction; future reservations see the overdrawn counters and are refused.
-    // Settle once per reservation, in the same fixed row order as admission.
-    await db.begin(async (tx) => {
-      for (const row of reservation.rows) {
-        await tx`UPDATE geo.usage SET used=used-${refund} WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period}`;
-        await tx`UPDATE geo.shares SET used=used-${refund} WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period} AND function_group=${reservation.group}`;
-      }
-    });
-  },
-  async availability(subject: AccessSubject, config: GeoBudgetConfig, now: Date) {
-    const balances = [];
-    for (const row of rowsFor(subject, config, now)) {
-      const [used] = await db<{ used: number }[]>`SELECT used::float8 AS used FROM geo.usage
+      });
+      return { cost, group, rows };
+    },
+    async settle(reservation: GeoReservation, referenceCost: number) {
+      const refund = reservation.cost - referenceCost;
+      if (!Number.isSafeInteger(referenceCost) || referenceCost < 0 || !Number.isSafeInteger(refund))
+        throw new Error("Invalid geo settlement");
+      if (!refund) return;
+      // Negative refunds truthfully debit known routing overruns. Admission still uses the original
+      // bounded CAS transaction; future reservations see the overdrawn counters and are refused.
+      // Settle once per reservation, in the same fixed row order as admission.
+      await db().begin(async (tx) => {
+        for (const row of reservation.rows) {
+          await tx`UPDATE geo.usage SET used=used-${refund} WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period}`;
+          await tx`UPDATE geo.shares SET used=used-${refund} WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period} AND function_group=${reservation.group}`;
+        }
+      });
+    },
+    async availability(subject: AccessSubject, config: GeoBudgetConfig, now: Date) {
+      const balances = [];
+      for (const row of rowsFor(subject, config, now)) {
+        const [used] = await db()<{ used: number }[]>`SELECT used::float8 AS used FROM geo.usage
         WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period}`;
-      balances.push({ exhausted: (used?.used ?? 0) >= row.limit, resetsAt: row.resetsAt });
-    }
-    return { cloud: balances[0]!, person: balances[1]! };
-  },
-  async recordTransition(
-    event: "provider_key_rejected" | "monthly_budget_exhausted" | "route_cost_overrun",
-    timezone: string,
-    context: { actor: CapabilityExecutionContext["actor"] | AppPwaActor; requestId?: string },
-    now: Date,
-    metadata: Record<string, number> = {},
-  ) {
-    const period = geoPeriods(now, timezone).cloud.period;
-    await db.begin(async (tx) => {
-      const inserted =
-        event === "route_cost_overrun"
-          ? [true]
-          : await tx`INSERT INTO geo.audit_transitions(event,period) VALUES(${event},${period}) ON CONFLICT DO NOTHING RETURNING event`;
-      if (!inserted.length) return;
-      const actor =
-        context.actor.kind === "device" || context.actor.kind === "visit"
-          ? null
-          : context.actor.kind === "user"
-            ? {
-                userId: context.actor.user.id,
-                uid: context.actor.user.uid,
-                provider: context.actor.user.provider,
-                roles: context.actor.user.roles,
-              }
-            : { uid: `service-account:${context.actor.serviceAccount.id}`, provider: "service_account", roles: context.actor.scopes };
-      await audit.record(
-        {
-          action: `core.geo.${event}`,
-          outcome: event === "monthly_budget_exhausted" ? "denied" : "failed",
-          actor,
-          requestId: context.requestId,
-          metadata: {
-            period,
-            ...metadata,
-            ...(context.actor.kind === "device" || context.actor.kind === "visit"
+        balances.push({ exhausted: (used?.used ?? 0) >= row.limit, resetsAt: row.resetsAt });
+      }
+      return { cloud: balances[0]!, person: balances[1]! };
+    },
+    async recordTransition(
+      event: "provider_key_rejected" | "monthly_budget_exhausted" | "route_cost_overrun",
+      timezone: string,
+      context: { actor: CapabilityExecutionContext["actor"] | AppPwaActor; requestId?: string },
+      now: Date,
+      metadata: Record<string, number> = {},
+    ) {
+      const period = geoPeriods(now, timezone).cloud.period;
+      await db().begin(async (tx) => {
+        const inserted =
+          event === "route_cost_overrun"
+            ? [true]
+            : await tx`INSERT INTO geo.audit_transitions(event,period) VALUES(${event},${period}) ON CONFLICT DO NOTHING RETURNING event`;
+        if (!inserted.length) return;
+        const actor =
+          context.actor.kind === "device" || context.actor.kind === "visit"
+            ? null
+            : context.actor.kind === "user"
               ? {
-                  appId: context.actor.appId,
-                  subject: { type: "user", userId: context.actor.ownerUserId },
-                  via: {
-                    kind: context.actor.kind,
-                    appId: context.actor.appId,
-                    deviceId: context.actor.deviceId,
-                    ...(context.actor.kind === "visit" ? { visitId: context.actor.visitId } : {}),
-                  },
+                  userId: context.actor.user.id,
+                  uid: context.actor.user.uid,
+                  provider: context.actor.user.provider,
+                  roles: context.actor.user.roles,
                 }
-              : {}),
+              : { uid: `service-account:${context.actor.serviceAccount.id}`, provider: "service_account", roles: context.actor.scopes };
+        await audit.record(
+          {
+            action: `core.geo.${event}`,
+            outcome: event === "monthly_budget_exhausted" ? "denied" : "failed",
+            actor,
+            requestId: context.requestId,
+            metadata: {
+              period,
+              ...metadata,
+              ...(context.actor.kind === "device" || context.actor.kind === "visit"
+                ? {
+                    appId: context.actor.appId,
+                    subject: { type: "user", userId: context.actor.ownerUserId },
+                    via: {
+                      kind: context.actor.kind,
+                      appId: context.actor.appId,
+                      deviceId: context.actor.deviceId,
+                      ...(context.actor.kind === "visit" ? { visitId: context.actor.visitId } : {}),
+                    },
+                  }
+                : {}),
+            },
           },
-        },
-        tx,
-      );
-    });
-  },
-});
+          tx,
+        );
+      });
+    },
+  };
+};

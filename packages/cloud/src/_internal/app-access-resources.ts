@@ -1,8 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { waitWithin } from "../api/fanout";
 import type { AppMeta } from "../contracts/app";
 import { type AppAccessDeclaration, type AppAccessRule, AppAccessRuleSchema, type ResourceAppAccessAdapter } from "../contracts/app-access";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { coreOrigin } from "../services/identity/core-origin";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";

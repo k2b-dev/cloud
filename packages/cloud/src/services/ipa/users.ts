@@ -1,7 +1,7 @@
 import { password } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MutationResult, UserProfile } from "../../contracts/shared";
 import { coreUserEventPublisher } from "../../events/core-user-created";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { writeDeletedAccountAudit } from "../account-lifecycle/audit";
 import { resolveProviderProfile } from "../accounts/base-user";

@@ -1,14 +1,15 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { bindResourceAppAccess } from "../_internal/app-access-resources";
 import { compileCapabilities } from "../_internal/capabilities";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { AuthContext } from "../server";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
 import type { signInvocationToken } from "../services/identity/invocation-token";
@@ -16,6 +17,8 @@ import { issueInvocationToken } from "../services/identity/issue-invocation";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createSearchRoutes as buildSearchRoutes } from "./search";
 import type { SearchStreamLine } from "./search/schemas";
+
+useUnitClients();
 
 const capabilities = defineCapabilities({
   protocolVersion: 2,

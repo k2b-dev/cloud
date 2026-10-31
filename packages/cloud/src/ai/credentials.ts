@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { decryptValue, encryptValue } from "../services/settings/crypto";
 
 type SqlClient = typeof sql;

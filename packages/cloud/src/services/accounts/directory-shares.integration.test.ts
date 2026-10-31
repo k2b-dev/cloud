@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
 import { z } from "zod";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { EntityListItemSchema } from "../../contracts";
+import { sql } from "../../runtime/clients";
 import { prepareIdentitySigner } from "../identity/key-ring";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
 import "../../../../../scripts/fixtures/authorization-preload";

@@ -1,8 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
-import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { initializeTestPlatform, suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppEvents } from "../../../core/src/migrate/core/app-events";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
@@ -12,6 +11,7 @@ import { createAppEventRoutes } from "../api/app-events";
 import { appAccess } from "../contracts/app-access";
 import { APP_DETAILS_LIST_LIMIT, APP_SUBSCRIPTION_NEW_WINDOW_MS, AppDetailsSchema } from "../contracts/app-details";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
 import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
 import { createAppDetailsService } from "./app-details";
 import { buildProjectedUser } from "./session/user";
@@ -103,6 +103,13 @@ suiteFor("database")("app administration detail", () => {
         '{"baseLocale":"en","translations":{"de":{"label":"Nachricht","description":"Beschreibung","excludedReason":"Keine SMS für diese Meldung."}}}',
         'user', '{browser}', '{email}', '{sms}', 'No SMS for this notification.')
     `;
+  });
+
+  test("a service created before startup follows a replacement platform client", async () => {
+    const previous = sql;
+    await initializeTestPlatform();
+    expect(sql).not.toBe(previous);
+    expect((await details("demo", { authority: authority() }))?.app.id).toBe("demo");
   });
 
   test("online detail shares localized declarations, notification policy and real inherited grant counts", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { redis } from "bun";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { redis } from "../runtime/clients";
 import { GeoError } from "../services/geo/errors";
 import * as settings from "../services/settings";
 import { AppPwaError, appPwaCommand } from "./contracts";
@@ -8,6 +9,8 @@ import { AppPwaCoreQueryError } from "./core-query-error";
 import { appPwaQr, parseAppPwaQr } from "./protocol";
 import { appPwaDigest, createAppPwaService } from "./service";
 import { appPwaCookie, appPwaCredential, createAppPwaRouter } from "./transport";
+
+useUnitClients();
 
 const origin = "https://cloud.example.test";
 const path = "/app/signing/customer/";

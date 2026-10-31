@@ -6,13 +6,13 @@
  * core app mounts it under `/api/admin/core/settings`.
  */
 
-import { sql } from "bun";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ObjectStoreConfigurationError, ObjectStoreConnectionError, testObjectStoreConnection } from "../_internal/object-store-config";
 import { listApps } from "../_internal/registry";
 import { enrichDirtyAiConversations } from "../ai/enrich";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
 import { settingsDeleteLegacyKeys, settingsListLegacyKeys, settingsService } from "../services";
 import { readAccountCategoryPolicy } from "../services/account-category-policy";

@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { toPgTextArray } from "../services/postgres";
 import type { AiModelUsage } from "../shared/ai-models";
 import { aiModelCatalog } from "./model-catalog";

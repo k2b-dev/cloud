@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { decodeJwt, SignJWT } from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { freeipa } from "../server/services";
 import { accounts } from "../services/accounts";

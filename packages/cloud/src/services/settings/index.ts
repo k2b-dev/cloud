@@ -9,8 +9,8 @@
  * env-backed entries into Postgres. Startup never replaces an existing row;
  * env bootstrap only fills missing keys.
  */
+import { redis, sql } from "../../runtime/clients";
 
-import { redis, sql } from "bun";
 import { bindSettingValue, replaceSettingValue, unwrapSettingValue } from "./binding";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";
 import { resolveSettingPresentation, SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";

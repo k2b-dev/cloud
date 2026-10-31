@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { streamSSE } from "hono/streaming";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { appRegistry } from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";

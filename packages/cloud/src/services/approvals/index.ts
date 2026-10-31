@@ -1,9 +1,10 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { capabilityRequestHash } from "../../capabilities/claims";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
 import type { CapabilityActionReviewData } from "../../contracts/capabilities";
 import { CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
+import { sql } from "../../runtime/clients";
 import { isAppSessionActor } from "../../server/actor";
 import type { RequestActor, RequestCredentialKind } from "../../server/middleware/auth";
 import { audit } from "../audit";

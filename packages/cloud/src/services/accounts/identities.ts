@@ -1,7 +1,8 @@
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import { z } from "zod";
 import { DEFAULT_LINUX_IDENTITY_CONFIGURATION, LinuxIdentityConfigurationSchema } from "../../contracts/posix";
 import type { RequestActor, UserProfile, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { userFromActor } from "../../server/actor";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { toPgTextArray } from "../postgres";
@@ -66,9 +67,10 @@ const cursor = (after?: string): string | null => {
 };
 
 /** Server-side identity reads. Authentication and application resource authorization remain caller-owned. */
-export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdentity = readUpstreamIdentity) => {
+export const createAccountIdentityService = (injectedDb?: typeof sql, upstreamIdentity = readUpstreamIdentity) => {
+  const db = () => injectedDb ?? sql;
   const setting = async (key: string, fallback: unknown): Promise<unknown> => {
-    const [row] = await db<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key}`;
+    const [row] = await db()<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key}`;
     return row ? decryptValue(row.value) : fallback;
   };
   const availability = async (): Promise<AccountIdentityAvailability> => {
@@ -84,7 +86,7 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
       throw new AccountIdentityError("invalid_identity_configuration");
     }
   };
-  const userRows = (filter: SQLQuery) => db<UserRow[]>`
+  const userRows = (filter: SQLQuery) => db()<UserRow[]>`
     SELECT u.id, u.provider, u.uid, u.profile, u.admin,
       (u.account_expires IS NOT NULL AND u.account_expires <= now()) AS expired,
       p.managed_by, p.uid_number, p.primary_gid_number
@@ -98,7 +100,7 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
     const [row] = await userRows(sql`u.id = ${supplied.id}::uuid`);
     if (!row || row.expired || row.provider !== supplied.provider || row.uid !== supplied.uid || row.profile !== supplied.profile)
       throw new AccountIdentityError("identity_unavailable");
-    if (!(await isAccountCategoryAllowed(row, db))) throw new AccountIdentityError("identity_unavailable");
+    if (!(await isAccountCategoryAllowed(row, db()))) throw new AccountIdentityError("identity_unavailable");
     const state = await availability();
     if (row.provider === "ipa" && !state.freeipaEnabled) throw new AccountIdentityError("identity_unavailable");
     return { row, state, supplied };
@@ -113,14 +115,14 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
       if (!Array.isArray(configured) || !configured.every((value): value is string => typeof value === "string"))
         throw new AccountIdentityError("invalid_identity_configuration");
       const names = configured.length > 0 ? configured : ["admins"];
-      const [membership] = await db`SELECT 1 FROM auth.ipa_user_effective_groups
+      const [membership] = await db()`SELECT 1 FROM auth.ipa_user_effective_groups
         WHERE user_id = ${current.row.id}::uuid AND group_name = ANY(${toPgTextArray(names)}::text[]) LIMIT 1`;
       if (!membership) throw new AccountIdentityError("admin_required");
     }
     return current;
   };
   const groupRows = async (filter: SQLQuery) => {
-    const rows = await db<{ id: string; provider: UserProvider; name: string; gid_number: number | null; personal: boolean }[]>`
+    const rows = await db()<{ id: string; provider: UserProvider; name: string; gid_number: number | null; personal: boolean }[]>`
       SELECT g.id, g.provider, g.name, g.gid_number,
         EXISTS(SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id) AS personal
       FROM auth.groups g
@@ -189,7 +191,7 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
         eligible: current.profile === "user",
       };
     }
-    const [ownership] = await db<{ personal: boolean }[]>`SELECT EXISTS (
+    const [ownership] = await db()<{ personal: boolean }[]>`SELECT EXISTS (
       SELECT 1 FROM auth.personal_groups p
       WHERE (${input.identityId ?? null}::uuid IS NOT NULL AND p.group_id = ${input.identityId ?? null}::uuid)
          OR (${input.identityId ?? null}::uuid IS NULL AND p.group_name = ${input.name})
@@ -238,10 +240,10 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
       const after = cursor(input.after);
       const state = await availability();
       const [localAllowed, ipaAllowed] = await Promise.all([
-        isAccountCategoryAllowed({ provider: "local", profile: "user" }, db),
-        isAccountCategoryAllowed({ provider: "ipa", profile: "user" }, db),
+        isAccountCategoryAllowed({ provider: "local", profile: "user" }, db()),
+        isAccountCategoryAllowed({ provider: "ipa", profile: "user" }, db()),
       ]);
-      const rows = await db<
+      const rows = await db()<
         {
           id: string;
           provider: UserProvider;

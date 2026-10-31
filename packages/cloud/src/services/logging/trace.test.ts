@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { SyncEvent } from "@k2b/sync";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { flushSyncTraceEvents, observeSyncEvent, trace, traceSyncEvent } from "./trace";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */

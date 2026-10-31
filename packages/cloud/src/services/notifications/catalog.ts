@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { AnyBoundNotificationDefinition } from "../../contracts/notification-types";
+import { sql } from "../../runtime/clients";
 import { logger } from "../logging";
 import { toPgTextArray } from "../postgres";
 

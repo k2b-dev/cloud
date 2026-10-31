@@ -1,4 +1,4 @@
-import { redis } from "bun";
+import { redis } from "../../runtime/clients";
 
 const KEY_PREFIX = "auth:proxy-return:";
 const DEFAULT_TTL_SECONDS = 300;

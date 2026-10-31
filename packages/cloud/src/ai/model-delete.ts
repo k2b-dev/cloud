@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { z } from "zod";
+import { sql } from "../runtime/clients";
 import { recursiveGroupIdsSubquery } from "../services/accounts/group-sql";
 import { toPgTextArray } from "../services/postgres";
 import { type AiDeleteModelInput, type AiModel, type AiModelSlot, type AiProvider, aiReplacementProblem } from "../shared/ai-models";

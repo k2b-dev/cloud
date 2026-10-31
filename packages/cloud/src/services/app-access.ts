@@ -1,8 +1,9 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { Context } from "hono";
 import { RESOURCE_ACCESS_TIMEOUT_MS, resourceAppAccess } from "../_internal/app-access-resources";
 import type { AppMeta } from "../contracts/app";
 import { AppAccessRuleSchema, type FixedAppAccessRule } from "../contracts/app-access";
+import { sql } from "../runtime/clients";
 import { userFromActor } from "../server/actor";
 import { type AuthContext, auth, type RequestAuthority } from "../server/middleware/auth";
 import { buildAccessPrincipalCondition } from "../server/services/access";

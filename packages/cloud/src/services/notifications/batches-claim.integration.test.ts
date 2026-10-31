@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import * as bulk from "../outgoing-mail/enqueue";
 import { toPgTextArray, toPgUuidArray } from "../postgres";
 import { __notificationBatchTest } from "./batches";

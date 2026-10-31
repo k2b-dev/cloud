@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { PaginationParams } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { registerSettings } from "../settings/defaults";
 import { redactLinkTokens, redactMetadata } from "./redaction";
@@ -126,7 +126,8 @@ function write(params: WriteParams): void {
   const consoleFn = params.level === "error" ? console.error : params.level === "warn" ? console.warn : console.log;
   consoleFn(prefix, message, ...(safeMetadata ? [safeMetadata] : []));
 
-  sql`
+  const persist = async () => {
+    await sql`
     INSERT INTO logging.entries (level, source, message, metadata)
     VALUES (
       ${params.level},
@@ -134,7 +135,9 @@ function write(params: WriteParams): void {
       ${message},
       (${safeMetadata ? JSON.stringify(safeMetadata) : null}::text)::jsonb
     )
-  `.catch((err: Error) => console.error("[logging] DB write failed:", err.message));
+    `;
+  };
+  void persist().catch((err: Error) => console.error("[logging] DB write failed:", err.message));
 }
 
 /**

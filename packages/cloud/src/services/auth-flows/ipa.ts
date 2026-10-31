@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { accounts } from "../accounts";
 import { logger } from "../logging";

@@ -1,6 +1,7 @@
-import { type SQL, type SQLQuery, sql } from "bun";
+import type { SQL, SQLQuery } from "bun";
 import type { CloudResourceRef } from "../contracts/capabilities";
 import { AuthenticatedPrincipalSchema, type ServiceAccountKind } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import {
   buildAccessPrincipalCondition,
   createAccess,

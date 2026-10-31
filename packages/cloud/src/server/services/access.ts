@@ -1,7 +1,8 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import { type ManagerCandidate, removesLastManager } from "../../access/managers";
 import { accessMessages } from "../../access/messages";
+import { sql } from "../../runtime/clients";
 import { recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } from "../../services/accounts/group-sql";
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";

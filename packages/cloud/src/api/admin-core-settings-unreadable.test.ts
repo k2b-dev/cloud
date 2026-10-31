@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { sql } from "../runtime/clients";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
 import * as settings from "../services/settings";
 import routes from "./admin-core-settings";
+
+useUnitClients();
 
 const key = "app.name";
 const restores: Array<{ mockRestore(): void }> = [];

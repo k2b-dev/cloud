@@ -289,12 +289,18 @@ const bindDefaultDatabase = async (prefix: string, database: Awaited<ReturnType<
   process.env.DATABASE_URL = database.url;
   ownTestDatabase(database.name);
   await initializeTestPlatform();
-  const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
-  if (row?.name !== database.name) {
-    await database.drop();
-    throw new Error(
-      `${prefix}: the default sql handle is already bound to "${row?.name}"; run this file in its own process (bun test --isolate)`,
-    );
+  const { sql: platformSql } = await import("../../packages/cloud/src/runtime/clients");
+  for (const [label, client] of [
+    ["platform", platformSql],
+    ["Bun default", sql],
+  ] as const) {
+    const [row] = await client<{ name: string }[]>`SELECT current_database() AS name`;
+    if (row?.name !== database.name) {
+      await database.drop();
+      throw new Error(
+        `${prefix}: the ${label} sql handle is already bound to "${row?.name}"; run this file in its own process (bun test --isolate)`,
+      );
+    }
   }
   return database;
 };

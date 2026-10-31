@@ -1,10 +1,14 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { redis as cacheClient } from "bun";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
+import { redis as cacheClient } from "../../runtime/clients";
+
 import { stubConnections } from "../../runtime/connections.test-fixture";
 import * as redis from "../request-cache-redis";
 import * as settingsStore from "../settings/store";
 import { GEO_TEST_KEY } from "./geo.test-fixture";
 import { readGeoConfig } from "./settings";
+
+useUnitClients();
 
 const values: Record<string, unknown> = {
   "geo.api_key": GEO_TEST_KEY,

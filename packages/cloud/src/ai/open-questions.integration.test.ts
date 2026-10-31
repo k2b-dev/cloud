@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
+import { sql } from "../runtime/clients";
 import { approvals } from "../services/approvals";
 import { AiInvalidationSchema } from "./live-events";
 import { migrateCloudAi } from "./migrate";

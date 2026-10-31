@@ -1,6 +1,7 @@
-import { type SQL, type SQLQuery, sql } from "bun";
+import type { SQL, SQLQuery } from "bun";
 import { listApps } from "../_internal/registry";
 import { AuthenticatedPrincipalSchema, type ServiceAccountKind } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import {
   buildAccessPrincipalCondition,

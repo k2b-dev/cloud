@@ -1,5 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
-import { redis } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { redis } from "../runtime/clients";
+
 import * as platformSettings from "../services/settings";
 import * as models from "./assistant-models";
 import { getAiChatQuotas } from "./chat-quotas";
@@ -7,6 +9,8 @@ import { aiQuotas } from "./quotas";
 import { aiRoutes } from "./routes";
 import * as settings from "./settings";
 import type { AiModelProfile } from "./types";
+
+useUnitClients();
 
 const subject = { type: "user" as const, userId: "own-user" };
 const balance = (scope: string) => ({

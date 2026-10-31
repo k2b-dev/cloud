@@ -1,10 +1,14 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import webpush from "web-push";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
+import { sql } from "../../runtime/clients";
 import { coreSettings } from "../settings/api";
 import { SettingUnreadableError } from "../settings/store";
 import { browserNotifications } from "./browser";
 import { getNotificationChannel } from "./channels";
+
+useUnitClients();
 
 const publicKey = "notifications.web_push_public_key";
 const privateKey = "notifications.web_push_private_key";

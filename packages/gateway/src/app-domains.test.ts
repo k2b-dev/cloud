@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { brotliCompressSync, brotliDecompressSync, gunzipSync } from "node:zlib";
+import { redis as platformRedis } from "@k2b/cloud";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { domainCheckKey } from "@k2b/cloud/contracts/app-domains";
 import { type AuthContext, clientIp, rateLimit } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
-import { redis } from "bun";
 import { Hono } from "hono";
+import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { createGatewayHandler } from "./handler";
 import { createProxyStats } from "./proxy";
 import { buildRouteTable } from "./trie";
+
+useUnitClients();
 
 const app = (baseUrl: string): AppRegistryEntry => ({
   id: "site",
@@ -531,7 +534,8 @@ test.each([
 test("public application clientIp and rateLimit use the trusted visitor instead of forged headers", async () => {
   const clock = spyOn(Date, "now").mockReturnValue(1_793_404_800_000);
   const counts = new Map<string, number>();
-  const send = spyOn(redis, "send").mockImplementation(async (_command, args) => {
+  // Cloud rate limiting uses the platform Valkey client, not Bun's global one.
+  const send = spyOn(platformRedis, "send").mockImplementation(async (_command, args) => {
     const key = String(args[2]);
     const count = (counts.get(key) ?? 0) + 1;
     counts.set(key, count);

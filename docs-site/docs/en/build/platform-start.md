@@ -29,9 +29,11 @@ transactions, reservations, query helpers, SQL files, listeners, client
 options, and writable callbacks. Connections open on use.
 
 Before start, using either handle throws `sql used before platform start` or
-`redis used before platform start`. Unit and render tests need no startup when
-they do not use connections. Tests that replace services can stub their
-connection snapshot without opening infrastructure connections.
+`redis used before platform start`. The logger still writes to the console
+when database persistence fails before startup or after teardown; logging never
+throws a client startup error. Unit and render tests need no startup when they
+do not use connections. Tests that replace services can stub their connection
+snapshot without opening infrastructure connections.
 
 Use `lazySync()` for module-scope Sync declarations and use them after
 `app.start()`. See [Background work](/en/docs/automation/lifecycle-background-work). `storage` uses the operator's
@@ -58,6 +60,31 @@ operator name or startup options, or the pool's `connection` options override
 it. Platform initialization leaves the environment URL unchanged. During the
 transition from Bun-global clients, `defineApp()` retains the existing URL
 application name for those clients; the import migration removes that rewrite.
+
+## Migrate existing imports
+
+Move `sql` and `redis` value imports from `bun` to `@k2b/cloud`. Keep native
+`SQL` and `RedisClient` type imports from `bun`. Replace owned client
+constructors with `createSql()` or `createRedis()`, preserving their options
+and closing them through the same lifecycle.
+
+In a Cloud source checkout, preview and apply the migration to one package:
+
+```sh
+bun scripts/codemods/platform-clients.ts packages/my-app --dry-run
+bun scripts/codemods/platform-clients.ts packages/my-app
+```
+
+The command prints changed-file and converted-pool counts. It preserves aliases
+and unrelated Bun imports; running it again leaves migrated files unchanged.
+Review explicit Redis URLs, constructor spies, and subprocess startup manually.
+The `platform-clients` repository check also catches native module aliases,
+computed literal keys, and constructor values passed to other functions.
+Type-only constructor use stays allowed. Native constructors and direct target
+reads remain available in `tests/`, `scripts/fixtures/`, package-root `test/`
+and `bench/` directories, test files, and explicitly listed fixture files.
+A `fixtures/` or `tests/` directory inside application source does not grant
+an exemption.
 
 ## Start a custom data process
 

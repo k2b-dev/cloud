@@ -1,6 +1,6 @@
-import { sql } from "bun";
 import { createCapabilityDeadline } from "../_internal/capability-timeout";
 import type { CapabilityOrigin } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { pruneApprovalRequests } from "../services/approvals";
 import { logger } from "../services/logging";

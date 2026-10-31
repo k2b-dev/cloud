@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { migrateCloudAi } from "../../ai/migrate";
+import { sql } from "../../runtime/clients";
 import { encryptValue } from "./crypto";
 import { assertSettingVersions } from "./versions";
 

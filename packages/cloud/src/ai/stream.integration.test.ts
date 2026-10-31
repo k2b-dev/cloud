@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import { createSync, type Sync } from "@k2b/sync";
-import { sql } from "bun";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import { sql } from "../runtime/clients";
 import { latestTopicCursor } from "../services/topic-cursor";
 import { migrateCloudAi } from "./migrate";
 import type { AiStreamEvent, AiTurnBlock, AiWireEvent } from "./protocol";

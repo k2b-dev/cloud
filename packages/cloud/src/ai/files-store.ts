@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../runtime/clients";
 import { stripImageMetadata } from "../services/image-metadata";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { isAiImage } from "./file-media-type";
