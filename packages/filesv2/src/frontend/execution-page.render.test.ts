@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { LayoutBreadcrumb } from "@k2b/cloud/ssr/layout-runtime";
-import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { session } from "@k2b/cloud/services";
+import type { LayoutBreadcrumb } from "@k2b/cloud/ssr/layout-runtime";
+import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { LocaleProvider } from "@k2b/ui";
 import { type Context, type Env, type Handler, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
