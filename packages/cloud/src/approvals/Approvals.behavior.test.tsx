@@ -106,6 +106,28 @@ describe("Approvals", () => {
     }
   });
 
+  test("a Code-version request has its own source and receipt without a chat continuation", async () => {
+    const request = item("code1", {
+      sentence: "Approve Report?",
+      review: { message: "Approve the reviewed version?" },
+      requester: { kind: "code_version", appId: "demo", title: "Report", href: "/code/report/" },
+    });
+    const view = await mount({ initial: page([request]) }, () => Response.json({ status: "approved" }));
+    try {
+      const row = view.dom.root.querySelector<HTMLElement>("article.cloud-approval")!;
+      expect(row.querySelector("a")?.textContent).toBe("Code “Report”");
+      expect(row.querySelector("a")?.getAttribute("href")).toBe("/code/report/");
+      expect(row.textContent).not.toContain("from chat");
+      await Bun.sleep(550);
+      view.button("Approve Report?", row)!.click();
+      await waitFor(() => row.dataset.decided === "approved", "version receipt");
+      expect(row.textContent).toContain("Approval recorded for this version.");
+      expect(row.textContent).not.toContain("The chat it came from");
+    } finally {
+      view.cleanup();
+    }
+  });
+
   for (const locale of ["de", "en"] as const) {
     for (const linked of [true, false]) {
       test(`${locale}: the public approvals list preserves the chat's message preview and reading interaction (${linked ? "revision link" : "in place"})`, async () => {

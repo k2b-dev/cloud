@@ -12,6 +12,7 @@ import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 import { compactApprovalDetailsSql } from "./content";
 
+export { readApprovalContent } from "./content";
 export { countPending, listPending, presentPendingApproval } from "./list";
 export { migrateApprovals } from "./migrate";
 export { type ApprovalActionPolicy, loadApprovalActionPolicies, pendingApprovalCard } from "./question";

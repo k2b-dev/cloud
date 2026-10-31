@@ -1,6 +1,6 @@
 # Cloud approvals
 
-`Approvals` lists the signed-in person's open Action approvals and lets them
+`Approvals` lists the signed-in person's open approvals and lets them
 approve or reject each one in place. Every app uses the same component and the
 same Core route, `/api/approvals`, for its own scope: the requests whose effect
 belongs to the app, or that the app asked for. The app builds no route, table,
@@ -45,11 +45,15 @@ deed and target. A new review gives the app's sentence with chips and its
 preview. An older review shows its message as the question, every detail as a
 row, and Markdown as one block; a request without a review asks its sentence.
 Above the card, one quiet line names the owning app, links the chat it waits
-in, and says how long ago Cloud asked and when the request expires.
+in, and says how long ago Cloud asked and when the request expires. A
+`code_version` request links to its Code instead, labelled **Code “title”**.
+It addresses current Cloud admins and never offers remembered choices.
 
 An answer collapses the card at once to one outcome line in its place, with
 the focus on that line; what follows moves up by the answer the person gave.
 **Approved.** says that the chat it came from carries the Action out. A
+Code-version approvals instead say that the approval was recorded for this
+version; they do not promise a chat continuation. A
 rejection reads as the app's rejected sentence and "You declined.". When
 another tab or channel decided first, or the request expired or was withdrawn,
 the line says **Already decided elsewhere** or **Expired or withdrawn** in a
@@ -102,7 +106,9 @@ The component reads `GET /api/approvals` and decides with
 the person is the approver, that the request is still open, and the channel
 rules of the request's level; then it continues the chat that asked, exactly as
 a decision in the chat card does. After a decision the component refreshes the
-rail counts.
+rail counts. Code-version decisions use the current Cloud-admin role and the
+version owner's transaction instead of a waiting chat. An unavailable owner
+leaves the question open with the existing retryable error state.
 
 ## Example
 

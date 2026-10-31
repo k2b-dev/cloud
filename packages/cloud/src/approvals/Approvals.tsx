@@ -74,7 +74,13 @@ function Origin(props: { item: PendingApproval; withApp?: boolean }) {
         <span aria-hidden="true"> · </span>
       </Show>
       <a href={props.item.requester.href}>
-        {props.item.requester.title ? t().fromChat({ title: props.item.requester.title }) : t().fromUntitledChat}
+        {props.item.requester.kind === "code_version"
+          ? props.item.requester.title
+            ? t().fromCode({ title: props.item.requester.title })
+            : t().fromUntitledCode
+          : props.item.requester.title
+            ? t().fromChat({ title: props.item.requester.title })
+            : t().fromUntitledChat}
       </a>
       <span aria-hidden="true"> · </span>
       <time dateTime={props.item.createdAt}>{dates.formatDateTimeRelative(props.item.createdAt, { locale: locale() })}</time>
@@ -85,9 +91,18 @@ function Origin(props: { item: PendingApproval; withApp?: boolean }) {
 }
 
 /** The outcome lines a request on this page can reach; the chat it came from shows how the Action itself ends. */
-const outcomeLines = (card: ActionCard, words: ReturnType<typeof approvalMessages.resolve>["t"], reopen: () => void) => ({
+const outcomeLines = (
+  card: ActionCard,
+  words: ReturnType<typeof approvalMessages.resolve>["t"],
+  reopen: () => void,
+  codeVersion: boolean,
+) => ({
   sending: { tone: "running" as const, text: [{ kind: "text" as const, text: words.sending }] },
-  approved: { tone: "done" as const, text: [{ kind: "text" as const, text: words.approvedHere }], detail: words.continuesInChat },
+  approved: {
+    tone: "done" as const,
+    text: [{ kind: "text" as const, text: words.approvedHere }],
+    detail: codeVersion ? words.versionApproved : words.continuesInChat,
+  },
   rejected: { tone: "off" as const, text: card.forms.rejected, detail: words.declinedHere },
   elsewhere: { tone: "off" as const, icon: "ti ti-info-circle", text: [{ kind: "text" as const, text: words.decidedElsewhere }] },
   gone: { tone: "off" as const, icon: "ti ti-clock-x", text: [{ kind: "text" as const, text: words.gone }] },
@@ -147,7 +162,12 @@ function ApprovalCard(props: {
           outcome={
             <ActionReceipt
               card={card()}
-              lines={outcomeLines(card(), approvalMessages.resolve([card().locale]).t, props.reopen)}
+              lines={outcomeLines(
+                card(),
+                approvalMessages.resolve([card().locale]).t,
+                props.reopen,
+                props.item.requester.kind === "code_version",
+              )}
               current={current()}
             />
           }
@@ -236,7 +256,7 @@ const openDetails = (item: PendingApproval, locale: string) =>
               </Armed>
               <p class="cloud-approval__callout">
                 <i class="ti ti-info-circle" aria-hidden="true" />
-                {t().exactlyThis}
+                {item.requester.kind === "code_version" ? t().exactlyThisVersion : t().exactlyThis}
               </p>
             </div>
           </PanelDialog.Body>
@@ -409,11 +429,16 @@ export default function Approvals(props: ApprovalsProps) {
   const rejectAll = async () => {
     const targets = open();
     if (targets.length === 0) return;
-    const confirmed = await prompts.confirm(t().rejectAllBody({ count: targets.length }), {
-      title: t().rejectAllTitle,
-      confirmText: t().rejectAll,
-      variant: "danger",
-    });
+    const confirmed = await prompts.confirm(
+      targets.some((item) => item.requester.kind === "code_version")
+        ? t().rejectAllWithVersions
+        : t().rejectAllBody({ count: targets.length }),
+      {
+        title: t().rejectAllTitle,
+        confirmText: t().rejectAll,
+        variant: "danger",
+      },
+    );
     // One after another: rejecting is cheap, and the list stays readable while the receipts appear.
     if (confirmed) for (const item of targets) await decide(item, { approved: false });
   };
