@@ -92,6 +92,7 @@ const open = async (options: BrowserContextOptions, path: string) => {
       const entry = editorDirectory().items.find((item) => item.path === url.searchParams.get("path"));
       return route.fulfill(entry ? { json: { base: editorBases.items[0], entry } } : { status: 404, json: {} });
     }
+    if (path.endsWith("/trash")) return route.fulfill({ json: { entries: [], next: null } });
     if (path.endsWith("/editor")) return route.fulfill({ json: editorLaunch(route.request().postDataJSON().path) });
     return route.fulfill({ status: 404, json: {} });
   });
@@ -176,5 +177,25 @@ describe("Files office editor", () => {
     expect(await row(tab, "lieferant-30.ods").getAttribute("aria-selected")).toBe("true");
     expect(errors).toEqual([]);
     await tab.context().close();
+  }, 60_000);
+
+  test("Trash offers its own way back only where the sidebar is not beside it", async () => {
+    const trash = `/app/filesv2?base=${encodeURIComponent(editorBases.items[0]!.id)}&view=trash`;
+    for (const [options, visible] of [
+      [desktop, false],
+      [phone, true],
+    ] as const) {
+      const { tab, errors } = await open(options, trash);
+      const back = tab.locator("a.filesv2-compact-back");
+      await back.waitFor({ state: "attached" });
+      expect(await back.isVisible()).toBe(visible);
+      if (visible) {
+        await back.click();
+        await row(tab, "lieferant-01.ods").waitFor();
+        expect(await here(tab)).toBe(`/app/filesv2?base=${encodeURIComponent(editorBases.items[0]!.id)}`);
+      }
+      expect(errors).toEqual([]);
+      await tab.context().close();
+    }
   }, 60_000);
 });

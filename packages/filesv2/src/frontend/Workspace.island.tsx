@@ -958,13 +958,20 @@ export default function Workspace(props: {
               >
                 <Show
                   when={currentView() !== "shares"}
-                  fallback={<SharesOverview shares={snapshot().shares ?? { items: [], next: null }} onNavigate={onNavigate} />}
+                  fallback={
+                    <SharesOverview
+                      shares={snapshot().shares ?? { items: [], next: null }}
+                      baseId={snapshot().selectedId}
+                      onNavigate={onNavigate}
+                    />
+                  }
                 >
                   <Show
                     when={!(currentView() === "trash" && selected()?.status === "existing")}
                     fallback={
                       <TrashView
                         base={selected()!}
+                        onNavigate={onNavigate}
                         onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))}
                       />
                     }

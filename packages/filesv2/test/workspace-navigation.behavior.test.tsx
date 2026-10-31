@@ -631,8 +631,9 @@ describe("Filesv2 progressive navigation", () => {
     expect(selectedNode()).toBe(JSON.stringify([group.id, null, ""]));
     expectNoTrashInTree();
     await openTrash(group.id);
-    // No back button of its own: the highlighted storage in the tree is the way back to the listing.
-    expect(dom.root.querySelector(".k2b-app-workspace__main .ti-arrow-left")).toBeNull();
+    // Its own way back is only for layouts without the sidebar (CSS hides it from 64 rem); the highlighted storage in
+    // the tree leads back as well.
+    expect(dom.root.querySelector<HTMLAnchorElement>("a.filesv2-compact-back")?.getAttribute("href")).toBe("/app/filesv2?base=accounting");
     tree().querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=accounting"]')!.click();
     await flush();
     apiRequests.at(-1)!.resolve(Response.json(bases));
@@ -641,7 +642,16 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     expect(dom.window.location.search).toBe("?base=accounting");
     expect(dom.root.querySelector(".filesv2-list__row--trash")).not.toBeNull();
-    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "trash", "bases", "entries", "bases", "trash", "bases", "entries"]);
+    expect(apiRequests.map((request) => request.kind)).toEqual([
+      "bases",
+      "trash",
+      "bases",
+      "entries",
+      "bases",
+      "trash",
+      "bases",
+      "entries",
+    ]);
   });
   test("a listing row stops spinning when a navigation back to the same folder replaces its pending open", async () => {
     const dom = createDomTestHarness();
