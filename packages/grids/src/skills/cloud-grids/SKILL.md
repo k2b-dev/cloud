@@ -1,6 +1,10 @@
 ---
 name: cloud-grids
 description: "Use for Cloud Grids: finding or analysing records, GQL queries, reports and Views, inventory, CRM, invoices, or understanding and administering bases, tables, relations, permissions, forms, workflows, documents, custom apps and navigation. Explain unsupported administration through the GUI; use only available authorized tools."
+load-tools:
+  - grids.base.search
+  - grids.gql.context
+  - grids.gql.execute
 ---
 
 # Work with Cloud Grids

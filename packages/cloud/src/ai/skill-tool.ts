@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RequestAuthority } from "../server/middleware/auth";
+import { AI_TOOL_UNAVAILABLE_REASONS } from "./capabilities";
 import { AI_SKILL_FILE_MOUNT } from "./file-mount";
 import type { AiResourceContext } from "./projects-authorization";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
@@ -49,6 +50,8 @@ export const CloudAiLoadSkillInputSchema = z
   })
   .refine((input) => Boolean(input.name) !== Boolean(input.id), "Provide either a Skill name or ID.");
 
+const LoadedToolSchema = z.object({ name: z.string(), call: z.string() });
+
 export const CloudAiLoadSkillOutputSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -56,13 +59,22 @@ export const CloudAiLoadSkillOutputSchema = z.object({
   instructions: z.string(),
   mount: z.string(),
   files: z.array(z.string()),
+  /** The tools the Skill lists in `load-tools`, loaded as load_tools would load them. */
+  tools: z
+    .object({
+      loaded: z.array(LoadedToolSchema),
+      alreadyLoaded: z.array(LoadedToolSchema),
+      unavailable: z.array(z.object({ name: z.string(), reason: z.enum(AI_TOOL_UNAVAILABLE_REASONS) })),
+      evicted: z.array(z.string()),
+    })
+    .optional(),
 });
 
 export const createCloudAiLoadSkillTool = (subject: AiResourceContext, authority: RequestAuthority | null = null) =>
   defineAiTool({
     name: "load_skill",
     description:
-      "Load one available Agent Skill by its exact name or attached core.ai.skill ID for the current turn. This rechecks Cloud read permission, pins the skill revision, returns its SKILL.md instructions, and mounts its immutable files read-only below /skills/<name>. Load again in a later turn before reading its reference files; historical load results do not mount files in this turn.",
+      "Load one available Agent Skill by its exact name or attached core.ai.skill ID for the current turn. This rechecks Cloud read permission, pins the skill revision, returns its SKILL.md instructions, and mounts its immutable files read-only below /skills/<name>. Load again in a later turn before reading its reference files; historical load results do not mount files in this turn. The tools a Skill names for itself are loaded with it, as load_tools would: from the next model turn, call each one in `tools.loaded` or `tools.alreadyLoaded` by its `call` name without searching or loading it again.",
     inputSchema: CloudAiLoadSkillInputSchema,
     outputSchema: CloudAiLoadSkillOutputSchema,
     approval: "never",
@@ -71,6 +83,8 @@ export const createCloudAiLoadSkillTool = (subject: AiResourceContext, authority
     const selector = input.id ? { id: input.id } : input.name;
     const snapshot = selector ? await aiSkills.loadForTurn(ctx.turnId, selector, subject, authority) : null;
     if (!snapshot) throw new Error(`Skill "${input.id ?? input.name}" is unavailable or access was revoked.`);
+    // A Skill grants nothing: its tools pass the same catalog, scope, and grant checks as load_tools, and every call is authorized.
+    const tools = snapshot.loadTools.length && ctx.loadTools ? await ctx.loadTools(snapshot.loadTools) : undefined;
     return {
       name: snapshot.name,
       description: snapshot.description,
@@ -78,6 +92,9 @@ export const createCloudAiLoadSkillTool = (subject: AiResourceContext, authority
       instructions: snapshot.instructions,
       mount: `${AI_SKILL_FILE_MOUNT}/${snapshot.name}`,
       files: snapshot.files.map((file) => file.path),
+      ...(tools
+        ? { tools: { loaded: tools.loaded, alreadyLoaded: tools.alreadyLoaded, unavailable: tools.unavailable, evicted: tools.evicted } }
+        : {}),
     };
   });
 
