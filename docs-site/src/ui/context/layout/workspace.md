@@ -67,9 +67,9 @@ The head follows these rules as well:
   and on tablet and phone. An app's root page shows its title only beside
   the overlay sidebar's button. A page without its own `h1` keeps a visually
   hidden one.
-- The back link goes with the title. Beside a visible sidebar it remains
-  only for pages deeper than the sidebar lists: the sidebar marks their
-  container with `active="ancestor"`, not the page itself.
+- The back link goes with the title. Beside a visible sidebar it is gone
+  also for pages deeper than the sidebar lists: the sidebar marks their
+  container with `active="ancestor"`, which names the place and leads back.
 - Tabs, chips, and actions share one row while they fit. As the head narrows,
   the quiet count goes first, filters wrap, and views become compact with
   “More +n” before scrolling sideways. The primary action then keeps only its
@@ -677,11 +677,12 @@ It draws no line; only its place separates it from the content. The default head
   It then holds a [PageTitle](/en/ui/layout/page-title) with the way up: from
   48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
   of it. The title is the page's `h1`. From a 64 rem host, a visible, non-collapsed
-  column sidebar with `[aria-current="page"]` hides the repeated title and its back link;
+  column sidebar with `[aria-current="page"]`, or `[aria-current="true"]` on the item
+  a deeper page lies below, hides the repeated title and its back link;
   the `h1` remains visually hidden for assistive technology. Mark the exact
   current page with `SidebarItem active`; on a page deeper than the sidebar
   lists, mark the containing item with `active="ancestor"` so it stays
-  highlighted and the page keeps its back link. Compact layouts keep the way
+  highlighted and leads back. Compact layouts keep the way
   up. A host's Alt+Up shortcut still reads the trail.
 
 The title comes from the host's page trail: a host renders
@@ -837,8 +838,8 @@ Keyboard focus keeps the shared focus ring. See [Colors and selection](/en/ui/su
 for standalone defaults and Cloud mappings.
 
 Mark the exact current page with `active`; on a page deeper than the sidebar
-lists, use `active="ancestor"` on the containing item to keep its highlight and
-the page's back link.
+lists, use `active="ancestor"` on the containing item to keep its highlight; it
+then leads back in place of the page's back link.
 
 ```tsx
 <AppWorkspace.SidebarSection

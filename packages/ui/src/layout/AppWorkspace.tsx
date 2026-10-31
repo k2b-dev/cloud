@@ -453,7 +453,8 @@ export type AppWorkspaceSidebarItemProps = {
   /**
    * Marks the current page (`aria-current="page"`). On a page deeper than the
    * sidebar lists, pass `"ancestor"` for the item that contains it: it keeps
-   * the highlight, and the page keeps its back link.
+   * the highlight and, beside the visible sidebar, leads back in place of the
+   * page's back link.
    */
   active?: boolean | "ancestor";
   activeClass?: string;

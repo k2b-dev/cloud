@@ -2593,14 +2593,16 @@ html {
 }
 
 @container k2b-app-area (min-width: 64rem) {
-  /* A sidebar that marks the current page already names it, so the head
-     shows neither the title nor the way up beside it; Alt+Up still goes up.
-     On a page without its own `h1` the head's heading stays for assistive
-     technology. A collapsed sidebar shows no names and keeps the head. */
+  /* A sidebar that marks the current page, or the item a deeper page lies
+     below (`aria-current="true"`), already names the place and leads back,
+     so the head shows neither the title nor the way up beside it; Alt+Up
+     still goes up. On a page without its own `h1` the head's heading stays
+     for assistive technology. A collapsed sidebar shows no names and keeps
+     the head. */
   .k2b-ui
     .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+      > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], [aria-current="true"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], [aria-current="true"])
     )
     > .k2b-app-workspace__head[data-trail="up"] {
     position: absolute;
@@ -2616,8 +2618,8 @@ html {
 
   .k2b-ui
     .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+      > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], [aria-current="true"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], [aria-current="true"])
     )
     > .k2b-app-workspace__head
     > .k2b-app-workspace__head-lead
@@ -2627,8 +2629,8 @@ html {
 
   .k2b-ui
     .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
-      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
-      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+      > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], [aria-current="true"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) :is([aria-current="page"], [aria-current="true"])
     ):not(:has(.k2b-app-workspace__main h1))
     > .k2b-app-workspace__head
     > .k2b-app-workspace__head-lead
