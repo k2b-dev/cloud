@@ -59,9 +59,8 @@ test("development key generation preserves explicit grants independently of app 
   expect(fixture.keys.find((key: { appId: string }) => key.appId === "acme").grants).toEqual(["oauth:issue"]);
   expect(fixture.keys.find((key: { appId: string }) => key.appId === "oauth").grants).toEqual([]);
   expect(fixture.keys.find((key: { appId: string }) => key.appId === "new-app").grants).toEqual([]);
-  const module = await import(
-    `data:text/javascript,${encodeURIComponent(new Bun.Transpiler({ loader: "ts" }).transformSync(rendered.publicKeys))}`
-  );
+  const source = new Bun.Transpiler({ loader: "ts" }).transformSync(rendered.publicKeys);
+  const module = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
   expect(module.DEVELOPMENT_APP_KEYS.find((key: { appId: string }) => key.appId === "acme").grants).toEqual(["oauth:issue"]);
   expect(module.DEVELOPMENT_APP_KEYS.find((key: { appId: string }) => key.appId === "oauth").grants).toEqual([]);
 });
