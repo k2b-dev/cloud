@@ -42,6 +42,29 @@ x-app: &app
     start_period: 2s
 
 services:
+  # No shared environment or runtime: runner must never receive installation credentials.
+  runner:
+    build:
+      context: .
+      dockerfile: packages/runner/Dockerfile
+    profiles: [extra]
+    restart: unless-stopped
+    environment:
+      CLOUD_APP_KEY_FILE: /run/secrets/runner-app-key
+      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+    secrets:
+      - source: runner-app-key
+        target: runner-app-key
+    networks: [runner-core]
+    read_only: true
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    pids_limit: 256
+    # Keep this above the largest Code wall-clock budget plus completion transport time.
+    stop_grace_period: 6m
+
   # ══════════════════════════════════════════════════════════════════
   # Core set — started by `bun run dev`
   # ══════════════════════════════════════════════════════════════════
@@ -78,6 +101,7 @@ services:
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/gateway-ops/src/index.ts
 
   app-core:
+    networks: [default, runner-core]
     <<: *app
     container_name: app-core
     environment:
@@ -385,3 +409,11 @@ services:
       - ./packages/api-docs/src:/app/packages/api-docs/src
       - ./styles.css:/app/styles.css
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/api-docs/src/index.ts
+
+networks:
+  runner-core:
+    internal: true
+
+secrets:
+  runner-app-key:
+    file: ./.local/app-keys/runner.key

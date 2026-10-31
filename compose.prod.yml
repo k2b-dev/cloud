@@ -33,12 +33,34 @@ x-app-defaults: &app-defaults
   environment: *shared-env
 
 networks:
+  runner-core:
+    internal: true
   cloud-internal:
     driver: bridge
   traefik:
     external: true
 
 services:
+  # No shared environment or runtime: runner must never receive installation credentials.
+  runner:
+    image: ghcr.io/k2b-dev/cloud-app-runner:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    restart: unless-stopped
+    environment:
+      CLOUD_APP_KEY_FILE: /run/secrets/runner-app-key
+      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+    secrets:
+      - source: runner-app-key
+        target: runner-app-key
+    networks: [runner-core]
+    read_only: true
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    pids_limit: 256
+    # Keep this above the largest Code wall-clock budget plus completion transport time.
+    stop_grace_period: 6m
+
   # Gateway — the only service exposed to Traefik.
   gateway:
     <<: *app-defaults
@@ -84,6 +106,7 @@ services:
 
   # Apps — internal only, reached through the gateway.
   app-core:
+    networks: [cloud-internal, runner-core]
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-core:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     healthcheck:
@@ -220,3 +243,7 @@ services:
     image: ghcr.io/k2b-dev/cloud-app-weather:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     environment:
       <<: *shared-env
+
+secrets:
+  runner-app-key:
+    file: ./secrets/runner.key

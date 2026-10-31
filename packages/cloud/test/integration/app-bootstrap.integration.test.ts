@@ -14,7 +14,13 @@ import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { platformStartFixture } from "../../scripts/platform-start.test-fixture";
 import { bootstrapConnections } from "../../src/runtime/bootstrap-client";
-import { BOOTSTRAP_BODY, BOOTSTRAP_PATH, bootstrapBodyDigest, signBootstrapProof } from "../../src/runtime/bootstrap-protocol";
+import {
+  BOOTSTRAP_BODY,
+  BOOTSTRAP_PATH,
+  bootstrapBodyDigest,
+  signAppProof,
+  signBootstrapProof,
+} from "../../src/runtime/bootstrap-protocol";
 import { sql } from "../../src/runtime/clients";
 
 const NOW = Date.UTC(2030, 0, 2, 3, 4, 5);
@@ -107,6 +113,27 @@ suiteFor(
       await sql`UPDATE auth.service_account_credentials SET connections_allowed = true WHERE id = ${key.keyId}::uuid`;
     }
     expect((await routes[1].request(BOOTSTRAP_PATH, request(proof))).status).toBe(200);
+  });
+
+  test("runner key cannot bootstrap even with connections_allowed, but can sign run acquisition", async () => {
+    const enrolled = await appKeys.register({ actor, appId: "runner", publicKey: APP_KEY_FIXTURES[2].publicKey });
+    if (!enrolled.ok) throw new Error(enrolled.error.message);
+    const runnerKey: AppKey = {
+      appId: "runner",
+      keyId: enrolled.data.keyId,
+      installationId: enrolled.data.installationId,
+      seed: APP_KEY_FIXTURES[2].seed,
+    };
+    await sql`UPDATE auth.service_account_credentials SET connections_allowed = true WHERE id = ${runnerKey.keyId}::uuid`;
+    for (const route of routes) {
+      const response = await route.request(BOOTSTRAP_PATH, request(await signBootstrapProof(runnerKey)));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ code: "connections_not_permitted" });
+    }
+    const body = new TextEncoder().encode(JSON.stringify({ instanceId: "33333333-3333-4333-8333-333333333333", freeSlots: 2 }));
+    const runRequest = { method: "POST", path: "/_internal/code/runner/fetch", body };
+    const verified = await authenticateAppProof(await signAppProof(runnerKey, runRequest), runRequest);
+    expect(verified.identity.appId).toBe("runner");
   });
 
   const lastRejectedStart = async () => {

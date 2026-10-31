@@ -1,0 +1,250 @@
+import { mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { RunnerConfig, RunnerJsonValue, RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
+import { z as schema } from "zod";
+import { readBytes } from "./bridge";
+
+/** Only bridge calls can leave a sandbox. No run token or app key crosses this interface. */
+export type SandboxCall = (operation: string, input: RunnerJsonValue) => Promise<RunnerJsonValue>;
+/** Execution seam for C14 attacks and C17 simulations. load does not execute user code. */
+export interface RunnerEngine {
+  load(lease: RunnerLease, source: string, config: RunnerConfig, call: SandboxCall, signal: AbortSignal): Promise<void>;
+  run(lease: RunnerLease, signal: AbortSignal): Promise<RunnerOutcome>;
+  kill(runId: string): Promise<void>;
+  close(): Promise<void>;
+}
+type Loaded = { lease: RunnerLease; source: string; config: RunnerConfig; call: SandboxCall; signal: AbortSignal; group?: Group };
+type Group = {
+  process: Bun.Subprocess<"ignore", "pipe", "ignore">;
+  origin: string;
+  directory: string;
+  server: ReturnType<typeof Bun.serve>;
+  watchdog: ReturnType<typeof setInterval>;
+  lastPing: number;
+  checking: boolean;
+  runs: Set<string>;
+  outcome?: RunnerOutcome;
+  closing?: Promise<void>;
+};
+const CallSchema = schema.object({ runId: schema.string(), operation: schema.string().min(1), input: schema.json() }).strict();
+
+/** One workerd process per organization and trust tier, independent of the number of replicas. */
+export class WorkerdEngine implements RunnerEngine {
+  #loaded = new Map<string, Loaded>();
+  #groups = new Map<string, Promise<Group>>();
+  constructor(readonly executable?: string) {}
+  async load(lease: RunnerLease, source: string, config: RunnerConfig, call: SandboxCall, signal: AbortSignal) {
+    signal.throwIfAborted();
+    if (this.#loaded.has(lease.runId)) throw new Error("runner_already_loaded");
+    this.#loaded.set(lease.runId, { lease, source, config, call, signal });
+  }
+  async #spawn(config: RunnerConfig): Promise<Group> {
+    const capability = crypto.randomUUID();
+    const members = new Set<string>();
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      maxRequestBodySize: config.bridgeBytes,
+      fetch: async (request) => {
+        if (request.method !== "POST" || new URL(request.url).pathname !== "/call" || request.headers.get("Authorization") !== capability)
+          return new Response(null, { status: 403 });
+        try {
+          const bytes = await readBytes(new Response(request.body), config.bridgeBytes, request.signal);
+          const call = CallSchema.parse(JSON.parse(new TextDecoder().decode(bytes)));
+          const loaded = this.#loaded.get(call.runId);
+          if (!members.has(call.runId) || !loaded || loaded.signal.aborted) return new Response(null, { status: 409 });
+          const result = await loaded.call(call.operation, call.input);
+          const body = JSON.stringify(result);
+          if (Buffer.byteLength(body) > config.bridgeBytes) throw new Error("runner_call_too_large");
+          return new Response(body, { headers: { "Content-Type": "application/json" } });
+        } catch {
+          return new Response(null, { status: 502 });
+        }
+      },
+    });
+    let process: Group["process"] | undefined;
+    let directory: string | undefined;
+    try {
+      directory = await mkdtemp(join(tmpdir(), "cloud-workerd-"));
+      await Bun.write(join(directory, "host.js"), Bun.file(join(import.meta.dir, "assets/host.js")));
+      await Bun.write(
+        join(directory, "config.capnp"),
+        `using Workerd = import "/workerd/workerd.capnp";
+const config :Workerd.Config = (
+  services = [
+    (name = "host", worker = (
+      compatibilityDate = "2026-10-01", compatibilityFlags = ["experimental"],
+      modules = [(name = "host.js", esModule = embed "host.js")],
+      bindings = [(name = "LOADER", workerLoader = ()),
+        (name = "BRIDGE", service = "bridge"), (name = "CAPABILITY", text = ${JSON.stringify(capability)})],
+      globalOutbound = (name = "denied")
+    )),
+    (name = "bridge", external = (address = "127.0.0.1:${server.port}", http = ())),
+    (name = "denied", network = (allow = []))
+  ],
+  sockets = [(name = "http", address = "127.0.0.1:0", http = (), service = "host")]
+);`,
+      );
+      // The workerd child has no environment, including no app key or Core origin.
+      const executable = this.executable ?? (import.meta.path.endsWith(".ts") ? (await import("workerd")).default : "/app/workerd");
+      process = Bun.spawn([executable, "serve", "--experimental", "--control-fd=1", join(directory, "config.capnp")], {
+        env: {},
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "ignore",
+      });
+      const reader = process.stdout.getReader();
+      let port: number;
+      let readyTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        port = await Promise.race([
+          (async () => {
+            let text = "";
+            while (text.length < 4096) {
+              const chunk = await reader.read();
+              if (chunk.done) break;
+              text += new TextDecoder().decode(chunk.value);
+              const line = text.split("\n")[0];
+              if (line && text.includes("\n")) {
+                const event = schema.object({ port: schema.number().int().positive() }).passthrough().parse(JSON.parse(line));
+                return event.port;
+              }
+            }
+            throw new Error("runner_workerd_start_failed");
+          })(),
+          new Promise<never>((_, reject) => {
+            readyTimer = setTimeout(() => reject(new Error("runner_workerd_start_timeout")), config.transportMs);
+          }),
+        ]);
+      } finally {
+        clearTimeout(readyTimer);
+        void reader.cancel().catch(() => undefined);
+      }
+      const group: Group = {
+        process,
+        directory,
+        server,
+        origin: `http://127.0.0.1:${port}`,
+        lastPing: performance.now(),
+        checking: false,
+        runs: members,
+        watchdog: setInterval(() => {
+          void this.#check(group, config);
+        }, 100),
+      };
+      return group;
+    } catch {
+      if (process) {
+        process.kill("SIGKILL");
+        await process.exited;
+      }
+      await server.stop(true);
+      if (directory) await this.#remove(directory);
+      throw new Error("runner_workerd_start_failed");
+    }
+  }
+  async #check(group: Group, config: RunnerConfig) {
+    if (group.closing) return;
+    if (performance.now() - group.lastPing >= 1000) {
+      await this.#terminate(group, "stalled");
+      return;
+    }
+    if (group.checking) return;
+    group.checking = true;
+    try {
+      if (process.platform === "linux") {
+        const status = await readFile(`/proc/${group.process.pid}/status`, "utf8");
+        const rss = Number(/VmRSS:\s+(\d+)/.exec(status)?.[1] ?? 0) * 1024;
+        if (rss > config.processMemoryBytes) {
+          await this.#terminate(group, "memory_limit");
+          return;
+        }
+      }
+      const response = await fetch(`${group.origin}/ping`, { signal: AbortSignal.timeout(1000) });
+      await response.body?.cancel();
+      if (response.ok) group.lastPing = performance.now();
+    } catch {
+      /* The next 100ms tick enforces the one-second stall budget, including a pending ping. */
+    } finally {
+      group.checking = false;
+    }
+  }
+  async #remove(directory: string) {
+    await Promise.all(["host.js", "config.capnp"].map((file) => unlink(join(directory, file)).catch(() => undefined)));
+    await rmdir(directory).catch(() => undefined);
+  }
+  async #terminate(group: Group, outcome: RunnerOutcome) {
+    if (!group.closing) {
+      group.outcome = outcome;
+      clearInterval(group.watchdog);
+      group.closing = (async () => {
+        group.process.kill("SIGKILL");
+        await group.process.exited;
+        await group.server.stop(true);
+        await this.#remove(group.directory);
+      })();
+    }
+    await group.closing;
+  }
+  async run(lease: RunnerLease, signal: AbortSignal): Promise<RunnerOutcome> {
+    const loaded = this.#loaded.get(lease.runId);
+    if (!loaded) throw new Error("runner_not_loaded");
+    const key = JSON.stringify([lease.organizationId, lease.trustTier]);
+    let pending = this.#groups.get(key);
+    if (!pending) {
+      pending = this.#spawn(loaded.config);
+      this.#groups.set(key, pending);
+    }
+    let group: Group;
+    try {
+      group = await pending;
+    } catch {
+      this.#groups.delete(key);
+      throw new Error("runner_workerd_start_failed");
+    }
+    if (group.closing) {
+      this.#groups.delete(key);
+      return "failed";
+    }
+    loaded.group = group;
+    group.runs.add(lease.runId);
+    const abort = () => {
+      void this.#terminate(group, "failed");
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      signal.throwIfAborted();
+      const response = await fetch(`${group.origin}/run`, {
+        method: "POST",
+        body: JSON.stringify({ runId: lease.runId, source: loaded.source, entrypoint: lease.entrypoint, input: lease.input }),
+        signal,
+      });
+      await response.body?.cancel();
+      return response.ok ? "succeeded" : "failed";
+    } catch {
+      return group.outcome ?? "failed";
+    } finally {
+      signal.removeEventListener("abort", abort);
+    }
+  }
+  async kill(runId: string) {
+    const loaded = this.#loaded.get(runId);
+    this.#loaded.delete(runId);
+    const group = loaded?.group;
+    if (!group) return;
+    group.runs.delete(runId);
+    if (group.runs.size === 0) {
+      await this.#terminate(group, "failed");
+      for (const [key, pending] of this.#groups) if ((await pending.catch(() => undefined)) === group) this.#groups.delete(key);
+    }
+  }
+  async close() {
+    for (const pending of this.#groups.values()) {
+      const group = await pending.catch(() => undefined);
+      if (group) await this.#terminate(group, "failed");
+    }
+    this.#groups.clear();
+    this.#loaded.clear();
+  }
+}

@@ -41,13 +41,17 @@ export const appIds = (root = workspaceRoot): string[] => {
 export const imageName = (appId: string): string => (appId === "gateway" || appId === "core" ? `cloud-${appId}` : `cloud-app-${appId}`);
 
 /** Service name of an application in `compose.dev.yml`. */
-export const devServiceName = (appId: string): string => (appId === "gateway" ? "gateway" : `app-${appId}`);
+export const devServiceName = (appId: string): string => (appId === "gateway" || appId === "runner" ? appId : `app-${appId}`);
 
 export type ReleaseImage = { image: string; dockerfile: string; appId?: string };
 
 /** Every image of one Cloud release: all applications plus the website and the Cloud Login PWA. */
 export const releaseImages = (): ReleaseImage[] => [
-  ...appIds().map((appId) => ({ image: imageName(appId), dockerfile: "Dockerfile", appId })),
+  ...appIds().map((appId) => ({
+    image: imageName(appId),
+    dockerfile: appId === "runner" ? "packages/runner/Dockerfile" : "Dockerfile",
+    appId,
+  })),
   { image: "cloud-website", dockerfile: "docs-site/Dockerfile" },
   { image: "cloud-pwa-auth", dockerfile: "pwas/pwa-auth/Dockerfile" },
 ];
@@ -55,9 +59,15 @@ export const releaseImages = (): ReleaseImage[] => [
 if (import.meta.main) {
   const command = Bun.argv[2];
   if (command === "apps") console.log(appIds().join("\n"));
+  else if (command === "http-apps")
+    console.log(
+      appIds()
+        .filter((id) => id !== "runner")
+        .join("\n"),
+    );
   else if (command === "images") console.log(JSON.stringify(releaseImages()));
   else {
-    console.error("usage: bun scripts/workspace.ts <apps|images>");
+    console.error("usage: bun scripts/workspace.ts <apps|http-apps|images>");
     process.exit(2);
   }
 }

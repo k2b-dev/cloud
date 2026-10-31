@@ -1,0 +1,82 @@
+import { expect, jest, test } from "bun:test";
+import type { AppKey } from "@k2b/cloud/app-key";
+import { importAppPublicKey } from "@k2b/cloud/app-key";
+import { RUNNER_PATHS } from "@k2b/cloud/code/runner";
+import { jwtVerify } from "jose";
+import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../scripts/fixtures/app-key-fixtures";
+import { CoreBridge, readBytes } from "../src/bridge";
+import { runnerEnvironment } from "../src/env";
+import { config } from "./fixtures";
+
+const NOW = Date.UTC(2030, 0, 2);
+const key: AppKey = { installationId: INSTALLATION_ID, keyId: KEY_ID, appId: "runner", seed: APP_KEY_FIXTURES[0].seed };
+
+test("mock Core receives real app-key signatures over each long-poll body with a fresh nonce", async () => {
+  jest.setSystemTime(NOW);
+  const nonces = new Set<unknown>();
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      const body = await request.text();
+      const { payload } = await jwtVerify(
+        request.headers.get("Authorization")!.slice(7),
+        await importAppPublicKey(APP_KEY_FIXTURES[0].publicKey),
+        {
+          issuer: "runner",
+          audience: `cloud-core:${INSTALLATION_ID}`,
+          currentDate: new Date(NOW),
+        },
+      );
+      expect(payload.htm).toBe("POST");
+      expect(payload.htu).toBe(new URL(request.url).pathname);
+      expect(payload.bdh).toBe(Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body))).toString("base64url"));
+      expect(nonces.has(payload.jti)).toBe(false);
+      nonces.add(payload.jti);
+      if (new URL(request.url).pathname === RUNNER_PATHS.config) return Response.json(config);
+      expect(JSON.parse(body).freeSlots).toBe(2);
+      return Response.json({ runs: [] });
+    },
+  });
+  try {
+    const bridge = new CoreBridge(key, server.url.origin);
+    await bridge.configure(new AbortController().signal);
+    for (let i = 0; i < 2; i++) await bridge.fetch({ instanceId: INSTALLATION_ID, freeSlots: 2 }, new AbortController().signal);
+    expect(nonces.size).toBe(3);
+  } finally {
+    await server.stop(true);
+    jest.useRealTimers();
+  }
+});
+
+test("response limits count chunked bytes and caller cancellation closes a stalled body", async () => {
+  const oversized = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(3));
+        controller.close();
+      },
+    }),
+  );
+  await expect(readBytes(oversized, 2, new AbortController().signal)).rejects.toThrow("runner_response_too_large");
+  let cancelled = false;
+  const response = new Response(
+    new ReadableStream({
+      cancel() {
+        cancelled = true;
+      },
+    }),
+  );
+  const controller = new AbortController();
+  const pending = readBytes(response, 2, controller.signal);
+  controller.abort();
+  await expect(pending).rejects.toThrow();
+  expect(cancelled).toBe(true);
+});
+
+test("runner refuses foreign app keys, conflicting key sources and non-origin Core addresses", async () => {
+  await expect(runnerEnvironment({ CLOUD_APP_KEY: "x", CLOUD_APP_KEY_FILE: "/never-read" })).rejects.toThrow("not both");
+  expect(() => new CoreBridge({ ...key, appId: "inventory" }, "http://core")).toThrow("runner app key");
+  for (const origin of ["file:///etc", "http://core/path", "http://user:password@core", "http://core?query"])
+    expect(() => new CoreBridge(key, origin)).toThrow();
+});

@@ -1,0 +1,156 @@
+import { expect, jest, test } from "bun:test";
+import type { RunnerBridge, RunnerCompleteRequest, RunnerLease, RunnerLeaseProof } from "@k2b/cloud/code/runner";
+import { BundleCache, bundleHash } from "../src/cache";
+import type { RunnerEngine } from "../src/engine";
+import { Runner } from "../src/runner";
+import { config, lease, source } from "./fixtures";
+
+const NOW = Date.UTC(2030, 0, 2);
+const waitFor = async (predicate: () => boolean) => {
+  for (let i = 0; i < 500; i++) {
+    if (predicate()) return;
+    await Bun.sleep(2);
+  }
+  throw new Error("Expected runner state was not reached");
+};
+function mockBridge(runs: RunnerLease[]) {
+  const completions: RunnerCompleteRequest[] = [];
+  const fetched: number[] = [];
+  const beats: RunnerLeaseProof[] = [];
+  let bundles = 0;
+  const bridge: RunnerBridge = {
+    configure: async () => config,
+    fetch: async ({ freeSlots }, signal) => {
+      fetched.push(freeSlots);
+      if (runs.length) return { runs: runs.splice(0, freeSlots) };
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      return { runs: [] };
+    },
+    bundle: async () => {
+      bundles++;
+      return source;
+    },
+    heartbeat: async (request) => {
+      beats.push(request);
+      return { leaseExpiresAt: NOW + 5000 };
+    },
+    complete: async (request) => {
+      completions.push(request);
+    },
+    call: async () => null,
+  };
+  return { bridge, completions, fetched, beats, bundles: () => bundles };
+}
+
+test("free slots bound admission, cached bundles are reused, heartbeat carries the lease, stop drains without fetching", async () => {
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([lease({ runId: "a", heartbeatMs: 5 }), lease({ runId: "b" }), lease({ runId: "c" })]);
+  const finish = Promise.withResolvers<void>();
+  const started: string[] = [];
+  const engine: RunnerEngine = {
+    load: async () => {},
+    run: async (run) => {
+      started.push(run.runId);
+      await finish.promise;
+      return "succeeded";
+    },
+    kill: async () => {},
+    close: async () => {},
+  };
+  const runner = new Runner(mock.bridge, engine);
+  const running = runner.start();
+  try {
+    await waitFor(() => started.length === 2 && mock.beats.length > 0);
+    expect(mock.fetched).toEqual([2]);
+    expect(mock.bundles()).toBe(1);
+    expect(mock.beats[0]).toEqual({ runId: "a", generation: 1, token: "opaque-run-token" });
+    runner.stop();
+    expect(mock.completions).toHaveLength(0);
+    finish.resolve();
+    await running;
+    expect(mock.fetched).toEqual([2]);
+    expect(mock.completions.map(({ outcome }) => outcome)).toEqual(["succeeded", "succeeded"]);
+    expect(started).toEqual(["a", "b"]);
+  } finally {
+    runner.stop();
+    finish.resolve();
+    await running;
+    jest.useRealTimers();
+  }
+});
+
+test("stop cancels an outstanding long-poll and ignores leases racing its cancellation", async () => {
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([]);
+  let polling = false;
+  mock.bridge.fetch = async (_, signal) => {
+    polling = true;
+    await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    return { runs: [lease()] };
+  };
+  let loaded = false;
+  const engine: RunnerEngine = {
+    load: async () => {
+      loaded = true;
+    },
+    run: async () => "succeeded",
+    kill: async () => {},
+    close: async () => {},
+  };
+  const runner = new Runner(mock.bridge, engine);
+  const running = runner.start();
+  try {
+    await waitFor(() => polling);
+    runner.stop();
+    await running;
+    expect(loaded).toBe(false);
+  } finally {
+    runner.stop();
+    await running;
+    jest.useRealTimers();
+  }
+});
+
+for (const cause of ["wall_clock_limit", "lease_lost"] as const) {
+  test(`an uncompleted run stops at ${cause} without resetting its budget`, async () => {
+    jest.setSystemTime(NOW);
+    const mock = mockBridge([lease({ deadlineAt: NOW + (cause === "wall_clock_limit" ? 20 : 5000), leaseExpiresAt: NOW + 30 })]);
+    const engine: RunnerEngine = {
+      load: async () => {},
+      run: async (_, signal) => {
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        throw new Error("aborted");
+      },
+      kill: async () => {},
+      close: async () => {},
+    };
+    const runner = new Runner(mock.bridge, engine);
+    const running = runner.start();
+    try {
+      await waitFor(() => mock.completions.length > 0);
+      runner.stop();
+      await running;
+      expect(mock.completions[0]?.outcome).toBe(cause);
+    } finally {
+      runner.stop();
+      await running;
+      jest.useRealTimers();
+    }
+  });
+}
+
+test("bundle cache rejects hash mismatch, bounds memory and evicts least recently used modules", async () => {
+  const cache = new BundleCache(2, 2);
+  let reads = 0;
+  const read = async (text: string) => {
+    reads++;
+    return text;
+  };
+  for (const text of ["a", "b", "a", "c", "b"]) await cache.get(bundleHash(text), () => read(text));
+  expect(reads).toBe(4);
+  await expect(cache.get(bundleHash("x"), () => read("z"))).rejects.toThrow("runner_invalid_bundle");
+  await expect(cache.get(bundleHash("long"), () => read("long"))).rejects.toThrow("runner_invalid_bundle");
+});
