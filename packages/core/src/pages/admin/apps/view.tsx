@@ -41,6 +41,8 @@ export type AppPageData = {
   providerFailures: readonly string[];
   /** The app's access rule as one phrase, for a rule the app fixes itself. */
   accessRule: string;
+  /** Core and Gateway are platform services and have no app keys. */
+  keysSupported: boolean;
   /** Display names of known apps by ID, for publishers of heard events. */
   appNames: ReadonlyMap<string, string>;
 };
@@ -60,8 +62,8 @@ export type DetailData =
   | {
       view: "routes";
       window: AppStatusWindow;
-      rows: readonly RouteRow[];
-      providers: readonly string[];
+      /** One table per provider that answered, each with its own source line; one table without numbers if none did. */
+      tables: ReadonlyArray<{ provider: string | null; rows: readonly RouteRow[] }>;
       failures: readonly string[];
       routerKnown: boolean;
       avgMs: number | null;
@@ -85,9 +87,12 @@ export type DetailData =
     }
   | {
       view: "errors";
-      failedRequests: ReadonlyArray<{ at: string; method: string; path: string; status: number }>;
-      total: number | null;
-      providers: readonly string[];
+      /** Each provider's failed requests under its own name: at most one page each, the rest in its telemetry. */
+      groups: ReadonlyArray<{
+        provider: string;
+        failedRequests: ReadonlyArray<{ at: string; method: string; path: string; status: number }>;
+        total: number | null;
+      }>;
       failures: readonly string[];
       telemetryHref: string | null;
       logsHref: string | null;
@@ -588,7 +593,14 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
         app={entry.id}
         selected={selected}
       />
-      <Row icon="ti ti-key" label={t.keys} value={keysValue()} view={providerOnly ? null : "keys"} app={entry.id} selected={selected} />
+      <Row
+        icon="ti ti-key"
+        label={t.keys}
+        value={props.app.keysSupported ? keysValue() : "–"}
+        view={providerOnly || !props.app.keysSupported ? null : "keys"}
+        app={entry.id}
+        selected={selected}
+      />
       <Row
         icon="ti ti-broadcast"
         label={t.events}
@@ -852,8 +864,7 @@ function ExpandList<T>(props: {
 function RoutesColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extract<DetailData, { view: "routes" }>; app: AppEntry }) {
   const t = props.t;
   const f = props.f;
-  const down = () => props.detail.failures.length > 0 && props.detail.providers.length === 0;
-  const misrouted = () => props.detail.rows.filter((row) => row.router === "missing");
+  const misrouted = () => (props.detail.tables[0]?.rows ?? []).filter((row) => row.router === "missing");
   return (
     <div class="flex flex-col gap-2">
       <ViewTabs
@@ -894,56 +905,65 @@ function RoutesColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extra
           </NoticeCard>
         )}
       </For>
-      <table class="w-full table-fixed border-collapse text-[13.5px]" data-routes-table>
-        <colgroup>
-          <col style={{ width: "34%" }} />
-          <col style={{ width: "22%" }} />
-          <col style={{ width: "16%" }} />
-          <col />
-        </colgroup>
-        <thead>
-          <tr class="text-left text-xs font-semibold text-dimmed">
-            <th class="px-2 py-1.5">{t.route}</th>
-            <th class="px-2 py-1.5 text-right">{t.requests}</th>
-            <th class="px-2 py-1.5 text-right">{t.errors}</th>
-            <th class="px-2 py-1.5 max-sm:hidden">{t.router}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={props.detail.rows}>
-            {(row) => {
-              const absent = down() || row.router === "missing" || row.requests === null;
-              return (
-                <tr class="h-10 hover:bg-(--k2b-hover)" data-route={row.prefix}>
-                  <td class="truncate px-2 font-mono text-[12.5px]" classList={{ "text-(--k2b-danger-text)": row.router === "missing" }}>
-                    {row.prefix}
-                  </td>
-                  <td class="px-2 text-right tabular-nums text-secondary">{absent ? "–" : f.number(row.requests!)}</td>
-                  <td
-                    class="px-2 text-right tabular-nums text-secondary"
-                    classList={{
-                      "text-(--k2b-danger-text)":
-                        !absent && (row.errors ?? 0) > 0 && (row.errors ?? 0) / Math.max(1, row.requests ?? 1) >= 0.01,
-                    }}
-                  >
-                    {absent || row.errors === null ? "–" : f.number(row.errors)}
-                  </td>
-                  <td class="px-2 max-sm:hidden">
-                    {row.router === "missing" ? (
-                      <StatusBadge tone="error" icon={null} label={t.routerMissing} />
-                    ) : row.router === "unknown" ? (
-                      <span class="text-xs text-dimmed">{t.routerUnknown}</span>
-                    ) : (
-                      <StatusBadge tone="ok" variant="dot" label={t.routerActive} />
-                    )}
-                  </td>
+      <For each={props.detail.tables}>
+        {(table) => (
+          <>
+            <table class="w-full table-fixed border-collapse text-[13.5px]" data-routes-table>
+              <colgroup>
+                <col style={{ width: "34%" }} />
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "16%" }} />
+                <col />
+              </colgroup>
+              <thead>
+                <tr class="text-left text-xs font-semibold text-dimmed">
+                  <th class="px-2 py-1.5">{t.route}</th>
+                  <th class="px-2 py-1.5 text-right">{t.requests}</th>
+                  <th class="px-2 py-1.5 text-right">{t.errors}</th>
+                  <th class="px-2 py-1.5 max-sm:hidden">{t.router}</th>
                 </tr>
-              );
-            }}
-          </For>
-        </tbody>
-      </table>
-      <Source>{t.numbersFrom({ providers: props.detail.providers.join(", ") || "–" })}</Source>
+              </thead>
+              <tbody>
+                <For each={table.rows}>
+                  {(row) => {
+                    const absent = table.provider === null || row.router === "missing" || row.requests === null;
+                    return (
+                      <tr class="h-10 hover:bg-(--k2b-hover)" data-route={row.prefix}>
+                        <td
+                          class="truncate px-2 font-mono text-[12.5px]"
+                          classList={{ "text-(--k2b-danger-text)": row.router === "missing" }}
+                        >
+                          {row.prefix}
+                        </td>
+                        <td class="px-2 text-right tabular-nums text-secondary">{absent ? "–" : f.number(row.requests!)}</td>
+                        <td
+                          class="px-2 text-right tabular-nums text-secondary"
+                          classList={{
+                            "text-(--k2b-danger-text)":
+                              !absent && (row.errors ?? 0) > 0 && (row.errors ?? 0) / Math.max(1, row.requests ?? 1) >= 0.01,
+                          }}
+                        >
+                          {absent || row.errors === null ? "–" : f.number(row.errors)}
+                        </td>
+                        <td class="px-2 max-sm:hidden">
+                          {row.router === "missing" ? (
+                            <StatusBadge tone="error" icon={null} label={t.routerMissing} />
+                          ) : row.router === "unknown" ? (
+                            <span class="text-xs text-dimmed">{t.routerUnknown}</span>
+                          ) : (
+                            <StatusBadge tone="ok" variant="dot" label={t.routerActive} />
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }}
+                </For>
+              </tbody>
+            </table>
+            <Source>{t.numbersFrom({ providers: table.provider ?? "–" })}</Source>
+          </>
+        )}
+      </For>
       <FootLinks
         links={[
           ...(props.detail.telemetryHref ? [{ label: t.openTelemetry, href: props.detail.telemetryHref }] : []),
@@ -1072,7 +1092,6 @@ function ErrorsColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extra
             </ButtonLink>
           </div>
         </div>
-        <Section title={t.failedRequests} count={d.total ?? d.failedRequests.length} />
       </Show>
       <For each={d.failures}>
         {(provider) => (
@@ -1081,29 +1100,52 @@ function ErrorsColumn(props: { t: AppsPageMessages; f: AppsFormat; detail: Extra
           </NoticeCard>
         )}
       </For>
-      <Show
-        when={d.failedRequests.length > 0}
-        fallback={
-          <p class="px-2 py-1 text-[13.5px] text-dimmed">{d.failures.length && !d.providers.length ? t.unavailable : t.noFailedRequests}</p>
-        }
-      >
-        <ExpandList
-          items={d.failedRequests}
-          total={d.total ?? d.failedRequests.length}
-          more={(count) => t.showAll({ count })}
-          moreHint={null}
-          render={(request) => (
-            <div class="rounded-lg px-2 py-2 hover:bg-(--k2b-hover)">
-              <div class="flex items-center gap-2 text-[13.5px]">
-                <StatusBadge tone="error" icon={null} label={String(request.status)} />
-                <span class="truncate font-mono text-[13px]">{`${request.method} ${request.path}`}</span>
-              </div>
-              <div class="mt-0.5 text-[12.5px] text-dimmed">{f.dateTime(request.at)}</div>
-            </div>
-          )}
-        />
+      <Show when={d.groups.length === 0 && d.failures.length > 0}>
+        <p class="px-2 py-1 text-[13.5px] text-dimmed">{t.unavailable}</p>
       </Show>
-      <Source>{t.errorsSource({ providers: d.providers.join(", ") || "–" })}</Source>
+      <For each={d.groups}>
+        {(group) => {
+          const total = group.total ?? group.failedRequests.length;
+          return (
+            <>
+              <Show when={deliveries() > 0 || d.groups.length > 1}>
+                <Section title={t.failedRequests} count={total} />
+              </Show>
+              <Show
+                when={group.failedRequests.length > 0}
+                fallback={<p class="px-2 py-1 text-[13.5px] text-dimmed">{t.noFailedRequests}</p>}
+              >
+                <ExpandList
+                  items={group.failedRequests}
+                  total={total}
+                  more={(count) => t.showAll({ count })}
+                  moreHint={null}
+                  render={(request) => (
+                    <div class="rounded-lg px-2 py-2 hover:bg-(--k2b-hover)">
+                      <div class="flex items-center gap-2 text-[13.5px]">
+                        <StatusBadge tone="error" icon={null} label={String(request.status)} />
+                        <span class="truncate font-mono text-[13px]">{`${request.method} ${request.path}`}</span>
+                      </div>
+                      <div class="mt-0.5 text-[12.5px] text-dimmed">{f.dateTime(request.at)}</div>
+                    </div>
+                  )}
+                />
+                <Show when={total > group.failedRequests.length && d.telemetryHref}>
+                  {(href) => (
+                    <p class="px-2 py-1 text-[13px] text-dimmed">
+                      {t.moreInTelemetry({ count: total - group.failedRequests.length })}{" "}
+                      <a class="underline underline-offset-3" href={href()}>
+                        {t.openTelemetry}
+                      </a>
+                    </p>
+                  )}
+                </Show>
+              </Show>
+              <Source>{t.errorsSource({ providers: group.provider })}</Source>
+            </>
+          );
+        }}
+      </For>
       <FootLinks
         links={[
           ...(d.telemetryHref ? [{ label: t.openTelemetry, href: d.telemetryHref }] : []),

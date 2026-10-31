@@ -184,18 +184,22 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
         return {
           view,
           window: query.window,
-          rows: entry.routes.map((prefix, index) => {
-            const missing = entry.missingRoutes.find((route) => route.prefix === prefix);
-            const share = [0.73, 0.25, 0.012, 0.008][index] ?? 0.01;
-            return {
-              prefix,
-              requests: down || missing || !traffic ? null : Math.round(traffic.requests * share),
-              errors: down || missing || !traffic ? null : Math.round(traffic.errors * (index === 1 ? 0.6 : 0.4)),
-              router: missing ? ("missing" as const) : state === "router-unknown" ? ("unknown" as const) : ("active" as const),
-              owner: missing?.owner ?? null,
-            };
-          }),
-          providers: down ? [] : ["Gateway"],
+          tables: [
+            {
+              provider: down ? null : "Gateway",
+              rows: entry.routes.map((prefix, index) => {
+                const missing = entry.missingRoutes.find((route) => route.prefix === prefix);
+                const share = [0.73, 0.25, 0.012, 0.008][index] ?? 0.01;
+                return {
+                  prefix,
+                  requests: down || missing || !traffic ? null : Math.round(traffic.requests * share),
+                  errors: down || missing || !traffic ? null : Math.round(traffic.errors * (index === 1 ? 0.6 : 0.4)),
+                  router: missing ? ("missing" as const) : state === "router-unknown" ? ("unknown" as const) : ("active" as const),
+                  owner: missing?.owner ?? null,
+                };
+              }),
+            },
+          ],
           failures: down ? ["Gateway"] : [],
           routerKnown: state !== "router-unknown",
           avgMs: down ? null : (traffic?.avgMs ?? null),
@@ -233,23 +237,27 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
         } as const;
       return {
         view,
-        failedRequests:
-          entry.id === "grids"
-            ? [
-                ["12:58:12", "POST", "/api/grids/rows", 500],
-                ["12:41:03", "POST", "/api/grids/rows", 500],
-                ["12:12:47", "GET", "/api/grids/export", 504],
-                ["11:55:30", "PATCH", "/api/grids/rows", 500],
-                ["11:40:02", "POST", "/api/grids/rows", 500],
-              ].map(([time, method, path, status]) => ({
-                at: `2026-10-30T${time}.000Z`,
-                method: String(method),
-                path: String(path),
-                status: Number(status),
-              }))
-            : [],
-        total: entry.id === "grids" ? 18 : 0,
-        providers: ["Gateway"],
+        groups: [
+          {
+            provider: "Gateway",
+            failedRequests:
+              entry.id === "grids"
+                ? [
+                    ["12:58:12", "POST", "/api/grids/rows", 500],
+                    ["12:41:03", "POST", "/api/grids/rows", 500],
+                    ["12:12:47", "GET", "/api/grids/export", 504],
+                    ["11:55:30", "PATCH", "/api/grids/rows", 500],
+                    ["11:40:02", "POST", "/api/grids/rows", 500],
+                  ].map(([time, method, path, status]) => ({
+                    at: `2026-10-30T${time}.000Z`,
+                    method: String(method),
+                    path: String(path),
+                    status: Number(status),
+                  }))
+                : [],
+            total: entry.id === "grids" ? 18 : 0,
+          },
+        ],
         failures: [],
         telemetryHref: "/admin/observability/telemetry?app=" + entry.id,
         logsHref: "/admin/observability/logs",
@@ -282,6 +290,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
                     details,
                     revokedKeyName: keys.find((item) => item.status === "revoked")?.name ?? null,
                     providerFailures: state === "provider" ? ["Gateway"] : [],
+                    keysSupported: entry.id !== "core",
                     accessRule: entry.accessKind === "noGuests" ? "Alle außer Gästen" : "Alle angemeldeten Personen",
                     appNames: new Map([
                       ["contacts", "Kontakte"],

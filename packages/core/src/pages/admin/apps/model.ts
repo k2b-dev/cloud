@@ -85,15 +85,14 @@ export type AppEntry = AppInput & { status: AppStatusKind; hints: AppHint[]; nev
 export const ERROR_RATE_WARN = 0.01;
 export const ERROR_RATE_MIN_REQUESTS = 20;
 
+/** The highest share any one provider measured; providers count different things and never add up. */
 const errorRate = (numbers: readonly ProviderNumbers[]): number | null => {
-  let requests = 0;
-  let errors = 0;
-  for (const entry of numbers) {
-    if (!entry.traffic) continue;
-    requests = Math.max(requests, entry.traffic.requests);
-    errors = Math.max(errors, entry.traffic.errors);
-  }
-  return requests >= ERROR_RATE_MIN_REQUESTS ? errors / requests : null;
+  const rates = numbers
+    .flatMap((entry) =>
+      entry.traffic && entry.traffic.requests >= ERROR_RATE_MIN_REQUESTS ? [entry.traffic.errors / entry.traffic.requests] : [],
+    )
+    .toSorted((a, b) => b - a);
+  return rates[0] ?? null;
 };
 
 /** The provider's latest sighting of an app that Core never saw run. */

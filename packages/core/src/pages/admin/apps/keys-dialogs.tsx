@@ -24,6 +24,8 @@ export type KeyEntry = {
   publicKey: string;
   fingerprint: string;
   status: "active" | "expired" | "revoked";
+  /** The app's service account; "disabled" turns background access off for all its keys. */
+  accountStatus?: "active" | "disabled";
   createdAt: string;
   createdBy: string | null;
   expiresAt: string | null;
@@ -274,7 +276,12 @@ export const openRevokeKeyDialog = (app: App, key: KeyEntry, last: boolean, loca
           const response = await api[":appId"].keys[":keyId"]
             .$delete({ param: { appId: app.id, keyId: key.keyId } }, { init: { signal: abortSignal } })
             .catch(() => null);
-          if (!response?.ok) throw new Error("failed");
+          // A lost answer may hide a revocation that happened: read the list again and let a retry repeat it safely.
+          if (!response) {
+            onRevoked();
+            throw Object.assign(new Error("unclear"), { unclear: true });
+          }
+          if (!response.ok) throw new Error("failed");
         },
         onSuccess: () => {
           close();
@@ -306,11 +313,14 @@ export const openRevokeKeyDialog = (app: App, key: KeyEntry, last: boolean, loca
                   </NoticeCard>
                 </Show>
                 <Show when={revoke.error()}>
-                  <NoticeCard tone="danger" icon="ti ti-alert-circle" role="alert">
-                    <span>
-                      <b>{t.revokeFailedLead}</b> {t.revokeFailedText}
-                    </span>
-                  </NoticeCard>
+                  {(error) => (
+                    <NoticeCard tone={"unclear" in error() ? "warning" : "danger"} icon="ti ti-alert-circle" role="alert">
+                      <span>
+                        <b>{"unclear" in error() ? t.unclearLead : t.revokeFailedLead}</b>{" "}
+                        {"unclear" in error() ? t.revokeUnclearText : t.revokeFailedText}
+                      </span>
+                    </NoticeCard>
+                  )}
                 </Show>
               </div>
             </PanelDialog.Body>

@@ -19,7 +19,7 @@ import { appKeys } from "@k2b/cloud/services/app-keys";
 import { AdminLayout, getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
 import { createAppStatusReader } from "../../../app-status";
 import { ssr } from "../../../config";
-import { listAppListing, rememberAppStatusReports } from "../../../known-apps";
+import { listAppListing } from "../../../known-apps";
 import { settingsDocumentationHref } from "../settings/documentation";
 import { appsFormat } from "./format";
 import type { KeyEntry } from "./keys-dialogs";
@@ -29,10 +29,40 @@ import { AppsView, type AppsViewData, type DetailData, type RouteRow } from "./v
 
 /** Platform services that route but are not apps an administrator manages here. */
 const HIDDEN = new Set(["gateway", "gateway-router"]);
-/** The list asks providers for at most this many apps at once (the `app-status.summary` limit). */
-const SUMMARY_LIMIT = 200;
+/** `appAdminFacts` reads at most this many apps at once. */
+const FACTS_BATCH = 500;
 
 const log = logger("admin-apps");
+/** Platform services that can have no app key. */
+const RESERVED_KEYS = new Set(["core", "gateway"]);
+
+/** An app ID nothing knows yet, opened through "Add app" to create its first key. */
+const unknownApp = (id: string): AppInput => ({
+  id,
+  name: id,
+  description: "",
+  icon: "ti ti-apps",
+  accent: null,
+  live: false,
+  heartbeatStale: false,
+  release: null,
+  routes: [],
+  adminHref: null,
+  logsHref: null,
+  instances: null,
+  firstSeenAt: null,
+  lastSeenAt: null,
+  firstKnownAt: null,
+  coreKnows: true,
+  accessKind: null,
+  access: null,
+  keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
+  failedDeliveries: 0,
+  runtimeIssues: [],
+  missingRoutes: [],
+  numbers: [],
+  numbersUnavailable: false,
+});
 
 /** A provider's link of one kind; providers name what a link opens, Core never knows their paths. */
 const linkOf = (numbers: readonly ProviderNumbers[], kind: "logs" | "metrics" | "routes" | "capabilities") =>
@@ -108,16 +138,34 @@ export default ssr<AuthContext>(async (c) => {
     live = detailed.filter((app) => !HIDDEN.has(app.id));
     const known = (await listAppListing({ liveApps: live })).filter((entry) => !HIDDEN.has(entry.id));
     const ids = known.map((entry) => entry.id).sort();
-    summaries = await status.readAppStatusSummaries({ authority, appIds: ids.slice(0, SUMMARY_LIMIT), window: "24h", locale, signal });
-    // Removing an app later must reach every provider that reported it, also one that is down by then.
-    await rememberAppStatusReports(summaries).catch((error: unknown) => log.warn("Could not record app-status reports", { error }));
+    // The reader asks for the first 200 and names the rest in `truncated`; the reader also records who reported what.
+    summaries = await status.readAppStatusSummaries({ authority, appIds: ids, window: "24h", locale, signal }).catch((error: unknown) => {
+      log.error("Could not read app status", { error });
+      return {
+        byApp: new Map(),
+        otherApps: [],
+        failures: [{ provider: { appId: "core", name: "Core" }, reason: "unavailable" as const }],
+        truncated: [],
+      };
+    });
     const listing = summaries.otherApps.length
       ? (await listAppListing({ liveApps: live, otherApps: summaries.otherApps })).filter((entry) => !HIDDEN.has(entry.id))
       : known;
-    const facts = await appAdminFacts(
-      authority,
-      listing.map((entry) => entry.id),
+    // Core's facts only add hints; without them the list still shows every app and its state.
+    const listingIds = listing.map((entry) => entry.id);
+    const facts = new Map(
+      (
+        await Promise.all(
+          Array.from({ length: Math.ceil(listingIds.length / FACTS_BATCH) }, (_, index) =>
+            appAdminFacts(authority, listingIds.slice(index * FACTS_BATCH, (index + 1) * FACTS_BATCH)).catch((error: unknown) => {
+              log.error("Could not read the apps' Core facts", { error });
+              return new Map<string, never>();
+            }),
+          ),
+        )
+      ).flatMap((batch) => [...batch]),
     );
+    const truncated = new Set(summaries.truncated);
     const compatibility = assessRuntimeCompatibility(live);
     const names = new Map(listing.map((entry) => [entry.id, localized.get(entry.id)?.name ?? entry.name]));
     const failedProviders = new Set(summaries.failures.map((failure) => failure.provider.appId));
@@ -155,7 +203,7 @@ export default ssr<AuthContext>(async (c) => {
         ],
         missingRoutes: app ? missingRoutes(app, router, names) : [],
         numbers,
-        numbersUnavailable: failedProviders.size > 0 && numbers.length === 0,
+        numbersUnavailable: (failedProviders.size > 0 || truncated.has(entry.id)) && numbers.length === 0,
       });
     });
     list = {
@@ -169,8 +217,13 @@ export default ssr<AuthContext>(async (c) => {
     log.error("Could not load the app list", { error });
   }
 
-  // Level 2: the open app. An app no source knows has no page.
-  const entry = query.app ? (entries.find((candidate) => candidate.id === query.app) ?? null) : null;
+  // Level 2: the open app. An app no source knows has no page, except its keys: "Add app" starts there, and its
+  // first key makes Core know it.
+  const added =
+    query.app && query.view === "keys" && !entries.some((candidate) => candidate.id === query.app) && !RESERVED_KEYS.has(query.app)
+      ? deriveApp(unknownApp(query.app))
+      : null;
+  const entry = query.app ? (entries.find((candidate) => candidate.id === query.app) ?? added) : null;
   if (query.app && !entry && list.state === "ok") return ssr.error(c, 404);
   const liveApp = entry ? live.find((app) => app.id === entry.id) : undefined;
   const details =
@@ -180,11 +233,11 @@ export default ssr<AuthContext>(async (c) => {
           return null;
         })
       : null;
-  const reservedKeys = entry ? entry.id === "core" || entry.id === "gateway" : true;
+  const reservedKeys = entry ? RESERVED_KEYS.has(entry.id) : true;
   const keyList =
     entry && !reservedKeys
       ? await appKeys
-          .list({ actor: user, appId: entry.id, page: 1, perPage: 100 })
+          .list({ actor: user, appId: entry.id, page: 1, perPage: 500 })
           .then((result) => (result.ok ? (result.data.items as KeyEntry[]) : null))
           .catch(() => null)
       : null;
@@ -213,6 +266,7 @@ export default ssr<AuthContext>(async (c) => {
         return { view: "access", rule: ruleLabel(locale, access), editor };
       }
       case "keys": {
+        if (reservedKeys) return null;
         const tokens = await serviceAccountCredentials
           .listOverview({
             pagination: { page: 1, perPage: 20 },
@@ -247,7 +301,8 @@ export default ssr<AuthContext>(async (c) => {
                   hasNext: tokens.hasNext,
                 }
               : null,
-            docsHref: settingsDocumentationHref(await coreSettings.get<string>("app.documentation_url"), "app-keys") ?? null,
+            docsHref:
+              settingsDocumentationHref(await coreSettings.get<string>("app.documentation_url").catch(() => undefined), "app-keys") ?? null,
             timeZone: dateContext.timeZone ?? "UTC",
           },
         };
@@ -261,41 +316,45 @@ export default ssr<AuthContext>(async (c) => {
           status.readAppStatusDetail({ authority, appId: entry.id, window, locale, signal }),
           latestGatewayRouteSnapshot().catch(() => null),
         ]);
-        const providers = statusDetail.results.map((result) => result.provider.name);
         const failures = statusDetail.failures.map((failure) => failure.provider.name);
         const telemetryHref = linkOf(entry.numbers, "metrics");
-        if (query.view === "errors") {
-          const result = statusDetail.results[0];
+        if (query.view === "errors")
           return {
             view: "errors",
-            failedRequests: result?.failedRequests ?? [],
-            total: result?.totalFailedRequests ?? null,
-            providers,
+            // Each provider keeps its own requests and its name; two providers never mix their numbers.
+            groups: statusDetail.results.map((result) => ({
+              provider: result.provider.name,
+              failedRequests: result.failedRequests,
+              total: result.totalFailedRequests,
+            })),
             failures,
             telemetryHref,
             logsHref: entry.logsHref,
           };
-        }
         const routed = new Map((router?.routes ?? []).map((route) => [route.prefix, route.appId]));
-        const numbers = new Map(statusDetail.results.flatMap((result) => result.routes).map((route) => [route.prefix, route]));
         const names = new Map(entries.map((candidate) => [candidate.id, candidate.name]));
-        const rows: RouteRow[] = entry.routes.map((prefix) => {
-          const owner = routed.get(prefix);
-          const measured = numbers.get(prefix);
-          return {
-            prefix,
-            requests: measured ? measured.requests : null,
-            errors: measured ? measured.errors : null,
-            router: !router ? "unknown" : owner === entry.id ? "active" : "missing",
-            owner: owner && owner !== entry.id ? (names.get(owner) ?? owner) : null,
-          };
-        });
+        const rows = (measured: ReadonlyMap<string, { requests: number; errors: number }> | null): RouteRow[] =>
+          entry.routes.map((prefix) => {
+            const owner = routed.get(prefix);
+            const numbers = measured?.get(prefix);
+            return {
+              prefix,
+              requests: numbers ? numbers.requests : null,
+              errors: numbers ? numbers.errors : null,
+              router: !router ? "unknown" : owner === entry.id ? "active" : "missing",
+              owner: owner && owner !== entry.id ? (names.get(owner) ?? owner) : null,
+            };
+          });
         const traffic = entry.numbers.find((item) => item.traffic)?.traffic;
         return {
           view: "routes",
           window,
-          rows,
-          providers,
+          tables: statusDetail.results.length
+            ? statusDetail.results.map((result) => ({
+                provider: result.provider.name,
+                rows: rows(new Map(result.routes.map((route) => [route.prefix, route]))),
+              }))
+            : [{ provider: null, rows: rows(null) }],
           failures,
           routerKnown: Boolean(router),
           avgMs: window === "24h" ? (traffic?.avgMs ?? null) : null,
@@ -341,6 +400,7 @@ export default ssr<AuthContext>(async (c) => {
           details,
           revokedKeyName: keyList?.find((key) => key.status === "revoked")?.name ?? null,
           providerFailures,
+          keysSupported: !reservedKeys,
           accessRule: ruleLabel(locale, liveApp?.access ?? localized.get(entry.id)?.access),
           appNames: new Map(entries.map((candidate) => [candidate.id, candidate.name])),
         }

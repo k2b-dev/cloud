@@ -81,6 +81,10 @@ export default function Keys(props: KeysProps) {
       return { items: body.items, total: body.total, hasNext: body.hasNext };
     },
   });
+  const refreshAfterToken = () => {
+    setTokenRevision((value) => value + 1);
+    keysState.setRevision((value) => value + 1);
+  };
   const enable = mutation.create({
     mutation: async (_: void, { abortSignal }) => {
       const response = await workloads[":appId"].$patch(
@@ -104,7 +108,16 @@ export default function Keys(props: KeysProps) {
   createEffect(
     on(
       () => keys.data(),
-      (data) => data && keysState.setActiveCount(data.filter((key) => key.status === "active").length),
+      (data) => {
+        if (!data) return;
+        keysState.setActiveCount(data.filter((key) => key.status === "active").length);
+        // Revoking an automatic runtime token turns background access off; the keys read again says so.
+        const status = data[0]?.accountStatus;
+        if (status) {
+          setAccountStatus(status);
+          keysState.setDisabledAccount(status === "disabled");
+        }
+      },
     ),
   );
 
@@ -328,7 +341,7 @@ export default function Keys(props: KeysProps) {
                             label: t().revoke,
                             variant: "danger",
                             action: () =>
-                              void openTokenDialog(props.app, locale(), () => setTokenRevision((value) => value + 1), {
+                              void openTokenDialog(props.app, locale(), refreshAfterToken, {
                                 id: token.id,
                                 name: token.name,
                                 prefix: token.tokenPrefix,
