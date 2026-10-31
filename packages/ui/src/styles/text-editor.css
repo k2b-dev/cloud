@@ -30,7 +30,9 @@
 .k2b-ui .k2b-ste-source { font-family: var(--k2b-font-mono) !important; font-size: 13.5px; }
 
 /* Table grid: hairlines only between cells of an editable table (design rule: wide edit tables may). */
-.k2b-ui .k2b-ste-table { position: relative; margin: 4px 0 10px; overflow-x: auto; max-width: 100%; }
+/* The grid is a block of the editor, which measures blocks without margins: the space below is a transparent border,
+   and the lift toward the line above is an offset, so text after a table sits where the editor places it. */
+.k2b-ui .k2b-ste-table { position: relative; margin: 0; border-bottom: 4px solid transparent; overflow-x: auto; max-width: 100%; }
 .k2b-ui .k2b-ste-table table { border-collapse: collapse; min-width: 50%; font-size: 14px; line-height: 1.45; }
 .k2b-ui .k2b-ste-table th, .k2b-ui .k2b-ste-table td { padding: 0; border-bottom: 1px solid var(--k2b-border); vertical-align: top; min-width: 7rem; }
 .k2b-ui .k2b-ste-table th { font-weight: 650; text-align: left; }
@@ -48,7 +50,7 @@
 .k2b-ui .k2b-ste-table td[data-peer], .k2b-ui .k2b-ste-table th[data-peer] { position: relative; }
 .k2b-ui .k2b-ste-table td[data-peer] .k2b-ste-cell, .k2b-ui .k2b-ste-table th[data-peer] .k2b-ste-cell { box-shadow: inset 0 0 0 2px var(--pc); }
 .k2b-ui .k2b-ste-table td[data-peer]::after, .k2b-ui .k2b-ste-table th[data-peer]::after { content: attr(data-peer); position: absolute; right: 4px; top: -9px; padding: 0 6px; border-radius: 6px; background-color: var(--pc); color: #fff; font: 600 11px/18px var(--k2b-font-sans); pointer-events: none; }
-.k2b-ui .k2b-ste-table { padding-top: 10px; margin-top: -6px; }
+.k2b-ui .k2b-ste-table { padding-top: 10px; top: -6px; }
 .k2b-ui .k2b-ste-table td[data-extra] .k2b-ste-cell, .k2b-ui .k2b-ste-table th[data-extra] .k2b-ste-cell { background: var(--k2b-warning-surface); }
 .k2b-ui .k2b-text-editor { position: relative; min-width: 0; color: var(--k2b-text); }
 /* Keep the app's sync state and table validation visible together. */

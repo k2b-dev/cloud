@@ -1,0 +1,6 @@
+### Other people's carets showed in the wrong place below tables and block anchors
+
+- **What happened:** In Notebooks, another person's caret appeared at wrong positions: below a named table every line sat 12 px lower than the editor assumed, and a caret inside a rendered table, formula or info block showed as one line at the block's top-left corner.
+- **Root cause:** CodeMirror places lines from its height map and measures blocks without margins. The shared table grid had vertical margins, and the block anchor label from #2186 was an inline box in a taller line box than its own, so each such block shifted every later line away from the height map. Separately, the caret layer drew a caret inside a rendered block with one line height at the block's top, although no line of the hidden source is visible there.
+- **Error class:** A rendered editor block takes more or less room than the box CodeMirror measures, so positions derived from the height map drift from what the browser draws.
+- **Guard:** `block-geometry.browser.test.ts` checks that every drawn block of the Notebook editor sits where the height map places it, on a desktop and a phone width. `remote-cursor-position.browser.test.ts` checks carets on their character after scrolling, a remote edit and a resize, and along the whole block inside a table, formula and info block.

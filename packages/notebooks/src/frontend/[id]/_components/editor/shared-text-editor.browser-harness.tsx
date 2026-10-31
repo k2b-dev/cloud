@@ -254,6 +254,25 @@ function Harness() {
         mode = next;
       },
       posts: () => posts,
+      blockDrift() {
+        const current = view();
+        if (!current) throw new Error("Editor not ready");
+        // CodeMirror places every line from its height map; each drawn block must sit where the map says.
+        const children = [...current.contentDOM.children].filter((child) => !child.classList.contains("cm-gap"));
+        return current.viewportLineBlocks.flatMap((block, index) => {
+          const child = children[index];
+          const box = child?.getBoundingClientRect();
+          // A relative offset moves only the drawing, not the lines after it.
+          const style = child && getComputedStyle(child);
+          const offset = style?.position === "relative" ? Number.parseFloat(style.top) || 0 : 0;
+          const top = box ? Math.round(box.top - offset - current.documentTop - block.top) : null;
+          const height = box ? Math.round(box.height - block.height) : null;
+          // A rounding pixel is no drift.
+          return top !== null && height !== null && Math.abs(top) <= 1 && Math.abs(height) <= 1
+            ? []
+            : [{ block: child?.className ?? "missing", top, height }];
+        });
+      },
       uploads: () => [...uploads],
       undo: async () => {
         await actions.undo();
@@ -375,6 +394,8 @@ export type NoteHarness = {
   setOnline: (online: boolean) => void;
   setServer: (mode: ServerMode) => void;
   posts: () => number;
+  /** Drawn blocks whose position or height differs from CodeMirror's height map, in whole pixels. */
+  blockDrift: () => { block: string; top: number | null; height: number | null }[];
   uploads: () => string[];
   undo: () => Promise<void>;
   peerType: (after: string, insert: string) => void;
