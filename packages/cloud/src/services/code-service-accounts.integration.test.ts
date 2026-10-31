@@ -168,7 +168,9 @@ suite("code service-account boundaries", () => {
       await expect(sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${agentId}::uuid`).rejects.toMatchObject({
         errno: "23514",
       });
-      expect(await sql`SELECT permission FROM auth.access WHERE id = ${codeGrant.id}::uuid`).toEqual([{ permission: "write" }]);
+      expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id = ${codeGrant.id}::uuid`).toEqual([
+        { permission: "write" },
+      ]);
     } finally {
       await sql`DELETE FROM auth.service_accounts WHERE id IN (${codeId}::uuid, ${agentId}::uuid)`;
     }

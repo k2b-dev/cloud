@@ -88,7 +88,9 @@ suite("Venue keeps a manager", () => {
     await sql`INSERT INTO venue.venue_access(venue_id, access_id) VALUES (${venueId}::uuid, ${access.id}::uuid)`;
     for (const permission of ["read", "admin"] as const) {
       expect((await venueService.access.update(venueId, access.id, permission, manager)).ok).toBe(false);
-      expect(await sql`SELECT permission FROM auth.access WHERE id = ${access.id}::uuid`).toEqual([{ permission: "write" }]);
+      expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id = ${access.id}::uuid`).toEqual([
+        { permission: "write" },
+      ]);
     }
   });
 

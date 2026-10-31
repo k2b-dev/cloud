@@ -161,9 +161,9 @@ suite("Project and Skill credential limits and manager eligibility", () => {
       for (const permission of ["read", "admin"]) {
         const response = await request(person.headers, `${fixture.path}/access/${access.id}`, "PATCH", { permission });
         expect(response.status).toBe(404);
-        expect(await sql`SELECT permission FROM auth.access WHERE service_account_id = ${machine.id}::uuid`).toEqual([
-          { permission: "write" },
-        ]);
+        expect(
+          await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE service_account_id = ${machine.id}::uuid`,
+        ).toEqual([{ permission: "write" }]);
       }
     });
 
