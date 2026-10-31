@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { RecordQuery } from "../contracts";
 import { compileFilter, renderClause } from "../service/filter-compiler";
 import type { FormulaSqlFieldResolver } from "../service/formula-sql-compiler";

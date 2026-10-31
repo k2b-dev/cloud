@@ -1,4 +1,5 @@
 import { getWorkflowMachineAuthority } from "./workflow-machine-authority";
+
 /**
  * Grids workflow definitions, stored by the kernel.
  *
@@ -21,6 +22,7 @@ import { getWorkflowMachineAuthority } from "./workflow-machine-authority";
  * has no activation to carry it.
  */
 
+import { sql } from "@k2b/cloud";
 import type { WorkflowBoundPlan, WorkflowDiagnostic } from "@k2b/cloud/workflows";
 import type { WorkflowActivationInput } from "@k2b/cloud/workflows/store";
 import {
@@ -30,7 +32,7 @@ import {
   setWorkflowEnabled,
 } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type {
   CreateGridsWorkflowInput,

@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { normalizedSql } from "../sql-test-utils";
 import {
   applyComputedProjections,
@@ -10,6 +11,8 @@ import {
 import * as fieldReads from "./field-read";
 import { enrichRecordsWithFormulas } from "./relation-formulas";
 import type { Field, GridRecord } from "./types";
+
+useUnitClients();
 
 const field = (overrides: Partial<Field> & Pick<Field, "id" | "shortId" | "name" | "type">): Field => ({
   id: overrides.id,

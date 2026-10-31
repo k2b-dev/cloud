@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../integration-test-utils";
 

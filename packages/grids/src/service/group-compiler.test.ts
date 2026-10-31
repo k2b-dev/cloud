@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { parseFormula } from "../formula/parser";
 import { normalizedSql } from "../sql-test-utils";
 import { compileGroupQuery, isAggregatable, isGroupable } from "./group-compiler";
 import type { Field } from "./types";
+
+useUnitClients();
 
 const mkField = (id: string, type: string, name = id, extras: Partial<Field> = {}): Field => ({
   id,

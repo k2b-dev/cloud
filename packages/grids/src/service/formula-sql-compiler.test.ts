@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
-import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "@k2b/cloud";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { FORMULA_LIMITS, parseFormula } from "../formula/parser";
 import { normalizedSqlParts } from "../sql-test-utils";
 import { compileFormulaPredicateAstToSql, compileFormulaSourceToSql } from "./formula-sql-compiler";
 import { requireValidCalculationSql } from "./formula-sql-values";
 import type { Field } from "./types";
+
+if (!testInfra.database) useUnitClients();
 
 test("SQL compilation rejects expressions beyond the shared complexity budget", () => {
   const source = Array(FORMULA_LIMITS.depth + 1)

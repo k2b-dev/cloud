@@ -1,9 +1,8 @@
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { connections } from "@k2b/cloud";
+import { connections, sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { RecordAuditContextSchema } from "../contracts";
 import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";

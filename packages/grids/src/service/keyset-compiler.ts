@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { validateFilterValue } from "./filter-compiler-validation";
 import type { FormulaSqlType } from "./formula-sql-compiler";
 

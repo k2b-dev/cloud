@@ -8,7 +8,7 @@
  * generation fence are all the kernel's — there is no second copy here.
  */
 
-import { lazySync } from "@k2b/cloud";
+import { createSql, lazySync } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeResources, trace } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
@@ -41,7 +41,7 @@ import {
 } from "@k2b/cloud/workflows/store";
 import { err, fail, type Result } from "@k2b/stdlib";
 import { CursorMismatchError, RetentionGapError, type Worker } from "@k2b/sync";
-import { SQL } from "bun";
+import type { SQL } from "bun";
 import { app } from "../config";
 import type { WorkflowRunEventScope } from "../lib/workflow-run-events";
 import type {
@@ -356,7 +356,7 @@ let workflowEffectDb: SQL | undefined;
 let declaredWorkflowActions: WorkflowExecuteActionPort | undefined;
 const workflowEffectActions = (): WorkflowExecuteActionPort => {
   if (!declaredWorkflowActions) {
-    workflowEffectDb = new SQL();
+    workflowEffectDb = createSql();
     declaredWorkflowActions = createWorkflowActionPort(gridsWorkflows, { db: workflowEffectDb });
   }
   return declaredWorkflowActions;
