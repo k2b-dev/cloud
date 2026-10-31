@@ -388,3 +388,33 @@ test("grant admission refuses overflow before an account list becomes unreadable
   });
   expect({ rows, grants, writes }).toEqual(snapshot);
 });
+
+test("a list exactly at the result byte budget remains readable", async () => {
+  const makeGrant = (index: number) => ({
+    grantId: `33333333-3333-4333-8333-${String(index).padStart(12, "0")}`,
+    principal,
+    target: { ...target, id: "x".repeat(512) },
+    level: "write",
+  });
+  const measure = (data: ReturnType<typeof makeGrant>[]) => new TextEncoder().encode(JSON.stringify({ data })).byteLength;
+  const fullSize = new TextEncoder().encode(JSON.stringify(makeGrant(0))).byteLength + 1;
+  const count = Math.floor((CAPABILITY_MAX_RESULT_BYTES - 11) / fullSize);
+  const expected = Array.from({ length: count }, (_, index) => makeGrant(index));
+  expected.push({ ...makeGrant(count), target: { ...target, id: "x" } });
+  const remaining = CAPABILITY_MAX_RESULT_BYTES - measure(expected);
+  if (remaining >= 0) expected[count]!.target.id += "x".repeat(remaining);
+  else expected[count - 1]!.target.id = expected[count - 1]!.target.id.slice(0, remaining);
+  expect(measure(expected)).toBe(CAPABILITY_MAX_RESULT_BYTES);
+  rows = expected.map((grant) => ({
+    app_id: "inventory",
+    grant_id: grant.grantId,
+    principal,
+    target_type: target.type,
+    target_id: grant.target.id,
+    binding_hash: "fixture",
+    level: grant.level,
+    revoked: false,
+  }));
+  grants = expected.map((grant) => ({ grantId: grant.grantId, id: grant.target.id, level: grant.level }));
+  expect(await listCodeAccess("inventory", bindings(), principal, { listPrincipal: principal }, deps.db)).toEqual(expected);
+});

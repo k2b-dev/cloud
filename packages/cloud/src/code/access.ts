@@ -241,7 +241,7 @@ export const listCodeAccess = async (
     if (indexed.length > maxListGrants) throw new Error("Code access list exceeds the capability result budget");
     const indexedById = new Map(indexed.map((entry) => [entry.grant_id, entry]));
     const result: CodeAccessGrant[] = [];
-    let bytes = 11;
+    let bytes = new TextEncoder().encode(JSON.stringify({ data: [] })).byteLength;
     for (const [type, adapter] of bindings) {
       const entries = z
         .array(CodeAccessEntrySchema)
@@ -255,7 +255,7 @@ export const listCodeAccess = async (
         const target = { type, id: entry.id };
         if (targetAdapter(bindings, appId, target)) {
           const grant = CodeAccessGrantSchema.parse({ grantId: entry.grantId, level: entry.level, target, principal });
-          bytes += new TextEncoder().encode(JSON.stringify(grant)).byteLength + 1;
+          bytes += new TextEncoder().encode(JSON.stringify(grant)).byteLength + (result.length ? 1 : 0);
           if (bytes > CAPABILITY_MAX_RESULT_BYTES) throw new Error("Code access list exceeds the capability result budget");
           result.push(grant);
         }
