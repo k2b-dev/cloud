@@ -17,13 +17,16 @@ export async function migrateAiQuotas() {
       service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE SET NULL,
       model_profile_id TEXT NOT NULL, turn_id UUID, turn_attempt INTEGER, started_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
       finished_at TIMESTAMPTZ, input BIGINT, output BIGINT,
-      kind TEXT NOT NULL CHECK(kind IN ('chat','background')), task TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('chat','background','live-transcription')), task TEXT NOT NULL,
       provider_model TEXT NOT NULL, app_id TEXT, conversation_id UUID, workflow_run_id UUID,
       step_key TEXT, trace_id TEXT, workflow_id UUID, workflow_name TEXT, workflow_version INTEGER, pricing JSONB, cost NUMERIC(30,12), reserved NUMERIC(30,12) NOT NULL DEFAULT 0,
       lease_expires_at TIMESTAMPTZ NOT NULL, status TEXT NOT NULL DEFAULT 'running', error_code TEXT,
       CHECK(cost IS NULL OR cost>=0), CHECK(reserved>=0),
       CHECK(input IS NULL OR input>=0), CHECK(output IS NULL OR output>=0)
     )`;
+    await db`ALTER TABLE ai.inference_calls DROP CONSTRAINT IF EXISTS inference_calls_kind_check`;
+    await db`ALTER TABLE ai.inference_calls ADD CONSTRAINT inference_calls_kind_check CHECK(kind IN ('chat','background','live-transcription'))`;
+    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS audio_ms INTEGER`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS credential_id UUID`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS estimated BOOLEAN NOT NULL DEFAULT false`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS error TEXT`;

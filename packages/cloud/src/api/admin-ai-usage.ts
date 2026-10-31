@@ -34,7 +34,7 @@ export const createAdminAiUsageRoutes = (
     .get(
       "/runs/:kind/:id",
       describeRoute({ summary: "Read an AI run and its stored error", tags: ["Admin AI usage"] }),
-      v("param", z.object({ kind: z.enum(["chat", "background"]), id: z.uuid() })),
+      v("param", z.object({ kind: z.enum(["chat", "background", "live-transcription"]), id: z.uuid() })),
       async (c) => {
         const { kind, id } = c.req.valid("param");
         const result = await service.detail(kind, id);
