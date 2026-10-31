@@ -3996,7 +3996,19 @@ const actionDefinitions = {
       const mailboxId = target.data;
       const key = requireIdempotencyKey(context, "conversation.keep.release");
       if (!key.ok) return key;
+      const mailContext = requestContext(context);
+      const canLift = await conversationKeeps.canLiftConversationKeeps(mailContext);
       const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      if (!canLift) {
+        if (scope.ok)
+          await conversationKeeps.recordConversationKeepAudit(
+            { context: mailContext, mailboxId: scope.data.mailbox.id, conversationId: scope.data.conversationId },
+            "mail.conversation.keep.release",
+            "denied",
+            { reason: input.reason?.trim().slice(0, 500).toWellFormed() || null },
+          );
+        return fail(err.forbidden(conversationKeeps.LIFT_KEEP_FORBIDDEN));
+      }
       if (!scope.ok) return scope;
       const result = await conversationKeeps.releaseConversationKeep({
         context: requestContext(context),

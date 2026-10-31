@@ -12,6 +12,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { err, fail } from "@k2b/stdlib";
+import type { z } from "zod";
 import { mailCapabilities } from "./capabilities";
 import {
   ActivityListDataSchema,
@@ -484,22 +485,44 @@ describe("mail capabilities", () => {
     expect(tags).not.toHaveBeenCalled();
   });
 
-  test("comment Actions check current access before resolving contained resources", async () => {
+  test("conversation and comment Actions return the same denial for existing and missing resources", async () => {
     const denied = fail(err.forbidden("Access denied"));
     spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
     const resource = spyOn(publicResources, "resolveMailboxPublicId");
-    const update = mailCapabilities.actions["conversation.comment.update"];
-    const remove = mailCapabilities.actions["conversation.comment.delete"];
-    const updateInput = update.input.parse({ conversationId, commentId, expectedRevision: 3, body: "Updated comment" });
-    const removeInput = remove.input.parse({ conversationId, commentId, expectedRevision: 3 });
-    for (const call of [
-      () => update.review(updateInput, context),
-      () => update.run(updateInput, context),
-      () => remove.review(removeInput, context),
-      () => remove.run(removeInput, context),
-    ])
-      expect(await call()).toEqual(denied);
+    const content = spyOn(messages, "listConversationMessages");
+    const comment = spyOn(collaboration, "getConversationComment");
+    const deniedContext = { ...context, idempotencyKey: "denied-conversation-action" };
+    const check = async <Input extends z.ZodType, Data extends z.ZodType>(
+      action: CapabilityActionDefinition<Input, Data>,
+      fields: Record<string, unknown>,
+      nestedTarget = false,
+    ) => {
+      for (const id of [conversationId, "NoConv"]) {
+        const input = action.input.parse({
+          ...fields,
+          ...(nestedTarget ? { target: { conversationId: id, sourceFolderId: folderId } } : { conversationId: id }),
+        });
+        expect(await action.review?.(input, deniedContext), `${action.title} review for ${id}`).toEqual(denied);
+        expect(await action.run(input, deniedContext), `${action.title} execution for ${id}`).toEqual(denied);
+      }
+    };
+    await check(mailCapabilities.actions["conversation.mark"], { read: true }, true);
+    await check(mailCapabilities.actions["conversation.move"], { destination: { kind: "role", role: "archive" } }, true);
+    await check(mailCapabilities.actions["conversation.tag.update"], { expectedRevision: 3, addTagIds: [tagId] });
+    await check(mailCapabilities.actions["conversation.assign"], { mode: "replace", assigneeUserIds: [] });
+    await check(mailCapabilities.actions["conversation.status.update"], { expectedRevision: 3, status: "done" });
+    await check(mailCapabilities.actions["conversation.keep"], {});
+    await check(mailCapabilities.actions["conversation.snooze"], { expectedRevision: 3, snoozedUntil: null });
+    await check(mailCapabilities.actions["conversation.reminder.set"], { expectedRevision: null, dueAt: timestamp });
+    await check(mailCapabilities.actions["conversation.reminder.cancel"], { expectedRevision: 3 });
+    await check(mailCapabilities.actions["conversation.comment.create"], { body: "Internal context" });
+    for (const id of [commentId, "NoCmnt"]) {
+      await check(mailCapabilities.actions["conversation.comment.update"], { commentId: id, expectedRevision: 3, body: "Updated comment" });
+      await check(mailCapabilities.actions["conversation.comment.delete"], { commentId: id, expectedRevision: 3 });
+    }
     expect(resource).not.toHaveBeenCalled();
+    expect(content).not.toHaveBeenCalled();
+    expect(comment).not.toHaveBeenCalled();
   });
 
   test("conversation.related checks current access before resolving its conversation", async () => {
@@ -747,26 +770,59 @@ describe("mail capabilities", () => {
     expect(checkMailCapabilityMessages()).toEqual([]);
   });
 
-  test("keep release refuses non-admin review before resolving content and accepts Cloud admins without mailbox grants", async () => {
-    const allowed = spyOn(conversationKeeps, "canLiftConversationKeeps").mockResolvedValue(false);
+  test("keep release checks administrator access before resolution and accepts admins without mailbox grants", async () => {
+    const order: string[] = [];
+    const allowed = spyOn(conversationKeeps, "canLiftConversationKeeps").mockImplementation(async () => {
+      order.push("access");
+      return false;
+    });
     const subject = spyOn(conversationKeeps, "getConversationKeepReleaseSubject").mockResolvedValue({
       ok: true,
       data: { subject: "Evidence" },
     });
-    const access = spyOn(mailboxAccess, "requireMailboxPermission");
-    const release = mailCapabilities.actions["conversation.keep.release"];
-    expect(await release.review({ conversationId }, context)).toMatchObject({
-      ok: false,
-      error: {
-        code: "FORBIDDEN",
-        message: "Only a Cloud administrator can stop keeping a conversation",
-      },
+    const denied = fail(err.forbidden("Access denied"));
+    const access = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
+    const assignedAccess = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(async (table, mailbox, id) => {
+      order.push("resolve");
+      expect(table).toBe("conversations");
+      expect(mailbox).toBe(internalMailboxId);
+      return id === conversationId ? internalConversationId : null;
     });
+    const mutation = spyOn(conversationKeeps, "releaseConversationKeep");
+    const audit = spyOn(conversationKeeps, "recordConversationKeepAudit").mockResolvedValue(undefined);
+    const release = mailCapabilities.actions["conversation.keep.release"];
+    for (const id of [conversationId, "NoConv"]) {
+      const denied = fail(err.forbidden(conversationKeeps.LIFT_KEEP_FORBIDDEN));
+      expect(await release.review({ conversationId: id }, context)).toEqual(denied);
+      expect(
+        await release.run({ conversationId: id, reason: "  Policy reviewed  " }, { ...context, idempotencyKey: "denied-keep-release" }),
+      ).toEqual(denied);
+    }
+    expect(order).toEqual(["access", "access", "resolve", "access", "access", "resolve"]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(
+      {
+        context: { actor: context.actor, accessSubject: context.accessSubject, requestId: context.requestId },
+        mailboxId: internalMailboxId,
+        conversationId: internalConversationId,
+      },
+      "mail.conversation.keep.release",
+      "denied",
+      { reason: "Policy reviewed" },
+    );
+    expect(mutation).not.toHaveBeenCalled();
     expect(subject).not.toHaveBeenCalled();
     allowed.mockResolvedValue(true);
     const review = await release.review({ conversationId, reason: "Policy reviewed" }, context);
     expect(review).toMatchObject({ ok: true });
+    mutation.mockResolvedValue({ ok: true, data: { conversationId: internalConversationId, released: true } });
+    expect(
+      await release.run({ conversationId, reason: "Policy reviewed" }, { ...context, idempotencyKey: "admin-keep-release" }),
+    ).toMatchObject({ ok: true, data: { data: { conversationId, released: true } } });
     expect(access).not.toHaveBeenCalled();
+    expect(assignedAccess).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledTimes(1);
     if (!review.ok) throw new Error(review.error.message);
     expect(review.data.sentence.action).toBe("Stop keeping the conversation {conversation}");
     expect(review.data.consequences?.map((c) => c.text).join(" ")).toContain("Cloud administrator");
@@ -1678,6 +1734,7 @@ describe("mail capabilities", () => {
   });
 
   test("returns a schema-valid user outcome from every Mail action", async () => {
+    spyOn(conversationKeeps, "canLiftConversationKeeps").mockResolvedValue(true);
     spyOn(conversationKeeps, "keepConversation").mockResolvedValue({
       ok: true,
       data: {
