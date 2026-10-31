@@ -25,6 +25,11 @@ export type AppKeyMetadata = {
   revokedBy: string | null;
   lastUsedAt: string | null;
 };
+export type LastRejectedStart = {
+  at: string;
+  reason: "revoked" | "expired" | "disabled" | "connections_not_permitted";
+  keyId: string | null;
+};
 type Row = {
   id: string;
   app_id: string;
@@ -208,7 +213,21 @@ export const listAppKeys = async (params: { actor: AdminActor; appId: string; pa
     `;
     total = count?.total ?? 0;
   }
-  return ok({ installationId: await getInstallationId(), items: rows.map(map), page, perPage, total, hasNext: page * perPage < total });
+  const [rejection] = await sql<{ rejected_at: Date; reason: LastRejectedStart["reason"]; key_id: string | null }[]>`
+    SELECT rejected_at, reason, key_id FROM auth.app_start_rejections WHERE app_id = ${params.appId}
+  `;
+  const lastRejectedStart: LastRejectedStart | null = rejection
+    ? { at: rejection.rejected_at.toISOString(), reason: rejection.reason, keyId: rejection.key_id }
+    : null;
+  return ok({
+    installationId: await getInstallationId(),
+    items: rows.map(map),
+    lastRejectedStart,
+    page,
+    perPage,
+    total,
+    hasNext: page * perPage < total,
+  });
 };
 
 export const listAppsWithKeys = async (params: { actor: AdminActor; page?: number; perPage?: number }) => {
@@ -275,8 +294,8 @@ export const revokeAppKey = async (params: { actor: AdminActor; appId: string; k
   });
 };
 
-/** Bootstrap and signed workload requests must query this directly; no cache. */
-export const getActiveAppKey = async (
+/** Core bootstrap diagnostics need the stored public key even after revocation; this does not authenticate it. */
+export const getStoredAppKey = async (
   params: { appId: string; keyId: string },
   db: SQL = sql,
 ): Promise<(AppKeyMetadata & { connectionsAllowed: boolean; oauthIssueAllowed: boolean }) | null> => {
@@ -290,11 +309,16 @@ export const getActiveAppKey = async (
   const [row] = await db<(Row & { connections_allowed: boolean })[]>`
     SELECT ${db.unsafe(columns)} FROM auth.service_account_credentials c
     JOIN auth.service_accounts sa ON sa.id = c.service_account_id
-    WHERE c.kind = 'app_key' AND c.id = ${params.keyId}::uuid AND c.status = 'active'
-      AND (c.expires_at IS NULL OR c.expires_at > now()) AND sa.status = 'active'
+    WHERE c.kind = 'app_key' AND c.id = ${params.keyId}::uuid
       AND sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app' AND sa.resource_id = ${params.appId}
   `;
   return row ? { ...map(row), connectionsAllowed: row.connections_allowed, oauthIssueAllowed: row.oauth_issue_allowed } : null;
+};
+
+/** Bootstrap and signed workload requests must query this directly; no cache. */
+export const getActiveAppKey = async (params: { appId: string; keyId: string }, db: SQL = sql) => {
+  const key = await getStoredAppKey(params, db);
+  return key?.status === "active" && key.accountStatus === "active" ? key : null;
 };
 
 /** Call only after successful authentication; a late touch cannot revive a key. */

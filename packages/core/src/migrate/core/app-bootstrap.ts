@@ -29,5 +29,13 @@ export const migrateAppBootstrap = async (): Promise<void> => {
       PRIMARY KEY (key_id, jti)
     )
   `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.app_start_rejections (
+      app_id TEXT PRIMARY KEY,
+      rejected_at TIMESTAMPTZ NOT NULL,
+      reason TEXT NOT NULL,
+      key_id UUID NULL
+    )
+  `.simple();
   await sql`CREATE INDEX IF NOT EXISTS app_proof_replays_retention ON auth.app_proof_replays (retain_until)`.simple();
 };
