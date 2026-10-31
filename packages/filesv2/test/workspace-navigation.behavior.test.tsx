@@ -631,7 +631,17 @@ describe("Filesv2 progressive navigation", () => {
     expect(selectedNode()).toBe(JSON.stringify([group.id, null, ""]));
     expectNoTrashInTree();
     await openTrash(group.id);
-    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "trash", "bases", "entries", "bases", "trash"]);
+    // No back button of its own: the highlighted storage in the tree is the way back to the listing.
+    expect(dom.root.querySelector(".k2b-app-workspace__main .ti-arrow-left")).toBeNull();
+    tree().querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=accounting"]')!.click();
+    await flush();
+    apiRequests.at(-1)!.resolve(Response.json(bases));
+    await flush();
+    apiRequests.at(-1)!.resolve(Response.json({ base: group, path: "", items: [], next: null }));
+    await flush();
+    expect(dom.window.location.search).toBe("?base=accounting");
+    expect(dom.root.querySelector(".filesv2-list__row--trash")).not.toBeNull();
+    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "trash", "bases", "entries", "bases", "trash", "bases", "entries"]);
   });
   test("a listing row stops spinning when a navigation back to the same folder replaces its pending open", async () => {
     const dom = createDomTestHarness();

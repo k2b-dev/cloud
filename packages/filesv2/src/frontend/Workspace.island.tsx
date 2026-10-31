@@ -419,13 +419,14 @@ export default function Workspace(props: {
         if (url.pathname !== "/app/filesv2") return;
         const target = `${url.pathname}${url.search}`;
         if (target === workspace.committedSource() && !workspace.pending()) return;
-        // The listing scrolls back to where it was left once its rows are on the page again.
-        const restoreScroll = deferScrollRestore();
         const previous = workspace.committedSource();
         if (!closing && editorGuard && !(await editorGuard())) {
           commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false });
           return;
         }
+        // The listing scrolls back to where it was left once its rows are on the page again. Deferred only after the
+        // guard: the input that answers its question would otherwise cancel the restoration.
+        const restoreScroll = deferScrollRestore();
         void workspace
           .navigate(target, restoreScroll, () => commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false }))
           .then(() => resetCursor(target));
@@ -722,7 +723,10 @@ export default function Workspace(props: {
       return;
     }
     workspace.cancelNavigationActions();
+    const editing = window.location.href;
     if (editorGuard && !(await editorGuard())) return;
+    // Browser Back may have left the document while its guard asked; then there is nothing left to close.
+    if (window.location.href !== editing) return;
     closingEditor = true;
     window.history.back();
   };
@@ -954,20 +958,13 @@ export default function Workspace(props: {
               >
                 <Show
                   when={currentView() !== "shares"}
-                  fallback={
-                    <SharesOverview
-                      shares={snapshot().shares ?? { items: [], next: null }}
-                      baseId={snapshot().selectedId}
-                      onNavigate={onNavigate}
-                    />
-                  }
+                  fallback={<SharesOverview shares={snapshot().shares ?? { items: [], next: null }} onNavigate={onNavigate} />}
                 >
                   <Show
                     when={!(currentView() === "trash" && selected()?.status === "existing")}
                     fallback={
                       <TrashView
                         base={selected()!}
-                        onNavigate={onNavigate}
                         onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))}
                       />
                     }

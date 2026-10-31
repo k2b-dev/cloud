@@ -27,7 +27,6 @@ import { filesUrl } from "./urls";
 /** Owners retain access to their link management even after losing access to its former storage. */
 export default function SharesOverview(props: {
   shares: SharePage | ShareView[];
-  baseId?: string | null;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
 }) {
   const b = useBrowserMessages();
@@ -96,16 +95,6 @@ export default function SharesOverview(props: {
           <h1 class="truncate text-base font-semibold text-primary">{b().sharesTitle}</h1>
           <p class="mt-0.5 text-xs text-dimmed">{b().sharesDescription}</p>
         </div>
-        <ButtonLink
-          size="sm"
-          variant="ghost"
-          href={filesUrl(props.baseId ?? undefined)}
-          navigation="enhanced"
-          onNavigate={props.onNavigate}
-        >
-          <i class="ti ti-arrow-left" aria-hidden="true" />
-          {b().backToFiles}
-        </ButtonLink>
       </header>
       <Show
         when={shares().length}

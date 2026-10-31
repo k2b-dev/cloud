@@ -1,5 +1,4 @@
-import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { AppWorkspace, Button, ButtonLink, Format, InlineGuidance, Placeholder, prompts, toast } from "@k2b/ui";
+import { AppWorkspace, Button, Format, InlineGuidance, Placeholder, prompts, toast } from "@k2b/ui";
 import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, TrashEntry } from "../contracts";
@@ -7,14 +6,9 @@ import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { useTrashMessages } from "./trash-messages";
-import { filesUrl } from "./urls";
 
 /** Trash is recoverable; permanent deletion belongs exclusively to administration. */
-export default function TrashView(props: {
-  base: BaseSummary;
-  onRestored: (path: string) => void;
-  onNavigate?: (event: LinkNavigateEvent) => void;
-}) {
+export default function TrashView(props: { base: BaseSummary; onRestored: (path: string) => void }) {
   const b = useBrowserMessages();
   const t = useFilesMessages();
   const text = useTrashMessages();
@@ -109,10 +103,6 @@ export default function TrashView(props: {
             <Button size="sm" variant="secondary" loading={page.loading} onClick={refresh}>
               {text().retry}
             </Button>
-            <ButtonLink size="sm" variant="secondary" href={filesUrl(props.base.id)} navigation="enhanced" onNavigate={props.onNavigate}>
-              <i class="ti ti-arrow-left" aria-hidden="true" />
-              {b().backToFiles}
-            </ButtonLink>
           </div>
         </div>
       </header>
