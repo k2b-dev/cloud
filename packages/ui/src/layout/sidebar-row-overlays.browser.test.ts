@@ -340,6 +340,16 @@ describe("@k2b/ui sidebar row controls", () => {
           }),
         );
         for (const inset of insets) expect(Math.abs(inset.end - inset.start), inset.label).toBeLessThanOrEqual(0.5);
+        // The collapsed rail centres every row's icon: the end inset gives way to its zero padding.
+        const collapsed = await page.evaluate(() => {
+          document.querySelector(".k2b-app-workspace")!.setAttribute("data-sidebar-collapsed", "true");
+          document.querySelector(".k2b-app-workspace__sidebar")!.setAttribute("data-workspace-collapsible", "true");
+          return [
+            ...document.querySelectorAll(".k2b-app-workspace__sidebar-item[data-has-actions] > .k2b-app-workspace__sidebar-item-main"),
+          ].map((main) => getComputedStyle(main).paddingInline);
+        });
+        expect(collapsed.length).toBeGreaterThan(0);
+        expect(new Set(collapsed)).toEqual(new Set(["0px"]));
       } finally {
         await page.close();
       }

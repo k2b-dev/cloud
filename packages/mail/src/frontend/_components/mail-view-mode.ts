@@ -69,18 +69,19 @@ const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 
 /**
- * The longest relative times a row can show in this locale: the most seconds, minutes, and hours, yesterday, every
- * weekday, and a date in every month. The columns view sizes its time column to the widest of them, measured in the
- * row's own font, so no time is cut off and every row keeps the same column.
+ * The longest relative times a row can show in this locale: every count of seconds, minutes, and hours, since plural
+ * forms differ in length, yesterday, every weekday, and a date in every month. The columns view sizes its time column
+ * to the widest of them, measured in the row's own font, so no time is cut off and every row keeps the same column.
  */
 export const mailTimeColumnSamples = (dateConfig: DateContext, now: Date): string[] => {
   const base = now.getTime();
   const relative = (time: number, from = base) => dates.formatDateTimeRelative(new Date(time), { ...dateConfig, base: new Date(from) });
+  const counts = (length: number, unit: number) => Array.from({ length }, (_, index) => relative(base - (index + 1) * unit));
   const samples = [
     relative(base),
-    relative(base - 59_000),
-    relative(base - 59 * MINUTE),
-    relative(base - 23 * 60 * MINUTE),
+    ...counts(59, 1_000),
+    ...counts(59, MINUTE),
+    ...counts(23, 60 * MINUTE),
     relative(base - DAY - 60 * MINUTE),
     // Each weekday, three days before its base.
     ...Array.from({ length: 7 }, (_, day) => relative(base + day * DAY, base + (day + 3) * DAY)),

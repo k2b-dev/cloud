@@ -5362,13 +5362,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   /* An overlaying action takes no room, so the row's content keeps its usual end inset, the same as its icon's start
      inset: a count ends where the row's padding does, not under the action's edge. Tree rows end with their chevron. */
+  /* The conditions sit in :where(), so this ties with the inline actions' 0.125rem rule above, which it follows, and
+     the collapsed rail's centring still wins. */
   .k2b-ui
-    .k2b-app-workspace__sidebar-item:is(
+    .k2b-app-workspace__sidebar-item:is([data-action-visibility="hover"], [data-has-actions="true"]):where(
       :has(> .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child),
       :has(> .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]):not(
           :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
         )
-    ):not(:has(> .k2b-app-workspace__sidebar-item-main > .k2b-app-workspace__nav-tree-toggle))
+    ):where(:not(:has(> .k2b-app-workspace__sidebar-item-main > .k2b-app-workspace__nav-tree-toggle)))
     > .k2b-app-workspace__sidebar-item-main {
     padding-inline-end: 0.5625rem;
   }

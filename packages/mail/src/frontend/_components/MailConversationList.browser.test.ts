@@ -1329,7 +1329,7 @@ describe("Mail columns view time column", () => {
             ...longest(false).map((entry) => ({ ...entry, id: `${entry.id}r`, conversationId: `${entry.conversationId}r` })),
           ],
         });
-        await settled(page);
+        await page.locator(".mail-columns-head-time").waitFor();
         const cells = await timeColumn(page);
         expect(cells.length).toBe(13);
         if (locale === "de") expect(cells.map((cell) => cell.label)).toContain("vor 23 Stunden");
@@ -1343,7 +1343,9 @@ describe("Mail columns view time column", () => {
         }
         // A live update with another time moves no column.
         await page.evaluate(() => window.setMailItems(window.mailItems().map((entry) => ({ ...entry, unread: !entry.unread }))));
-        await settled(page);
+        await page.waitForFunction(
+          () => !document.querySelector('[data-conversation-id="Cv0001"]')?.classList.contains("mail-list-entry-unread"),
+        );
         expect(await timeColumn(page)).toEqual(cells);
         expect(page.errors).toEqual([]);
         await close(page);
@@ -1352,7 +1354,7 @@ describe("Mail columns view time column", () => {
 
 test("day group headings use the muted ink of every list group heading, not the rows' ink", async () => {
   const page = await load({ locale: "de" });
-  await settled(page);
+  await page.locator(".mail-day-group h3").first().waitFor();
   const colors = await page.evaluate(() => {
     const probe = document.createElement("span");
     probe.style.color = "var(--k2b-text-muted)";
