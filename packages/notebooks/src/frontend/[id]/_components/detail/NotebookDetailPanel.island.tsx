@@ -501,6 +501,11 @@ export default function NotebookDetailPanel(props: Props) {
     const onSoftNavigated = (event: Event) => {
       const detail = (event as CustomEvent<SoftNavigatedDetail>).detail;
       if (!detail?.noteId) return;
+      // The people of the previous note are not here; the new note's connection reports its own.
+      if (detail.noteId !== noteId()) {
+        setParticipants([]);
+        setLocations({});
+      }
       setNoteId(detail.noteId);
       setNoteTitle(detail.noteTitle);
       setContentMd(detail.contentMd);

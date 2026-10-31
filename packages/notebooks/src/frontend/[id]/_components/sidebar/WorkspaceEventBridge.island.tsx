@@ -167,12 +167,19 @@ export default function WorkspaceEventBridge(props: Props) {
             if (socketGeneration === generation && cursor) lastCursor = cursor;
           })
           .catch(() => {
-            if (!disposed && socketGeneration === generation) ws.close();
+            if (!disposed && socketGeneration === generation) {
+              // Stop this queue before closing: later queued events must not
+              // advance past the snapshot that failed to cover this event.
+              generation += 1;
+              ws.close();
+            }
           });
       };
 
       ws.onclose = (event) => {
-        if (disposed || socket !== ws || socketGeneration !== generation) return;
+        // The socket identifies a stale close; a queue that stopped itself after a failed covering read raised the
+        // generation and still needs this reconnect.
+        if (disposed || socket !== ws) return;
         socket = undefined;
         clearPresence();
         if (event.code === 1008) {

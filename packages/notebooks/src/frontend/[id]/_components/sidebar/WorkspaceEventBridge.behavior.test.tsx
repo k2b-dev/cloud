@@ -5,6 +5,7 @@ import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/
 import { notebooksWorkspace } from "../../../../lib/workspace-events";
 import { presencePeerId } from "../../../lib/presence-peer";
 import { NOTE_SOFT_NAVIGATED_EVENT, PRESENCE_EVENT, SYNC_STATE_REQUEST_EVENT } from "../detail/events";
+import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "./workspace-events";
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -299,6 +300,47 @@ describe("WorkspaceEventBridge", () => {
     latestSocket().close(1006);
 
     expect(runReconnect()).toBe(2_000);
+  });
+
+  test("a failed covering read cannot be skipped by an already queued later event", async () => {
+    await mount();
+    const socket = latestSocket();
+    socket.open();
+    socket.message(WS.ready, { notebookId: NOTEBOOK_ID });
+    const failedRead = Promise.withResolvers<void>();
+    const dispatched: string[] = [];
+    const cover = (raw: Event) => {
+      const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
+      dispatched.push(detail.cursor!);
+      detail.cover(detail.cursor === "failed" ? failedRead.promise : Promise.resolve());
+    };
+    const hint = (cursor: string) =>
+      socket.message(WS.event, {
+        notebookId: NOTEBOOK_ID,
+        cursor,
+        event: { v: 1, type: "note.updated", notebookId: NOTEBOOK_ID, note: { id: "Note01" } },
+      });
+    const settle = async () => {
+      for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+    };
+    window.addEventListener(WORKSPACE_EVENT, cover);
+    try {
+      hint("covered");
+      await settle();
+      hint("failed");
+      hint("later");
+      await settle();
+      failedRead.reject(new Error("Saved-text read failed after its retries"));
+      await settle();
+      expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+      expect(dispatched).toEqual(["covered", "failed"]);
+      runReconnect();
+      const reconnected = latestSocket();
+      reconnected.open();
+      expect(JSON.parse(reconnected.sent[0]!)).toMatchObject({ payload: { fromCursor: "covered" } });
+    } finally {
+      window.removeEventListener(WORKSPACE_EVENT, cover);
+    }
   });
 
   test("lost access reloads once, then offers a manual reload", async () => {
