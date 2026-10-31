@@ -79,6 +79,8 @@
 .k2b-ui .k2b-ste-recovery:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 @media (max-width: 47.999rem) {
  .k2b-ui .k2b-ste-toolbar { overflow-x: auto; max-width: 100%; gap: 12px; }
+ /* Dictate stays at the end of the scrolling row, so it never scrolls away. */
+ .k2b-ui .k2b-ste-toolbar > .k2b-ste-dictate { position: sticky; right: 0; flex: none; background: var(--k2b-surface); }
  .k2b-ui .k2b-ste-toolbar-slot { display: block; min-height: 54px; }
  .k2b-ui .k2b-text-editor[data-active="true"] .k2b-ste-toolbar { position: fixed; left: 8px; right: 8px; bottom: calc(8px + var(--k2b-ste-keyboard, 0px)); z-index: 7; padding: 4px; border-radius: 14px; background: var(--k2b-surface); box-shadow: var(--k2b-shadow-float); max-width: none; }
  .k2b-ui .k2b-ste-toolbar .k2b-ste-tool { width: 38px; height: 38px; min-height: 38px; }
