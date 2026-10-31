@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { GRID_FORMULA_FUNCTIONS } from "../formula/function-catalog";
 import { hydrateDslViewQueries } from "../service/gql-resolver-context";
 import type { Field } from "../service/types";
 import { renderGqlAssistantContext, renderGqlAssistantSkill } from "./assistant-docs";
 import { parseGridsQueryDsl } from "./parser";
 import type { DslResolverContext } from "./resolver";
+
+useUnitClients();
 
 const table = { kind: "table" as const, id: "11111111-1111-4111-8111-111111111111", shortId: "ITEMS", name: "Items" };
 const hiddenTableId = "22222222-2222-4222-8222-222222222222";

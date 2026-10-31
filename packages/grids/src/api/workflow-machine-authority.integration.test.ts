@@ -1,10 +1,9 @@
 import { afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { appAccess, appRegistry } from "@k2b/cloud";
+import { appAccess, appRegistry, sql } from "@k2b/cloud";
 import { accounts, coreSettings, serviceAccountCredentials } from "@k2b/cloud/services";
 import * as notificationPlatform from "@k2b/cloud/services/notifications/platform";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
-import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import * as machineAuthority from "../service/workflow-machine-authority";

@@ -1,5 +1,5 @@
 import { beforeAll, expect, spyOn } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import * as objectLists from "../field-types/object-list";
 import * as evaluator from "../formula/evaluator";

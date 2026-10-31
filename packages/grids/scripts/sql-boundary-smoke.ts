@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { sql } from "@k2b/cloud";
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import { requireDatabaseUrl } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../core/src/migrate/core/auth";
 import { migrate as migrateGrids } from "../src/migrate";

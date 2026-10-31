@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import { type LookupTargetMeta, lookupTargetMeta } from "../lookup-display";
 import { assertFederatedPublication, buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";

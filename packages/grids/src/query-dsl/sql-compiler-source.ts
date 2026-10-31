@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { DslSqlCompileOptions } from "./sql-compiler-types";
 
 export const dslRecordRelation = (options: Pick<DslSqlCompileOptions, "recordSource">): unknown =>

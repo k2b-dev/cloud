@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
-import { sql } from "bun";
 import { ObjectListConfigSchema } from "../field-types/object-list";
 import type { ListFormulaFunctionName } from "../formula/function-catalog";
 import { parseFormula } from "../formula/parser";

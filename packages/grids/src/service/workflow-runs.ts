@@ -13,6 +13,7 @@
  * CLI, or a browser.
  */
 
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import {
@@ -24,7 +25,6 @@ import {
   type WorkflowStepSummary,
 } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   GridsWorkflowChannel,
   GridsWorkflowLauncherKind,
@@ -175,7 +175,8 @@ const parseSnapshot = (value: unknown): GridsWorkflowAuthorizationSnapshot | nul
 
 // ─── Reading a run ───────────────────────────────────────────────────────────
 
-const RUN_SELECT = sql.unsafe(`
+const RUN_SELECT = () =>
+  sql.unsafe(`
   r.id::text AS id, r.workflow_id::text AS workflow_id, r.mode, r.state, r.inputs,
   r.result, r.result_message, r.error, r.created_at, r.started_at, r.finished_at,
   v.revision AS workflow_revision,
@@ -183,7 +184,8 @@ const RUN_SELECT = sql.unsafe(`
   p.actor_user_id::text AS actor_user_id, p.service_account_id::text AS service_account_id
 `);
 
-const RUN_FROM = sql.unsafe(`
+const RUN_FROM = () =>
+  sql.unsafe(`
   FROM workflows.run AS r
   JOIN workflows.version AS v ON v.id = r.workflow_version_id
   JOIN grids.workflow_run_profile AS p ON p.run_id = r.id
@@ -211,13 +213,13 @@ const mapRun = (row: DbRow): GridsWorkflowRun => ({
 
 export const getWorkflowRun = async (runId: string, client?: SqlClient): Promise<GridsWorkflowRun | null> => {
   const db = client ?? sql;
-  const [row] = await db<DbRow[]>`SELECT ${RUN_SELECT} ${RUN_FROM} WHERE r.id = ${runId}::uuid`;
+  const [row] = await db<DbRow[]>`SELECT ${RUN_SELECT()} ${RUN_FROM()} WHERE r.id = ${runId}::uuid`;
   return row ? mapRun(row) : null;
 };
 
 export const getWorkflowRunByShortId = async (shortId: string, client?: SqlClient): Promise<GridsWorkflowRun | null> => {
   const db = client ?? sql;
-  const [row] = await db<DbRow[]>`SELECT ${RUN_SELECT} ${RUN_FROM} WHERE p.short_id = ${shortId}`;
+  const [row] = await db<DbRow[]>`SELECT ${RUN_SELECT()} ${RUN_FROM()} WHERE p.short_id = ${shortId}`;
   return row ? mapRun(row) : null;
 };
 
@@ -241,8 +243,8 @@ export const listWorkflowRunsPage = async (params: {
   const channelClause = params.channel ? sql`AND p.channel = ${params.channel}` : sql``;
   const cursorClause = cursor ? sql`AND (r.created_at, r.id) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)` : sql``;
   const rows = await sql<DbRow[]>`
-    SELECT ${RUN_SELECT}, (r.created_at::text || '|' || r.id::text) AS cursor_token
-    ${RUN_FROM}
+    SELECT ${RUN_SELECT()}, (r.created_at::text || '|' || r.id::text) AS cursor_token
+    ${RUN_FROM()}
     WHERE p.base_id = ${params.baseId}::uuid
       AND r.workflow_id = ANY(${workflowIds}::uuid[])
       ${workflowClause}

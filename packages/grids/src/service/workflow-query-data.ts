@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { DslQueryExecuteBodySchema } from "../contracts";
 import { canonicalizeDslQuery } from "../query-dsl/canonical";
 import type { DslQueryContextInput } from "../query-dsl/parameters";

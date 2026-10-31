@@ -14,8 +14,8 @@
  * `grids.workflow_run_profile` instead. One query changes; nothing else does.
  */
 
+import { createSql } from "@k2b/cloud";
 import type { WorkflowActionContext } from "@k2b/cloud/workflows";
-import { SQL, sql } from "bun";
 import type { GridsWorkflowChannel, GridsWorkflowPrincipal } from "../workflows/contracts";
 import type { SqlClient } from "./audit";
 import type { DocumentIssuanceActor } from "./document-issuance";
@@ -95,7 +95,7 @@ export const canExecuteRunBeforeHttp = async (scope: GridsWorkflowActionScope, s
   signal.throwIfAborted();
   // Keep a cancellation connection independent of both the shared pool and
   // the authorization transaction. Closing this pool never affects app work.
-  const pool = new SQL({ ...sql.options, max: 2 });
+  const pool = createSql({ max: 2 });
   let cancellation: Promise<unknown> | undefined;
   let abort: (() => void) | undefined;
   let control: Awaited<ReturnType<typeof pool.reserve>> | undefined;
