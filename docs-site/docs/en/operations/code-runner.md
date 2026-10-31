@@ -88,6 +88,8 @@ no more leases than that count. The runner rejects an oversized or duplicate
 batch. Bundles are fetched by SHA-256 and verified before entering the local
 LRU cache. Replicas do not coordinate with each other or connect to NATS,
 Postgres, or Valkey.
+Concurrent cache misses download independently with each attempt's own lease
+and cancellation signal; only completed, verified bundles are shared.
 
 ## Stop and recover
 

@@ -45,7 +45,7 @@ function mockBridge(runs: RunnerLease[]) {
   return { bridge, completions, fetched, beats, bundles: () => bundles };
 }
 
-test("free slots bound admission, cached bundles are reused, heartbeat carries the lease, stop drains without fetching", async () => {
+test("free slots bound admission, heartbeat carries the lease, stop drains without fetching", async () => {
   jest.setSystemTime(NOW);
   const mock = mockBridge([lease({ runId: "a", heartbeatMs: 5 }), lease({ runId: "b" }), lease({ runId: "c" })]);
   const finish = Promise.withResolvers<void>();
@@ -65,7 +65,7 @@ test("free slots bound admission, cached bundles are reused, heartbeat carries t
   try {
     await waitFor(() => started.length === 2 && mock.beats.length > 0);
     expect(mock.fetched).toEqual([2]);
-    expect(mock.bundles()).toBe(1);
+    expect(mock.bundles()).toBe(2);
     expect(mock.beats[0]).toEqual({ runId: "a", generation: 1, token: "opaque-run-token" });
     runner.stop();
     expect(mock.completions).toHaveLength(0);
@@ -208,6 +208,34 @@ test("a fenced bundle download reports lease_lost without executing code", async
     await running;
     expect(mock.completions[0]?.outcome).toBe("lease_lost");
     expect(executed).toBe(false);
+  } finally {
+    runner.stop();
+    await running;
+    jest.useRealTimers();
+  }
+});
+
+test("identical bundles retain independent lease failures across organizations", async () => {
+  const { RunnerLeaseLostError } = await import("@k2b/cloud/code/runner");
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([lease({ runId: "a" }), lease({ runId: "b", organizationId: "other-org" })]);
+  mock.bridge.bundle = async ({ runId }) => {
+    if (runId === "a") throw new RunnerLeaseLostError();
+    return source;
+  };
+  const runner = new Runner(mock.bridge, {
+    load: async () => {},
+    run: async () => "succeeded",
+    kill: async () => {},
+    close: async () => {},
+  });
+  const running = runner.start();
+  try {
+    await waitFor(() => mock.completions.length === 2);
+    runner.stop();
+    await running;
+    expect(mock.completions.find(({ runId }) => runId === "a")?.outcome).toBe("lease_lost");
+    expect(mock.completions.find(({ runId }) => runId === "b")?.outcome).toBe("succeeded");
   } finally {
     runner.stop();
     await running;

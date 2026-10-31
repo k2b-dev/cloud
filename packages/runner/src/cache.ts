@@ -5,7 +5,6 @@ export const bundleHash = (source: string): string => new Bun.CryptoHasher("sha2
 export class BundleCache {
   #bytes = 0;
   #entries = new Map<string, string>();
-  #loading = new Map<string, Promise<string>>();
   constructor(
     readonly maxBytes: number,
     readonly bundleBytes: number,
@@ -17,29 +16,21 @@ export class BundleCache {
       this.#entries.set(hash, existing);
       return existing;
     }
-    const pending = this.#loading.get(hash);
-    if (pending) return pending;
-    const loading = (async () => {
-      const source = await load();
-      const size = Buffer.byteLength(source);
-      if (size > this.bundleBytes || bundleHash(source) !== hash) throw new Error("runner_invalid_bundle");
-      if (size <= this.maxBytes) {
-        while (this.#bytes + size > this.maxBytes) {
-          const oldest = this.#entries.entries().next().value;
-          if (!oldest) break;
-          this.#entries.delete(oldest[0]);
-          this.#bytes -= Buffer.byteLength(oldest[1]);
-        }
-        this.#entries.set(hash, source);
-        this.#bytes += size;
+    // A cold download belongs to one lease and cancellation signal. Sharing
+    // its promise would let one fenced attempt fail another valid attempt.
+    const source = await load();
+    const size = Buffer.byteLength(source);
+    if (size > this.bundleBytes || bundleHash(source) !== hash) throw new Error("runner_invalid_bundle");
+    if (size <= this.maxBytes && !this.#entries.has(hash)) {
+      while (this.#bytes + size > this.maxBytes) {
+        const oldest = this.#entries.entries().next().value;
+        if (!oldest) break;
+        this.#entries.delete(oldest[0]);
+        this.#bytes -= Buffer.byteLength(oldest[1]);
       }
-      return source;
-    })();
-    this.#loading.set(hash, loading);
-    try {
-      return await loading;
-    } finally {
-      this.#loading.delete(hash);
+      this.#entries.set(hash, source);
+      this.#bytes += size;
     }
+    return source;
   }
 }
