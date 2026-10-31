@@ -2360,6 +2360,7 @@ steps:
       const [stored] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.drafts WHERE id = ${draft.data.id}::uuid`;
       const capabilityContext = {
         ...agent,
+        target: { type: "mail.mailbox", id: mailboxShortId },
         user: null,
         origin: "http" as const,
         requestId: `agent-send-${suffix}`,
@@ -2368,14 +2369,13 @@ steps:
         locale: "en",
       };
       const content = await mailCapabilities.queries["draft.send.review"].run(
-        { mailboxId: mailboxShortId, draftId: stored!.short_id, expectedRevision: draft.data.revision },
+        { draftId: stored!.short_id, expectedRevision: draft.data.revision },
         capabilityContext,
       );
       if (!content.ok) throw new Error(content.error.message);
       const review = content.data.data;
       const sent = await mailCapabilities.actions["draft.send"].run(
         {
-          mailboxId: mailboxShortId,
           draftId: stored!.short_id,
           senderIdentityId: senderIdentityShortId,
           expectedRevision: draft.data.revision,
