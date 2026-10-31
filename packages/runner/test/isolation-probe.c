@@ -43,12 +43,16 @@ int main(int argc, char **argv) {
   check(argc >= 5 && !strcmp(argv[1], "serve"), "workerd arguments");
   extern char **environ;
   check(environ[0] == NULL, "empty environment");
-  for (int fd = 3; fd < 64; ++fd) check(fcntl(fd, F_GETFD) == -1 && errno == EBADF, "no inherited descriptors");
+  for (int fd = 4; fd < 64; ++fd) check(fcntl(fd, F_GETFD) == -1 && errno == EBADF, "no inherited descriptors");
   struct __user_cap_header_struct header = { .version = _LINUX_CAPABILITY_VERSION_3 };
   struct __user_cap_data_struct caps[2] = {{0}, {0}};
   check(syscall(SYS_capget, &header, caps) == 0, "capget");
   for (int i = 0; i < 2; ++i)
     check(!caps[i].effective && !caps[i].permitted && !caps[i].inheritable, "no capabilities");
+  int listening = 0;
+  socklen_t length = sizeof(listening);
+  check(getsockopt(3, SOL_SOCKET, SO_ACCEPTCONN, &listening, &length) == 0 && listening == 1, "only inherited fd is a listener");
+  check(fchmod(3, 0666) == -1 && errno == EPERM, "listener owner is supervisor");
   int supervisor = getppid();
   char targets[PATH_MAX], report[PATH_MAX], key[PATH_MAX], socket_path[108], sibling_config[PATH_MAX];
   snprintf(targets, sizeof(targets), "/tmp/runner-isolation-%d.targets", supervisor);
@@ -62,6 +66,23 @@ int main(int argc, char **argv) {
     check(getgroups(0, NULL) == 0, "no supplementary groups");
     check(getsid(0) != getsid(supervisor) && getsid(0) != getsid(sibling), "separate sessions");
     unreadable(key); proc_unreadable(supervisor); proc_unreadable(sibling); unreadable(sibling_config);
+    // Try to make the supervisor follow a cross-group socket path. It must be
+    // impossible to mutate the containing directory, not merely fail connect().
+    char own_directory[PATH_MAX], own_socket[PATH_MAX], moved[PATH_MAX];
+    strcpy(own_directory, argv[argc - 1]);
+    char *slash = strrchr(own_directory, '/'); check(slash != NULL, "config directory"); *slash = 0;
+    check(snprintf(own_socket, sizeof(own_socket), "%s/workerd.sock", own_directory) < (int)sizeof(own_socket), "socket path");
+    check(snprintf(moved, sizeof(moved), "%s-moved", own_directory) < (int)sizeof(moved), "rename path");
+    check(unlink(own_socket) == -1 && errno == EACCES, "cannot replace own listener");
+    check(unlink(argv[argc - 1]) == -1 && errno == EACCES, "cannot replace trusted config");
+    check(rename(own_directory, moved) == -1 && (errno == EPERM || errno == EACCES), "cannot replace group directory");
+    check(symlink(socket_path, moved) == 0, "probe temporary link");
+    // Renaming a symlink over the root-owned directory must also fail.
+    check(rename(moved, own_directory) == -1, "cannot redirect supervisor IPC");
+    check(unlink(moved) == 0, "remove probe link");
+    check(getpgid(sibling) == sibling, "separate sibling process group");
+    check(kill(-sibling, SIGUSR1) == -1 && errno == EPERM, "signal sibling process group");
+    check(kill(-sibling, SIGCONT) == -1 && errno == EPERM, "continue sibling process group");
     check(setuid(0) == -1 && errno == EPERM, "cannot regain root");
     check(socket(AF_INET, SOCK_STREAM, 0) == -1 && errno == EAFNOSUPPORT, "no IPv4");
     check(socket(AF_INET6, SOCK_STREAM, 0) == -1 && errno == EAFNOSUPPORT, "no IPv6");
@@ -76,6 +97,7 @@ int main(int argc, char **argv) {
   fclose(file);
   snprintf(report, sizeof(report), "/tmp/runner-isolation-%d.%s", supervisor, sibling ? "passed" : "victim");
   file = fopen(report, "w"); check(file != NULL, "report");
+  check(fchmod(fileno(file), 0644) == 0, "readable public probe report");
   fprintf(file, "%d %s\n", getpid(), argv[argc - 1]); fclose(file);
   char executable[PATH_MAX];
   /* argv[0] is the absolute probe path supplied by WorkerdEngine. */

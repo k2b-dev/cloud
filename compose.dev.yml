@@ -57,10 +57,10 @@ services:
         target: runner-app-key
     networks: [runner-core]
     read_only: true
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m]
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777]
     cap_drop: [ALL]
     # Supervisor only; runner-isolate drops all of these before exec.
-    cap_add: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
+    cap_add: [SETUID, SETGID, KILL, CHOWN]
     security_opt: [no-new-privileges:true]
     mem_limit: 1g
     pids_limit: 256

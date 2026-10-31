@@ -81,14 +81,15 @@ deadlines use Unix milliseconds.
 ## Process isolation
 
 Keep the runner's own container PID namespace, read-only root, `no-new-privileges`,
-private `/tmp` tmpfs and capability settings from the Compose templates. Do not
+private `/tmp` tmpfs (root-owned, sticky mode `1777`) and capability settings from the Compose templates. Do not
 use host/shared PID namespaces. The supervisor holds the app key and run tokens;
-workerd receives an empty environment and no inherited descriptor above stderr.
-Only the supervisor signs requests to Core.
+workerd receives an empty environment. Its only inherited descriptor above
+stderr is fd 3: its listening Unix socket. Only the supervisor signs requests
+to Core.
 
-The supervisor runs as UID 0 with only `SETUID`, `SETGID`, `CHOWN`,
-`DAC_OVERRIDE` and `KILL`. These let it assign identities and private directories,
-reach its children's sockets and stop them. Each organization/trust-tier group
+The supervisor runs as UID 0 with only `SETUID`, `SETGID`, `CHOWN` and `KILL`.
+These let it assign identities, protect socket paths and stop its children.
+It has no `DAC_OVERRIDE`. Each organization/trust-tier group
 gets a distinct UID and GID, starting at 20000, and a separate session. Identities
 are never reused during the supervisor's lifetime. Each replica has its own
 container PID namespace, so scaling needs no UID allocation across replicas.
@@ -100,9 +101,13 @@ privileges, signal or inspect the memory/environment/descriptors of the
 supervisor or another group. Separate sessions also prevent Linux's cross-UID
 SIGCONT exception. A supervisor exit kills its children.
 
-Communication in both directions uses Unix sockets inside each group's `0700`
-directory. Other groups cannot traverse that directory or connect to its
-sockets. The child's filter permits only Unix sockets and blocks IP/packet
+Communication in both directions uses Unix sockets inside a directory owned
+by `root:<group-gid>`, mode `0710`. Only the supervisor may change its entries;
+the group's GID permits traversal. The launcher binds the root-owned `0600`
+workerd listener before dropping privileges and passes it as fd 3. The bridge
+socket belongs to `root:<group-gid>`, mode `0660`. workerd cannot replace any
+socket, configuration file or containing directory. Other groups cannot
+traverse these directories or connect to their sockets. The child's filter permits only Unix sockets and blocks IP/packet
 sockets, process creation, cross-process memory/ptrace interfaces, namespace
 changes and io_uring. V8 threads remain available. There are no workerd TCP
 listeners, and a native workerd escape cannot connect directly to Core.
@@ -116,7 +121,8 @@ CI runs the native engine and shutdown tests inside the image with the same
 capabilities and restrictions as Compose. The isolation probe starts in the
 actual workerd process's UID, session and filter, tries to read the key and
 `/proc/<pid>/{environ,mem,fd}`, signal/ptrace the supervisor and a sibling,
-connect to a sibling socket, open IP sockets and regain privileges, then
+connect to a sibling socket, replace IPC paths, open IP sockets and regain
+privileges, then
 executes workerd in the same PID. C14 extends this attack coverage with hostile
 bundles and the real bridge. It must retain these OS-context checks and the
 CPU-loop watchdog test; sandbox JavaScript API checks alone do not cover a

@@ -1,5 +1,4 @@
-import { chmod, chown, mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, chown, lstat, mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { RunnerConfig, RunnerJsonValue, RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { RunnerCallError } from "@k2b/cloud/code/runner";
@@ -55,8 +54,11 @@ export class WorkerdEngine implements RunnerEngine {
   async #spawn(config: RunnerConfig, retire: () => void): Promise<Group> {
     if (process.platform !== "linux" || process.getuid?.() !== 0) throw new Error("runner_isolation_requires_root");
     if (nextUid > 0x7fffffff) throw new Error("runner_isolation_uid_exhausted");
+    const temporary = await lstat("/tmp");
+    if (!temporary.isDirectory() || temporary.uid !== 0 || (temporary.mode & 0o1777) !== 0o1777)
+      throw new Error("runner_isolation_requires_root_owned_sticky_tmp");
     const uid = nextUid++;
-    const directory = await mkdtemp(join(tmpdir(), "cloud-workerd-"));
+    const directory = await mkdtemp("/tmp/cloud-workerd-");
     const socket = join(directory, "workerd.sock");
     const bridgeSocket = join(directory, "bridge.sock");
     const capability = crypto.randomUUID();
@@ -96,9 +98,12 @@ export class WorkerdEngine implements RunnerEngine {
           }
         },
       });
-      await chown(directory, uid, uid);
-      // The enclosing 0700 directory admits only this group's UID and the supervisor.
-      await chmod(bridgeSocket, 0o666);
+      // Root owns every pathname. The group may traverse, never replace a socket
+      // with a symlink that would redirect the privileged supervisor to another group.
+      await chown(directory, 0, uid);
+      await chmod(directory, 0o710);
+      await chown(bridgeSocket, 0, uid);
+      await chmod(bridgeSocket, 0o660);
       await Bun.write(join(directory, "host.js"), Bun.file(join(import.meta.dir, "assets/host.js")));
       await Bun.write(
         join(directory, "config.capnp"),
@@ -115,9 +120,11 @@ const config :Workerd.Config = (
     (name = "bridge", external = (address = "unix:${bridgeSocket}", http = ())),
     (name = "denied", network = (allow = []))
   ],
-  sockets = [(name = "http", address = "unix:${socket}", http = (), service = "host")]
+  sockets = [(name = "http", http = (), service = "host")]
 );`,
       );
+      // Do not depend on the supervisor's umask for child readability.
+      await Promise.all(["host.js", "config.capnp"].map((file) => chmod(join(directory, file), 0o444)));
       // The workerd child has no environment, including no app key or Core origin.
       const executable =
         this.executable ?? (import.meta.path.endsWith(".ts") ? (await import("workerd")).default : join(import.meta.dir, "workerd"));
@@ -125,10 +132,12 @@ const config :Workerd.Config = (
         [
           join(import.meta.dir, "runner-isolate"),
           String(uid),
+          socket,
           executable,
           "serve",
           "--experimental",
           "--control-fd=1",
+          "--socket-fd=http=3",
           join(directory, "config.capnp"),
         ],
         {

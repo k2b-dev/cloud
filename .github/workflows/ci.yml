@@ -713,9 +713,9 @@ jobs:
       - name: Exercise the compiled runner under its container restrictions
         run: |
           docker run --rm --network none --read-only --cap-drop ALL \
-            --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN --cap-add DAC_OVERRIDE \
+            --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN \
             --security-opt no-new-privileges --memory 1g --pids-limit 256 \
-            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
             --volume "$GITHUB_WORKSPACE/packages/runner/test/image-smoke.ts:/smoke.ts:ro" \
             cloud-runner:ci sh -c 'bun --no-env-file test /app/engine.test.js /app/isolation.test.js /app/shutdown.test.js && bun --no-env-file /smoke.ts'
       - name: Boot core and gateway against fresh infrastructure

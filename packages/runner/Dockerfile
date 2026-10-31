@@ -23,13 +23,14 @@ COPY --from=build /app/runner.js /app/runner.js
 COPY --from=build /app/workerd /app/workerd
 COPY packages/runner/src/assets/host.js /app/assets/host.js
 COPY --from=build /app/runner-isolate /app/runner-isolate
-# Only the supervisor retains the five capabilities declared in Compose.
+# Only the supervisor retains the four capabilities declared in Compose.
 USER root
 CMD ["bun", "/app/runner.js"]
 
 # CI exercises every native engine test in the same privilege envelope as production.
 FROM build AS test-build
 COPY packages/runner/test packages/runner/test
+COPY scripts/fixtures/app-key-fixtures.ts scripts/fixtures/app-key-fixtures.ts
 RUN cc -O2 -Wall -Wextra -Werror packages/runner/test/isolation-probe.c -o /app/isolation-probe
 RUN bun build packages/runner/test/engine.test.ts packages/runner/test/isolation.test.ts packages/runner/test/shutdown.test.ts --target=bun --outdir=/app/tests --external=bun:test
 
