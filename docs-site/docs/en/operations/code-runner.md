@@ -118,6 +118,11 @@ checks process RSS and pings workerd every 100 ms; a process that stops
 responding for one second is killed along with its active attempts. Other
 process groups continue. The container cgroup also bounds aggregate memory.
 
+The pinned OSS workerd build accepts Loader `limits.cpuMs` but does not
+enforce it: a bounded 100-million-iteration CPU probe completed despite a
+1 ms limit on both the worker and entrypoint. The supervisor watchdog remains
+the stall control; a native per-attempt CPU budget is not claimed.
+
 ## Integrate the bridge
 
 Core and runner consumers import protocol types and strict schemas from
