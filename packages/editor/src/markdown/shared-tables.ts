@@ -8,7 +8,13 @@ import { displayCell, findTables, type Table } from "@k2b/ui/text-editor/model";
 import { isFormula } from "../formula";
 import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
 import { applyLigatures } from "./ligatures";
-import { createPrettyTablePresentation, formatFormulaValue, type PrettyTableData, type PrettyTableOptions } from "./pretty-table";
+import {
+  createPrettyTablePresentation,
+  formatFormulaError,
+  formatFormulaValue,
+  type PrettyTableData,
+  type PrettyTableOptions,
+} from "./pretty-table";
 import { formulaPreviewWidget } from "./tables";
 
 export type TablePresentationOptions = Omit<PrettyTableOptions, "locale"> & {
@@ -44,21 +50,39 @@ const presentationTheme = EditorView.theme({
     zIndex: "5",
     background: "var(--k2b-surface)",
   },
+  // One flat chip right below the edited cell, above the page so the table's scroll area never cuts it.
   ".cm-notebook-active-result": {
-    position: "absolute",
-    bottom: "100%",
-    right: "0",
-    zIndex: "6",
-    padding: "2px 6px",
-    maxWidth: "18rem",
-    background: "var(--k2b-surface)",
-    border: "1px solid var(--k2b-border)",
+    position: "fixed",
+    inset: "auto",
+    margin: "0",
+    display: "flex",
+    alignItems: "baseline",
+    gap: "6px",
+    width: "max-content",
+    height: "auto",
+    maxWidth: "min(20rem, calc(100vw - 16px))",
+    overflow: "visible",
+    padding: "4px 8px",
+    border: "0",
     borderRadius: "var(--k2b-radius-control)",
-    boxShadow: "var(--k2b-shadow-float)",
-    fontSize: "12px",
+    boxShadow: "none",
+    background: "var(--k2b-surface-muted)",
+    color: "var(--k2b-text-secondary)",
+    font: "12.5px/1.4 var(--k2b-font-sans)",
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
   },
+  ".cm-notebook-active-result[data-error]": { background: "var(--k2b-danger-surface)", color: "var(--k2b-danger-text)" },
+  ".cm-notebook-active-result > .ti": { flex: "none", alignSelf: "center" },
 
   ".k2b-ste-table .k2b-ste-cell > .md-table-cell": { padding: "0", minHeight: "0" },
+  ".k2b-ste-table .k2b-ste-cell > .md-table-cell.md-formula-error": {
+    display: "inline-block",
+    padding: "0 6px",
+    borderRadius: "var(--k2b-radius-control)",
+    fontFamily: "var(--k2b-font-mono)",
+    fontSize: "12.5px",
+  },
   ".k2b-ste-table tr:has([data-notebook-total]) > td": { borderTop: "1px solid var(--ui-border-strong)", fontWeight: "600" },
   ".cm-notebook-formula-copy": {
     display: "inline-flex",
@@ -117,19 +141,30 @@ const copyButton = (element: HTMLElement, value: string, locale: string): HTMLBu
   return button;
 };
 
-/** The active formula stays over its reserved cell, with the evaluated result
- * beside it. Reuse the same presentation as the inactive grid and exports. */
+/** The active formula stays over its reserved cell, with its result or error
+ * right below it, described to screen readers. Reuse the same evaluation as
+ * the inactive grid and exports. */
+let resultIds = 0;
 const activeFormulaPreview = (options: TablePresentationOptions): Extension =>
   ViewPlugin.define((view) => {
     let cell: HTMLElement | null = null;
     let result: HTMLElement | null = null;
     let alive = true;
+    const place = () => {
+      const box = cell?.parentElement?.getBoundingClientRect();
+      if (!box || !result) return;
+      result.style.left = `${Math.max(8, Math.min(box.left, innerWidth - result.offsetWidth - 8))}px`;
+      result.style.top = `${box.bottom + 4}px`;
+    };
     const clear = () => {
       cell?.classList.remove("cm-notebook-formula-editor");
+      cell?.removeAttribute("aria-describedby");
       if (cell?.parentElement) cell.parentElement.style.removeProperty("height");
       result?.remove();
       result = null;
       cell = null;
+      removeEventListener("scroll", place, true);
+      removeEventListener("resize", place);
     };
     const paint = () =>
       queueMicrotask(() => {
@@ -155,15 +190,41 @@ const activeFormulaPreview = (options: TablePresentationOptions): Extension =>
           parent.style.height = `${parent.getBoundingClientRect().height}px`;
           result = parent.ownerDocument.createElement("div");
           result.className = "cm-notebook-active-result";
+          result.id = `cm-notebook-active-result-${++resultIds}`;
+          result.popover = "manual";
           result.setAttribute("role", "status");
           result.contentEditable = "false";
           parent.append(result);
+          result.showPopover();
           target.classList.add("cm-notebook-formula-editor");
+          target.setAttribute("aria-describedby", result.id);
           cell = target;
+          addEventListener("scroll", place, true);
+          addEventListener("resize", place);
         }
         const locale = options.locale?.() ?? (target.ownerDocument.documentElement.lang || "en");
         const presentation = createPrettyTablePresentation(presentationData(table), { ...options, locale });
-        result.innerHTML = presentation.cellHtml(row - 1, column);
+        const evaluated = presentation.rows[row - 1]?.cells[column]?.result;
+        if (!evaluated) {
+          clear();
+          return;
+        }
+        // An error says what is wrong and what helps, on one wrapping line; a valid result shows quietly.
+        const error = evaluated.kind === "error";
+        result.toggleAttribute("data-error", error);
+        result.replaceChildren();
+        if (error) {
+          const icon = result.ownerDocument.createElement("i");
+          icon.className = "ti ti-alert-triangle";
+          icon.setAttribute("aria-hidden", "true");
+          result.append(icon);
+        }
+        const message = result.ownerDocument.createElement("span");
+        message.textContent = error
+          ? formatFormulaError(evaluated, locale).replace(/\n→ /, " · ")
+          : formatFormulaValue(evaluated.value, locale);
+        result.append(message);
+        place();
       });
     view.contentDOM.addEventListener("focusin", paint);
     view.contentDOM.addEventListener("focusout", paint);

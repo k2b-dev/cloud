@@ -278,14 +278,37 @@ const hasHeader = (t: T.Table) => t.lines[0]!.cells.some((cell) => cell.text.len
 const firstRow = (t: T.Table) => (hasHeader(t) ? 0 : 1);
 const shapeOf = (t: T.Table) => `${T.rowCount(t)}x${width(t)}:${firstRow(t)}`;
 const renderedDocuments = new WeakMap<HTMLElement, Text>();
+/**
+ * How far the grid may reach left of the text: its grip gutter and the first
+ * cell's padding sit there, so cell text lines up with the paragraphs. It
+ * never reaches past the first ancestor that clips, which would cut the grips.
+ */
+const bleed = (view: EditorView, wrap: HTMLElement): number => {
+  const content = view.contentDOM;
+  const line = content.querySelector<HTMLElement>(".cm-line");
+  const cell = wrap.querySelector<HTMLElement>(".k2b-ste-cell");
+  const wanted =
+    Number.parseFloat(getComputedStyle(wrap).paddingLeft) +
+    (cell ? Number.parseFloat(getComputedStyle(cell).paddingLeft) : 0) -
+    (line ? Number.parseFloat(getComputedStyle(line).paddingLeft) : 0);
+  const start = content.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(content).paddingLeft);
+  let limit = 0;
+  for (let element = content.parentElement; element; element = element.parentElement)
+    if (getComputedStyle(element).overflowX !== "visible") {
+      limit = element.getBoundingClientRect().left + element.clientLeft;
+      break;
+    }
+  return Math.max(0, Math.min(wanted, Math.floor(start - limit)));
+};
 const measureScroll = (view: EditorView, wrap: HTMLElement) =>
   view.requestMeasure({
     key: wrap,
-    read: () => ({ left: wrap.scrollLeft, width: wrap.clientWidth, total: wrap.scrollWidth }),
-    write: ({ left, width, total }) => {
+    read: () => ({ left: wrap.scrollLeft, width: wrap.clientWidth, total: wrap.scrollWidth, bleed: bleed(view, wrap) }),
+    write: ({ left, width, total, bleed }) => {
       if (!wrap.isConnected) return;
       wrap.toggleAttribute("data-scrolled", left > 0);
       wrap.toggleAttribute("data-more", left + width < total - 1);
+      wrap.style.setProperty("--k2b-ste-bleed", `${bleed}px`);
     },
   });
 
@@ -747,6 +770,8 @@ const buildGrid = (view: EditorView, t: T.Table, wrap: HTMLElement) => {
       cell.spellcheck = true;
       cell.tabIndex = -1;
       cell.setAttribute("role", "textbox");
+      // The cell menu has no button; screen readers announce its key.
+      cell.setAttribute("aria-keyshortcuts", "Shift+F10");
       cell.setAttribute(
         "aria-label",
         view.state.facet(tableHost)?.cellLabel(r, c, T.displayCell(grid[0]?.[c] ?? "")) ?? `${r + 1}, ${c + 1}`,
@@ -757,21 +782,29 @@ const buildGrid = (view: EditorView, t: T.Table, wrap: HTMLElement) => {
       wire(view, cell, wrap);
       td.setAttribute("role", r === 0 ? "columnheader" : "gridcell");
       td.append(cell);
+      // Grips sit in the gutters outside the grid and stay out of the Tab order; Shift+F10 is the key path.
       const grip = (kind: "rowMenu" | "columnMenu") => {
         const button = document.createElement("button");
         button.type = "button";
         button.tabIndex = -1;
         button.className = `k2b-ste-grip k2b-ste-${kind}`;
+        button.dataset.c = String(c);
         button.setAttribute(
           "aria-label",
           view.state.facet(tableHost)?.actionLabel?.(kind) ?? (kind === "rowMenu" ? "Row menu" : "Column menu"),
         );
         button.setAttribute("aria-haspopup", "menu");
-        button.innerHTML = '<i class="ti ti-grip-vertical" aria-hidden="true"></i>';
+        // Full icon names: icon subsets keep only the names that appear in the bundle.
+        button.innerHTML = `<i class="ti ${kind === "rowMenu" ? "ti-grip-vertical" : "ti-grip-horizontal"}" aria-hidden="true"></i>`;
         button.onmousedown = (event) => event.preventDefault();
         button.onclick = () => {
           cell.focus({ preventScroll: true });
-          wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-menu", { bubbles: true, detail: { cell, anchor: button } }));
+          wrap.dispatchEvent(
+            new CustomEvent("k2b-ste-cell-menu", {
+              bubbles: true,
+              detail: { cell, anchor: button, scope: kind === "rowMenu" ? "row" : "column" },
+            }),
+          );
         };
         td.append(button);
       };
@@ -793,8 +826,9 @@ const buildGrid = (view: EditorView, t: T.Table, wrap: HTMLElement) => {
     button.type = "button";
     button.className = `k2b-ste-${action}`;
     const label = view.state.facet(tableHost)?.actionLabel?.(action) ?? (action === "addRow" ? "Row" : "Column");
-    button.textContent = action === "addRow" ? `+ ${label}` : "+";
-    if (action === "addColumn") button.setAttribute("aria-label", label);
+    button.innerHTML = '<i class="ti ti-plus" aria-hidden="true"></i>';
+    if (action === "addRow") button.append(label);
+    button.setAttribute("aria-label", action === "addRow" ? `+ ${label}` : label);
     button.onmousedown = (event) => event.preventDefault();
     button.onclick = () => {
       const current = currentTable(view, wrap);
@@ -1347,6 +1381,10 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
     wrap.querySelectorAll<HTMLElement>(".k2b-ste-cell").forEach((cell) => (cell.tabIndex = cell === el ? 0 : -1));
     wrap.dataset.activeR = el.dataset.r;
     wrap.dataset.activeC = el.dataset.c;
+    // Without hover, a phone shows the grips of the focused cell's row and column.
+    wrap
+      .querySelectorAll<HTMLElement>(".k2b-ste-columnMenu")
+      .forEach((grip) => grip.toggleAttribute("data-current", grip.dataset.c === el.dataset.c));
     if (view.state.readOnly) {
       // A read-only cell selects rendered text; it never enters source editing.
       // Keyboard entry may have prepared editable text before focusing it.
@@ -1398,6 +1436,7 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
         renderCell(view, el, el.dataset.raw ?? "", table, Number(el.dataset.r), Number(el.dataset.c));
       if (!wrap.contains(focused)) {
         delete wrap.dataset.activeR;
+        wrap.querySelectorAll<HTMLElement>(".k2b-ste-columnMenu[data-current]").forEach((grip) => delete grip.dataset.current);
         wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-blur", { bubbles: true }));
         if (!(focused instanceof HTMLElement && focused.classList.contains("k2b-ste-cell") && view.dom.contains(focused)))
           view.state.facet(tableHost)?.onCellSelection?.(null);

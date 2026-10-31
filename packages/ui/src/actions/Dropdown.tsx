@@ -30,6 +30,8 @@ const hrefOf = (item: DropdownAction) => ("href" in item ? item.href : undefined
 const externalOf = (item: DropdownAction) => ("external" in item ? item.external : undefined);
 
 export type DropdownPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left" | "right-start";
+/** Where a menu opened without its trigger appears: an element, or any box such as a point inside one. */
+export type DropdownAnchor = { getBoundingClientRect(): Pick<DOMRect, "left" | "top" | "right" | "bottom"> };
 
 export type DropdownActionBase = {
   class?: string;
@@ -147,6 +149,13 @@ export type DropdownProps = {
    * then carries each row's trigger, not each row's entries. Fixed for the menu's lifetime.
    */
   lazy?: boolean;
+  /**
+   * Receives `open`, which shows the menu without its trigger beside `anchor`, as for a context menu, a key or a
+   * grip. Focus returns to `returnFocus` when the menu closes. Phones get the sheet as from the trigger.
+   */
+  openAt?: (open: (anchor: DropdownAnchor, returnFocus?: HTMLElement) => void) => void;
+  /** Receives `close`, which closes the menu or sheet and returns focus. */
+  closeWith?: (close: () => void) => void;
 };
 
 export type DropdownTriggerProps = Omit<
@@ -221,7 +230,7 @@ const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
 };
 
 export const dropdownPosition = (
-  trigger: DOMRect,
+  trigger: Pick<DOMRect, "left" | "top" | "right" | "bottom">,
   menu: Pick<DOMRect, "width" | "height">,
   position: DropdownPosition,
   viewport: { width: number; height: number },
@@ -600,6 +609,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const [internalOpen, setInternalOpen] = createSignal(false);
   const [entriesShown, setEntriesShown] = createSignal(!props.lazy);
   let triggerRef: HTMLButtonElement | undefined;
+  /** Set while the menu is open from `openAt`: it appears beside `anchor`, and focus returns to `origin`. */
+  let anchor: DropdownAnchor | undefined;
+  let origin: HTMLElement | undefined;
   let menuRef: HTMLDivElement | undefined;
   let triggerRing = true;
   let mounted = false;
@@ -613,8 +625,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     typeof props.position === "function" ? props.position() : (props.position ?? (props.align === "end" ? "bottom-left" : "bottom-right"));
 
   const place = () => {
-    if (!triggerRef || !menuRef) return;
-    const rect = dropdownPosition(triggerRef.getBoundingClientRect(), menuRef.getBoundingClientRect(), position(), {
+    const at = anchor ?? triggerRef;
+    if (!at || !menuRef) return;
+    const rect = dropdownPosition(at.getBoundingClientRect(), menuRef.getBoundingClientRect(), position(), {
       width: window.innerWidth,
       height: window.innerHeight,
     });
@@ -644,7 +657,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   };
   const close = (restoreFocus = true) => {
     // Before hiding, so the popover does not return focus on its own.
-    if (restoreFocus) returnFocus(triggerRef, triggerRing);
+    if (restoreFocus) returnFocus(origin ?? triggerRef, triggerRing);
     if (menuRef?.matches(":popover-open")) menuRef.hidePopover();
     // Like `open`, expose the closed state now: the toggle event can arrive after the next key press, and a trigger
     // that still reads as open would ignore Enter (Escape, then Enter at once, must reopen).
@@ -653,7 +666,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   };
   const open = (focus: "first" | "last" | false = "first") => {
     if (props.disabled || !menuRef || menuRef.matches(":popover-open")) return;
-    triggerRing = ringOnReturn(triggerRef);
+    triggerRing = ringOnReturn(origin ?? triggerRef);
     // A lazy menu's entries exist before it shows, so it places and focuses them as any other.
     setEntriesShown(true);
     menuRef.showPopover();
@@ -702,7 +715,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
       event.preventDefault();
     } else if (event.key === "Escape") {
       event.preventDefault();
-      returnFocus(triggerRef, triggerRing);
+      returnFocus(origin ?? triggerRef, triggerRing);
       requestOpen(false);
     } else if (event.key === "Tab") {
       requestOpen(false);
@@ -716,7 +729,10 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     registerTrigger: (element) => {
       triggerRef = element;
     },
-    toggle: () => requestOpen(!isOpen()),
+    toggle: () => {
+      if (!isOpen()) anchor = origin = undefined;
+      requestOpen(!isOpen());
+    },
     triggerKeyDown: (event) => {
       if (!["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) return;
       event.preventDefault();
@@ -725,6 +741,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
         focusMenuItem(menuRef, event.key === "ArrowUp" ? -1 : 0);
         return;
       }
+      anchor = origin = undefined;
       keyFocus = event.key === "ArrowUp" ? "last" : "first";
       requestOpen(true, keyFocus);
       keyFocus = false;
@@ -741,6 +758,16 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     if (!props.disabled) return;
     sheet?.abort();
     if (mounted) close(false);
+  });
+  props.openAt?.((at, focus) => {
+    if (isOpen()) return;
+    anchor = at;
+    origin = focus;
+    requestOpen(true);
+  });
+  props.closeWith?.(() => {
+    sheet?.abort();
+    if (isOpen()) close();
   });
   onMount(() => {
     mounted = true;
@@ -773,6 +800,10 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
             if (nextOpen) attachViewportListeners();
             else detachViewportListeners();
             if (props.open === undefined || props.open !== nextOpen) props.onOpenChange?.(nextOpen);
+            // A light dismiss hides the menu with focus inside it; an opener without a trigger takes it back.
+            const focused = document.activeElement;
+            if (wasOpen && !nextOpen && origin?.isConnected && (!focused || focused === document.body || menuRef?.contains(focused)))
+              returnFocus(origin, triggerRing);
             if (wasOpen && !nextOpen) props.onClose?.();
             if (!nextOpen && props.open === true) queueMicrotask(() => props.open === true && open(false));
           }}

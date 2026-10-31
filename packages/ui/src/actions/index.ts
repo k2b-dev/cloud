@@ -11,6 +11,7 @@ export { activeDrag, DragSource, DropTarget, useKeyboardDrag } from "./DragAndDr
 export type {
   DropdownAction,
   DropdownActionBase,
+  DropdownAnchor,
   DropdownChoice,
   DropdownItemProps,
   DropdownPosition,
