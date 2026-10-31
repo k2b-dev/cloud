@@ -98,6 +98,15 @@ databaseSuite()("independent Code-version approvals", () => {
     expect(await decide(result.id, outsider)).toMatchObject({ ok: true, status: "approved" });
   });
 
+  test("the database permits exactly one personal or role recipient and keeps Code confirmation mandatory", async () => {
+    const { id } = await ask();
+    await expect(sql`UPDATE approvals.requests SET approver_user_id=${admin}::uuid WHERE id=${id}::uuid`).rejects.toThrow();
+    await expect(sql`UPDATE approvals.requests SET approver_role=NULL WHERE id=${id}::uuid`).rejects.toThrow();
+    await expect(sql`UPDATE approvals.requests SET assurance='standard' WHERE id=${id}::uuid`).rejects.toThrow();
+    await expect(sql`UPDATE approvals.requests SET requester_kind='assistant_turn' WHERE id=${id}::uuid`).rejects.toThrow();
+    expect(await approvals.get(id)).toMatchObject({ approverRole: "admin", approverUserId: null, assurance: "confirm", status: "pending" });
+  });
+
   test("only a current Cloud admin decides; being the author or chat user grants nothing", async () => {
     const { id } = await ask();
     expect(await decide(id, outsider)).toEqual({ ok: false, code: "NOT_FOUND" });
