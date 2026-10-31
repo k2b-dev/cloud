@@ -5,7 +5,7 @@ section: Build an app
 order: 140
 description: Publish route prefixes and make an application reachable through the gateway.
 tags: [applications, routing, gateway, registry]
-updated: 2026-10-09
+updated: 2026-10-31
 ---
 
 # Routes and service discovery
@@ -48,6 +48,19 @@ claims from older registry records. A root or ancestor route cannot answer for
 a missing or rejected owner. An independent [App-PWA](/en/docs/frontend/app-pwa)
 uses this namespace and requires an explicitly declared route covering its
 neutral start path.
+
+## Serve a site on its own domains
+
+`defineApp({ public: true })` adds a separate `app.public` Hono router for
+administrator-assigned domains. These hosts reach only that router, with the
+original path and public URL, including a client port. Their paths need no
+entry in `routes`. `/_cloud/public` and its descendants are reserved for
+platform dispatch; the gateway owns `/_cloud/domain-check/*` on app domains.
+Cloud-host path routing continues to use the declared prefixes above.
+
+See [Public site of an app](/en/docs/build/public-surface) for SSR, development
+hosts, visitor sessions, client IPs and rate limits, and
+[App domains](/en/docs/operations/app-domains) for ingress and protections.
 
 ## Mount the same paths in Hono
 

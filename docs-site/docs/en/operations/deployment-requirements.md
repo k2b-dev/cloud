@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-28
+updated: 2026-10-31
 ---
 
 # Deployment requirements
@@ -26,6 +26,24 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Upgrade public app sites
+
+Deploy Core first: its settings migration creates `settings.app_domains`, the
+app lookup index, and stored domain-check state. Domain assignment requires
+an app ID already recorded in `platform.application_packages`; it does not
+require the app to be running. Core adds the administrator domains API and
+`cld admin apps domains` commands. Refresh the installed `admin` CLI module
+when using a previously installed profile.
+
+The gateway reads assignments within its five-second route refresh. Updated
+apps must declare `public: true` and serve their separate public router.
+Before Core's table exists, a gateway sees no assignments. This change adds
+no environment variable or external service; checks use existing Valkey for
+short-lived challenges. Core must resolve and reach each assigned host on
+TLS port 443, including through hairpin NAT or split DNS where required.
+See [Public site](/en/docs/build/public-surface#assign-and-check-domains) and
+[App domains](/en/docs/operations/app-domains).
 
 ## Resource reader checks and discussions
 

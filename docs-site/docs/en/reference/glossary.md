@@ -5,7 +5,7 @@ section: Reference
 order: 1245
 description: Use one English and one German term for each Cloud product concept in Help and interface text.
 tags: [glossary, terminology, writing, help, english, german]
-updated: 2026-10-10
+updated: 2026-10-31
 ---
 
 # Cloud glossary
@@ -69,6 +69,8 @@ the term.
 | English | German | Meaning | Not in English | Not in German |
 | --- | --- | --- | --- | --- |
 | app | App | A Cloud application such as Mail or Spaces. | `application`, `applications` | `Anwendung`, `Anwendungen`, `Applikation*` |
+| public site | Webseite | An app-owned website on domains assigned to the app; visitors use its own session. | — | — |
+| app domain | App-Domain | A host assigned to one app’s public site. | — | — |
 | delete | löschen | Destroy an object or move it to the trash. | — | — |
 | remove | entfernen | Take an object out of a list, a group, or a link. The object continues to exist. | — | — |
 | trash | Papierkorb | Deleted items wait here until Cloud deletes them permanently. | `bin`, `recycle bin`, `wastebasket` | `Mülleimer` |

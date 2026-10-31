@@ -19,6 +19,30 @@ Route hit and error counts are scoped to `--range` (1h, 6h, 24h, 7d, 30d). They 
 
 Use `diagnose` for a bounded troubleshooting bundle. Narrow its time window and included sections before requesting more data. Its `telemetry.failingRoutes` and `jobs` sections name the endpoints and background jobs that are actually failing, which is usually the fastest way into a problem.
 
+## App domains
+
+Assign a domain to an app's public site, then inspect DNS, certificate and
+gateway reachability. New assignments accept known app IDs from the durable
+application package registry, including stopped apps. `active` requires a live
+registry entry with `public: true`.
+
+```bash
+cld --profile operator admin apps domains ls website --json
+cld --profile operator admin apps domains add website example.com
+cld --profile operator admin apps domains add website www.example.com --redirect-to example.com
+cld --profile operator admin apps domains check website example.com --json
+cld --profile operator admin apps domains set website www.example.com --no-redirect
+cld --profile operator admin apps domains rm website www.example.com --yes
+```
+
+`set` takes exactly one of `--redirect-to <host>` or `--no-redirect`. Redirects
+stay within the app, without chains. Remove incoming redirects before removing
+their target; the error names those domains. Changes require an administrator;
+OAuth mutations also require `admin` scope. The initial check runs in the
+background. Checks run at most once per 60 seconds; later stages are `null`
+after a failure. `--json` and `--jsonl` preserve the API payload. A first check
+in progress can return `status: null`; list again shortly.
+
 ## Logs and storage diagnostics
 
 ```bash

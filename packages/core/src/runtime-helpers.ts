@@ -34,6 +34,7 @@ import type { createAiNotificationService } from "./ai-notifications";
 import { appApprovalRuntime } from "./app-approval-runtime";
 import { migrate as migrateAnnouncements } from "./migrate/core/announcements";
 import { migrate as migrateAppApproval } from "./migrate/core/app-approval";
+import { migrate as migrateAppDomains } from "./migrate/core/app-domains";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
@@ -128,6 +129,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
+    { name: "app-domains", run: migrateAppDomains },
     { name: "outgoing-mail", run: migrateOutgoingMail },
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },

@@ -27,7 +27,7 @@ import { bindProcessApplicationId, clearProcessApplicationId } from "./process-i
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HtmlFn, SsrConfig } from "@k2b/ssr";
+import type { HtmlFn, SsrConfig, SsrOptions } from "@k2b/ssr";
 import { createConfig as createSsrConfig } from "@k2b/ssr";
 import { routes } from "@k2b/ssr/hono";
 import type { Sync } from "@k2b/sync";
@@ -48,6 +48,7 @@ import type {
   CloudLifecycleContext,
   WidgetEndpoint,
 } from "../contracts/app";
+import { PUBLIC_SURFACE_PREFIX } from "../contracts/app-domains";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_REQUEST_BYTES,
@@ -68,6 +69,7 @@ import { getLocale, resolveLocale } from "../server/locale";
 import { requireAppAccess, stopAppAccessConnections } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
+import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./public-surface";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
 import { connections } from "../runtime/connections";
@@ -165,6 +167,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   /** Shared object-store package. Defaults to the app ID. */
   package?: string;
   access?: AppAccessDeclaration;
+  /** Serve a separate public site on domains assigned by an administrator. */
+  public?: true;
   name: string;
   icon: string;
   description: string;
@@ -373,6 +377,10 @@ export type AppDefinition<S extends AppSettingsMap = {}, N extends NotificationD
   config: SsrConfig;
   meta: AppMeta;
   baseUrl: string;
+  /** Normal Hono router for the public site. Adding routes requires `public: true`. */
+  readonly public: Hono;
+  /** Public HTML template and island assets, reusing this app's single SSR plugin/build. Call before adding page routes. */
+  publicSsr: <T extends object = object>(template: NonNullable<SsrOptions<T>["template"]>) => { html: HtmlFn<T> };
   start: (opts: StartOptions) => Promise<StartResult>;
   /**
    * The process-wide @k2b/sync instance, connected and ready once `start()`
@@ -479,6 +487,8 @@ export const defineApp = <
 >(
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
+  validatePublicSurfaceRoutes(opts.routes);
+  const publicRouter = new Hono();
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
   configurePostgresApplicationName(opts.id);
@@ -693,6 +703,8 @@ export const defineApp = <
 
   // ── 3. start() — builds and boots the Hono server ────────────────────
   const start = async (startOpts: StartOptions): Promise<StartResult> => {
+    if (!opts.public && publicRouter.routes.length)
+      throw new Error(`App "${opts.id}" adds app.public routes without declaring public: true`);
     const port = startOpts.port ?? 3000;
     if (env.GOTENBERG_URL)
       console.warn("[deprecation] GOTENBERG_URL only bootstraps gotenberg.url; remove it after cld admin settings status --env succeeds.");
@@ -752,6 +764,7 @@ export const defineApp = <
       const entry: AppRegistryEntry = {
         package: packageName,
         id: meta.id,
+        ...(opts.public ? { public: true as const } : {}),
         access: meta.access,
         name: meta.name,
         icon: meta.icon,
@@ -896,7 +909,10 @@ export const defineApp = <
       // app middleware cannot report their template. Without this, every hashed
       // island chunk would land in telemetry as its own route.
       const invocationApp = { getApp: async (id: string) => (id === meta.id ? meta : null) };
+      const publicSurface = createPublicSurfaceHandler(opts.public ? publicRouter : undefined, isDevelopment);
       const server = new Hono<AuthContext>()
+        .all(PUBLIC_SURFACE_PREFIX, publicSurface)
+        .all(`${PUBLIC_SURFACE_PREFIX}/*`, publicSurface)
         .use("*", routeTemplate)
         .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
         .route(ssrMountPath, routes(config))
@@ -1266,6 +1282,14 @@ export const defineApp = <
     config,
     meta,
     baseUrl: opts.baseUrl,
+    public: publicRouter,
+    publicSsr: <T extends object = object>(template: NonNullable<SsrOptions<T>["template"]>) => {
+      if (!opts.public) throw new Error(`App "${opts.id}" uses publicSsr without declaring public: true`);
+      const site = createSsrConfig<T>({ dev: config.dev, rootDir: config.rootDir, basePath: "", template });
+      publicRouter.route("/_ssr", routes(site.config));
+      publicRouter.all("/_ssr/*", (c) => c.notFound());
+      return { html: site.html };
+    },
     start,
     get sync() {
       return getProcessSync();

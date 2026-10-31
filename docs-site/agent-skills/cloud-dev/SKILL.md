@@ -44,6 +44,7 @@ and durable data.
 
 - Use `defineApp()` for the declaration, the Hono router for requests, and
   `app.start()` for registration and lifecycle.
+- App domains reach only `app.public` of their own app; link `subject`s are not principals.
 - Declare `access` for app use; Cloud applies it before app code and to discovery. Keep resource checks in services.
   Read **App access** (`/en/docs/identity/app-access`) for public routes and migration.
 - Keep declared prefixes, mounted routes, and registration aligned. A running
