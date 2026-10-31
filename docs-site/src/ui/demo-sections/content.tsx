@@ -2,6 +2,8 @@ import {
   announce,
   Button,
   Chart,
+  CodeDiff,
+  type CodeDiffFile,
   CodeDisplay,
   DataTable,
   type DataTableColumn,
@@ -53,6 +55,7 @@ import {
   panelDialogOptions,
   ReactionBar,
   reactionPeople,
+  SegmentedControl,
   StatusBadge,
   Steps,
   StructuredDataPreview,
@@ -513,6 +516,92 @@ const CodeDemo = () => (
     <CodeDisplay title="component.tsx" language="tsx" code={'export const Status = () => <span data-ready="true">Ready</span>;'} />
   </DemoCard>
 );
+
+// Fictional automation that answers callback requests; version 2 against version 3.
+const diffFiles: CodeDiffFile[] = [
+  {
+    path: "index.ts",
+    lines: [
+      { kind: "same", text: 'import { app, ai, owner } from "@sdk";' },
+      { kind: "same", text: "" },
+      { kind: "same", text: "// Answers callback requests in info@" },
+      { kind: "same", text: "" },
+      { kind: "same", text: 'app.on("mail.message.received", async (event) => {' },
+      { kind: "same", text: "  const msg = await owner.message.get({ id: event.messageId });" },
+      { kind: "add", text: "  if (msg.from.noReply) return; // never answer no-reply addresses" },
+      { kind: "same", text: '  const kind = await ai.classify({ text: msg.text, labels: ["Callback", "Other"] });' },
+      { kind: "same", text: '  if (kind !== "Callback") return;' },
+      { kind: "same", text: "" },
+      {
+        kind: "same",
+        text: '  const text = await ai.write({ prompt: "Confirm the callback and offer two time slots.", context: msg.text });',
+      },
+      { kind: "del", text: "  await owner.draft.create({ replyTo: msg.id, text });" },
+      { kind: "add", text: "  // The recipient comes from the event: the sender of this mail" },
+      { kind: "add", text: "  await owner.message.reply({ messageId: event.messageId, text });" },
+      { kind: "same", text: "});" },
+    ],
+  },
+  {
+    path: "callback.test.ts",
+    lines: [
+      { kind: "same", text: 'test("confirms a callback", async () => {' },
+      { kind: "del", text: "  expect(drafts).toHaveLength(1);" },
+      { kind: "add", text: "  expect(sent).toHaveLength(1);" },
+      { kind: "add", text: '  expect(sent[0].to).toBe("sender@example.com");' },
+      { kind: "same", text: "});" },
+    ],
+  },
+  {
+    path: "params.ts",
+    lines: [
+      { kind: "same", text: "export const params = {" },
+      { kind: "same", text: "  slots: 2," },
+      { kind: "same", text: "};" },
+    ],
+  },
+];
+
+const CodeDiffDemo = () => {
+  const [state, setState] = createSignal<"diff" | "marked" | "new" | "loading" | "error">("diff");
+  return (
+    <DemoCard
+      id="code-diff"
+      chip={{ kind: "component", name: "CodeDiff", from: "@k2b/ui" }}
+      description="A change between two versions, line by line: file tabs, folded unchanged lines, a marked line, whole code for a first version, loading, and error with retry."
+      code={`<CodeDiff files={files} mark={{ path: "index.ts", line: 13 }} />
+<CodeDiff files={[]} status="error" errorDescription="Nothing was decided." onRetry={reload} />`}
+    >
+      <SegmentedControl
+        value={state}
+        onValueChange={(value) => setState(value)}
+        label="State"
+        size="sm"
+        options={[
+          { value: "diff", label: "Diff" },
+          { value: "marked", label: "Marked line" },
+          { value: "new", label: "First version" },
+          { value: "loading", label: "Loading" },
+          { value: "error", label: "Error" },
+        ]}
+      />
+      <CodeDiff
+        files={
+          state() === "new"
+            ? diffFiles.map((file) => ({
+                ...file,
+                lines: file.lines.filter((line) => line.kind !== "del").map((line) => ({ kind: "add" as const, text: line.text })),
+              }))
+            : diffFiles
+        }
+        mark={state() === "marked" ? { path: "index.ts", line: 13 } : undefined}
+        status={state() === "loading" ? "loading" : state() === "error" ? "error" : undefined}
+        errorDescription="Nothing was approved or rejected. Try again to see the code."
+        onRetry={() => setState("diff")}
+      />
+    </DemoCard>
+  );
+};
 
 const LogsDemo = () => (
   <DemoCard
@@ -2075,6 +2164,7 @@ const demos: DemoSection = {
   code: () => (
     <DemoGrid columns="one">
       <CodeDemo />
+      <CodeDiffDemo />
     </DemoGrid>
   ),
   logs: () => (

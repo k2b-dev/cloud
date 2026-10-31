@@ -28,6 +28,8 @@ export type { ChartExplorerControlsProps } from "./ChartExplorerControls";
 export { ChartExplorerControls } from "./ChartExplorerControls";
 export { ChartFilterControls, type ChartFilterControlsProps } from "./ChartFilterControls";
 export { ChartSnapshotView } from "./ChartSnapshotView";
+export type { CodeDiffFile, CodeDiffLine, CodeDiffLineKind, CodeDiffLocation, CodeDiffProps } from "./CodeDiff";
+export { CodeDiff } from "./CodeDiff";
 export type { CodeDisplayLanguage, CodeDisplayProps } from "./CodeDisplay";
 export { default as CodeDisplay } from "./CodeDisplay";
 export { type ChartCursor, createChartCursor } from "./chart-cursor";
