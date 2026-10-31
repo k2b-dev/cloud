@@ -232,6 +232,10 @@ For automatic home provisioning, the trusted server-only `provisioningUsers`
 projection and `provisioningIdentity` live check are documented under
 [application event operations](/en/docs/operations/app-events#check-files-home-provisioning).
 
+`serviceAccountUsesOwnGrants` and `serviceAccountMayHoldCredentials` separate
+resource-grant resolution from credential eligibility. Code accounts have only
+the first property; see [Service accounts](/en/docs/identity/service-accounts#code-accounts).
+
 `readAccountCategoryPolicy` supplies server-side presentation settings;
 `isAccountCategoryAllowed` is for platform-owned credential eligibility checks,
 not application resource authorization. The browser-safe contracts barrel

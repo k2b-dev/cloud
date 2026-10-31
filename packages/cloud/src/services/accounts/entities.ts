@@ -664,7 +664,7 @@ export const list = async (
           NULL::text AS personal_owner_display_name,
           LOWER(sa.name) AS sort_label
         FROM auth.service_accounts sa
-        WHERE NOT ${otherRelation} AND ${machineRelation}
+        WHERE sa.kind <> 'code' AND NOT ${otherRelation} AND ${machineRelation}
       ),
       entity_rows AS (
         SELECT * FROM user_rows

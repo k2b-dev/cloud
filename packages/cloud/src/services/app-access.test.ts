@@ -303,3 +303,26 @@ test("an aborted existence check releases the caller and starts no further scope
     stop();
   }
 });
+
+test("code accounts cannot enter through any normal app-access rule or compatibility path", async () => {
+  const authority = service();
+  if (authority.actor.kind !== "service_account") throw new Error("fixture");
+  authority.actor.serviceAccount.kind = "code";
+  for (const credentialKind of ["api_key", "oauth", "invocation"] as const) {
+    authority.credentialKind = credentialKind;
+    authority.scopes = ["read", "write", "admin"];
+    const apps = [
+      { id: "legacy" },
+      { id: "signed-in", access: appAccess.signedIn() },
+      { id: "no-guests", access: appAccess.noGuests() },
+      { id: "roles", access: appAccess.roles(["admin"]) },
+      { id: "resources", access: compileAppAccess(appAccess.resources({ adapters: { fixture: { hasAnyRight: async () => true } } })) },
+      { id: "grants", access: appAccess.grants({ until: appAccess.signedIn() }) },
+    ];
+    for (const app of apps) {
+      expect(evaluateAppAccess(authority, app, { app_id: app.id, configured: true, permission: "admin" })).toBe(false);
+      expect(await canUseApp(authority, app)).toBe(false);
+    }
+    expect(await usableAppIds(authority, apps)).toEqual(new Set());
+  }
+});

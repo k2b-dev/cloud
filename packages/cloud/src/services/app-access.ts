@@ -25,7 +25,7 @@ export const appAccessAuthority = <E extends AuthContext>(c: Context<E>): Reques
 const credentialAllows = (authority: RequestAuthority, appId: string): boolean => {
   const actor = authority.actor;
   if (actor.kind === "service_account") {
-    if (actor.serviceAccount.status !== "active") return false;
+    if (actor.serviceAccount.status !== "active" || actor.serviceAccount.kind === "code") return false;
     if (actor.serviceAccount.kind === "resource_bound" && actor.serviceAccount.appId !== appId) return false;
     if (actor.credentialExpiresAt && !(new Date(actor.credentialExpiresAt).getTime() > Date.now())) return false;
   }
@@ -62,6 +62,7 @@ const fixedAllows = (authority: RequestAuthority, rule: FixedAppAccessRule): boo
 
 /** Pure decision shared by single-app and batched reads. Missing grant state means unconfigured, not an implicit grant. */
 export const evaluateAppAccess = (authority: RequestAuthority | null, app: AccessApp, state?: GrantState): boolean => {
+  if (authority?.actor.kind === "service_account" && authority.actor.serviceAccount.kind === "code") return false;
   if (app.access === undefined) return true; // Step 1 compatibility; no inferred entry rule.
   if (!authority || !credentialAllows(authority, app.id)) return false;
   const parsed = AppAccessRuleSchema.safeParse(app.access);

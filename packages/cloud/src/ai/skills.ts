@@ -11,6 +11,7 @@ import {
   hasPermission,
   type PermissionLevel,
   type Principal,
+  updateAccess,
 } from "../server/services/access";
 import { accessRevision } from "../server/services/access-revision";
 import { evaluateAppAccess, usableAppIds } from "../services/app-access";
@@ -475,7 +476,7 @@ const updateSkillAccess = async (skillId: string, accessId: string, permission: 
     after: before.map((entry) => (entry.shortId === accessId ? { ...entry, permission } : entry)),
   });
   if (!guarded.ok) throw new AiSkillLastAdminError();
-  return (await db`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${bound.id}::uuid`).count === 1;
+  return (await updateAccess({ id: bound.id, permission }, db)).ok;
 };
 
 const revokeSkillAccess = async (skillId: string, accessId: string, db: SQL): Promise<boolean> => {

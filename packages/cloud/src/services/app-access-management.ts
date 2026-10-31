@@ -48,6 +48,7 @@ const credentialIsEligible = (authority: RequestAuthority): boolean => {
   return (
     serviceAccount.status === "active" &&
     serviceAccount.kind !== "resource_bound" &&
+    serviceAccount.kind !== "code" &&
     (!credentialExpiresAt || new Date(credentialExpiresAt).getTime() > Date.now())
   );
 };
@@ -458,7 +459,10 @@ export const changeAppAccess = async (params: {
         if (before.principal.type === "public") throw new AppAccessManagementError("BAD_INPUT", "Public app access is not supported.", 400);
         if (before.principal.type === "authenticated" && change.permission !== "read")
           throw new AppAccessManagementError("BAD_INPUT", "Signed-in identities may only receive Use.", 400);
-        await db`UPDATE auth.access SET permission = ${change.permission}::auth.permission_level WHERE id = ${before.id}::uuid`;
+        const updated = await db`UPDATE auth.access SET permission = ${change.permission}::auth.permission_level
+          WHERE id = ${before.id}::uuid AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
+            WHERE account.id = auth.access.service_account_id AND account.kind = 'code')`;
+        if (!updated.count) throw new AppAccessManagementError("NOT_FOUND", "Access entry not found.", 404);
         changedId = before.id;
       } else await db`DELETE FROM auth.access WHERE id = ${before.id}::uuid`;
       await record(

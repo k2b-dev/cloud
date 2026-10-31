@@ -7,9 +7,9 @@ import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { isUniqueViolation, toPgTextArray } from "./postgres";
 import {
-  isStandaloneServiceAccountKind,
   type ServiceAccount,
   type StandaloneServiceAccountKind,
+  serviceAccountMayHoldCredentials,
   serviceAccounts,
 } from "./service-accounts";
 import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "./session/recent";
@@ -163,7 +163,7 @@ const credentialOwner = (row: DbCredentialOverviewRow, serviceAccount: ServiceAc
       avatarHash: row.delegated_avatar_hash,
     };
   }
-  if (isStandaloneServiceAccountKind(serviceAccount.kind)) {
+  if (serviceAccount.kind === "standalone" || serviceAccount.kind === "agent") {
     return { type: "standalone", serviceAccountId: serviceAccount.id, name: serviceAccount.name, kind: serviceAccount.kind };
   }
   return {
@@ -332,6 +332,10 @@ const insertApiToken = async (
   },
 ): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
   if (!UUID_PATTERN.test(params.serviceAccountId)) return fail(err.notFound("Service account"));
+  const [account] = await db<{ kind: string }[]>`
+    SELECT kind FROM auth.service_accounts WHERE id = ${params.serviceAccountId}::uuid FOR SHARE
+  `;
+  if (!account || !serviceAccountMayHoldCredentials(account.kind)) return fail(err.notFound("Service account"));
   const name = normalizeName(params.name);
   if (!name) return fail(err.badInput("API key name is required"));
   if (name.length > 120) return fail(err.badInput("API key name must be 120 characters or fewer"));
@@ -500,7 +504,12 @@ export const createStandaloneApiToken = async (params: {
   if (params.scopes?.includes(AI_INFERENCE_SCOPE) || (params.access === "models" && params.scopes?.length))
     return fail(err.badInput("Models-only access cannot be combined with general credential scopes"));
   const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
-  if (!serviceAccount || !isStandaloneServiceAccountKind(serviceAccount.kind)) return fail(err.notFound("Service account"));
+  if (
+    !serviceAccount ||
+    !serviceAccountMayHoldCredentials(serviceAccount.kind) ||
+    !(serviceAccount.kind === "standalone" || serviceAccount.kind === "agent")
+  )
+    return fail(err.notFound("Service account"));
   if (serviceAccount.status !== "active") return fail(err.badInput("Service account is disabled"));
 
   return sql.begin(async (tx) => {
@@ -985,6 +994,7 @@ export const authenticateApiToken = async (token: string): Promise<Authenticated
   row = current;
 
   const serviceAccount = mapServiceAccount(row);
+  if (!serviceAccountMayHoldCredentials(serviceAccount.kind)) return null;
   const delegatedUser = serviceAccount.delegatedUserId ? await accounts.users.get({ id: serviceAccount.delegatedUserId }) : null;
   if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser))) return null;
   if (serviceAccount.kind === "user_delegated" && !delegatedUser) {
