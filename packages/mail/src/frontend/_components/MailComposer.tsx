@@ -101,6 +101,8 @@ export default function MailComposer(props: {
   dateConfig: DateContext;
   canShareAttachments?: boolean;
   calendarIntegrationAvailable?: boolean;
+  /** Live dictation is set up and allowed for this person; the editor toolbar then shows Dictate. */
+  liveDictation?: boolean;
   /** Lets the composer open the mailbox's sender settings when no verified sender can send. */
   canManageMailbox?: boolean;
   currentUserEmail?: string | null;
@@ -1552,6 +1554,7 @@ export default function MailComposer(props: {
           previewPending={() => previewQuery.loading() || previewQuery.refreshing()}
           onRetryPreview={retryPreview}
           onEditorReady={focusFreshEditorAtStart}
+          liveDictation={props.liveDictation}
           onAttachImages={() => void chooseAttachments()}
           onDroppedImages={(files) => {
             if (editable()) void attachments.addFiles(files);

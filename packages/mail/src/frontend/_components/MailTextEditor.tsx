@@ -1,5 +1,6 @@
 import { autocompletion, type CompletionContext } from "@codemirror/autocomplete";
 import { Transaction } from "@codemirror/state";
+import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
 import { isolateYjsHistory } from "@k2b/editor/collab";
 import { Button, type Completion, Dropdown, useLocale } from "@k2b/ui";
 import { type TableHost, TextEditor, type TextEditorController, type TextEditorControls } from "@k2b/ui/text-editor";
@@ -10,6 +11,8 @@ import { type MailDraftDocumentClient, type MailSharedDraftState, mailSharedDraf
 import { mailComposerMessages } from "./mail-composer-messages";
 import { mailDraftPeers, mailDraftTablePresence } from "./mail-draft-document-presence";
 import { createMailDraftTableStructure, type UnknownTableAction } from "./mail-draft-document-table";
+
+const liveDictationSource = createLiveDictationSource({ app: "mail" });
 
 /** Mail owns templates, attachments and draft replacement; the shared editor owns text and tables. */
 export default function MailTextEditor(props: {
@@ -24,6 +27,8 @@ export default function MailTextEditor(props: {
   onEditorReady: (editor: TextEditorController) => void;
   onAttachImages?: () => void;
   onDroppedImages?: (files: File[]) => void;
+  /** Live dictation into the body, from the editor toolbar. */
+  liveDictation?: boolean;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -235,6 +240,7 @@ export default function MailTextEditor(props: {
           if (next !== "plain") setMode(next);
         }}
         readOnly={!props.editable()}
+        dictation={props.liveDictation ? { source: liveDictationSource } : undefined}
         maxLength={2_097_152}
         extensions={[
           autocompletion({ override: [complete], activateOnTypingDelay: 180 }),
