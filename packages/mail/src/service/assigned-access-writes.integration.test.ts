@@ -876,13 +876,13 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
   });
 
   test("capability reviews use scoped services, while assignment reviews still refuse", async () => {
-    const context = capContext(writer);
-    const input = { mailboxId: mailboxShortId, conversationId: c1.shortId, status: "done" as const, expectedRevision: 1 };
+    const context = { ...capContext(writer), target: { type: "mail.mailbox", id: mailboxShortId } };
+    const input = { conversationId: c1.shortId, status: "done" as const, expectedRevision: 1 };
     expect((await mailCapabilities.actions["conversation.status.update"].review(input, context)).ok).toBe(true);
     denied(await mailCapabilities.actions["conversation.status.update"].review({ ...input, conversationId: c2.shortId }, context), 404);
     denied(
       await mailCapabilities.actions["conversation.assign"].review(
-        { mailboxId: mailboxShortId, conversationId: c1.shortId, assigneeUserIds: [writer.id], mode: "replace" },
+        { conversationId: c1.shortId, assigneeUserIds: [writer.id], mode: "replace" },
         context,
       ),
       403,
