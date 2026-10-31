@@ -2,7 +2,7 @@ import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { asUndoStep, type EditorAction, type EditorHandle, Toolbar, type ToolbarCustom, type ToolbarMenu } from "@k2b/editor";
 import { indentListItems, outdentListItems, setListKind } from "@k2b/editor/markdown";
-import { appWorkspaceDetailElementId, Button, Dropdown, IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
+import { Button, Dropdown, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { type InlineFormat, TableSizePicker, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { ariaShortcut, isApple, shortcutLabel } from "../../../lib/shortcut-label";
@@ -10,8 +10,6 @@ import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
 import { commentMessages } from "../comments/messages";
-import { NOTEBOOK_DETAIL_ID } from "../detail/events";
-import { NOTEBOOK_NAVIGATION_ID } from "../sidebar/navigation-visibility";
 import { openAttachmentPicker } from "./AttachmentPicker";
 import {
   type CaretFormat,
@@ -24,6 +22,7 @@ import {
   toggleHeadingLevel,
   toggleInlineMark,
 } from "./editor-actions";
+import { DetailsButton, NavigationButton } from "./workspace-buttons";
 
 type Props = {
   connected: boolean;
@@ -328,25 +327,7 @@ export default function EditorToolbar(props: Props) {
           ],
         },
       ]}
-      start={
-        // The workspace has no head on a note page: this button opens the navigation as an overlay below a 64 rem app
-        // host and shows or hides the column from there; the shared controller runs it and keeps aria-expanded current.
-        // Phones keep the header's menu (app.css).
-        <div class="notebooks-navigation-toggle">
-          <Tooltip.Anchor content={t().navigation}>
-            <IconButton
-              label={t().navigation}
-              tooltip={false}
-              size="xs"
-              class="text-dimmed"
-              aria-controls={NOTEBOOK_NAVIGATION_ID}
-              data-app-workspace-sidebar-toggle=""
-            >
-              <i class="ti ti-layout-sidebar text-sm" aria-hidden="true" />
-            </IconButton>
-          </Tooltip.Anchor>
-        </div>
-      }
+      start={<NavigationButton />}
       end={
         <>
           <Show when={showDisconnected()}>
@@ -387,19 +368,7 @@ export default function EditorToolbar(props: Props) {
               <i class="ti ti-book" aria-hidden="true" />
             </IconButtonLink>
           </Tooltip.Anchor>
-          {/* The workspace's Details button: the shared controller opens, closes or, without room, slides in the panel. */}
-          <Tooltip.Anchor content={t().detailPanel}>
-            <IconButton
-              label={t().detailPanel}
-              tooltip={false}
-              size="xs"
-              class="text-dimmed"
-              aria-controls={appWorkspaceDetailElementId(NOTEBOOK_DETAIL_ID)}
-              data-app-workspace-detail-toggle=""
-            >
-              <i class="ti ti-layout-sidebar-right text-sm" aria-hidden="true" />
-            </IconButton>
-          </Tooltip.Anchor>
+          <DetailsButton />
         </>
       }
     />

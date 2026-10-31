@@ -516,6 +516,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     overlay = { ...target, inerted };
     target.root.dataset.sidebarOverlay = "open";
     target.toggle.setAttribute("aria-expanded", "true");
+    syncSidebarToggles();
     inerted.forEach((region) => region.setAttribute("inert", ""));
     // Focus starts on the current destination, so the reader knows where they
     // are: on its own tab stop, or on the tree item around it.
@@ -541,6 +542,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     overlay = null;
     delete closing.root.dataset.sidebarOverlay;
     closing.toggle.setAttribute("aria-expanded", "false");
+    // Escape, the scrim or a chosen destination also close it: every sidebar button of the workspace says so.
+    syncSidebarToggles();
     closing.inerted.forEach((region) => region.removeAttribute("inert"));
     if (focus === "none") return;
     const active = document.activeElement;

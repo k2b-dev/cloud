@@ -38,6 +38,7 @@ render(() => createComponent(AppWorkspace, {
     createComponent(AppWorkspace.Content, { get children() { return [
       createComponent(AppWorkspace.Main, { minWidth: 640, get children() { return [
         button("Navigation", { id: "app-sidebar", "aria-controls": "navigation", "data-app-workspace-sidebar-toggle": "" }),
+        button("Navigation", { id: "second-sidebar", "aria-controls": "navigation", "data-app-workspace-sidebar-toggle": "" }),
         button("Detail panel", { id: "app-detail", "aria-controls": appWorkspaceDetailElementId("record"), "data-app-workspace-detail-toggle": "" }),
         "Note text",
       ]; } }),
@@ -121,9 +122,12 @@ test("below a 64 rem app host the app's buttons open the overlay sidebar and the
     await page.click("#app-sidebar");
     await settled(page);
     expect(await state(page)).toMatchObject({ overlay: "open", sidebarExpanded: "true" });
+    // Every sidebar button of the workspace tells the same, also after Escape closed the overlay.
+    expect(await page.locator("#second-sidebar").getAttribute("aria-expanded")).toBe("true");
     await page.keyboard.press("Escape");
     await settled(page);
     expect(await state(page)).toMatchObject({ overlay: null, sidebarExpanded: "false" });
+    expect(await page.locator("#second-sidebar").getAttribute("aria-expanded")).toBe("false");
     // Without room beside the text the open panel waits; its button slides it in and out.
     expect(await state(page)).toMatchObject({ detailHidden: false, detailVisible: false, detailExpanded: "false" });
     await page.click("#app-detail");

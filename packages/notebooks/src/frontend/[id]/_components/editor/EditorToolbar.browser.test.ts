@@ -811,16 +811,19 @@ describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name,
             const box = row.getBoundingClientRect();
             return {
               pageFits: document.documentElement.scrollWidth <= innerWidth,
-              controlsFit: Array.from(row.querySelectorAll("button")).every((button) => {
-                const control = button.getBoundingClientRect();
-                return (
-                  control.left >= box.left &&
-                  control.right <= box.right &&
-                  control.right <= innerWidth &&
-                  control.top >= box.top &&
-                  control.bottom <= box.bottom
-                );
-              }),
+              // Phones hide the navigation button (the header's menu takes its place); every shown control fits.
+              controlsFit: Array.from(row.querySelectorAll("button"))
+                .filter((button) => button.getClientRects().length > 0)
+                .every((button) => {
+                  const control = button.getBoundingClientRect();
+                  return (
+                    control.left >= box.left &&
+                    control.right <= box.right &&
+                    control.right <= innerWidth &&
+                    control.top >= box.top &&
+                    control.bottom <= box.bottom
+                  );
+                }),
             };
           });
           expect(fit).toEqual({ pageFits: true, controlsFit: true });
