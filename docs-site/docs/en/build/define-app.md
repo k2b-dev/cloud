@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-28
+updated: 2026-10-31
 ---
 
 # Define an application
@@ -61,6 +61,15 @@ dark mode. Core pages keep the operator-configured Cloud favicon.
 
 Declare only prefixes the application serves. See
 [Routes and discovery](/en/docs/build/routing).
+
+## Declare a public site
+
+Set `public: true` to serve an app-owned website through `app.public` on
+domains assigned by an administrator. These requests use a separate Hono
+router before Cloud authentication and app access middleware. The normal
+application lifecycle and platform services remain available.
+`app.publicSsr(template)` renders the site's own template and reuses the app's
+single island build. See [Public site of an app](/en/docs/build/public-surface).
 
 ## Set the SSR asset prefix
 

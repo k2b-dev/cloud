@@ -7,7 +7,7 @@ import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
-import { type AppOptions, defineApp, type StartResult } from "./define-app";
+import { type AppDefinition, type AppOptions, defineApp, type StartOptions, type StartResult } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId } from "./process-identity";
 import * as processSync from "./process-sync";
@@ -45,7 +45,12 @@ export const person = {
 } satisfies User;
 
 /** Starts the app with registry, sync and settings stubbed and returns the registry entry it publishes. */
-export const publishedEntry = async (options: AppOptions, inspect?: (server: StartResult) => Promise<void>): Promise<AppRegistryEntry> => {
+export const publishedEntry = async (
+  options: AppOptions,
+  inspect?: (server: StartResult) => Promise<void>,
+  configure?: (app: AppDefinition) => void,
+  startOptions?: Partial<StartOptions>,
+): Promise<AppRegistryEntry> => {
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   const entries: unknown[] = [];
@@ -85,7 +90,9 @@ export const publishedEntry = async (options: AppOptions, inspect?: (server: Sta
     spyOn(settingsService, "loadCache").mockResolvedValue(undefined),
   ];
   try {
-    const server = await defineApp(options).start({ fetch: () => new Response("application") });
+    const app = defineApp(options);
+    configure?.(app);
+    const server = await app.start({ fetch: () => new Response("application"), ...startOptions });
     await inspect?.(server);
     const entry = entries.find((value): value is AppRegistryEntry => (value as AppRegistryEntry).id === options.id);
     if (!entry) throw new Error("The app published no registry entry");

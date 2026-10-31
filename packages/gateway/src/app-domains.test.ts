@@ -11,7 +11,7 @@ import { createGatewayHandler } from "./handler";
 import { createProxyStats } from "./proxy";
 import { buildRouteTable } from "./trie";
 
-const app = (baseUrl: string) => ({
+const app = (baseUrl: string): AppRegistryEntry => ({
   id: "site",
   name: "Site",
   icon: "globe",
@@ -162,7 +162,8 @@ test("unknown hosts reject normal routes and storage", async () => {
 
 test("an assigned app without a public declaration is rejected", async () => {
   const f = fixture();
-  f.setSnapshot({ ...f.snapshot, apps: new Map([["site", { ...app("http://absent"), public: false }]]) });
+  const { public: _declared, ...undeclared } = app("http://absent");
+  f.setSnapshot({ ...f.snapshot, apps: new Map([["site", undeclared]]) });
   expect((await f.request()).status).toBe(421);
 });
 

@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 
 # API surface
@@ -68,6 +68,11 @@ import { defineApp } from "@k2b/cloud";
 The returned application's `ssr` renders pages and exposes `ssr.access` for
 browser-route rejections and `ssr.error(c, status, options?)` for terminal HTML
 errors. See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
+
+For an app-owned website, declare `public: true` and add Hono routes to
+`app.public`. `app.publicSsr<T>(template)` returns `{ html: HtmlFn<T> }` and
+mounts public island assets while keeping one app plugin/build. See
+[Public site of an app](/en/docs/build/public-surface).
 
 The root also exports the types bound to an application declaration. This
 includes typed settings and notification definitions, and `skill()` with

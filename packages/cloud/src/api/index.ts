@@ -26,6 +26,7 @@ import adminAiProjectsRoutes from "./admin-ai-projects";
 import adminAiQuotaRoutes from "./admin-ai-quotas";
 import adminAiSkillsRoutes from "./admin-ai-skills";
 import adminAiUsageRoutes from "./admin-ai-usage";
+import adminAppDomainRoutes from "./admin-app-domains";
 import adminAppKeyRoutes from "./admin-app-keys";
 import adminCoreSettingsRoutes from "./admin-core-settings";
 import adminDirectorySharesRoutes from "./admin-directory-shares";
@@ -107,6 +108,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/geo", adminGeoRoutes)
     .route("/admin/identity/directory-shares", adminDirectorySharesRoutes)
     .route("/admin/identity", adminIdentityRoutes)
+    .route("/admin/apps", adminAppDomainRoutes)
     .route("/admin/apps", adminAppKeyRoutes)
     .route("/admin/sync", createSyncOpsProxyRoutes())
     .route("/admin/lifecycle", adminLifecycleRoutes)
@@ -135,6 +137,7 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
   return { api };
 };
 
+export { createAdminAppDomainRoutes } from "./admin-app-domains";
 export { createAdminAppKeyRoutes } from "./admin-app-keys";
 export { createAppAccessRoutes } from "./app-access";
 /** Core-owned internal startup protocol; applications use @k2b/cloud/start. */
