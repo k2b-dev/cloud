@@ -1,6 +1,7 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
+import { APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes } from "../api/app-migration-trigger";
 import { createResourceAppAccessRoutes } from "../api/app-resource-access";
 import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/settings-ops";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
@@ -1121,6 +1122,7 @@ export const defineApp = <
 
       cleanup.push(bindResourceAppAccess(meta.id, opts.access));
       server.route(RESOURCE_ACCESS_PATH, createResourceAppAccessRoutes(meta));
+      if (meta.id !== "core" && meta.id !== "gateway") server.route(APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes(meta.id));
       cleanup.push(() => stopAppAccessConnections());
       if (meta.access?.kind === "grants") {
         server.route(appAccessManagementPath(meta), createOwnedAppAccessRoutes(meta, opts.access?.canManage));

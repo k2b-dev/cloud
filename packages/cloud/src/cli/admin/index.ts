@@ -19,6 +19,7 @@ import { appCredentialCommands } from "./app-credentials";
 import { appDomainCommands } from "./app-domains";
 import { appKeyCommands } from "./app-keys";
 import { appSignInCommands } from "./app-sign-in";
+import { appStatusCommands } from "./app-status";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
 import { gatewayCommands } from "./gateway";
@@ -106,6 +107,7 @@ const build = (locale?: string) =>
     commands: [
       ...appCredentialCommands,
       ...appKeyCommands,
+      ...appStatusCommands,
       ...appDomainCommands(locale),
       ...agentCommands,
       ...documentationCommands,

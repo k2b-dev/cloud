@@ -707,3 +707,76 @@ export const verifyAppCapabilityInvocation = async (
     throw error;
   }
 };
+
+const MigrationProbeClaims = z
+  .object({
+    iss: z.string().url(),
+    aud: z.string(),
+    token_use: z.literal("app_migration_probe"),
+    key_id: z.uuid(),
+    oauth: z.boolean(),
+    jti: z.uuid(),
+    iat: z.number().int(),
+    nbf: z.number().int(),
+    exp: z.number().int(),
+  })
+  .strict();
+/** Core's short-lived instruction to test one deployed key; carries no person or domain authority. */
+export const signMigrationProbe = async (input: {
+  appId: string;
+  keyId: string;
+  oauth: boolean;
+  nonce: string;
+  issuer?: string;
+  signer?: PreparedIdentitySigner;
+  now?: Date;
+}) => {
+  const issuer = input.issuer ?? (await getIdentityRuntimeConfig()).issuer;
+  const signer = input.signer ?? (await prepareIdentitySigner("invocation"));
+  const now = Math.floor((input.now?.getTime() ?? Date.now()) / 1000);
+  if (signer.signUntil.getTime() < (now + CLOUD_INVOCATION_TOKEN_TTL_SECONDS) * 1000)
+    throw new Error("Invocation signing key expires before the migration probe");
+  const claims = MigrationProbeClaims.parse({
+    iss: issuer,
+    aud: `app:${AppIdSchema.parse(input.appId)}`,
+    token_use: "app_migration_probe",
+    key_id: input.keyId,
+    oauth: input.oauth,
+    jti: input.nonce,
+    iat: now,
+    nbf: now,
+    exp: now + CLOUD_INVOCATION_TOKEN_TTL_SECONDS,
+  });
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: CLOUD_IDENTITY_ALGORITHM, typ: CLOUD_INVOCATION_TOKEN_TYPE, kid: signer.kid })
+    .sign(signer.key);
+};
+export const verifyMigrationProbe = async (
+  token: string,
+  appId: string,
+  options: { issuer?: string; key?: JWTVerifyGetKey; now?: Date } = {},
+) => {
+  if (new TextEncoder().encode(token).byteLength > IDENTITY_MAX_COMPACT_TOKEN_BYTES) return null;
+  try {
+    assertProtectedHeader(decodeProtectedHeader(token));
+    const runtime = options.issuer && options.key ? null : await getIdentityRuntimeConfig();
+    const url = runtime?.invocationJwksUrl;
+    const state = options.key || !url ? null : remoteSet(url);
+    const key = options.key ?? state?.key;
+    if (!key) return null;
+    const verify = (key: JWTVerifyGetKey) =>
+      jwtVerify(token, key, {
+        algorithms: [CLOUD_IDENTITY_ALGORITHM],
+        audience: `app:${AppIdSchema.parse(appId)}`,
+        issuer: options.issuer ?? runtime!.issuer,
+        typ: CLOUD_INVOCATION_TOKEN_TYPE,
+        clockTolerance: INVOCATION_CLOCK_TOLERANCE_SECONDS,
+        currentDate: options.now,
+      });
+    const result = await verifyWithKeyRefresh(verify, key, state && url ? { url, state } : null);
+    const claims = MigrationProbeClaims.parse(result.payload);
+    return claims.exp - claims.iat === CLOUD_INVOCATION_TOKEN_TTL_SECONDS && claims.nbf === claims.iat ? claims : null;
+  } catch {
+    return null;
+  }
+};
