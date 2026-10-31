@@ -27,6 +27,28 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## App-domain routing and unknown hosts
+
+**After upgrading the gateway, unknown Host headers receive HTTP 421.**
+Cloud clients, monitoring routes other than health/readiness, and reverse-proxy
+aliases must use the configured `app.url` host or the internal gateway service
+host. A second site hostname needs a durable app-domain assignment; adding a
+DNS record or forwarding `X-Forwarded-Host` alone does not enable it. Development
+also permits loopback hosts. `/health` and `/_cloud/ready` remain available on
+unassigned hosts for container checks; an assigned site's `/health` belongs to
+its app.
+
+Deploy Core first for the assignment table, then the gateway, then applications
+with `public: true`. Configure Traefik's HTTP provider or Caddy's certificate
+admission against the separate private gateway port `3001`
+(`GATEWAY_INGRESS_PORT`). Keep this port off public ingress; it has no public
+router or host-port mapping. Set `APP_URL` on the gateway too. The production
+Compose uses the private alias `cloud-gateway-${CLOUD_HOST}` and sets
+`GATEWAY_INTERNAL_URL` to its port `3000`; use that alias for ingress discovery
+to avoid collisions on a shared network. `GATEWAY_INGRESS_ENTRYPOINT` defaults
+to `websecure`. See [App domains](/en/docs/operations/app-domains)
+for DNS, TLS, checks, and development setup.
+
 ## Resource reader checks and discussions
 
 Upgrade Core before deploying applications that declare resource containment,
@@ -300,7 +322,7 @@ See [runtime configuration](/en/docs/operations/runtime-configuration#set-infras
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
-| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; the gateway keeps cross-site requests and subresource loads uncompressed. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
+| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. On the Cloud host, the gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; on the Cloud host, the gateway keeps cross-site requests and subresource loads uncompressed. Cookie-less app-domain requests without `Authorization` also compress text, JavaScript, XML and SVG, including cross-site visits. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
 | Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
@@ -515,7 +537,7 @@ environment fallback.
 | `CLOUD_CORE_INTERNAL_ORIGIN` | OAuth, background broker callers, resource-derived app discovery, and managed Assistant code hosts | Direct private Core origin, not the gateway. Compose supplies it. Code hosts use it for turn-bound capability callbacks and binary streams. |
 | `CLOUD_APP_CREDENTIAL` | Optional host-run app override | Core automatically issues and rotates app-bound `identity:invoke` credentials over NATS. No per-app Compose secret is needed. An explicit override wins; OAuth does not use it. See [runtime configuration](/en/docs/operations/runtime-configuration#shared-infrastructure-trust-limit) for the shared-infrastructure trust limit. |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Optional private transport origin for OAuth public keys. Core identity keys use `CLOUD_CORE_INTERNAL_ORIGIN`; the deprecated `CLOUD_IDENTITY_JWKS_ORIGIN` override is still honored this release. Neither value grants signing authority. |
-| `APP_URL` | Application services | Initial public URL; saved `app.url` takes precedence. Built-in images run in production mode on port 3000. |
+| `APP_URL` | Gateway and application services | Initial public URL; saved `app.url` takes precedence. Built-in images run in production mode on port 3000. |
 | `GOTENBERG_URL` | Application services | Optional initial Gotenberg URL for PDF rendering; saved `gotenberg.url` takes precedence. Dev Compose sets `http://gotenberg:3000`. |
 | `ADMIN_LOGIN_TOKEN` | **Core only** | Temporary first administrator access on a fresh installation; no production default. Remove after configuring and verifying normal administrator sign-in. |
 
