@@ -32,10 +32,10 @@ const mapToColumn = (row: DbColumn): SpaceColumn => ({
 
 const selectColumns = async (db: typeof sql, spaceId: string): Promise<SpaceColumn[]> => {
   const rows = await db<DbColumn[]>`
-    SELECT id, space_id, name, color, rank::text AS rank, is_done, created_at
-    FROM spaces.columns
-    WHERE space_id = ${spaceId}
-    ORDER BY rank
+    SELECT c.id, c.space_id, c.name, c.color, c.rank::text AS rank, c.is_done, c.created_at
+    FROM spaces.columns c
+    WHERE c.space_id = ${spaceId}
+    ORDER BY c.rank, c.short_id COLLATE "C"
   `;
   return rows.map(mapToColumn);
 };
@@ -46,14 +46,16 @@ const selectColumns = async (db: typeof sql, spaceId: string): Promise<SpaceColu
 export const list = (params: { spaceId: string }): Promise<SpaceColumn[]> => selectColumns(sql, params.spaceId);
 
 /**
- * The column a new task lands in when the caller names none: the first column that is not done, in board order.
+ * The column a new task lands in when the caller names none: the first column that is not done, in board order
+ * (numeric rank, then public ID; the order `list` and Read space return).
  */
 export const firstOpen = async (params: { spaceId: string }): Promise<SpaceColumn | null> => {
+  // Qualified: a bare `rank` would sort by the text alias, putting 10240 before 2048.
   const [row] = await sql<DbColumn[]>`
-    SELECT id, space_id, name, color, rank::text AS rank, is_done, created_at
-    FROM spaces.columns
-    WHERE space_id = ${params.spaceId} AND NOT is_done
-    ORDER BY rank, id
+    SELECT c.id, c.space_id, c.name, c.color, c.rank::text AS rank, c.is_done, c.created_at
+    FROM spaces.columns c
+    WHERE c.space_id = ${params.spaceId} AND NOT c.is_done
+    ORDER BY c.rank, c.short_id COLLATE "C"
     LIMIT 1
   `;
   return row ? mapToColumn(row) : null;

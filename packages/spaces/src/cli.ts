@@ -719,9 +719,18 @@ function spacesCommands(locale?: string) {
           const description = await readText(flags.description, flags.from, "description");
           const container = address.kind === "path" ? address.container : address.ref;
           const space = await loadSpace(ctx, (await resolveSpace(ctx, `${container}:`)).id);
-          // Same default as spaces.task.create: the first column in board order that is not marked done.
-          const columnId = flags.column ? resolveColumnId(space, flags.column) : space.columns.find((column) => !column.isDone)?.id;
-          if (!columnId) throw new Error(t({ en: `${space.name} has no open column.`, de: `${space.name} hat keine offene Spalte.` }));
+          // A task without --column goes to the first open column, like spaces.task.create; an event to the first column.
+          // The server returns columns in board order, and this module ships with that server.
+          const columnFor = (task: boolean): string => {
+            if (flags.column) return resolveColumnId(space, flags.column);
+            const columnId = (task ? space.columns.find((column) => !column.isDone) : space.columns[0])?.id;
+            if (columnId) return columnId;
+            throw new Error(
+              task
+                ? t({ en: `${space.name} has no open column.`, de: `${space.name} hat keine offene Spalte.` })
+                : t({ en: `${space.name} has no column.`, de: `${space.name} hat keine Spalte.` }),
+            );
+          };
           const explicit = {
             title: title || undefined,
             description,
@@ -736,7 +745,7 @@ function spacesCommands(locale?: string) {
           };
           if (!flags.template) {
             const item = await send<SpaceItem>(ctx, "POST", api(`/${space.id}/items`), {
-              columnId,
+              columnId: columnFor(!explicit.startsAt),
               ...explicit,
               assigneeIds: explicit.assigneeIds ?? [],
               tagIds: explicit.tagIds ?? [],
@@ -778,7 +787,7 @@ function spacesCommands(locale?: string) {
             ...given,
             // A given range never keeps the template's all-day flag.
             ...(explicit.startsAt ? { allDay: explicit.allDay ?? false } : {}),
-            columnId,
+            columnId: columnFor(template.kind === "task"),
           };
           if (!body.title)
             throw new Error(
