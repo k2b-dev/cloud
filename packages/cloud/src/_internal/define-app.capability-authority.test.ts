@@ -2,12 +2,13 @@ import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { Sync } from "@k2b/sync";
 import { z } from "zod";
-import { env } from "../config/env";
 import { appAccess } from "../contracts/app-access";
 import { type CapabilityExecutionContext, type CapabilityStream, defineCapabilities } from "../contracts/capabilities";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import type { RequestActor } from "../server/middleware/auth";
 import * as invocationActor from "../services/identity/invocation-actor";
 import * as invocationToken from "../services/identity/invocation-token";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -21,8 +22,7 @@ import * as registry from "./registry";
 import * as watcher from "./runtime-watcher";
 
 test("generated capability routes hand resolved invocation authority to execute, review and every stream handler", async () => {
-  const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-  Object.defineProperty(env, "APP_SECRET", { value: "authority-test-only", configurable: true });
+  const secretStub = stubConnections({ appSecret: { current: "authority-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   const unused = (): never => {
@@ -180,6 +180,7 @@ test("generated capability routes hand resolved invocation authority to execute,
     resolve,
     spyOn(settingsService, "get").mockResolvedValue("en"),
     spyOn(settingsService, "loadCache").mockResolvedValue(undefined),
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
@@ -299,6 +300,6 @@ test("generated capability routes hand resolved invocation authority to execute,
     processSync.unbindProcessSync();
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
-    Object.defineProperty(env, "APP_SECRET", originalSecret);
+    secretStub.mockRestore();
   }
 });

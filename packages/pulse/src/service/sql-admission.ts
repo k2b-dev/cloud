@@ -1,4 +1,4 @@
-import { env } from "@k2b/cloud/config";
+import { connections } from "@k2b/cloud";
 import { RedisClient } from "bun";
 import { SqlError } from "./sql-errors";
 
@@ -82,7 +82,7 @@ export const createSqlAdmission = (
   const send = async (command: string, args: string[]) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      client ??= new RedisClient(options.url ?? env.REDIS_URL, { enableOfflineQueue: false, connectionTimeout: 1000 });
+      client ??= new RedisClient(options.url ?? connections().valkey.url, { enableOfflineQueue: false, connectionTimeout: 1000 });
       const current = client;
       const operation = async () => {
         if (!current.connected) {

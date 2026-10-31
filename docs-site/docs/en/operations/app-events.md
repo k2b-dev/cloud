@@ -38,9 +38,9 @@ created or reverse completed handler effects.
 
 ## Inspect readiness and failures
 
-Open **Administration → Apps** (`/admin/apps`) and select an app to inspect
-its access rule, requested platform permissions, sent events, subscriptions,
-and active notification definitions. Deploying an app approves its declared
+Open **Administration → Apps** (`/admin/apps`), select an app and open **Events**
+(`/admin/apps?app=<id>&view=events`) to inspect sent events, subscriptions and active
+notification definitions; the app page itself shows the requested platform permissions. Deploying an app approves its declared
 subscriptions; the detail view makes them visible rather than asking for a
 second approval. Subscriptions first observed in the last seven days are marked
 **New**. Blocked subscriptions show their reason and failed deliveries offer

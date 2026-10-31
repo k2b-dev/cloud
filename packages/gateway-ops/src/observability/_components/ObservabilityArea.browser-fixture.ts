@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
+import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
 import { createConfig } from "@k2b/ssr";
 import { type Context, Hono } from "hono";
 import { createComponent, type JSX } from "solid-js";
@@ -277,7 +278,13 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
   pages.get(
     "/admin/observability/health-check",
     page((c, locale, state) =>
-      createComponent(HealthCheckView, { c, locale, attention, schedule: "*/5 * * * *", unreadable: state === "unreadable" }),
+      createComponent(HealthCheckView, {
+        c,
+        locale,
+        attention,
+        values: { schedule: "*/5 * * * *", targets: ["alerts.internal", "10.20.0.0/16"] },
+        unreadable: { schedule: state === "unreadable" },
+      }),
     ),
   );
   pages.get(
@@ -314,7 +321,12 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
     if (state === "savefail" && request.method !== "GET")
       return Response.json({ message: "Der Wert passt nicht zum erwarteten Format." }, { status: 400 });
     if (url.pathname === "/api/logging/settings/retention" && request.method === "PUT") return Response.json({ message: "ok" });
-    if (url.pathname.startsWith("/api/gateway/settings/") && request.method === "PUT") return Response.json({ message: "ok" });
+    if (url.pathname.startsWith("/api/gateway/settings/") && request.method === "PUT") {
+      const { value } = (await request.json()) as { value: unknown };
+      // The same check the setting declaration runs on the server.
+      const refused = url.pathname.endsWith("/gateway.webhook_allowed_targets") ? validateNetworkAllowlist(value) : undefined;
+      return refused ? Response.json({ message: refused }, { status: 400 }) : Response.json({ message: "ok" });
+    }
     const hook = url.pathname.match(/^\/api\/gateway\/health\/webhooks\/([^/]+)(\/test)?$/);
     if (hook && hook[2]) return Response.json({ message: "submitted" });
     if (hook && request.method === "PUT") {

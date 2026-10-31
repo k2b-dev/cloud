@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { rootCertificates } from "node:tls";
 import * as settings from "@k2b/cloud/services/settings";
 import { toLegacySettingDefs, validateSettingValue } from "@k2b/cloud/services/settings/defaults";
 import { writeKey } from "@k2b/cloud/services/settings/store";
+import { stubConnections } from "../../../../../scripts/fixtures/platform";
 import "../../config";
 import { natsMetricSamples } from "./metrics";
 import { getNatsClusterDiagnostics, type NatsDiagnosticsDependencies, natsDiagnosticsConfig } from "./service";
@@ -22,8 +23,22 @@ const directory = mkdtempSync(join(tmpdir(), "cloud-nats-settings-"));
 const definitions = toLegacySettingDefs(natsDiagnosticsSettings);
 const definition = (key: string) => definitions.find((def) => def.key === key)!;
 
+const applicationNats = {
+  servers: ["nats://application"],
+  namespace: "test-unit",
+  replicas: 1 as const,
+  ignoreClusterUpdates: true,
+  creds: "application-credentials-content",
+  ca: "application-ca-content",
+};
+let connection: ReturnType<typeof stubConnections>;
+beforeEach(() => {
+  connection = stubConnections({ nats: applicationNats });
+});
+
 for (const name of names) delete process.env[name];
 afterEach(() => {
+  connection.mockRestore();
   for (const name of names) delete process.env[name];
 });
 // Register separately so failures also restore the caller's environment and files.
@@ -126,7 +141,13 @@ const readConfig = async (
 };
 
 test("connection configuration reads fresh settings and honors format switches", async () => {
-  expect((await readConfig("creds", creds)).admin).toMatchObject({ servers: ["nats://system"], creds });
+  const config = await readConfig("creds", creds);
+  expect(config.admin).toMatchObject({ servers: ["nats://system"], creds });
+  expect(config.application).toEqual({
+    servers: applicationNats.servers,
+    creds: applicationNats.creds,
+    tlsCa: applicationNats.ca,
+  });
   expect((await readConfig("nkey", seed)).admin).toMatchObject({ servers: ["nats://system"], seed });
   expect((await readConfig("nkey", creds)).admin.servers).toEqual([]);
   expect((await readConfig("creds", seed)).admin.servers).toEqual([]);

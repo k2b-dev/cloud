@@ -10,6 +10,10 @@ assert.match(new URL(process.env.DATABASE_URL!).pathname, /^\/cloud_oauth_verify
 assert.equal(new URL(process.env.DATABASE_URL!).hostname, "127.0.0.1");
 const current = process.env.OAUTH_VERIFY_VERSION === "current";
 const core = process.env.APP_ID === "core";
+if (current) {
+  const { initializePlatform } = await import("../../../cloud/src/start");
+  await initializePlatform({ appId: core ? "core" : "oauth", source: "env" });
+}
 const router = new Hono<AuthContext>();
 if (core) {
   for (const name of ["auth", "app-approval", "audit", "settings", "logging"]) {

@@ -1039,6 +1039,8 @@ export type CapabilityFileProviderDeclaration = { list: string; read: string; sa
 
 export type CapabilityCalendarSourceDeclaration = { calendars: string; events: string; update?: string; move?: string; delete?: string };
 
+export type CapabilityAppStatusDeclaration = { summary: string; detail: string; forget: string };
+
 export type CapabilityDiscussionsDeclaration = { item: string; containers: string; activity?: string };
 
 export type CapabilityDefinitions = {
@@ -1051,6 +1053,7 @@ export type CapabilityDefinitions = {
   fileProvider?: CapabilityFileProviderDeclaration;
   calendarSource?: CapabilityCalendarSourceDeclaration;
   discussions?: CapabilityDiscussionsDeclaration;
+  appStatus?: CapabilityAppStatusDeclaration;
   events?: CapabilityDefinitionCatalog<AppEventDefinition>;
   subscribes?: CapabilityDefinitionCatalog<AppEventSubscriptionDefinition>;
 };
@@ -1179,6 +1182,14 @@ export const CapabilityResourcePageManifestSchema = z
   })
   .strict();
 
+export const CapabilityAppStatusManifestSchema = z
+  .object({
+    summary: CapabilityLocalIdSchema,
+    detail: CapabilityLocalIdSchema,
+    forget: CapabilityLocalIdSchema,
+  })
+  .strict();
+
 export const CapabilityDiscussionsManifestSchema = z
   .object({
     item: CapabilityLocalIdSchema,
@@ -1268,6 +1279,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     resourcePages: sentPages,
     resourceTypes: sentModels,
     discussions: sentDiscussions,
+    appStatus: sentAppStatus,
     ...rest
   } = sent;
   const models = readEntries(sentModels ?? [], CapabilityResourceTypeModelSchema) ?? [];
@@ -1309,6 +1321,14 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     (!role.data.activity || queryIds.has(role.data.activity))
       ? role.data
       : undefined;
+  const statusRole = CapabilityAppStatusManifestSchema.safeParse(sentAppStatus);
+  const appStatus =
+    statusRole.success &&
+    queryIds.has(statusRole.data.summary) &&
+    queryIds.has(statusRole.data.detail) &&
+    readableActions.some((action) => action.localId === statusRole.data.forget)
+      ? statusRole.data
+      : undefined;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
   const pageCounts = new Map<string, number>();
@@ -1328,6 +1348,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     ...rest,
     ...(sentModels !== undefined ? { resourceTypes } : {}),
     ...(discussions ? { discussions } : {}),
+    ...(appStatus ? { appStatus } : {}),
     ...(sentPages !== undefined ? { resourcePages } : {}),
     ...(provider.success ? { fileProvider: provider.data } : {}),
     ...(calendar.success ? { calendarSource: calendar.data } : {}),
@@ -1371,6 +1392,7 @@ export const CapabilityManifestSchema = z.preprocess(
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
     calendarSource: CapabilityCalendarSourceManifestSchema.optional(),
     discussions: CapabilityDiscussionsManifestSchema.optional(),
+    appStatus: CapabilityAppStatusManifestSchema.optional(),
     resourceTypes: z.array(CapabilityResourceTypeModelSchema).max(MAX_MANIFEST_ENTRIES).optional(),
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),
     events: z.array(CapabilityEventManifestSchema).max(MAX_MANIFEST_ENTRIES).optional(),

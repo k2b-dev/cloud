@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { redactSensitivePath } from "./redaction";
+import { REDACTED, redactLinkTokens, redactMetadata, redactSensitivePath } from "./redaction";
 
 describe("redactSensitivePath", () => {
   test.each([
@@ -76,4 +76,24 @@ describe("redactSensitivePath", () => {
     expect(redactSensitivePath("/api/demo?secret=hidden#fragment")).toBe("/api/demo");
     expect(redactSensitivePath("/share/demo/token?secret=hidden")).toBe("/share/demo/:token");
   });
+});
+
+const oneTimeToken = `cl_${"a".repeat(43)}`;
+
+test("one-time tokens override the readable-slug heuristic in paths and suffixes", () => {
+  for (const value of [oneTimeToken, `${oneTimeToken}.html`, `prefix-${oneTimeToken}`, `%63%6c%5f${"a".repeat(43)}`]) {
+    expect(redactSensitivePath(`/customer/${value}?code=${oneTimeToken}`)).toBe("/customer/:token");
+  }
+});
+
+test("scrubs one-time tokens in log messages, query values and nested metadata regardless of key", () => {
+  const url = `https://example.test/login?code=${oneTimeToken}&next=/portal`;
+  expect(redactLinkTokens(`GET ${url}`)).toBe(`GET https://example.test/login?code=${REDACTED}&next=/portal`);
+  expect(redactMetadata({ address: url, children: [oneTimeToken, { detail: `failed ${oneTimeToken}` }], accessToken: "secret" })).toEqual({
+    address: `https://example.test/login?code=${REDACTED}&next=/portal`,
+    children: [REDACTED, { detail: `failed ${REDACTED}` }],
+    accessToken: REDACTED,
+  });
+  expect(redactMetadata({ [oneTimeToken]: "safe" })).toEqual({ [REDACTED]: "safe" });
+  expect(redactLinkTokens(`cl_${"a".repeat(42)}`)).toBe(`cl_${"a".repeat(42)}`);
 });

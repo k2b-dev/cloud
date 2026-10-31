@@ -42,7 +42,7 @@ export const OBSERVABILITY_SECTION_HREF: Record<ObservabilitySection, string> = 
   telemetry: "/admin/observability/telemetry",
   metrics: "/admin/observability/metrics",
   deliveries: "/admin/observability/deliveries",
-  gateway: "/admin/observability/gateway",
+  gateway: "/admin/observability/gateway/routes",
   postgres: "/admin/observability/postgres",
   valkey: "/admin/observability/valkey",
   nats: "/admin/observability/nats",

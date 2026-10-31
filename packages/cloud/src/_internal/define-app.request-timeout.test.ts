@@ -3,10 +3,11 @@ import { ok } from "@k2b/stdlib";
 import type { Sync } from "@k2b/sync";
 import { Hono } from "hono";
 import { z } from "zod";
-import { env } from "../config/env";
 import { defineCapabilities } from "../contracts/capabilities";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import * as invocationMiddleware from "../server/middleware/invocation";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -19,8 +20,7 @@ import * as registry from "./registry";
 import * as watcher from "./runtime-watcher";
 
 test("forwards the Bun server and owns capability JSON timeouts until success or failure", async () => {
-  const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-  Object.defineProperty(env, "APP_SECRET", { value: "request-timeout-test-only", configurable: true });
+  const secretStub = stubConnections({ appSecret: { current: "request-timeout-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   const unused = (): never => {
@@ -110,6 +110,7 @@ test("forwards the Bun server and owns capability JSON timeouts until success or
       return next();
     }),
     spyOn(settingsService, "get").mockResolvedValue("en"),
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
@@ -241,6 +242,6 @@ test("forwards the Bun server and owns capability JSON timeouts until success or
     processSync.unbindProcessSync();
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
-    Object.defineProperty(env, "APP_SECRET", originalSecret);
+    secretStub.mockRestore();
   }
 });

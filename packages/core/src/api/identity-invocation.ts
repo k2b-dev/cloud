@@ -1,4 +1,5 @@
 import {
+  authenticateSignedAppRequest,
   type CapabilityDispatchDependencies,
   createIdentityChildInvocationRoutes,
   dispatchCapability,
@@ -10,7 +11,7 @@ import {
   CapabilityIdempotencyKeySchema,
   CapabilityLocalIdSchema,
 } from "@k2b/cloud/contracts";
-import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@k2b/cloud/services/identity";
+import { type AuthenticatedWorkload, authenticateWorkloadCredential, isAppRequestProof } from "@k2b/cloud/services/identity";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
@@ -125,7 +126,10 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
     const token = bearerToken(c.req.header("Authorization"));
     if (!appId.success || !token) return errorResponse(c, 401, "UNAUTHORIZED");
 
-    const workload = await authenticateWorkload({ token, appId: appId.data, scope: "identity:invoke" });
+    const workload = isAppRequestProof(c.req.header("Authorization"))
+      ? await authenticateSignedAppRequest(c, "identity:invoke")
+      : await authenticateWorkload({ token, appId: appId.data, scope: "identity:invoke" });
+    if (workload instanceof Response) return workload;
     if (!workload) return errorResponse(c, 401, "UNAUTHORIZED");
 
     const input = await readRequest(c.req.raw);

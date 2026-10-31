@@ -1,4 +1,4 @@
-import { Button, Checkbox, NoticeCard, NumberInput, TextInput, useLocale } from "@k2b/ui";
+import { Button, Checkbox, NoticeCard, NumberInput, TagsInput, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { z } from "zod";
 import { artifactClient } from "./client";
@@ -14,6 +14,8 @@ export function DatabaseSettingsForm(props: { current: DatabaseView; close: () =
   const t = () => artifactMessages.resolve([locale()]).t;
   const [url, setUrl] = createSignal(props.current.url);
   const [token, setToken] = createSignal("");
+  const [targets, setTargets] = createSignal<string[]>(props.current.allowedTargets);
+  const [targetsError, setTargetsError] = createSignal("");
   const [replace, setReplace] = createSignal<string[]>([]);
   const [unreadableKeys, setUnreadableKeys] = createSignal(props.current.unreadable);
   const [busy, setBusy] = createSignal(false);
@@ -21,19 +23,30 @@ export function DatabaseSettingsForm(props: { current: DatabaseView; close: () =
   const [failure, setFailure] = createSignal("");
   const [tested, setTested] = createSignal(false);
   const keys = ["assistant.rsql_url", "assistant.rsql_api_token"] as const;
-  const unreadable = (key: (typeof keys)[number]) => unreadableKeys()?.[key] === true;
+  // The allowed targets guard the connection but do not belong to it: removing the connection keeps them.
+  const targetsKey = "assistant.rsql_allowed_targets" as const;
+  const allKeys = [keys[0], targetsKey, keys[1]] as const;
+  type Key = (typeof allKeys)[number];
+  const unreadable = (key: Key) => unreadableKeys()?.[key] === true;
+  const label = (key: Key) => (key === keys[0] ? t().serverUrl : key === keys[1] ? t().token : t().allowedTargets);
+  const targetsChanged = () => JSON.stringify(targets()) !== JSON.stringify(props.current.allowedTargets);
   const input = (forTest = false): z.input<typeof DatabaseSettings> => ({
     ...((!unreadable(keys[0]) || replace().includes(keys[0])) && (forTest || url() !== props.current.url || replace().includes(keys[0]))
       ? { url: url() }
       : {}),
     ...((!unreadable(keys[1]) || replace().includes(keys[1])) && (token() || replace().includes(keys[1])) ? { token: token() } : {}),
-    replaceUnreadable: keys.filter((key) => unreadable(key) && replace().includes(key)),
+    // A test checks the drafted list; a save stores it only when it changed or replaces an unreadable one.
+    ...((!unreadable(targetsKey) || replace().includes(targetsKey)) && (forTest || targetsChanged() || replace().includes(targetsKey))
+      ? { allowedTargets: targets() }
+      : {}),
+    replaceUnreadable: allKeys.filter((key) => unreadable(key) && replace().includes(key)),
   });
   const act = async (test: boolean) => {
     if (busy()) return;
     setBusy(true);
     setAction(test ? "test" : "save");
     setFailure("");
+    setTargetsError("");
     setTested(false);
     try {
       if (test) {
@@ -44,6 +57,10 @@ export function DatabaseSettingsForm(props: { current: DatabaseView; close: () =
         props.close();
       }
     } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "DB_TARGETS_INVALID") {
+        setTargetsError(error.message);
+        return;
+      }
       setFailure(error instanceof Error ? error.message : t().REQUEST_FAILED);
       if (error instanceof Error && "code" in error && error.code === "setting_unreadable") {
         try {
@@ -58,12 +75,12 @@ export function DatabaseSettingsForm(props: { current: DatabaseView; close: () =
   };
   return (
     <div class="flex flex-col gap-4">
-      <Show when={keys.some(unreadable)}>
+      <Show when={allKeys.some(unreadable)}>
         <NoticeCard tone="warning" title={t().unreadableTitle} detail={t().unreadableDetail}>
-          <For each={keys.filter(unreadable)}>
+          <For each={allKeys.filter(unreadable)}>
             {(key) => (
               <Checkbox
-                label={`${t().replaceStored}: ${key === keys[0] ? t().serverUrl : t().token}`}
+                label={`${t().replaceStored}: ${label(key)}`}
                 value={replace().includes(key)}
                 disabled={busy()}
                 onValueChange={(checked) => {
@@ -81,6 +98,19 @@ export function DatabaseSettingsForm(props: { current: DatabaseView; close: () =
         disabled={busy() || (unreadable(keys[0]) && !replace().includes(keys[0]))}
         onValueChange={(value) => {
           setUrl(value);
+          setTested(false);
+        }}
+      />
+      <TagsInput
+        label={t().allowedTargets}
+        description={t().allowedTargetsHint}
+        placeholder="rsql, 10.20.0.0/16"
+        value={targets}
+        error={targetsError}
+        disabled={busy() || (unreadable(targetsKey) && !replace().includes(targetsKey))}
+        onValueChange={(value) => {
+          setTargets(value);
+          setTargetsError("");
           setTested(false);
         }}
       />

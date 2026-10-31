@@ -67,7 +67,7 @@ export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
   const body: WidgetResponse = {
     title: t.platformHealth,
     icon: "ti ti-heartbeat",
-    href: "/admin/observability/gateway",
+    href: "/admin/apps",
     blocks,
   };
   return c.json(body);

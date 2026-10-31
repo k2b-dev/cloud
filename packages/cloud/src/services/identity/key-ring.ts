@@ -449,7 +449,7 @@ export const initializeIdentityAuthority = async (): Promise<void> => {
   if (keys.previous) await rewrapIdentitySigningKeys();
 };
 
-export const listIdentityJwks = async (purpose: "session" | "invocation"): Promise<{ keys: JWK[]; etag: string }> => {
+export const listIdentityJwks = async (purpose: SigningKeyPurpose): Promise<{ keys: JWK[]; etag: string }> => {
   const rows = await sql<Array<{ public_jwk: JWK | string }>>`
         SELECT public_jwk
         FROM auth.signing_keys

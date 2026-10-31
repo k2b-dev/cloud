@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { env } from "@k2b/cloud/config";
+import { connections } from "@k2b/cloud";
 import { connect, credsAuthenticator, nkeyAuthenticator } from "@nats-io/transport-node";
 import { z } from "zod";
 import { readNatsAccess } from "./access-state";
@@ -125,7 +125,7 @@ export type NatsDiagnostics = {
 export type NatsDiagnosticsOptions = { streamOffset?: number; consumerStream?: string; consumerOffset?: number };
 export const natsAccountDiagnosticsConfig = (): NatsDiagnosticsConfig => ({
   admin: { servers: [] },
-  application: { servers: env.NATS_SERVERS, credsFile: env.NATS_CREDS_FILE, tlsCaFile: env.NATS_TLS_CA_FILE },
+  application: { servers: connections().nats.servers, creds: connections().nats.creds, tlsCa: connections().nats.ca },
 });
 export const natsDiagnosticsConfig = async (): Promise<NatsDiagnosticsConfig> => {
   try {

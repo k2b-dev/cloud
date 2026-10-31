@@ -48,6 +48,8 @@ const must = <T>(result: { ok: true; data: T } | { ok: false; error: { message: 
 };
 const namespace = options.namespace;
 assert(namespace && namespace.startsWith("grids-diagnostics-"));
+const { initializeTestPlatform } = await import("../../../scripts/fixtures/platform");
+await initializeTestPlatform("grids");
 const connection = await connect({
   servers: localVerificationUrl("NATS", process.env.SYNC_TEST_SERVERS).toString(),
   ignoreClusterUpdates: true,

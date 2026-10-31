@@ -1,4 +1,4 @@
-import { env } from "@k2b/cloud/config";
+import { createSql } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { hasPermission, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { SHARED_TEXT_NAME } from "@k2b/cloud/shared-text";
@@ -253,7 +253,7 @@ const mapReply = (row: ReplyRow, context: AnnotationContext, canWrite: boolean) 
 // pool: independent notes can progress while a write replays a large document,
 // and advisory-lock waiters cannot consume the store's save connections.
 let transactionPool: SQL | undefined;
-const annotationTransactions = () => (transactionPool ??= new SQL({ url: env.DATABASE_URL, max: 10 }));
+const annotationTransactions = () => (transactionPool ??= createSql({ max: 10 }));
 // Spend at most half the normal request idle budget waiting, leaving time to
 // replay/save the document and send a retryable conflict before the socket closes.
 const ANNOTATION_LOCK_TIMEOUT_MS = (REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2;

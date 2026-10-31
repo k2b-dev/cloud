@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "bun";
-import { suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { initializeTestPlatform, suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { createGeoAdmin, GeoAdminError } from "./admin";
 import { GEO_TEST_NOW, geoTestConfig, geoTestContext } from "./geo.test-fixture";
 import { createGeoLedger } from "./ledger";
@@ -50,6 +50,7 @@ suiteFor("database", "valkey")("Core geo administration", () => {
     await database?.drop();
     if (previousSecret === undefined) delete process.env.APP_SECRET;
     else process.env.APP_SECRET = previousSecret;
+    await initializeTestPlatform();
   });
 
   test("a verified key is stored and named with its admin; a refused or unverifiable replacement keeps the old key", async () => {

@@ -20,7 +20,7 @@ Gateway Ops ist die Administrationsoberfläche für das Cloud-Gateway. Hier sieh
 ## Eine Aufgabe beginnen {icon="route"}
 
 :::reference
-- **Plattformzustand prüfen:** Beginne unter **Apps**, um Dienste zu sehen, die online, beeinträchtigt oder offline sind. Entferne eine Offline-Registrierung nur, wenn du nicht erwartest, dass die App zurückkommt.
+- **Plattformzustand prüfen:** Beginne unter **Administration → Apps**, um zu sehen, welche Apps laufen, gestört sind oder nicht laufen. Entferne eine App, die nicht läuft, nur dann aus der Liste, wenn du nicht erwartest, dass sie zurückkommt.
 - **Routing verfolgen:** Öffne **Routen**, um Routenpräfixe, die Gesamtzahl der Treffer und die erfassten Fehler für jedes Präfix des Gateways zu prüfen.
 - **Ein Anfrageproblem untersuchen:** Nutze **Telemetrie** für Anfrageereignisse, langsame Anfragen, Statuscodes, Routenpräfixe, Methoden und Fehlerarten. Prüfe die **Protokolle**, wenn die App strukturierte Protokolleinträge geschrieben hat.
 - **Plattformspeicher prüfen:** Nutze die Diagnosen unter **Postgres** und **Redis**, um Tabellenwachstum, tote Zeilen, installierte Erweiterungen, Schlüsselanzahl, Präfixverteilung, TTL-Abdeckung und Warnungen zu prüfen.

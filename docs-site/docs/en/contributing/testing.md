@@ -885,6 +885,16 @@ its own private database calls `ownTestDatabase(name)`, as Filesv2's does.
 The shared test database is never touched this way, because other processes
 may use it at the same time.
 
+With a database target configured, the preload observes test and per-test hook
+callbacks before they are registered, including parameterized tests. If the
+guard cancels or terminates work after a callback timed out, its late database
+rejection is reported as a guard warning instead of an unhandled error between
+tests. The original timeout still fails. SQL errors and cancellation during a
+running callback still fail normally. Private-database suites run serially;
+concurrent tests must not share a database that the guard owns.
+`tests/integration/test-infra-cancellation.integration.test.ts` checks active
+statements, timed-out hooks, idle transactions, and recovery of the next test.
+
 Templates are keyed by a content hash of workspace runtime sources and assets,
 the lockfile, workspace definition, and migration fixture code. Runtime inputs
 are hashed conservatively because migrations import shared helpers and assets;
@@ -1068,6 +1078,25 @@ so fixture IDs stay apart from service-generated IDs.
 Never cut a random UUID or `Math.random()` to short-ID length: the small space
 repeats and fails a unique index at random. `bun run check` flags this with the
 `test-short-ids` rule.
+
+## Measure the public-site example
+
+`bun scripts/lighthouse-public-site.ts` builds
+`packages/cloud/examples/public-site` in production mode and serves it as
+`http://public-site.localhost:<port>/` on a free port through the gateway's own request handler
+(host decision, protections, compression) to the app's `app.public` surface.
+A fixed snapshot replaces only the domain table and the registry. It then runs
+Lighthouse 13.6.0 on Playwright's Chromium with mobile emulation and simulated
+throttling, prints the SEO and performance scores of `/` and `/de/`, and exits
+with 1 below SEO 100 or performance 95. Reports stay in
+`.local/lighthouse-public-site/`.
+
+The run uses the integration variables (`CLOUD_TEST_DATABASE_URL`,
+`CLOUD_TEST_VALKEY_URL`, `CLOUD_TEST_NATS_SERVERS`, and
+`CLOUD_TEST_NATS_CREDS_FILE` where needed): the measurement server starts like
+the gateway process, and its telemetry publishes to its own test namespace,
+which the script deletes. Run it before a release that changes the gateway's
+app-domain path or `app.public`; it is not part of the gate.
 
 ## Request cache checks
 

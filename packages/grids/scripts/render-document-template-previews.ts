@@ -201,6 +201,8 @@ const main = async (): Promise<void> => {
     process.exit(1);
   }
 
+  const { initializePlatform } = await import("@k2b/cloud/start");
+  await initializePlatform({ appId: "grids", source: "env" });
   const base = await gridsService.base.getByShortId(requirePublicId(baseRef, "Base"));
   if (!base) throw new Error(`Base not found: ${baseRef}`);
   const table = await gridsService.table.getByShortIdForBase(base.id, requirePublicId(tableRef, "Table"));
