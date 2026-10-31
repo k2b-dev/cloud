@@ -45,7 +45,7 @@ export default ssr<AuthContext>(async (c) => {
       title={[
         { title: t.start, href: "/" },
         { title: t.account, href: "/me" },
-        { title: t.notifications, href: "/me/notifications" },
+        // The account tabs and the notification views above the history lead back; the shell repeats neither.
         { title: t.deliveryHistory },
       ]}
     >

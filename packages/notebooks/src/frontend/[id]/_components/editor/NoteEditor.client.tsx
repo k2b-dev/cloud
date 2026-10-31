@@ -64,7 +64,6 @@ import {
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
-  PRESENCE_EVENT,
   PRESENCE_LOCATIONS_EVENT,
   RECONNECT_EVENT,
   RICH_MODE_CHANGED_EVENT,
@@ -797,12 +796,6 @@ function EditorInstance(
           syncEnded.ready();
           structureChanged();
         },
-        // Forwards every presence update to the OnlineSection island via a
-        // window event — the editor itself doesn't need to track participants
-        // anymore now that the toolbar no longer renders them.
-        onPresenceChange: (next) => {
-          window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: next }));
-        },
         onFatal: (error) => {
           syncState.end();
           syncEnded.end(error);
@@ -1239,14 +1232,16 @@ function EditorInstance(
     const onWorkspaceEvent = (raw: Event) => {
       const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
       const { event } = detail;
-      if (props.readOnly || collabStarted()) return;
+      if (props.readOnly || collabStarted() || event.notebookId !== props.notebookId) return;
       // A note deleted elsewhere before anyone typed here reopens as the server now shows it.
       if (event.type === "note.deleted" && event.noteId === props.noteId) {
         window.location.reload();
         return;
       }
-      if (event.type !== "note.updated" || event.note.id !== props.noteId) return;
-      if (event.note.historyIncomplete) setHistoryIncomplete(true);
+      if (event.type === "note.updated") {
+        if (event.note.id !== props.noteId) return;
+        if (event.note.historyIncomplete) setHistoryIncomplete(true);
+      } else if (event.type !== "workspace.invalidated") return;
       savedTextRequest?.abort();
       const request = new AbortController();
       savedTextRequest = request;

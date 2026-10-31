@@ -156,11 +156,14 @@ const decryptString = async (encrypted: string): Promise<string> => {
 const S3_PROVIDER_HINT =
   "Provider returned no detailed error message. Check that the endpoint includes the storage location, the region matches it, the bucket exists, and the access key can write objects.";
 
+// Plain text for logs and error messages, never markup. Script and style bodies are noise in a
+// provider page; end tags may carry spaces or attributes. One tag pass can join two halves into a
+// new tag, so every `<` left after it goes too.
 const stripHtml = (value: string): string =>
   value
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+    .replace(/<(script|style)\b[\s\S]*?(?:<\/\1\b[^>]*>|$)/gi, " ")
+    .replace(/<[^<>]*>/g, " ")
+    .replace(/</g, " ")
     .replace(/\s+/g, " ")
     .trim();
 

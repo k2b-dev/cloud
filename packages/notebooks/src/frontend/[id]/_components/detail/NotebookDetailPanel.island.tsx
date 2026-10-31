@@ -161,7 +161,7 @@ const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
  * Event flow (all through window CustomEvents, see `events.ts`):
  *  - editor toolbar / readonly footer → DETAIL_PANEL_TOGGLE_EVENT → toggles open
  *  - editor → TOC_UPDATE_EVENT / ACTIVE_HEADING_EVENT → outline and its current section
- *  - editor → PRESENCE_EVENT / PRESENCE_LOCATIONS_EVENT → people here and where they are
+ *  - workspace socket → PRESENCE_EVENT → people here; editor → PRESENCE_LOCATIONS_EVENT → where they are
  *  - editor → SYNC_STATE_EVENT → offline state; panel → RECONNECT_EVENT retries
  *  - panel → TOC_SCROLL_EVENT / JUMP_TO_PARTICIPANT_EVENT → editor scrolls
  *  - panel → TOGGLE_RICH_MODE_EVENT → editor flips its `richMode` signal
@@ -501,6 +501,11 @@ export default function NotebookDetailPanel(props: Props) {
     const onSoftNavigated = (event: Event) => {
       const detail = (event as CustomEvent<SoftNavigatedDetail>).detail;
       if (!detail?.noteId) return;
+      // The people of the previous note are not here; the new note's connection reports its own.
+      if (detail.noteId !== noteId()) {
+        setParticipants([]);
+        setLocations({});
+      }
       setNoteId(detail.noteId);
       setNoteTitle(detail.noteTitle);
       setContentMd(detail.contentMd);

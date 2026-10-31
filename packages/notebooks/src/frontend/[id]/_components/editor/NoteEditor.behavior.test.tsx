@@ -32,35 +32,39 @@ const mount = (markdown: string) => {
   const { NoteEditor, LocaleProvider, yjs } = loaded!;
   // Keep the real editor, collaboration binding, attachment event and ScrollArea handlers;
   // only the network provider is inert. No service is contacted by this fixture.
-  const provider = spyOn(yjs, "createYjsProvider").mockImplementation((opts) => ({
-    connect() {},
-    reconnectNow() {},
-    resume() {},
-    dispose() {},
-    hasUnsentChanges: () => false,
-    restoreRevision: () => opts.initialRestoreRevision ?? null,
-    canStructure: () => false,
-    canUndo: () => !!opts.undoManager?.undoStack.length,
-    canRedo: () => !!opts.undoManager?.redoStack.length,
-    undo: async () => {
-      opts.undoManager?.undo();
-      return null;
-    },
-    redo: async () => {
-      opts.undoManager?.redo();
-      return null;
-    },
-    setInverseHandler: () => {},
-    recoveryInput: () => ({
-      state: Y.encodeStateAsUpdate(opts.doc),
-      text: opts.doc.getText("codemirror").toString(),
-      pending: [],
-      baseCursor: null,
-    }),
-    beginAction: () => {
-      throw new Error("Structure is unavailable in this fixture");
-    },
-  }));
+  let options: Parameters<typeof yjs.createYjsProvider>[0] | undefined;
+  const provider = spyOn(yjs, "createYjsProvider").mockImplementation((opts) => {
+    options = opts;
+    return {
+      connect() {},
+      reconnectNow() {},
+      resume() {},
+      dispose() {},
+      hasUnsentChanges: () => false,
+      restoreRevision: () => opts.initialRestoreRevision ?? null,
+      canStructure: () => false,
+      canUndo: () => !!opts.undoManager?.undoStack.length,
+      canRedo: () => !!opts.undoManager?.redoStack.length,
+      undo: async () => {
+        opts.undoManager?.undo();
+        return null;
+      },
+      redo: async () => {
+        opts.undoManager?.redo();
+        return null;
+      },
+      setInverseHandler: () => {},
+      recoveryInput: () => ({
+        state: Y.encodeStateAsUpdate(opts.doc),
+        text: opts.doc.getText("codemirror").toString(),
+        pending: [],
+        baseCursor: null,
+      }),
+      beginAction: () => {
+        throw new Error("Structure is unavailable in this fixture");
+      },
+    };
+  });
   const dispose = render(
     () => (
       <LocaleProvider locale="en">
@@ -106,6 +110,7 @@ const mount = (markdown: string) => {
     dom,
     view,
     surface,
+    provider: () => options!,
     async [Symbol.asyncDispose]() {
       dispose();
       // Focus-out cleanup queues a measurement in the shared editor. Let it run
