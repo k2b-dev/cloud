@@ -80,6 +80,7 @@ render(
       locale: options.locale ?? "en",
       get children() {
         return createComponent(Chat.Composer, {
+          variant: options.variant,
           get value() {
             return draft();
           },
@@ -122,7 +123,9 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (options: { width?: number; draft?: string; alternative?: boolean; locale?: "en" | "de" } = {}): Promise<Page> => {
+const open = async (
+  options: { width?: number; draft?: string; alternative?: boolean; locale?: "en" | "de"; variant?: "conversation" } = {},
+): Promise<Page> => {
   const width = options.width ?? 900;
   const page = await (await browser.newContext({ viewport: { width, height: 700 } })).newPage();
   await page.route(`${assets}**`, (route) =>
@@ -143,7 +146,7 @@ html, body { margin: 0; height: 100%; }
   });
   await page.addScriptTag({ content: `window.fixtureOptions = ${JSON.stringify(options)};` });
   await page.addScriptTag({ content: script });
-  await page.locator(".k2b-chat-composer textarea").waitFor();
+  await page.locator(".k2b-chat-composer textarea").first().waitFor();
   return page;
 };
 
@@ -310,6 +313,23 @@ describe("live dictation in the composer", () => {
       }
     });
   }
+
+  test("in a conversation the bar takes the row above the field, and the field stays put", async () => {
+    const page = await open({ variant: "conversation", draft: "Hi" });
+    try {
+      const field = await box(page, "textarea:not([aria-hidden])");
+      await start(page);
+      expect(await box(page, "textarea:not([aria-hidden])")).toEqual(field);
+      await page.evaluate(() => emit({ type: "text", text: "there" }));
+      await page.waitForFunction(() => draft() === "Hi there");
+      await page.getByRole("button", { name: "Stop dictation" }).click();
+      await page.evaluate(() => finish());
+      await page.getByRole("button", { name: "Dictate" }).waitFor();
+      expect(await box(page, "textarea:not([aria-hidden])")).toEqual(field);
+    } finally {
+      await page.context().close();
+    }
+  });
 
   test("offline, the microphone stays focusable and says why it waits", async () => {
     const page = await open({});
