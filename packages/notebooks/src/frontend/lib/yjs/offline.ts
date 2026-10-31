@@ -39,6 +39,8 @@ export class NotebookAuthorizationError extends Error {
 export async function openNotebookDocument(
   options: Omit<YjsProviderOptions, "initialPending" | "initialCursor" | "initialRestoreRevision"> & {
     recoveryOnly?: boolean;
+    /** Explicit tab-only editing never opens or reads IndexedDB. */
+    memoryOnly?: boolean;
     notebookId: string;
     userId: string;
     signal: AbortSignal;
@@ -46,28 +48,35 @@ export async function openNotebookDocument(
   },
 ): Promise<NotebookDocumentClient> {
   const draftId = `notebooks:${options.noteId}`;
-  const generations = await listSharedTextOfflineGenerations({ userId: options.userId, draftId });
+  const generations = options.memoryOnly ? [] : await listSharedTextOfflineGenerations({ userId: options.userId, draftId });
   const previous = generations
     .map((value) => noteGenerationSchema.parse(value))
     .sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0))[0];
   let generation: string | undefined;
   // The first request discovers the current server generation; it never reads device bytes.
   const read = async (signal: AbortSignal) => {
-    const response = await apiClient[":id"].notes[":noteId"].document.$get(
-      {
-        param: { id: options.notebookId, noteId: options.noteId },
-        query: { expectedUserId: options.userId, generation },
-      },
-      { init: { cache: "no-store", signal } },
-    );
+    const response = await apiClient[":id"].notes[":noteId"].document
+      .$get(
+        {
+          param: { id: options.notebookId, noteId: options.noteId },
+          query: { expectedUserId: options.userId, generation },
+        },
+        { init: { cache: "no-store", signal } },
+      )
+      .catch((error: unknown) => {
+        if (error instanceof TypeError) throw new NotebookAuthorizationError(0);
+        throw error;
+      });
     if (!response.ok) throw new NotebookAuthorizationError(response.status);
     return noteDocumentSessionSchema.parse(await response.json());
   };
   const current = await read(options.signal);
   const identity = { userId: options.userId, draftId, generation: previous ?? current.generation };
   generation = identity.generation;
-  const opened = await openAuthorizedSharedTextOffline(identity, read, options.signal);
-  let offline: SharedTextOfflineSession = opened.session;
+  const opened = options.memoryOnly
+    ? { authorization: current, session: undefined, state: null, baseCursor: null }
+    : await openAuthorizedSharedTextOffline(identity, read, options.signal);
+  let offline: SharedTextOfflineSession | undefined = opened.session;
   const authorization = opened.authorization;
   // A pending record can already be covered by the committed row (e.g. the tab closed
   // between snapshot commit and receipt). Clear it before deciding whether recovery is needed.
@@ -76,11 +85,11 @@ export async function openNotebookDocument(
     if (
       restored &&
       authorization.generation === identity.generation &&
-      (await offline.acknowledgeSnapshot({ identity, state: encoding.fromBase64(authorization.durable.state), durability: "durable" }))
+      (await offline?.acknowledgeSnapshot({ identity, state: encoding.fromBase64(authorization.durable.state), durability: "durable" }))
     )
       restored = null;
   } catch (error) {
-    offline.close();
+    offline?.close();
     throw error;
   }
   let restoredText = "";
@@ -116,14 +125,15 @@ export async function openNotebookDocument(
     emit();
   };
   const pump = () => {
-    if (running || offline.signal.aborted) return;
+    const store = offline;
+    if (running || !store || store.signal.aborted) return;
     running = true;
     queue = (async () => {
       while (latest) {
         const input = latest;
         const captured = version;
         // Keep failed input available for retry; a newer full state covers it.
-        await offline.save(input.bytes, input.base);
+        await store.save(input.bytes, input.base);
         if (captured === version) {
           latest = null;
           state.saved = true;
@@ -138,6 +148,7 @@ export async function openNotebookDocument(
       });
   };
   const save = (pending: SharedTextProviderPendingState) => {
+    if (!offline) return;
     version++;
     state.pending = true;
     state.saved = false;
@@ -149,9 +160,9 @@ export async function openNotebookDocument(
   const acknowledge = async (bytes: Uint8Array) => {
     // Serial ordering prevents a receipt racing ahead of the local write it covers.
     await queue;
-    if (latest || offline.signal.aborted) return;
+    if (!offline || latest || offline.signal.aborted) return;
     const captured = version;
-    const covered = await offline.acknowledgeSnapshot({ identity, state: bytes, durability: "durable" });
+    const covered = await offline?.acknowledgeSnapshot({ identity, state: bytes, durability: "durable" });
     if (covered && captured === version && !latest) {
       state.pending = false;
       state.failed = false;
@@ -159,14 +170,14 @@ export async function openNotebookDocument(
     }
   };
   const scheduleReceipt = () => {
-    if (!receiptTimer && !disposed && state.pending && !state.recovery && !offline.signal.aborted)
+    if (offline && !receiptTimer && !disposed && state.pending && !state.recovery && !offline.signal.aborted)
       receiptTimer = setTimeout(() => {
         receiptTimer = undefined;
         void checkDurable();
       }, 8_000);
   };
   const checkDurable = async () => {
-    if (checking || disposed || !state.pending || state.recovery || offline.signal.aborted) return;
+    if (!offline || checking || disposed || !state.pending || state.recovery || offline.signal.aborted) return;
     if (provider?.hasUnsentChanges()) {
       scheduleReceipt();
       return;
@@ -199,19 +210,19 @@ export async function openNotebookDocument(
     fail();
     // IDB may close independently of authentication (Safari backgrounding/versionchange).
     // Keep the server path alive; retry opens storage again and saves the latest full state.
-    if (offline.signal.reason instanceof SharedTextOfflineLoggedOutError) {
+    if (offline?.signal.reason instanceof SharedTextOfflineLoggedOutError) {
       provider?.dispose();
       options.onFatal?.({ code: "SESSION_EXPIRED", message: "Device storage signed out" });
     }
   };
   try {
     options.signal.throwIfAborted();
-    offline.signal.throwIfAborted();
+    offline?.signal.throwIfAborted();
     // Never merge a restored generation into old local identities. Keep that exact input visible instead.
     if (!state.recovery) Y.applyUpdate(options.doc, encoding.fromBase64(authorization.durable.state), "remote");
     if (restored) Y.applyUpdate(options.doc, restored, "remote");
     if (identity.generation !== authorization.generation && !restored) {
-      offline.close();
+      offline?.close();
       return openNotebookDocument(options);
     }
     provider = createYjsProvider({
@@ -259,7 +270,7 @@ export async function openNotebookDocument(
         options.onFatal?.(error);
       },
     });
-    offline.signal.addEventListener("abort", aborted, { once: true });
+    offline?.signal.addEventListener("abort", aborted, { once: true });
     emit();
     return {
       provider,
@@ -295,8 +306,8 @@ export async function openNotebookDocument(
       },
       retry: async () => {
         try {
-          if (offline.signal.aborted) {
-            if (offline.signal.reason instanceof SharedTextOfflineLoggedOutError) return;
+          if (offline?.signal.aborted) {
+            if (offline?.signal.reason instanceof SharedTextOfflineLoggedOutError) return;
             const reopened = await openAuthorizedSharedTextOffline(identity, read, options.signal);
             if (disposed) {
               reopened.session.close();
@@ -306,7 +317,7 @@ export async function openNotebookDocument(
             state.failed = false;
             state.saved = !state.pending;
             emit();
-            offline.signal.addEventListener("abort", aborted, { once: true });
+            offline?.signal.addEventListener("abort", aborted, { once: true });
             if (!latest && state.pending) latest = lastInput;
           }
           pump();
@@ -319,7 +330,7 @@ export async function openNotebookDocument(
       discard: async () => {
         if (!state.recovery) throw new Error("Notebook input is still active");
         await queue;
-        await offline.forget();
+        await offline?.forget();
         state.pending = false;
         latest = null;
         emit();
@@ -327,21 +338,21 @@ export async function openNotebookDocument(
       flush: async () => {
         pump();
         await queue;
-        return !state.pending || (state.saved && !latest);
+        return options.memoryOnly ? !provider?.hasUnsentChanges() : !state.pending || (state.saved && !latest);
       },
       dispose: () => {
         if (disposed) return;
         disposed = true;
         clearTimeout(receiptTimer);
         provider?.dispose();
-        offline.signal.removeEventListener("abort", aborted);
+        offline?.signal.removeEventListener("abort", aborted);
         // Do not abort an already queued final write during in-app navigation.
         pump();
-        void queue.finally(() => offline.close());
+        void queue.finally(() => offline?.close());
       },
     };
   } catch (error) {
-    offline.close();
+    offline?.close();
     throw error;
   }
 }

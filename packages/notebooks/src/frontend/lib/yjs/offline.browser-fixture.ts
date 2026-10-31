@@ -79,6 +79,11 @@ export async function startOfflineNotebookFixture() {
         initialState = encoding.toBase64(Y.encodeStateAsUpdate(doc));
         return Response.json({ ok: true });
       }
+      if (url.pathname === "/remote-prefix") {
+        doc.getText("codemirror").insert(0, "Remote\n");
+        initialState = encoding.toBase64(Y.encodeStateAsUpdate(doc));
+        return Response.json({ ok: true });
+      }
       if (url.pathname === "/session-expired") {
         sessionExpired = true;
         return Response.json({ ok: true });

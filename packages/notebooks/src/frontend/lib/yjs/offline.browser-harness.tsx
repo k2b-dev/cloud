@@ -11,6 +11,7 @@ Object.assign(window, {
   offlineNotebook: {
     ready: () => !!notebookDevice.client,
     connected: () => notebookDevice.connected,
+    unsent: () => notebookDevice.client?.provider.hasUnsentChanges() ?? true,
     text: () => view()?.state.doc.toString() ?? "",
     device: () => notebookDevice.state,
     saved: () => listSharedTextOfflineGenerations({ userId: "user-1", draftId: "notebooks:Note01" }),
@@ -65,6 +66,7 @@ declare global {
     offlineNotebook: {
       ready(): boolean;
       connected(): boolean;
+      unsent(): boolean;
       text(): string;
       device(): NotebookDeviceState;
       saved(): Promise<string[]>;

@@ -210,12 +210,16 @@ const mountNoteEditor = async ({
   recoveryText,
   initialContent = markdown,
   initialRichMode = "source",
+  documentUnavailable = false,
+  documentRetryGate,
 }: {
   pending?: boolean;
   readOnly?: boolean;
   recoveryText?: string;
   initialContent?: string;
   initialRichMode?: "rich" | "source";
+  documentUnavailable?: boolean;
+  documentRetryGate?: Promise<void>;
 } = {}) => {
   let pending = initialPending;
   annotationText = initialContent;
@@ -293,6 +297,8 @@ const mountNoteEditor = async ({
   routeGet.mockClear();
   tablePost.mockClear();
   const device = spyOn(loaded!.offline, "openNotebookDocument").mockImplementation(async (options) => {
+    if (options.memoryOnly) await documentRetryGate;
+    if (documentUnavailable) throw new loaded!.offline.NotebookAuthorizationError(0);
     options.doc.transact(() => options.doc.getText("codemirror").insert(0, options.noteId === "Note01" ? initialContent : ""), "remote");
     const provider = loaded!.yjs.createYjsProvider({ ...options, initialRestoreRevision: "0" });
     return {
@@ -353,6 +359,9 @@ const mountNoteEditor = async ({
     providers,
     confirmed,
     view,
+    authorizeDocument: () => {
+      documentUnavailable = false;
+    },
     setPending: (value: boolean) => {
       pending = value;
       providers.at(-1)?.opts.onUnsentChange?.();
@@ -634,6 +643,66 @@ describe("sync ended editor recovery", () => {
     // A remote edit after the catch-up reaches the editor through Yjs.
     instance.opts.doc.transact(() => ytext.insert(0, "# "), "remote");
     expect(editor.view().state.doc.toString().startsWith("# Intro from Ada")).toBe(true);
+  });
+
+  test("device retry and the tab-only choice cannot open overlapping sessions", async () => {
+    using editor = await mountNoteEditor({ pending: false, documentUnavailable: true });
+    const action = (label: string) =>
+      Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === label)!;
+    action("Retry saving").click();
+    expect(action("Edit in this tab only").disabled).toBe(true);
+    await flush();
+    expect(action("Edit in this tab only").disabled).toBe(false);
+  });
+
+  test("tab-only typing starts while the server retry is still waiting", async () => {
+    const gate = Promise.withResolvers<void>();
+    using editor = await mountNoteEditor({ pending: false, documentUnavailable: true, documentRetryGate: gate.promise });
+    try {
+      Array.from(editor.dom.root.querySelectorAll("button"))
+        .find((button) => button.textContent?.trim() === "Edit in this tab only")!
+        .click();
+      await flush();
+      expect(editor.view().contentDOM.contentEditable).toBe("true");
+      editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " While waiting." }, userEvent: "input.type" });
+      expect(editor.view().state.doc.toString()).toContain(" While waiting.");
+      expect(beforeUnloadPrevented()).toBe(true);
+    } finally {
+      gate.resolve();
+      await flush();
+    }
+  });
+
+  test("tab-only recovery copies the typed words when retry cannot merge them", async () => {
+    using editor = await mountNoteEditor({ pending: false, documentUnavailable: true });
+    const action = (label: string) =>
+      Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === label)!;
+    action("Edit in this tab only").click();
+    await flush();
+    await waitFor(() => editor.view().contentDOM.contentEditable === "true", 1000);
+    editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Mine." }, userEvent: "input.type" });
+    const typed = editor.view().state.doc.toString();
+    const lazy = await import("../../../lib/yjs/lazy-collab");
+    const diff = spyOn(lazy, "rebaseOnto").mockReturnValue(null);
+    const copied = spyOn(loaded!.clipboard, "copy").mockResolvedValue(undefined);
+    try {
+      editor.authorizeDocument();
+      action("Retry saving").click();
+      await flush();
+      expect(editor.dom.root.querySelector("[data-sync-ended]")).not.toBeNull();
+      expect(editor.view().state.doc.toString()).toBe(typed);
+      const recovery = editor.dom.root.querySelector("[data-sync-ended]")!;
+      Array.from(recovery.querySelectorAll("button"))
+        .find((button) => button.textContent?.trim() === "Copy text")!
+        .click();
+      await flush();
+      expect(copied).toHaveBeenCalledWith(typed);
+      expect(beforeUnloadPrevented()).toBe(true);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      diff.mockRestore();
+      copied.mockRestore();
+    }
   });
 
   test("first edits survive a remote rewrite whose text diff runs out of time", async () => {

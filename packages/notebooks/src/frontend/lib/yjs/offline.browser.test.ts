@@ -252,6 +252,7 @@ test("changed authorization cannot load pending bytes and retry requires fresh s
     await page.reload();
     await page.getByText("Your account or access changed.", { exact: false }).waitFor();
     expect(await page.getByRole("button", { name: "Copy text", exact: true }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Edit in this tab only", exact: true }).count()).toBe(0);
     expect(await page.evaluate(() => window.offlineNotebook.text())).toBe("Saved\n");
     expect(await page.locator(".cm-content").getAttribute("contenteditable")).toBe("false");
     expect(await page.evaluate(() => window.offlineNotebook.saved())).toEqual(["0"]);
@@ -371,3 +372,81 @@ test("a terminal lock after durable acknowledgement does not offer nonexistent d
     await context.close();
   }
 }, 30_000);
+
+for (const failure of ["missing IndexedDB", "storage error", "quota", "server error", "network error"] as const) {
+  test(`a failed device session (${failure}) offers explicit tab-only editing with a persistent warning`, async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      if (failure === "missing IndexedDB") await page.addInitScript(() => Object.defineProperty(window, "indexedDB", { value: undefined }));
+      if (failure === "storage error" || failure === "quota")
+        await page.addInitScript((quota) => {
+          indexedDB.open = () => {
+            throw new DOMException("Storage unavailable", quota ? "QuotaExceededError" : "SecurityError");
+          };
+        }, failure === "quota");
+      if (failure === "server error" || failure === "network error")
+        await page.route("**/document?**", (route) =>
+          failure === "server error" ? route.fulfill({ status: 503 }) : route.abort("failed"),
+        );
+      await page.goto(server.url.href);
+      const notice = page.locator("[data-notebook-device-state]");
+      await notice.waitFor();
+      if (failure === "missing IndexedDB" || failure === "storage error" || failure === "quota")
+        expect(await notice.textContent()).toContain("Device storage could not be opened.");
+      expect(await page.locator(".cm-content").getAttribute("contenteditable")).toBe("false");
+      await notice.getByRole("button", { name: "Edit in this tab only", exact: true }).click({ timeout: 3000 });
+      await page.waitForFunction(() => document.querySelector(".cm-content")?.getAttribute("contenteditable") === "true");
+      await page.locator(".cm-content").click();
+      await page.keyboard.press("ControlOrMeta+End");
+      await page.keyboard.type("Tab-only words");
+      expect(await page.evaluate(() => window.offlineNotebook.text())).toBe("Saved\nTab-only words");
+      expect(await notice.textContent()).toContain("Closing this tab loses changes that have not reached the server.");
+      expect(await page.evaluate(() => !window.dispatchEvent(new Event("beforeunload", { cancelable: true })))).toBe(true);
+      if (failure === "server error" || failure === "network error") {
+        await page.keyboard.press("ControlOrMeta+a");
+        await page.keyboard.press("Backspace");
+        expect(await page.evaluate(() => window.offlineNotebook.text())).toBe("");
+        await page.keyboard.press("ControlOrMeta+z");
+        expect(await page.evaluate(() => window.offlineNotebook.text())).toBe("Saved\nTab-only words");
+        await page.keyboard.press("ControlOrMeta+Shift+Z");
+        expect(await page.evaluate(() => window.offlineNotebook.text())).toBe("");
+        await page.keyboard.press("ControlOrMeta+z");
+        expect(await page.evaluate(() => window.offlineNotebook.text())).toBe("Saved\nTab-only words");
+        await notice.getByRole("button", { name: "Retry saving", exact: true }).click();
+        await notice.getByText("The connection could not be restored.", { exact: false }).waitFor();
+        const expectedText = failure === "server error" ? "Remote\nSaved\nTab-only words" : "Saved\nTab-only words";
+        if (failure === "server error") await page.request.get(new URL("/remote-prefix", server.url).href);
+        await page.unroute("**/document?**");
+        await notice.getByRole("button", { name: "Retry saving", exact: true }).click();
+        await page.waitForFunction(() => window.offlineNotebook.ready());
+        expect(await page.evaluate(() => window.offlineNotebook.text())).toBe(expectedText);
+        await page.request.get(new URL("/accept", server.url).href);
+        await page.request.get(new URL("/drop", server.url).href);
+        await page.waitForFunction(() => !window.offlineNotebook.connected());
+        await page.evaluate(() => window.offlineNotebook.reconnect());
+        await page.waitForFunction(() => window.offlineNotebook.connected() && !window.offlineNotebook.unsent());
+        expect(server.text()).toBe(expectedText);
+      }
+      expect(await notice.textContent()).toContain("Editing in this tab only.");
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+}
+
+for (const status of [401, 403, 404]) {
+  test(`a document access failure (${status}) keeps the note read-only without a tab-only bypass`, async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.route("**/document?**", (route) => route.fulfill({ status }));
+      await page.goto(server.url.href);
+      await page.getByText("Your account or access changed.", { exact: false }).waitFor();
+      expect(await page.locator(".cm-content").getAttribute("contenteditable")).toBe("false");
+      expect(await page.getByRole("button", { name: "Edit in this tab only", exact: true }).count()).toBe(0);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+}

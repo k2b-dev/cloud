@@ -1,6 +1,7 @@
 import { autocompletion } from "@codemirror/autocomplete";
+import { history, historyKeymap, redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
-import { EditorView, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { listSharedTextOfflineGenerations } from "@k2b/cloud/browser/shared-text";
 import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
@@ -47,7 +48,7 @@ import {
 } from "../../../lib/editor/shared-editor";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import type { YjsProviderOptions } from "../../../lib/yjs";
-import { changesBetween } from "../../../lib/yjs/lazy-collab";
+import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
 import {
   NotebookAuthorizationError,
   type NotebookDeviceState,
@@ -440,6 +441,8 @@ function EditorInstance(
   const [connected, setConnected] = createSignal(false);
   const [device, setDevice] = createSignal<NotebookDeviceState>({ pending: false, saved: false, failed: false, recovery: false });
   const [deviceReady, setDeviceReady] = createSignal(false);
+  const [deviceOpening, setDeviceOpening] = createSignal(false);
+  const [tabOnly, setTabOnly] = createSignal(false);
   const [deviceKept, setDeviceKept] = createSignal(false);
   const [deviceOpenError, setDeviceOpenError] = createSignal<"access" | "network" | null>(null);
   let documentClient: NotebookDocumentClient | undefined;
@@ -558,7 +561,7 @@ function EditorInstance(
     provider?.connect();
   };
   if (!props.readOnly && undoManager) {
-    addExtension(collab.of([]));
+    addExtension(collab.of([history(), keymap.of(historyKeymap)]));
     addExtension(() => isolateYjsHistory(undoManager));
     addExtension(cloudLinkPasteExtension());
     // Reading or switching notes needs no collaboration; text edits and editable table focus start it.
@@ -572,6 +575,7 @@ function EditorInstance(
         )
           return;
         startCollaboration();
+        structureChanged();
         // The typed words are unsent until the live note confirms them; leaving asks first.
         syncEnded.refresh();
         notifySent();
@@ -595,12 +599,15 @@ function EditorInstance(
     );
   };
   /** Edits not yet confirmed by the server, including those typed before the live document arrived. */
-  const hasUnsentChanges = () => (device().pending && !device().saved) || (provider?.hasUnsentChanges() ?? false);
+  const hasUnsentChanges = () =>
+    (tabOnly() && !collabActive() && currentText() !== baseText) ||
+    (device().pending && !device().saved) ||
+    (provider?.hasUnsentChanges() ?? false);
   /** Leaving waits only while this editor's own edits are on their way; an ended session has its own bar and prompt. */
   const holdsLeave = () => collabStarted() && !syncEnded.ended() && hasUnsentChanges();
 
-  // Editing starts only after the authorized Y.Doc has loaded. The socket remains lazy,
-  // but even the first keystroke is already a Yjs update with device persistence.
+  // Normally the authorized Y.Doc loads before typing and the first keystroke is device-backed.
+  // Explicit tab-only input during an outage stays in the editor until an authorized read succeeds.
   const settleFirstEdits = () => {
     const view = editorView();
     if (!view || !undoManager || collabActive()) return;
@@ -826,12 +833,21 @@ function EditorInstance(
   const [structureRevision, setStructureRevision] = createSignal(0);
   const structureChanged = () => setStructureRevision((revision) => revision + 1);
   const runHistory = (direction: "undo" | "redo") => {
-    if (!provider || !collabActive() || props.readOnly || syncEnded.ended()) return;
+    if (props.readOnly || syncEnded.ended()) return;
+    const view = editorView();
+    if (!collabActive()) {
+      if (tabOnly() && view) (direction === "undo" ? undo : redo)(view);
+      return;
+    }
+    if (!provider) return;
     void provider[direction]().catch(() => tableControls()?.notify(t().tableActionFailed));
   };
   const canHistory = (direction: "canUndo" | "canRedo") => {
     structureRevision();
-    return collabActive() && !syncEnded.ended() && !!provider?.[direction]();
+    if (syncEnded.ended()) return false;
+    if (collabActive()) return !!provider?.[direction]();
+    const view = editorView();
+    return tabOnly() && !!view && (direction === "canUndo" ? undoDepth(view.state) : redoDepth(view.state)) > 0;
   };
   const [unknownTableAction, setUnknownTableAction] = createSignal<UnknownTableAction | null>(null);
   let inverseHandler: Parameters<TableStructureProvider["setInverseHandler"]>[0] | undefined;
@@ -858,9 +874,10 @@ function EditorInstance(
     onUnknown: (action) => setUnknownTableAction(action),
   });
   let initialization: Promise<void> | undefined;
-  const initializeDevice = (): Promise<void> => {
+  const initializeDevice = (memoryOnly = tabOnly()): Promise<void> => {
     if (!props.canWrite || documentAbort.signal.aborted || documentClient) return Promise.resolve();
     if (initialization) return initialization;
+    setDeviceOpening(true);
     initialization = (async () => {
       try {
         setDeviceOpenError(null);
@@ -881,6 +898,7 @@ function EditorInstance(
           userId: props.userId,
           signal: documentAbort.signal,
           recoveryOnly: props.readOnly,
+          memoryOnly,
           onDeviceState: (state) => {
             setDevice(state);
             syncEnded.refresh();
@@ -894,29 +912,53 @@ function EditorInstance(
         documentClient = client;
         provider = client.provider;
         if (inverseHandler) provider.setInverseHandler(inverseHandler);
+        // During a server outage tab-only input stays in CodeMirror, without invented Yjs identities.
+        // Carry it onto the committed document only after a fresh authorized read succeeds.
+        if (tabOnly() && currentText() !== baseText) {
+          const rebased = rebaseOnto(baseText, currentText(), ytext.toString());
+          if (!rebased) {
+            syncEnded.end({ code: "RESYNC_REQUIRED", message: "Tab input needs recovery", reopen: true });
+            return;
+          }
+          applyToYText(ytext, rebased.changes, undoManager);
+        }
         settleFirstEdits();
         setDeviceReady(true);
+        if (collabStarted()) provider.connect();
         if (client.recovery) syncEnded.end({ code: "RESYNC_REQUIRED", message: "Device input needs recovery" });
         else if (client.pending) startCollaboration();
         structureChanged();
       } catch (error) {
         if (!documentAbort.signal.aborted) {
-          setDeviceOpenError(
-            error instanceof NotebookAuthorizationError && [401, 403, 404].includes(error.status)
-              ? "access"
-              : error instanceof NotebookAuthorizationError || error instanceof TypeError
-                ? "network"
-                : null,
-          );
+          const accessDenied = error instanceof NotebookAuthorizationError && [401, 403, 404].includes(error.status);
+          if (accessDenied) setDeviceReady(false);
+          setDeviceOpenError(accessDenied ? "access" : error instanceof NotebookAuthorizationError ? "network" : null);
           setDevice((previous) => ({ ...previous, failed: true }));
         }
       }
     })().finally(() => {
       initialization = undefined;
+      setDeviceOpening(false);
     });
     return initialization;
   };
   onMount(() => void initializeDevice());
+  const editInTab = async () => {
+    // Access failures never offer this action. A failed server read can keep input
+    // in this tab, but neither reads stored private bytes nor publishes it.
+    if (props.readOnly || !props.canWrite || deviceOpening() || deviceOpenError() === "access") return;
+    setTabOnly(true);
+    // A server retry may wait on an unavailable proxy. The explicit choice lets
+    // typing start now; initializeDevice rebases it when authorization returns.
+    if (deviceOpenError() === "network") {
+      setDeviceReady(true);
+      editorView()?.focus();
+    }
+    await initializeDevice(true);
+    if (documentAbort.signal.aborted || deviceOpenError() === "access") return;
+    setDeviceReady(true);
+    editorView()?.focus();
+  };
   const discardDeviceInput = async () => {
     if (
       (await prompts.confirm(t().deviceDiscardConfirm, { title: t().deviceDiscard, variant: "danger", confirmText: t().deviceDiscard })) !==
@@ -1236,14 +1278,21 @@ function EditorInstance(
       });
     }
     if (!props.readOnly) {
-      // The shared controller exists before its mount loses `hidden` in this
-      // Solid flush. Focus after that visibility update, before the next paint.
-      queueMicrotask(() => {
-        if (disposed || scrollPort?.contains(document.activeElement)) return;
-        if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
-        // A reader who scrolled the preview keeps reading there; the caret still starts the note.
-        else if (!opensHeading) focusEditor(0, "start", !startPosition);
-      });
+      // Initial device authorization can finish after mount. Focus once editing is enabled,
+      // preserving both focus elsewhere and the reader's position in the preview.
+      let initialFocusHandled = false;
+      createEffect(
+        on(deviceReady, (ready) => {
+          if (!ready || initialFocusHandled) return;
+          initialFocusHandled = true;
+          queueMicrotask(() => {
+            if (disposed || document.activeElement !== document.body) return;
+            if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
+            // A reader who scrolled the preview keeps reading there; the caret still starts the note.
+            else if (!opensHeading) focusEditor(0, "start", !startPosition);
+          });
+        }),
+      );
       scheduleCursorIdleHide();
     }
     // First emit so the panel reflects the current doc immediately on mount,
@@ -1496,32 +1545,53 @@ function EditorInstance(
         <Show when={deviceReady() && device().recovery && (props.readOnly || provider?.recoveryInput().text !== currentText())}>
           <TextInput multiline readOnly label={t().deviceCopyLabel} value={deviceReady() ? (provider?.recoveryInput().text ?? "") : ""} />
         </Show>
-        <Show when={device().failed || device().recovery}>
+        <Show when={tabOnly() || device().failed || device().recovery}>
           <div class="flex flex-wrap items-center gap-2 px-2 py-2" data-notebook-device-state>
             <InlineGuidance
               role={device().failed ? "alert" : "status"}
               tone={device().failed ? "danger" : "warning"}
               class="min-w-0 flex-1"
             >
-              {device().failed
-                ? deviceOpenError() === "access"
-                  ? t().deviceAccessChanged
-                  : deviceOpenError() === "network"
-                    ? t().deviceOffline
-                    : deviceReady()
-                      ? t().deviceFailed
-                      : t().deviceOpeningFailed
-                : deviceKept()
-                  ? t().deviceKept
-                  : t().deviceRecovery}
+              {deviceOpenError() === "access"
+                ? t().deviceAccessChanged
+                : tabOnly()
+                  ? t().deviceTabOnly
+                  : device().failed
+                    ? deviceOpenError() === "network"
+                      ? t().deviceOffline
+                      : deviceReady()
+                        ? t().deviceFailed
+                        : t().deviceOpeningFailed
+                    : deviceKept()
+                      ? t().deviceKept
+                      : t().deviceRecovery}
             </InlineGuidance>
+            <Show when={tabOnly() && device().failed && deviceOpenError() !== "access"}>
+              <InlineGuidance role="alert" tone="warning">
+                {t().deviceTabRetryFailed}
+              </InlineGuidance>
+            </Show>
             <Show when={device().failed}>
-              <Button size="xs" variant="ghost" onClick={() => void (documentClient ? documentClient.retry() : initializeDevice())}>
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={deviceOpening()}
+                onClick={() => void (documentClient ? documentClient.retry() : initializeDevice())}
+              >
                 {t().deviceRetry}
               </Button>
             </Show>
-            <Show when={deviceReady() && (device().pending || device().failed)}>
-              <Button size="xs" variant="ghost" onClick={() => void clipboard.copy(provider?.recoveryInput().text ?? currentText())}>
+            <Show when={device().failed && !deviceReady() && !props.readOnly && props.canWrite && deviceOpenError() !== "access"}>
+              <Button size="xs" variant="ghost" disabled={deviceOpening()} onClick={() => void editInTab()}>
+                {t().deviceEditInTab}
+              </Button>
+            </Show>
+            <Show when={tabOnly() || (deviceReady() && (device().pending || device().failed))}>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => void clipboard.copy((collabActive() ? provider?.recoveryInput().text : undefined) ?? currentText())}
+              >
                 {t().copyText}
               </Button>
             </Show>
@@ -1573,7 +1643,7 @@ function EditorInstance(
               notebookId={props.notebookId}
               ended={ended()}
               sync={syncEnded}
-              markdown={() => provider?.recoveryInput().text ?? currentText()}
+              markdown={() => (collabActive() ? provider?.recoveryInput().text : undefined) ?? currentText()}
               noteHref={() => window.location.pathname + window.location.search}
             />
           )}
