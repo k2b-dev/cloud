@@ -5,7 +5,7 @@ section: Operations
 order: 1138
 description: JetStream storage reserved for Notebook live editing, how it is sized, and how per-note topics from older releases are retired.
 tags: [notebooks, nats, jetstream, storage, migration]
-updated: 2026-10-26
+updated: 2026-10-31
 ---
 
 # Size and migrate the Notebook document log
@@ -227,3 +227,6 @@ Shutdown closes the annotation pool after the workers drain.
 Soft-deleted comments and replies remain restorable during their author's
 original ten-minute mutation window. Later writes purge expired deleted rows
 in bounded batches for that note or thread.
+
+For device storage failures and explicit tab-only editing, see
+[Keep unconfirmed input on the device](../data/shared-text-documents#keep-unconfirmed-input-on-the-device).

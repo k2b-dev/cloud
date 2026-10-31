@@ -5,6 +5,22 @@ export const notebookWorkspaceMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      deviceAccessChanged: "Your account or access changed. Reopen the note or sign in again.",
+      deviceOffline:
+        "The server is unreachable. Retry, or edit in this tab only. Closing this tab loses changes that have not reached the server.",
+      deviceOpeningFailed:
+        "Device storage could not be opened. Retry, or edit in this tab only. Closing this tab loses changes that have not reached the server.",
+      deviceCopyLabel: "Pending text on this device",
+      deviceFailed: "This device could not save your changes. Keep the note open and retry, or copy your text.",
+      deviceRecovery: "This copy stays on this device. Copy the text, then discard this copy to edit the current note.",
+      deviceKept: "Pending text kept on this device. This copy remains read-only until you discard it.",
+      deviceTabRetryFailed: "The connection could not be restored. Your text is still in this tab. Try again when the server is available.",
+      deviceEditInTab: "Edit in this tab only",
+      deviceTabOnly: "Editing in this tab only. Closing this tab loses changes that have not reached the server.",
+      deviceRetry: "Retry saving",
+      deviceKeep: "Keep on this device",
+      deviceDiscard: "Discard device changes",
+      deviceDiscardConfirm: "Discard the pending text on this device? This cannot be undone.",
       failedCreateNote: "Failed to create note",
       failedMoveNote: "Failed to move note",
       failedSortNotes: "Failed to sort notes",
@@ -502,6 +518,25 @@ export const notebookWorkspaceMessages = i18n.define({
       close: "Close",
     },
     de: {
+      deviceAccessChanged: "Dein Konto oder Zugriff hat sich geändert. Öffne die Notiz erneut oder melde dich wieder an.",
+      deviceOffline:
+        "Der Server ist nicht erreichbar. Versuche es erneut oder bearbeite die Notiz nur in diesem Tab. Beim Schließen gehen Änderungen verloren, die den Server noch nicht erreicht haben.",
+      deviceOpeningFailed:
+        "Der Gerätespeicher konnte nicht geöffnet werden. Versuche es erneut oder bearbeite die Notiz nur in diesem Tab. Beim Schließen gehen Änderungen verloren, die den Server noch nicht erreicht haben.",
+      deviceCopyLabel: "Ausstehender Text auf diesem Gerät",
+      deviceFailed:
+        "Dieses Gerät konnte deine Änderungen nicht speichern. Lass die Notiz geöffnet und versuche es erneut oder kopiere deinen Text.",
+      deviceRecovery: "Diese Kopie bleibt auf diesem Gerät. Kopiere den Text und verwirf diese Kopie, um die aktuelle Notiz zu bearbeiten.",
+      deviceKept: "Ausstehender Text bleibt auf diesem Gerät. Diese Kopie bleibt bis zum Verwerfen schreibgeschützt.",
+      deviceTabRetryFailed:
+        "Die Verbindung konnte nicht wiederhergestellt werden. Dein Text ist weiterhin in diesem Tab. Versuche es erneut, wenn der Server wieder erreichbar ist.",
+      deviceEditInTab: "Nur in diesem Tab bearbeiten",
+      deviceTabOnly:
+        "Du bearbeitest nur in diesem Tab. Beim Schließen gehen Änderungen verloren, die den Server noch nicht erreicht haben.",
+      deviceRetry: "Speichern erneut versuchen",
+      deviceKeep: "Auf diesem Gerät behalten",
+      deviceDiscard: "Geräteänderungen verwerfen",
+      deviceDiscardConfirm: "Den ausstehenden Text auf diesem Gerät verwerfen? Das kann nicht rückgängig gemacht werden.",
       failedCreateNote: "Die Notiz konnte nicht erstellt werden",
       failedMoveNote: "Die Notiz konnte nicht verschoben werden",
       failedSortNotes: "Die Notizen konnten nicht sortiert werden",

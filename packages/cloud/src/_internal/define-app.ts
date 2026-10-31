@@ -114,7 +114,6 @@ import { createHttpDrain } from "./http-drain";
 import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
-import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
@@ -493,7 +492,6 @@ export const defineApp = <
   const publicRouter = new Hono();
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
-  configurePostgresApplicationName(opts.id);
   const isDevelopment = env.IS_DEVELOPMENT;
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
