@@ -358,11 +358,32 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`ALTER TABLE assistant.artifacts DROP CONSTRAINT artifacts_kind_check`.simple();
     await sql`UPDATE assistant.artifacts SET kind='script' WHERE short_id=${resource.id}`;
     await sql`INSERT INTO assistant.artifact_projects SELECT id,${projectId}::uuid FROM assistant.artifacts WHERE short_id=${resource.id}`;
-    await migrateArtifacts();
-    expect(await artifacts.get(resource.id, reader)).toMatchObject({ kind: "app", source, publishedVersion: 1 });
-    expect(await artifacts.projects(resource.id, owner)).toEqual([{ projectId, shortId: null, name: null }]);
-    await expect(artifacts.create({ kind: "script", title: "Rejected legacy kind", source }, owner)).rejects.toThrow();
-    await artifacts.remove(resource.id, owner);
+    const codeId = crypto.randomUUID();
+    await sql`INSERT INTO auth.service_accounts(id,name,kind) VALUES(${codeId}::uuid,${`code:app:${resource.id}`},'code')`;
+    const [codeGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id,permission)
+      VALUES(${codeId}::uuid,'write') RETURNING id`;
+    if (!codeGrant) throw new Error("Missing Code grant");
+    await sql`INSERT INTO assistant.artifact_access SELECT id,${codeGrant.id}::uuid FROM assistant.artifacts WHERE short_id=${resource.id}`;
+    try {
+      await migrateArtifacts();
+      expect(await artifacts.get(resource.id, reader)).toMatchObject({ kind: "app", source, publishedVersion: 1 });
+      expect(await artifacts.projects(resource.id, owner)).toEqual([{ projectId, shortId: null, name: null }]);
+      await expect(artifacts.create({ kind: "script", title: "Rejected legacy kind", source }, owner)).rejects.toThrow();
+      // Legacy promotion preserves Code grants, and normal sharing reports refusal.
+      for (const permission of ["read", "admin"] as const) {
+        await expect(artifacts.changeGrant(resource.id, codeGrant.id, permission, owner)).rejects.toMatchObject({ code: "NOT_FOUND" });
+        expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id=${codeGrant.id}::uuid`).toEqual([
+          { permission: "write" },
+        ]);
+      }
+      await expect(
+        artifacts.grant(resource.id, { type: "service_account", serviceAccountId: codeId }, "read", owner),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    } finally {
+      await artifacts.remove(resource.id, owner);
+      await sql`DELETE FROM auth.access WHERE id=${codeGrant.id}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id=${codeId}::uuid`;
+    }
   });
 
   test("shared binary files have independent atomic byte budgets, pagination and no count ceiling", async () => {
