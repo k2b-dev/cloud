@@ -6,6 +6,7 @@ import { z } from "zod";
 import { stubConnections } from "../runtime/connections.test-fixture";
 import { jsonResponse } from "../server/middleware/openapi";
 import { v } from "../server/middleware/validator";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -24,6 +25,7 @@ test("the published OpenAPI spec describes the validation error body Cloud sends
   // Only the methods used by startup are implemented; heartbeat transport is stubbed.
   const sync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);

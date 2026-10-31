@@ -326,13 +326,14 @@ add the endpoint to `publicRoutes`.
 Only `?repair=1` on the Core route selects administrator repair. Ordinary
 management never falls back to repair after a denial. Repair grants no app
 use: the administrator needs an applicable app grant to use a configured app.
-Administrators can open **Administration → Apps → Repair access** even when
+Administrators can open **Administration → Apps**, the app, and **Access** (the app shows **Repair access** when nobody manages it) even when
 the app is absent from their launcher. Fixed rules cannot be repaired into
 lists; changing a fixed rule requires an application declaration update.
 
-At `/admin/apps`, selecting an app shows its access rule or the access editor
-for configurable access, requested platform services, heard and sent events,
-and notifications. Administrators can read the same detail with
+At `/admin/apps`, selecting an app shows its state, traffic, access, keys, events and
+notifications as one column of rows; each row opens its own column, and the address keeps
+the selection (`/admin/apps?app=mail&view=access`). **Access** shows the rule or the access
+editor for configurable access. Administrators can read the same detail with
 `cld apps show <app-id>`. Newly observed subscriptions are marked for seven
 days. See [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for offline apps, list limits and delivery recovery.

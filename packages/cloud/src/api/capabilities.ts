@@ -297,6 +297,8 @@ export type CapabilityDispatchParams = {
   callingAppId?: string;
   /** Internal observation only: called immediately before attempting the app request. */
   onUpstreamAttempt?: () => void;
+  /** Core-only aggregate budget, charged on upstream bytes before parsing or validation. */
+  consumeResponseBytes?: (bytes: number) => void;
   dependencies?: CapabilityDispatchDependencies;
 };
 
@@ -789,7 +791,12 @@ const runCapabilityDispatch = async (
   let upstreamBody: Awaited<ReturnType<typeof readBoundedJson>>;
   try {
     upstreamBody = await deadline.wait(() =>
-      readBoundedJson(response, params.review ? CAPABILITY_MAX_REVIEW_RESPONSE_BYTES : CAPABILITY_MAX_RESULT_BYTES, signal),
+      readBoundedJson(
+        response,
+        params.review ? CAPABILITY_MAX_REVIEW_RESPONSE_BYTES : CAPABILITY_MAX_RESULT_BYTES,
+        signal,
+        params.consumeResponseBytes,
+      ),
     );
   } catch {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");

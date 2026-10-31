@@ -322,17 +322,17 @@ Dependent calls fail closed when no valid token remains; logs report that
 state and report recovery once. Public HTTP readiness contains no credential
 status or reason, so an issuance outage does not remove unrelated app routes.
 Operators inspect credential metadata and the workload account state under
-**Administration → App credentials**, and application logs for refresh failures.
+**Administration → Apps**, then the app and **Keys → Tokens for host operation**, and application logs for refresh failures.
 Before starting lifecycle workers, the runtime registers its instance and
 requests a credential with a five-second timeout. If none is available, startup
 continues with dependent background calls unavailable. Routes are advertised
 only after lifecycle startup and declared resources are ready.
 
-Credentials named `Runtime <instance>` appear in **Administration → App credentials**
+Credentials named `Runtime <instance>` appear under **Administration → Apps**, then the app and **Keys → Tokens for host operation**
 and `cld admin app-credentials list <app>`. Revoking either overlapping runtime
 token disables the app's workload service account: calls and automatic issuance
 stop for every instance, including after a restart or concurrent rotation.
-In the same table, choose **Enable app workload access** to allow issuance again,
+At the top of the same keys column, **Background access is off** offers **Turn on again** to allow issuance again,
 or run `cld admin app-credentials enable <app> --yes`. Restarting alone does not
 restore access. The admin API also supports
 `PATCH /api/admin/identity/workloads/<app>` with `{"status":"active"}` or

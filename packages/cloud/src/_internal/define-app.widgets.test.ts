@@ -10,6 +10,7 @@ import { settings } from "../server/middleware/settings";
 import { getWidgetRequest } from "../server/widget-request";
 import * as invocationActor from "../services/identity/invocation-actor";
 import * as invocationToken from "../services/identity/invocation-token";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as settingsSnapshot from "../services/settings/snapshot";
@@ -76,6 +77,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
   // The heartbeats are stubbed, so the registry handles declared on this fake are never used.
   const fakeSync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(fakeSync);

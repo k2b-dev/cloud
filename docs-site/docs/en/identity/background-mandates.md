@@ -225,9 +225,9 @@ deprecated `CLOUD_APP_CREDENTIAL` is an optional explicit override; it wins over
 delivery and remains operator-managed. See [runtime configuration](/en/docs/operations/runtime-configuration)
 for rotation, revocation, health diagnostics, and the shared-infrastructure trust limit.
 
-For an explicit host-run override, an administrator opens **Administration → App credentials** (`/admin/app-credentials`),
-chooses **Create credential**, then selects the owning app and enters a name and
-optional expiration time in the dialog.
+For an explicit host-run override, an administrator opens **Administration → Apps** (`/admin/apps`), opens the owning app,
+then **Keys**, unfolds **Tokens for host operation**, chooses **Create token**, and enters a name and
+optional expiration time in the dialog. The old address `/admin/app-credentials` opens the Apps page with a hint.
 The token is shown once. Save it in the deployment's secret store and inject it
 only into that app. The table lists credentials across all apps and supports revocation.
 
@@ -261,8 +261,8 @@ or for one app with `GET /api/admin/identity/workloads/inventory/credentials`, a
 revoke one exact credential with
 `DELETE /api/admin/identity/workloads/inventory/credentials/<credentialId>`.
 Revoking an automatic runtime credential disables the app's workload access
-across all instances and restarts. Restore it in **App credentials** with
-**Enable app workload access**, with `cld admin app-credentials enable <app> --yes`,
+across all instances and restarts. Restore it in the app's **Keys** column with
+**Turn on again**, with `cld admin app-credentials enable <app> --yes`,
 or with `PATCH /api/admin/identity/workloads/<app>` and `{"status":"active"}`.
 The shared capability client refreshes a broker-rejected workload credential
 and retries once; persistent credential rejection returns HTTP 503 so workers

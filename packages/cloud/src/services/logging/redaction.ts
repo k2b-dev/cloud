@@ -7,14 +7,18 @@ const SENSITIVE_KEY_PATTERN = /(password|secret|token|cookie|authorization|api[_
 
 export const REDACTED = "[REDACTED]";
 
+/** Recognizable one-time credentials are scrubbed even under ordinary metadata keys. */
+export const redactLinkTokens = (value: string): string => value.replace(/cl_[A-Za-z0-9_-]{43}/g, REDACTED);
+
 export const isSensitiveMetadataKey = (key: string): boolean => SENSITIVE_KEY_PATTERN.test(key);
 
 export const redactMetadata = (input: unknown): unknown => {
+  if (typeof input === "string") return redactLinkTokens(input);
   if (input === null || typeof input !== "object") return input;
   if (Array.isArray(input)) return input.map(redactMetadata);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
-    out[key] = isSensitiveMetadataKey(key) ? REDACTED : redactMetadata(value);
+    out[redactLinkTokens(key)] = isSensitiveMetadataKey(key) ? REDACTED : redactMetadata(value);
   }
   return out;
 };
@@ -60,6 +64,7 @@ export const redactSensitivePath = (pathname: string): string => {
     .split("/")
     .map((segment) => {
       const value = decodeSegment(segment);
+      if (redactLinkTokens(value) !== value) return ":token";
       if (UUID.test(value)) return ":id";
       // Dot-separated parts cover signed tokens and credential filenames such as .ics.
       // Lowercase word slugs preserve readable routes like getting-started-with-grids.

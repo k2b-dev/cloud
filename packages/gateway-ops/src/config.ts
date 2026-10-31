@@ -31,7 +31,6 @@ export const app = defineApp({
         },
         adminGroups: { gateway: "Gateway", observability: "Systembeobachtung" },
         adminLinks: {
-          "/admin/observability/gateway": "Apps",
           "/admin/observability/gateway/routes": "Routen",
           "/admin/observability": "Übersicht",
           "/admin/observability/logs": "Protokolle",
@@ -63,10 +62,7 @@ export const app = defineApp({
       section: "observability",
       id: "gateway",
       label: "Gateway",
-      links: [
-        { href: "/admin/observability/gateway", icon: "ti-apps", label: "Apps" },
-        { href: "/admin/observability/gateway/routes", icon: "ti-route", label: "Routes" },
-      ],
+      links: [{ href: "/admin/observability/gateway/routes", icon: "ti-route", label: "Routes" }],
     },
     {
       section: "observability",

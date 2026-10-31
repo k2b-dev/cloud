@@ -499,6 +499,13 @@ versioned resource clipboard format instead of embedding an ID in app-specific
 JSON or inferring it from text. See
 [Copy and paste Cloud resources](/en/docs/platform/resource-references).
 
+### App status providers
+
+The `appStatus: { summary, detail, forget }` role supplies administrator-only
+traffic summaries, paged failed requests, and offline listing removal. Use the
+shared schemas and authority rules in
+[App status providers](/en/docs/platform/app-status).
+
 ### Shared resource types and discussions
 
 A Type may declare a local `container` Type and an optional
