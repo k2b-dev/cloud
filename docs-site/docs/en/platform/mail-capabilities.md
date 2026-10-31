@@ -1,5 +1,6 @@
 ---
 title: Mail capability targets
+navTitle: Mail capabilities
 section: Platform services
 order: 556
 description: Address Mail Actions at one mailbox and keep their contained resources in that mailbox.
