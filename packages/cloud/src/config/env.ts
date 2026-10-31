@@ -176,7 +176,7 @@ const registry = defineEnv({
     schema: z.string(),
     scope: "secret",
     secretFile: true,
-    doc: "App Ed25519 private key for startup bootstrap, background calls and OAuth issuance; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Keep infrastructure env until the platform-client import migration is complete.",
+    doc: "App Ed25519 private key for startup bootstrap, background calls and OAuth issuance; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Built-in apps need only the key and direct Core origin; retain infrastructure env for Core and Gateway.",
   },
   CLOUD_CORE_INTERNAL_ORIGIN: {
     schema: z.string(),

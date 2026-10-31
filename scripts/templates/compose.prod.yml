@@ -1,4 +1,6 @@
 # Production deployment template — single host, behind an existing Traefik.
+# Before starting apps, enroll OAuth explicitly (repeat the grant on rotation):
+# cld --profile operator admin apps keys create oauth --grant oauth:issue --out-dir ./secrets
 #
 # This file does NOT define `postgres`, `valkey`, `nats-1..3`, or `filegate`.
 # Add them yourself (the apps reference `postgres:5432`, `valkey:6379`, and a
@@ -23,7 +25,6 @@ x-shared-env: &shared-env
   APP_SECRET: ${APP_SECRET}
   APP_URL: https://${CLOUD_HOST}
   CLOUD_IDENTITY_JWKS_ORIGIN: http://app-core:3000
-  CLOUD_OAUTH_JWKS_ORIGIN: http://app-oauth:3000
   CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
 
 x-app-defaults: &app-defaults
@@ -42,8 +43,13 @@ services:
   gateway:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-gateway:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
-    networks: [cloud-internal, traefik]
+    networks:
+      cloud-internal: {}
+      traefik:
+        aliases: ["cloud-gateway-${CLOUD_HOST}"]
     environment:
+      APP_URL: https://${CLOUD_HOST}
+      GATEWAY_INTERNAL_URL: http://cloud-gateway-${CLOUD_HOST}:3000
       APP_SECRET: ${APP_SECRET}
       REDIS_URL: redis://valkey:6379
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
@@ -53,6 +59,8 @@ services:
       NATS_TLS_CA_FILE: ${NATS_TLS_CA_FILE:-}
       # Unset trusts loopback and private networks, which covers Traefik here.
       GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
+    # Private HTTP provider/Caddy ask listener; never publish a host port or route it through Traefik.
+    expose: ["3001"]
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.cloud.rule=Host(`${CLOUD_HOST}`)"

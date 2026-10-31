@@ -2,11 +2,16 @@ import { err, fail, ok } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { APP_INSTANCE_PREFIX, appInstanceRegistry, readAppRegistrySnapshot } from "../_internal/registry";
+import { startBounded } from "../api/fanout";
 import { env } from "../config/env";
-import { AppBootstrapMetadataSchema, type AppMigrationStatus } from "../contracts/app-migration";
+import { APP_MIGRATION_TRIGGER_PATH, AppBootstrapMetadataSchema, type AppMigrationStatus } from "../contracts/app-migration";
 import type { User } from "../contracts/shared";
 import { sql } from "../runtime/clients";
 import { isDevelopmentPublicKey } from "../runtime/development-keys";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
+import type { LastRejectedStart } from "./app-keys";
+import { readAppMigrationObservation } from "./app-migration-evidence";
+import { signMigrationProbe } from "./identity/invocation-token";
 
 export type MigrationInstance = { appId: string; instanceId: string; hostname: string; bootstrap?: unknown };
 /** A missing process or an old producer cannot prove completion. Check every replica. */
@@ -16,8 +21,18 @@ export const evaluateAppMigration = (input: {
   instances: MigrationInstance[];
   expect: string[];
   allowEnv: string[];
+  probes?: { appId: string; keyId: string; broker: boolean; oauth: boolean | null }[];
+  observation?: AppMigrationStatus["observation"];
+  rejections?: { appId: string; lastRejectedStart: LastRejectedStart }[];
   registryIssues?: { key: string; reason: string }[];
 }): AppMigrationStatus => {
+  const observation = input.observation ?? {
+    startedAt: null,
+    lastLegacyUseAt: null,
+    observedAt: new Date(0).toISOString(),
+    windowSeconds: null,
+    complete: false,
+  };
   const keyedApps = [...new Set(input.activeKeys.map((key) => key.appId))];
   const ids = new Set([...keyedApps, ...input.registeredApps, ...input.instances.map((i) => i.appId), ...input.expect]);
   ids.delete("core");
@@ -56,6 +71,23 @@ export const evaluateAppMigration = (input: {
           : modes.has("env")
             ? "env"
             : "core";
+    const liveKeyIds = [...new Set(instances.map((instance) => instance.bootstrap?.keyId).filter((id): id is string => !!id))];
+    const probes = liveKeyIds.map((keyId) => {
+      const probe = input.probes?.find((probe) => probe.appId === appId && probe.keyId === keyId);
+      return { keyId, broker: probe?.broker ?? false, oauth: probe?.oauth ?? (probe ? null : false) };
+    });
+    const lastRejectedStart = input.rejections?.find((rejection) => rejection.appId === appId)?.lastRejectedStart ?? null;
+    const attentionReasons = [
+      ...(!instances.length ? ["no_live_instance"] : []),
+      ...(instances.some((instance) => !instance.allowed) ? ["bootstrap_incomplete"] : []),
+      ...(!liveKeyIds.length ||
+      instances.some((instance) => !instance.bootstrap?.keyId) ||
+      probes.some((probe) => !probe.broker || probe.oauth === false)
+        ? ["signed_probe_incomplete"]
+        : []),
+      ...(!observation.complete ? ["legacy_observation_incomplete"] : []),
+      ...(lastRejectedStart ? ["last_rejected_start"] : []),
+    ];
     return {
       appId,
       expectedBy: [
@@ -65,26 +97,40 @@ export const evaluateAppMigration = (input: {
       ],
       status,
       allowedEnv,
-      needsAttention: !instances.length || instances.some((i) => !i.allowed),
+      needsAttention: attentionReasons.length > 0,
+      attentionReasons,
+      lastRejectedStart,
+      probes,
       instances,
     };
   });
   const registryIssues = input.registryIssues ?? [];
-  return { needsAttention: registryIssues.length > 0 || apps.length === 0 || apps.some((a) => a.needsAttention), registryIssues, apps };
+  return {
+    observation,
+    needsAttention: !observation.complete || registryIssues.length > 0 || apps.length === 0 || apps.some((a) => a.needsAttention),
+    registryIssues,
+    apps,
+  };
 };
 
 /** Active, usable credentials define expected apps; historical retirement does not. */
 export const listActiveMigrationKeys = async (db: SQL = sql) => {
   const keys = await db<
-    { appId: string; keyId: string; publicKey: string }[]
-  >`SELECT sa.app_id AS "appId", c.id AS "keyId", c.public_key AS "publicKey" FROM auth.service_account_credentials c
+    { appId: string; keyId: string; publicKey: string; oauthIssueAllowed: boolean }[]
+  >`SELECT sa.app_id AS "appId", c.id AS "keyId", c.public_key AS "publicKey", c.oauth_issue_allowed AS "oauthIssueAllowed" FROM auth.service_account_credentials c
       JOIN auth.service_accounts sa ON sa.id = c.service_account_id
       WHERE c.kind = 'app_key' AND c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now())
         AND sa.status = 'active' AND sa.kind = 'resource_bound' AND sa.resource_type = 'cloud.app' AND sa.resource_id = sa.app_id`;
   return keys.filter((key) => env.NODE_ENV === "development" || !isDevelopmentPublicKey(key.publicKey));
 };
 
-export const readAppMigrationStatus = async (input: { actor: Pick<User, "roles">; expect: string[]; allowEnv: string[] }) => {
+export const readAppMigrationStatus = async (input: {
+  actor: Pick<User, "roles">;
+  expect: string[];
+  allowEnv: string[];
+  windowSeconds?: number;
+  signal?: AbortSignal;
+}) => {
   if (!input.actor.roles.includes("admin")) return fail(err.forbidden("Administrator access required"));
   const [keys, registry, instances] = await Promise.all([
     listActiveMigrationKeys(),
@@ -104,6 +150,46 @@ export const readAppMigrationStatus = async (input: { actor: Pick<User, "roles">
     if (parsed.success) validInstances.push(parsed.data);
     else registryIssues.push({ key: entry.key, version: entry.revision, reason: "Invalid application instance record" });
   }
+  const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_SECONDS * 1000)]);
+  const liveKeys = keys.filter((key) =>
+    validInstances.some((instance) => {
+      const metadata = AppBootstrapMetadataSchema.safeParse(instance.bootstrap);
+      return instance.appId === key.appId && metadata.success && metadata.data.keyId === key.keyId;
+    }),
+  );
+  // One probe at a time bounds admission. All probes share this request's idle deadline.
+  const results = await Promise.all(
+    startBounded(
+      liveKeys,
+      1,
+      async (key) => {
+        const nonce = crypto.randomUUID();
+        const app = registry.apps.find((app) => app.id === key.appId);
+        if (!app) throw new Error("Application has no registered endpoint");
+        const token = await signMigrationProbe({ appId: key.appId, keyId: key.keyId, oauth: key.oauthIssueAllowed, nonce });
+        signal.throwIfAborted();
+        const response = await fetch(new URL(`${APP_MIGRATION_TRIGGER_PATH}/probe`, app.baseUrl), {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+          signal,
+          redirect: "error",
+        });
+        await response.body?.cancel();
+        if (response.status !== 204) throw new Error("Signed migration probe failed");
+        const receipts = await sql<{ scope: string }[]>`SELECT scope FROM auth.app_migration_probes
+      WHERE key_id = ${key.keyId}::uuid AND nonce = ${nonce}::uuid`;
+        return {
+          appId: key.appId,
+          keyId: key.keyId,
+          broker: receipts.some((receipt) => receipt.scope === "identity:invoke"),
+          oauth: key.oauthIssueAllowed ? receipts.some((receipt) => receipt.scope === "oauth:issue") : null,
+        };
+      },
+      signal,
+    ),
+  );
+  const rejections = await sql<{ app_id: string; rejected_at: Date; reason: LastRejectedStart["reason"]; key_id: string | null }[]>`
+    SELECT app_id, rejected_at, reason, key_id FROM auth.app_start_rejections`;
   return ok(
     evaluateAppMigration({
       ...input,
@@ -111,6 +197,12 @@ export const readAppMigrationStatus = async (input: { actor: Pick<User, "roles">
       registeredApps: registry.apps.map((a) => a.id),
       instances: validInstances,
       registryIssues,
+      observation: await readAppMigrationObservation(input.windowSeconds),
+      probes: results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])),
+      rejections: rejections.map((row) => ({
+        appId: row.app_id,
+        lastRejectedStart: { at: row.rejected_at.toISOString(), reason: row.reason, keyId: row.key_id },
+      })),
     }),
   );
 };

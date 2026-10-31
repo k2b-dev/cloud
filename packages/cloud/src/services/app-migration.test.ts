@@ -4,7 +4,7 @@ import { evaluateAppMigration, type MigrationInstance, readAppMigrationStatus } 
 const keyId = "22222222-2222-4222-8222-222222222222";
 const bootstrap = (mode: "core" | "env") => ({
   mode,
-  ...(mode === "core" ? { keyId } : {}),
+  keyId,
   keyFormat: "cloud-app-key-v1",
   protocol: 1,
   sources: {
@@ -21,7 +21,22 @@ const instance = (appId: string, mode: "core" | "env", instanceId = "one"): Migr
   bootstrap: bootstrap(mode),
 });
 const evaluate = (instances: MigrationInstance[] = [], other: Partial<Parameters<typeof evaluateAppMigration>[0]> = {}) =>
-  evaluateAppMigration({ activeKeys: [{ appId: "mail", keyId }], registeredApps: ["mail"], instances, expect: [], allowEnv: [], ...other });
+  evaluateAppMigration({
+    activeKeys: [{ appId: "mail", keyId }],
+    registeredApps: ["mail"],
+    instances,
+    expect: [],
+    allowEnv: [],
+    observation: {
+      startedAt: "2030-01-01T00:00:00.000Z",
+      lastLegacyUseAt: null,
+      observedAt: "2030-01-02T00:00:00.000Z",
+      windowSeconds: 86400,
+      complete: true,
+    },
+    probes: [{ appId: "mail", keyId, broker: true, oauth: null }],
+    ...other,
+  });
 
 test("inventory includes keyed, registered and explicit apps, excludes Core/Gateway, and catches silent or stopped apps", () => {
   const result = evaluate([], {
@@ -93,4 +108,24 @@ test("a replica must report a current key belonging to its app", () => {
       ],
     }).needsAttention,
   ).toBe(false);
+});
+
+test("successful bootstrap alone never passes without current broker and OAuth probes and a complete clean observation", () => {
+  for (const other of [
+    { probes: [] },
+    { probes: [{ appId: "mail", keyId, broker: false, oauth: null }] },
+    { probes: [{ appId: "mail", keyId, broker: true, oauth: false }] },
+    { observation: undefined },
+  ])
+    expect(evaluate([instance("mail", "core")], other).needsAttention).toBe(true);
+  expect(evaluate([instance("mail", "core")], { probes: [{ appId: "mail", keyId, broker: true, oauth: true }] }).needsAttention).toBe(
+    false,
+  );
+});
+test("lastRejectedStart remains an attention reason until a successful bootstrap clears Core's rejection", () => {
+  const lastRejectedStart = { at: "2030-01-02T00:00:00.000Z", reason: "revoked" as const, keyId };
+  const result = evaluate([instance("mail", "core")], { rejections: [{ appId: "mail", lastRejectedStart }] });
+  expect(result.needsAttention).toBe(true);
+  expect(result.apps[0]?.lastRejectedStart).toEqual(lastRejectedStart);
+  expect(result.apps[0]?.attentionReasons).toContain("last_rejected_start");
 });

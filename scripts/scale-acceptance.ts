@@ -554,6 +554,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         server: ORIGIN,
         outDir: keyDirectory,
         format: "file",
+        grants: appId === "oauth" ? ["oauth:issue"] : [],
         register: async (body) => (await http(gateway, `/api/admin/apps/${appId}/keys`, "POST", body, token)).json(),
       });
       // Disposable credentials in a host directory with mode 0700. File-backed

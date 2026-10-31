@@ -3,8 +3,8 @@ import type { SQL } from "bun";
 import { appKeyFingerprint, validateAppKeyAppId } from "../app-key";
 import { env } from "../config/env";
 import type { User } from "../contracts/shared";
-import { DEVELOPMENT_APP_KEYS, isDevelopmentPublicKey } from "../runtime/development-keys";
 import { sql } from "../runtime/clients";
+import { DEVELOPMENT_APP_KEYS, isDevelopmentPublicKey } from "../runtime/development-keys";
 import { audit } from "./audit";
 import { serviceAccounts } from "./service-accounts";
 

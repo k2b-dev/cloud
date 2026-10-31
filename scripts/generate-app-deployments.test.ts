@@ -6,6 +6,7 @@ test("production and dev templates wire only app key and Core origin into every 
   for (const development of [false, true]) {
     const name = `compose.${development ? "dev" : "prod"}.yml`;
     const rendered = renderAppDeployment(await Bun.file(new URL(`./templates/${name}`, import.meta.url)).text(), development);
+    expect(rendered).toContain(development ? "explicit oauth:issue grant" : "keys create oauth --grant oauth:issue");
     expect(rendered).toBe(await Bun.file(new URL(`../${name}`, import.meta.url)).text());
     const parsed = Bun.YAML.parse(rendered) as {
       services: Record<

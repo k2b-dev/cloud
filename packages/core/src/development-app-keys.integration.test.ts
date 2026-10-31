@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import {
   DEVELOPMENT_APP_KEYS,
@@ -9,7 +10,6 @@ import {
   registerAppKey,
 } from "@k2b/cloud/services/app-keys";
 import { listActiveMigrationKeys } from "@k2b/cloud/services/app-migration";
-import { sql } from "@k2b/cloud";
 import { APP_KEY_FIXTURES } from "../../../scripts/fixtures/app-key-fixtures";
 import { databaseSuite, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "./migrate/core/audit";
@@ -38,6 +38,9 @@ databaseSuite()("isolated development app enrollment", () => {
         ?.count,
     ).toBe(DEVELOPMENT_APP_KEYS.length);
     expect((await sql`SELECT uid FROM auth.users WHERE uid = 'kept-user'`).length).toBe(1);
+    const grants = await sql<{ app_id: string; oauth_issue_allowed: boolean }[]>`SELECT sa.app_id, c.oauth_issue_allowed
+      FROM auth.service_account_credentials c JOIN auth.service_accounts sa ON sa.id = c.service_account_id WHERE c.kind = 'app_key'`;
+    expect(grants.filter((row) => row.oauth_issue_allowed).map((row) => row.app_id)).toEqual(["oauth"]);
     const key = DEVELOPMENT_APP_KEYS[0]!;
     await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now() WHERE id = ${key.keyId}::uuid`;
     await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE app_id = ${key.appId}`;

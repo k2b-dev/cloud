@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const APP_MIGRATION_RECEIPT_PATH = "/api/_internal/identity/v1/migration-probe";
+export const APP_MIGRATION_TRIGGER_PATH = "/api/_internal/app-migration/v1";
+
 const source = z.enum(["env", "core"]);
 export const AppBootstrapMetadataSchema = z.object({
   keyId: z.uuid().optional(),
@@ -27,8 +30,17 @@ const instance = z.object({
   status: z.enum(["core", "env", "unknown"]),
   allowed: z.boolean(),
 });
+export const AppMigrationObservationSchema = z.object({
+  startedAt: z.iso.datetime().nullable(),
+  lastLegacyUseAt: z.iso.datetime().nullable(),
+  observedAt: z.iso.datetime(),
+  windowSeconds: z.number().int().positive().nullable(),
+  complete: z.boolean(),
+});
+export const AppMigrationProbeSchema = z.object({ keyId: z.uuid(), broker: z.boolean(), oauth: z.boolean().nullable() });
 export const AppMigrationStatusSchema = z.object({
   needsAttention: z.boolean(),
+  observation: AppMigrationObservationSchema,
   registryIssues: z.array(z.object({ key: z.string(), reason: z.string() })),
   apps: z.array(
     z.object({
@@ -37,6 +49,15 @@ export const AppMigrationStatusSchema = z.object({
       status: z.enum(["core", "env", "mixed", "unknown", "stopped"]),
       allowedEnv: z.boolean(),
       needsAttention: z.boolean(),
+      attentionReasons: z.array(z.string()),
+      lastRejectedStart: z
+        .object({
+          at: z.iso.datetime(),
+          reason: z.enum(["revoked", "expired", "disabled", "connections_not_permitted"]),
+          keyId: z.uuid().nullable(),
+        })
+        .nullable(),
+      probes: z.array(AppMigrationProbeSchema),
       instances: z.array(instance),
     }),
   ),

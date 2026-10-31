@@ -247,14 +247,17 @@ export const appKeyCommands = [
           const rejection = result.lastRejectedStart;
           ctx.print(`Last rejected start: ${rejection.at} · ${rejection.reason} · key ${rejection.keyId ?? "unknown"}`);
         }
-        ctx.table(result.items.map((item) => ({ ...item, usable: item.usable ?? "unknown" })), [
-          { key: "keyId", label: "Key ID" },
-          { key: "name", label: "Name" },
-          { key: "fingerprint", label: "Fingerprint" },
-          { key: "status", label: "Status" },
-          { key: "accountStatus", label: "Account" },
-          { key: "usable", label: "Usable" },
-        ]);
+        ctx.table(
+          result.items.map((item) => ({ ...item, usable: item.usable ?? "unknown" })),
+          [
+            { key: "keyId", label: "Key ID" },
+            { key: "name", label: "Name" },
+            { key: "fingerprint", label: "Fingerprint" },
+            { key: "status", label: "Status" },
+            { key: "accountStatus", label: "Account" },
+            { key: "usable", label: "Usable" },
+          ],
+        );
       }
     },
   }),

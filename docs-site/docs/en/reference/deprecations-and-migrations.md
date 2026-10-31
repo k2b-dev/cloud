@@ -12,8 +12,7 @@ updated: 2026-10-30
 
 ## Application deployment moves to key files
 
-The release containing the complete platform-client and signed-request
-migration replaces ordinary apps' shared infrastructure environment block
+This release replaces ordinary apps' shared infrastructure environment block
 with an app key file and Core address. Core and Gateway retain infrastructure
 values. Existing environment mode remains supported during the parallel
 release; environment overrides also remain supported afterward.

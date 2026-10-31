@@ -27,8 +27,8 @@ export const enrollDevelopmentAppKeys = async (db: SQL, { enabled = env.CLOUD_DE
         [account] = await tx<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
         VALUES (${`${key.appId} development workload`}, 'resource_bound', ${key.appId}, 'cloud.app', ${key.appId}) RETURNING id`;
       if (!account) throw new Error("Development account creation failed");
-      await tx`INSERT INTO auth.service_account_credentials (id, service_account_id, name, kind, public_key, fingerprint)
-        VALUES (${key.keyId}::uuid, ${account.id}::uuid, 'PUBLIC DEVELOPMENT FIXTURE', 'app_key', ${key.publicKey}, ${key.fingerprint})
+      await tx`INSERT INTO auth.service_account_credentials (id, service_account_id, name, kind, public_key, fingerprint, oauth_issue_allowed)
+        VALUES (${key.keyId}::uuid, ${account.id}::uuid, 'PUBLIC DEVELOPMENT FIXTURE', 'app_key', ${key.publicKey}, ${key.fingerprint}, ${key.appId === "oauth"})
         ON CONFLICT (id) DO NOTHING`;
     }
   });

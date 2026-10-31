@@ -134,7 +134,12 @@ test("OAuth read scope cannot mutate app keys even with an admin role", async ()
 
 test("migration status validates the explicit inventory, keeps an admin actor, and disables response caching", async () => {
   const input: unknown[] = [];
-  const result = { needsAttention: true, apps: [], registryIssues: [] };
+  const result = {
+    needsAttention: true,
+    apps: [],
+    registryIssues: [],
+    observation: { startedAt: null, lastLegacyUseAt: null, observedAt: "2030-01-02T00:00:00.000Z", windowSeconds: null, complete: false },
+  };
   const routes = createAdminAppKeyRoutes(authenticate, service, async (params) => {
     input.push(params);
     return ok(result);
@@ -143,7 +148,7 @@ test("migration status validates the explicit inventory, keeps an admin actor, a
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toContain("no-store");
   expect(await response.json()).toEqual(result);
-  expect(input).toEqual([{ actor, expect: ["mail", "inventory"], allowEnv: ["inventory"] }]);
+  expect(input).toEqual([{ actor, expect: ["mail", "inventory"], allowEnv: ["inventory"], signal: expect.any(AbortSignal) }]);
   for (const query of ["expect=core", "allowEnv=../bad", "expect=gateway"])
     expect((await routes.request(`/status?${query}`)).status).toBe(400);
   expect(input.length).toBe(1);
@@ -169,4 +174,28 @@ test("the admin key-list OpenAPI response declares the nullable rejection and it
   expect(schema).toContain('"expired"');
   expect(schema).toContain('"disabled"');
   expect(schema).toContain('"keyId"');
+});
+
+test("starting an observation requires administrator write scope and validates its duration", async () => {
+  let begins = 0;
+  const begin = async () => {
+    begins++;
+    return { startedAt: "2030-01-02T00:00:00.000Z" };
+  };
+  const routes = createAdminAppKeyRoutes(authenticate, service, undefined, begin);
+  expect((await routes.request("/observation", { method: "POST" })).status).toBe(200);
+  expect(begins).toBe(1);
+  const readOnly = createAdminAppKeyRoutes(
+    async (c, next) => {
+      c.set("user", actor);
+      c.set("oauthScopes", ["read"]);
+      await next();
+    },
+    service,
+    undefined,
+    begin,
+  );
+  expect((await readOnly.request("/observation", { method: "POST" })).status).toBe(403);
+  expect(begins).toBe(1);
+  for (const duration of ["0", "-1", "NaN", "1.5"]) expect((await routes.request(`/status?windowSeconds=${duration}`)).status).toBe(400);
 });

@@ -45,8 +45,7 @@ Applications can authenticate at startup with `CLOUD_APP_KEY` or
 query, fragment or embedded credentials. The public gateway blocks this
 internal route.
 
-For the release containing the complete platform-client and signed-request
-migration, follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+In this release, follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
 before removing app infrastructure values. Use the Compose template from that
 release; Core and Gateway retain their infrastructure environment. A
 third-party app with old Bun-global clients needs an explicit environment
@@ -135,7 +134,7 @@ Core now accepts locally generated Ed25519 public keys through administrator
 APIs and `cld admin apps keys`. The installation ID lives in Core’s database.
 Enrollment alone does not change application startup. Supplying a key enables
 the startup protocol above; keep existing infrastructure environment values
-until the import migration is complete. See [App keys](/en/docs/operations/app-keys) for creation,
+only for third-party apps that have not migrated their imports. Built-in apps use the platform handles. See [App keys](/en/docs/operations/app-keys) for creation,
 resumable CLI output, rotation, and revocation.
 
 ## Replace the legacy Weather geo configuration

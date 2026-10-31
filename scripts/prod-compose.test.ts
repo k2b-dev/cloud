@@ -25,6 +25,13 @@ describe("production Compose release set", () => {
       expect(source).not.toMatch(/CLOUD_[A-Z]+_APP_CREDENTIAL/);
     }
   });
+  test("preserves the gateway host admission and private ingress listener", () => {
+    const gateway = compose.split("  gateway:\n")[1]?.split("  app-gateway-ops:")[0];
+    expect(gateway).toContain('aliases: ["cloud-gateway-${CLOUD_HOST}"]');
+    expect(gateway).toContain("APP_URL: https://${CLOUD_HOST}");
+    expect(gateway).toContain("GATEWAY_INTERNAL_URL: http://cloud-gateway-${CLOUD_HOST}:3000");
+    expect(gateway).toContain('expose: ["3001"]');
+  });
   test("requires one immutable tag for every runtime image", () => {
     const images = compose
       .split(/\r?\n/)

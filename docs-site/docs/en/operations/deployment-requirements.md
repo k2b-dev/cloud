@@ -29,8 +29,7 @@ this service set.
 
 ## Applications start with a key file and Core address
 
-The release containing the complete platform-client and signed-request
-migration supplies a Compose template that gives ordinary apps only
+This release supplies a Compose template that gives ordinary apps only
 `CLOUD_APP_KEY_FILE` and `CLOUD_CORE_INTERNAL_ORIGIN`. Core and Gateway keep
 their infrastructure environment. Core must migrate and become ready before
 applications bootstrap. An unavailable Core blocks startup for up to five
