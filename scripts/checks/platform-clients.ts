@@ -4,7 +4,6 @@ import ts from "@typescript/typescript6";
 import { listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
-
 const delivered = new Set([
   "DATABASE_URL",
   "REDIS_URL",
