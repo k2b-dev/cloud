@@ -2,7 +2,7 @@ import { history, historyKeymap, redo, undo } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { clipboard } from "@k2b/stdlib/solid";
-import { createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { children, createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import {
   Dropdown,
@@ -60,7 +60,7 @@ export type TextEditorProps = {
   /** Opens the host's attachment picker when clipboard images cannot be inserted. */
   onAttachImages?: () => void;
   onTableCheck?: (needsCheck: boolean) => void;
-  /** Host-owned sync status; its place is reserved across transitions. */
+  /** Host-owned sync status. Its row appears only while there is a status or a table check; keep it set across transitions. */
   status?: JSX.Element;
   class?: string;
 };
@@ -269,6 +269,7 @@ export function TextEditor(props: TextEditorProps) {
   const locale = useLocale();
   const t = () => textEditorMessages.resolve([locale()]).t;
   const [mode, setMode] = createSignal<TextEditorMode>(props.mode ?? "formatted");
+  const status = children(() => props.status);
   const [ready, setReady] = createSignal(false);
   const [recovery, setRecovery] = createSignal<string>();
   const [notice, setNotice] = createSignal<{ message: string; images?: boolean }>();
@@ -1036,9 +1037,9 @@ export function TextEditor(props: TextEditorProps) {
       <span class="k2b-ste-announcement" role="status" aria-live="polite" aria-atomic="true">
         {announcement()}
       </span>
-      <Show when={!props.presentation || "status" in props || check()}>
+      <Show when={(status() !== undefined && status() !== null && status() !== false) || check()}>
         <div class="k2b-ste-status" role="status">
-          <span>{props.status}</span>
+          <span>{status()}</span>
           <Show when={check()}>
             <span class="k2b-ste-check" title={missingSeparator() ? t().checkSeparatorDetail : t().checkTableDetail}>
               <i class="ti ti-alert-triangle" aria-hidden="true" />
@@ -1109,17 +1110,20 @@ export function TextEditor(props: TextEditorProps) {
                 </Toolbar.Group>
               )}
             </For>
-            <SegmentedControl
-              class="k2b-ste-views"
-              size="sm"
-              ariaLabel={t().view}
-              value={mode() === "source" ? "source" : "formatted"}
-              options={[
-                { value: "formatted", label: t().formatted, icon: "ti ti-typography" },
-                { value: "source", label: t().source, icon: "ti ti-markdown" },
-              ]}
-              onValueChange={selectMode}
-            />
+            {/* Editing is always formatted. Only a source view reached through the table check offers the way back. */}
+            <Show when={mode() === "source"}>
+              <SegmentedControl
+                class="k2b-ste-views"
+                size="sm"
+                ariaLabel={t().view}
+                value="source"
+                options={[
+                  { value: "formatted", label: t().formatted, icon: "ti ti-typography" },
+                  { value: "source", label: t().source, icon: "ti ti-markdown" },
+                ]}
+                onValueChange={selectMode}
+              />
+            </Show>
           </Toolbar>
         </div>
       </Show>

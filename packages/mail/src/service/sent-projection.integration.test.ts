@@ -3081,6 +3081,29 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("a draft whose text ends in a line break keeps its revision when the sync sees Mail's own copy", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Typing a new line");
+      // Someone presses Enter at the end of the text; the composer saves while they keep typing.
+      const typed = "Hi\n\n\nDas ist ein test\n";
+      const saved = await editInCloud(mailbox, draft.id, draft.revision, typed);
+      await settleDraftImports(mailbox.mailboxId);
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ id: draft.id, body: typed, revision: String(saved.revision), state: "draft", recoveries: 0 }),
+      ]);
+      // The composer's next save still holds the current revision.
+      const next = await editInCloud(mailbox, draft.id, saved.revision, `${typed}weiter`);
+      expect(next.revision).toBe(saved.revision + 1);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a client that edits the current copy updates the draft once, even when it stores the edit twice", async () => {
     const provider = createProvider("imap");
     try {

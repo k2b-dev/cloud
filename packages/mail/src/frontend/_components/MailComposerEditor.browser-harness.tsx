@@ -24,7 +24,14 @@ export type MailComposerEditorHarnessOptions = {
   format?: "plain" | "markdown";
   editorActive?: boolean;
 };
-export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftIntent; signatureTemplateId: string | null; seed?: boolean };
+export type MailComposerHarnessOptions = {
+  locale: "en" | "de";
+  intent: DraftIntent;
+  signatureTemplateId: string | null;
+  seed?: boolean;
+  /** Write and preview side by side, as a person arranges the panes. */
+  split?: boolean;
+};
 
 declare global {
   interface Window {
@@ -285,7 +292,22 @@ window.mountComposer = (options) => {
           }}
           initialDraft={options.seed ? undefined : draft}
           initialSeed={restoredSeed}
-          initialPanes={options.seed ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } } : layout}
+          initialPanes={
+            options.split
+              ? {
+                  version: 2,
+                  root: {
+                    type: "split",
+                    direction: "horizontal",
+                    ratio: 0.5,
+                    first: { type: "group", items: ["editor"], active: "editor" },
+                    second: { type: "group", items: ["preview"], active: "preview" },
+                  },
+                }
+              : options.seed
+                ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } }
+                : layout
+          }
           returnHref="/app/mail/Box001"
           dateConfig={{ locale: options.locale, timeZone: "UTC" }}
         />

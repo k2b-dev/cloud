@@ -64,7 +64,7 @@ const { defaultBrowserType: _, ...phone } = devices[browserName === "webkit" ? "
 const profiles: Record<string, BrowserContextOptions> = { desktop: { viewport: { width: 1440, height: 900 } }, phone };
 for (const [name, options] of Object.entries(profiles))
   describe(name, () => {
-    test("toolbar formats the cell selection and source mode clears its floating menu", async () => {
+    test("toolbar formats the cell selection without a view switch; a source view returns to formatted", async () => {
       const context = await browser.newContext(options);
       try {
         const page = await context.newPage();
@@ -90,11 +90,18 @@ for (const [name, options] of Object.entries(profiles))
         });
         await page.getByRole("button", { name: "Fett", exact: true }).click();
         expect(await page.evaluate(() => window.sharedComponentHarness.view.state.doc.toString())).toContain("**Visitenkarten**");
-        await page.getByRole("radio", { name: "Markdown", exact: true }).click();
+        // Editing is always formatted: the toolbar offers no Formatted/Markdown switch.
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        expect(await page.getByRole("radio", { name: "Markdown", exact: true }).count()).toBe(0);
+        // A source view (the table check's "Check Markdown") keeps its tools and the way back.
+        await page.goto(server.url.href + "?state=source");
+        await page.locator(".k2b-ste-views").waitFor();
         expect(await page.locator(".k2b-ste-table").count()).toBe(0);
-        expect(await page.locator(".k2b-ste-floating-menu .k2b-dropdown__trigger").count()).toBe(0);
         await page.getByRole("button", { name: "Tabelle", exact: true }).click();
         expect(await page.evaluate(() => window.sharedComponentHarness.view.state.doc.toString())).toContain("Spalte 1");
+        await page.getByRole("radio", { name: "Formatiert", exact: true }).click();
+        await page.locator(".k2b-ste-table").first().waitFor();
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
         expect(errors).toEqual([]);
       } finally {
         await context.close();
