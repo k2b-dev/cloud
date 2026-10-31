@@ -36,7 +36,7 @@ const certificate = (host: string, addresses: PublicNetworkAddress[], signal: Ab
     if (signal.aborted) abort();
   });
 
-const reachable = (host: string, addresses: PublicNetworkAddress[], nonce: string, signal: AbortSignal): Promise<void> =>
+const reachable = (host: string, addresses: PublicNetworkAddress[], nonce: string, answer: string, signal: AbortSignal): Promise<void> =>
   readNetworkResponse({
     request,
     options: {
@@ -59,9 +59,9 @@ const reachable = (host: string, addresses: PublicNetworkAddress[], nonce: strin
       response.setEncoding("utf8");
       response.on("data", (chunk: string) => {
         body += chunk;
-        if (body.length > nonce.length) reject(new Error("Gateway check returned an unexpected response"));
+        if (body.length > answer.length) reject(new Error("Gateway check returned an unexpected response"));
       });
-      response.once("end", () => (body === nonce ? resolve() : reject(new Error("Gateway check did not return the challenge"))));
+      response.once("end", () => (body === answer ? resolve() : reject(new Error("Gateway check did not return the challenge answer"))));
     },
   });
 
@@ -69,7 +69,7 @@ type DomainCheckDependencies = {
   resolve: (host: string, signal: AbortSignal) => Promise<PublicNetworkAddress[]>;
   certificate: typeof certificate;
   reachable: typeof reachable;
-  challenge: (host: string, nonce: string) => Promise<() => Promise<void>>;
+  challenge: (host: string, nonce: string, answer: string) => Promise<() => Promise<void>>;
   now: () => Date;
   nonce: () => string;
 };
@@ -91,9 +91,9 @@ const dependencies: DomainCheckDependencies = {
     ),
   certificate,
   reachable,
-  challenge: async (host, nonce) => {
+  challenge: async (host, nonce, answer) => {
     const key = domainCheckKey(host, nonce);
-    await redis.set(key, "1", "EX", DOMAIN_CHECK_TTL_SECONDS);
+    await redis.set(key, answer, "EX", DOMAIN_CHECK_TTL_SECONDS);
     return async () => {
       await redis.del(key);
     };
@@ -106,7 +106,7 @@ const failure = (error: unknown): AppDomainCheckStep => ({
   detail: error instanceof Error ? error.message : "Domain check failed",
 });
 
-/** Stop at the first failure. No redirect is followed and no response body can exceed the challenge. */
+/** Stop at the first failure. No redirect is followed and no response body can exceed the challenge answer. */
 export const checkAppDomain = async (host: string, overrides: Partial<DomainCheckDependencies> = {}): Promise<AppDomainStatus> => {
   const deps = { ...dependencies, ...overrides };
   const status: AppDomainStatus = {
@@ -133,10 +133,12 @@ export const checkAppDomain = async (host: string, overrides: Partial<DomainChec
   }
   let cleanup: (() => Promise<void>) | undefined;
   try {
+    // The answer stays in Valkey; only this installation's gateway can return it for the nonce in the path.
     const nonce = deps.nonce();
+    const answer = deps.nonce();
     await deadline(async (signal) => {
-      cleanup = await awaitNetworkOperation(deps.challenge(host, nonce), signal);
-      await deps.reachable(host, addresses, nonce, signal);
+      cleanup = await awaitNetworkOperation(deps.challenge(host, nonce, answer), signal);
+      await deps.reachable(host, addresses, nonce, answer, signal);
     });
     status.reachable = { ok: true, detail: "Cloud gateway returned the challenge" };
   } catch (error) {

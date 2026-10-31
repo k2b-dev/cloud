@@ -8,10 +8,11 @@ const fixture = (failAt?: "dns" | "certificate" | "reachable") => {
     calls.push(step);
     if (step === failAt) throw new Error(`${step} failed`);
   };
-  const probe = () =>
-    checkAppDomain("site.example.test", {
+  const probe = () => {
+    const values = ["fixed-challenge", "secret-answer"];
+    return checkAppDomain("site.example.test", {
       now: () => new Date(checkedAt),
-      nonce: () => "fixed-challenge",
+      nonce: () => values.shift()!,
       resolve: async () => {
         await run("dns");
         return [{ address: "203.0.113.8", family: 4 }];
@@ -21,17 +22,21 @@ const fixture = (failAt?: "dns" | "certificate" | "reachable") => {
         expect(signal.aborted).toBe(false);
         await run("certificate");
       },
-      challenge: async (host, nonce) => {
+      challenge: async (host, nonce, answer) => {
         expect(host).toBe("site.example.test");
         expect(nonce).toBe("fixed-challenge");
+        // The stored answer never travels in the request path, so an echoing server cannot pass.
+        expect(answer).toBe("secret-answer");
         await run("challenge");
         return () => run("cleanup");
       },
-      reachable: async (_host, _addresses, nonce) => {
+      reachable: async (_host, _addresses, nonce, answer) => {
         expect(nonce).toBe("fixed-challenge");
+        expect(answer).toBe("secret-answer");
         await run("reachable");
       },
     });
+  };
   return { probe, calls };
 };
 

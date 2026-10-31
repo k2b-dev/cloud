@@ -15,7 +15,11 @@ export const PUBLIC_HOST_HEADER = "X-Cloud-Public-Host";
 
 /** The only Cloud path on an app domain: `GET <prefix><nonce>` answers the nonce while Core checks the domain. */
 export const DOMAIN_CHECK_PATH_PREFIX = "/_cloud/domain-check/";
-/** Valkey key Core sets (value "1", TTL `DOMAIN_CHECK_TTL_SECONDS`) before it requests the check path. */
+/**
+ * Valkey key Core sets before it requests the check path, with TTL `DOMAIN_CHECK_TTL_SECONDS`. Its value is a
+ * separate random answer that never appears in the request; the gateway responds with it, so an unrelated server
+ * that echoes the path cannot pass the check.
+ */
 export const domainCheckKey = (host: string, nonce: string): string => `cloud:domain-check:${host}:${nonce}`;
 export const DOMAIN_CHECK_TTL_SECONDS = 60;
 
@@ -43,7 +47,7 @@ const HOST_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
 /** Returns the normalized host, or null when `input` is not a single DNS host name without port or wildcard. */
 export const normalizeAppDomainHost = (input: string): string | null => {
   const trimmed = input.trim().replace(/\.$/, "");
-  if (!trimmed || /[/:@?#*\s]/.test(trimmed)) return null;
+  if (!trimmed || /[/\\:@?#*\s]/.test(trimmed)) return null;
   let host: string;
   try {
     host = new URL(`http://${trimmed}`).hostname;
@@ -81,4 +85,7 @@ export const isCloudCredentialCookie = (name: string): boolean =>
   name === PWA_COOKIES.pairing ||
   name === "cloud_browser" ||
   name === "__Host-cloud_browser" ||
-  name.startsWith("__Secure-cloud-app-pwa-");
+  name.startsWith("__Secure-cloud-app-pwa-") ||
+  // Access proofs that built-in apps set on the Cloud host.
+  name === "mail_attachment_grant" ||
+  name === "filesv2-share-access";
