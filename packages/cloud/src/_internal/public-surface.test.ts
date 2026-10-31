@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
-import { redis } from "../runtime/clients";
 import { Hono } from "hono";
 import { appAccess } from "../contracts/app-access";
 import { PUBLIC_HOST_HEADER, PUBLIC_SURFACE_PREFIX } from "../contracts/app-domains";
+import { redis } from "../runtime/clients";
 import { clientIp, rateLimit } from "../server";
 import { type AppDefinition, defineApp } from "./define-app";
 import { inventory, publishedEntry } from "./define-app.test-fixture";
