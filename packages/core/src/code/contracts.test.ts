@@ -1,12 +1,17 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, type User } from "@k2b/cloud/contracts";
+import {
+  CAPABILITY_MAX_RESULT_BYTES,
+  type CapabilityExecutionContext,
+  CloudResourceReaderViewSchema,
+  type User,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { aiCapabilities } from "../capabilities";
 import { codePerson, readCodeOwner } from "./access";
-import { CodeOwnerSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
-import { codeSourceHash } from "./store";
+import { CodeOwnerSchema, CodeRunCursorSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
+import { codeSourceHash, codeTextChunk } from "./store";
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -96,9 +101,9 @@ test("owner presentation and default editorship use the live authorized canonica
         title: "Read mailbox",
         description: "Read one mailbox.",
         openWorld: false,
-        input: z.object({ id: z.string() }),
-        data: z.object({ view: z.unknown() }),
-        run: () => ({ ok: true, data: { data: { view: null } } }),
+        input: z.object({ id: z.string().describe("Mailbox ID.") }).strict(),
+        data: z.object({ view: CloudResourceReaderViewSchema }).strict(),
+        run: () => ({ ok: true, data: { data: { view: { title: "Mailbox", permission: "read" } } } }),
       },
     },
   });
@@ -132,4 +137,21 @@ test("owner presentation and default editorship use the live authorized canonica
     invoke.mockRestore();
     catalog.mockRestore();
   }
+});
+
+test("text chunks make progress without splitting surrogate pairs and reject split offsets", () => {
+  expect(codeTextChunk("a😀b", 0, 2)).toEqual({ text: "a", nextOffset: 1 });
+  expect(codeTextChunk("a😀b", 1, 1)).toEqual({ text: "😀", nextOffset: 3 });
+  expect(codeTextChunk("a😀b", 3, 10)).toEqual({ text: "b", nextOffset: null });
+  expect(() => codeTextChunk("a😀b", 2, 10)).toThrow("surrogate pair");
+  expect(codeTextChunk("done", 10, 10)).toEqual({ text: "", nextOffset: null });
+});
+
+test("run content chunks and precise keyset cursors are validated", () => {
+  const input = { codeId: "c_8hw2", runId: user.id, content: { kind: "result", ordinal: 1 } };
+  expect(codeQueryContracts.runRead.input.parse(input)).toMatchObject({ cursor: 0, offset: 0, length: 16384 });
+  expect(codeQueryContracts.runRead.input.safeParse({ ...input, length: 16385 }).success).toBe(false);
+  expect(codeQueryContracts.runRead.input.safeParse({ ...input, content: { kind: "result", ordinal: 0 } }).success).toBe(false);
+  expect(CodeRunCursorSchema.safeParse(`2026-10-31T12:00:00.123456Z|${user.id}`).success).toBe(true);
+  expect(CodeRunCursorSchema.safeParse(`2026-13-31T12:00:00.123456Z|${user.id}`).success).toBe(false);
 });

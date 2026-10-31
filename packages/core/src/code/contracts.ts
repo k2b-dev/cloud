@@ -1,19 +1,30 @@
-import { CloudResourceRefSchema, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 /** Stable public identity; never changes when a new version is saved. */
-export const CodeIdSchema = z.string().regex(/^c_[a-z0-9]{4,16}$/);
+export const CodeIdSchema = z
+  .string()
+  .regex(/^c_[a-z0-9]{4,16}$/)
+  .describe("Stable Code ID returned by core.code.list or core.code.read.");
 /** Exactly one owner. Resource identity is the platform's opaque { type, id } pair. */
 export const CodeOwnerSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("person"), userId: z.uuid() }).strict(),
-  z.object({ kind: z.literal("resource"), ref: CloudResourceRefSchema }).strict(),
+  z
+    .object({ kind: z.literal("person").describe("Personal Code owner."), userId: z.uuid().describe("UUID of the owning person.") })
+    .strict(),
   z
     .object({
-      kind: z.literal("app"),
+      kind: z.literal("resource").describe("Resource Code owner."),
+      ref: CloudResourceRefSchema.describe("Exact resource owning the Code."),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("app").describe("Application Code owner."),
       appId: z
         .string()
         .regex(/^[a-z][a-z0-9-]*$/)
-        .max(100),
+        .max(80)
+        .describe("Registered owner application ID."),
     })
     .strict(),
 ]);
@@ -43,7 +54,7 @@ export type CodeVersionManifest = z.infer<typeof CodeVersionManifestSchema>;
 /** Core-owned tables; other applications consume capabilities, never these tables. */
 export const CODE_TABLES = {
   codes: "code.codes",
-  access: "code.access",
+  shares: "code.shares",
   versions: "code.versions",
   runs: "code.runs",
   calls: "code.calls",
@@ -86,6 +97,7 @@ export const CodeRunSchema = z
     codeId: CodeIdSchema,
     versionId: z.uuid(),
     trigger: z.enum(["manual", "schedule", "event", "path"]),
+    /** Declared handler name; never a concrete request URL or payload. Safe run metadata for readers. */
     entrypoint: z.string(),
     state: z.enum(["queued", "running", "succeeded", "failed", "cancelled", "skipped"]),
     outcome: z.string().nullable(),
@@ -95,12 +107,19 @@ export const CodeRunSchema = z
   })
   .strict();
 export type CodeRun = z.infer<typeof CodeRunSchema>;
+/** jsonb text adds separator whitespace; twice the public result budget bounds every valid capability result. */
+export const CODE_RESULT_STORAGE_BYTES = 2 * CAPABILITY_MAX_RESULT_BYTES;
+/** Inline JSON and text chunks share the capability response budget. Larger values remain complete in Postgres. */
+export const CODE_INLINE_JSON_BYTES = 16_384;
 /** Ordered observational record, not a replay journal or an idempotency reservation. */
 export const CodeCallSchema = z
   .object({
     ordinal: z.number().int().positive(),
     kind: z.enum(["query", "action"]),
-    call: NormalizedCapabilityCallSchema,
+    capability: z.string(),
+    call: NormalizedCapabilityCallSchema.nullable(),
+    callChunked: z.boolean(),
+    resultChunked: z.boolean(),
     result: z.json().nullable(),
     state: z.enum(["running", "succeeded", "failed"]),
     startedAt: timestamp,
@@ -108,12 +127,34 @@ export const CodeCallSchema = z
   })
   .strict();
 export type CodeCall = z.infer<typeof CodeCallSchema>;
-const pageInput = { cursor: z.string().regex(/^\d+$/).max(12).optional(), limit: z.number().int().min(1).max(50).default(20) };
+const pageInput = {
+  cursor: z.string().max(100).optional().describe("Opaque cursor returned by the previous page."),
+  limit: z.number().int().min(1).max(50).default(20).describe("Maximum run metadata items in this page."),
+};
 const page = { nextCursor: z.string().nullable() };
+const textChunkInput = {
+  offset: z.number().int().min(0).default(0).describe("UTF-16 offset, starting at zero or returned as nextOffset."),
+  length: z.number().int().min(1).max(16_384).default(16_384).describe("Maximum UTF-16 code units in this text chunk."),
+};
+const textChunk = z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).strict();
+/** Exact timestamp precision is retained in the cursor, including Postgres microseconds. */
+export const CodeRunCursorSchema = z
+  .string()
+  .max(100)
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z\|[a-f0-9-]{36}$/)
+  .refine((value) => z.iso.datetime().safeParse(value.split("|")[0]).success && z.uuid().safeParse(value.split("|")[1]).success)
+  .describe("Opaque run history cursor returned by the previous page.");
 /** Public Query inputs/results. Content is chunked to fit the capability transport's result budget. */
 export const codeQueryContracts = {
   list: {
-    input: z.object({ owner: CodeOwnerSchema.optional(), ...pageInput, limit: z.number().int().min(1).max(20).default(20) }).strict(),
+    input: z
+      .object({
+        owner: CodeOwnerSchema.optional().describe("Filter by one exact Code owner."),
+        ...pageInput,
+        cursor: CodeIdSchema.optional().describe("Last Code ID returned as nextCursor."),
+        limit: z.number().int().min(1).max(20).default(20).describe("Maximum Code candidates checked in this page."),
+      })
+      .strict(),
     data: z.object({ items: z.array(CodeSchema.extend({ permission: CodePermissionSchema })), ...page }).strict(),
   },
   read: {
@@ -124,16 +165,22 @@ export const codeQueryContracts = {
     input: z
       .object({
         codeId: CodeIdSchema,
-        versionId: z.uuid(),
+        versionId: z.uuid().describe("Immutable version UUID belonging to this Code."),
         content: z
           .discriminatedUnion("kind", [
-            z.object({ kind: z.literal("source"), path: z.string().min(1).max(512) }).strict(),
-            z.object({ kind: z.literal("bundle") }).strict(),
-            z.object({ kind: z.literal("manifest") }).strict(),
+            z
+              .object({
+                kind: z.literal("source").describe("Read a source file."),
+                path: z.string().min(1).max(512).describe("Relative source path from version metadata."),
+              })
+              .strict(),
+            z.object({ kind: z.literal("bundle").describe("Read the exact runner bundle.") }).strict(),
+            z.object({ kind: z.literal("manifest").describe("Read the checked version manifest as JSON text.") }).strict(),
           ])
-          .optional(),
-        offset: z.number().int().min(0).default(0),
-        length: z.number().int().min(1).max(16_384).default(16_384),
+          .optional()
+          .describe("Select version text to read; omit for metadata only."),
+        offset: z.number().int().min(0).default(0).describe("UTF-16 offset, starting at zero or returned as nextOffset."),
+        length: z.number().int().min(1).max(16_384).default(16_384).describe("Maximum UTF-16 code units in this text chunk."),
       })
       .strict(),
     data: z
@@ -141,11 +188,37 @@ export const codeQueryContracts = {
       .strict(),
   },
   runList: {
-    input: z.object({ codeId: CodeIdSchema, ...pageInput }).strict(),
+    input: z.object({ codeId: CodeIdSchema, ...pageInput, cursor: CodeRunCursorSchema.optional() }).strict(),
     data: z.object({ items: z.array(CodeRunSchema), ...page }).strict(),
   },
   runRead: {
-    input: z.object({ codeId: CodeIdSchema, runId: z.uuid(), cursor: z.number().int().min(0).default(0) }).strict(),
+    input: z
+      .object({
+        codeId: CodeIdSchema,
+        runId: z.uuid().describe("Run UUID belonging to this Code."),
+        cursor: z.number().int().min(0).default(0).describe("Last call ordinal from nextCursor, or zero for the first call."),
+        content: z
+          .discriminatedUnion("kind", [
+            z.object({ kind: z.literal("input").describe("Read the full run input as JSON text.") }).strict(),
+            z.object({ kind: z.literal("output").describe("Read the full run output as JSON text.") }).strict(),
+            z
+              .object({
+                kind: z.literal("call").describe("Read the full normalized call as JSON text."),
+                ordinal: z.number().int().positive().describe("Call ordinal from the call page."),
+              })
+              .strict(),
+            z
+              .object({
+                kind: z.literal("result").describe("Read the full call result as JSON text."),
+                ordinal: z.number().int().positive().describe("Call ordinal from the call page."),
+              })
+              .strict(),
+          ])
+          .optional()
+          .describe("Optional full JSON content selector for a large payload."),
+        ...textChunkInput,
+      })
+      .strict(),
     data: z
       .object({
         run: CodeRunSchema,
@@ -153,6 +226,9 @@ export const codeQueryContracts = {
           .object({
             input: z.json(),
             output: z.json().nullable(),
+            inputChunked: z.boolean(),
+            outputChunked: z.boolean(),
+            content: textChunk.nullable(),
             calls: z.array(CodeCallSchema).max(1),
             nextCursor: z.number().int().nullable(),
           })

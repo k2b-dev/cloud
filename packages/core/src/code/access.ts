@@ -3,6 +3,8 @@ import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cl
 import { CloudResourceReaderViewSchema, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
 import { getEffectivePermission, type RequestAuthority, userFromActor } from "@k2b/cloud/server";
 import { canManageAppAccess } from "@k2b/cloud/services";
+import { i18n } from "@k2b/stdlib";
+import type { SQL } from "bun";
 import { z } from "zod";
 import type { Code, CodeOwner, CodePermission } from "./contracts";
 
@@ -34,7 +36,12 @@ export const codePerson = (context: CodeContext, write = false) => {
   if (
     credential !== "session" &&
     credential !== "mandate" &&
-    !(credential === "api_key" && scopes.length === 0) &&
+    !(
+      credential === "api_key" &&
+      authority.actor.kind === "service_account" &&
+      authority.actor.serviceAccount.kind === "user_delegated" &&
+      scopes.length === 0
+    ) &&
     !scopes.some((scope) =>
       (write
         ? ["write", "admin", "core:write", "core:admin", "core:*"]
@@ -75,30 +82,42 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
 };
 
 /** Default editors are the personal owner or live owner administrators; explicit shares add editors/readers. */
-export const codePermission = async (code: Code, context: CodeContext): Promise<CodePermission | null> => {
+export const codePermission = async (code: Code, context: CodeContext, db: SQL = sql): Promise<CodePermission | null> => {
   const user = codePerson(context);
   if (user.roles.includes("admin")) return "editor";
   if (code.owner.kind === "person" && code.owner.userId === user.id) return "editor";
-  const entries = await sql<{ access_id: string }[]>`SELECT access_id FROM code.access WHERE code_id = ${code.id}`;
-  const permission = await getEffectivePermission({
-    accessIds: entries.map((row) => row.access_id),
-    subject: context.authority.accessSubject,
-  });
+  const entries = await db<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id = ${code.id}`;
+  const permission = await getEffectivePermission(
+    {
+      accessIds: entries.map((row) => row.access_id),
+      subject: context.authority.accessSubject,
+    },
+    db,
+  );
   if (permission === "write" || permission === "admin") return "editor";
   if (code.owner.kind !== "person" && (await readCodeOwner(code.owner, context))?.admin) return "editor";
   return permission === "read" ? "reader" : null;
 };
 /** Missing and inaccessible Code have the same result. */
-export const requireCodePermission = async (code: Code, context: CodeContext, editor = false): Promise<CodePermission> => {
-  const permission = await codePermission(code, context);
+export const requireCodePermission = async (code: Code, context: CodeContext, editor = false, db: SQL = sql): Promise<CodePermission> => {
+  const permission = await codePermission(code, context, db);
   if (!permission || (editor && permission !== "editor")) throw new CodeDataError("NOT_FOUND", "Code not found.");
   if (editor) codePerson(context, true);
   return permission;
 };
-/** Service-account names are stable machine identities; this label always comes from the live owner reader. */
+const codeMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: { accountName: ({ title }: { title: string }) => `Code of ${title}` },
+    de: { accountName: ({ title }) => `Code von ${title}` },
+  },
+});
+
+/** Live owner presentation uses reader authority, independently of permission to open the Code itself. */
 export const codeAccountDisplayName = async (code: Code, context: CodeContext): Promise<string | null> => {
-  await requireCodePermission(code, context);
+  codePerson(context);
   if (!code.serviceAccountId) return null;
   const owner = await readCodeOwner(code.owner, context);
-  return owner ? (context.locale?.startsWith("de") ? `Code von ${owner.title}` : `Code of ${owner.title}`) : null;
+  const { t } = codeMessages.resolve(context.locale ? [context.locale] : []);
+  return owner ? t.accountName({ title: owner.title }) : null;
 };

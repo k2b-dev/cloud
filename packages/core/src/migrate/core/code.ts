@@ -24,7 +24,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS codes_resource_owner ON code.codes(owner_type,owner_id) WHERE owner_kind = 'resource'`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS codes_app_owner ON code.codes(owner_app_id) WHERE owner_kind = 'app'`.simple();
     await tx`CREATE INDEX IF NOT EXISTS codes_person_owner ON code.codes(owner_user_id,id) WHERE owner_kind = 'person'`.simple();
-    await tx`CREATE TABLE IF NOT EXISTS code.access (
+    await tx`CREATE TABLE IF NOT EXISTS code.shares (
       code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
       access_id UUID NOT NULL UNIQUE REFERENCES auth.access(id) ON DELETE CASCADE,
       PRIMARY KEY (code_id,access_id)
@@ -53,16 +53,17 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       outcome TEXT CHECK (outcome IS NULL OR outcome ~ '^[a-z][a-z0-9_]{0,127}$'),
       input JSONB NOT NULL DEFAULT 'null'::jsonb, output JSONB,
       payload_bytes INTEGER NOT NULL CHECK (payload_bytes BETWEEN 1 AND 32768),
-      calls_limit INTEGER NOT NULL CHECK (calls_limit > 0),
+      calls_limit INTEGER NOT NULL CHECK (calls_limit BETWEEN 1 AND 1000),
       generation INTEGER NOT NULL DEFAULT 0 CHECK (generation >= 0), lease_expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(), started_at TIMESTAMPTZ, ended_at TIMESTAMPTZ,
       FOREIGN KEY (version_id,code_id) REFERENCES code.versions(id,code_id) ON DELETE CASCADE,
       CHECK ((state IN ('succeeded','failed','cancelled','skipped')) = (ended_at IS NOT NULL)),
       CHECK (ended_at IS NULL OR ended_at >= created_at),
-      CHECK (octet_length(input::text) <= payload_bytes AND (output IS NULL OR octet_length(output::text) <= payload_bytes))
+      CHECK (octet_length(input::text) <= payload_bytes AND (output IS NULL OR octet_length(output::text) <= 524288))
     )`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_code_history ON code.runs(code_id,created_at DESC,id DESC)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_retention ON code.runs(ended_at,id) WHERE ended_at IS NOT NULL`.simple();
+    // 524288 = twice CAPABILITY_MAX_RESULT_BYTES, including jsonb separator whitespace.
     await tx`CREATE TABLE IF NOT EXISTS code.calls (
       run_id UUID NOT NULL REFERENCES code.runs(id) ON DELETE CASCADE, ordinal INTEGER NOT NULL CHECK (ordinal > 0),
       kind TEXT NOT NULL CHECK (kind IN ('query','action')), call JSONB NOT NULL CHECK (jsonb_typeof(call) = 'object'), result JSONB,
@@ -75,7 +76,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     DECLARE run code.runs;
     BEGIN
       SELECT * INTO run FROM code.runs WHERE id = NEW.run_id FOR UPDATE;
-      IF NEW.ordinal > run.calls_limit OR octet_length(NEW.call::text) + COALESCE(octet_length(NEW.result::text),0) > run.payload_bytes THEN
+      IF NEW.ordinal > run.calls_limit OR octet_length(NEW.call::text) > run.payload_bytes OR COALESCE(octet_length(NEW.result::text),0) > 524288 THEN
         RAISE EXCEPTION 'code call storage limit' USING ERRCODE = '23514';
       END IF;
       RETURN NEW;
@@ -104,22 +105,27 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     END $$ LANGUAGE plpgsql`.simple();
     await tx`CREATE OR REPLACE FUNCTION code.cleanup_deleted_code() RETURNS TRIGGER AS $$
     BEGIN
-      DELETE FROM auth.access WHERE id IN (SELECT access_id FROM code.access WHERE code_id = OLD.id);
       DELETE FROM auth.service_accounts WHERE id = OLD.service_account_id;
       RETURN OLD;
     END $$ LANGUAGE plpgsql`.simple();
-    // Delete access entries before cascades erase the junction; the account FK is deferred by deleting after the code row.
+    // A removed junction erases its owned access entry; the code AFTER DELETE trigger erases its account.
     await tx`CREATE OR REPLACE FUNCTION code.cleanup_access() RETURNS TRIGGER AS $$
     BEGIN DELETE FROM auth.access WHERE id = OLD.access_id; RETURN OLD; END $$ LANGUAGE plpgsql`.simple();
-    await tx`DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'code.versions'::regclass AND tgname = 'immutable_version') THEN
-        CREATE TRIGGER immutable_version BEFORE UPDATE ON code.versions FOR EACH ROW EXECUTE FUNCTION code.guard_version_update();
-        CREATE TRIGGER immutable_identity BEFORE UPDATE ON code.codes FOR EACH ROW EXECUTE FUNCTION code.guard_identity();
-        CREATE TRIGGER valid_account BEFORE INSERT OR UPDATE ON code.codes FOR EACH ROW EXECUTE FUNCTION code.guard_account();
-        CREATE TRIGGER deleted_code AFTER DELETE ON code.codes FOR EACH ROW EXECUTE FUNCTION code.cleanup_deleted_code();
-        CREATE TRIGGER deleted_access AFTER DELETE ON code.access FOR EACH ROW EXECUTE FUNCTION code.cleanup_access();
-        CREATE TRIGGER bounded_call BEFORE INSERT OR UPDATE ON code.calls FOR EACH ROW EXECUTE FUNCTION code.guard_call();
+    await tx`CREATE OR REPLACE FUNCTION code.guard_version_delete() RETURNS TRIGGER AS $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM code.codes WHERE id = OLD.code_id) THEN
+        RAISE EXCEPTION 'delete the owning code instead of an immutable version' USING ERRCODE = '55000';
       END IF;
-    END $$`.simple();
+      RETURN OLD;
+    END $$ LANGUAGE plpgsql`.simple();
+    await tx`
+        CREATE OR REPLACE TRIGGER immutable_version BEFORE UPDATE ON code.versions FOR EACH ROW EXECUTE FUNCTION code.guard_version_update();
+        CREATE OR REPLACE TRIGGER immutable_identity BEFORE UPDATE ON code.codes FOR EACH ROW EXECUTE FUNCTION code.guard_identity();
+        CREATE OR REPLACE TRIGGER valid_account BEFORE INSERT ON code.codes FOR EACH ROW EXECUTE FUNCTION code.guard_account();
+        CREATE OR REPLACE TRIGGER deleted_code AFTER DELETE ON code.codes FOR EACH ROW EXECUTE FUNCTION code.cleanup_deleted_code();
+        CREATE OR REPLACE TRIGGER deleted_access AFTER DELETE ON code.shares FOR EACH ROW EXECUTE FUNCTION code.cleanup_access();
+        CREATE OR REPLACE TRIGGER bounded_call BEFORE INSERT OR UPDATE ON code.calls FOR EACH ROW EXECUTE FUNCTION code.guard_call();
+        CREATE OR REPLACE TRIGGER immutable_version_delete BEFORE DELETE ON code.versions FOR EACH ROW EXECUTE FUNCTION code.guard_version_delete();
+    `.simple();
   });
 };

@@ -24,12 +24,15 @@ type CodeOwner =
   | { kind: "app"; appId: string };
 ```
 
-A person can own several Codes. A resource or an application can own at most
+A person creates their own personal Code and can own several Codes. A resource or an application can own at most
 one. Resource identity uses `CloudResourceRef`; Core does not interpret the
 owning application's domain IDs.
 
 The personal owner is an editor. For resource and application Code, the
-owner's current administrators are editors. Other people get access through
+owner's current administrators are editors. Resource administrators come from
+the canonical reader; application administrators come from application access
+grants. An application's `canManage` callback restricts changes to its access
+list, independently of Code editorship. Other people get access through
 explicit editor or reader shares. An editor can add or remove shares using
 the common access-entry model. Cloud administrators can read and edit all
 Code. Resource readability alone does not grant access to its Code.
@@ -47,15 +50,15 @@ A credential's scopes still limit reads and writes.
 Each resource or application Code has its own credentialless service account.
 Its stable machine name is `code:<resource-type>:<resource-id>` or
 `code:app:<app-id>`. Its display name comes from the owner's live reader:
-“Code of …” (“Code von …” in German). An unavailable reader supplies no
-cached replacement title. Creating the account grants no target permissions;
+“Code of …” (“Code von …” in German). The label needs permission to read the owner, independently of Code editorship.
+An unavailable reader supplies no cached replacement title. Creating the account grants no target permissions;
 activation owns those grants.
 
 ## Immutable versions
 
 A version stores all source files, the exact UTF-8 bundle, `sourceHash`,
 `bundleHash` and a checked-version manifest slot. Source paths are relative
-POSIX paths. The source hash is SHA-256 of compact JSON containing the sorted
+POSIX paths. Storage rejects NUL characters and malformed Unicode with `BAD_INPUT`. The source hash is SHA-256 of compact JSON containing the sorted
 `[path, content]` pairs; the bundle hash is SHA-256 of the exact bundle bytes.
 
 The source, bundle, hashes and manifest are immutable. The checker and
@@ -78,7 +81,14 @@ check current permissions in Core's Code service.
 | `core.code.read` | `codeId` | `code` and `permission` |
 | `core.code.version.read` | `codeId`, `versionId`, optional `content`, `offset`, `length` | Version metadata and optional text chunk |
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
-| `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor` | Run metadata; editor-only `contents` |
+| `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
+
+Without an owner filter, a normal caller lists their personal and explicitly
+shared Code. To discover Code through live owner administration, supply the
+exact resource or application owner. Cloud administrators list all Code.
+Code IDs provide the list cursor; run history uses a cursor containing the
+exact creation timestamp and run ID, so newer runs do not shift later pages.
+Treat both cursors as opaque.
 
 A list page can be empty while `nextCursor` is present: filtering permissions
 applies to a bounded candidate window. Continue until `nextCursor` is null.
@@ -93,9 +103,20 @@ content selector, the Query returns metadata and `content: null`.
 
 `run.read` returns `contents: null` for readers. For editors, `contents`
 contains the run input and output plus at most one capability call. Follow
-`contents.nextCursor` to read calls in their invocation order. A call records
-its normalized `{ capability, target, refs, input }`, kind, outcome and times.
-It is an observation of one attempt; it does not provide replay or resumption.
+`contents.nextCursor` to read calls in invocation order. A call records its
+normalized `{ capability, target, refs, input }`, capability name, kind,
+result, state and times. It is an observation of one attempt; it does not
+provide replay or resumption.
+
+Values larger than 16 KiB of compact JSON return `null` inline and set
+`inputChunked`, `outputChunked`, `callChunked` or `resultChunked`. They remain
+complete in storage. Select `content: { kind: "input" }`, `{ kind: "output" }`,
+`{ kind: "call", ordinal: 1 }` or `{ kind: "result", ordinal: 1 }` to read
+JSON text through `contents.content`, using the same UTF-16 chunk contract as
+version text. Readers still receive `contents: null` with any selector.
+
+`entrypoint` is the declared handler name. For a path handler it never contains
+the concrete URL, request IDs, query parameters or other run input.
 
 ## Storage limits and retention
 
@@ -109,17 +130,22 @@ service.
 | `core.code.source_files` | 100 | 100 |
 | `core.code.bundle_bytes` | 4 MiB | 16 MiB |
 | `core.code.manifest_bytes` | 1 MiB of JSON | 4 MiB |
-| `core.code.payload_bytes` | 32 KiB per run input/output or call/result pair | 32 KiB |
-| `core.code.calls_per_run` | 1,000 | 1,000,000 |
+| `core.code.payload_bytes` | 32 KiB per run input or normalized call input | 32 KiB |
+| `core.code.calls_per_run` | 1,000 | 1,000 |
 
 All settings require positive integers. New versions use current limits; a
 run pins its call and payload limits at creation. Smaller settings do not
-rewrite existing versions or active runs. Transport budgets bound the file
-count and payload maximums.
+rewrite existing versions or active runs. Transport budgets bound the file count and input maximums. Run/call input
+admission uses Postgres's `jsonb::text` byte count, including its separator
+whitespace, before invocation. Capability results use the public 256 KiB
+result budget independently of the run input setting; storage allows twice
+that budget for jsonb separator whitespace. An oversized result outside the
+capability contract, or a result containing NUL/malformed Unicode, finishes
+the call as failed with an explicit diagnostic.
 
 Core removes completed runs and their calls 30 days after `endedAt`, in bounded
 batches. Queued and running attempts are preserved regardless of their age.
-Versions remain with their Code. Deleting a personal owner cascades to their
+Versions remain with their Code; individual version deletion is rejected. Deleting a personal owner cascades to their
 Code, versions, runs and shares. Creator attribution uses `ON DELETE SET NULL`,
 so removing a creator leaves resource-owned Code intact.
 
@@ -132,7 +158,11 @@ owner-deletion outbox.
 Core modules consume `packages/core/src/code/index.ts`. It exports Zod schemas
 and types (`CodeOwner`, `Code`, `CodeVersion`, `CodeRun`, `CodeCall`),
 `codeQueryContracts`, `CODE_TABLES`, permission-aware reads and version/share
-services. Other applications consume the five capabilities instead of importing
+services. `CODE_TABLES.shares` names `code.shares`, which links editor/reader
+shares to `auth.access`; it is separate from target Code grants. Use
+`addCodeShare` and `removeCodeShare` to edit these shares. Repeated shares for
+one principal update the existing access entry. Share and version writes lock
+the Code row and recheck permission within that transaction. Other applications consume the five capabilities instead of importing
 Core or accessing its tables.
 
 `insertCodeRun`, `appendCodeCall` and `finishCodeCall` are internal runner-host

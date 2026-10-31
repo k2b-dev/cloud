@@ -709,7 +709,8 @@ export const aiCapabilities = defineCapabilities({
   queries: {
     "code.list": {
       title: "List Code",
-      description: "List Code visible to you. Follow nextCursor even when a page is empty. Optionally filter by exact owner.",
+      description:
+        "List personal and explicitly shared Code; Cloud admins list all. Supply an exact owner to include its live administrators. Follow nextCursor even on empty pages.",
       ...codeQueryContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),
@@ -738,7 +739,8 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.run.read": {
       title: "Read a Code run",
-      description: "Read one attempt. Editors see input, output and ordered calls, one call per page. Readers receive contents:null.",
+      description:
+        "Read one attempt and ordered calls, one call per page. Editors read large JSON through content chunks; readers receive contents:null.",
       ...codeQueryContracts.runRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),

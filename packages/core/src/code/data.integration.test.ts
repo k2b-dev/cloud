@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
@@ -10,7 +10,7 @@ import * as access from "./access";
 import { type Code, codeQueryContracts } from "./contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import {
-  addCodeAccess,
+  addCodeShare,
   appendCodeCall,
   codeBundleHash,
   codeSourceHash,
@@ -19,9 +19,12 @@ import {
   expireCodeRuns,
   finishCodeCall,
   insertCodeRun,
+  listCodeRuns,
+  listCodes,
   readCode,
+  readCodeRun,
   readCodeVersion,
-  removeCodeAccess,
+  removeCodeShare,
 } from "./store";
 
 const ids = {
@@ -80,8 +83,10 @@ databaseSuite()("Core Code data and Query authorization", () => {
   const ownerState = new Map<string, { title: string; admin: boolean }>();
   let ownerSpy: ReturnType<typeof spyOn<typeof access, "readCodeOwner">>;
   beforeAll(async () => {
+    setSystemTime(fixed);
     database = await useFreshDatabase("core_code");
     await migrateAuth();
+    await migrateCode(); // Forward on an empty identity database.
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
     // Forward migration over an already populated identity database.
@@ -111,8 +116,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
       ctx(ids.owner),
     );
     versionId = version.id;
-    await addCodeAccess(code.id, { type: "user", userId: ids.editor }, "editor", ctx(ids.owner));
-    await addCodeAccess(code.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.owner));
+    await addCodeShare(code.id, { type: "user", userId: ids.editor }, "editor", ctx(ids.owner));
+    await addCodeShare(code.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.owner));
     runId = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "weekly", input: { private: "run input" } });
     await sql`UPDATE code.runs SET state='running',started_at=${fixed} WHERE id=${runId}::uuid`;
     await sql.begin(async (tx) => {
@@ -136,6 +141,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
     ownerSpy?.mockRestore();
     settingsSpy?.mockRestore();
     await database?.drop();
+    setSystemTime();
   });
 
   test("forward migration is idempotent on a filled DB and preserves pre-existing accounts", async () => {
@@ -164,7 +170,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
         c,
       );
       const runs = await aiCapabilities.queries["code.run.list"].run({ codeId: code.id, limit: 20 }, c);
-      const run = await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 0 }, c);
+      const run = await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 0, offset: 0, length: 16384 }, c);
       for (const response of [read, version, runs, run]) expect(response.ok).toBe(allowed);
       if (run.ok) {
         expect(codeQueryContracts.runRead.data.safeParse(run.data.data).success).toBe(true);
@@ -180,7 +186,10 @@ databaseSuite()("Core Code data and Query authorization", () => {
       if (runs.ok) expect(JSON.stringify(runs)).not.toContain("private");
       if (version.ok) expect(version.data.data.content?.text).toBe("export default 'source';");
     }
-    const second = await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 1 }, context(ids.owner));
+    const second = await aiCapabilities.queries["code.run.read"].run(
+      { codeId: code.id, runId, cursor: 1, offset: 0, length: 16384 },
+      context(ids.owner),
+    );
     expect(second.ok && second.data.data.contents?.calls[0]?.ordinal).toBe(2);
   });
   test("a Code account itself sees none of the five Queries, even with an accidental direct grant", async () => {
@@ -226,14 +235,16 @@ databaseSuite()("Core Code data and Query authorization", () => {
     const [grant] = await sql<
       { id: string }[]
     >`INSERT INTO auth.access(service_account_id,permission) VALUES(${account.id}::uuid,'write') RETURNING id`;
-    await sql`INSERT INTO code.access(code_id,access_id) VALUES(${code.id},${grant!.id}::uuid)`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.id},${grant!.id}::uuid)`;
     expect((await aiCapabilities.queries["code.list"].run({ limit: 20 }, codeContext)).ok).toBe(false);
     expect((await aiCapabilities.queries["code.read"].run({ codeId: code.id }, codeContext)).ok).toBe(false);
     expect(
       (await aiCapabilities.queries["code.version.read"].run({ codeId: code.id, versionId, offset: 0, length: 100 }, codeContext)).ok,
     ).toBe(false);
     expect((await aiCapabilities.queries["code.run.list"].run({ codeId: code.id, limit: 20 }, codeContext)).ok).toBe(false);
-    expect((await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 0 }, codeContext)).ok).toBe(false);
+    expect(
+      (await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 0, offset: 0, length: 16384 }, codeContext)).ok,
+    ).toBe(false);
     await sql`DELETE FROM code.codes WHERE id=${resource.id}`;
     expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${account.id}::uuid`).toHaveLength(0);
   });
@@ -246,6 +257,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
     expect((await readCode(resource.id, ctx(ids.stranger))).permission).toBe("editor");
     expect(await access.codeAccountDisplayName(resource, { ...ctx(ids.stranger), locale: "de" })).toBe("Code von Renamed mailbox");
     ownerState.set(ids.stranger, { title: "Renamed again", admin: false });
+    expect(await access.codeAccountDisplayName(resource, { ...ctx(ids.stranger), locale: "DE-at" })).toBe("Code von Renamed again");
     await expect(readCode(resource.id, ctx(ids.stranger))).rejects.toThrow("Code not found");
     ownerState.delete(ids.stranger);
     expect(await sql<{ name: string }[]>`SELECT name FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`).toEqual([
@@ -290,11 +302,11 @@ databaseSuite()("Core Code data and Query authorization", () => {
     ).rejects.toThrow("storage limits");
   });
   test("sharing uses normal grant precedence and revocation; readers cannot share or save versions", async () => {
-    const grant = await addCodeAccess(code.id, { type: "user", userId: ids.stranger }, "editor", ctx(ids.editor));
+    const grant = await addCodeShare(code.id, { type: "user", userId: ids.stranger }, "editor", ctx(ids.editor));
     expect((await readCode(code.id, ctx(ids.stranger))).permission).toBe("editor");
-    await removeCodeAccess(code.id, grant, ctx(ids.owner));
+    await removeCodeShare(code.id, grant, ctx(ids.owner));
     await expect(readCode(code.id, ctx(ids.stranger))).rejects.toThrow();
-    await expect(addCodeAccess(code.id, { type: "user", userId: ids.stranger }, "reader", ctx(ids.reader))).rejects.toThrow();
+    await expect(addCodeShare(code.id, { type: "user", userId: ids.stranger }, "reader", ctx(ids.reader))).rejects.toThrow();
     await expect(
       createCodeVersion(
         { codeId: code.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: versionId },
@@ -345,8 +357,128 @@ databaseSuite()("Core Code data and Query authorization", () => {
     expect(await sql`SELECT * FROM code.runs WHERE id=${active}::uuid`).toHaveLength(1);
     expect(await sql`SELECT * FROM code.versions WHERE id=${versionId}::uuid`).toHaveLength(1);
   });
+  test("personal creation stays with its person; non-person owners must exist even for administrators", async () => {
+    await expect(
+      createCode({ owner: { kind: "person", userId: ids.owner }, title: "Other person" }, ctx(ids.admin, true)),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    ownerSpy.mockResolvedValueOnce(null);
+    await expect(
+      createCode({ owner: { kind: "resource", ref: { type: "example.mailbox", id: "missing" } }, title: "Missing" }, ctx(ids.admin, true)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    ownerSpy.mockResolvedValueOnce(null);
+    await expect(createCode({ owner: { kind: "app", appId: "missing" }, title: "Missing" }, ctx(ids.admin, true))).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+  test("shares upsert one principal and permission changes take effect", async () => {
+    const first = await addCodeShare(code.id, { type: "user", userId: ids.editor }, "reader", ctx(ids.owner));
+    const second = await addCodeShare(code.id, { type: "user", userId: ids.editor }, "editor", ctx(ids.owner));
+    expect(second).toBe(first);
+    expect(
+      await sql`SELECT a.id FROM code.shares j JOIN auth.access a ON a.id=j.access_id WHERE j.code_id=${code.id} AND a.user_id=${ids.editor}::uuid`,
+    ).toHaveLength(1);
+    expect((await readCode(code.id, ctx(ids.editor))).permission).toBe("editor");
+  });
+  test("unfiltered lists avoid remote owner scans; exact owners check live administration", async () => {
+    const resource = await createCode(
+      { owner: { kind: "resource", ref: { type: "example.mailbox", id: "list-admin" } }, title: "Resource" },
+      ctx(ids.admin, true),
+    );
+    ownerState.set(ids.stranger, { title: "Mailbox", admin: true });
+    ownerSpy.mockClear();
+    const unfiltered = await listCodes({ limit: 20 }, ctx(ids.stranger));
+    expect(unfiltered.items.some((item) => item.id === resource.id)).toBe(false);
+    expect(ownerSpy).not.toHaveBeenCalled();
+    const filtered = await listCodes({ owner: resource.owner, limit: 20 }, ctx(ids.stranger));
+    expect(filtered.items.some((item) => item.id === resource.id)).toBe(true);
+    ownerState.delete(ids.stranger);
+  });
+  test("JSON admission measures Postgres whitespace, rejects NUL and leaves no partial run", async () => {
+    const input = Array.from({ length: 12000 }, () => 0); // 24001 compact bytes; 36000 jsonb bytes.
+    await expect(insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "boundary", input })).rejects.toMatchObject({
+      code: "BAD_INPUT",
+    });
+    const invalidInputs: Record<string, string>[] = [{ value: "bad\u0000" }, { ["bad\u0000"]: "key" }, { value: "\ud800" }];
+    for (const input of invalidInputs)
+      await expect(
+        insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "invalid-text", input }),
+      ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    for (const [sourceFiles, bundle] of [
+      [{ "code.ts": "bad\u0000" }, "good"],
+      [{ "code.ts": "good" }, "bad\u0000"],
+    ] as const)
+      await expect(
+        createCodeVersion({ codeId: code.id, sourceFiles, bundle, manifest: null, baseVersionId: versionId }, ctx(ids.owner)),
+      ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    expect(await sql`SELECT id FROM code.runs WHERE entrypoint IN ('boundary','invalid-text')`).toHaveLength(0);
+  });
+  test("valid large results finish and remain readable in full through bounded chunks", async () => {
+    const largeRun = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "large-result", input: null });
+    const result = { rows: "ä😀".repeat(20000) };
+    await sql.begin(async (tx) => {
+      const ordinal = await appendCodeCall(
+        { runId: largeRun, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
+        tx,
+      );
+      await finishCodeCall({ runId: largeRun, ordinal, state: "succeeded", result, endedAt: fixed }, tx);
+    });
+    const [saved] = await sql<{ state: string; result: unknown }[]>`SELECT state,result FROM code.calls WHERE run_id=${largeRun}::uuid`;
+    expect(saved).toEqual({ state: "succeeded", result });
+    const page = await readCodeRun({ codeId: code.id, runId: largeRun }, ctx(ids.owner));
+    expect(page.contents?.calls[0]).toMatchObject({ result: null, resultChunked: true, state: "succeeded" });
+    let offset: number | null = 0;
+    let text = "";
+    while (offset !== null) {
+      const chunk = await readCodeRun(
+        { codeId: code.id, runId: largeRun, content: { kind: "result", ordinal: 1 }, offset },
+        ctx(ids.owner),
+      );
+      expect(codeQueryContracts.runRead.data.safeParse(chunk).success).toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(chunk))).toBeLessThan(262144);
+      if (!chunk.contents?.content) throw new Error("Missing result chunk");
+      text += chunk.contents.content.text;
+      offset = chunk.contents.content.nextOffset;
+    }
+    expect(JSON.parse(text)).toEqual(result);
+    expect(
+      (await readCodeRun({ codeId: code.id, runId: largeRun, content: { kind: "result", ordinal: 1 } }, ctx(ids.reader))).contents,
+    ).toBeNull();
+  });
+  test("out-of-contract or non-storable results finish visibly instead of leaving calls running", async () => {
+    const run = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "bad-result", input: null });
+    for (const result of ["x".repeat(524289), "bad\u0000"]) {
+      await sql.begin(async (tx) => {
+        const ordinal = await appendCodeCall(
+          { runId: run, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
+          tx,
+        );
+        await finishCodeCall({ runId: run, ordinal, state: "succeeded", result, endedAt: fixed }, tx);
+      });
+    }
+    const calls = await sql<
+      { state: string; result: { code: string } }[]
+    >`SELECT state,result FROM code.calls WHERE run_id=${run}::uuid ORDER BY ordinal`;
+    expect(calls.map((call) => call.state)).toEqual(["failed", "failed"]);
+    expect(calls.map((call) => call.result.code)).toEqual(["code_result_exceeds_capability_contract", "code_result_not_storable"]);
+  });
+  test("run keyset pages keep exact microseconds and ignore newer insertions", async () => {
+    const a = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "keyset-a", input: null });
+    const b = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "keyset-b", input: null });
+    await sql`UPDATE code.runs SET created_at='2026-10-30T12:00:00.000002Z' WHERE code_id=${code.id}`;
+    await sql`UPDATE code.runs SET created_at='2026-10-30T12:00:00.000003Z' WHERE id=${a}::uuid`;
+    const first = await listCodeRuns({ codeId: code.id, limit: 1 }, ctx(ids.owner));
+    expect(first.items[0]?.id).toBe(a);
+    expect(first.nextCursor).toContain("000003Z");
+    const newer = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "keyset-new", input: null });
+    const second = await listCodeRuns({ codeId: code.id, limit: 50, cursor: first.nextCursor! }, ctx(ids.owner));
+    expect(second.items.some((item) => item.id === b)).toBe(true);
+    expect(second.items.some((item) => item.id === a || item.id === newer)).toBe(false);
+  });
+  test("immutable versions reject individual deletion while owning Code still exists", async () => {
+    await expect((async () => await sql`DELETE FROM code.versions WHERE id=${versionId}::uuid`)()).rejects.toThrow("immutable version");
+  });
   test("personal owner deletion cascades Code, versions, runs and access entries", async () => {
-    const grants = await sql<{ access_id: string }[]>`SELECT access_id FROM code.access WHERE code_id=${code.id}`;
+    const grants = await sql<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id=${code.id}`;
     await sql`DELETE FROM auth.users WHERE id=${ids.owner}::uuid`;
     expect(await sql`SELECT id FROM code.codes WHERE id=${code.id}`).toHaveLength(0);
     expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);

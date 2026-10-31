@@ -25,7 +25,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
       queries: {
         "code.list": {
           title: "Code auflisten",
-          description: "Listet sichtbaren Code, wahlweise nach Besitzer. Folge dem Cursor auch bei einer leeren Seite.",
+          description:
+            "Listet eigenen und explizit geteilten Code; Cloud-Admins sehen allen. Für Zugriff als Besitzer-Admin den genauen Besitzer angeben. Dem Cursor auch bei leeren Seiten folgen.",
         },
         "code.read": { title: "Code lesen", description: "Liest Besitzer, feste Code-ID und aktuelle Berechtigung." },
         "code.version.read": {
