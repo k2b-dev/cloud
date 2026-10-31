@@ -284,3 +284,9 @@ template.
 - Give HTML an ETag or Last-Modified validator.
 - Set image width and height, use modern formats, and lazy-load images below the first viewport.
 - Put content in the SSR HTML; use islands for interaction.
+
+The [standalone public-site example](https://github.com/k2b-dev/cloud/tree/main/packages/cloud/examples/public-site)
+follows every point of this list: two translated pages, `robots.txt`, a
+sitemap, a permanent redirect, a `410`, ETags, a hashed logo and one island.
+Cloud measures it through the gateway's app-domain path with Lighthouse and
+requires SEO 100 and mobile performance 95.
