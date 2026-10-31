@@ -722,7 +722,8 @@ whole replacement.
 ## Application Ed25519 keys
 
 ```bash
-cld --profile operator admin apps keys create inventory oauth --out-dir ./secrets
+cld --profile operator admin apps keys create inventory --out-dir ./secrets
+cld --profile operator admin apps keys create oauth --grant oauth:issue --out-dir ./secrets
 cld --profile operator admin apps keys create --all --apps ./apps.txt --out-dir ./secrets --format k8s-secret
 cld --profile operator admin apps keys list inventory --json
 cld --profile operator admin apps keys revoke inventory <keyId> --yes
@@ -739,3 +740,11 @@ are allowed. At most two unexpired, unrevoked keys are active per app. Listing
 accepts `--page` and `--per-page` (default 100, maximum 500). Enrollment alone
 does not change runtime configuration. The CLI refuses revoked or expired keys
 and disabled accounts; listings include separate key and account statuses.
+
+New keys have no OAuth issuance grant by default, even for `oauth` and during
+rotation. `--grant oauth:issue` assigns it to each new key named in the command;
+repeat the flag for every issuer rotation. `--no-grant` explicitly selects no
+grants and cannot be combined with `--grant`. Repeating an existing enrollment
+keeps its original grants. To withdraw issuance, create and deploy an ungranted
+replacement, then revoke every granted key for that app. Listings include
+`grants`. Issuance uses clients and grants registered in Cloud's OAuth registry.

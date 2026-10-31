@@ -85,6 +85,10 @@ test("invalid app IDs, reserved IDs, payloads and pagination never reach the ser
     (await routes.request(request("/inventory/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey, seed: "must-not-reach-service" })))
       .status,
   ).toBe(400);
+  for (const grants of [["unknown"], ["oauth:issue", "oauth:issue"], "oauth:issue"])
+    expect((await routes.request(request("/inventory/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey, grants }))).status).toBe(
+      400,
+    );
   expect((await routes.request(request("/keys?perPage=501"))).status).toBe(400);
   expect(calls.length).toBe(before);
 });
@@ -124,4 +128,13 @@ test("OAuth read scope cannot mutate app keys even with an admin role", async ()
   expect((await routes.request(request("/oauth/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey }))).status).toBe(403);
   expect((await routes.request(request(`/oauth/keys/${KEY_ID}`, "DELETE"))).status).toBe(403);
   expect(calls.length).toBe(before);
+});
+
+test("enrollment passes explicit grant and empty grant choices to the owning service", async () => {
+  const routes = createAdminAppKeyRoutes(authenticate, service);
+  for (const grants of [["oauth:issue"], []]) {
+    const response = await routes.request(request("/acme-oauth/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey, grants }));
+    expect(response.status).toBe(200);
+    expect(calls.at(-1)).toMatchObject({ appId: "acme-oauth", grants });
+  }
 });

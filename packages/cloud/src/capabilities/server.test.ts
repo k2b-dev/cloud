@@ -195,7 +195,7 @@ describe("server capability client", () => {
     globalThis.fetch = Object.assign(
       async (input: string | URL | Request, init?: RequestInit) => {
         requests.push(input instanceof Request ? input : new Request(input, init));
-        expect(init?.redirect).toBe("error");
+        expect(new Request(input, init).redirect).toBe("error");
         return Response.json({ data: { readable: [] } });
       },
       { preconnect: originalFetch.preconnect },
