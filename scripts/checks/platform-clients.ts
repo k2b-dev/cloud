@@ -1160,6 +1160,12 @@ export const baseline: Readonly<Record<string, readonly string[]>> = {
   "tests/integration/identity/identity-keyring.integration.test.ts": ['import { sql } from "bun";'],
   "tests/integration/identity/mandate-capability-policy.integration.test.ts": ['import { sql } from "bun";'],
   "tests/integration/test-infra-redis-binding.integration.test.ts": ['import { RedisClient, redis } from "bun";'],
+  "packages/core/src/migrate/core/known-apps.ts": ['import { type SQL, sql } from "bun";'],
+  "packages/core/src/app-domains.integration.test.ts": ['import { sql as nativeSql } from "bun";'],
+  "packages/gateway/src/handler.ts": ['import { redis } from "bun";'],
+  "packages/gateway/src/runtime.ts": ['import { sql } from "bun";'],
+  "packages/gateway/src/app-domains.test.ts": ['import { redis } from "bun";'],
+  "packages/gateway/src/public-protections.test.ts": ['import { redis } from "bun";'],
 };
 
 const delivered = new Set([
