@@ -133,6 +133,15 @@ export default function GroupedNavigation(props: {
                   navigation="document"
                 />
               )}
+              {type === "workflow" && (
+                <AppWorkspace.NavTree.Item
+                  id="type:workflow/workflow:all"
+                  label={workspaceText.allWorkflows}
+                  icon="ti ti-route"
+                  href={`/app/grids/${props.baseId}/workflows${props.editMode ? "?edit=true" : ""}`}
+                  navigation="document"
+                />
+              )}
               {props.resources.filter((resource) => resource.type === type).map((resource) => item(resource, `type:${type}`))}
             </AppWorkspace.NavTree.Item>
           ))}
