@@ -2183,3 +2183,18 @@ apps through `cld admin apps keys` or Core’s administrator API. Enrollment use
 the same app-bound service account as workload credentials. Keep the current
 runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
 for the supported commands and recovery steps.
+
+## Code-version role approvals
+
+Core adds the Code-version request kind and Cloud-admin recipient to the
+existing approvals table on startup. Existing Action requests, pending chat
+actions and remembered choices retain their data and recipient semantics.
+There is no separate Assistant migration for this change.
+
+Start the upgraded Core before a version service creates Code approval
+requests. Every Core process that handles decisions must install the version
+owner's transactional handler. A missing handler leaves the request pending
+and answers its decision with `503`; install the handler and retry. This does
+not block personal Action approvals. See
+[Code-version approvals](/en/docs/identity/approvals#code-version-approvals)
+for the service contract and device limits.
