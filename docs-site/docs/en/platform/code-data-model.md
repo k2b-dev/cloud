@@ -1,0 +1,142 @@
+---
+title: Code data model
+section: Platform
+order: 960
+description: Understand Code ownership, immutable versions, Query access and run retention.
+tags: [code, capabilities, data, permissions]
+updated: 2026-10-31
+---
+
+# Code data model
+
+A Code has one owner and a fixed `codeId`, such as `c_8hw2`. Saving a new
+version preserves that identity. Core stores Code, its versions and its runs
+in the Postgres schema `code`.
+
+## Owners and access
+
+An owner is one of these identities:
+
+```ts
+type CodeOwner =
+  | { kind: "person"; userId: string }
+  | { kind: "resource"; ref: { type: string; id: string } }
+  | { kind: "app"; appId: string };
+```
+
+A person can own several Codes. A resource or an application can own at most
+one. Resource identity uses `CloudResourceRef`; Core does not interpret the
+owning application's domain IDs.
+
+The personal owner is an editor. For resource and application Code, the
+owner's current administrators are editors. Other people get access through
+explicit editor or reader shares. An editor can add or remove shares using
+the common access-entry model. Cloud administrators can read and edit all
+Code. Resource readability alone does not grant access to its Code.
+
+| Permission | Code and version source | Run metadata | Run inputs, outputs and calls |
+| --- | --- | --- | --- |
+| Editor | Yes | Yes | Yes |
+| Reader | Yes | Yes | No |
+| No Code access | No | No | No |
+
+There are no reader shares by default. Service accounts of kind `code` cannot
+use the Code management Queries, including Queries about their own Code.
+A credential's scopes still limit reads and writes.
+
+Each resource or application Code has its own credentialless service account.
+Its stable machine name is `code:<resource-type>:<resource-id>` or
+`code:app:<app-id>`. Its display name comes from the owner's live reader:
+“Code of …” (“Code von …” in German). An unavailable reader supplies no
+cached replacement title. Creating the account grants no target permissions;
+activation owns those grants.
+
+## Immutable versions
+
+A version stores all source files, the exact UTF-8 bundle, `sourceHash`,
+`bundleHash` and a checked-version manifest slot. Source paths are relative
+POSIX paths. The source hash is SHA-256 of compact JSON containing the sorted
+`[path, content]` pairs; the bundle hash is SHA-256 of the exact bundle bytes.
+
+The source, bundle, hashes and manifest are immutable. The checker and
+submission services supply the final manifest when inserting a version. The
+checked-version manifest is separate from the generated SDK manifest.
+
+A save supplies `baseVersionId`, or `null` for the first version. A stale base
+fails with `CONFLICT`; read the newer version before saving again. Version
+numbers increase within the Code. A run always references a version of the
+same Code.
+
+## Read through Core Queries
+
+Use these capabilities through the standard capability client. They all
+check current permissions in Core's Code service.
+
+| Query | Input | Result |
+| --- | --- | --- |
+| `core.code.list` | Optional `owner`, `cursor`, `limit` (1–20) | Visible Code items with `permission` and `nextCursor` |
+| `core.code.read` | `codeId` | `code` and `permission` |
+| `core.code.version.read` | `codeId`, `versionId`, optional `content`, `offset`, `length` | Version metadata and optional text chunk |
+| `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
+| `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor` | Run metadata; editor-only `contents` |
+
+A list page can be empty while `nextCursor` is present: filtering permissions
+applies to a bounded candidate window. Continue until `nextCursor` is null.
+Inaccessible identities return `NOT_FOUND`. Missing person authority or
+insufficient credential scopes return `FORBIDDEN`.
+
+For version text, select `content: { kind: "source", path: "code.ts" }`,
+`{ kind: "bundle" }` or `{ kind: "manifest" }`. `offset` defaults to zero;
+`length` defaults to and cannot exceed 16,384 UTF-16 code units. Follow
+`content.nextOffset` until null. Chunks preserve surrogate pairs. Without a
+content selector, the Query returns metadata and `content: null`.
+
+`run.read` returns `contents: null` for readers. For editors, `contents`
+contains the run input and output plus at most one capability call. Follow
+`contents.nextCursor` to read calls in their invocation order. A call records
+its normalized `{ capability, target, refs, input }`, kind, outcome and times.
+It is an observation of one attempt; it does not provide replay or resumption.
+
+## Storage limits and retention
+
+Core declares these administrator settings. They have no environment-variable
+fallback. The Code administration surface can edit them through the settings
+service.
+
+| Setting | Default | Maximum |
+| --- | --- | --- |
+| `core.code.source_bytes` | 1 MiB, including paths | 16 MiB |
+| `core.code.source_files` | 100 | 100 |
+| `core.code.bundle_bytes` | 4 MiB | 16 MiB |
+| `core.code.manifest_bytes` | 1 MiB of JSON | 4 MiB |
+| `core.code.payload_bytes` | 32 KiB per run input/output or call/result pair | 32 KiB |
+| `core.code.calls_per_run` | 1,000 | 1,000,000 |
+
+All settings require positive integers. New versions use current limits; a
+run pins its call and payload limits at creation. Smaller settings do not
+rewrite existing versions or active runs. Transport budgets bound the file
+count and payload maximums.
+
+Core removes completed runs and their calls 30 days after `endedAt`, in bounded
+batches. Queued and running attempts are preserved regardless of their age.
+Versions remain with their Code. Deleting a personal owner cascades to their
+Code, versions, runs and shares. Creator attribution uses `ON DELETE SET NULL`,
+so removing a creator leaves resource-owned Code intact.
+
+This data layer does not schedule runs, activate versions or revoke grants in
+other applications. Those services own their lifecycle transactions and the
+owner-deletion outbox.
+
+## Maintainer contracts
+
+Core modules consume `packages/core/src/code/index.ts`. It exports Zod schemas
+and types (`CodeOwner`, `Code`, `CodeVersion`, `CodeRun`, `CodeCall`),
+`codeQueryContracts`, `CODE_TABLES`, permission-aware reads and version/share
+services. Other applications consume the five capabilities instead of importing
+Core or accessing its tables.
+
+`insertCodeRun`, `appendCodeCall` and `finishCodeCall` are internal runner-host
+storage seams. The dispatcher must authorize execution and validate its lease
+and generation in the same transaction before recording calls. They do not
+grant invocation authority. `generation` and `lease_expires_at` reserve the
+additive storage columns for the execution service.

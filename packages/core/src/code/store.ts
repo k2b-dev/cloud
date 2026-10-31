@@ -1,0 +1,391 @@
+import { createHash, randomBytes } from "node:crypto";
+import { sql } from "@k2b/cloud";
+import { type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
+import { createAccess, type Principal } from "@k2b/cloud/server";
+import type { SQL, TransactionSQL } from "bun";
+import { type CodeContext, CodeDataError, codePerson, readCodeOwner, requireCodePermission } from "./access";
+import {
+  type Code,
+  type CodeCall,
+  type CodeOwner,
+  CodeOwnerSchema,
+  type CodeRun,
+  type CodeSourceFiles,
+  CodeSourceFilesSchema,
+  type CodeVersion,
+  type CodeVersionManifest,
+  CodeVersionManifestSchema,
+} from "./contracts";
+import { CODE_SETTINGS, codeSettings } from "./settings";
+
+/** Shared transaction shape for C8/C13; all methods with a db argument use that transaction only. */
+export type CodeDb = SQL;
+type CodeRow = {
+  id: string;
+  owner_kind: CodeOwner["kind"];
+  owner_user_id: string | null;
+  owner_type: string | null;
+  owner_id: string | null;
+  owner_app_id: string | null;
+  title: string;
+  service_account_id: string | null;
+  state: Code["state"];
+  active_version_id: string | null;
+  created_by: string | null;
+  created_at: Date;
+};
+const mapCode = (row: CodeRow): Code => ({
+  id: row.id,
+  owner: CodeOwnerSchema.parse(
+    row.owner_kind === "person"
+      ? { kind: "person", userId: row.owner_user_id }
+      : row.owner_kind === "app"
+        ? { kind: "app", appId: row.owner_app_id }
+        : { kind: "resource", ref: { type: row.owner_type, id: row.owner_id } },
+  ),
+  title: row.title,
+  serviceAccountId: row.service_account_id,
+  state: row.state,
+  activeVersionId: row.active_version_id,
+  createdBy: row.created_by,
+  createdAt: row.created_at.toISOString(),
+});
+/** Internal row lookup; public callers must use readCode, which authorizes before returning data. */
+export const findCode = async (codeId: string, db: CodeDb = sql): Promise<Code | null> => {
+  const [row] = await db<CodeRow[]>`SELECT * FROM code.codes WHERE id = ${codeId}`;
+  return row ? mapCode(row) : null;
+};
+export const readCode = async (codeId: string, context: CodeContext) => {
+  codePerson(context);
+  const code = await findCode(codeId);
+  if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
+  return { code, permission: await requireCodePermission(code, context) };
+};
+/** Paginate a bounded candidate window. An empty authorized page may still have nextCursor. */
+export const listCodes = async (input: { owner?: CodeOwner; limit: number; cursor?: string }, context: CodeContext) => {
+  codePerson(context);
+  const offset = Number(input.cursor ?? 0);
+  const owner = input.owner;
+  const kind = owner?.kind ?? null;
+  const userId = owner?.kind === "person" ? owner.userId : null;
+  const type = owner?.kind === "resource" ? owner.ref.type : null;
+  const id = owner?.kind === "resource" ? owner.ref.id : null;
+  const appId = owner?.kind === "app" ? owner.appId : null;
+  const rows = await sql<CodeRow[]>`SELECT * FROM code.codes WHERE
+    (${kind}::text IS NULL OR owner_kind = ${kind}) AND (${userId}::uuid IS NULL OR owner_user_id = ${userId}::uuid)
+    AND (${type}::text IS NULL OR owner_type = ${type}) AND (${id}::text IS NULL OR owner_id = ${id})
+    AND (${appId}::text IS NULL OR owner_app_id = ${appId}) ORDER BY id LIMIT ${input.limit + 1} OFFSET ${offset}`;
+  const items = [];
+  for (const row of rows.slice(0, input.limit)) {
+    const code = mapCode(row);
+    try {
+      items.push({ code, permission: await requireCodePermission(code, context) });
+    } catch (error) {
+      if (!(error instanceof CodeDataError && error.code === "NOT_FOUND")) throw error;
+    }
+  }
+  return {
+    items: items.map(({ code, permission }) => ({ ...code, permission })),
+    nextCursor: rows.length > input.limit ? String(offset + input.limit) : null,
+  };
+};
+const setting = async (key: keyof typeof CODE_SETTINGS) => {
+  const value = await codeSettings.get(key);
+  const definition = CODE_SETTINGS[key];
+  if (!Number.isSafeInteger(value) || value < definition.min || value > definition.max) throw new Error(`Invalid Code setting: ${key}`);
+  return value;
+};
+const bytes = (value: string) => Buffer.byteLength(value, "utf8");
+const sha256 = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
+/** Hash sorted [path,content] pairs as compact JSON, UTF-8/SHA-256; key insertion order cannot change the digest. */
+export const codeSourceHash = (source: CodeSourceFiles): string =>
+  sha256(
+    JSON.stringify(
+      Object.keys(source)
+        .sort()
+        .map((path) => [path, source[path]]),
+    ),
+  );
+export const codeBundleHash = (bundle: string): string => sha256(bundle);
+
+/** Create one owner identity and its credentialless account in one transaction. This grants no target permissions. */
+export const createCode = async (input: { owner: CodeOwner; title: string }, context: CodeContext): Promise<Code> => {
+  const user = codePerson(context, true);
+  const owner = CodeOwnerSchema.parse(input.owner);
+  if (!user.roles.includes("admin") && !(await readCodeOwner(owner, context))?.admin)
+    throw new CodeDataError("FORBIDDEN", "Owner administration required.");
+  const title = input.title.trim();
+  if (!title || title.length > 200) throw new CodeDataError("BAD_INPUT", "Code title must contain 1–200 characters.");
+  try {
+    return await sql.begin(async (tx) => {
+      let accountId: string | null = null;
+      if (owner.kind !== "person") {
+        const name = owner.kind === "app" ? `code:app:${owner.appId}` : `code:${owner.ref.type}:${owner.ref.id}`;
+        const [account] = await tx<
+          { id: string }[]
+        >`INSERT INTO auth.service_accounts(name,kind,created_by) VALUES(${name},'code',${user.id}::uuid) RETURNING id`;
+        if (!account) throw new Error("Code account insert returned no row");
+        accountId = account.id;
+      }
+      const id = `c_${randomBytes(6).toString("hex")}`;
+      const [row] = await tx<
+        CodeRow[]
+      >`INSERT INTO code.codes(id,owner_kind,owner_user_id,owner_type,owner_id,owner_app_id,title,service_account_id,created_by)
+        VALUES(${id},${owner.kind},${owner.kind === "person" ? owner.userId : null}::uuid,${owner.kind === "resource" ? owner.ref.type : null},${owner.kind === "resource" ? owner.ref.id : null},${owner.kind === "app" ? owner.appId : null},${title},${accountId}::uuid,${user.id}::uuid) RETURNING *`;
+      if (!row) throw new Error("Code insert returned no row");
+      return mapCode(row);
+    });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505")
+      throw new CodeDataError("CONFLICT", "Owner already has Code.");
+    throw error;
+  }
+};
+/** Common rights-editor backing: share only with persons/groups, never service accounts or wildcard principals. */
+export const addCodeAccess = async (
+  codeId: string,
+  principal: Extract<Principal, { type: "user" | "group" }>,
+  permission: "editor" | "reader",
+  context: CodeContext,
+): Promise<string> => {
+  const { code } = await readCode(codeId, context);
+  await requireCodePermission(code, context, true);
+  if (!["user", "group"].includes(principal.type) || !["editor", "reader"].includes(permission))
+    throw new CodeDataError("BAD_INPUT", "Invalid Code share.");
+  return sql.begin(async (tx) => {
+    const access = await createAccess({ principal, permission: permission === "editor" ? "write" : "read" }, tx);
+    if (!access.ok) throw new CodeDataError("BAD_INPUT", access.error.message);
+    await tx`INSERT INTO code.access(code_id,access_id) VALUES(${codeId},${access.data.id}::uuid)`;
+    return access.data.id;
+  });
+};
+export const removeCodeAccess = async (codeId: string, accessId: string, context: CodeContext): Promise<void> => {
+  const { code } = await readCode(codeId, context);
+  await requireCodePermission(code, context, true);
+  await sql`DELETE FROM code.access WHERE code_id = ${codeId} AND access_id = ${accessId}::uuid`;
+};
+
+type VersionRow = {
+  id: string;
+  code_id: string;
+  number: number;
+  source_files: CodeSourceFiles;
+  bundle: string;
+  source_hash: string;
+  bundle_hash: string;
+  source_bytes: number;
+  bundle_bytes: number;
+  manifest: CodeVersionManifest | null;
+  created_by: string | null;
+  created_at: Date;
+};
+const mapVersion = (row: VersionRow): CodeVersion => ({
+  id: row.id,
+  codeId: row.code_id,
+  number: row.number,
+  files: Object.keys(row.source_files).sort(),
+  sourceHash: row.source_hash,
+  bundleHash: row.bundle_hash,
+  sourceBytes: row.source_bytes,
+  bundleBytes: row.bundle_bytes,
+  manifestAvailable: row.manifest !== null,
+  createdBy: row.created_by,
+  createdAt: row.created_at.toISOString(),
+});
+/** Save the full executable snapshot once. C8/C16 supply the final manifest at insertion; never fill it by UPDATE. */
+export const createCodeVersion = async (
+  input: {
+    codeId: string;
+    sourceFiles: CodeSourceFiles;
+    bundle: string;
+    manifest: CodeVersionManifest | null;
+    baseVersionId: string | null;
+  },
+  context: CodeContext,
+): Promise<CodeVersion> => {
+  const { code } = await readCode(input.codeId, context);
+  await requireCodePermission(code, context, true);
+  const source = CodeSourceFilesSchema.parse(input.sourceFiles);
+  const manifest = input.manifest === null ? null : CodeVersionManifestSchema.parse(input.manifest);
+  const sourceBytes = Object.entries(source).reduce((total, [path, content]) => total + bytes(path) + bytes(content), 0);
+  const bundleBytes = bytes(input.bundle);
+  const sourceLimit = await setting("core.code.source_bytes");
+  const fileLimit = await setting("core.code.source_files");
+  const bundleLimit = await setting("core.code.bundle_bytes");
+  const manifestLimit = await setting("core.code.manifest_bytes");
+  if (
+    Object.keys(source).length < 1 ||
+    Object.keys(source).length > fileLimit ||
+    sourceBytes > sourceLimit ||
+    bundleBytes > bundleLimit ||
+    bytes(JSON.stringify(manifest)) > manifestLimit
+  )
+    throw new CodeDataError("BAD_INPUT", "Code version exceeds storage limits.");
+  return sql.begin(async (tx) => {
+    await tx`SELECT id FROM code.codes WHERE id = ${input.codeId} FOR UPDATE`;
+    const [latest] = await tx<
+      { id: string; number: number }[]
+    >`SELECT id,number FROM code.versions WHERE code_id = ${input.codeId} ORDER BY number DESC LIMIT 1`;
+    if ((latest?.id ?? null) !== input.baseVersionId) throw new CodeDataError("CONFLICT", "A newer Code version exists.");
+    const [row] = await tx<
+      VersionRow[]
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
+      VALUES(${input.codeId},${(latest?.number ?? 0) + 1},${JSON.stringify(source)}::text::jsonb,${input.bundle},${codeSourceHash(source)},${codeBundleHash(input.bundle)},${manifest === null ? null : JSON.stringify(manifest)}::text::jsonb,${sourceBytes},${bundleBytes},${codePerson(context).id}::uuid) RETURNING *`;
+    if (!row) throw new Error("Version insert returned no row");
+    return mapVersion(row);
+  });
+};
+/** UTF-16 offsets address the returned text; chunks never split a surrogate pair. */
+export const readCodeVersion = async (
+  input: {
+    codeId: string;
+    versionId: string;
+    content?: { kind: "source"; path: string } | { kind: "bundle" | "manifest" };
+    offset: number;
+    length: number;
+  },
+  context: CodeContext,
+) => {
+  await readCode(input.codeId, context);
+  const [row] = await sql<VersionRow[]>`SELECT * FROM code.versions WHERE code_id = ${input.codeId} AND id = ${input.versionId}::uuid`;
+  if (!row) throw new CodeDataError("NOT_FOUND", "Code version not found.");
+  let text: string | undefined;
+  if (input.content?.kind === "bundle") text = row.bundle;
+  if (input.content?.kind === "manifest") text = row.manifest === null ? undefined : JSON.stringify(row.manifest);
+  if (input.content?.kind === "source")
+    text = Object.hasOwn(row.source_files, input.content.path) ? row.source_files[input.content.path] : undefined;
+  if (input.content && text === undefined) throw new CodeDataError("NOT_FOUND", "Version content not found.");
+  let content = null;
+  if (text !== undefined) {
+    let end = Math.min(text.length, input.offset + input.length);
+    if (end > input.offset && /[\uD800-\uDBFF]/.test(text[end - 1]!) && /[\uDC00-\uDFFF]/.test(text[end] ?? "")) end--;
+    if (end === input.offset && input.offset < text.length) end = Math.min(text.length, input.offset + 2);
+    content = { text: text.slice(input.offset, end), nextOffset: end < text.length ? end : null };
+  }
+  return { version: mapVersion(row), content };
+};
+
+type RunRow = {
+  id: string;
+  code_id: string;
+  version_id: string;
+  trigger: CodeRun["trigger"];
+  entrypoint: string;
+  state: CodeRun["state"];
+  outcome: string | null;
+  input: unknown;
+  output: unknown;
+  created_at: Date;
+  started_at: Date | null;
+  ended_at: Date | null;
+};
+const mapRun = (row: RunRow): CodeRun => ({
+  id: row.id,
+  codeId: row.code_id,
+  versionId: row.version_id,
+  trigger: row.trigger,
+  entrypoint: row.entrypoint,
+  state: row.state,
+  outcome: row.outcome,
+  createdAt: row.created_at.toISOString(),
+  startedAt: row.started_at?.toISOString() ?? null,
+  endedAt: row.ended_at?.toISOString() ?? null,
+});
+/** Public run metadata deliberately has no input, output or calls. */
+export const listCodeRuns = async (input: { codeId: string; cursor?: string; limit: number }, context: CodeContext) => {
+  await readCode(input.codeId, context);
+  const rows = await sql<
+    RunRow[]
+  >`SELECT id,code_id,version_id,trigger,entrypoint,state,outcome,created_at,started_at,ended_at FROM code.runs WHERE code_id = ${input.codeId} ORDER BY created_at DESC,id DESC LIMIT ${input.limit + 1} OFFSET ${Number(input.cursor ?? 0)}`;
+  return {
+    items: rows.slice(0, input.limit).map(mapRun),
+    nextCursor: rows.length > input.limit ? String(Number(input.cursor ?? 0) + input.limit) : null,
+  };
+};
+type CallRow = {
+  ordinal: number;
+  kind: CodeCall["kind"];
+  call: NormalizedCapabilityCall;
+  result: CodeCall["result"];
+  state: CodeCall["state"];
+  started_at: Date;
+  ended_at: Date | null;
+};
+/** Readers receive contents:null. Editors page one bounded call at a time in invocation order. */
+export const readCodeRun = async (input: { codeId: string; runId: string; cursor: number }, context: CodeContext) => {
+  const { permission } = await readCode(input.codeId, context);
+  const [row] = await sql<
+    RunRow[]
+  >`SELECT id,code_id,version_id,trigger,entrypoint,state,outcome,created_at,started_at,ended_at FROM code.runs WHERE code_id = ${input.codeId} AND id = ${input.runId}::uuid`;
+  if (!row) throw new CodeDataError("NOT_FOUND", "Code run not found.");
+  if (permission === "reader") return { run: mapRun(row), contents: null };
+  const [payload] = await sql<
+    { input: CodeCall["result"]; output: CodeCall["result"] }[]
+  >`SELECT input,output FROM code.runs WHERE id = ${input.runId}::uuid`;
+  if (!payload) throw new CodeDataError("NOT_FOUND", "Code run not found.");
+  const calls = await sql<
+    CallRow[]
+  >`SELECT * FROM code.calls WHERE run_id = ${input.runId}::uuid AND ordinal > ${input.cursor} ORDER BY ordinal LIMIT 2`;
+  return {
+    run: mapRun(row),
+    contents: {
+      ...payload,
+      calls: calls.slice(0, 1).map((call) => ({
+        ordinal: call.ordinal,
+        kind: call.kind,
+        call: call.call,
+        result: call.result,
+        state: call.state,
+        startedAt: call.started_at.toISOString(),
+        endedAt: call.ended_at?.toISOString() ?? null,
+      })),
+      nextCursor: calls.length > 1 ? calls[0]!.ordinal : null,
+    },
+  };
+};
+/** Internal scheduler seam: pins version and admission budgets. C13 owns authorization, leasing and dispatch. */
+export const insertCodeRun = async (
+  input: { codeId: string; versionId: string; trigger: CodeRun["trigger"]; entrypoint: string; input: CodeCall["result"] },
+  db: CodeDb = sql,
+): Promise<string> => {
+  const payloadBytes = await setting("core.code.payload_bytes");
+  const callsLimit = await setting("core.code.calls_per_run");
+  if (bytes(JSON.stringify(input.input)) > payloadBytes) throw new CodeDataError("BAD_INPUT", "Run input exceeds storage limit.");
+  const [row] = await db<
+    { id: string }[]
+  >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,input,payload_bytes,calls_limit) VALUES(${input.codeId},${input.versionId}::uuid,${input.trigger},${input.entrypoint},${JSON.stringify(input.input)}::text::jsonb,${payloadBytes},${callsLimit}) RETURNING id`;
+  if (!row) throw new Error("Run insert returned no row");
+  return row.id;
+};
+/** Append the next observation under the run lock. C13 fences the transaction before calling this. */
+export const appendCodeCall = async (
+  input: { runId: string; kind: CodeCall["kind"]; call: NormalizedCapabilityCall },
+  db: TransactionSQL,
+): Promise<number> => {
+  const call = NormalizedCapabilityCallSchema.parse(input.call);
+  await db`SELECT id FROM code.runs WHERE id = ${input.runId}::uuid FOR UPDATE`;
+  const [row] = await db<
+    { ordinal: number }[]
+  >`INSERT INTO code.calls(run_id,ordinal,kind,call) SELECT ${input.runId}::uuid,COALESCE(MAX(ordinal),0)+1,${input.kind},${JSON.stringify(call)}::text::jsonb FROM code.calls WHERE run_id = ${input.runId}::uuid RETURNING ordinal`;
+  if (!row) throw new Error("Call insert returned no row");
+  return row.ordinal;
+};
+/** Store the bounded result of one observation. No replay behavior is attached to this record. */
+export const finishCodeCall = async (
+  input: { runId: string; ordinal: number; state: "succeeded" | "failed"; result: CodeCall["result"]; endedAt: Date },
+  db: TransactionSQL,
+): Promise<void> => {
+  const result =
+    await db`UPDATE code.calls SET state = ${input.state},result = ${JSON.stringify(input.result)}::text::jsonb,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state = 'running'`;
+  if (result.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");
+};
+/** Retention is 30 days after termination; active/queued runs and immutable versions are never swept. */
+export const expireCodeRuns = async (options: { now: Date; limit: number; db?: CodeDb }): Promise<number> => {
+  if (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 1000)
+    throw new RangeError("Invalid Code retention batch size");
+  const db = options.db ?? sql;
+  const cutoff = new Date(options.now.getTime() - 30 * 86_400_000);
+  const result =
+    await db`DELETE FROM code.runs WHERE id IN (SELECT id FROM code.runs WHERE ended_at <= ${cutoff} ORDER BY ended_at,id LIMIT ${options.limit} FOR UPDATE SKIP LOCKED)`;
+  return result.count;
+};

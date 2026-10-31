@@ -23,6 +23,23 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.list": {
+          title: "Code auflisten",
+          description: "Listet sichtbaren Code, wahlweise nach Besitzer. Folge dem Cursor auch bei einer leeren Seite.",
+        },
+        "code.read": { title: "Code lesen", description: "Liest Besitzer, feste Code-ID und aktuelle Berechtigung." },
+        "code.version.read": {
+          title: "Code-Version lesen",
+          description: "Liest unveränderliche Versionen und Quelltext, Bundle oder Manifest in Teilen.",
+        },
+        "code.run.list": {
+          title: "Code-Läufe auflisten",
+          description: "Listet Lauf-Metadaten ohne Eingaben, Ausgaben oder Inhalte von Capability-Aufrufen.",
+        },
+        "code.run.read": {
+          title: "Code-Lauf lesen",
+          description: "Liest einen Versuch. Bearbeiter sehen Eingaben, Ausgaben und Aufrufe in Reihenfolge, Leser nur Metadaten.",
+        },
         ...geoCapabilityPresentation,
         "ai.task.run.read": {
           title: "Lauf einer Assistant-Routine lesen",

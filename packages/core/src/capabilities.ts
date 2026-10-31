@@ -56,6 +56,9 @@ import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { codeQueryContracts } from "./code/contracts";
+import { runCodeQuery } from "./code/queries";
+import { listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
 
@@ -704,6 +707,42 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "code.list": {
+      title: "List Code",
+      description: "List Code visible to you. Follow nextCursor even when a page is empty. Optionally filter by exact owner.",
+      ...codeQueryContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),
+    },
+    "code.read": {
+      title: "Read Code",
+      description: "Read one Code identity, owner and current permission using its stable codeId.",
+      ...codeQueryContracts.read,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCode(input.codeId, ctx)),
+    },
+    "code.version.read": {
+      title: "Read a Code version",
+      description:
+        "Read immutable version metadata or a source, bundle or manifest text chunk. Follow nextOffset to obtain the full content.",
+      ...codeQueryContracts.versionRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersion(input, ctx)),
+    },
+    "code.run.list": {
+      title: "List Code runs",
+      description: "List attempt metadata without run inputs, outputs or capability call contents.",
+      ...codeQueryContracts.runList,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeRuns(input, ctx)),
+    },
+    "code.run.read": {
+      title: "Read a Code run",
+      description: "Read one attempt. Editors see input, output and ordered calls, one call per page. Readers receive contents:null.",
+      ...codeQueryContracts.runRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
     "map.style": {
       title: "Show a map",
       description:
