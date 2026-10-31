@@ -48,6 +48,10 @@ cld --profile operator admin apps domains add webseite www.example.org
 cld --profile operator admin apps domains add webseite example.org --redirect-to www.example.org
 ```
 
+Pass the application ID first and the host second. You can assign a domain
+while a known application is stopped. Adding an assignment starts its first
+domain check in the background.
+
 Point the domain's DNS A/AAAA records at your ingress. Configure ingress to
 preserve the request's `Host`, `Origin`, `Sec-Fetch-Site`, and `Sec-Fetch-Dest`,
 forward WebSockets, and stream responses without buffering. Configure trusted
@@ -61,6 +65,17 @@ the same application; redirect chains are not supported.
 Changes are reconciled from durable assignments and the live application
 registry within five seconds. Restarting the application or gateway is not
 required.
+
+To change an alias, turn it into a direct site domain, or remove its assignment:
+
+```sh
+cld --profile operator admin apps domains set webseite example.org --redirect-to www.example.org
+cld --profile operator admin apps domains set webseite example.org --no-redirect
+cld --profile operator admin apps domains rm webseite example.org --yes
+```
+
+For `set`, choose exactly one of `--redirect-to` and `--no-redirect`. Removal
+requires `--yes`.
 
 ## Configure Traefik
 
@@ -138,6 +153,18 @@ it does not revoke a certificate already issued by your ingress.
 
 ## Read domain checks
 
+Read the last stored check with `ls`, or run a new check with `check`:
+
+```sh
+cld --profile operator admin apps domains ls webseite
+cld --profile operator admin apps domains check webseite www.example.org
+```
+
+The list shows Host, Redirect, Active, DNS, Certificate, and Reachable.
+**Active** means the live application registry declares `public: true`; it
+does not mean that DNS or TLS checks passed. `check` displays each step's
+result and detail.
+
 The administration checks DNS, certificate validity, then reachability:
 
 - **DNS:** A/AAAA records exist. This alone does not prove that DNS points to
@@ -149,6 +176,11 @@ The administration checks DNS, certificate validity, then reachability:
 Only assigned hosts with a live nonce receive the special check response. It
 is plain text with `Cache-Control: no-store`. Other requests to that path
 belong to the app. Checks are limited to once per minute per domain.
+
+While the first check runs, the stored status can be empty. A completed check
+records its time and each stage's result and detail. If a stage fails, later
+stages remain unchecked. Both commands support `--json` and `--jsonl` for
+automation: `ls` returns `{ domains: [...] }`, and `check` returns `{ status }`.
 
 If DNS and TLS succeed but reachability fails, check proxy routing and whether
 the gateway can reach its own public ingress. Hairpin NAT, split DNS, or
