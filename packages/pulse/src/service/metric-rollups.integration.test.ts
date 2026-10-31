@@ -1,5 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { clickhouseAdminQuery } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";

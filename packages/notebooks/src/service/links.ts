@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { logger, toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 
 const log = logger("notebooks:links");

@@ -1,5 +1,5 @@
 import { afterAll } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 
 /** Instance-wide health transitions need their own database, never the other suites' singleton. */

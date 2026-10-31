@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { baseStore } from "../store/base-store";
 import {
@@ -14,6 +15,8 @@ import {
   updateBaseLimits,
 } from "./base-admin";
 import { getPolicy, setPolicy } from "./base-policy";
+
+useUnitClients();
 
 test("delegating a Cloud admin to a service account does not authorize store administration", async () => {
   const identity = adminFixtureIdentity();

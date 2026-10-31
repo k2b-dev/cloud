@@ -2,11 +2,11 @@ import { databaseSuite, requireInfraUrl, suiteFor } from "../../../../scripts/fi
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { geoMapSnapshotFingerprint, geoMapSnapshotPart } from "@k2b/cloud/contracts/geo-snapshot";
 import { serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import * as pdfModule from "@k2b/cloud/services/pdf";
-import { sql } from "bun";
 import sharp from "sharp";
 import { pdfImages, pdfText, pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { fictionalMap, fictionalRouteMap } from "../lib/map.test-fixture";

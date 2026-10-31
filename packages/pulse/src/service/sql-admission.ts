@@ -1,5 +1,5 @@
-import { connections } from "@k2b/cloud";
-import { RedisClient } from "bun";
+import { createRedis } from "@k2b/cloud";
+import type { RedisClient } from "bun";
 import { SqlError } from "./sql-errors";
 
 // RAM plan: 3 concurrent normal profiles * 2 GB + 1 GB maintenance + 3 GB
@@ -67,7 +67,11 @@ export type SqlAdmission = ReturnType<typeof createSqlAdmission>;
 /** A dedicated fail-closed connection. testOnly clock/poll hooks are explicit,
  * never environment-driven; production Lua uses Valkey TIME across replicas. */
 export const createSqlAdmission = (
-  options: { url?: string; namespace?: string; testOnly?: { nowMs?: () => number; poll?: (signal?: AbortSignal) => Promise<void> } } = {},
+  options: {
+    createClient?: () => RedisClient;
+    namespace?: string;
+    testOnly?: { nowMs?: () => number; poll?: (signal?: AbortSignal) => Promise<void> };
+  } = {},
 ) => {
   let client: RedisClient | undefined, connecting: Promise<void> | undefined;
   const prefix = options.namespace ?? "pulse:sql";
@@ -82,7 +86,7 @@ export const createSqlAdmission = (
   const send = async (command: string, args: string[]) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      client ??= new RedisClient(options.url ?? connections().valkey.url, { enableOfflineQueue: false, connectionTimeout: 1000 });
+      client ??= (options.createClient ?? (() => createRedis({ enableOfflineQueue: false, connectionTimeout: 1000 })))();
       const current = client;
       const operation = async () => {
         if (!current.connected) {

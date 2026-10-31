@@ -1,7 +1,7 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { audit, logger } from "@k2b/cloud/services";
 import type { Node } from "@k2b/filegate";
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import type { Area, BaseKind } from "../contracts";
 import type { FilesCall, LifecycleMkdir } from "../service/activity";
 import { FilesError } from "../service/errors";

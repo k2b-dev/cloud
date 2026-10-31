@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { migrateCloudAi } from "@k2b/cloud/ai";
-import { sql } from "bun";
 import { databaseSuite, testInfra, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../core/src/migrate/core/events";

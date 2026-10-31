@@ -8,9 +8,9 @@
  * fresh values via the per-request snapshot or async coreSettings reads.
  */
 
+import { sql } from "@k2b/cloud";
 import { type AuthContext, auth, getLocale, v } from "@k2b/cloud/server";
 import { SettingUnreadableError } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { app } from "../config";

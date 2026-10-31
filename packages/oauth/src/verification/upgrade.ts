@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { sql } from "bun";
+import { connections, sql } from "@k2b/cloud";
+import { initializePlatform } from "@k2b/cloud/start";
 import { decodeJwt, decodeProtectedHeader, type JWTPayload } from "jose";
 import * as client from "./reference-client";
 
-assert.match(new URL(process.env.DATABASE_URL!).pathname, /^\/cloud_oauth_verify_[a-z0-9_]+$/);
+await initializePlatform({ appId: "oauth", source: "env" });
+assert.match(new URL(connections().database.url).pathname, /^\/cloud_oauth_verify_[a-z0-9_]+$/);
 const children: Array<ReturnType<typeof Bun.spawn>> = [];
 const checks: string[] = [];
 const check = (name: string) => {

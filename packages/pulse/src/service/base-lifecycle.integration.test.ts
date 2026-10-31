@@ -1,6 +1,7 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { clickhouseAdminQuery as admin, clickhouseTestPrefix as prefix } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";

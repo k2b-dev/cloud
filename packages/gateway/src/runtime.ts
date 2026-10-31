@@ -1,4 +1,4 @@
-import { buildRuntimeFromRegistry, type ProcessSync, readAppRegistrySnapshot, startProcessSync, watchAppRegistry } from "@k2b/cloud";
+import { buildRuntimeFromRegistry, type ProcessSync, readAppRegistrySnapshot, sql, startProcessSync, watchAppRegistry } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import { readAppDomains } from "@k2b/cloud/contracts/app-domains";
 import type { EnvSettingStatus } from "@k2b/cloud/contracts/settings-env";
@@ -11,7 +11,6 @@ import {
 } from "@k2b/cloud/services";
 import { get } from "@k2b/cloud/services/settings";
 import { readEnvSettingsStatus } from "@k2b/cloud/services/settings/env-status";
-import { sql } from "bun";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { gatewayRouter } from "./config";
 import { type AppRouteWarning, buildAppRoutesDetailed } from "./routes";

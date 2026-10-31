@@ -1,7 +1,7 @@
 /** The production migration path, shared by the target bootstrap and template builder. */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { sql } from "bun";
+import { sql } from "../../packages/cloud/src/runtime/clients";
 import { appIds, workspaceRoot } from "../workspace";
 import { initializeTestPlatform, requireInfra } from "./test-infra";
 

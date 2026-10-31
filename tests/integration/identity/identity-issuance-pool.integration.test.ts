@@ -3,6 +3,7 @@ import * as bun from "bun";
 import { createLocalJWKSet } from "jose";
 import { z } from "zod";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../../packages/cloud/src/_internal/process-identity";
+import { sql as platformSql } from "../../../packages/cloud/src/runtime/clients";
 import type { AuthContext } from "../../../packages/cloud/src/server";
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import { testInfra, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
@@ -19,7 +20,7 @@ if (!testInfra.database) {
   const databaseUrl = new URL(fresh.url);
   const pool = new bun.SQL(databaseUrl, { max: 1, connectionTimeout: 5, idleTimeout: 0 });
   afterAll(async () => {
-    await bun.sql.close({ timeout: 5 });
+    await platformSql.close({ timeout: 5 });
     await fresh.drop();
   });
   const identity = await import("../../../packages/cloud/src/services/identity");
@@ -491,7 +492,7 @@ if (!testInfra.database) {
           message: expect.stringContaining("statement timeout"),
         });
         // A refresh the callers gave up on does not keep holding a connection.
-        const [waiting] = await bun.sql<{ count: number }[]>`
+        const [waiting] = await platformSql<{ count: number }[]>`
           SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
         `;
         expect(waiting?.count).toBe(0);

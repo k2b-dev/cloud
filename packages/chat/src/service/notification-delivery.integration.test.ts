@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, setSystemTime, spyOn, test } from "bun:test";
-import { redis as platformRedis } from "@k2b/cloud";
+import { redis as platformRedis, redis, sql } from "@k2b/cloud";
 import { ResourceReaderRateLimited } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { browserNotifications, notifications, serviceAccountCredentials, toPgUuidArray } from "@k2b/cloud/services";
 import { processNotificationDelivery } from "@k2b/cloud/services/notifications/dispatcher";
 import type { sendTypedNotification } from "@k2b/cloud/services/notifications/platform";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Upgrade existing records without changing their restore locations. */
 export async function migrateTrash(): Promise<void> {

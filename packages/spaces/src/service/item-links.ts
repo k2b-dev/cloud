@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { MAX_ITEM_LINKS, type SpaceItemLinkInput } from "@/contracts";
 import { publishSpaceChange, spacesLive } from "./live";
 

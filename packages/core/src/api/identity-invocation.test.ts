@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
 import type { AuthContext } from "@k2b/cloud/server";
 import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import type { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import { err, fail, ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { app } from "../config";
 import { createIdentityInvocationRoutes } from "./identity-invocation";
+
+useUnitClients();
 
 const mandateId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";

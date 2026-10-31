@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { resolveDisplayNames } from "@k2b/cloud/server";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";

@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { generateUniqueShortId } from "../lib/short-id";
 import * as activity from "./activity";
 import * as workspaceEvents from "./workspace-events";
