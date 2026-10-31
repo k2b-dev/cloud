@@ -1,6 +1,4 @@
 import type { z } from "zod";
-import type { AppPwaActor } from "../../app-pwa/contracts";
-import type { AccessSubject, CapabilityExecutionContext, RequestActor } from "../../contracts";
 import {
   GeoAutocompleteDataSchema,
   type GeoAutocompleteInput,
@@ -26,28 +24,10 @@ import { cutGeoWindow, decodePolyline6, locateOnGeoLine, simplifyGeoLine } from 
 import { createGeoRouteService } from "./route-service";
 import { type GeoConfig, geoPlan, readGeoConfig } from "./settings";
 
-export type GeoContext = Partial<Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale" | "signal" | "requestId">>;
-/** Internal, narrow App-PWA autocomplete adapter; never a RequestActor or capability caller. */
-export type AppPwaGeoContext = { actor: AppPwaActor; locale?: string; signal?: AbortSignal; requestId?: string };
-type GeoCallContext = GeoContext | AppPwaGeoContext;
-export const geoIdentity = (context: GeoContext): { actor: RequestActor; accessSubject: AccessSubject } => {
-  const { actor, accessSubject } = context;
-  if (
-    !actor ||
-    !accessSubject ||
-    !(actor.kind === "user" ? actor.user?.id : actor.kind === "service_account" ? actor.serviceAccount?.id : undefined) ||
-    !(accessSubject.type === "user" ? accessSubject.userId : accessSubject.serviceAccountId)
-  )
-    throw new GeoError("GEO_FORBIDDEN");
-  return { actor, accessSubject };
-};
-const geoCallIdentity = (context: GeoCallContext): { actor: RequestActor | AppPwaActor; accessSubject: AccessSubject } => {
-  if (context.actor?.kind === "device" || context.actor?.kind === "visit") {
-    if (!context.actor.ownerUserId) throw new GeoError("GEO_FORBIDDEN");
-    return { actor: context.actor, accessSubject: { type: "user", userId: context.actor.ownerUserId } };
-  }
-  return geoIdentity({ actor: context.actor, accessSubject: "accessSubject" in context ? context.accessSubject : undefined });
-};
+export { type AppPwaGeoContext, type GeoContext, geoIdentity } from "./identity";
+
+import { type AppPwaGeoContext, type GeoCallContext, type GeoContext, geoCallIdentity, geoIdentity } from "./identity";
+
 const bound = (name: string, value: number, min: number, max: number, integer = false) => {
   if (!Number.isFinite(value) || value > max || value < min || (integer && !Number.isInteger(value)))
     limitExceeded(name, value < min ? min : max, value);

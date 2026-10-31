@@ -24,6 +24,30 @@ You need a Cloud administrator credential. OAuth credentials also need `write`
 or `admin` scope for creation and revocation. Use HTTPS when talking to Core
 across machines.
 
+## App-paid capability calls
+
+Applications may use the same enrolled key to call capabilities explicitly
+offered for app authority. The application declares each required platform
+permission; Core enforces it per capability. No service account token needs
+to be created or distributed for this path. See
+[Call as the application](/en/docs/platform/capabilities#call-as-the-application).
+
+The existing `security.rate_limit_per_second` setting bounds aggregate calls
+per application across keys, in addition to signed ingress and per-key limits.
+For Geo, each app shares the existing `geo.person_daily_credits` allowance
+across its keys and remains under `geo.monthly_budget_credits` and its provider
+plan limits. Daily app usage is stored under `app:<appId>` in the existing
+subject ledger. No new deployment setting or provider credentials are needed.
+
+Capability execution history adds nullable `actor_app_id` and `actor_key_id`
+columns on migration. These identify the application and enrolled key without
+assigning user grants. Revocation is checked on every signed transmission and
+again at the provider before execution, including previously issued app
+invocations. Operators can stop one app's access by revoking its enrolled
+keys. Platform permissions are declared by the application author; there is
+no separate operator approval toggle. Removing a permission from that
+declaration takes effect at the next Core admission.
+
 ## Create keys with cld
 
 Select the intended administrator profile explicitly:

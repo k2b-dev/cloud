@@ -153,6 +153,38 @@ Valkey limiter, returns 429 with `Retry-After` when exhausted, and needs no
 Cloud session or request context. An explicit `limitPerSecond` defines the
 route budget; omitted limits use the installation setting.
 
+## Call platform capabilities without a person
+
+Declare the required `platformPermissions` in `defineApp`, such as
+`platformPermissions: ["geo:query"]`. On the server, call the capability with
+`appCaller()` from `@k2b/cloud/server` after the application has started:
+
+```ts
+import { appCaller, geoClient, rateLimit } from "@k2b/cloud/server";
+
+app.public.get("/address-suggestions", rateLimit({ keyBy: "ip" }), async (c) => {
+  const result = await geoClient.autocomplete(
+    { text: c.req.query("text") ?? "" }, appCaller({ signal: c.req.raw.signal }),
+  );
+  if (!result.ok && result.error.retryAfterMs)
+    c.header("Retry-After", String(Math.ceil(result.error.retryAfterMs / 1000)));
+  const response = c.json(result.ok ? result.data : { code: result.error.code, message: result.error.message });
+  return new Response(response.body, { status: result.ok ? 200 : result.error.status, headers: response.headers });
+});
+```
+
+The app needs its enrolled Ed25519 key in `CLOUD_APP_KEY` or
+`CLOUD_APP_KEY_FILE` and the Core internal origin. Each call is signed as the
+app; no visitor becomes a Cloud user or service account. Core checks the
+capability's permission against the app's current declaration.
+
+Public visitors trigger **app-paid calls**. Rate-limit the form with
+`rateLimit({ keyBy: "ip" })`; use `clientIp(c)` for additional app-owned abuse
+controls. Core applies a shared per-app request limit, and paid services keep
+their operational budgets. Handle 429 and preserve `Retry-After` instead of
+retrying immediately. See [App capabilities](/en/docs/platform/capabilities#call-as-the-application)
+for background calls, provider declarations, budgets and audit.
+
 ## Keep the normal app lifecycle
 
 `public: true` adds the public router and registry declaration. The app keeps

@@ -58,6 +58,7 @@ and durable data.
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.
 - For one independently installed App-PWA per app, read **App-PWA** (`/en/docs/frontend/app-pwa`) and **App-PWA sessions** (`/en/docs/identity/app-pwa-sessions`). Device and visit actors never become employees; the app authorizes customer actions through the visit. Cloud resource operations intersect device ceilings with current owner grants. Commit domain writes in the supplied transaction; keep private pages and unfinished signatures out of offline storage.
+- For app-paid capabilities without a person, declare `platformPermissions` and use `appCaller()` from `@k2b/cloud/server` with the enrolled app key; it grants no resource access. Public visitors spend the app allowance: use `rateLimit({ keyBy: "ip" })` and `clientIp(c)` for abuse controls. Read **App capabilities**.
 - Durable background work that calls another application stores one revocable
   mandate for the workload. The platform signs each Core transmission with the app key; legacy workload credentials remain this release.
   Never store the user's session or personal API key.
@@ -139,7 +140,6 @@ SolidJS library remains independent of Cloud and application domains.
   root using none of these layouts must install one provider around its returned tree.
 - Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
   Build no back buttons for it; an app with its own header places `PageTrail` there.
-
 ## Ship CLI commands and Assistant Skills with the app
 Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its *Design commands* section before adding `cld` commands.
 Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `module` exports `defineCliCommands()` named
