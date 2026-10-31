@@ -132,7 +132,9 @@ describe("renderAiPlatformPrompt", () => {
     expect(prompt).toContain("Start offered work only after the user agrees");
     expect(prompt).toContain("No offer for a simple request, fact, or small talk");
     expect(prompt).toContain("while you ask or wait for approval");
-    expect(prompt).toContain("right after an earlier or declined offer");
+    expect(prompt).toContain("right after an earlier offer");
+    // A declined offer silences offers for the rest of the chat, not only for the next reply.
+    expect(prompt).toContain("once the user declined one in this chat");
     expect(prompt).toContain("when the user wants no suggestions or only a short answer");
     // "Write it shorter" corrects a draft; it does not ask for silence.
     expect(prompt).toContain("shortening a draft is a correction, not such a request.");
@@ -269,8 +271,10 @@ describe("composeAiSystemPrompt", () => {
 
     expect(suggestions).toContain("for the first case that applies:");
     expect(suggestions).toContain(
-      "The user corrected the format or steps of a result for the second time in this chat and you delivered the corrected result: offer to save the approach as a personal Skill, or to add the correction to their own Skill that shaped the result.",
+      "The user corrected the format or steps of a result for the second time in this chat and you delivered the corrected result: offer to save the approach as a personal Skill.",
     );
+    // A user's own Skill gets the correction offer on the first correction, independent of the second-correction case.
+    expect(suggestions).toContain("- The user corrected a result that their own Skill shaped: offer to add the correction to that Skill.");
     // Every new-Skill offer, including one for recurring work, first checks the catalog so a used Skill is not offered again.
     expect(suggestions).toContain(
       "Offer a new Skill only when no listed Skill covers the approach; a single preference belongs in memory.",
@@ -472,7 +476,7 @@ test("web prompt stays byte-identical with organization and selected Cloud Skill
     loadedSkills: [{ name: "invoice", revision: 2, instructions: "Read rules.", files: ["/skills/invoice/SKILL.md"] }],
   });
   expect(new Bun.CryptoHasher("sha256").update(prompt).digest("hex")).toBe(
-    "b59a0fca6898d45c7d418aab855842dbe81d01827caeaca6b1e1bb2dce19a5cf",
+    "6bc96ea1f516d3aa219416b5a8db05666905233be65d6210ab1362bc637dd2da",
   );
 });
 
