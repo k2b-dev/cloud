@@ -7,6 +7,7 @@ import {
   AppApprovalError,
   isAccountCategoryAllowed,
   readAppApprovalConfig,
+  serviceAccountMayHoldCredentials,
   toPgTextArray,
 } from "@k2b/cloud/services";
 import { isAppRequestProof, withActiveIdentitySigner } from "@k2b/cloud/services/identity";
@@ -455,6 +456,7 @@ const validateAuthority = (requests: OAuthTokenRequest[], state: AuthorityState,
   if (first.kind === "service_access") {
     if (requests.length !== 1 || !state.serviceAccount || state.user) return false;
     const account = state.serviceAccount;
+    if (!serviceAccountMayHoldCredentials(account.kind)) return false;
     const resourceBound =
       account.kind === "resource_bound" && account.appId !== null && account.resourceType !== null && account.resourceId !== null;
     const standalone =

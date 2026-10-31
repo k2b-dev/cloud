@@ -15,7 +15,7 @@ import { getIdentitySigningKeyStatus, identityMetrics, revokeIdentitySigningKey,
 import { WORKLOAD_SCOPES } from "../services/identity/workload-auth";
 import { mandateMetrics, mandates } from "../services/mandates";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
-import { isStandaloneServiceAccountKind, STANDALONE_SERVICE_ACCOUNT_KINDS, serviceAccounts } from "../services/service-accounts";
+import { STANDALONE_SERVICE_ACCOUNT_KINDS, serviceAccounts } from "../services/service-accounts";
 
 const WorkloadCredentialInputSchema = z
   .object({
@@ -288,7 +288,9 @@ export const createAdminIdentityRoutes = (
       async (c) =>
         respond(c, async () => {
           const account = await service.serviceAccounts.get({ id: c.req.valid("param").id });
-          return account && isStandaloneServiceAccountKind(account.kind) ? ok(account) : fail(err.notFound("Service account"));
+          return account && (account.kind === "standalone" || account.kind === "agent")
+            ? ok(account)
+            : fail(err.notFound("Service account"));
         }),
     )
     .patch(
@@ -305,7 +307,7 @@ export const createAdminIdentityRoutes = (
           const { status } = c.req.valid("json");
           const actor = c.get("user");
           const account = await service.serviceAccounts.get({ id });
-          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          if (!account || !(account.kind === "standalone" || account.kind === "agent")) return fail(err.notFound("Service account"));
           const updated = await service.serviceAccounts.setStatus({ id, status });
           if (!updated.ok) return updated;
           await service.audit.record({
@@ -327,7 +329,7 @@ export const createAdminIdentityRoutes = (
         respond(c, async () => {
           const { id } = c.req.valid("param");
           const account = await service.serviceAccounts.get({ id });
-          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          if (!account || !(account.kind === "standalone" || account.kind === "agent")) return fail(err.notFound("Service account"));
           const state = await service.avatars.state({ id });
           return state ? ok(state) : fail(err.notFound("Service account"));
         }),
@@ -345,7 +347,7 @@ export const createAdminIdentityRoutes = (
           const { id } = c.req.valid("param");
           const actor = c.get("user");
           const account = await service.serviceAccounts.get({ id });
-          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          if (!account || !(account.kind === "standalone" || account.kind === "agent")) return fail(err.notFound("Service account"));
           const updated = await service.avatars.update({ id, change: c.req.valid("json") });
           if (!updated.ok)
             return fail(updated.status === 409 ? { ...err.conflict("Picture"), message: updated.error } : err.badInput(updated.error));
@@ -368,7 +370,7 @@ export const createAdminIdentityRoutes = (
           const { id } = c.req.valid("param");
           const actor = c.get("user");
           const account = await service.serviceAccounts.get({ id });
-          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          if (!account || !(account.kind === "standalone" || account.kind === "agent")) return fail(err.notFound("Service account"));
           const cleared = await service.avatars.clear({ id });
           if (!cleared.ok) return fail(err.notFound("Service account"));
           await service.audit.record({

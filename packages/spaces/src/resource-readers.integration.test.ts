@@ -22,6 +22,7 @@ suite("spaces current resource readers", () => {
     const userId = crypto.randomUUID();
     const expiredId = crypto.randomUUID();
     const accountId = crypto.randomUUID();
+    const codeId = crypto.randomUUID();
     const disabledId = crypto.randomUUID();
     const boundId = crypto.randomUUID();
     const delegatedId = crypto.randomUUID();
@@ -34,6 +35,7 @@ suite("spaces current resource readers", () => {
     const candidates: ResourcePrincipal[] = [
       user,
       account,
+      { type: "service_account", serviceAccountId: codeId },
       bound,
       delegated,
       { type: "user", userId: expiredId },
@@ -58,7 +60,8 @@ suite("spaces current resource readers", () => {
         (${expiredId}::uuid, ${expiredId}, 'local', 'user', 'Expired', 'User', 'Expired User')`;
       await sql`UPDATE auth.users SET account_expires = '2000-01-01T00:00:00Z' WHERE id = ${expiredId}::uuid`;
       await sql`INSERT INTO auth.service_accounts (id, name, kind, status) VALUES
-        (${accountId}::uuid, ${accountId}, 'agent', 'active'), (${disabledId}::uuid, ${disabledId}, 'standalone', 'disabled')`;
+        (${accountId}::uuid, ${accountId}, 'agent', 'active'), (${disabledId}::uuid, ${disabledId}, 'standalone', 'disabled'),
+        (${codeId}::uuid, ${codeId}, 'code', 'active')`;
       await sql`INSERT INTO auth.service_accounts (id, name, kind, app_id, resource_type, resource_id)
         VALUES (${boundId}::uuid, ${boundId}, 'resource_bound', 'spaces', 'space', ${containerId})`;
       await sql`INSERT INTO auth.service_accounts (id, name, kind, delegated_user_id)
@@ -120,7 +123,8 @@ suite("spaces current resource readers", () => {
       await sql`INSERT INTO auth.groups (id, provider, name, cn) VALUES (${groupId}::uuid, 'local', ${groupId}, ${groupId}), (${parentGroupId}::uuid, 'local', ${parentGroupId}, ${parentGroupId})`;
       await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${parentGroupId}::uuid, ${groupId}::uuid)`;
       await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${userId}::uuid, ${groupId}::uuid)`;
-      await sql`INSERT INTO auth.service_account_groups (service_account_id, group_id) VALUES (${accountId}::uuid, ${groupId}::uuid)`;
+      await sql`INSERT INTO auth.service_account_groups (service_account_id, group_id) VALUES
+        (${accountId}::uuid, ${groupId}::uuid), (${codeId}::uuid, ${groupId}::uuid)`;
       const [groupGrant] = await sql<
         { id: string }[]
       >`INSERT INTO auth.access (group_id, permission) VALUES (${parentGroupId}::uuid, 'read') RETURNING id`;
@@ -141,6 +145,18 @@ suite("spaces current resource readers", () => {
         expect(await checkContainer()).toEqual([user, account, delegated]);
         await sql`DELETE FROM auth.access WHERE id = ${grant.id}::uuid`;
       }
+      // Code was excluded from both the group and signed-in/public grants above.
+      // Its own grant is the only path through the same public readable contract.
+      const code = { type: "service_account", serviceAccountId: codeId } as const;
+      const [codeGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id, permission)
+        VALUES (${codeId}::uuid, 'write') RETURNING id`;
+      if (!codeGrant) throw new Error("Expected code grant");
+      grants.push(codeGrant.id);
+      await sql`INSERT INTO spaces.space_access(space_id, access_id) VALUES (${containerId}::uuid, ${codeGrant.id}::uuid)`;
+      expect(await check([code])).toEqual([code]);
+      expect(await checkContainer()).toEqual([code]);
+      await sql`DELETE FROM auth.access WHERE id = ${codeGrant.id}::uuid`;
+      expect(await check([code])).toEqual([]);
       await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${delegatedId}::uuid`;
       expect(await check()).toEqual([]);
       const [grant] = await sql<
@@ -167,7 +183,7 @@ suite("spaces current resource readers", () => {
       await sql`DELETE FROM settings.entries WHERE key IN ('user.category.login.enabled', 'user.category.login.visible', 'user.category.login.label')`;
       await sql`DELETE FROM spaces.spaces WHERE id = ANY(${toPgUuidArray([containerId, otherId])}::uuid[])`;
       await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(grants)}::uuid[])`;
-      await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray([accountId, disabledId, boundId, delegatedId])}::uuid[])`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray([accountId, disabledId, boundId, delegatedId, codeId])}::uuid[])`;
       await sql`DELETE FROM auth.groups WHERE id = ANY(${toPgUuidArray([groupId, parentGroupId])}::uuid[])`;
       await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray([userId, expiredId])}::uuid[])`;
     }

@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import type { RequestActor, ServiceAccount } from "@k2b/cloud/contracts";
 import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
-import { isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 
 export type UserScope = {
   id: string;
@@ -31,7 +31,7 @@ export const accessScopeFor = (actor: RequestActor, subject: AccessSubject): Res
   if (actor.kind !== "service_account" || actor.delegatedUser) {
     return fail(err.forbidden("Resource access subject does not match the authenticated actor"));
   }
-  if (isStandaloneServiceAccountKind(actor.serviceAccount.kind) && subject.serviceAccountId !== actor.serviceAccount.id) {
+  if (serviceAccountUsesOwnGrants(actor.serviceAccount.kind) && subject.serviceAccountId !== actor.serviceAccount.id) {
     return fail(err.forbidden("Resource access subject does not match the authenticated actor"));
   }
   return ok({ subject, serviceAccount: actor.serviceAccount, scopes: actor.scopes });
@@ -59,7 +59,7 @@ const boundBaseShortId = (scope: AccessScope): string | null => {
 
 /** Only a resource-bound account needs a binding; a standalone or agent account is limited by its grants alone. */
 const missingBinding = (scope: AccessScope, bound: string | null): boolean =>
-  isResourceScope(scope) && !bound && !isStandaloneServiceAccountKind(scope.serviceAccount.kind);
+  isResourceScope(scope) && !bound && !serviceAccountUsesOwnGrants(scope.serviceAccount.kind);
 
 const canRequestPermission = (scope: AccessScope, required: PermissionLevel): boolean =>
   PERMISSION_RANK[scopedPermission(scope)] >= PERMISSION_RANK[required];

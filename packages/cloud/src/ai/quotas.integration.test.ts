@@ -74,14 +74,19 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE auth.users(id UUID PRIMARY KEY,uid TEXT,display_name TEXT)`;
     await sql`CREATE TABLE auth.groups(id UUID PRIMARY KEY,name TEXT,provider TEXT)`;
-    await sql`CREATE TABLE auth.service_accounts(id UUID PRIMARY KEY,name TEXT,kind TEXT)`;
+    await sql`CREATE TABLE auth.service_accounts(id UUID PRIMARY KEY,name TEXT,kind TEXT,status TEXT NOT NULL DEFAULT 'active')`;
+    // Match Core's auth/service-account-groups migration for machine quota checks.
+    await sql`CREATE TABLE auth.service_account_groups(
+      service_account_id UUID NOT NULL REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      group_id UUID NOT NULL REFERENCES auth.groups(id) ON DELETE CASCADE,
+      PRIMARY KEY(service_account_id,group_id))`;
     await sql`CREATE TABLE auth.user_groups_v2(user_id UUID,group_id UUID)`;
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id UUID,child_group_id UUID)`;
     await sql`CREATE TABLE ai.turns(id UUID PRIMARY KEY,status TEXT,attempt INTEGER,lease_expires_at TIMESTAMPTZ,conversation_id UUID,run_config JSONB)`;
     await sql`CREATE TABLE ai.conversations(id UUID PRIMARY KEY,created_by_user_id UUID,launched_by_app_id TEXT,archived_at TIMESTAMPTZ)`;
     await sql`CREATE TABLE ai.queued_messages(id UUID PRIMARY KEY,conversation_id UUID,submission JSONB,status TEXT,error TEXT,quota_checked_at TIMESTAMPTZ,position BIGSERIAL)`;
     await sql`INSERT INTO auth.users VALUES(${user}::uuid,'one','One'),(${other}::uuid,'two','Two')`;
-    await sql`INSERT INTO auth.service_accounts VALUES(${service}::uuid,'Service','agent')`;
+    await sql`INSERT INTO auth.service_accounts(id,name,kind) VALUES(${service}::uuid,'Service','agent')`;
     await sql`INSERT INTO auth.groups VALUES(${group}::uuid,'Parent','local'),(${child}::uuid,'Child','local')`;
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${user}::uuid,${child}::uuid)`;
     await sql`INSERT INTO auth.group_groups_v2 VALUES(${group}::uuid,${child}::uuid)`;
@@ -275,9 +280,22 @@ suite("Assistant quota PostgreSQL boundaries", () => {
   test("service accounts have separate personal usage", async () => {
     await save([rule("*", 100)]);
     const s = { type: "service_account" as const, serviceAccountId: service };
+    expect(await aiQuotas.assertAllowed(s, "a")).toBe(true);
     await fixtureCalls.finish(await fixtureCalls.begin(s, "a", turn), { input: 80, output: 20 });
-    await expect(aiQuotas.assertAllowed(s, "a")).rejects.toThrow();
+    await expect(aiQuotas.assertAllowed(s, "a")).rejects.toThrow("limit reached");
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
+  });
+  test("user quota checks preserve nested groups without machine membership tables", async () => {
+    const r = rule("*", 100);
+    r.grants.push({ principal: { type: "group", groupId: group }, limit: 200 });
+    await save([r]);
+    await sql`ALTER TABLE auth.service_account_groups RENAME TO service_account_groups_unavailable`;
+    try {
+      expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
+      expect((await aiQuotas.snapshot(subject, "a")).balances[0]).toMatchObject({ limit: 200, sources: ["Parent"] });
+    } finally {
+      await sql`ALTER TABLE auth.service_account_groups_unavailable RENAME TO service_account_groups`;
+    }
   });
   test("admin config names service-account grants by their current name and kind", async () => {
     const principal = { type: "service_account" as const, serviceAccountId: service };

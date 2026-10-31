@@ -535,8 +535,8 @@ export const artifacts = {
       const before = await resolveDisplayNames(current.filter((entry) => entry !== null));
       const after = before.flatMap((entry) => (entry.id === accessId ? (level ? [{ ...entry, permission: level }] : []) : [entry]));
       if (!ensureManagerRemains({ before, after }).ok) throw new ArtifactError("LAST_MANAGER");
-      if (level) await updateAccess({ id: accessId, permission: level }, db);
-      else await deleteAccess({ id: accessId }, db);
+      const changed = level ? await updateAccess({ id: accessId, permission: level }, db) : await deleteAccess({ id: accessId }, db);
+      if (!changed.ok) throw new ArtifactError("NOT_FOUND");
       return { updated: true };
     });
   },

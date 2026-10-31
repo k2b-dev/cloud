@@ -8,7 +8,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
 import { MailboxListInputSchema } from "../capability-contracts";
 import { newShortId } from "../lib/short-id";
-import { getMailboxAccess } from "../service/access";
+import { getMailboxAccess, grantMailboxAccess, updateMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { loadAssignmentReviewChange } from "../service/capability-review-readers";
 import { listLapsedAssignees } from "../service/collaborators";
@@ -51,7 +51,7 @@ suite("Mail REST access for service-account credentials", () => {
   let owner: User;
   let verifyAccessToken: { mockRestore: () => void } | undefined;
 
-  const insertAccount = async (name: string, boundMailboxId?: string, kind: "agent" | "standalone" = "agent") => {
+  const insertAccount = async (name: string, boundMailboxId?: string, kind: "agent" | "standalone" | "code" = "agent") => {
     const [row] = boundMailboxId
       ? await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
           VALUES (${name}, 'resource_bound', 'mail', 'mailbox', ${boundMailboxId}) RETURNING id`
@@ -164,6 +164,32 @@ suite("Mail REST access for service-account credentials", () => {
       await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
     }
     if (userIds.length) await sql`DELETE FROM auth.users WHERE id IN ${sql(userIds)}`;
+  });
+
+  test("normal mailbox shares refuse a code account", async () => {
+    const codeId = await insertAccount(`Mailbox code ${suffix}`, undefined, "code");
+    const result = await grantMailboxAccess({
+      context: { actor: { kind: "user", user: owner }, accessSubject: { type: "user", userId: owner.id } },
+      mailboxId,
+      principal: { type: "service_account", serviceAccountId: codeId },
+      permission: "write",
+    });
+    expect(result.ok).toBe(false);
+    expect(await sql`SELECT id FROM auth.access WHERE service_account_id = ${codeId}::uuid`).toHaveLength(0);
+    // A Code grant cannot substitute for the mailbox's ordinary manager.
+    await grant(codeId, "write");
+    const [ownerGrant] = await sql<{ id: string }[]>`SELECT a.id FROM auth.access a
+      JOIN mail.mailbox_access link ON link.access_id = a.id
+      WHERE link.mailbox_id = ${mailboxId}::uuid AND a.user_id = ${owner.id}::uuid`;
+    if (!ownerGrant) throw new Error("Missing owner grant");
+    const lowered = await updateMailboxAccess({
+      context: { actor: { kind: "user", user: owner }, accessSubject: { type: "user", userId: owner.id } },
+      mailboxId,
+      accessId: ownerGrant.id,
+      permission: "write",
+    });
+    expect(lowered.ok).toBe(false);
+    await sql`DELETE FROM auth.access WHERE service_account_id = ${codeId}::uuid`;
   });
 
   test("an agent token caps the agent's grant to its scopes", async () => {
