@@ -128,8 +128,10 @@ its trigger beside `anchor`: an element, or any object with
 `getBoundingClientRect()`, such as a point inside a cell. Use it when the menu
 belongs to content that has no button of its own, such as a grip, a
 right-click, or Shift+F10 in a grid cell. Focus returns to `returnFocus` when
-the menu closes, also after a press outside it; phones get the sheet as from a
-trigger. `closeWith` hands over `close()`.
+the menu or sheet closes, also after a press outside it. Pass a function when an
+entry can move the place focus belongs to, such as moving a row; it is read as
+the menu closes. Phones get the sheet as from a trigger. `closeWith` hands over
+`close()`.
 Set `lazy` on a menu that repeats on every row of a long list, such as a tree
 or sidebar: its entries render when the menu first opens, so the page carries
 each row's trigger but not each row's entries. Opening, focus, and keyboard use

@@ -271,7 +271,7 @@ for (const [name, options] of Object.entries(profiles))
           const grid = box(".k2b-ste-table table");
           const row = box('tr[data-r="3"] .k2b-ste-rowMenu');
           const column = box('.k2b-ste-columnMenu[data-c="1"]');
-          const visible = (selector: string) => getComputedStyle(document.querySelector(selector)!).opacity === "1";
+          const visible = (selector: string) => getComputedStyle(document.querySelector(selector)!).visibility === "visible";
           return {
             rowRight: row.right,
             columnBottom: column.bottom,
@@ -297,6 +297,15 @@ for (const [name, options] of Object.entries(profiles))
         if (name === "phone") {
           expect(geometry.rowSize).toEqual([30, 44]);
           expect(geometry.columnSize).toEqual([44, 30]);
+          // A taller target than its row: the hidden grip of the next row never takes the tap.
+          const hit = await page.evaluate(() => {
+            const grip = document.querySelector('tr[data-r="3"] .k2b-ste-rowMenu')!.getBoundingClientRect();
+            return document
+              .elementFromPoint(grip.left + grip.width / 2, grip.bottom - 2)
+              ?.closest("tr")
+              ?.getAttribute("data-r");
+          });
+          expect(hit).toBe("3");
         }
         expect(errors).toEqual([]);
       } finally {
@@ -344,6 +353,13 @@ for (const [name, options] of Object.entries(profiles))
           expect(await focused()).toBe("2,1");
         }
         expect(await cell(2, 1).getAttribute("aria-keyshortcuts")).toBe("Shift+F10");
+        // Moving the row keeps the menu open; Escape returns to the moved cell, not to the old place.
+        await cell(1, 0).click();
+        await page.keyboard.press("Shift+F10");
+        await openMenu.getByRole("menuitem", { name: /^Zeile nach unten/ }).click();
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => document.activeElement?.matches('.k2b-ste-cell[data-r="2"][data-c="0"]'));
+        expect(await cell(2, 0).textContent()).toBe("Bühne und Technik");
         expect(errors).toEqual([]);
       } finally {
         await context.close();
@@ -374,6 +390,24 @@ for (const [name, options] of Object.entries(profiles))
         expect(await openMenu.count()).toBe(0);
         await page.waitForFunction(() => document.activeElement?.matches('.k2b-ste-cell[data-r="0"][data-c="2"]'));
         expect(await page.locator("[data-marked], .k2b-ste-grip[data-open]").count()).toBe(0);
+        // Only that press is swallowed: after a release elsewhere, the next key activation still clicks.
+        await page.evaluate(() => {
+          const outside = document.getElementById("outside")!;
+          outside.dataset.clicks = "0";
+          outside.addEventListener("click", () => (outside.dataset.clicks = String(Number(outside.dataset.clicks) + 1)));
+        });
+        await cell(1, 0).click();
+        await page.keyboard.press("Shift+F10");
+        await openMenu.waitFor();
+        const heading = (await page.getByText("Sommerfest 2027").boundingBox())!;
+        await page.mouse.move(heading.x + 5, heading.y + 5);
+        await page.mouse.down();
+        await page.mouse.move(heading.x + 5, heading.y + 120);
+        await page.mouse.up();
+        expect(await openMenu.count()).toBe(0);
+        await page.locator("#outside").focus();
+        await page.keyboard.press("Enter");
+        expect(await page.locator("#outside").getAttribute("data-clicks")).toBe("1");
         // Right-click opens at the pointer; Escape returns to its cell.
         await cell(3, 4).click({ button: "right" });
         await openMenu.waitFor();

@@ -16,6 +16,7 @@ export type {
   DropdownItemProps,
   DropdownPosition,
   DropdownProps,
+  DropdownReturnFocus,
   DropdownSection,
   DropdownTriggerProps,
 } from "./Dropdown";

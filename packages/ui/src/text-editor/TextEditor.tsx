@@ -359,7 +359,7 @@ export function TextEditor(props: TextEditorProps) {
     show();
   };
   let menuOpen = false;
-  let openCellMenu: ((anchor: DropdownAnchor, returnFocus?: HTMLElement) => void) | undefined;
+  let openCellMenu: ((anchor: DropdownAnchor, returnFocus?: () => HTMLElement | undefined) => void) | undefined;
   let closeCellMenu: (() => void) | undefined;
   let copyTrigger: HTMLButtonElement | undefined;
   const tableTriggers = new Set<HTMLButtonElement>();
@@ -612,19 +612,26 @@ export function TextEditor(props: TextEditorProps) {
     menuOpen = open;
     tableMenuOpen = open && !phoneMenu();
   };
+  let swallow: AbortController | undefined;
   const pressBesideMenu = (event: PointerEvent) => {
+    swallow?.abort();
     if (!tableMenuOpen || (event.target instanceof Element && event.target.closest(".k2b-ste-table-menu"))) return;
     event.stopPropagation();
-    const swallow = new AbortController();
+    const current = new AbortController();
+    swallow = current;
     const block = (blocked: Event) => {
       blocked.preventDefault();
       blocked.stopPropagation();
-      if (blocked.type === "click" || blocked.type === "contextmenu") swallow.abort();
+      if (blocked.type === "click" || blocked.type === "contextmenu") current.abort();
     };
     for (const type of ["mousedown", "mouseup", "click", "contextmenu"])
-      document.addEventListener(type, block, { capture: true, signal: swallow.signal });
-    // A press that never clicks, such as a drag, ends at the next press.
-    document.addEventListener("pointerdown", () => swallow.abort(), { capture: true, once: true, signal: swallow.signal });
+      document.addEventListener(type, block, { capture: true, signal: current.signal });
+    // Only this press is swallowed: its click follows the release in the same task, a cancelled or dragged press
+    // never clicks, and a key starts new input.
+    const end = () => current.abort();
+    document.addEventListener("pointerup", () => setTimeout(end), { capture: true, once: true, signal: current.signal });
+    document.addEventListener("pointercancel", end, { capture: true, once: true, signal: current.signal });
+    document.addEventListener("keydown", end, { capture: true, once: true, signal: current.signal });
   };
   const menuClose = () => {
     menuOpen = false;
@@ -917,8 +924,9 @@ export function TextEditor(props: TextEditorProps) {
       grip = opener;
       setScope(kind);
       focus(event);
+      // Focus returns to the menu's cell as it closes; moving a row or column moves that cell.
       queueMicrotask(() => {
-        if (!disposed && cell()?.isConnected) openCellMenu?.(anchor, target);
+        if (!disposed && cell()?.isConnected) openCellMenu?.(anchor, () => cell());
       });
     };
     const mutations = new MutationObserver(schedulePosition);
@@ -966,6 +974,7 @@ export function TextEditor(props: TextEditorProps) {
       document.removeEventListener("focusin", focusChange);
       document.removeEventListener("pointerdown", pointer);
       document.removeEventListener("pointerdown", pressBesideMenu, true);
+      swallow?.abort();
       root.removeEventListener("k2b-ste-table-structure", structureAnnouncement);
       root.removeEventListener("k2b-ste-cell-focus", focus);
       root.removeEventListener("k2b-ste-cell-blur", focusChange);

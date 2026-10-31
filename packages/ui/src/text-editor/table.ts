@@ -1830,8 +1830,17 @@ export const tableGrid = (): Extension => [
       if (el) queueCellSelection(view, el);
     };
     view.dom.ownerDocument.addEventListener("selectionchange", selection);
+    // The editor's width decides how far grids may reach beside the text and whether more columns follow.
+    const resize =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => {
+            for (const wrap of view.contentDOM.querySelectorAll<HTMLElement>(".k2b-ste-table")) measureScroll(view, wrap);
+          });
+    resize?.observe(view.dom);
     return {
       destroy() {
+        resize?.disconnect();
         pendingContextMenus.get(view)?.abort();
         pendingContextMenus.delete(view);
         view.dom.ownerDocument.removeEventListener("selectionchange", selection);
