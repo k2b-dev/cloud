@@ -352,17 +352,22 @@ const principalTierConditions = (params: {
   const { userId, serviceAccountId, authenticated, columns } = params;
   // One rule for ordinary resolvers and batched access.readable checks. Read the
   // persisted kind, never a caller-provided kind or optional opt-in flag.
-  const inherits = sql`NOT EXISTS (
+  const inherits =
+    serviceAccountId === null
+      ? sql`TRUE`
+      : sql`NOT EXISTS (
     SELECT 1 FROM auth.service_accounts code_account
     WHERE code_account.id = ${serviceAccountId}::uuid AND code_account.kind = 'code'
   )`;
+  // A known user or anonymous subject does not need machine-membership tables.
+  // Batched readers pass SQL expressions, so both membership branches remain.
+  const userGroups = userId === null ? sql`FALSE` : sql`${columns.groupId} IN (${recursiveGroupIdsSubquery(userId)})`;
+  const serviceAccountGroups =
+    serviceAccountId === null ? sql`FALSE` : sql`${columns.groupId} IN (${recursiveServiceAccountGroupIdsSubquery(serviceAccountId)})`;
   return {
     serviceAccount: sql`${columns.serviceAccountId} = ${serviceAccountId}::uuid`,
     user: sql`${inherits} AND ${columns.userId} = ${userId}::uuid`,
-    group: sql`${inherits} AND (
-      ${columns.groupId} IN (${recursiveGroupIdsSubquery(userId ?? sql`NULL::uuid`)})
-      OR ${columns.groupId} IN (${recursiveServiceAccountGroupIdsSubquery(serviceAccountId ?? sql`NULL::uuid`)})
-    )`,
+    group: sql`${inherits} AND (${userGroups} OR ${serviceAccountGroups})`,
     authenticated: sql`${inherits} AND ${authenticated} AND ${columns.authenticatedOnly} = true`,
     public: sql`${inherits} AND (
       ${columns.userId} IS NULL

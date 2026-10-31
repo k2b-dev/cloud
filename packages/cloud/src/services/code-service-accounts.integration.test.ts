@@ -14,7 +14,7 @@ import { serviceAccounts } from "./service-accounts";
 const suite = databaseSuite();
 
 suite("code service-account boundaries", () => {
-  test("normal credential, directory, sharing and app-access paths refuse code", async () => {
+  test("code accounts never gain credentials, admin grants or broader access through ordinary paths", async () => {
     const id = crypto.randomUUID(),
       creatorId = crypto.randomUUID(),
       recipientId = crypto.randomUUID();
@@ -50,7 +50,9 @@ suite("code service-account boundaries", () => {
           () => serviceAccountCredentials.createStandaloneApiToken({ serviceAccountId: id, actor, name: "blocked", access: "models" }),
         ],
         ["resource API token", () => serviceAccountCredentials.createResourceApiToken({ serviceAccountId: id, actor, name: "blocked" })],
-        ["normal share", () => createAccess({ principal, permission: "write" })],
+        ["normal read share", () => createAccess({ principal, permission: "read" })],
+        ["normal write share", () => createAccess({ principal, permission: "write" })],
+        ["normal admin share", () => createAccess({ principal, permission: "admin" })],
         ["directory recipient", () => directoryShares.grant({ actor, recipientId: id, principal: { type: "user", userId: creatorId } })],
         ["directory target", () => directoryShares.grant({ actor, recipientId, principal })],
       ] as const;
@@ -73,14 +75,19 @@ suite("code service-account boundaries", () => {
         }),
       ).rejects.toThrow();
       // The storage seam refuses both credential kinds, including direct inserts.
+      // Execute rejection probes explicitly: matchers do not start Bun's lazy SQL.
       for (const accountId of [id, recipientId]) {
         if (accountId === id)
-          await expect(sql`INSERT INTO auth.service_account_credentials
+          await expect(
+            sql`INSERT INTO auth.service_account_credentials
           (service_account_id, name, kind, token_prefix, secret_hash)
-          VALUES (${accountId}::uuid, 'blocked', 'api_token', ${crypto.randomUUID()}, 'hash')`).rejects.toMatchObject({ errno: "23514" });
-        await expect(sql`INSERT INTO auth.service_account_credentials
+          VALUES (${accountId}::uuid, 'blocked', 'api_token', ${crypto.randomUUID()}, 'hash')`.execute(),
+          ).rejects.toMatchObject({ errno: "23514" });
+        await expect(
+          sql`INSERT INTO auth.service_account_credentials
           (service_account_id, name, kind, public_key, fingerprint)
-          VALUES (${accountId}::uuid, 'blocked', 'app_key', ${"A".repeat(43)}, ${"a".repeat(32)})`).rejects.toMatchObject({
+          VALUES (${accountId}::uuid, 'blocked', 'app_key', ${"A".repeat(43)}, ${"a".repeat(32)})`.execute(),
+        ).rejects.toMatchObject({
           errno: "23514",
         });
       }
@@ -90,11 +97,13 @@ suite("code service-account boundaries", () => {
         scopes: ["read"],
       });
       if (!ordinary.ok) throw new Error("Expected an ordinary machine credential");
-      await expect(sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${recipientId}::uuid`).rejects.toMatchObject({
+      await expect(sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${recipientId}::uuid`.execute()).rejects.toMatchObject({
         errno: "23514",
       });
-      await expect(sql`UPDATE auth.service_account_credentials SET service_account_id = ${id}::uuid
-        WHERE id = ${ordinary.data.credential.id}::uuid`).rejects.toMatchObject({ errno: "23514" });
+      await expect(
+        sql`UPDATE auth.service_account_credentials SET service_account_id = ${id}::uuid
+        WHERE id = ${ordinary.data.credential.id}::uuid`.execute(),
+      ).rejects.toMatchObject({ errno: "23514" });
       const credentials = await sql`SELECT id FROM auth.service_account_credentials WHERE service_account_id = ${id}::uuid`;
       expect(credentials).toHaveLength(0);
       const listed = await serviceAccounts.listStandalone({ search: id });
@@ -146,26 +155,28 @@ suite("code service-account boundaries", () => {
     }
   });
 
-  test("storage refuses admin code grants, upgrades, reassignment and account transitions", async () => {
+  test("code accounts can never receive admin grants through inserts, upgrades, reassignment or account transitions", async () => {
     const codeId = crypto.randomUUID(),
       agentId = crypto.randomUUID();
     await sql`INSERT INTO auth.service_accounts(id, name, kind)
       VALUES (${codeId}::uuid, ${`code:app:${codeId}`}, 'code'), (${agentId}::uuid, ${`agent-${agentId}`}, 'agent')`;
     try {
-      await expect(sql`INSERT INTO auth.access(service_account_id, permission)
-        VALUES (${codeId}::uuid, 'admin')`).rejects.toMatchObject({ errno: "23514" });
+      await expect(
+        sql`INSERT INTO auth.access(service_account_id, permission)
+        VALUES (${codeId}::uuid, 'admin')`.execute(),
+      ).rejects.toMatchObject({ errno: "23514" });
       const [codeGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id, permission)
         VALUES (${codeId}::uuid, 'write') RETURNING id`;
       const [agentGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id, permission)
         VALUES (${agentId}::uuid, 'admin') RETURNING id`;
       if (!codeGrant || !agentGrant) throw new Error("Missing fixture grants");
-      await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${codeGrant.id}::uuid`).rejects.toMatchObject({
+      await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${codeGrant.id}::uuid`.execute()).rejects.toMatchObject({
         errno: "23514",
       });
       await expect(
-        sql`UPDATE auth.access SET service_account_id = ${codeId}::uuid WHERE id = ${agentGrant.id}::uuid`,
+        sql`UPDATE auth.access SET service_account_id = ${codeId}::uuid WHERE id = ${agentGrant.id}::uuid`.execute(),
       ).rejects.toMatchObject({ errno: "23514" });
-      await expect(sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${agentId}::uuid`).rejects.toMatchObject({
+      await expect(sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${agentId}::uuid`.execute()).rejects.toMatchObject({
         errno: "23514",
       });
       expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id = ${codeGrant.id}::uuid`).toEqual([
