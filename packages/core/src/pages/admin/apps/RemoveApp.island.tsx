@@ -15,8 +15,11 @@ export default function RemoveApp(props: { app: { id: string; name: string }; va
         </Button>
       }
     >
-      <AppWorkspace.SidebarItem icon="ti ti-trash" tone="danger" onClick={open} data={{ row: "remove" }}>
-        {props.label}
+      <AppWorkspace.SidebarItem variant="object" tone="danger" onClick={open} data={{ row: "remove" }}>
+        <AppWorkspace.SidebarItemIcon>
+          <i class="ti ti-trash" />
+        </AppWorkspace.SidebarItemIcon>
+        <AppWorkspace.SidebarItemLabel>{props.label}</AppWorkspace.SidebarItemLabel>
       </AppWorkspace.SidebarItem>
     </Show>
   );

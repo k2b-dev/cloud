@@ -378,13 +378,17 @@ function Row(props: {
       fallback={
         // A fact without a column of its own: the same metrics as the rows around it, but no link and no hover.
         <div
-          class="flex min-h-8 items-center gap-2 px-[0.5625rem] py-1.5 text-[13px] leading-[1.125rem]"
+          class="flex min-h-11 items-center gap-2.5 px-[0.5625rem] py-1.5 text-[13px] leading-[1.125rem]"
           classList={{ "text-dimmed": props.muted }}
           data-row={props.label}
         >
-          <i class={`${props.icon} w-4 shrink-0 text-center`} aria-hidden="true" />
-          <span class="whitespace-nowrap">{props.label}</span>
-          <span class="min-w-0 flex-1 truncate text-right tabular-nums" classList={{ "text-dimmed": !props.muted }}>
+          <span class="inline-flex size-8 shrink-0 items-center justify-center text-base text-(--k2b-text-muted)" aria-hidden="true">
+            <i class={props.icon} />
+          </span>
+          <span class="whitespace-nowrap text-[13px] font-semibold" classList={{ "font-normal": props.muted }}>
+            {props.label}
+          </span>
+          <span class="min-w-0 flex-1 truncate text-right text-[13px] tabular-nums" classList={{ "text-dimmed": !props.muted }}>
             {props.value}
           </span>
           <span class="w-[1em] shrink-0" aria-hidden="true" />
@@ -392,13 +396,14 @@ function Row(props: {
       }
     >
       {(link) => (
+        // Object rows: the 44 px row group of the approved keys mockup, with a plain glyph instead of a tile.
         <AppWorkspace.SidebarItem
+          variant="object"
           href={link()}
-          icon={props.icon}
           active={Boolean(props.view) && props.selected === props.view}
           tone={props.tone}
           meta={
-            <span class="flex items-center gap-2 text-[13px] tabular-nums">
+            <span class="flex items-center gap-2 text-[13px] font-normal text-(--k2b-text-muted) tabular-nums">
               {/* The value gives way before the label: it truncates, the label keeps its line. */}
               <span class="max-w-[15rem] truncate">{props.value}</span>
               <i class={`ti ${props.external ? "ti-arrow-up-right" : "ti-chevron-right"} text-dimmed`} aria-hidden="true" />
@@ -407,7 +412,10 @@ function Row(props: {
           metaVisibility="always"
           data={{ row: props.label }}
         >
-          {props.label}
+          <AppWorkspace.SidebarItemIcon>
+            <i class={`${props.icon} text-(--k2b-text-muted)`} />
+          </AppWorkspace.SidebarItemIcon>
+          <AppWorkspace.SidebarItemLabel>{props.label}</AppWorkspace.SidebarItemLabel>
         </AppWorkspace.SidebarItem>
       )}
     </Show>

@@ -124,7 +124,8 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     const query = parseAppsQuery(c.req.query());
     const format = appsFormat({ locale, timeZone: "Europe/Berlin" }, FIXTURE_NOW);
     const inputs = fixtureApps()
-      .filter((app) => !removed.has(app.id) && !(state === "removed" && app.id === "pulse"))
+      // Without its provider, an app only the provider knows is not listed at all.
+      .filter((app) => !removed.has(app.id) && !(state === "removed" && app.id === "pulse") && !(state === "provider" && !app.coreKnows))
       .map((app) => (state === "provider" ? { ...app, numbers: [], numbersUnavailable: true } : app));
     const apps = sortApps(inputs.map(deriveApp), locale);
     const entry = apps.find((app) => app.id === query.app);

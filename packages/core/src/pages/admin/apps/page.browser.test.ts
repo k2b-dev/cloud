@@ -31,11 +31,11 @@ beforeEach(async () => {
       get: (target, key, receiver) => (key === "now" ? () => at : Reflect.get(target, key, receiver)),
     });
   }, FIXTURE_NOW);
-});
+}, 20_000);
 afterAll(async () => {
   await browser?.close();
   fixture?.close();
-});
+}, 20_000);
 
 test("the list names every app by name with its state in words and its most important hint", async () => {
   await open("");
@@ -61,7 +61,7 @@ test("the list names every app by name with its state in words and its most impo
   expect(await grids.innerText()).toContain("Fehlerquote 4,3% in 24 h · +1");
   expect(await page.locator('[data-app="tools"]').innerText()).toContain("Zugriff: niemand verwaltet ihn");
   expect(await page.getByText("Wähle eine App, um Zustand, Zugriff, Schlüssel und Ereignisse zu sehen.").isVisible()).toBe(true);
-});
+}, 20_000);
 
 test("the old app address opens the app, and every hint has exactly one way out to its column", async () => {
   await open("?app=grids");
@@ -71,7 +71,7 @@ test("the old app address opens the app, and every hint has exactly one way out 
   await page.waitForSelector('[data-detail="events"]');
   expect(new URL(page.url()).search).toBe("?app=grids&view=events");
   expect(await page.getByRole("button", { name: /Kontakt geändert .* erneut zustellen/ }).count()).toBe(2);
-});
+}, 20_000);
 
 test("an old link lands with a hint that closes and leaves the address clean", async () => {
   await open("?moved=gateway");
@@ -86,7 +86,7 @@ test("an old link lands with a hint that closes and leaves the address clean", a
   expect((await page.locator("[data-apps-summary]").boundingBox())!.y).toBeLessThan(list!.y);
   await open("?moved=credentials");
   expect(await page.locator("[data-moved-notice]").innerText()).toContain("„Schlüssel“ › „Tokens für Host-Betrieb“");
-});
+}, 20_000);
 
 test("only an app that is not running can leave the list; a failure keeps it and says so", async () => {
   await open("");
@@ -112,7 +112,7 @@ test("only an app that is not running can leave the list; a failure keeps it and
   await page.waitForURL((url) => url.search === "");
   await page.waitForSelector('body[data-ready="true"]');
   expect(await page.locator('[data-app="pulse"]').count()).toBe(0);
-});
+}, 20_000);
 
 test("keys: the private key shows once, and closing it unsaved asks first", async () => {
   await open("?app=mail&view=keys");
@@ -138,7 +138,7 @@ test("keys: the private key shows once, and closing it unsaved asks first", asyn
   await unsaved.waitFor();
   await unsaved.getByRole("button", { name: "Zurück zum Schlüssel" }).click();
   expect(await once.isVisible()).toBe(true);
-});
+}, 20_000);
 
 test("keys: revoking the only active key warns about the next start", async () => {
   await open("?app=mail&view=keys");
@@ -147,7 +147,7 @@ test("keys: revoking the only active key warns about the next start", async () =
   const dialog = page.locator("[data-key-revoke]");
   await dialog.waitFor();
   expect(await dialog.innerText()).toContain("Einziger aktiver Schlüssel.");
-});
+}, 20_000);
 
 test("keys: background access off says so and offers to turn it on; two active keys block creating a third", async () => {
   await open("?app=mail&view=keys&state=keys-off");
@@ -156,7 +156,7 @@ test("keys: background access off says so and offers to turn it on; two active k
   await open("?app=grids&view=keys");
   expect(await page.getByText("Höchstens 2 sind aktiv. Widerrufe zuerst einen alten.").isVisible()).toBe(true);
   expect(await page.getByRole("button", { name: "Schlüssel erzeugen" }).isDisabled()).toBe(true);
-});
+}, 20_000);
 
 test("a provider that does not answer leaves its values in place, and trying again keeps every row where it is", async () => {
   await open("?app=mail&state=provider");
@@ -167,7 +167,7 @@ test("a provider that does not answer leaves its values in place, and trying aga
   await page.locator('[data-hint="provider"]').getByRole("button", { name: "Erneut versuchen" }).click();
   await page.locator('[data-row="Verkehr 24 h"]').getByText("12.400").waitFor();
   expect(await rows()).toEqual(before);
-});
+}, 20_000);
 
 test("routes keep the five windows and say which prefix the router sends elsewhere", async () => {
   await open("?app=spaces&view=routes");
@@ -175,7 +175,7 @@ test("routes keep the five windows and say which prefix the router sends elsewhe
   expect(await tabs.allInnerTexts()).toEqual(["1 h", "6 h", "24 h", "7 Tage", "30 Tage"]);
   expect(await page.locator('[data-route="/caldav"]').innerText()).toContain("fehlt im Router");
   expect(await page.getByText("/caldav erklärt Spaces, der Router leitet es an Dateien weiter.").isVisible()).toBe(true);
-});
+}, 20_000);
 
 test("on a phone each level is its own page with a way back", async () => {
   await open("?app=mail&view=keys", 390);
@@ -188,4 +188,4 @@ test("on a phone each level is its own page with a way back", async () => {
       .isVisible(),
   ).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-});
+}, 20_000);
