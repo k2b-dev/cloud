@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.1.1...npm-editor-v0.2.0) (2026-10-31)
+
+
+### Features
+
+* **editor:** show block anchors as quiet labels in Notebooks and the notes site ([#2186](https://github.com/k2b-dev/cloud/issues/2186)) ([a81989c](https://github.com/k2b-dev/cloud/commit/a81989c55bd7c4f78646ffa11e6347136053a9cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.38.0 to 0.38.1
+
 ## [0.1.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.1.0...npm-editor-v0.1.1) (2026-10-31)
 
 

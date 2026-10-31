@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.49.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.48.0...npm-cloud-v0.49.0) (2026-10-31)
+
+
+### Features
+
+* **capabilities:** call platform capabilities as the app ([#2214](https://github.com/k2b-dev/cloud/issues/2214)) ([de4a979](https://github.com/k2b-dev/cloud/commit/de4a979ca1125d1c314b00479f12fa3aef218b49)), closes [#2213](https://github.com/k2b-dev/cloud/issues/2213)
+* **identity:** apps sign background and OAuth calls with their key ([#2191](https://github.com/k2b-dev/cloud/issues/2191)) ([d0da761](https://github.com/k2b-dev/cloud/commit/d0da76197d3cb17ec0156547ac9abc60d8b203bc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.38.0 to 0.38.1
+    * @k2b/editor bumped from 0.1.1 to 0.2.0
+
 ## [0.48.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.47.0...npm-cloud-v0.48.0) (2026-10-31)
 
 

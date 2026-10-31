@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.38.0...npm-ui-v0.38.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **ui:** give every column edge one shadow in every state ([#2216](https://github.com/k2b-dev/cloud/issues/2216)) ([cdd8ffd](https://github.com/k2b-dev/cloud/commit/cdd8ffdaea8f72d4d25081c68b4da7a6e51e5838))
+
 ## [0.38.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.37.0...npm-ui-v0.38.0) (2026-10-31)
 
 
