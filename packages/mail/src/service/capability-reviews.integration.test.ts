@@ -49,6 +49,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     user: owner.actor.kind === "user" ? owner.actor.user : null,
     requestId: "mail-action-review-fixture",
     origin: "assistant",
+    target: { type: "mail.mailbox", id: mailboxShortId },
     locale,
     signal: new AbortController().signal,
   });
@@ -154,14 +155,61 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${users}::jsonb))`;
   }, 30_000);
 
+  const withForeignConversation = async (run: (shortId: string) => Promise<void>) => {
+    const other = unwrap(await createMailbox(owner, { name: "Other mailbox" }));
+    try {
+      const [row] = await sql<{ short_id: string }[]>`INSERT INTO mail.conversations
+        (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+        VALUES (${newShortId()}, ${other.id}::uuid, 'Foreign conversation', 'lea@outside.test', ${at}) RETURNING short_id`;
+      if (!row) throw new Error("Missing foreign conversation");
+      await run(row.short_id);
+    } finally {
+      const access = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id=${other.id}::uuid`;
+      await sql`DELETE FROM mail.mailboxes WHERE id=${other.id}::uuid`;
+      for (const grant of access) await sql`DELETE FROM auth.access WHERE id=${grant.access_id}::uuid`;
+    }
+  };
+
+  test("an Action at mailbox A refuses a conversation in visible mailbox B", async () => {
+    await withForeignConversation(async (conversationId) => {
+      const action = mailCapabilities.actions["conversation.status.update"];
+      const input = action.input.parse({ conversationId, expectedRevision: 1, status: "done" });
+      for (const call of [action.review, action.run])
+        expect(await call(input, context())).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    });
+  }, 30_000);
+
+  for (const id of ["conversation.assign.batch", "conversation.status.update.batch"] as const)
+    test(`${id} refuses a foreign last member before changing any valid member`, async () => {
+      await withForeignConversation(async (foreignId) => {
+        const conversationIds = [conversations[0]!.shortId, foreignId];
+        const snapshot = async () => sql`SELECT
+          (SELECT to_jsonb(c) FROM mail.conversations c WHERE id=${conversations[0]!.id}::uuid) AS conversation,
+          (SELECT jsonb_agg(to_jsonb(a) ORDER BY principal_id) FROM mail.conversation_assignees a
+            WHERE conversation_id=${conversations[0]!.id}::uuid) AS assignees`;
+        const before = await snapshot();
+        if (id === "conversation.assign.batch") {
+          const action = mailCapabilities.actions[id];
+          const input = action.input.parse({ conversationIds, mode: "replace", assigneeUserIds: [memberId] });
+          expect(await action.review(input, context())).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+          expect(await action.run(input, context())).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+        } else {
+          const action = mailCapabilities.actions[id];
+          const input = action.input.parse({ conversationIds, status: "done" });
+          expect(await action.review(input, context())).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+          expect(await action.run(input, context())).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+        }
+        expect(await snapshot()).toEqual(before);
+      });
+    }, 30_000);
+
   const draftReviews = async () => {
     const ctx = context();
-    const base = { mailboxId: mailboxShortId, draftId: draftShortId, expectedRevision: 7 };
+    const base = { draftId: draftShortId, expectedRevision: 7 };
     return [
       unwrap(
         await mailCapabilities.actions["draft.create"].review(
           mailCapabilities.actions["draft.create"].input.parse({
-            mailboxId: mailboxShortId,
             senderIdentityId: identityShortId,
             subject: "Maintenance",
           }),
@@ -204,13 +252,10 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     const body = `${"x".repeat(65_530)}NEWEND`;
     const create = mailCapabilities.actions["draft.create"];
     const created = unwrap(
-      await create.review(
-        create.input.parse({ mailboxId: mailboxShortId, senderIdentityId: identityShortId, subject: "Unsaved", body }),
-        context(),
-      ),
+      await create.review(create.input.parse({ senderIdentityId: identityShortId, subject: "Unsaved", body }), context()),
     );
     expect(created.content).toMatchObject({ kind: "message", body, to: [] });
-    const base = { mailboxId: mailboxShortId, draftId: draftShortId, expectedRevision: 7 };
+    const base = { draftId: draftShortId, expectedRevision: 7 };
     const patch = mailCapabilities.actions["draft.patch"];
     const patched = unwrap(await patch.review(patch.input.parse({ ...base, patch: { body } }), context()));
     expect(patched.content).toMatchObject({ body, baseRevision: 7 });
@@ -243,7 +288,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     const subject = `${"s".repeat(199)}😀tail\ud800`;
     for (const body of [`${"x".repeat(9_999)}😀tail\ud800`, "short\ud800body\udc00"]) {
       const input = patch.input.parse({
-        mailboxId: mailboxShortId,
         draftId: draftShortId,
         expectedRevision: 7,
         patch: { subject, body },
@@ -324,7 +368,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       const before = await state();
       const action = mailCapabilities.actions["draft.create"];
       const input = action.input.parse({
-        mailboxId: mailboxShortId,
         senderIdentityId: identityShortId,
         intent: "forward",
         conversationId: conversations[0]!.shortId,
@@ -446,7 +489,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
   }, 30_000);
 
   const assignment = async (mode: "add" | "remove" | "replace", userIds: string[], batch: boolean) => {
-    const input = { mailboxId: mailboxShortId, assigneeUserIds: userIds, mode };
+    const input = { assigneeUserIds: userIds, mode };
     return batch
       ? unwrap(
           await mailCapabilities.actions["conversation.assign.batch"].review(
@@ -495,7 +538,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     const ids = await publicIds("tags", [tag.id]);
     const review = unwrap(
       await mailCapabilities.actions["mailbox.tag.update"].review(
-        { mailboxId: mailboxShortId, tagId: ids.get(tag.id)!, expectedRevision: tag.revision, color: "#1d4ed8" },
+        { tagId: ids.get(tag.id)!, expectedRevision: tag.revision, color: "#1d4ed8" },
         context(),
       ),
     );
@@ -504,7 +547,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
 
   test("removing only unknown users is refused as bad input instead of an invalid review", async () => {
     for (const conversationIds of [undefined, conversations.map((c) => c.shortId)]) {
-      const input = { mailboxId: mailboxShortId, assigneeUserIds: ["99999999-9999-4999-8999-999999999999"], mode: "remove" as const };
+      const input = { assigneeUserIds: ["99999999-9999-4999-8999-999999999999"], mode: "remove" as const };
       const result = conversationIds
         ? await mailCapabilities.actions["conversation.assign.batch"].review({ ...input, conversationIds }, context())
         : await mailCapabilities.actions["conversation.assign"].review({ ...input, conversationId: conversations[0]!.shortId }, context());
@@ -543,7 +586,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     for (const status of ["done", "open"] as const) {
       const review = unwrap(
         await mailCapabilities.actions["conversation.status.update.batch"].review(
-          { mailboxId: mailboxShortId, conversationIds: conversations.map((c) => c.shortId), status },
+          { conversationIds: conversations.map((c) => c.shortId), status },
           context(),
         ),
       );
@@ -554,7 +597,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
 
   test("send review shows the chosen identity, exact recipients, every MIME part, rendered signature, schedule, safety and revision", async () => {
     const input = {
-      mailboxId: mailboxShortId,
       draftId: draftShortId,
       senderIdentityId: identityShortId,
       expectedRevision: 7,
@@ -606,7 +648,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
   test("a signature change beyond the display limit changes the approval digest", async () => {
     await sql`UPDATE mail.drafts SET body_markdown = ${"Long body. ".repeat(2000)} WHERE id = ${draftId}::uuid`;
     const input = {
-      mailboxId: mailboxShortId,
       draftId: draftShortId,
       senderIdentityId: identityShortId,
       expectedRevision: 7,
@@ -638,7 +679,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     try {
       setSystemTime(new Date(at));
       const input = {
-        mailboxId: mailboxShortId,
         draftId: draftShortId,
         senderIdentityId: identityShortId,
         expectedRevision: 7,
@@ -762,7 +802,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       await sql`UPDATE mail.compose_templates SET body_template='Signed by {{ actor.display_name }}'
         WHERE id=(SELECT signature_template_id FROM mail.drafts WHERE id=${draftId}::uuid)`;
       const input = {
-        mailboxId: mailboxShortId,
         draftId: draftShortId,
         senderIdentityId: identityShortId,
         expectedRevision: 7,
