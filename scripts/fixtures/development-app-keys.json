@@ -89,9 +89,7 @@
       "appId": "oauth",
       "keyId": "7777f0c8-7ae5-4232-a085-67226ca8a785",
       "seed": "d3fwyHrlQjJghWcibKinhVo5_-CasfpqeHxXzZaYXQU",
-      "grants": [
-        "oauth:issue"
-      ]
+      "grants": ["oauth:issue"]
     },
     {
       "appId": "proxy-auth",
