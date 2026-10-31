@@ -4,8 +4,6 @@ import ts from "@typescript/typescript6";
 import { listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
-// Transitional source contents only; each package migration removes its entries.
-export const baseline: Record<string, string[]> = {};
 
 const delivered = new Set([
   "DATABASE_URL",
@@ -217,18 +215,7 @@ export const rule: Rule = {
       .flatMap((root) => listFiles(join(workspaceRoot, root), sourceFilePattern))
       .sort()) {
       const path = relative(workspaceRoot, file).replaceAll("\\", "/");
-      const source = readFileSync(file, "utf8");
-      const lines = source.split(/\r?\n/);
-      const result = checkSource(path, source);
-      const remaining = [...(baseline[path] ?? [])];
-      const added = result.filter((finding) => {
-        const index = remaining.indexOf(lines[finding.line! - 1]!.trim());
-        if (index < 0) return true;
-        remaining.splice(index, 1);
-        return false;
-      });
-      if (remaining.length) findings.push({ file, message: "remove resolved platform-clients baseline entries after migrating this file" });
-      findings.push(...added.map((finding) => ({ ...finding, file })));
+      findings.push(...checkSource(path, readFileSync(file, "utf8")).map((finding) => ({ ...finding, file })));
     }
     return findings;
   },
