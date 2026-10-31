@@ -26,8 +26,9 @@ export default ssr<AuthContext>(async (c) => {
   const context = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), requestId: c.req.header("x-request-id") ?? null };
   // The way back names the mailbox it leads to; both reads refuse a caller without access to it.
   const [mailbox, result] = await Promise.all([mailboxes.getMailbox(context, mailboxId), drafts.getDraft(context, mailboxId, draftId)]);
-  if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
-  if (!result.ok) return ssr.error(c, result.error.status);
+  // Without access the page answers as for an unknown address, so it never tells that the mailbox or draft exists.
+  if (!mailbox.ok) return ssr.error(c, mailbox.error.status === 403 ? 404 : mailbox.error.status);
+  if (!result.ok) return ssr.error(c, result.error.status === 403 ? 404 : result.error.status);
   const draft = result.data;
   const revision = c.req.query("revision");
   // Review overflow links must show the exact effective message or fail visibly;

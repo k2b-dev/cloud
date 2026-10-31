@@ -229,10 +229,18 @@ test("the way back names the mailbox it leads to", async () => {
 
 test("a mailbox the caller may not read answers 404 and shows neither its name nor the draft", async () => {
   const draftRead = spyOn(drafts, "getDraft").mockResolvedValue(ok(draft));
-  spies.push(draftRead, spyOn(mailboxes, "getMailbox").mockResolvedValue(fail(err.notFound("Mailbox"))));
+  // The service's real answer for a caller without access is 403; the page answers as for an unknown address.
+  spies.push(draftRead, spyOn(mailboxes, "getMailbox").mockResolvedValue(fail(err.forbidden("Access denied"))));
   const response = await request();
   expect(response.status).toBe(404);
   const html = await response.text();
   expect(html).not.toContain("Vertrieb Nord");
   expect(html).not.toContain("Quarterly offer");
+});
+
+test("a draft read refused for access answers 404 as well", async () => {
+  spies.push(spyOn(drafts, "getDraft").mockResolvedValue(fail(err.forbidden("Access denied"))));
+  const response = await request();
+  expect(response.status).toBe(404);
+  expect(await response.text()).not.toContain("Quarterly offer");
 });
