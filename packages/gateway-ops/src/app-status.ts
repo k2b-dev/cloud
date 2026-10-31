@@ -117,7 +117,8 @@ export const readGatewayAppStatusDetail = async (
       WHERE app_id = ${appId} AND occurred_at >= now() - (${hours}::int * interval '1 hour')
         AND (status_code >= 500 OR error_kind IS NOT NULL)
         AND (${before?.at ?? null}::timestamptz IS NULL OR (occurred_at, id) < (${before?.at ?? null}::timestamptz, ${before?.id ?? null}::bigint))
-      ORDER BY occurred_at DESC, id DESC LIMIT 51`,
+      -- The select list turns id into text; order by the table's bigint so 10 never sorts before 9.
+      ORDER BY occurred_at DESC, gateway.telemetry_events.id DESC LIMIT 51`,
     sql<{ total: number }[]>`SELECT count(*)::int AS total FROM gateway.telemetry_events
       WHERE app_id = ${appId} AND occurred_at >= now() - (${hours}::int * interval '1 hour')
         AND (status_code >= 500 OR error_kind IS NOT NULL)`,
