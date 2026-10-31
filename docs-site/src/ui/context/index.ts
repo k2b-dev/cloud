@@ -63,6 +63,7 @@ import inputImage from "./input/image.md" with { type: "text" };
 import inputImageCropper from "./input/image-cropper.md" with { type: "text" };
 import inputNumber from "./input/number.md" with { type: "text" };
 import inputPin from "./input/pin.md" with { type: "text" };
+import inputDictation from "./input/dictation.md" with { type: "text" };
 import inputQrScanner from "./input/qr-scanner.md" with { type: "text" };
 import inputRichSelect from "./input/rich-select.md" with { type: "text" };
 import inputSelect from "./input/select.md" with { type: "text" };
@@ -130,6 +131,7 @@ const catalogContextSources = {
   "input/tag-editor": { file: "input/tag-editor.md", content: inputTagEditor },
   "input/pin": { file: "input/pin.md", content: inputPin },
   "input/emoji-picker": { file: "input/emoji-picker.md", content: inputEmojiPicker },
+  "input/dictation": { file: "input/dictation.md", content: inputDictation },
   "input/qr-scanner": { file: "input/qr-scanner.md", content: inputQrScanner },
   "input/signature": { file: "input/signature.md", content: inputSignature },
   "input/image": { file: "input/image.md", content: inputImage },

@@ -9,6 +9,14 @@
   }
 }
 
+/* While dictating, the bar stands in for the action row. On a phone it fills the whole toolbar line; the host's start
+   and end controls come back when dictation ended. */
+@media (max-width: 47.999rem) {
+  [data-k2b-editor-toolbar][data-dictating] > :not(.k2b-dictation-bar) {
+    display: none;
+  }
+}
+
 /* ── Slash-command autocomplete palette ─────────────────────────────────
    The CodeMirror autocomplete tooltip is portaled outside the editor
    surface AND its theme is injected as a runtime `<style>` after this file

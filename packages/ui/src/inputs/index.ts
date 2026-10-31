@@ -128,3 +128,17 @@ export {
 } from "./TemplateEditor";
 export type { TextInputProps } from "./TextInput";
 export { TextInput } from "./TextInput";
+export type { DictationButtonProps, DictationBarProps } from "./dictation/Dictation";
+export { DictationBar, DictationButton, dictationBarShown } from "./dictation/Dictation";
+export type { DictationController, DictationNotice, DictationOptions, DictationStatus } from "./dictation/create-dictation";
+export { createDictation } from "./dictation/create-dictation";
+export type {
+  DictationAlternative,
+  DictationDevice,
+  DictationEndReason,
+  DictationErrorCode,
+  DictationEvent,
+  DictationSession,
+  DictationSource,
+  DictationTarget,
+} from "./dictation/types";
