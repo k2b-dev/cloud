@@ -20,12 +20,20 @@ export type TokenEntry = {
 const tokenStatus = (token: TokenEntry) =>
   token.status === "revoked" ? "revoked" : token.expiresAt && Date.parse(token.expiresAt) <= Date.now() ? "expired" : "active";
 type Tokens = { items: TokenEntry[]; total: number; hasNext: boolean };
+/** Core's last refusal of a start with a verified proof, as the keys API reports it. */
+export type StartRejection = {
+  at: string;
+  reason: "revoked" | "expired" | "disabled" | "connections_not_permitted";
+  keyId: string | null;
+};
+type KeyList = { items: KeyEntry[]; lastRejectedStart: StartRejection | null };
 
 export type KeysProps = {
   app: { id: string; name: string };
   neverStarted: boolean;
   /** Null when the server could not read the keys; the column then offers to try again. */
   initialKeys: KeyEntry[] | null;
+  initialRejection: StartRejection | null;
   /** Display names of the people who created keys, by user ID. */
   people: Record<string, string>;
   /** "disabled" means background access is off for the whole app. */
@@ -48,9 +56,16 @@ export default function Keys(props: KeysProps) {
   const locale = useLocale();
   const t = () => keysMessages.resolve([locale()]).t;
   const context = () => ({ locale: locale(), timeZone: props.timeZone });
-  // Without a valid key, the revoked and expired ones explain why; revoked ones start open.
+  // Without a valid key, or when Core refused a start with a revoked one, the revoked ones explain why and open.
+  const explainsRevoked = (data: KeyList | undefined) => {
+    if (!data?.items.length) return false;
+    const refused = data.lastRejectedStart?.keyId;
+    return (
+      !data.items.some((key) => key.status === "active") || data.items.some((key) => key.status === "revoked" && key.keyId === refused)
+    );
+  };
   const [showRevoked, setShowRevoked] = createSignal(
-    Boolean(props.initialKeys?.length) && !(props.initialKeys ?? []).some((key) => key.status === "active"),
+    explainsRevoked(props.initialKeys ? { items: props.initialKeys, lastRejectedStart: props.initialRejection } : undefined),
   );
   const [showTokens, setShowTokens] = createSignal(false);
   const [tokenPage, setTokenPage] = createSignal(1);
@@ -59,15 +74,18 @@ export default function Keys(props: KeysProps) {
 
   const keys = query.create({
     source: () => ({ revision: keysState.revision() }),
-    initial: props.initialKeys ? { source: { revision: 0 }, data: props.initialKeys } : undefined,
+    initial: props.initialKeys
+      ? { source: { revision: 0 }, data: { items: props.initialKeys, lastRejectedStart: props.initialRejection } }
+      : undefined,
     isSameSource: (a, b) => a.revision === b.revision,
-    load: async (_, { abortSignal }): Promise<KeyEntry[]> => {
+    load: async (_, { abortSignal }): Promise<KeyList> => {
       const response = await keysApi[":appId"].keys.$get(
         { param: { appId: props.app.id }, query: { page: "1", perPage: "100" } },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(t().loadFailed);
-      return ((await response.json()) as { items: KeyEntry[] }).items;
+      const body = (await response.json()) as KeyList;
+      return { items: body.items, lastRejectedStart: body.lastRejectedStart };
     },
   });
   const tokens = query.create({
@@ -104,16 +122,27 @@ export default function Keys(props: KeysProps) {
   });
   onCleanup(() => enable.abort());
 
-  const list = () => keys.data() ?? [];
+  const list = () => keys.data()?.items ?? [];
+  const rejection = () => keys.data()?.lastRejectedStart ?? null;
   const current = () => list().filter((key) => key.status !== "revoked");
   const revoked = () => list().filter((key) => key.status === "revoked");
   const active = () => list().filter((key) => key.status === "active");
   /** During a rotation the older active key is the one to retire. */
+  // A later read (after a failed first one, or a new refusal) opens them too; closing by hand stays until that changes.
+  createEffect(
+    on(
+      () => explainsRevoked(keys.data()),
+      (open) => {
+        if (open) setShowRevoked(true);
+      },
+      { defer: true },
+    ),
+  );
   const oldKeyId = () =>
     active().length >= 2 ? active().toSorted((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0]!.keyId : null;
   createEffect(
     on(
-      () => keys.data(),
+      () => keys.data()?.items,
       (data) => {
         if (!data) return;
         keysState.setActiveCount(data.filter((key) => key.status === "active").length);
@@ -135,9 +164,17 @@ export default function Keys(props: KeysProps) {
       toast.error(t().copyFailed);
     }
   };
+  /** The refused start on the key Core refused, so the list shows which key to replace. */
+  const refused = (key: KeyEntry) => {
+    const refusal = rejection();
+    if (!refusal || refusal.keyId !== key.keyId) return null;
+    const when = dates.formatTimeSpan(refusal.at, context());
+    return refusal.reason === "connections_not_permitted" ? t().startRejectedNoConnections({ when }) : t().startRejected({ when });
+  };
   const meta = (key: KeyEntry) => {
     const created = t().created({ date: formatDate(key.createdAt, context()) });
-    if (key.status === "revoked") return [created, key.revokedAt ? t().revokedAt({ date: formatDate(key.revokedAt, context()) }) : null];
+    if (key.status === "revoked")
+      return [created, key.revokedAt ? t().revokedAt({ date: formatDate(key.revokedAt, context()) }) : null, refused(key)];
     return [
       created,
       key.createdBy ? props.people[key.createdBy] : null,
@@ -146,6 +183,7 @@ export default function Keys(props: KeysProps) {
         : key.lastUsedAt
           ? t().usedAt({ when: dates.formatTimeSpan(key.lastUsedAt, context()) })
           : t().neverUsed,
+      refused(key),
     ];
   };
   const Row = (row: { key: KeyEntry }) => (

@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { invalidateSettingsCache } from "@k2b/cloud/services/settings";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
-import { sql } from "bun";
 
 export const migrate = async (db: typeof sql = sql): Promise<void> => {
   await db.begin(async (tx) => {

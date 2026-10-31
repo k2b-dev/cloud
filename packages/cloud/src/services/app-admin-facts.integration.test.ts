@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { migrateAppBootstrap } from "../../../core/src/migrate/core/app-bootstrap";
 import { migrate as migrateAppEvents } from "../../../core/src/migrate/core/app-events";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
@@ -43,6 +44,7 @@ beforeAll(async () => {
   if (!testInfra.database) return;
   database = await useFreshDatabase("app_admin_facts");
   await migrateAuth();
+  await migrateAppBootstrap();
   await migrateEvents();
   await migrateAppEvents();
   await migrateNotifications();
@@ -159,6 +161,8 @@ suiteFor("database")("batched app administration facts", () => {
         ('facts-a.old', 'facts-a', 'old', 'Old', 'Old', 'user', false),
         ('facts-b.one', 'facts-b', 'one', 'One', 'One', 'user', true)
     `;
+    await sql`INSERT INTO auth.app_start_rejections(app_id, rejected_at, reason, key_id)
+      VALUES ('facts-b', '2026-10-30T11:57:00Z', 'disabled', ${id(43)}), ('other', '2026-10-30T11:00:00Z', 'revoked', NULL)`;
 
     const facts = await appAdminFacts(authority(), ["facts-a", "facts-b", "unknown", "facts-a"]);
     expect([...facts.keys()]).toEqual(["facts-a", "facts-b", "unknown"]);
@@ -173,6 +177,7 @@ suiteFor("database")("batched app administration facts", () => {
         accountStatus: "active",
       },
       tokens: { active: 1, total: 3 },
+      lastRejectedStart: null,
       events: { hears: 1, sends: 2, failedDeliveries: 3, waitingDeliveries: 2 },
       notifications: 2,
       firstKnownAt: "2023-01-01T00:00:00.000Z",
@@ -181,6 +186,7 @@ suiteFor("database")("batched app administration facts", () => {
       access: { people: 0, groups: 0, serviceAccounts: 0, managers: 0, configured: false },
       keys: { active: 1, expired: 0, revoked: 0, lastUsedAt: null, firstCreatedAt: "2024-07-01T00:00:00.000Z", accountStatus: "disabled" },
       tokens: { active: 1, total: 1 },
+      lastRejectedStart: { at: "2026-10-30T11:57:00.000Z", reason: "disabled" },
       events: { hears: 1, sends: 1, failedDeliveries: 1, waitingDeliveries: 1 },
       notifications: 1,
       firstKnownAt: "2024-02-01T00:00:00.000Z",
@@ -189,6 +195,7 @@ suiteFor("database")("batched app administration facts", () => {
       access: null,
       keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, firstCreatedAt: null, accountStatus: null },
       tokens: { active: 0, total: 0 },
+      lastRejectedStart: null,
       events: { hears: 0, sends: 0, failedDeliveries: 0, waitingDeliveries: 0 },
       notifications: 0,
       firstKnownAt: null,

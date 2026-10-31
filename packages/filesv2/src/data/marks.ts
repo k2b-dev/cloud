@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { FilesError } from "../service/errors";
 
 /** Per-user pointers to entries: recently opened files and explicit favorites. Both name a binding, never a raw path alone. */

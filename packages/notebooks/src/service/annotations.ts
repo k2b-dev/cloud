@@ -1,9 +1,9 @@
-import { createSql } from "@k2b/cloud";
+import { createSql, sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { hasPermission, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { SHARED_TEXT_NAME } from "@k2b/cloud/shared-text";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
-import { SQL, sql, type TransactionSQL } from "bun";
+import { SQL, type TransactionSQL } from "bun";
 import * as Y from "yjs";
 import { z } from "zod";
 import {

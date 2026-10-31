@@ -45,7 +45,7 @@ another coordinated resource migration.
 
 ## Run the read-only cutover check
 
-From the release checkout, supply `DATABASE_URL`, `NATS_SERVERS`, and
+From the release checkout, supply `DATABASE_URL`, `REDIS_URL`, `NATS_SERVERS`, and
 `SYNC_NAMESPACE` for the exact installation through its designated secret
 system. Set `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE` when required. Then run:
 

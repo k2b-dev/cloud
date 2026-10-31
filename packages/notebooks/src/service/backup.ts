@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { type LogEntry, logger, get as settingsGet, settingsService } from "@k2b/cloud/services";
 import { isNetworkTargetBlocked, NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
@@ -7,7 +7,6 @@ import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto"
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { app } from "../config";
 import { exportNotebookZip, type NotebookExport } from "./export";
 import { notebookServiceMessages } from "./messages";

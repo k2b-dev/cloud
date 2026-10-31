@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { clickhouseTestPrefix } from "../../../../scripts/fixtures/test-clickhouse";
 import { cleanupFixtureBase, fixtureBase, fixtureStore } from "../store/base-store.test-fixture";
 import { StoreQueryError } from "../store/client";

@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   type AiConversationSkillUse,
   type AiConversationSource,
@@ -14,7 +15,6 @@ import {
   loadAiConversationFileOverview,
   toAiChatTaskView,
 } from "@k2b/cloud/ai";
-import { sql } from "bun";
 import { type ArtifactSummary, artifacts } from "./artifacts/service";
 
 /** Snapshot limits: results, files, and apps come from people and stay small; sources and working files can grow. */

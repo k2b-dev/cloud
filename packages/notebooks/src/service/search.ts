@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { PaginationParams } from "@k2b/cloud/contracts";
 import { logger } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 import type { Note } from "./notes";
 

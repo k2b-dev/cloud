@@ -4,7 +4,7 @@ import { BubbleMenu, createEditor, Editor, type EditorAction, markdownActions, t
 import { collab } from "@k2b/editor/collab";
 import type { MarkdownUrlOptions } from "@k2b/editor/markdown";
 import { files as browserFiles } from "@k2b/stdlib/browser";
-import type { TextEditorController } from "@k2b/ui/text-editor";
+import type { TextEditorController, TextEditorControls } from "@k2b/ui/text-editor";
 import { createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -52,7 +52,7 @@ export function NoteEditor(props: {
   readOnly?: boolean;
   placeholder?: string;
   autofocus?: "end" | "start";
-  onReady?: (editor: TextEditorController, undo: () => void) => void;
+  onReady?: (editor: TextEditorController, undo: () => void, table?: TextEditorControls) => void;
   onFiles?: (files: File[]) => void;
   /** URLs of the note's files by key, for `file:KEY` references; a new object re-renders them. */
   files?: Record<string, string>;
@@ -204,8 +204,8 @@ export function NoteEditor(props: {
           boundary: () => undoManager.stopCapturing(),
         }}
         extensions={collab({ text: props.text, undoManager, awareness: props.awareness })}
-        onReady={(controller) => {
-          props.onReady?.(controller, () => void undoManager.undo());
+        onReady={(controller, controls) => {
+          props.onReady?.(controller, () => void undoManager.undo(), controls);
           const view = controller.view;
           // Cursors of others disappear when this person leaves the editor.
           const blur = () =>

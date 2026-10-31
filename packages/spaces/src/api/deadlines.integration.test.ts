@@ -1,8 +1,8 @@
 import { afterEach, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { TIMEZONE_COOKIE } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { ItemFilterSchema, SpaceItemSchema } from "../contracts";

@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import type { AuthContext } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";

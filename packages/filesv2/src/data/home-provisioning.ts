@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { Area, HomeProvisioningResult, HomeProvisioningState, HomeProvisioningStatus, HomeReconciliationResult } from "../contracts";
 
 type Row = {

@@ -1,6 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { audit, logger, SettingUnreadableError, settings } from "@k2b/cloud/services";
 import { invalidateSettingsCache } from "@k2b/cloud/services/settings";
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import { type ConfigurationInput, ConfigurationSchema, type PublicConfiguration } from "../contracts";

@@ -272,6 +272,7 @@ export const rule: Rule = {
       "--analysis-min-width", // AnalyticsView.tsx: validated layout width
       "--mail-row-height", // MailConversationRow.tsx: measured height of a leaving row
       "--mail-tag", // MailConversationRow.tsx: the color of each tag chip
+      "--mail-time-samples", // MailConversationList.tsx: the longest localized times that size the columns view's time column
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
       "--k2b-chart-height", // @k2b/ui Chart.tsx and ChartSnapshotView.tsx: the rendered chart height

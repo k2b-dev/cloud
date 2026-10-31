@@ -1,3 +1,4 @@
+import { createSql, sql } from "@k2b/cloud";
 import {
   REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
   REQUEST_IDLE_TIMEOUT_SECONDS,
@@ -5,7 +6,7 @@ import {
   type resolveDisplayNames,
 } from "@k2b/cloud/server";
 import { audit, logger } from "@k2b/cloud/services";
-import { SQL, sql } from "bun";
+import type { SQL } from "bun";
 import {
   ACTIVITY_EXPORT_BATCH,
   ACTIVITY_EXPORT_LIMIT,
@@ -48,7 +49,9 @@ async function reserveExportConnection(database: SQL, signal: AbortSignal) {
         if (backendPid !== undefined) {
           // Bun 1.4.2 query.cancel() does not interrupt PostgreSQL. Use a separate connection,
           // so cancellation cannot queue behind blocked exports in the application pool.
-          const control = new SQL({ ...database.options, max: 1 });
+          const { adapter, ...options } = database.options;
+          if (adapter === "sqlite") throw new Error("Activity cancellation requires a Postgres connection");
+          const control = createSql({ ...options, adapter, max: 1 });
           try {
             await withActivityReadBudget(undefined, (budget) =>
               budget.run(

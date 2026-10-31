@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import * as settings from "@k2b/cloud/services/settings";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { app } from "../config";
 import { artifactDatabase } from "./database";
 import { testIdentity } from "./test-identity";
+
+useUnitClients();
 
 let restoreCache: () => void;
 beforeEach(() => {

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, setSystemTime, spyOn, test } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import { type AppDeviceProof, AppDevicePublicKeySchema, appDeviceProofMessage } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { type AppTerminalLogins, appApproval, oauthTokens, readAppApprovalConfig, toPgUuidArray } from "@k2b/cloud/services";
@@ -6,7 +7,6 @@ import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
 import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";

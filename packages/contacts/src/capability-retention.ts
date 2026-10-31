@@ -1,7 +1,6 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
 
 const log = logger("contacts:capability-retention");
 const RETENTION_DAYS = 30;

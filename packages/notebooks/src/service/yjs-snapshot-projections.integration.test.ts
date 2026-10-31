@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { SQL } from "bun";
 import * as Y from "yjs";
 import { connectTestNats, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 

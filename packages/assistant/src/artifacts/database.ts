@@ -1,3 +1,4 @@
+import { createSql, sql } from "@k2b/cloud";
 import { hasRole } from "@k2b/cloud/contracts";
 import { createAllowedNetworkFetch } from "@k2b/cloud/services";
 import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
@@ -5,7 +6,7 @@ import { invalidateSettingsCache, SettingUnreadableError, set } from "@k2b/cloud
 import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
-import { SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import { LIMITS } from "./contracts";
@@ -117,12 +118,13 @@ function result<T>(r: RsqlResult<T>): T {
 const generation = (namespace: string) => new Bun.CryptoHasher("sha256").update(namespace).digest("hex");
 // A separate, single-connection pool cannot queue behind callers holding App
 // locks in the ordinary pool. This query never takes an App/config lock.
-const mutationIntents = new SQL({ max: 1, connectionTimeout: 15 });
+let mutationIntentPool: SQL | undefined;
+const mutationIntents = () => (mutationIntentPool ??= createSql({ max: 1, connectionTimeout: 15 }));
 // Called while the owning App row is locked. Commit the intent separately so
 // a timeout, upstream failure or process crash still invalidates earlier reviews.
 // No mapping row is locked/updated by the surrounding transaction on this path.
 async function markDataMutation(id: string) {
-  await mutationIntents`UPDATE assistant.artifact_databases SET data_revision=gen_random_uuid() WHERE artifact_id=${id}::uuid`;
+  await mutationIntents()`UPDATE assistant.artifact_databases SET data_revision=gen_random_uuid() WHERE artifact_id=${id}::uuid`;
 }
 const CheckColumn = z.object({
   name: z.string(),

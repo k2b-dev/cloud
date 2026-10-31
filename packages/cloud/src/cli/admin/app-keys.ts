@@ -203,6 +203,14 @@ export const appKeyCommands = [
       const result = z
         .object({
           installationId: z.uuid(),
+          lastRejectedStart: z
+            .object({
+              at: z.iso.datetime(),
+              reason: z.enum(["revoked", "expired", "disabled", "connections_not_permitted"]),
+              keyId: z.uuid().nullable(),
+            })
+            .nullable()
+            .optional(),
           items: z.array(
             z
               .object({ keyId: z.string(), name: z.string(), fingerprint: z.string(), status: z.string(), accountStatus: z.string() })
@@ -211,7 +219,11 @@ export const appKeyCommands = [
         })
         .passthrough()
         .parse(await apiGet(ctx, `${keyPath(args.app)}?page=${flags.page}&perPage=${flags.perPage}`));
-      if (!printStructured(ctx, result))
+      if (!printStructured(ctx, result)) {
+        if (result.lastRejectedStart) {
+          const rejection = result.lastRejectedStart;
+          ctx.print(`Last rejected start: ${rejection.at} · ${rejection.reason} · key ${rejection.keyId ?? "unknown"}`);
+        }
         ctx.table(result.items, [
           { key: "keyId", label: "Key ID" },
           { key: "name", label: "Name" },
@@ -219,6 +231,7 @@ export const appKeyCommands = [
           { key: "status", label: "Status" },
           { key: "accountStatus", label: "Account" },
         ]);
+      }
     },
   }),
   command("apps keys revoke", {
