@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, expect, jest, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import * as applicationAi from "@k2b/cloud/ai";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";

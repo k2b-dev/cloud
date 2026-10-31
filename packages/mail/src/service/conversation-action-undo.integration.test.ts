@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { audit, encryptSecret, serviceAccountCredentials, toPgTextArray } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAIL_ACTION_OUTCOME_TTL_MS, MAX_CONVERSATION_ACTION_MESSAGES } from "../command-outcomes";
 import type { CommandState } from "../contracts";

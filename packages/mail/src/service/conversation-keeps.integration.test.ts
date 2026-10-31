@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { KeptConversationExportSchema, MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
 import { newShortId } from "../lib/short-id";

@@ -1,7 +1,6 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, redis } from "@k2b/cloud";
 import type { ServiceError } from "@k2b/stdlib";
 import type { Lock } from "@k2b/sync";
-import { redis } from "bun";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { isProviderTimeout } from "./provider-errors";
 

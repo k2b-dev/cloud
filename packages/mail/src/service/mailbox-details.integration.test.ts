@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { Principal } from "@k2b/cloud/contracts";
 import { encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { grantMailboxAccess, listMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";

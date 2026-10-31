@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { convert } from "html-to-text";
 import { z } from "zod";
 import type { ConversationView, ConversationWorkStatus, FolderDisplay } from "../contracts";
@@ -785,7 +785,7 @@ const mapMessageSummary = (row: DbMessageSummary): MessageSummary => ({
   folderId: row.folder_id,
 });
 
-const messageSummarySelect = sql`
+const messageSummarySelect = () => sql`
   mc.id,
   mc.subject,
   NULLIF(LEFT(COALESCE(mc.plain_text, ''), 240), '') AS preview,
@@ -855,7 +855,7 @@ export const listConversationMessages = async (params: {
   if (!conversation) return fail(err.notFound("Conversation"));
   const rows = params.latest
     ? await sql<DbMessageSummary[]>`
-        SELECT ${messageSummarySelect}
+        SELECT ${messageSummarySelect()}
         FROM mail.conversation_messages cm
         JOIN mail.message_contents mc ON mc.id = cm.message_id
         ${messageSummaryJoins()}
@@ -865,7 +865,7 @@ export const listConversationMessages = async (params: {
         LIMIT ${limit + 1}
       `
     : await sql<DbMessageSummary[]>`
-        SELECT ${messageSummarySelect}
+        SELECT ${messageSummarySelect()}
         FROM mail.conversation_messages cm
         JOIN mail.message_contents mc ON mc.id = cm.message_id
         ${messageSummaryJoins()}
@@ -1054,8 +1054,8 @@ const attachMessageMetadata = async (
   return remote.ok ? attachSecurity(mailboxId, remote.data) : remote;
 };
 
-const messageDetailSelect = sql`
-  ${messageSummarySelect},
+const messageDetailSelect = () => sql`
+  ${messageSummarySelect()},
   (${isKeptMessage(sql`mc.id`)}
     AND NOT EXISTS (SELECT 1 FROM mail.remote_message_refs live_ref WHERE live_ref.message_id = mc.id AND live_ref.stale_at IS NULL)
     AND EXISTS (SELECT 1 FROM mail.message_placements kept_placement WHERE kept_placement.message_id = mc.id AND kept_placement.deleted_at IS NULL)
@@ -1090,7 +1090,7 @@ const messageDetailSelect = sql`
   COALESCE(attachment_rows.items, '[]'::jsonb) AS attachments
 `;
 
-const messageDetailAddressJoin = sql`
+const messageDetailAddressJoin = () => sql`
   LEFT JOIN LATERAL (
     SELECT jsonb_agg(jsonb_build_object('name', ma.display_name, 'address', ma.email) ORDER BY ma.position) AS addresses
     FROM mail.message_addresses ma
@@ -1103,7 +1103,7 @@ const messageDetailAddressJoin = sql`
   ) cc_rows ON true
 `;
 
-const messageDetailAttachmentJoin = sql`
+const messageDetailAttachmentJoin = () => sql`
   LEFT JOIN LATERAL (
     SELECT jsonb_agg(
       jsonb_build_object(
@@ -1113,7 +1113,7 @@ const messageDetailAttachmentJoin = sql`
         'sizeBytes', attachment.size_bytes,
         'contentId', attachment.content_id,
         'checksum', attachment.checksum
-      ) ORDER BY ${attachmentMimeOrder}
+      ) ORDER BY ${attachmentMimeOrder()}
     ) AS items
     FROM mail.attachments attachment
     JOIN mail.message_parts part ON part.id = attachment.part_id
@@ -1121,7 +1121,7 @@ const messageDetailAttachmentJoin = sql`
   ) attachment_rows ON true
 `;
 
-const messageDetailDeliveryJoin = sql`
+const messageDetailDeliveryJoin = () => sql`
   LEFT JOIN mail.outbox_submissions delivery ON delivery.message_id = mc.id
 `;
 
@@ -1154,13 +1154,13 @@ export const listConversationMessageDetails = async (params: {
       ORDER BY content.internal_date DESC, content.id DESC
       LIMIT ${limit}
     )
-    SELECT ${messageDetailSelect}
+    SELECT ${messageDetailSelect()}
     FROM selected_messages selected_message
     JOIN mail.message_contents mc ON mc.id = selected_message.message_id
     ${messageSummaryJoins(params.preferredFolderId)}
-    ${messageDetailAddressJoin}
-    ${messageDetailAttachmentJoin}
-    ${messageDetailDeliveryJoin}
+    ${messageDetailAddressJoin()}
+    ${messageDetailAttachmentJoin()}
+    ${messageDetailDeliveryJoin()}
     ORDER BY mc.internal_date, mc.id
   `;
   return attachMessageMetadata(params.context, params.mailboxId, rows.map(mapMessageDetail));
@@ -1181,12 +1181,12 @@ export const getMessage = async (params: {
   const visibility = access.data.access;
   if (!visibility) return fail(err.forbidden("Access denied"));
   const [row] = await sql<DbMessageDetail[]>`
-    SELECT ${messageDetailSelect}
+    SELECT ${messageDetailSelect()}
     FROM mail.message_contents mc
     ${messageSummaryJoins()}
-    ${messageDetailAddressJoin}
-    ${messageDetailAttachmentJoin}
-    ${messageDetailDeliveryJoin}
+    ${messageDetailAddressJoin()}
+    ${messageDetailAttachmentJoin()}
+    ${messageDetailDeliveryJoin()}
     WHERE mc.id = ${params.messageId}::uuid AND mc.mailbox_id = ${params.mailboxId}::uuid
       AND ${messageVisibleTo(visibility, sql`mc.id`)}
   `;

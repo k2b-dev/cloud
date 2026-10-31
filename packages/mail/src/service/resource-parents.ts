@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 const mailboxId = async (table: "conversations" | "message_contents" | "drafts" | "outbox_submissions", id: string) => {
   const rows =

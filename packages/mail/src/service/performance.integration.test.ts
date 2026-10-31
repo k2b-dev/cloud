@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";

@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { redis } from "bun";
+import { redis } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { waitForMailProviderSlot } from "./provider-pacer";
 

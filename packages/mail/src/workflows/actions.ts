@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { notifications } from "@k2b/cloud/services";
 import type {
   ErasedWorkflowAction,
@@ -8,7 +9,6 @@ import type {
   WorkflowPlannedEffect,
 } from "@k2b/cloud/workflows";
 import { workflowAction } from "@k2b/cloud/workflows";
-import { sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import type { ActorCommandInput, MailAddress, MailCommand, ResponseScheduleDefinitionInput } from "../contracts";

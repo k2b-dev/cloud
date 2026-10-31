@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { type Result, unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";

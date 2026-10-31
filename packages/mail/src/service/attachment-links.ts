@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { audit, coreSettings } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import type {
   AttachmentLink,
@@ -133,7 +133,7 @@ type DbAttachmentLink = {
   created_at: Date | string;
 };
 
-const linkColumns = sql`
+const linkColumns = () => sql`
   link.id,
   link.mailbox_id,
   link.blob_id,
@@ -156,7 +156,7 @@ const linkColumns = sql`
  * A public link may never outlive the attachment it was created from: a purged message, a deleted draft
  * or a replaced or removed draft attachment makes the link unavailable exactly like a revocation.
  */
-const linkSourceAlive = sql`
+const linkSourceAlive = () => sql`
   (
     EXISTS (
       SELECT 1
@@ -379,7 +379,7 @@ export const createPublicAttachmentLink = async (params: {
           ${actor.kind},
           ${actorId}::uuid
         )
-        RETURNING ${linkColumns}
+        RETURNING ${linkColumns()}
       `;
       if (!created) throw new Error("Attachment link insert returned no row");
       await audit.record(
@@ -421,7 +421,7 @@ export const listPublicAttachmentLinks = async (
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 100);
   const rows = await sql<(DbAttachmentLink & { cursor_at: string })[]>`
-    SELECT ${linkColumns},
+    SELECT ${linkColumns()},
            to_char(link.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM mail.attachment_links link
     WHERE link.mailbox_id = ${mailboxId}::uuid
@@ -455,7 +455,7 @@ export const revokePublicAttachmentLink = async (params: {
       UPDATE mail.attachment_links link
       SET revoked_at = COALESCE(link.revoked_at, now())
       WHERE link.id = ${params.linkId}::uuid AND link.mailbox_id = ${params.mailboxId}::uuid
-      RETURNING ${linkColumns}
+      RETURNING ${linkColumns()}
     `;
     if (!updated) return null;
     await tx`DELETE FROM mail.attachment_link_grants WHERE link_id = ${updated.id}::uuid`;
@@ -478,14 +478,14 @@ export const revokePublicAttachmentLink = async (params: {
 const publicLinkByToken = async (publicToken: string): Promise<DbAttachmentLink | null> => {
   if (!PUBLIC_TOKEN_PATTERN.test(publicToken)) return null;
   const [row] = await sql<DbAttachmentLink[]>`
-    SELECT ${linkColumns}
+    SELECT ${linkColumns()}
     FROM mail.attachment_links link
     JOIN mail.mailboxes mailbox ON mailbox.id = link.mailbox_id AND mailbox.deleted_at IS NULL
     WHERE link.token_hash = ${hashAttachmentLinkToken(publicToken)}
       AND link.revoked_at IS NULL
       AND (link.expires_at IS NULL OR link.expires_at > now())
       AND (link.max_downloads IS NULL OR link.download_count < link.max_downloads)
-      AND ${linkSourceAlive}
+      AND ${linkSourceAlive()}
   `;
   return row ?? null;
 };
@@ -571,7 +571,7 @@ export const inspectPublicAttachmentDownload = async (params: {
       AND link.revoked_at IS NULL
       AND (link.expires_at IS NULL OR link.expires_at > now())
       AND (link_grant.download_claimed_at IS NOT NULL OR link.max_downloads IS NULL OR link.download_count < link.max_downloads)
-      AND ${linkSourceAlive}
+      AND ${linkSourceAlive()}
   `;
   if (!row) return fail(err.notFound("Attachment link"));
   return ok({
@@ -598,7 +598,7 @@ export const assertPublicAttachmentDownloadAccess = async (linkId: string, grant
       AND link_grant.expires_at > now()
       AND link.revoked_at IS NULL
       AND (link.expires_at IS NULL OR link.expires_at > now())
-      AND ${linkSourceAlive}
+      AND ${linkSourceAlive()}
   `;
   if (!row?.available) throw new Error("Attachment link access was revoked");
 };
@@ -616,13 +616,13 @@ export const claimPublicAttachmentDownload = async (params: {
   try {
     const claimed = await sql.begin(async (tx) => {
       const [row] = await tx<DbAttachmentLink[]>`
-        SELECT ${linkColumns}
+        SELECT ${linkColumns()}
         FROM mail.attachment_links link
         JOIN mail.mailboxes mailbox ON mailbox.id = link.mailbox_id AND mailbox.deleted_at IS NULL
         WHERE link.token_hash = ${tokenHash}
           AND link.revoked_at IS NULL
           AND (link.expires_at IS NULL OR link.expires_at > now())
-          AND ${linkSourceAlive}
+          AND ${linkSourceAlive()}
         FOR UPDATE OF link
       `;
       if (!row || !row.blob_id) return null;

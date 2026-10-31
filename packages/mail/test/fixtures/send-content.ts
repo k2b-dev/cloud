@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { actorRefFromRequest, type MailRequestContext } from "../../src/service/auth";
 import { loadSendContent } from "../../src/service/send-content";
 
