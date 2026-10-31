@@ -5,7 +5,7 @@ import { isAccountCategoryAllowed } from "./account-category-policy";
 import { isAccountExpired } from "./account-model";
 import { IDENTITY_JWKS_MAX_AGE_SECONDS } from "./identity/constants";
 import { getIdentityRuntimeConfig, readIdentityGroupsAdmin } from "./identity/runtime-config";
-import type { ServiceAccount } from "./service-accounts";
+import { type ServiceAccount, serviceAccountMayHoldCredentials } from "./service-accounts";
 import { buildProjectedUser, userProjectionJoin, userProjectionSql } from "./session/user";
 
 type ServiceAccountActorRow = Record<string, unknown> & {
@@ -135,6 +135,7 @@ export const resolveOAuthTokenActor = async (
     const row = rows[0];
     if (!row) return null;
     const serviceAccount = mapServiceAccount(row);
+    if (!serviceAccountMayHoldCredentials(serviceAccount.kind)) return null;
     const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;
     if (serviceAccount.kind === "user_delegated" && !delegatedUser) return null;
     if (delegatedUser && isAccountExpired(delegatedUser.accountExpires)) return null;

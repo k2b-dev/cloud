@@ -14,7 +14,7 @@ import {
   respond,
   v,
 } from "@k2b/cloud/server";
-import { coreSettings, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { coreSettings, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
@@ -318,7 +318,7 @@ const getCommentAuthor = (c: Context<AuthContext>): Result<CommentAuthor> => {
   const user = getUserBackedActor(c);
   if (user) return ok({ kind: "user", id: user.id });
   const actor = c.get("actor");
-  if (actor.kind === "service_account" && isStandaloneServiceAccountKind(actor.serviceAccount.kind)) {
+  if (actor.kind === "service_account" && serviceAccountUsesOwnGrants(actor.serviceAccount.kind)) {
     return ok({ kind: "service_account", id: actor.serviceAccount.id });
   }
   return fail(err.forbidden("This endpoint requires a user-backed actor"));
@@ -387,7 +387,7 @@ const getScopedSpaceAccess = (c: Context<AuthContext>): Result<ScopedSpaceAccess
   }
 
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (subject.serviceAccount && isStandaloneServiceAccountKind(subject.serviceAccount.kind)) {
+  if (subject.serviceAccount && serviceAccountUsesOwnGrants(subject.serviceAccount.kind)) {
     if (
       subject.subject.type !== "service_account" ||
       subject.subject.serviceAccountId !== subject.serviceAccount.id ||

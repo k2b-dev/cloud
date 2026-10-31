@@ -2357,6 +2357,10 @@ suite("OAuth resource access tokens", () => {
         isPublic: false,
       });
       expect((await oauth.clients.create({ actor: adminActor(adminId), data: clientInput(delegated.data.id) })).ok).toBe(false);
+      const codeId = crypto.randomUUID();
+      await sql`INSERT INTO auth.service_accounts(id, name, kind) VALUES (${codeId}::uuid, ${`code:app:${codeId}`}, 'code')`;
+      created.accounts.push(codeId);
+      expect((await oauth.clients.create({ actor: adminActor(adminId), data: clientInput(codeId) })).ok).toBe(false);
 
       const client = await oauth.clients.create({ actor: adminActor(adminId), data: clientInput(agent.data.id) });
       expect(client.ok).toBe(true);
@@ -2408,6 +2412,15 @@ suite("OAuth resource access tokens", () => {
       expect(
         (await requestClientCredentialsToken({ clientId: client.data.clientId, clientSecret: rotated.data.clientSecret })).status,
       ).toBe(200);
+
+      // A stale client or token can never authenticate a Code account.
+      await sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${agent.data.id}::uuid`;
+      const codeDenied = await requestClientCredentialsToken({ clientId: client.data.clientId, clientSecret: rotated.data.clientSecret });
+      expect(codeDenied.status).toBe(400);
+      expect(await codeDenied.json()).toMatchObject({ error: "invalid_client" });
+      expect(await oauthTokens.verifyAccessToken(body.access_token)).toBeNull();
+      expect((await actorProbe().request("/probe", { headers: { Authorization: `Bearer ${body.access_token}` } })).status).toBe(401);
+      await sql`UPDATE auth.service_accounts SET kind = 'agent' WHERE id = ${agent.data.id}::uuid`;
 
       // Disabling the account is the central revocation: no new tokens, and issued tokens stop resolving.
       expect((await serviceAccounts.setStatus({ id: agent.data.id, status: "disabled" })).ok).toBe(true);

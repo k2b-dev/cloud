@@ -27,6 +27,16 @@ Flat chat and MCP calls use `space` or `book` alongside domain fields;
 with the providers. See [capability targets](/en/docs/operations/capability-targets)
 for rollout constraints and retained person-call behavior.
 
+## Service-account kind checks have separate purposes
+
+Replace `isStandaloneServiceAccountKind` with
+`serviceAccountUsesOwnGrants` for resource-grant resolution. For credential
+eligibility, use `serviceAccountMayHoldCredentials` and retain the credential
+type's binding checks. The `code` kind uses its own grants but cannot hold
+credentials. Keep administrator-managed account lists and normal directory,
+group, and sharing eligibility limited to their existing account kinds. See
+[Service accounts](/en/docs/identity/service-accounts#code-accounts).
+
 ## App keys authenticate background work and OAuth
 
 Applications with `CLOUD_APP_KEY` or `CLOUD_APP_KEY_FILE` now sign each request

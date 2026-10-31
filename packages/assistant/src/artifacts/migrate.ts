@@ -82,7 +82,9 @@ export async function migrateArtifacts() {
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS assistant_artifact_access_id ON assistant.artifact_access(access_id)`.simple();
   await sql`UPDATE auth.access SET permission='admin' WHERE permission='write'
-    AND id IN (SELECT access_id FROM assistant.artifact_access)`.simple();
+    AND id IN (SELECT access_id FROM assistant.artifact_access)
+    AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
+      WHERE account.id=auth.access.service_account_id AND account.kind='code')`.simple();
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_client_calls (
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     turn_id UUID NOT NULL, call_id TEXT NOT NULL,

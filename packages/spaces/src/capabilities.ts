@@ -22,7 +22,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { type AuditActor, audit, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
@@ -294,7 +294,7 @@ const scopedSpaceId = (context: CapabilityExecutionContext, required: Permission
       : capabilityFail(context, err.forbidden("Access denied"), "accessDenied");
   }
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (isStandaloneServiceAccountKind(account.kind)) {
+  if (serviceAccountUsesOwnGrants(account.kind)) {
     return context.accessSubject.type === "service_account" &&
       context.accessSubject.serviceAccountId === account.id &&
       hasPermission(permissionFromScopes(context.actor.scopes), required)
@@ -2044,7 +2044,7 @@ const runItemDelete = async (input: z.infer<typeof ItemDeleteInputSchema>, conte
 /** Comments are written by the user behind the call or by a standalone or agent account under its own name. */
 const commentAuthor = (context: CapabilityExecutionContext): CommentAuthor | null => {
   if (context.user) return { kind: "user", id: context.user.id };
-  return context.actor.kind === "service_account" && isStandaloneServiceAccountKind(context.actor.serviceAccount.kind)
+  return context.actor.kind === "service_account" && serviceAccountUsesOwnGrants(context.actor.serviceAccount.kind)
     ? { kind: "service_account", id: context.actor.serviceAccount.id }
     : null;
 };

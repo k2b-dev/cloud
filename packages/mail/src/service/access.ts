@@ -13,7 +13,7 @@ import {
   resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
-import { accounts, audit } from "@k2b/cloud/services";
+import { accounts, audit, type ServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
 import { auditActorFromRequest, capByCredentialScopes, isResourceBoundToMailbox, type MailRequestContext, userBackedActor } from "./auth";
 
@@ -46,6 +46,7 @@ type DbAccess = {
   user_id: string | null;
   group_id: string | null;
   service_account_id: string | null;
+  service_account_kind?: ServiceAccountKind | null;
   authenticated_only: boolean;
   permission: PermissionLevel;
   created_at: Date | string;
@@ -549,9 +550,11 @@ const grantMailboxAccessWithAuthority = async (params: {
 
 const lockAccessEntries = async (mailboxId: string, db: SqlClient): Promise<DbAccess[]> =>
   db<DbAccess[]>`
-    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope
+    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope,
+      account.kind AS service_account_kind
     FROM (${accessRows(mailboxId)}) grants
     JOIN auth.access a ON a.id = grants.access_id
+    LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
     ORDER BY a.id
     FOR UPDATE OF a
   `;
@@ -564,9 +567,9 @@ const ensureAdminRemains = (
 ): Result<void> => {
   const current = entries.find((entry) => entry.id === accessId);
   if (!current) return fail(err.notFound("Mailbox access"));
-  const manages = (entry: { permission: PermissionLevel; scope: MailboxAccessScope }) =>
-    entry.permission === "admin" && entry.scope === "mailbox";
-  if (!manages(current) || (next && manages(next))) return ok();
+  const manages = (entry: { permission: PermissionLevel; scope: MailboxAccessScope; service_account_kind?: ServiceAccountKind | null }) =>
+    entry.permission === "admin" && entry.scope === "mailbox" && entry.service_account_kind !== "code";
+  if (!manages(current) || (next && manages({ ...current, ...next }))) return ok();
   if (entries.some((entry) => entry.id !== accessId && manages(entry))) return ok();
   return fail(err.badInput("A mailbox must keep at least one administrator"));
 };

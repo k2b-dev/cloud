@@ -16,11 +16,11 @@ import {
   updateAccess,
 } from "@k2b/cloud/server";
 import {
-  isStandaloneServiceAccountKind,
   type ServiceAccountCredential,
   type ServiceAccountKind,
   serviceAccountCredentials,
   serviceAccounts,
+  serviceAccountUsesOwnGrants,
 } from "@k2b/cloud/services";
 import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
@@ -96,7 +96,7 @@ export const mayReadAcrossNotebooks = async (params: {
 }): Promise<boolean> => {
   if (!params.serviceAccountId || params.boundNotebookId) return true;
   const account = await serviceAccounts.get({ id: params.serviceAccountId });
-  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+  return Boolean(account && serviceAccountUsesOwnGrants(account.kind));
 };
 
 export const buildNotebookVisibleAccessCondition = (params: { userId?: string | null; serviceAccountId?: string | null }) => {
