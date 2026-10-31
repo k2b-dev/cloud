@@ -1,5 +1,5 @@
 import { beforeAll, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { MATH_FORMULA_FUNCTIONS } from "../formula/functions-math";
 import { FormulaDecimal } from "../formula/numeric";

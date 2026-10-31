@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileBaseFieldColumn, fieldProjection, isImplicitlySelectableField } from "../query-dsl/sql-compiler-fields";
 import { createHtmlTemplateRenderBudget, enrichRecordsWithHtmlTemplates, renderHtmlTemplateValue } from "../service/html-template-fields";
 import type { Field, GridRecord } from "../service/types";
 import { HTML_TEMPLATE_ERROR, htmlTemplateHandler, validateHtmlTemplateCss } from "./html-template";
+
+useUnitClients();
 
 const field: Field = {
   id: "00000000-0000-7000-8000-000000000001",

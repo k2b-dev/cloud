@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { connections } from "@k2b/cloud";
-import { RedisClient } from "bun";
+import { connections, createRedis } from "@k2b/cloud";
+import type { RedisClient } from "bun";
 import { z } from "zod";
 import { stableCustomAppStringify } from "../custom-apps/stable-value";
 import { canonicalizeDslQuery } from "../query-dsl/canonical";
@@ -100,9 +100,7 @@ let reconnectAfter = 0;
 const connectedClient = (): RedisClient | null => {
   if (Date.now() < reconnectAfter) return null;
   if (!client) {
-    const url = connections().valkey.url;
-    if (!url) return null;
-    client = new RedisClient(url, { enableOfflineQueue: false });
+    client = createRedis({ enableOfflineQueue: false });
   }
   // Never delay a query for connection setup; also recover after Bun exhausts
   // automatic reconnect attempts during a longer outage.

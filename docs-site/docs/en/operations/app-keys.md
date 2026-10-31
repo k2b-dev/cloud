@@ -216,6 +216,16 @@ account prevents authentication with all its keys. Successful bootstrap updates
 `lastUsedAt`; a key that has never authenticated has a null value. Lists accept `--page` and `--per-page`
 (default 100, maximum 500).
 
+The per-app key list also reports `lastRejectedStart`: the time, key ID and
+reason (`revoked`, `expired`, `disabled`, or `connections_not_permitted`) of the
+last refused bootstrap whose signature and request claims were verified against
+that app's stored key. A successful bootstrap of the app clears it. Unknown
+keys, unverified proofs, and proofs already used successfully are not recorded
+because they do not prove a new start by that app. `cld` shows the rejection on
+one line when set.
+Core adds `auth.app_start_rejections` on migration, keeping at most one row per
+app; operators need no new configuration.
+
 Revocation is idempotent. Retrying enrollment of a revoked or expired public
 key returns its original ID and never reactivates it. Generate a new pair to
 replace it. Disabling the app's service account remains a separate app-wide
@@ -231,9 +241,14 @@ Core's endpoints require administrator authorization:
 | Method and path | Request or response |
 | --- | --- |
 | `POST /api/admin/apps/:appId/keys` | `{ publicKey, name?, expiresAt?, grants? }` → `{ keyId, installationId, fingerprint, status, accountStatus }` |
-| `GET /api/admin/apps/:appId/keys` | `{ installationId, items, page, perPage, total, hasNext }` with public-key metadata |
+| `GET /api/admin/apps/:appId/keys` | `{ installationId, items, lastRejectedStart, page, perPage, total, hasNext }` with public-key metadata |
 | `DELETE /api/admin/apps/:appId/keys/:keyId` | Revoke that app's exact key; repeated revocation succeeds |
 | `GET /api/admin/apps/keys` | `{ installationId, items, page, perPage, total, hasNext }`; each item has `appId`, `accountStatus`, `totalKeys`, `activeKeys` |
+
+`lastRejectedStart` is `null` when no verified refusal is recorded, or
+`{ at: "2030-01-02T03:04:05.000Z", reason: "revoked", keyId: "<uuid>" }`.
+`at` is an ISO 8601 timestamp; `keyId` is a UUID or `null`. The field belongs
+to the app and is returned on every page of its key list.
 
 Both GET endpoints accept `page` and `perPage` with the same limits as `cld`.
 The overview includes apps with revoked keys, even when the app is not running.

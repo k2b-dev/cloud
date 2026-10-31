@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { type AccessSubject, buildAccessPrincipalTierConditions } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { DocumentDefaultsSchema } from "../contracts";
 import { grantAccess } from "./access";
 import { logAudit } from "./audit";
@@ -14,7 +14,7 @@ import type { Base, CreateBaseInput, UpdateBaseInput } from "./types";
 
 type DbRow = Record<string, unknown>;
 
-const COLS = sql`id, short_id, name, description, document_defaults, created_by, deleted_at, created_at, updated_at`;
+const COLS = () => sql`id, short_id, name, description, document_defaults, created_by, deleted_at, created_at, updated_at`;
 
 const mapDocumentDefaults = (value: unknown): Base["documentDefaults"] => {
   return DocumentDefaultsSchema.parse(parseJsonbRow(value, {}));
@@ -39,12 +39,12 @@ const mapRow = (row: DbRow): Base => ({
 export const list = async (opts: { includeDeleted?: boolean } = {}): Promise<Base[]> => {
   const rows = opts.includeDeleted
     ? await sql<DbRow[]>`
-        SELECT ${COLS}
+        SELECT ${COLS()}
         FROM grids.bases
         ORDER BY created_at DESC
       `
     : await sql<DbRow[]>`
-        SELECT ${COLS}
+        SELECT ${COLS()}
         FROM grids.bases
         WHERE deleted_at IS NULL
         ORDER BY created_at DESC
@@ -144,11 +144,11 @@ export const get = async (id: string, opts: { includeDeleted?: boolean; client?:
   const client = opts.client ?? sql;
   const [row] = opts.includeDeleted
     ? await client<DbRow[]>`
-        SELECT ${COLS}
+        SELECT ${COLS()}
         FROM grids.bases WHERE id = ${id}::uuid
       `
     : await client<DbRow[]>`
-        SELECT ${COLS}
+        SELECT ${COLS()}
         FROM grids.bases WHERE id = ${id}::uuid AND deleted_at IS NULL
       `;
   return row ? mapRow(row) : null;
@@ -210,7 +210,7 @@ export const overviewActivity = async (params: { baseIds: string[]; tableLimit: 
 /** Resolves the only public base identifier to the internal resource. */
 export const getByShortId = async (shortId: string): Promise<Base | null> => {
   const [row] = await sql<DbRow[]>`
-    SELECT ${COLS}
+    SELECT ${COLS()}
     FROM grids.bases WHERE short_id = ${shortId} AND deleted_at IS NULL
   `;
   return row ? mapRow(row) : null;
@@ -225,7 +225,7 @@ export const create = async (input: CreateBaseInput, actorId: string | null, loc
     const [r] = await sql<DbRow[]>`
       INSERT INTO grids.bases (short_id, name, description, document_defaults, created_by)
       VALUES (${shortId}, ${name}, ${input.description ?? null}, ${input.documentDefaults ?? {}}::jsonb, ${actorId}::uuid)
-      RETURNING ${COLS}
+      RETURNING ${COLS()}
     `;
     if (!r) throw new Error("insert returned no row");
     return r;
@@ -283,7 +283,7 @@ export const update = async (id: string, input: UpdateBaseInput, actorId: string
           document_defaults = ${next.documentDefaults}::jsonb,
           updated_at = now()
       WHERE id = ${id}::uuid AND deleted_at IS NULL
-      RETURNING ${COLS}
+      RETURNING ${COLS()}
     `;
     if (!row) return null;
     const diff: Record<string, { old: unknown; new: unknown }> = {};
@@ -344,7 +344,7 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     const [row] = await tx<DbRow[]>`
       UPDATE grids.bases SET deleted_at = NULL, updated_at = now()
       WHERE id = ${id}::uuid AND deleted_at IS NOT NULL
-      RETURNING ${COLS}
+      RETURNING ${COLS()}
     `;
     if (!row) return fail(err.notFound(messages.base));
     await logAudit({ baseId: id, userId: actorId, action: "restored" }, tx);

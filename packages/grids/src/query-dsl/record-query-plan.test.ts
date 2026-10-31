@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { RecordQuery } from "../contracts";
 import { aggregateOutputKey } from "../service/aggregate-capabilities";
 import { normalizedSqlParts } from "../sql-test-utils";
@@ -9,6 +10,8 @@ import { resolveDslQueryToQueryPlan } from "./resolver";
 import { field } from "./resolver-fixtures";
 import { compileDslAggregateQueryPlanToSql, compileDslGroupedQueryPlanToSql, compileDslQueryPlanToSql } from "./sql-compiler";
 import type { DslSqlCompileOptions } from "./sql-compiler-types";
+
+useUnitClients();
 
 const source = { kind: "table" as const, id: "11111111-1111-4111-8111-111111111111", shortId: "TABLE1", name: "Records" };
 const fieldId = "22222222-2222-4222-8222-222222222222";

@@ -1,7 +1,8 @@
 /** Live execution policy shared by run admission and effect-time scope checks. */
+
+import { sql } from "@k2b/cloud";
 import { type AccessSubject, getEffectiveGroupIds } from "@k2b/cloud/server";
 import { accounts, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { buildCustomAppQueryContext } from "../custom-apps/query-context";
 import { customAppPageHref, resolveCustomAppPageParams } from "../custom-apps/routing";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";

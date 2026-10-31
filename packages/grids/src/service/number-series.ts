@@ -1,7 +1,7 @@
-import { createSql } from "@k2b/cloud";
+import { createSql, sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { SqlClient } from "./audit";
 import { insertWithShortIdForDb } from "./short-id";
 

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";

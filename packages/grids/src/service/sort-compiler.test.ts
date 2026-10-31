@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { normalizedSql } from "../sql-test-utils";
 import { compileSort, decodeCursor } from "./sort-compiler";
 import type { Field } from "./types";
+
+useUnitClients();
 
 const mkField = (id: string, type: string): Field => ({
   id,

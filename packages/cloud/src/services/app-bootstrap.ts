@@ -12,7 +12,7 @@ import {
   bootstrapBodyDigest,
 } from "../runtime/bootstrap-protocol";
 import { sql } from "../runtime/clients";
-import { getActiveAppKey, getInstallationId } from "./app-keys";
+import { getActiveAppKey, getInstallationId, getStoredAppKey, type LastRejectedStart } from "./app-keys";
 import { get } from "./settings";
 
 export class BootstrapProofError extends Error {
@@ -21,7 +21,33 @@ export class BootstrapProofError extends Error {
     this.name = "BootstrapProofError";
   }
 }
+/** Evidence attached only after signature and every request claim have been verified. */
+export class RejectedBootstrapStart extends BootstrapProofError {
+  constructor(
+    readonly identity: BootstrapIdentity,
+    readonly jti: string,
+    readonly reason: LastRejectedStart["reason"],
+  ) {
+    super(reason === "connections_not_permitted" ? reason : "invalid_proof");
+  }
+}
 const invalid = () => new BootstrapProofError("invalid_proof");
+
+/** A refused proof is never consumed. Already-consumed proofs cannot change administrator state. */
+export const recordRejectedBootstrapStart = async (rejection: RejectedBootstrapStart, db: SQL = sql): Promise<void> => {
+  const { identity, jti, reason } = rejection;
+  await db`
+    INSERT INTO auth.app_start_rejections (app_id, rejected_at, reason, key_id)
+    SELECT ${identity.appId}, clock_timestamp(), ${reason}, ${identity.keyId}::uuid
+    WHERE NOT EXISTS (SELECT 1 FROM auth.app_proof_replays WHERE key_id = ${identity.keyId}::uuid AND jti = ${jti})
+    ON CONFLICT (app_id) DO UPDATE
+      SET rejected_at = EXCLUDED.rejected_at, reason = EXCLUDED.reason, key_id = EXCLUDED.key_id
+  `;
+};
+
+export const clearRejectedBootstrapStart = async (appId: string, db: SQL = sql): Promise<void> => {
+  await db`DELETE FROM auth.app_start_rejections WHERE app_id = ${appId}`;
+};
 
 /** Shared Postgres uniqueness rejects a proof used concurrently on different Core replicas. */
 export const consumeBootstrapProof = async (keyId: string, jti: string, exp: number, db: SQL = sql): Promise<boolean> => {
@@ -116,6 +142,16 @@ export const authenticateAppProof = async (
   // Only validated IDs reach SQL, and the app identity must own this active credential.
   const key = await getActiveAppKey({ appId, keyId }, db);
   if (!key) throw invalid();
+  return verifyAppProof(proof, request, key, db, now);
+};
+
+const verifyAppProof = async (
+  proof: string,
+  request: { method: string; path: string; body: Uint8Array<ArrayBuffer> },
+  key: NonNullable<Awaited<ReturnType<typeof getStoredAppKey>>>,
+  db: SQL,
+  now: number,
+) => {
   let claims: JWTPayload;
   try {
     const verified = await jwtVerify(proof, await importAppPublicKey(key.publicKey), {
@@ -142,7 +178,7 @@ export const authenticateAppProof = async (
   const installationId = await getInstallationId(db);
   if (claims.aud !== `cloud-core:${installationId}`) throw new BootstrapProofError("wrong_installation");
   // Admission must succeed before the route atomically consumes this verified nonce.
-  return { identity: { installationId, appId, keyId }, key, jti: claims.jti, exp: claims.exp! };
+  return { identity: { installationId, appId: key.appId, keyId: key.keyId }, key, jti: claims.jti, exp: claims.exp! };
 };
 
 /** Only connection delivery requires connections_allowed; runners can still sign requests. */
@@ -152,9 +188,30 @@ export const authenticateBootstrap = async (
   db: SQL = sql,
   now = Date.now(),
 ): Promise<{ identity: BootstrapIdentity; jti: string; exp: number }> => {
-  const verified = await authenticateAppProof(proof, request, db, now);
+  const ids = inspectAppProof(proof, now);
+  const key = await getStoredAppKey(ids, db);
+  if (!key) throw invalid();
+  const inactive = key.status !== "active" || key.accountStatus !== "active";
+  let verified: Awaited<ReturnType<typeof verifyAppProof>>;
+  try {
+    verified = await verifyAppProof(proof, request, key, db, now);
+  } catch (error) {
+    // Inactive keys have always returned invalid_proof, regardless of their claims.
+    if (inactive) throw invalid();
+    throw error;
+  }
   if (request.method !== "POST" || request.path !== BOOTSTRAP_PATH) throw invalid();
-  if (!verified.key.connectionsAllowed) throw new BootstrapProofError("connections_not_permitted");
+  const reason =
+    key.status === "revoked"
+      ? "revoked"
+      : key.status === "expired"
+        ? "expired"
+        : key.accountStatus === "disabled"
+          ? "disabled"
+          : !key.connectionsAllowed
+            ? "connections_not_permitted"
+            : null;
+  if (reason) throw new RejectedBootstrapStart(verified.identity, verified.jti, reason);
   const { identity, jti, exp } = verified;
   return { identity, jti, exp };
 };

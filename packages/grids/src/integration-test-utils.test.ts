@@ -6,7 +6,7 @@ import { newShortId, SHORT_ID_REGEX } from "./service/short-id";
 const packageRoot = join(import.meta.dir, "..");
 const generator = new Set(["src/integration-test-utils.ts", "src/integration-test-utils.test.ts"]);
 const testSource = /\.test\.|test-|fixture/;
-const usesTestDatabase = /\bpostgresTest\b|testFor\([^)]*"database"|import \{[^}]*\b(?:sql|SQL)\b[^}]*\} from "bun";/;
+const usesTestDatabase = /\bpostgresTest\b|testFor\([^)]*"database"|import \{[^}]*\b(?:sql|SQL)\b[^}]*\} from "(?:bun|@k2b\/cloud)";/;
 const comment = /^\s*(?:\/\/|\/\*|\*)/;
 /** Common ways to make up a short ID without testShortId(). Each can repeat a value that another fixture inserts later. */
 const adHocShortId = [

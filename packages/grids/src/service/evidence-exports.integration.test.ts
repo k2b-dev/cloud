@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { createHash } from "node:crypto";
-import { getProcessSync } from "@k2b/cloud";
+import { getProcessSync, sql } from "@k2b/cloud";
 import type { Lock } from "@k2b/sync";
-import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { normalizeRefKey } from "../ref-syntax";
 import { aggregateOutputKey } from "../service/aggregate-capabilities";
 import { compileFormulaPredicateAstToSql, type FormulaSqlFieldResolver, type FormulaSqlType } from "../service/formula-sql-compiler";

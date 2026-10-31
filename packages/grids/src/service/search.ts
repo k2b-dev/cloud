@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { SearchSpec } from "../contracts";
 import { filterSearchableFields, SCALAR_SEARCH_TYPES, SELECT_SEARCH_TYPES } from "../searchable-fields";
 import type { SqlClient } from "./audit";

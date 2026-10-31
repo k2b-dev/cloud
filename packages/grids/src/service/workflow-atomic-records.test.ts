@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { mapFieldRow } from "./field-read";
 import type { GridsWorkflowActionScope } from "./workflow-action-scope";
 import { atomicQueryMatches, lockAtomicRecords, resolveWorkflowRecordValues } from "./workflow-atomic-records";
+
+useUnitClients();
 
 const baseId = "11111111-1111-4111-8111-111111111111";
 const tableId = "22222222-2222-4222-8222-222222222222";
