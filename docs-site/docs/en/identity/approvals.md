@@ -100,7 +100,8 @@ credential authority on every read and decision. Request adapters pass
 `ApprovalRoleContext` with the full `RequestAuthority`. Web sessions, personal
 unscoped CLI keys, and credentials explicitly scoped `admin` may act for an
 admin; app sessions, machine accounts, mandates, and ordinary `write` tokens
-cannot. Omitting the context preserves personal Action reads only.
+cannot. App invocations cannot act as role approvers, even when their
+originating person is an admin. Omitting the context preserves personal Action reads only.
 
 A Cloud admin can approve another author's version or reject any version.
 The author cannot approve their own version, even when they are the only
@@ -131,7 +132,8 @@ for the Code version service and administration surfaces:
   `CodeVersionApprovalRequestInput` requires `kind: "code_version"`,
   `approverRole: "admin"`, `authorUserId`, and a `code_version` requester with
   a stable submission-attempt `ref`, an `appId`, and a same-origin `href` to the
-  Code. The version service chooses a finite `expiresInMs`; the personal
+  Code. The version service chooses a finite `expiresInMs` whose deadline
+  fits a JavaScript `Date`; invalid lifetimes throw `TypeError`. The personal
   Action limit does not apply. A resubmission after expiry needs a new `ref`.
 - `request(input, tx?)` records an immutable question. For a version, its
   `input` contains the complete version binding, including Code ID, version

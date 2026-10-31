@@ -12,7 +12,8 @@ export const approvalAdminActor = (userId: string, authority: RequestAuthority):
   const { actor, scopes } = authority;
   const user = userFromActor(actor);
   if (!user || user.id !== userId || isAppSessionActor(actor) || scopes.includes("ai:inference")) return null;
-  const credential = authority.credentialKind === "invocation" ? actor.delegation?.credentialKind : authority.credentialKind;
+  if (authority.credentialKind === "invocation" || actor.delegation) return null;
+  const credential = authority.credentialKind;
   if (
     actor.kind === "service_account" &&
     (actor.serviceAccount.kind !== "user_delegated" ||
@@ -22,7 +23,7 @@ export const approvalAdminActor = (userId: string, authority: RequestAuthority):
     return null;
   const personalKey = credential === "api_key" && actor.kind === "service_account" && scopes.length === 0;
   if (credential !== "session" && !personalKey && !scopes.includes("admin")) return null;
-  if (credential === "mandate" || credential === undefined) return null;
+  if (credential === "mandate") return null;
   return actor.kind === "user" ? actor : { kind: "user", user };
 };
 

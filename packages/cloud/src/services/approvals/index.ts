@@ -153,7 +153,8 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
   const recipient = role ? null : input.approverUserId;
   const subjectId = role ? null : input.subjectId;
   // Zero or less records a request that is already expired, such as a call that waited too long before the upgrade.
-  if (role && !Number.isFinite(input.expiresInMs)) throw new TypeError("Code approval expiry must be finite.");
+  if (role && (!Number.isFinite(input.expiresInMs) || !Number.isFinite(new Date(Date.now() + Math.max(0, input.expiresInMs)).getTime())))
+    throw new TypeError("Code approval expiry must be finite and fit in a JavaScript Date.");
   const expiresInMs = role
     ? Math.max(0, input.expiresInMs)
     : Number.isNaN(input.expiresInMs)

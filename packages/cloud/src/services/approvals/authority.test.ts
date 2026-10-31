@@ -55,13 +55,14 @@ test("role credentials preserve phone, machine and scope ceilings", () => {
   }
 });
 
-test("an invocation retains the originating credential ceiling and never turns a mandate into admin authority", () => {
-  const invoked = (credentialKind: "session" | "oauth" | "api_key" | "mandate"): RequestActor => ({
-    ...sessionActor,
-    delegation: { kind: "invocation", callingAppId: "demo", credentialKind, invocationId: "approval-test" },
-  });
-  expect(approvalAdminActor(user.id, authority(invoked("oauth"), "invocation", ["write"]))).toBeNull();
-  expect(approvalAdminActor(user.id, authority(invoked("oauth"), "invocation", ["admin"]))).not.toBeNull();
-  expect(approvalAdminActor(user.id, authority(invoked("mandate"), "invocation", ["admin"]))).toBeNull();
+test("app invocations cannot decide role approvals, including a resumed turn's session authority", () => {
+  for (const credentialKind of ["session", "oauth", "api_key", "mandate"] as const) {
+    const actor: RequestActor = {
+      ...sessionActor,
+      delegation: { kind: "invocation", callingAppId: "demo", credentialKind, invocationId: "approval-test" },
+    };
+    expect(approvalAdminActor(user.id, authority(actor, "invocation", ["admin"]))).toBeNull();
+    expect(approvalAdminActor(user.id, authority(actor, "session"))).toBeNull();
+  }
   expect(approvalAdminActor(user.id, authority(sessionActor, "invocation", ["admin"]))).toBeNull();
 });
