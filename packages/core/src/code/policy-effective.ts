@@ -6,6 +6,7 @@ export type CodePolicyGroups = {
   groups: { id: string; provider: string }[];
   ancestors: { groupId: string; ancestorId: string }[];
 };
+/** Resolved classification with its winning default, groups or veto for review and diagnostics. */
 export type EffectiveCodePolicyRow = {
   row: CodePolicyRow;
   value: CodePolicyValue;

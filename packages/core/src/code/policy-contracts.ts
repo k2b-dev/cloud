@@ -20,9 +20,11 @@ export const CODE_POLICY_ROWS = [
   "internet",
 ] as const;
 export const CodePolicyRowSchema = z.enum(CODE_POLICY_ROWS);
+/** Stable call classification shared by checker, activation, dispatcher and administration. */
 export type CodePolicyRow = z.infer<typeof CodePolicyRowSchema>;
 /** Transport values for Automatisch / Admin gibt frei / Nie. */
 export const CodePolicyValueSchema = z.enum(["automatic", "admin", "never"]);
+/** Automatic execution, version-bound Cloud-admin approval, or an unconditional veto. */
 export type CodePolicyValue = z.infer<typeof CodePolicyValueSchema>;
 export const CodePolicyRuleSchema = z
   .object({
@@ -31,9 +33,12 @@ export const CodePolicyRuleSchema = z
     value: CodePolicyValueSchema.describe("Automatic, Cloud-admin approval, or forbidden."),
   })
   .strict();
+/** One classification value for a group UUID, or the installation default when groupId is null. */
 export type CodePolicyRule = z.infer<typeof CodePolicyRuleSchema>;
 export const CodePolicyPresetSchema = z.enum(["off", "admin", "open", "custom"]);
+/** Named complete-table preset; edited tables use custom. */
 export type CodePolicyPreset = z.infer<typeof CodePolicyPresetSchema>;
+/** Complete default/group rule table. Resource/app Code ignores group relaxation. */
 export type CodePolicyDefinition = { preset: CodePolicyPreset; rules: CodePolicyRule[] };
 /** Stored table shape. Historical presets remain readable; absent defaults resolve to never. */
 export const StoredCodePolicyDefinitionSchema = z
@@ -67,6 +72,7 @@ export const CodePolicySchema = z
     updatedAt: z.iso.datetime(),
   })
   .strict();
+/** Persisted policy snapshot; revision is the optimistic concurrency token for preview/update. */
 export type CodePolicy = z.infer<typeof CodePolicySchema>;
 /** Presets replace the complete table, including group overrides. Sending remains gated by submission in Phase 1. */
 export function codePolicyPreset(preset: Exclude<CodePolicyPreset, "custom">): CodePolicyDefinition {
@@ -95,6 +101,7 @@ export const CodePolicyManifestSchema = z.object({
     .max(CODE_POLICY_ROWS.length)
     .refine((rows) => new Set(rows).size === rows.length, "Policy classifications must be unique"),
 });
+/** Checked immutable version classifications; policyRows contains each used row once. */
 export type CodePolicyManifest = z.infer<typeof CodePolicyManifestSchema>;
 const revision = z.number().int().positive().describe("Revision from policy.read; stale drafts are rejected.");
 const pageInput = {
