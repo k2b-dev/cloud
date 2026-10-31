@@ -51,7 +51,8 @@ The `code` kind is reserved for Code owned by a resource or an application.
 It is a separate principal: it uses only access granted to that exact account.
 Group, all-signed-in, and public entries never grant it access, including when
 an application answers `access.readable`. A Code account never counts as a
-resource manager.
+resource manager and cannot receive `admin`, including through direct storage
+writes or account reclassification.
 
 Code accounts cannot receive API tokens, models-only keys, OAuth clients or
 OAuth tokens. App keys belong only to a `resource_bound` account for

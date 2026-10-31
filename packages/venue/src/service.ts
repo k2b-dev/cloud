@@ -14,6 +14,7 @@ import {
   type Principal,
   type Result,
   resolveDisplayNames,
+  updateAccess,
 } from "@k2b/cloud/server";
 import {
   coreSettings,
@@ -915,11 +916,7 @@ const writeAccess = (
     // Venue's editor calls the admin level “Admin”; the message uses the same word.
     const guarded = ensureManagerRemains({ before, after, locale, level: venueMessages.resolve(locale ? [locale] : []).t.admin });
     if (!guarded.ok) return fail(guarded.error);
-    const changed =
-      permission === null
-        ? await tx`DELETE FROM auth.access WHERE id = ${accessId}::uuid`
-        : await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${accessId}::uuid`;
-    return changed.count === 0 ? fail(err.notFound("Access entry")) : ok();
+    return permission === null ? deleteAccess({ id: accessId }, tx) : updateAccess({ id: accessId, permission }, tx);
   });
 
 const changeAccess = async (

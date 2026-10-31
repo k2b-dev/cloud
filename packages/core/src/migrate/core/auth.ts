@@ -960,6 +960,34 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_access_authenticated
     ON auth.access(id) WHERE user_id IS NULL AND group_id IS NULL AND service_account_id IS NULL AND authenticated_only = true
   `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION auth.check_code_access_permission() RETURNS trigger AS $$
+    DECLARE account_kind TEXT;
+    BEGIN
+      SELECT kind INTO account_kind FROM auth.service_accounts WHERE id = NEW.service_account_id FOR SHARE;
+      IF account_kind = 'code' AND NEW.permission = 'admin' THEN
+        RAISE EXCEPTION 'Code accounts cannot receive admin access' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    CREATE OR REPLACE TRIGGER code_access_permission
+      BEFORE INSERT OR UPDATE OF service_account_id, permission ON auth.access
+      FOR EACH ROW EXECUTE FUNCTION auth.check_code_access_permission();
+    CREATE OR REPLACE FUNCTION auth.check_code_access_transition() RETURNS trigger AS $$
+    BEGIN
+      IF NEW.kind = 'code' AND EXISTS (
+        SELECT 1 FROM auth.access WHERE service_account_id = NEW.id AND permission = 'admin'
+      ) THEN
+        RAISE EXCEPTION 'Code accounts cannot retain admin access' USING ERRCODE = '23514';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    CREATE OR REPLACE TRIGGER code_access_transition
+      BEFORE UPDATE OF kind ON auth.service_accounts
+      FOR EACH ROW EXECUTE FUNCTION auth.check_code_access_transition();
+  `.simple();
   console.log("  ✓ auth.access table");
 
   await sql`

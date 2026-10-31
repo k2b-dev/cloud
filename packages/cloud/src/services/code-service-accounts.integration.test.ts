@@ -146,6 +146,34 @@ suite("code service-account boundaries", () => {
     }
   });
 
+  test("storage refuses admin code grants, upgrades, reassignment and account transitions", async () => {
+    const codeId = crypto.randomUUID(),
+      agentId = crypto.randomUUID();
+    await sql`INSERT INTO auth.service_accounts(id, name, kind)
+      VALUES (${codeId}::uuid, ${`code:app:${codeId}`}, 'code'), (${agentId}::uuid, ${`agent-${agentId}`}, 'agent')`;
+    try {
+      await expect(sql`INSERT INTO auth.access(service_account_id, permission)
+        VALUES (${codeId}::uuid, 'admin')`).rejects.toMatchObject({ errno: "23514" });
+      const [codeGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id, permission)
+        VALUES (${codeId}::uuid, 'write') RETURNING id`;
+      const [agentGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id, permission)
+        VALUES (${agentId}::uuid, 'admin') RETURNING id`;
+      if (!codeGrant || !agentGrant) throw new Error("Missing fixture grants");
+      await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${codeGrant.id}::uuid`).rejects.toMatchObject({
+        errno: "23514",
+      });
+      await expect(
+        sql`UPDATE auth.access SET service_account_id = ${codeId}::uuid WHERE id = ${agentGrant.id}::uuid`,
+      ).rejects.toMatchObject({ errno: "23514" });
+      await expect(sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${agentId}::uuid`).rejects.toMatchObject({
+        errno: "23514",
+      });
+      expect(await sql`SELECT permission FROM auth.access WHERE id = ${codeGrant.id}::uuid`).toEqual([{ permission: "write" }]);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id IN (${codeId}::uuid, ${agentId}::uuid)`;
+    }
+  });
+
   test("deleting the creator preserves the code account and mandate with a null creator", async () => {
     const id = crypto.randomUUID(),
       creatorId = crypto.randomUUID();

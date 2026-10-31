@@ -151,6 +151,22 @@ suite("Project and Skill credential limits and manager eligibility", () => {
   });
 
   for (const resource of ["projects", "skills"] as const) {
+    test(`${resource}: ordinary sharing cannot change an existing Code grant`, async () => {
+      const person = await owner();
+      const fixture = await create(resource, person.headers);
+      const machine = await account("agent", person.id, resource, fixture.id);
+      const access = await grant(person.headers, fixture.path, machine.id);
+      await sql`UPDATE auth.access SET permission = 'write' WHERE service_account_id = ${machine.id}::uuid`;
+      await sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${machine.id}::uuid`;
+      for (const permission of ["read", "admin"]) {
+        const response = await request(person.headers, `${fixture.path}/access/${access.id}`, "PATCH", { permission });
+        expect(response.status).toBe(404);
+        expect(await sql`SELECT permission FROM auth.access WHERE service_account_id = ${machine.id}::uuid`).toEqual([
+          { permission: "write" },
+        ]);
+      }
+    });
+
     for (const kind of ["standalone", "agent"] as const) {
       test(`${resource}: ${kind} authenticates, receives named grants, is scope-capped and loses revoked access`, async () => {
         const person = await owner();

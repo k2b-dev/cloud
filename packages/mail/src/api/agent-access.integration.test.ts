@@ -176,8 +176,8 @@ suite("Mail REST access for service-account credentials", () => {
     });
     expect(result.ok).toBe(false);
     expect(await sql`SELECT id FROM auth.access WHERE service_account_id = ${codeId}::uuid`).toHaveLength(0);
-    // A stale Code admin row cannot substitute for the mailbox's ordinary manager.
-    await grant(codeId, "admin");
+    // A Code grant cannot substitute for the mailbox's ordinary manager.
+    await grant(codeId, "write");
     const [ownerGrant] = await sql<{ id: string }[]>`SELECT a.id FROM auth.access a
       JOIN mail.mailbox_access link ON link.access_id = a.id
       WHERE link.mailbox_id = ${mailboxId}::uuid AND a.user_id = ${owner.id}::uuid`;
