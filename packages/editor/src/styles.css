@@ -269,13 +269,21 @@
   }
 }
 
-/* A rendered block in the editor, and the box the note's server preview reserves for a chart in its place. */
+/* A rendered block in the editor, and the box the note's server preview reserves for a chart in its place. The editor
+   measures blocks without margins, so the space above and below the frame is the block's own padding and the frame is
+   drawn inside it; a margin would move every line after the block away from where the editor places it. */
 .cm-query-block-widget {
+  position: relative;
   display: block;
-  margin: 0.5rem 0;
-  padding: 0.5rem;
+  padding: calc(1rem + 1px) calc(0.5rem + 1px);
+}
+.cm-query-block-widget::before {
+  content: "";
+  position: absolute;
+  inset: 0.5rem 0;
   border: 1px solid var(--ui-border);
   border-radius: var(--k2b-radius-control);
+  pointer-events: none;
 }
 .cm-query-block-preview.notebook-book-content {
   max-width: none;

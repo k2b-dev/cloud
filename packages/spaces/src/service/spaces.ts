@@ -356,10 +356,10 @@ export const getDetail = async (params: { id: string }): Promise<SpaceDetail | n
   if (!spaceRow) return null;
 
   const columns = await sql<DbColumn[]>`
-    SELECT id, space_id, name, color, rank::text AS rank, is_done
-    FROM spaces.columns
-    WHERE space_id = ${params.id}
-    ORDER BY rank
+    SELECT c.id, c.space_id, c.name, c.color, c.rank::text AS rank, c.is_done
+    FROM spaces.columns c
+    WHERE c.space_id = ${params.id}
+    ORDER BY c.rank, c.short_id COLLATE "C"
   `;
 
   const tags = await sql<DbTag[]>`
