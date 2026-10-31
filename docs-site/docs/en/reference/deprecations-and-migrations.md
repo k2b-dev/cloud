@@ -10,6 +10,26 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## Apps, app credentials and Gateway › Apps are one Apps page
+
+**Administration → Apps** now lists every app the registry, Core or an
+[App status](/en/docs/platform/app-status) provider knows, with its state and
+the one hint that needs attention. An app opens as its own column with state,
+traffic, access, keys and events; each row opens a further column, and the
+address keeps the selection, for example `/admin/apps?app=mail&view=keys`.
+
+| Before | Now |
+| --- | --- |
+| `/admin/apps?app=<id>` | unchanged; opens the app |
+| `/admin/app-credentials` | opens `/admin/apps` with a hint; tokens are under the app's **Keys → Tokens for host operation** |
+| `/admin/observability/gateway` (Apps table) | opens `/admin/apps` with a hint |
+| **Remove offline app** in the Gateway Apps table | **Remove from list …** in the app's row menu or page, only for an app that is not running |
+| `/admin/observability/gateway/routes` | unchanged; app IDs link to the app |
+
+Operators: no migration is needed beyond Core's own. `cld admin app-credentials …`,
+`cld admin apps keys …` and `DELETE /api/gateway/apps/<id>` keep working.
+Update bookmarks in your own runbooks.
+
 ## NATS diagnostics access moves to settings
 
 The four Gateway Ops `NATS_ADMIN_*` inputs are deprecated. During this release,
@@ -1790,8 +1810,8 @@ removes them after verifying Files:
   choose **Clean up**. The cleanup removes every stored key that no running
   application registers, not only `files.*`, so first check that the list holds
   nothing you still need.
-- the offline `files` registration: in `/admin/observability/gateway`, choose
-  **Remove offline app** for Files (legacy).
+- the offline `files` registration: in **Administration → Apps** (`/admin/apps`), open
+  Files (legacy) and choose **Remove from list …**.
 
 Once Files serves every directory you still need, stop the Filegate v2 daemon
 and remove its configuration and token. Keep its storage: the home and group

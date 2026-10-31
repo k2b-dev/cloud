@@ -208,7 +208,7 @@ router without hairpin NAT can make reachability fail for visitors on Core's
 network even while the website works from outside. Fix that routing or split
 DNS and check again; do not disable certificate validation.
 
-See the App domains operations guide for ingress, TLS and gateway
+See [App domains](/en/docs/operations/app-domains) for ingress, TLS and gateway
 protections.
 
 ### Administrator API
@@ -251,7 +251,7 @@ cld --profile development admin apps domains add website preview.example.com
 ```
 
 Configure the ingress and DNS for that host as described in
-the App domains operations guide. The app sees
+[App domains](/en/docs/operations/app-domains). The app sees
 `https://preview.example.com/...`; only development `*.localhost` hosts use
 HTTP.
 

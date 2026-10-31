@@ -78,7 +78,8 @@ export const router = new Hono<AuthContext>()
       },
     }),
   )
-  .get("/admin/observability/gateway", auth.requireRole("admin", ssr.access), ...gatewayPage)
+  // The apps table moved to Administration › Apps; the old address lands there with a short hint.
+  .get("/admin/observability/gateway", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/apps?moved=gateway", 302))
   .get("/admin/observability/gateway/routes", auth.requireRole("admin", ssr.access), ...gatewayPage)
   .get("/admin/observability", auth.requireRole("admin", ssr.access), ...observabilityOverviewPage)
   .get("/admin/observability/logs", auth.requireRole("admin", ssr.access), ...logsPage)

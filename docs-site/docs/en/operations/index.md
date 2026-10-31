@@ -51,3 +51,6 @@ See [Sign-in locations](/en/docs/operations/sign-in-locations) for the bundled
 location snapshot, its license, and its privacy and proxy requirements.
 
 Enroll and manage application public keys with [App keys](/en/docs/operations/app-keys).
+
+Assign public application hostnames and configure their TLS ingress with
+[App domains](/en/docs/operations/app-domains).

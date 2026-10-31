@@ -60,7 +60,7 @@ Cloud-host path routing continues to use the declared prefixes above.
 
 See [Public site of an app](/en/docs/build/public-surface) for SSR, development
 hosts, visitor sessions, client IPs and rate limits, and
-the App domains operations guide for ingress and protections.
+[App domains](/en/docs/operations/app-domains) for ingress and protections.
 
 ## Mount the same paths in Hono
 
@@ -80,7 +80,7 @@ publish it to the gateway.
 
 ## Response compression
 
-The gateway forwards response bodies unchanged, with one exception: it
+On the Cloud host, the gateway forwards response bodies unchanged, with one exception: it
 compresses `text/html`, `application/json`, and `application/*+json`
 responses. It chooses Brotli or gzip from the request's `Accept-Encoding` and
 streams each upstream chunk as it arrives. Applications still receive the
@@ -111,6 +111,25 @@ Sec-Fetch-Dest`, also when it stays uncompressed. A compressed response loses
 `Content-Length` and `Accept-Ranges`, and a strong `ETag` becomes weak. Compare `If-None-Match`
 weakly: `W/"x"` matches `"x"`, a list matches when one tag matches, and `*`
 matches any current representation.
+
+On an [app domain](/en/docs/operations/app-domains), requests without Cookie
+or Authorization headers after Cloud credentials have been removed also compress `text/*`,
+JavaScript, JSON (`+json` included), XML (`+xml` included), and SVG. This
+includes cross-site landings, subresources, and crawlers without Fetch
+Metadata. Site cookies or `Authorization` retain the Cloud-host compression
+rules above. App responses also vary on `Cookie` and `Authorization` so shared
+caches distinguish these cases.
+Precompressed bodies, `no-transform`, size thresholds, HEAD, conditional
+requests, and streaming keep the same behavior. Status codes, redirect
+locations, app cache directives, and representation bytes after decompression
+pass through unchanged. A response that sets a cookie becomes
+`Cache-Control: private, no-store`.
+
+The cookie decision uses the forwarded request: Cloud credential cookies
+cannot authenticate a public-site visitor and have already been discarded.
+An application's own cookie keeps the conservative rule. An application that
+mixes private content or other secret credentials with attacker-controlled
+text must still opt out with `no-transform`.
 
 Compression can reveal private content through response length (BREACH). Opt
 out with `middleware.noTransform()` only when **both** conditions hold:
