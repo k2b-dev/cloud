@@ -140,7 +140,8 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
         outcome,
         capabilityResultSchema(dataSchema, { consumer: true }),
         CAPABILITY_MAX_RESULT_BYTES,
-        combineCapabilitySignals(caller.signal, invocation.signal),
+        // Only a budgeted caller cancels reading a response that already arrived; others keep the received result.
+        charge ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
         charged ? undefined : charge,
       );
     }
@@ -193,7 +194,7 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
       response,
       capabilityResultSchema(dataSchema, { consumer: true }),
       CAPABILITY_MAX_RESULT_BYTES,
-      combineCapabilitySignals(caller.signal, invocation.signal),
+      caller.consumeResponseBytes ? combineCapabilitySignals(caller.signal, invocation.signal) : undefined,
       caller.consumeResponseBytes,
     );
   } catch (cause) {
