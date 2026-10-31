@@ -216,6 +216,18 @@ export type ApprovalDecisionResult =
       code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" | "SELF_APPROVAL" | "UNAVAILABLE" | "NOT_REMEMBERABLE" | "REAUTHENTICATE" | "BUSY";
     }
   | { ok: false; code: "ALREADY_DECIDED"; status: ApprovalStatus };
+/** A kind owner refuses a stale/invalid review. The transaction rolls back; transports return a visible conflict.
+ * Throw only after resolving the request recipient; never include private source or payloads in the message.
+ */
+export class ApprovalDecisionConflictError<C extends string = string> extends Error {
+  constructor(
+    readonly code: C,
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
 /**
  * A kind owner updates its durable domain decision in the same transaction as the platform decision. Throwing rolls
  * back both writes. Called exactly once for the winning decision, never on replay. No external effects belong here.

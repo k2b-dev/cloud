@@ -61,6 +61,15 @@ import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolic
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
 import { listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { codeVersionContracts } from "./code/version-contracts";
+import {
+  decideCodeVersion,
+  diffCodeVersion,
+  listCodeVersions,
+  reviewCodeVersionDecision,
+  setCodePaused,
+  submitCodeVersion,
+} from "./code/versions";
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
 
@@ -709,6 +718,20 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "code.version.diff": {
+      title: "Compare Code version",
+      description: "Read full file rows against the last approved or activated version, with exact decision binding.",
+      ...codeVersionContracts.diff,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => diffCodeVersion(input, ctx)),
+    },
+    "code.version.list": {
+      title: "List Code versions",
+      description: "Read version submission and approval receipts, including sole-admin decisions.",
+      ...codeVersionContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeVersions(input, ctx)),
+    },
     "code.policy.read": {
       title: "Read Code policy",
       description: "Read default and applicable group rules; Cloud admins read the complete editable table.",
@@ -1211,6 +1234,70 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "code.version.submit": {
+      title: "Submit Code version",
+      description:
+        "Save checked source and bundle against baseVersionId. Request version approval when policy requires it; leave the running version unchanged.",
+      ...codeVersionContracts.submit,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion(input, ctx)),
+    },
+    "code.version.approve": {
+      title: "Approve Code version",
+      description: "Approve the exact source, bundle and comparison through the platform's Cloud-admin rule.",
+      ...codeVersionContracts.decide,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof codeVersionContracts.decide.input>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionDecision(input, true, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion(input, true, ctx)),
+    },
+    "code.version.reject": {
+      title: "Reject Code version",
+      description: "Reject the exact version and comparison through the same platform request.",
+      ...codeVersionContracts.decide,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof codeVersionContracts.decide.input>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionDecision(input, false, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion(input, false, ctx)),
+    },
+    "code.pause": {
+      title: "Pause Code",
+      description: "Pause future Code execution without replacing the running version or replaying missed events.",
+      ...codeVersionContracts.pause,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, true, ctx)),
+    },
+    "code.resume": {
+      title: "Resume Code",
+      description: "Resume the active version only after checking current policy and live approval evidence.",
+      ...codeVersionContracts.resume,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "keeps_working" },
+      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, false, ctx)),
+    },
     "code.policy.update": {
       title: "Update Code policy",
       description:

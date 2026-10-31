@@ -198,7 +198,7 @@ export const createCode = async (input: { owner: CodeOwner; title: string }, con
   }
 };
 /** Serialize local share/version edits and recheck grants after acquiring the owner row lock. */
-const lockCodeForEdit = async (codeId: string, context: CodeContext, db: TransactionSQL): Promise<Code> => {
+export const lockCodeForEdit = async (codeId: string, context: CodeContext, db: CodeDb): Promise<Code> => {
   const [row] = await db<CodeRow[]>`SELECT * FROM code.codes WHERE id = ${codeId} FOR UPDATE`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code not found.");
   const code = mapCode(row);
@@ -277,6 +277,7 @@ export const createCodeVersion = async (
     baseVersionId: string | null;
   },
   context: CodeContext,
+  db: CodeDb = sql,
 ): Promise<CodeVersion> => {
   codePerson(context, true);
   const source = CodeSourceFilesSchema.parse(input.sourceFiles);
@@ -297,7 +298,7 @@ export const createCodeVersion = async (
     bytes(jsonText(manifest, true)) > manifestLimit
   )
     throw new CodeDataError("BAD_INPUT", "Code version exceeds storage limits.");
-  return sql.begin(async (tx) => {
+  const save = async (tx: CodeDb) => {
     await lockCodeForEdit(input.codeId, context, tx);
     const [latest] = await tx<
       { id: string; number: number }[]
@@ -309,7 +310,8 @@ export const createCodeVersion = async (
       VALUES(${input.codeId},${(latest?.number ?? 0) + 1},${JSON.stringify(source)}::text::jsonb,${input.bundle},${codeSourceHash(source)},${codeBundleHash(input.bundle)},${manifest === null ? null : JSON.stringify(manifest)}::text::jsonb,${sourceBytes},${bundleBytes},${codePerson(context).id}::uuid) RETURNING *`;
     if (!row) throw new Error("Version insert returned no row");
     return mapVersion(row);
-  });
+  };
+  return db === sql ? sql.begin(save) : save(db);
 };
 /** UTF-16 offsets address the returned text; chunks never split a surrogate pair. */
 export const readCodeVersion = async (

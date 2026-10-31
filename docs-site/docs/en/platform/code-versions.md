@@ -1,0 +1,172 @@
+---
+title: Code versions and approval
+navTitle: Code versions
+section: Platform services
+order: 962
+description: Submit checked Code, compare complete source versions and decide hash-bound Cloud-admin approvals.
+tags: [code, approvals, versions]
+updated: 2026-10-31
+---
+
+# Code versions and approval
+
+Submit a checked source and bundle together. Core saves an immutable version
+and requests a Cloud administrator's approval when the current
+[Code policy](/en/docs/platform/code-policy) requires it. The previous active
+version keeps running while the new version waits. Approval alone does not
+activate a version or grant resource access.
+
+## Submit a version
+
+`core.code.version.submit` accepts `codeId`, `sourceFiles`, `bundle`,
+`manifest` and `baseVersionId`. Use the latest saved version's UUID as the base,
+or null for the first push. The caller needs Code editor access and a write
+credential. Phone sessions cannot submit lasting Code authority.
+
+The result contains `version`, `binding`, `status`, `approvalId` and `decision`.
+`status: "submitted"` means the current policy needs no administrator's
+approval. `status: "pending"` has a platform approval request. Neither status
+changes the active version.
+
+Core checks the source and bundle hashes, source locations, manifest
+classifications and current policy before committing. A forbidden row returns
+`code_policy_never`. Unattended `ask_sends` is refused with
+`code_sends_not_yet` in Phase 1, even under the Open preset. Sending without a
+person is reserved for Phase 3.
+
+If someone pushed first, submission returns `code_version_conflict` with
+“Neuere Version vorhanden” in German, `details.latestVersionId` and the
+complete `details.files` difference from the requested base to the latest
+saved version. Review and reconcile those changes, then submit with that base.
+The failed push saves neither a version nor an approval request.
+
+### Checker manifest
+
+The G6 fixture contract is exported as `CodeCheckedVersionManifestSchema` and
+`CodeCheckedVersionManifest` from Core's `code/index.ts` until C16 supplies its
+checker producer. It contains:
+
+- `formatVersion: 1`, `sourceHash` and `bundleHash`;
+- unique `policyRows`, including every operation classification and any AI or
+  internet use;
+- `permissions`: the complete static list of `{ operation, kind, target, refs,
+  row, entrypoint, location: { path, line } }`. `kind` is `query` or `action`;
+  `target` is the exact resource reference or null, and `refs` contains related
+  resource references. Locations use one-based source lines.
+
+Source hashing uses SHA-256 over UTF-8 compact JSON of sorted `[path, content]`
+pairs. Bundle hashing uses SHA-256 over the exact UTF-8 bundle. The manifest
+is saved at version creation; it cannot be replaced later. A supplied manifest
+never grants permission to make a call. Dispatch checks each actual operation
+against current policy, version approval, mandate and resource access.
+
+## Compare what will be approved
+
+`core.code.version.diff({ codeId, versionId })` returns `binding`,
+`staleComparison`, `files`, `permissions` and `policyRows`. It compares against
+the last approved version or the last successfully activated version. Before
+either exists, the comparison is an empty source tree.
+
+Each file is `{ path, lines: [{ kind, text }] }`, directly usable by `CodeDiff`
+from `@k2b/ui`. `same` rows belong to both versions, `del` to the previous
+version and `add` to the proposed version. All rows and all files are present,
+including unchanged files and deleted files. Rows contain no newline character;
+a trailing empty row preserves a final newline. There is no hidden context or
+hunk truncation. If a detailed comparison exceeds Core's existing 100 ms diff
+budget, the complete old file is shown as removed and the complete new file as
+added.
+
+The standard capability result budget still applies. A comparison too large
+for that transport fails visibly rather than returning a partial diff. The
+stored approval content contains the complete comparison, readable through
+[the shared approval content route](/en/docs/identity/approvals#approval-routes).
+For source inspection, `core.code.version.read` also provides bounded chunks.
+
+A binding contains `codeId`, `versionId`, `sourceHash`, `bundleHash`,
+`manifestHash`, `comparisonVersionId`, `comparisonSourceHash` and
+`comparisonBundleHash`. Keep it unchanged for the decision. A changed comparison
+sets `staleComparison: true`; submit and review a new version.
+
+## Decide through the shared approval
+
+A pending version appears in the platform's **Waiting for you** list for Cloud
+administrators. Its request has kind `code_version`, assurance `confirm`, and
+reason `changes_access`. The stored complete content contains the hash binding,
+manifest and full source difference. Existing approval surfaces show it as
+passive plain JSON; the Code administration surface can render its full file
+rows as `CodeDiff`.
+
+`core.code.version.approve(binding)` and
+`core.code.version.reject(binding)` use that same platform request and current
+Cloud-admin authority. Shared approval cards and Cloud Login call the same
+transactional owner handler. The first decision wins; repeating the same
+accepted decision returns its existing receipt.
+
+Core refuses changed hashes with `code_hash_mismatch`, a superseded version
+with `code_version_stale`, and a changed comparison or review with
+`code_comparison_stale`. The platform decision and domain evidence roll back
+together. The shared browser route returns a conflict; Cloud Login declines
+the stale decision. Review the current version and submit again.
+
+An author cannot approve their own version when another active human Cloud
+administrator exists. The platform's sole-admin rule is the only exception:
+a sole active human Cloud administrator can approve their own version after
+recent full browser sign-in or through Cloud Login. The shared question shows:
+
+> Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft.
+
+Machine accounts and expired administrators do not count as a second person.
+The platform counts and locks the administrator population in the decision
+transaction. Adding a second administrator blocks new self-approvals immediately;
+an earlier approval stays valid.
+
+Core stores `sole_admin` in its durable decision and approved/rejected audit
+metadata. German version receipts label a self-approval
+**selbst freigegeben (einziger Admin)**. Approvals remain bound to the exact
+source, bundle and manifest. A revoked deciding device or a changed sign-out
+epoch prevents subsequent use of that approval.
+
+## List, pause and resume
+
+`core.code.version.list({ codeId, before?, limit? })` returns newest-first
+submission receipts and `nextBefore`. `before` is an exclusive version number;
+`limit` defaults to 20 and accepts at most 50. Decision receipts survive pruning
+of transient platform approval requests. An undecided expired request has
+`status: "expired"`; submit again to request a new review.
+
+`core.code.pause({ codeId })` pauses future execution of the active version.
+`core.code.resume({ codeId })` checks current policy and live approval evidence
+before resuming that same version. Events arriving during the pause are not
+replayed. A pending newer version remains pending. Cloud administrators and
+Code editors may pause or resume with write authority; phone sessions cannot.
+Activate a version before using either operation.
+
+## Maintainer integration
+
+Core owns the services and tables. Other applications consume capabilities.
+`packages/core/src/code/index.ts` exports:
+
+- `codeVersionContracts`, `CodeVersionBinding`, `CodeVersionSubmission`,
+  `CodeVersionDecision`, `CodeVersionDiffFile` and their schemas;
+- `submitCodeVersion`, `diffCodeVersion`, `listCodeVersions`,
+  `decideCodeVersion` and `setCodePaused` for permission-aware callers;
+- `startCodeVersionApprovals` and `applyCodeVersionDecision` for the lifecycle
+  owner of the C5 decision handler;
+- `requireCodeVersionApproval(code, versionId, tx)` for activation and dispatch.
+  Hold policy then Code locks, or use one consistent read snapshot. This checks
+  current classifications, hashes, decision and device/sign-out revocation;
+- `recordCodeVersionBaseline(codeId, versionId, tx)` for C9 to call only in
+  the transaction of a successful activation, after acquiring the Code lock.
+  It records comparison history and grants no execution or resource authority.
+
+The additive migration creates `code.version_submissions`,
+`code.version_decisions` and `code.version_baselines`. Submissions and decisions
+are immutable; user deletion may erase decision attribution. Requests may be
+pruned without deleting durable decisions or source evidence. No Assistant data
+is rewritten.
+
+Audit events are `core.code.version.submitted`, `core.code.version.approved`,
+`core.code.version.rejected`, `core.code.paused` and `core.code.resumed`.
+Decision events include both hashes, the manifest and comparison binding,
+request ID, channel and `sole_admin`; a sole-admin approval uses reason
+`self_approved_sole_admin`. Audit events contain no source or bundle bodies.

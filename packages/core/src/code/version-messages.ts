@@ -1,0 +1,41 @@
+import { i18n } from "@k2b/stdlib";
+
+export const codeVersionMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      conflict: "A newer version exists. Review the difference and submit against that version.",
+      rejectAction: "Reject this Code version",
+      rejectRunning: "Rejecting this Code version",
+      rejectDone: "Rejected this Code version",
+      keepPending: "Keep pending",
+      approved: "Approved",
+      rejected: "Rejected",
+      soleAdmin: "Self-approved (only admin)",
+      action: "Approve this Code version",
+      running: "Approving this Code version",
+      done: "Approved this Code version",
+      confirm: "Approve version",
+      decline: "Reject version",
+      declined: "Rejected this Code version",
+      content: "Complete Code difference and permissions",
+    },
+    de: {
+      conflict: "Neuere Version vorhanden. Prüfe den Unterschied und reiche gegen diese Version ein.",
+      rejectAction: "Diese Code-Version ablehnen",
+      rejectRunning: "Diese Code-Version wird abgelehnt",
+      rejectDone: "Diese Code-Version abgelehnt",
+      keepPending: "Offen lassen",
+      approved: "Freigegeben",
+      rejected: "Abgelehnt",
+      soleAdmin: "selbst freigegeben (einziger Admin)",
+      action: "Diese Code-Version freigeben",
+      running: "Diese Code-Version wird freigegeben",
+      done: "Diese Code-Version freigegeben",
+      confirm: "Version freigeben",
+      decline: "Version ablehnen",
+      declined: "Diese Code-Version abgelehnt",
+      content: "Vollständiger Code-Unterschied und Erlaubnisse",
+    },
+  },
+});

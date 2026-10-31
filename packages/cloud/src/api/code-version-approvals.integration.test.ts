@@ -7,7 +7,7 @@ import { migrateCloudAi } from "../ai/migrate";
 import type { RuntimeAppMeta } from "../contracts/app";
 import { ApprovalPageSchema } from "../contracts/approvals";
 import { sql } from "../runtime/clients";
-import { approvalReviewDigest, approvals, registerApprovalDecisionHandler } from "../services/approvals";
+import { ApprovalDecisionConflictError, approvalReviewDigest, approvals, registerApprovalDecisionHandler } from "../services/approvals";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { createDeviceActions } from "./app-approval-actions";
 import { approvalRoutes } from "./approvals";
@@ -29,7 +29,9 @@ suiteFor(
     const users: string[] = [];
     const requests: string[] = [];
     let transitions = 0;
+    let staleReview = false;
     const dispose = registerApprovalDecisionHandler("code_version", async () => {
+      if (staleReview) throw new ApprovalDecisionConflictError("code_comparison_stale", "The comparison changed.");
       transitions++;
     });
     try {
@@ -85,6 +87,12 @@ suiteFor(
           headers: requestHeaders,
           body: JSON.stringify({ approved, remember }),
         });
+      staleReview = true;
+      const stale = await decide(true);
+      expect(stale.status).toBe(409);
+      expect(await stale.json()).toMatchObject({ code: "code_comparison_stale" });
+      expect(await approvals.get(id)).toMatchObject({ status: "pending" });
+      staleReview = false;
       expect((await decide(true, outsiderHeaders)).status).toBe(404);
       expect((await decide(true, outsiderHeaders, "chat")).status).toBe(404);
       expect((await decide(true, headers, "chat")).status).toBe(400);
@@ -115,6 +123,19 @@ suiteFor(
           approved: true,
         }),
       ).toBe(false);
+      staleReview = true;
+      expect(
+        await device.decide({
+          userId: admin,
+          deviceId,
+          issuer: "https://cloud.example.test",
+          actionId: complete,
+          digest: view.digest,
+          approved: true,
+        }),
+      ).toBe(false);
+      expect(await approvals.get(complete)).toMatchObject({ status: "pending" });
+      staleReview = false;
       expect(
         await device.decide({
           userId: admin,
