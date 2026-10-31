@@ -49,10 +49,7 @@ const identityPublicRoutes = createIdentityPublicRoutes();
 // and non-user Skills readers cannot pass the Task router's user requirement.
 const coreApi = new Hono()
   .route("/admin/apps", createAdminAppListingRoutes())
-<<<<<<< HEAD
   .route("/admin/apps", createAdminAppStatusRoutes())
-=======
->>>>>>> origin/main
   .route("/ai/openai/v1", createAiOpenAiRoutes())
   .route("/ai/skills", aiSkillsRoutes)
   .route("/ai", aiChatTaskRoutes)
