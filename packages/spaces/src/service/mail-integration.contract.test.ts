@@ -44,7 +44,7 @@ if (process.env.SPACES_MAIL_INTEGRATION_CHILD !== "1") {
       status: "verified",
     },
   ]);
-  const calls: Array<{ capabilityId: string; input: unknown }> = [];
+  const calls: Array<{ capabilityId: string; input: unknown; target?: { type: string; id: string } }> = [];
   let mailboxPages: Array<{ data: unknown; page?: { hasMore: boolean; nextCursor?: string } }> | undefined;
   let identityPage: { hasMore: boolean; nextCursor?: string } | undefined;
   let identityPages: Array<{ hasMore: boolean; nextCursor?: string }> | undefined;
@@ -56,7 +56,10 @@ if (process.env.SPACES_MAIL_INTEGRATION_CHILD !== "1") {
   });
   mock.module("@k2b/cloud/capabilities/server", () => ({
     getCapabilityCatalogApp: async () => ({ ok: false }),
-    invokeCapabilityWithDataSchema: async (call: { capabilityId: string; input: unknown }, schema: z.ZodType) => {
+    invokeCapabilityWithDataSchema: async (
+      call: { capabilityId: string; input: unknown; target?: { type: string; id: string } },
+      schema: z.ZodType,
+    ) => {
       calls.push(call);
       const mailboxPage = call.capabilityId === "mailbox.list" ? mailboxPages?.shift() : undefined;
       const raw =
@@ -91,7 +94,7 @@ if (process.env.SPACES_MAIL_INTEGRATION_CHILD !== "1") {
         },
       ],
     });
-    expect(calls.at(-1)?.input).toEqual({ mailboxId: "Mail01", limit: 50 });
+    expect(calls.at(-1)).toMatchObject({ target: { type: "mail.mailbox", id: "Mail01" }, input: { limit: 50 } });
   });
 
   test("resolves the verified sender ref when preparing a draft", async () => {

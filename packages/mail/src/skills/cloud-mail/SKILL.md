@@ -7,6 +7,8 @@ description: "Use for work involving the user's Cloud mailboxes: finding, readin
 
 Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them. Load only the capabilities needed for the task. Reuse returned typed IDs and current revisions unchanged.
 
+Mailbox-scoped tools use `mailbox` as their flat target argument. Reuse its public ID from a mailbox ref or a returned mailboxId. Every contained resource, including every batch member, must belong to that mailbox. Readers and cross-mailbox search keep their existing inputs; `mail.draft.send.check` keeps mailboxId for outcome recovery.
+
 ## Choose the shortest useful path
 
 - For "what needs my attention?", start with `mail.conversation.focus`. No mailbox lookup is needed. Its previews help select conversations; a preview is not a complete message.

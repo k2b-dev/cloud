@@ -124,7 +124,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listen Sie die Zusammenarbeitsaktivität für ein bekanntes Postfach oder eine bekannte Konversation auf. Holen Sie sich die Mailbox-ID von mailbox.list und optional die Konversations-ID von einem mail.conversation ref. Dies ist ein Prüfzeitplan, kein Nachrichteninhalt.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId: "Optionaler Konversationsfilter ID.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -135,7 +134,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listen Sie interne Teamkommentare für eine bekannte Konversation auf. Mailbox-ID und Konversations-ID von conversation.list, conversation.search oder conversation.read abrufen; Verwenden Sie das zurückgegebene mail.comment refs mit comment.read.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             order: "Kommentarbestellung.",
@@ -158,7 +156,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Durchsuchen Sie kompakte Konversationsvorschauen in einem bekannten Postfach, optional nach Ordner, Arbeitsansicht oder ungelesenem Status. Ohne folderId lassen alle Ansichten außer mine, send_problems und kept Unterhaltungen aus Ordnern mit folder_only oder hidden weg; mit folderId werden sie aufgelistet. Das Ergebnis verfügt über genügend Status, um eine Konversation auszuwählen oder eine Anbietermarkierung/-verschiebung durchzuführen Actions; Verwenden Sie conversation.read für Details zur Zusammenarbeit.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             folderId: "Optionaler Anbieterordner ID-Filter.",
             workStatus: "Optionaler Filter für den Arbeitsstatus der Zusammenarbeit.",
             unread: "Optionaler Filter für den ungelesenen Zustand; true gibt nur Konversationen mit ungelesenen E-Mails zurück.",
@@ -180,7 +177,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Finden Sie verwandte Konversationen, nachdem ein Postfach und eine Konversation bekannt sind. Holen Sie sich ihren IDs von conversation.list, conversation.search oder einem mail.conversation ref; open gab refs mit conversation.read zurück.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId: "Konversation, deren zugehöriger Mail gefunden werden soll.",
             limit: "Maximale Anzahl verwandter Konversationen, die zurückgegeben werden sollen.",
           },
@@ -190,7 +186,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Überprüfen Sie, ob der aktuelle Benutzer eine Erinnerung an eine bekannte Konversation hat. Mailbox-ID und Konversations-ID von conversation.list, conversation.search oder conversation.read abrufen; Ein zurückgegebener mail.reminder ref kann mit reminder.read geöffnet werden.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
           },
@@ -200,7 +195,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Strukturierte Suche in einem bekannten Postfach nach Absender, Empfänger, Betreff, Text, Datum, Markierung, Ordner oder Anhang; Verwenden Sie stattdessen die Suche, wenn kein Postfach bekannt ist. Zu den Ergebnissen gehören kompakte Vorschauen und genaue Anhänge refs; Nur ausgewählte Ergebnisse lesen.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             expression: "Strukturierter, begrenzter E-Mail-Suchausdruck.",
             sort: "Ergebnisbestellung.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -212,7 +206,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listen Sie Zustellungen, die sich noch in einem Rückgängig-Fenster befinden oder für einen späteren Zeitpunkt geplant sind, in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie zurückgegebenes mail.delivery refs mit delivery.read oder delivery.cancel.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
@@ -230,7 +223,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listen Sie aktive Entwürfe als kompakte Empfänger- und Textvorschau mit aktueller Revision auf. Verwenden Sie draft.read für vollständig bearbeitbaren Inhalt, dann draft.send.review vor draft.send.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
@@ -248,7 +240,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Überprüfen Sie unmittelbar vor draft.send einen bekannten Entwurf. Holen Sie sich die Mailbox-ID von mailbox.list und die Draft-ID sowie die erwartete Revision von draft.read. Geben Sie die zurückgegebene Sicherheitsgenehmigung an draft.send weiter. Bei dieser Abfrage wird keine E-Mail gesendet.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
           },
@@ -258,7 +249,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listen Sie Ordner in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie den zurückgegebenen Ordner IDs zum Filtern von conversation.list oder als Verschiebungsziele, sofern dies unterstützt wird. effectiveDisplay sagt, wo die E-Mails eines Ordners erscheinen: folder_only und hidden halten seine Unterhaltungen aus Alle E-Mails und den Arbeitsansichten heraus, außer eine Nachricht liegt auch in einem everywhere-Ordner.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
@@ -268,7 +258,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Liste der konfigurierten Absenderidentitäten für ein Postfach vor draft.create oder draft.update. MailboxId von mailbox.list abrufen; Verwenden Sie beim Verfassen von E-Mails die zurückgegebene Absenderidentität ID.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
@@ -289,7 +278,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listen Sie Personen, die Anspruch auf conversation.assign haben, in einem Postfach auf. Rufen Sie die Mailbox-ID von mailbox.list ab und übergeben Sie einen zurückgegebenen Benutzer ID an Action.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             query: "Optionale Suche nach Mitgliedsnamen oder Benutzerkennung.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -308,7 +296,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listen Sie Cloud-local-Collaboration-Tags in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie das zurückgegebene Tag IDs mit conversation.tag.update oder mailbox.tag.update/delete.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
@@ -318,7 +305,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lesen Sie aktuelle Abmeldeinformationen für eine Mailingliste. MailboxId und ListKey von mailing-list.subscription.list abrufen; Verwenden Sie mit mailing-list.unsubscribe ein explizit zurückgegebenes Abmeldeziel.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             listKey: "Stabil erkannter Mailinglistenschlüssel.",
           },
         },
@@ -327,7 +313,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Listen Sie Mailinglisten-Abonnements auf, die anhand von Nachrichtenkopfzeilen in einem bekannten Postfach erkannt wurden. MailboxId von mailbox.list abrufen; Verwenden Sie einen zurückgegebenen listKey mit mailing-list.subscription.get oder mailing-list.unsubscribe.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl erkannter Listen, die zurückgegeben werden sollen.",
           },
@@ -337,7 +322,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Blättern Sie in chronologischer Reihenfolge durch jede Nachricht in einer bekannten Konversation. Kompakte Absender-, Empfänger-, Status-, Anhang- und Textvorschauen helfen bei der Auswahl, welche mail.message refs vollständige message.read-Texte benötigen.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -386,7 +370,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Ändert nur angegebene Felder mit expectedRevision. Alle ausgelassenen Felder bleiben vollständig erhalten. Angegebene Empfängerlisten ersetzen die jeweilige ganze Liste; [] leert sie. Sendet keine E-Mail.",
           input: {
-            mailboxId: "Öffentliche ID des Postfachs.",
             draftId: "Öffentliche ID des Entwurfs.",
             expectedRevision: "Erwartete aktuelle Revision zum Schutz vor gleichzeitigen Änderungen.",
             patch: "Nur die zu ändernden Felder; nicht übergebene Felder bleiben erhalten.",
@@ -413,7 +396,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Gespräch zuordnen",
           description: "Zuständige einer Konversation hinzufügen, entfernen oder ersetzen.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             assigneeUserIds:
@@ -424,9 +406,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.assign.batch": {
           title: "Konversationen zuweisen",
           description:
-            "Zuständige für bis zu 50 Konversationen eines Postfachs hinzufügen, entfernen oder ersetzen. Meldet ok oder not_found je Konversation; jede neu zugewiesene Person erhält eine Benachrichtigung.",
+            "Zuständige für bis zu 50 Konversationen eines Postfachs hinzufügen, entfernen oder ersetzen. Jede Konversation muss im Zielpostfach liegen; jede neu zugewiesene Person erhält eine Benachrichtigung.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
             assigneeUserIds:
               "Benutzer-UUIDs zum Hinzufügen, Entfernen oder Ersetzen; eine leere Liste mit replace hebt alle Zuweisungen auf.",
@@ -437,7 +418,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Internen Kommentar erstellen",
           description: "Fügen Sie einer Konversation einen internen Teamkommentar hinzu.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             body: "Interner Kommentartext.",
@@ -449,7 +429,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Löschen Sie Ihren eigenen internen Kommentar mithilfe einer optimistischen Überarbeitung innerhalb von 10 Minuten vorläufig.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             commentId: "Kommentar ID.",
@@ -460,7 +439,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Internen Kommentar aktualisieren",
           description: "Bearbeiten Sie Ihren eigenen internen Kommentar innerhalb von 10 Minuten mit einer optimistischen Überarbeitung.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             commentId: "Kommentar ID.",
@@ -473,7 +451,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Markieren Sie eine E-Mail-Konversation im aktuellen Quellordner als gelesen, ungelesen, markiert oder nicht markiert.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             target: "Konversation und ihr aktueller Anbieterordner.",
             "target.conversationId":
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
@@ -486,7 +463,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "E-Mail-Konversation verschieben",
           description: "Verschieben Sie eine E-Mail-Konversation in eine Standardrolle oder einen expliziten Ordner.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             target: "Konversation und ihr aktueller Anbieterordner.",
             "target.conversationId":
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
@@ -498,7 +474,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Persönliche Erinnerung abbrechen",
           description: "Brechen Sie die Erinnerung an eine ausstehende Konversation des aktuellen Benutzers ab.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
@@ -508,7 +483,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Persönliche Erinnerung festlegen",
           description: "Erstellen Sie die persönliche Gesprächserinnerung des aktuellen Benutzers oder planen Sie sie neu.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             dueAt: "Zukünftiger Zeitpunkt, zu dem der aktuelle Benutzer benachrichtigt werden soll.",
@@ -519,14 +493,13 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Unterhaltung aufbewahren",
           description:
             "Schützt die ganze Unterhaltung einschließlich späterer Antworten vor dem Löschen durch Cloud. Erfordert Schreibzugriff auf das Postfach.",
-          input: { mailboxId: "Exakte Postfach-ID.", conversationId: "Exakte Unterhaltungs-ID." },
+          input: { conversationId: "Exakte Unterhaltungs-ID." },
         },
         "conversation.keep.release": {
           title: "Aufbewahrung aufheben",
           description:
             "Erlaubt wieder das Löschen und blendet Cloud-Kopien bereits auf dem Mailserver gelöschter Nachrichten aus. Erfordert Cloud-Admin-Rechte.",
           input: {
-            mailboxId: "Exakte Postfach-ID.",
             conversationId: "Exakte Unterhaltungs-ID.",
             reason: "Optionale Begründung für das Aufheben, die im Audit-Log gespeichert wird.",
           },
@@ -535,7 +508,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Unterhaltung später anzeigen",
           description: "Wähle, wann die Unterhaltung wieder erscheint, oder zeige sie jetzt wieder an.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
@@ -545,9 +517,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.status.update.batch": {
           title: "Status von Unterhaltungen aktualisieren",
           description:
-            "Bis zu 50 Unterhaltungen eines Postfachs als erledigt markieren oder wieder öffnen. Meldet ok oder not_found je Unterhaltung.",
+            "Bis zu 50 Unterhaltungen eines Postfachs als erledigt markieren oder wieder öffnen. Jede Unterhaltung muss im Zielpostfach liegen.",
           input: {
-            mailboxId: "Exakte mail.mailbox ID des Postfachs.",
             conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
             status: "Unterhaltungen als erledigt markieren oder wieder öffnen.",
           },
@@ -556,7 +527,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Konversationsstatus aktualisieren",
           description: "Markieren Sie ein Gespräch als erledigt oder öffnen Sie es erneut.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
@@ -567,7 +537,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Konversations-Tags aktualisieren",
           description: "Fügen Sie Cloud-local-Tags mit optimistischer Parallelität hinzu und entfernen Sie sie.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
@@ -580,7 +549,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Brechen Sie eine geplante Zustellung oder eine Zustellung mit Widerrufsfrist ab und stellen Sie den Entwurf wieder her oder verwerfen Sie ihn.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             deliveryId: "ID der geplanten Zustellung.",
             disposition: "Ob durch eine Stornierung der Entwurf wiederhergestellt oder verworfen wird.",
           },
@@ -589,7 +557,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Entwurfsanhang hinzufügen",
           description: "Fügen Sie einem Entwurf einen begrenzten Inline-Anhang hinzu.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
             attachment: "Anhang zum Hinzufügen.",
@@ -602,7 +569,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Entwurfsanhang entfernen",
           description: "Entfernen Sie einen Anhang mithilfe einer optimistischen Entwurfsrevision.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             attachmentId: "ID des Entwurfsanhangs.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
@@ -612,7 +578,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Entwurf erstellen",
           description: "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",
             signatureTemplateId:
               "Signaturvorlage nach dem Text oder null für keine; weglassen verwendet die Standardsignatur des Absenders.",
@@ -645,7 +610,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Entwurf verwerfen",
           description: "Verwerfen Sie einen Benutzerentwurf mit einer optimistischen Überarbeitung.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
           },
@@ -654,7 +618,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Mail senden",
           description: "Senden oder planen Sie einen überprüften E-Mail-Entwurf zur externen Zustellung.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
             expectedContentHash: "Inhaltsfingerabdruck contentHash aus draft.send.review unter demselben Ausführungsakteur.",
@@ -672,7 +635,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Ersetzt alle bearbeitbaren Entwurfsfelder mit expectedRevision. Nur vollständige Snapshots (editableSnapshotComplete) verwenden; für einzelne Änderungen oder gekürzte Antworten draft.patch nutzen.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
             draft: "Vollständiger bearbeitbarer Entwurfsinhalt, der den aktuellen Inhalt ersetzt.",
@@ -700,7 +662,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Legt die Anzeige eines Ordners für alle in einem Postfach fest; erfordert die Verwaltung des Postfachs. folder_only hält die Unterhaltungen des Ordners aus Alle E-Mails, den Arbeitsansichten außer Mir zugewiesen, deren Zählern und conversation.focus heraus, außer eine Nachricht liegt auch in einem everywhere-Ordner; hidden blendet zusätzlich den Ordner aus. Unterordner erben die strengere Einstellung. Die Suche findet weiterhin alles.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             folderId: "Ordner-ID aus folder.list.",
             display:
               "everywhere zeigt die E-Mails des Ordners in Alle E-Mails und den Arbeitsansichten; folder_only lässt sie im Ordner; hidden blendet zusätzlich den Ordner aus.",
@@ -710,7 +671,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Postfach-Tag erstellen",
           description: "Erstellen Sie ein wiederverwendbares Cloud-local-Postfach-Tag.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             name: "Tag-Name.",
             color: "Tag-Farbe als sechsstelliger Hexadezimalwert.",
           },
@@ -719,7 +679,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Postfach-Tag löschen",
           description: "Löschen Sie ein Postfach-Tag und entfernen Sie es aus Konversationen.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             tagId: "Tag ID.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
           },
@@ -728,7 +687,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Postfach-Tag aktualisieren",
           description: "Benennen Sie ein Postfach-Tag um oder färben Sie es mithilfe einer optimistischen Revision um.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             tagId: "Tag ID.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
             name: "Ersatz-Tag-Name.",
@@ -740,7 +698,6 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Fordern Sie eine standardbasierte Ein-Klick-Abmeldung an, nachdem Sie den aktuell angekündigten Endpunkt bestätigt haben.",
           input: {
-            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             listKey: "Stabil erkannter Mailinglistenschlüssel.",
             href: "Exact beworbene Ein-Klick-HTTPS-Abmeldung URL.",
           },
