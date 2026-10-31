@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { lazySync } from "@k2b/cloud";
+import { lazySync, redis, sql } from "@k2b/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
 import { emitWorkflowEvent, notifyWorkflowWorker, WorkflowEventTooLargeError } from "@k2b/cloud/workflows/store";
 import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
-import { redis, sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";

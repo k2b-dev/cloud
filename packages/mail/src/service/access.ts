@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -14,7 +15,6 @@ import {
 } from "@k2b/cloud/server";
 import { accounts, audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { auditActorFromRequest, capByCredentialScopes, isResourceBoundToMailbox, type MailRequestContext, userBackedActor } from "./auth";
 
 type SqlClient = typeof sql;
@@ -186,7 +186,7 @@ const getPrincipalGrant = async (mailboxId: string, principal: Principal, db: Sq
 export const getMailboxPermission = async (context: MailRequestContext, mailboxId: string, db: SqlClient = sql): Promise<PermissionLevel> =>
   (await resolveMailboxGrants(context, mailboxId, false, db)).mailbox;
 
-const PERMISSION_ORDER = sql`
+const PERMISSION_ORDER = () => sql`
   CASE a.permission
     WHEN 'admin' THEN 3
     WHEN 'write' THEN 2
@@ -221,7 +221,7 @@ const resolveMailboxGrants = async (
     JOIN auth.access a ON a.id = ma.access_id
     WHERE ma.mailbox_id = ${mailboxId}::uuid
       AND ${mailboxAccessPrincipalCondition(context.accessSubject)}
-    ORDER BY ${PERMISSION_ORDER}
+    ORDER BY ${PERMISSION_ORDER()}
     LIMIT 1
   `;
   const [assigned] = await db<{ permission: PermissionLevel }[]>`
@@ -230,7 +230,7 @@ const resolveMailboxGrants = async (
     JOIN auth.access a ON a.id = assigned.access_id
     WHERE assigned.mailbox_id = ${mailboxId}::uuid
       AND ${mailboxAccessPrincipalCondition(context.accessSubject)}
-    ORDER BY ${PERMISSION_ORDER}
+    ORDER BY ${PERMISSION_ORDER()}
     LIMIT 1
   `;
   return {
@@ -464,7 +464,7 @@ export const loadMailboxAccessEntries = async (mailboxId: string): Promise<Mailb
     SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope
     FROM (${accessRows(mailboxId)}) grants
     JOIN auth.access a ON a.id = grants.access_id
-    ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER}, a.created_at, a.id
+    ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER()}, a.created_at, a.id
   `;
   return resolveDisplayNames(rows.map(mapAccess));
 };

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { buildMailWorkflowCatalog, type MailWorkflowCatalog, type MailWorkflowFolderCatalogEntry } from "../workflows/catalog";
 import type { MailRequestContext } from "./auth";
 import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";

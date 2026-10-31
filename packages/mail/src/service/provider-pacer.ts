@@ -1,4 +1,4 @@
-import { redis } from "bun";
+import { redis } from "@k2b/cloud";
 
 const PROVIDER_OPERATIONS_PER_SECOND = 5;
 const PROVIDER_SLOT_INTERVAL_MS = Math.ceil(1_000 / PROVIDER_OPERATIONS_PER_SECOND);

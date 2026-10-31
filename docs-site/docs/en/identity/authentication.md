@@ -64,6 +64,12 @@ principal, and exposes the same `actor` and `accessSubject` values to the
 provider. Optional `actor.delegation` records the calling app, original
 credential kind, and invocation ID for audit context; it grants no permission.
 
+App-owned platform capability calls use a separate authority through
+[`appCaller()`](/en/docs/platform/capabilities#call-as-the-application).
+Their app/key actor has no grant-bearing access subject and never enters the
+ordinary person-authentication middleware. Use it for app-paid operations;
+use the person's credentials or a mandate for their resources.
+
 ### Which session a request uses
 
 A browser can hold the web session (`session_token`) and, on a paired device,

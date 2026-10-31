@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 
 // Each SQL statement uses the socket's existing access-refresh budget.
 export const DRAFT_DOCUMENT_ACCESS_REFRESH_MS = 10_000;

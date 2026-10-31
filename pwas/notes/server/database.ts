@@ -3,9 +3,12 @@ import initial from "../migrations/001-initial.sql" with { type: "text" };
 
 import runtimeOwner from "../migrations/002-runtime-owner.sql" with { type: "text" };
 
+import moderationBudget from "../migrations/003-moderation-budget.sql" with { type: "text" };
+
 const migrations = [
   { version: 1, sql: initial },
   { version: 2, sql: runtimeOwner },
+  { version: 3, sql: moderationBudget },
 ];
 export const schemaVersion = migrations.at(-1)!.version;
 

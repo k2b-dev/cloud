@@ -6,9 +6,9 @@ import type { createGeoCache } from "./cache";
 import { geoCacheKey } from "./cache";
 import { geoReferenceCost } from "./costs";
 import { GeoError, GeoProviderError, limitExceeded } from "./errors";
+import { type GeoContext, geoIdentity } from "./identity";
 import type { createGeoLedger } from "./ledger";
 import { geoRouteReferenceCost } from "./route-costs";
-import type { GeoContext } from "./service";
 import { type GeoConfig, geoPlan } from "./settings";
 
 export type GeoRouteChainDependencies = {
@@ -42,14 +42,14 @@ export const runGeoRouteChain = async <T>(
   work: (call: GeoRouteChainCall) => Promise<T>,
 ): Promise<T> => {
   const { ledger, bucket, cache, now } = dependencies;
-  if (!context.accessSubject) throw new GeoError("GEO_FORBIDDEN");
+  const { accessSubject } = geoIdentity(context);
   context.signal?.throwIfAborted();
   const maximumCredits = Math.min(config.personDailyCredits, config.monthlyCredits);
   if (reserveCost > maximumCredits * 1000) limitExceeded("reservationCredits", maximumCredits, reserveCost / 1000);
   let reservation: Awaited<ReturnType<typeof ledger.reserve>>;
   try {
     // One atomic admission for all known geocodes and every possible paid routing step.
-    reservation = await ledger.reserve(context.accessSubject, config, reserveCost, "route", now());
+    reservation = await ledger.reserve(accessSubject, config, reserveCost, "route", now());
   } catch (error) {
     if (error instanceof GeoError && error.code === "GEO_BUDGET_EXHAUSTED" && error.details.scope === "cloud")
       await dependencies.recordTransition("monthly_budget_exhausted", config.timezone, context);

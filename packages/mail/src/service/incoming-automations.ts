@@ -1,11 +1,10 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { isAppSessionActor } from "@k2b/cloud/server";
 import { audit, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
 import type { PumpState, Worker } from "@k2b/sync";
-import { sql } from "bun";
 import {
   type CreateIncomingAutomation,
   createIncomingAutomationSchema,
@@ -99,7 +98,7 @@ type IncomingAutomationRow = {
 type AutomationActor = { kind: "user" | "service_account"; id: string };
 type AutomationConditionSet = { mode: MailAutomationConditions["mode"]; items: MailAutomationCondition[] };
 
-const incomingAutomationColumns = sql`
+const incomingAutomationColumns = () => sql`
   automation.id,
   automation.mailbox_id,
   automation.workflow_id,
@@ -332,12 +331,12 @@ const incomingAutomationPreviewIsExact = (scope: MailAutomationScope): boolean =
   scope.conditions.items.every((condition) => condition.field === "sender_address" || condition.field === "sender_domain");
 
 // Preview and backfill must use the first From address, like workflow snapshot execution.
-const firstFromAddress = sql`sender.position = (
+const firstFromAddress = () => sql`sender.position = (
   SELECT min(first_sender.position) FROM mail.message_addresses first_sender
   WHERE first_sender.message_id = message.id AND first_sender.role = 'from'
 )`;
 
-const incomingAutomationTargetFrom = sql`
+const incomingAutomationTargetFrom = () => sql`
   FROM mail.remote_message_refs remote_ref
   JOIN mail.message_placements placement
     ON placement.remote_message_ref_id = remote_ref.id
@@ -352,12 +351,12 @@ const incomingAutomationTargetFrom = sql`
   LEFT JOIN mail.message_addresses sender
     ON sender.message_id = message.id
    AND sender.role = 'from'
-   AND ${firstFromAddress}
+   AND ${firstFromAddress()}
   LEFT JOIN mail.conversation_messages conversation_message
     ON conversation_message.message_id = message.id
 `;
 
-const inboundIncomingAutomationTarget = sql`
+const inboundIncomingAutomationTarget = () => sql`
   NOT EXISTS (
     SELECT 1
     FROM mail.sender_identities identity
@@ -371,8 +370,8 @@ const inboundIncomingAutomationTarget = sql`
 export const senderMatchesSql = (kind: SenderMatchKind, value: string): SqlFragment => sql`EXISTS (
   SELECT 1 FROM mail.message_addresses sender
   WHERE sender.message_id = message.id AND sender.role = 'from'
-    AND ${firstFromAddress}
-    AND ${inboundIncomingAutomationTarget}
+    AND ${firstFromAddress()}
+    AND ${inboundIncomingAutomationTarget()}
     AND ${senderMatchSql(kind, value)}
 )`;
 
@@ -599,7 +598,7 @@ const loadIncomingAutomation = async (
   includeDeleted = false,
 ): Promise<Result<StoredIncomingAutomation>> => {
   const [row] = await db<IncomingAutomationRow[]>`
-    SELECT ${incomingAutomationColumns}
+    SELECT ${incomingAutomationColumns()}
     FROM mail.incoming_automations automation
     WHERE automation.id = ${automationId}::uuid
       AND automation.mailbox_id = ${mailboxId}::uuid
@@ -664,7 +663,7 @@ export const listIncomingAutomations = async (context: MailRequestContext, mailb
   const allowed = await requireMailboxPermission(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<IncomingAutomationRow[]>`
-    SELECT ${incomingAutomationColumns}
+    SELECT ${incomingAutomationColumns()}
     FROM mail.incoming_automations automation
     WHERE automation.mailbox_id = ${mailboxId}::uuid
       AND automation.deleted_at IS NULL
@@ -722,10 +721,10 @@ export const previewIncomingAutomationMatches = async (params: {
     SELECT
       COUNT(DISTINCT remote_ref.id)::int AS message_count,
       COUNT(DISTINCT conversation_message.conversation_id)::int AS conversation_count
-    ${incomingAutomationTargetFrom}
+    ${incomingAutomationTargetFrom()}
     WHERE resource.mailbox_id = ${params.mailboxId}::uuid
       AND remote_ref.stale_at IS NULL
-      AND ${inboundIncomingAutomationTarget}
+      AND ${inboundIncomingAutomationTarget()}
       AND ${incomingAutomationCandidateSql(scope.data)}
   `;
   const messageCount = Number(counts?.message_count ?? 0);
@@ -778,7 +777,7 @@ const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfil
   resource.mailbox_id = ${input.mailboxId}::uuid
   AND remote_ref.stale_at IS NULL
   AND remote_ref.first_seen_at <= ${input.cutoffAt}
-  AND ${inboundIncomingAutomationTarget}
+  AND ${inboundIncomingAutomationTarget()}
   AND ${incomingAutomationCandidateSql(input.scope)}
   ${
     input.retryFailed === true
@@ -847,7 +846,7 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
       await loadCurrentBackfillAutomation(input, sql);
       const rows = await sql<{ remote_message_ref_id: string }[]>`
         SELECT DISTINCT remote_ref.id AS remote_message_ref_id, message.internal_date
-        ${incomingAutomationTargetFrom}
+        ${incomingAutomationTargetFrom()}
         WHERE ${incomingAutomationBackfillCandidateSql(input)}
           AND NOT ${incomingAutomationBackfillAcceptedSql(input)}
         ORDER BY message.internal_date DESC, remote_ref.id DESC
@@ -909,7 +908,7 @@ const loadIncomingAutomationBackfillCounts = async (
       COUNT(DISTINCT remote_ref.id) FILTER (
         WHERE ${incomingAutomationBackfillAcceptedSql(input)}
       )::bigint AS accepted
-    ${incomingAutomationTargetFrom}
+    ${incomingAutomationTargetFrom()}
     WHERE ${incomingAutomationBackfillCandidateSql(input)}
   `;
   return { candidates: Number(row?.candidates ?? 0), accepted: Number(row?.accepted ?? 0) };
@@ -1273,7 +1272,7 @@ export const createIncomingAutomation = async (params: {
           ${actor.id}::uuid,
           ${mandate?.id ?? null}::uuid
         )
-        RETURNING ${incomingAutomationColumns}
+        RETURNING ${incomingAutomationColumns()}
       `,
       );
       const [row] = rows;
@@ -1547,7 +1546,7 @@ export const deleteIncomingAutomation = async (params: {
         UPDATE mail.incoming_automations AS automation
         SET enabled = false, mandate_id = NULL, revision = revision + 1, deleted_at = now()
         WHERE automation.id = ${params.automationId}::uuid AND automation.mailbox_id = ${params.mailboxId}::uuid
-        RETURNING ${incomingAutomationColumns}
+        RETURNING ${incomingAutomationColumns()}
       `;
       if (!row) throw new Error("Deleted incoming automation could not be reloaded");
       const automation = mapIncomingAutomation(row);

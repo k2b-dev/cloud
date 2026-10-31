@@ -1,8 +1,8 @@
+import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { convert } from "html-to-text";
 import * as Y from "yjs";
 import { z } from "zod";
@@ -180,7 +180,7 @@ type DbConversationDraftSummary = {
 const DRAFT_BODY_PREVIEW_SOURCE_LENGTH = 1_024;
 const DRAFT_BODY_PREVIEW_LENGTH = 240;
 
-const draftColumns = sql`
+const draftColumns = () => sql`
   d.id,
   d.mailbox_id,
   d.conversation_id,
@@ -237,7 +237,7 @@ const draftColumns = sql`
   d.updated_at
 `;
 
-const recoveryColumns = sql`
+const recoveryColumns = () => sql`
   recovery.id,
   recovery.draft_id,
   recovery.base_revision,
@@ -487,12 +487,12 @@ const copyForwardAttachments = async (params: { db: typeof sql; draftId: string;
       left(COALESCE(NULLIF(attachment.content_type, ''), 'application/octet-stream'), 255) AS content_type,
       blob.byte_length,
       blob.content_hash,
-      (row_number() OVER (ORDER BY ${attachmentMimeOrder}) - 1)::int AS position
+      (row_number() OVER (ORDER BY ${attachmentMimeOrder()}) - 1)::int AS position
     FROM mail.attachments attachment
     JOIN mail.message_parts part ON part.id = attachment.part_id
     JOIN mail.message_part_blobs blob ON blob.id = attachment.blob_id AND blob.complete = true
     WHERE attachment.message_id = ${params.sourceMessageId}::uuid
-    ORDER BY ${attachmentMimeOrder}
+    ORDER BY ${attachmentMimeOrder()}
   `;
   for (const attachment of source) {
     await withShortIdDb(
@@ -561,13 +561,13 @@ const sourceAttachmentPreviews = async (db: typeof sql, sourceMessageId: string 
       left(COALESCE(NULLIF(attachment.content_type, ''), 'application/octet-stream'), 255) AS content_type,
       blob.byte_length,
       blob.content_hash,
-      (row_number() OVER (ORDER BY ${attachmentMimeOrder}) - 1)::int AS position,
+      (row_number() OVER (ORDER BY ${attachmentMimeOrder()}) - 1)::int AS position,
       attachment.created_at
     FROM mail.attachments attachment
     JOIN mail.message_parts part ON part.id = attachment.part_id
     JOIN mail.message_part_blobs blob ON blob.id = attachment.blob_id AND blob.complete = true
     WHERE attachment.message_id = ${sourceMessageId}::uuid
-    ORDER BY ${attachmentMimeOrder}
+    ORDER BY ${attachmentMimeOrder()}
   `;
   return rows.map((row) => ({
     id: row.id,
@@ -774,7 +774,7 @@ const insertComposeDraftInTransaction = async (params: {
       ${params.materializationRequestHash ?? null},
       ${params.content.signatureTemplateId ?? null}::uuid
     )
-    RETURNING ${draftColumns}
+    RETURNING ${draftColumns()}
   `,
   );
   const [row] = rows;
@@ -790,7 +790,7 @@ const insertComposeDraftInTransaction = async (params: {
     attachmentCount = copied.data;
   }
   const [created] = await params.db<DbDraft[]>`
-    SELECT ${draftColumns}
+    SELECT ${draftColumns()}
     FROM mail.drafts d
     WHERE d.id = ${row.id}::uuid
   `;
@@ -977,7 +977,7 @@ const insertDerivedDraftInTransaction = async (params: {
       ${params.content.subject}, ${params.content.body}, ${params.content.format},
       ${params.content.priority}, ${params.content.requestDeliveryReceipt}, ${params.content.requestReadReceipt}
     )
-    RETURNING ${draftColumns}
+    RETURNING ${draftColumns()}
   `,
   );
   const [created] = createdRows;
@@ -993,7 +993,7 @@ const insertDerivedDraftInTransaction = async (params: {
     attachmentCount = copied.data;
   }
   const [loaded] = await params.db<DbDraft[]>`
-    SELECT ${draftColumns}
+    SELECT ${draftColumns()}
     FROM mail.drafts d
     WHERE d.id = ${created.id}::uuid
   `;
@@ -1136,7 +1136,7 @@ export const materializeDraftSeed = async (params: {
         parsed.data.origin.kind === "derive"
           ? (
               await tx<(DbDraft & { request_hash: string })[]>`
-                SELECT ${draftColumns}, d.derivation_request_hash AS request_hash
+                SELECT ${draftColumns()}, d.derivation_request_hash AS request_hash
                 FROM mail.drafts d
                 WHERE d.mailbox_id = ${params.mailboxId}::uuid
                   AND d.author_kind = ${actor.kind}
@@ -1146,7 +1146,7 @@ export const materializeDraftSeed = async (params: {
             )[0]
           : (
               await tx<(DbDraft & { request_hash: string })[]>`
-                SELECT ${draftColumns}, d.materialization_request_hash AS request_hash
+                SELECT ${draftColumns()}, d.materialization_request_hash AS request_hash
                 FROM mail.drafts d
                 WHERE d.mailbox_id = ${params.mailboxId}::uuid
                   AND d.author_kind = ${actor.kind}
@@ -1271,7 +1271,7 @@ export const deriveDraftFromMessage = async (params: {
       const derivationLockKey = [params.mailboxId, actor.kind, actorId(actor), "derive", parsed.data.idempotencyKey].join(":");
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${derivationLockKey}, 0))`;
       const [existing] = await tx<(DbDraft & { derivation_request_hash: string })[]>`
-        SELECT ${draftColumns}, d.derivation_request_hash
+        SELECT ${draftColumns()}, d.derivation_request_hash
         FROM mail.drafts d
         WHERE d.mailbox_id = ${params.mailboxId}::uuid
           AND d.author_kind = ${actor.kind}
@@ -1385,7 +1385,7 @@ export const createDeliveryRecoveryDraft = async (params: {
       const lockKey = [params.mailboxId, actor.kind, actorId(actor), "delivery-recovery", parsed.data.idempotencyKey].join(":");
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
       const [existing] = await tx<(DbDraft & { derivation_request_hash: string })[]>`
-        SELECT ${draftColumns}, d.derivation_request_hash
+        SELECT ${draftColumns()}, d.derivation_request_hash
         FROM mail.drafts d
         WHERE d.mailbox_id = ${params.mailboxId}::uuid
           AND d.author_kind = ${actor.kind}
@@ -1754,7 +1754,7 @@ export const updateDraft = async (params: {
           return conflict("Draft update requires recovery; the submitted content was saved as a recovery copy");
         }
         if (merged.data.status === "pendingPersistence") return pending();
-        const [saved] = await tx<DbDraft[]>`SELECT ${draftColumns} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
+        const [saved] = await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`;
         return saved ? ok(mapDraft(saved)) : pending();
       }
       if (Number(current.revision) !== params.expectedRevision) {
@@ -1793,7 +1793,7 @@ export const updateDraft = async (params: {
           last_editor_id = ${actorId(actor)}::uuid,
           revision = revision + 1
         WHERE d.id = ${draftId}::uuid AND d.origin = 'user'
-        RETURNING ${draftColumns}
+        RETURNING ${draftColumns()}
       `;
       if (row) await queueDraftProjectionInTransaction({ db: tx, draftId: row.id });
       return row ? ok(mapDraft(row)) : fail(err.internal("Draft update returned no row"));
@@ -1808,7 +1808,7 @@ export const listDrafts = async (context: MailRequestContext, mailboxId: string,
   const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<DbDraft[]>`
-    SELECT ${draftColumns}
+    SELECT ${draftColumns()}
     FROM mail.drafts d
     WHERE ${draftVisibleTo(allowed.data, sql`d`)}
       AND d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user' AND d.state IN ('draft', 'scheduled', 'sending')
@@ -1977,7 +1977,7 @@ export const getDraft = async (context: MailRequestContext, mailboxId: string, d
     if (!allowed.ok) return allowed;
     const load = () => db<(DbDraft & { stored_signature_template_id: string | null })[]>`
     SELECT
-      ${draftColumns},
+      ${draftColumns()},
       d.signature_template_id AS stored_signature_template_id,
       lifecycle.conversation_id AS lifecycle_conversation_id,
       CASE d.last_editor_kind
@@ -2030,7 +2030,7 @@ export const listDraftRecoveryCopies = async (params: {
   const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<DbRecoveryCopy[]>`
-    SELECT ${recoveryColumns}
+    SELECT ${recoveryColumns()}
     FROM mail.draft_recovery_copies recovery
     JOIN mail.drafts draft ON draft.id = recovery.draft_id
     WHERE recovery.draft_id = ${params.draftId}::uuid
@@ -2087,7 +2087,7 @@ export const restoreDraftRecoveryCopy = async (params: {
         if (draft.state !== "draft") return fail(err.badInput("Draft can no longer be edited"));
         if (Number(draft.revision) !== params.expectedRevision) return conflict("Draft changed before the recovery copy could be restored");
         const [copy] = await tx<DbRecoveryCopy[]>`
-        SELECT ${recoveryColumns}
+        SELECT ${recoveryColumns()}
         FROM mail.draft_recovery_copies recovery
         WHERE recovery.id = ${params.recoveryCopyId}::uuid
           AND recovery.draft_id = ${draftId}::uuid
@@ -2185,7 +2185,7 @@ export const restoreDraftRecoveryCopy = async (params: {
         }
         const [updated] =
           draft.edit_mode === "shared"
-            ? await tx<DbDraft[]>`SELECT ${draftColumns} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`
+            ? await tx<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${draftId}::uuid`
             : await tx<DbDraft[]>`
         UPDATE mail.drafts d
         SET
@@ -2204,7 +2204,7 @@ export const restoreDraftRecoveryCopy = async (params: {
           last_editor_id = ${actorId(actor)}::uuid,
           revision = revision + 1
         WHERE d.id = ${draftId}::uuid AND d.origin = 'user'
-        RETURNING ${draftColumns}
+        RETURNING ${draftColumns()}
       `;
         if (!updated) return fail(err.internal("Draft recovery returned no row"));
         await tx`
@@ -2228,7 +2228,7 @@ export const restoreDraftRecoveryCopy = async (params: {
         });
         await queueDraftProjectionInTransaction({ db: tx, draftId: updated.id });
         const [refreshed] = await tx<DbDraft[]>`
-        SELECT ${draftColumns}
+        SELECT ${draftColumns()}
         FROM mail.drafts d
         WHERE d.id = ${draftId}::uuid AND d.origin = 'user'
       `;
@@ -2304,7 +2304,7 @@ export const removeDraftAttachment = async (params: {
           last_editor_kind = ${actor.kind},
           last_editor_id = ${actorId(actor)}::uuid
         WHERE d.id = ${draftId}::uuid AND d.origin = 'user'
-        RETURNING ${draftColumns}
+        RETURNING ${draftColumns()}
       `;
       if (!updated) return fail(err.internal("Draft attachment removal returned no draft"));
       await recordDraftDocumentRevision({ db: tx, context: params.context, mailboxId: params.mailboxId, draftId });
@@ -2409,7 +2409,7 @@ export const discardDraft = async (params: {
           AND d.origin = 'user'
           AND d.state = 'draft'
           AND d.revision = ${params.expectedRevision}
-        RETURNING ${draftColumns}
+        RETURNING ${draftColumns()}
       `;
       if (!updated) {
         const [current] = await tx<{ revision: string | number; state: string }[]>`
@@ -2500,7 +2500,7 @@ export const recoverDraftDocumentRest = async (params: {
         if (!existing.rest_draft_id) return ok({ status: "unchanged" as const, durableSourceState: existing.source_state });
         const access = await requireDraftAccess(params.context, params.mailboxId, existing.rest_draft_id, "read", db);
         if (!access.ok) return access;
-        const [draft] = await db<DbDraft[]>`SELECT ${draftColumns} FROM mail.drafts d WHERE d.id = ${existing.rest_draft_id}::uuid`;
+        const [draft] = await db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${existing.rest_draft_id}::uuid`;
         return draft
           ? ok({ status: "recovered" as const, draft: mapDraft(draft), durableSourceState: existing.source_state })
           : fail(err.notFound("Rest draft"));
@@ -2569,7 +2569,7 @@ export const recoverDraftDocumentRest = async (params: {
         VALUES (${params.draftId}::uuid, ${params.generation}::bigint, ${actor.kind}, ${actorId(actor)}::uuid,
           ${params.clientId}::uuid, ${created.data.id}::uuid, ${Buffer.from(params.state)})
       `;
-      const [rest] = await db<DbDraft[]>`SELECT ${draftColumns} FROM mail.drafts d WHERE d.id = ${created.data.id}::uuid`;
+      const [rest] = await db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${created.data.id}::uuid`;
       if (!rest) throw new Error("Rest draft was not retained");
       return ok({ status: "recovered" as const, draft: mapDraft(rest), durableSourceState: params.state });
     });

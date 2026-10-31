@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { mailCapabilities } from "../capabilities";

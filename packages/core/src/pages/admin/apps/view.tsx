@@ -584,6 +584,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
     "mail:send": d.permissionMailSend,
     "mail:read": d.permissionMailRead,
     "resources:readers": d.permissionResourceReaders,
+    "geo:query": d.permissionGeoQuery,
   };
   const services = () => {
     if (neverStarted || providerOnly) return "–";

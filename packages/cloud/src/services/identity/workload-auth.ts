@@ -9,6 +9,8 @@ export type AuthenticatedWorkload = {
   serviceAccountId: string;
   credentialId: string;
   scope: WorkloadScope;
+  /** Present only for a verified signed app request, never a legacy token. */
+  keyId?: string;
 };
 
 type WorkloadCredentialAuthenticator = Pick<typeof serviceAccountCredentials, "isApiToken" | "authenticateApiToken">;

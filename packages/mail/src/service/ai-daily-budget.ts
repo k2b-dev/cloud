@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit, coreSettings } from "@k2b/cloud/services";
 import { dates, err, fail, type Result, tryCatch, unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { requireMailboxPermission } from "./access";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { enqueueMailInvalidation, mailLive } from "./live";

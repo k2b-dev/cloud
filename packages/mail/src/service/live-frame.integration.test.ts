@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { unwrap } from "@k2b/stdlib";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import {
   type ConnectorVerification,

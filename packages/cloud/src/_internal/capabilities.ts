@@ -133,6 +133,7 @@ const TYPE_FIELDS = {
   access: true,
 } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
+  app: true,
   appOnly: true,
   title: true,
   description: true,
@@ -144,6 +145,7 @@ const QUERY_FIELDS = {
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
+  app: true,
   title: true,
   description: true,
   input: true,
@@ -682,6 +684,11 @@ const compileOperationSchemas = (definition: QueryDefinition | CapabilityActionD
   ) {
     throw new Error(`${label} input field "idempotencyKey" is reserved for capability transports`);
   }
+  if (definition.app !== undefined) {
+    assertDefinedFields(definition.app, { permission: true, run: true }, `${label} app`);
+    if (typeof definition.app.run !== "function") throw new Error(`${label} app.run must be a function`);
+    if (definition.stream) throw new Error(`${label} app calls cannot use streams`);
+  }
   const resultZodSchema = capabilityResultSchema(definition.data);
   const dataSchema = projectSchema(definition.data, `${label} data`, "output");
   return {
@@ -691,6 +698,7 @@ const compileOperationSchemas = (definition: QueryDefinition | CapabilityActionD
     schemaHash: capabilityHash({
       inputSchema,
       dataSchema,
+      ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...("appOnly" in definition && definition.appOnly !== undefined ? { appOnly: definition.appOnly } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
     }),
@@ -843,6 +851,7 @@ export const compileCapabilities = (
       inputSchema: schemas.inputSchema,
       dataSchema: schemas.dataSchema,
       schemaHash: schemas.schemaHash,
+      ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       openWorld: definition.openWorld,
       universalSearch: normalizeSearchTags(definition, label),
@@ -927,6 +936,7 @@ export const compileCapabilities = (
       inputSchema: schemas.inputSchema,
       dataSchema: schemas.dataSchema,
       schemaHash: schemas.schemaHash,
+      ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       destructive: definition.destructive,
       openWorld: definition.openWorld,
@@ -1280,6 +1290,7 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
   const expectedSchemaHash = capabilityHash({
     inputSchema: operation.inputSchema,
     dataSchema: operation.dataSchema,
+    ...(operation.appPermission ? { appPermission: operation.appPermission } : {}),
     ...("appOnly" in operation && operation.appOnly !== undefined ? { appOnly: operation.appOnly } : {}),
     ...(operation.stream ? { stream: operation.stream } : {}),
   });
@@ -1782,9 +1793,13 @@ export const invokeCompiledCapability = async (params: {
     let invoked: CapabilityInvocationResult<unknown>;
     if (isAppCapabilityContext(context)) {
       const definition = operation.definition;
-      if (params.kind !== "query" || !("appOnly" in definition) || definition.appOnly !== true)
+      if (definition.app && context.actor.keyId) {
+        invoked = await definition.app.run(input.data, context);
+      } else if (params.kind === "query" && "appOnly" in definition && definition.appOnly === true) {
+        invoked = await definition.run(input.data, context);
+      } else {
         return { ok: false, error: { code: "FORBIDDEN", message: "App caller is not allowed", status: 403 } };
-      invoked = await definition.run(input.data, context);
+      }
     } else {
       if (operation.definition.appOnly) return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
       invoked = await operation.definition.run(input.data, context);

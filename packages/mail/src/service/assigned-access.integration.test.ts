@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { LiveViewer } from "@k2b/cloud/events";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import {
