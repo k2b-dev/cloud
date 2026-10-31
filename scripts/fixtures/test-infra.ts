@@ -41,7 +41,6 @@
  */
 import { afterAll, afterEach, beforeAll, describe, test } from "bun:test";
 import { S3Client, SQL } from "bun";
-import { sql } from "../../packages/cloud/src/runtime/clients";
 import {
   applyTestRuntimeEnv,
   dotenvLeak,
@@ -282,6 +281,8 @@ const bindDefaultDatabase = async (prefix: string, database: Awaited<ReturnType<
   process.env.DATABASE_URL = database.url;
   ownTestDatabase(database.name);
   await initializeTestPlatform();
+  // Loaded on demand: the gate itself must not load platform clients without test targets.
+  const { sql } = await import("../../packages/cloud/src/runtime/clients");
   const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
   if (row?.name !== database.name) {
     await database.drop();
