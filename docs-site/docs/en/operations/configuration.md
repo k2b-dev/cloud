@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 
 # Configuration reference
@@ -82,6 +82,8 @@ Declared in `packages/gateway/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
+| `GATEWAY_INTERNAL_URL` | string | runtime | `http://gateway:3000` | no | Gateway origin advertised to private ingress discovery. Use a unique private network alias when several installations share an ingress network. Also recognized as an internal Cloud host. |
+| `GATEWAY_INGRESS_ENTRYPOINT` | string | runtime | `websecure` | no | Traefik entrypoint for app-domain routers emitted by the private HTTP provider. Must name a configured HTTPS entrypoint. |
 | `GATEWAY_INGRESS_PORT` | number | runtime | `3001` | no | Private ingress provider listener for Traefik HTTP discovery and Caddy certificate admission. Keep this port off public ingress and publish no host port. |
 | `GATEWAY_INSTANCE_ID` | string | runtime | unset | no | Deprecated: remove to use a random per-process gateway identity. An explicit value is still honored for this release. |
 

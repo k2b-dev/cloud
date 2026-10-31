@@ -4,7 +4,7 @@ import { expect, mock, spyOn, test } from "bun:test";
 if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
   test("gateway renews its presence without registry changes and drains renewal before removal", async () => {
     const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-      env: { ...process.env, GATEWAY_RUNTIME_TEST_CHILD: "1" },
+      env: { ...process.env, GATEWAY_RUNTIME_TEST_CHILD: "1", NODE_ENV: "development", APP_URL: "https://cloud-dev.test" },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -18,6 +18,9 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     let listCalls = 0;
     let registryVersion = 0;
     let builtVersion = -1;
+    let domainReads = 0;
+    let domainFailure = false;
+    let publicUrl = "https://cloud.test";
     let hold: Promise<void> | undefined;
     let diagnosticsFail = false;
     let diagnosticsHang = false;
@@ -48,6 +51,18 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       watchAppRegistry: ({ signal }: { signal: AbortSignal }) =>
         new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
     }));
+    const contract = await import("@k2b/cloud/contracts/app-domains");
+    mock.module("@k2b/cloud/contracts/app-domains", () => ({
+      ...contract,
+      readAppDomains: async () => {
+        domainReads++;
+        if (domainFailure) throw new Error("database unavailable");
+        return [{ host: `site-${registryVersion}.test`, appId: "site", redirectTo: null, createdAt: "2026-10-31T00:00:00.000Z" }];
+      },
+    }));
+    mock.module("@k2b/cloud/services/settings", () => ({
+      get: async (key: string) => (key === "app.url" ? publicUrl : "le"),
+    }));
     mock.module("@k2b/cloud/services", () => ({
       logger: () => ({ info: () => {}, warn: () => {}, error: () => {} }),
       buildGatewayRouteSnapshot: (input: { stats: { totalRequests: number } }) => ({
@@ -73,9 +88,16 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
         return [];
       },
     }));
-    const { gatewayRuntime } = await import("./runtime");
+    const { gatewayRuntime, getDomainSnapshot, getIngressCertResolver, refreshDomains, refreshRoutes } = await import("./runtime");
     try {
+      domainFailure = true;
       await gatewayRuntime.setup();
+      await refreshDomains();
+      expect(getDomainSnapshot().cloudHosts.has("gateway")).toBe(true);
+      expect(getDomainSnapshot().domainsReady).toBe(false);
+      domainFailure = false;
+      await refreshDomains();
+      expect(getDomainSnapshot().domainsReady).toBe(true);
       await gatewayRuntime.start();
       await gatewayRuntime.start();
       expect(callbacks).toHaveLength(1);
@@ -93,6 +115,26 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       expect(snapshot!.stats.totalRequests).toBe(42);
       expect(listCalls).toBeGreaterThan(1);
       expect(builtVersion).toBe(1);
+      expect(domainReads).toBeGreaterThan(1);
+      expect(getDomainSnapshot().domains.has("site-1.test")).toBe(true);
+      expect(getDomainSnapshot().domains.has("site-0.test")).toBe(false);
+      expect(getDomainSnapshot().cloudHosts.has("cloud.test")).toBe(true);
+      expect(getDomainSnapshot().cloudHosts.has("gateway")).toBe(true);
+      expect(getIngressCertResolver()).toBe("le");
+      // The registry continues to reconcile while Postgres cannot refresh domains.
+      domainFailure = true;
+      registryVersion = 2;
+      await Promise.all([refreshDomains(), refreshRoutes()]);
+      expect(builtVersion).toBe(2);
+      expect(getDomainSnapshot().domains.has("site-1.test")).toBe(true);
+      expect(getDomainSnapshot().domainsReady).toBe(true);
+      domainFailure = false;
+      publicUrl = "https://cloud-new.test";
+      await refreshDomains();
+      expect(getDomainSnapshot().cloudHosts.has("cloud-new.test")).toBe(true);
+      expect(getDomainSnapshot().cloudHosts.has("cloud-dev.test")).toBe(true);
+      expect(getDomainSnapshot().cloudHosts.has("cloud.test")).toBe(false);
+      expect(getDomainSnapshot().domains.has("site-2.test")).toBe(true);
 
       // Diagnostics failures must not suppress the gateway's presence lease.
       diagnosticsFail = true;

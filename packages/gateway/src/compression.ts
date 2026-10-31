@@ -31,13 +31,13 @@ export const isCompressionEligible = (
   status: number,
   hasBody: boolean,
   headers: Headers,
-  publicWithoutCookies = false,
+  publicWithoutCredentials = false,
 ): boolean => {
   if (method === "HEAD" || status < 200 || [204, 206, 304].includes(status) || !hasBody) return false;
   if (headers.has("Content-Range") || headers.has("Content-Encoding") || hasNoTransform(headers)) return false;
   const type = headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   const publicText =
-    publicWithoutCookies &&
+    publicWithoutCredentials &&
     (/^text\//.test(type) ||
       /^(?:application\/(?:javascript|x-javascript|ecmascript|xml|[^\s/;]+\+(?:json|xml))|image\/svg\+xml)$/.test(type));
   if (!publicText && type !== "text/html" && type !== "application/json" && !/^application\/[^\s/;]+\+json$/.test(type)) return false;
@@ -136,22 +136,22 @@ const mergeVary = (headers: Headers, publicDomain = false) => {
   if (tokens.includes("*")) return;
   const missing = (
     publicDomain
-      ? ["Accept-Encoding", "Cookie", "Sec-Fetch-Site", "Sec-Fetch-Dest"]
+      ? ["Accept-Encoding", "Cookie", "Authorization", "Sec-Fetch-Site", "Sec-Fetch-Dest"]
       : ["Accept-Encoding", "Sec-Fetch-Site", "Sec-Fetch-Dest"]
   ).filter((name) => !tokens.includes(name.toLowerCase()));
   if (missing.length > 0) headers.set("Vary", [vary, ...missing].filter(Boolean).join(", "));
 };
 
 /**
- * Compress an eligible HTML or JSON body for a same-origin, direct, or non-browser
- * request. Mutates only the copied client headers; any other body stays byte-identical.
+ * Compress eligible HTML/JSON, or public text without request credentials.
+ * Mutates only the copied client headers; any other body stays byte-identical.
  */
 export const compressBody = (
   req: Request,
   response: Response,
   headers: Headers,
-  publicWithoutCookies = false,
-  publicDomain = publicWithoutCookies,
+  publicWithoutCredentials = false,
+  publicDomain = publicWithoutCredentials,
 ): ReadableStream<Uint8Array> | null => {
   const body = response.body;
   if (response.status === 304) {
@@ -166,7 +166,7 @@ export const compressBody = (
         .map((tag) => tag.trim()) ?? [];
     if (etag?.startsWith('"') && held.includes(`W/${etag}`)) headers.set("ETag", `W/${etag}`);
   }
-  if (!body || !isCompressionEligible(req.method, response.status, true, headers, publicWithoutCookies)) return body;
+  if (!body || !isCompressionEligible(req.method, response.status, true, headers, publicWithoutCredentials)) return body;
   mergeVary(headers, publicDomain);
   // The client's own no-transform asks intermediaries to leave the content unchanged.
   if (hasNoTransform(req.headers)) return body;
@@ -178,7 +178,7 @@ export const compressBody = (
   // own cache always sees the same User-Agent, so Vary does not need it.
   const site = req.headers.get("Sec-Fetch-Site");
   if (
-    !publicWithoutCookies &&
+    !publicWithoutCredentials &&
     (site === null ? req.headers.get("User-Agent")?.startsWith("Mozilla/") : site !== "same-origin" && site !== "none")
   )
     return body;
@@ -186,7 +186,7 @@ export const compressBody = (
   // their path and query. Only documents and fetch/XHR get a compressed body;
   // HTML and JSON loaded as an image, style, script or frame gain nothing from it.
   const dest = req.headers.get("Sec-Fetch-Dest");
-  if (!publicWithoutCookies && dest !== null && dest !== "document" && dest !== "empty") return body;
+  if (!publicWithoutCredentials && dest !== null && dest !== "document" && dest !== "empty") return body;
   const encoding = chooseEncoding(req.headers.get("Accept-Encoding"));
   if (!encoding) return body;
   const length = headers.has("Content-Length") ? Number(headers.get("Content-Length")) : undefined;

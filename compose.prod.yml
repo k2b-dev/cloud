@@ -43,8 +43,13 @@ services:
   gateway:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-gateway:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
-    networks: [cloud-internal, traefik]
+    networks:
+      cloud-internal: {}
+      traefik:
+        aliases: ["cloud-gateway-${CLOUD_HOST}"]
     environment:
+      APP_URL: https://${CLOUD_HOST}
+      GATEWAY_INTERNAL_URL: http://cloud-gateway-${CLOUD_HOST}:3000
       APP_SECRET: ${APP_SECRET}
       REDIS_URL: redis://valkey:6379
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}

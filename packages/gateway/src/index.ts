@@ -65,7 +65,7 @@ const handleRequest = createGatewayHandler({
 });
 const ingressServer = Bun.serve({
   port: appEnv.GATEWAY_INGRESS_PORT,
-  fetch: createIngressHandler(getDomainSnapshot, gatewayRouter.baseUrl, getIngressCertResolver),
+  fetch: createIngressHandler(getDomainSnapshot, gatewayRouter.baseUrl, getIngressCertResolver, appEnv.GATEWAY_INGRESS_ENTRYPOINT),
 });
 log.info(`Private ingress provider started on port ${ingressServer.port}`);
 

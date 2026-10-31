@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { brotliCompressSync, brotliDecompressSync, gunzipSync } from "node:zlib";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import { domainCheckKey } from "@k2b/cloud/contracts/app-domains";
+import { type AuthContext, clientIp, rateLimit } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
+import { redis } from "bun";
+import { Hono } from "hono";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { createGatewayHandler } from "./handler";
 import { createProxyStats } from "./proxy";
@@ -46,6 +49,7 @@ const fixture = (
   servers.push(upstream);
   const snapshot: DomainSnapshot = {
     cloudHosts: cloudHostSet("https://cloud.test", ["http://gateway:3000"], false),
+    domainsReady: true,
     domains: new Map([
       ["site.test", { host: "site.test", appId: "site", redirectTo: null, createdAt: "2026-10-30T00:00:00Z" }],
       ["alias.test", { host: "alias.test", appId: "site", redirectTo: "site.test", createdAt: "2026-10-30T00:00:00Z" }],
@@ -102,13 +106,16 @@ const fixture = (
   };
 };
 
-test("Cloud host keeps path routing and gateway headers", async () => {
-  const f = fixture();
-  const response = await f.request("/api/core?x=1", {}, "cloud.test");
-  expect(response.headers.get("X-Gateway-App")).toBe("core");
-  expect((await response.json()).path).toBe("/api/core?x=1");
-  expect(f.rates).toEqual([]);
-});
+test.each(["/api/core?x=1", "/_cloud/app-access", "/app/site/_cloud/access/site"])(
+  "Cloud host keeps path routing and gateway headers for %s",
+  async (path) => {
+    const f = fixture();
+    const response = await f.request(path, {}, "cloud.test");
+    expect(response.headers.get("X-Gateway-App")).toBe("core");
+    expect((await response.json()).path).toBe(path);
+    expect(f.rates).toEqual([]);
+  },
+);
 
 test.each(["/", "/api/anything", "/public/storage/files/a", "/health"])("app host owns %s", async (path) => {
   const f = fixture();
@@ -175,7 +182,19 @@ test("a registered app with a failed transport is retryable", async () => {
 
 test.each(["cloud.test", "site.test"])("internal paths cannot enter through %s", async (host) => {
   const f = fixture();
-  for (const path of ["/_cloud/public/a", "/%5fcloud/public/a", "/x/_cloud/public", "/_internal/a", "/_cloud/ingress/traefik"]) {
+  for (const path of [
+    "/_cloud/public/a",
+    "/%5fcloud/public/a",
+    "/x/_cloud/public",
+    "/_internal/a",
+    "/_cloud/ingress/traefik",
+    "/_cloud/app-access",
+    "/app/site/_cloud/access/site",
+    "/_cloud/domain-check/_internal",
+    "/_cloud/domain-check/%5Fcloud",
+    "/_cloud/domain-check/a%2F_cloud%2Fpublic",
+  ]) {
+    if (host === "cloud.test" && ["/_cloud/app-access", "/app/site/_cloud/access/site"].includes(path)) continue;
     expect((await f.request(path, {}, host)).status).toBe(404);
   }
   expect(f.requests).toHaveLength(0);
@@ -195,7 +214,8 @@ test("Cloud credential cookies are stripped and app cookies survive", async () =
   const body = await (
     await f.request("/", {
       headers: {
-        Cookie: "session_token=a; pwa_session=b; cloud_browser=c; __Host-cloud_browser=d; __Secure-cloud-app-pwa-site-id=e; portal=f",
+        Cookie:
+          "session_token=a; pwa_session=b; pwa_device=k; pwa_pairing=s; cloud_browser=c; __Host-cloud_browser=d; __Secure-cloud-app-pwa-site-id=e; portal=f",
       },
     })
   ).json();
@@ -497,4 +517,80 @@ test.each([
 ])("WebSocket GET rejects foreign origins and sites: %j", async (headers, status) => {
   const response = await fixture().request("/socket", { headers: { Upgrade: "websocket", ...headers } });
   expect(response.status).toBe(status);
+});
+
+test("public application clientIp and rateLimit use the trusted visitor instead of forged headers", async () => {
+  const clock = spyOn(Date, "now").mockReturnValue(1_793_404_800_000);
+  const counts = new Map<string, number>();
+  const send = spyOn(redis, "send").mockImplementation(async (_command, args) => {
+    const key = String(args[2]);
+    const count = (counts.get(key) ?? 0) + 1;
+    counts.set(key, count);
+    return [count, 0, String(count)];
+  });
+  try {
+    const publicApp = new Hono<AuthContext>();
+    publicApp.use("*", rateLimit({ keyBy: "ip", limitPerSecond: 2 }));
+    publicApp.get("*", (c) => c.json({ ip: clientIp(c) }));
+    const f = fixture((req) => publicApp.fetch(req));
+    const options = { headers: { "X-Forwarded-For": "192.0.2.99", "X-Real-IP": "192.0.2.98", "CF-Connecting-IP": "192.0.2.97" } };
+    expect(await (await f.request("/api/visitor", options)).json()).toEqual({ ip: client.address });
+    expect((await f.request("/api/visitor", options)).status).toBe(200);
+    expect((await f.request("/api/visitor", options)).status).toBe(429);
+    expect([...counts.keys()]).toEqual([expect.stringContaining(`cloud:rate-limit:2:1:ip:${client.address}:`)]);
+  } finally {
+    send.mockRestore();
+    clock.mockRestore();
+  }
+});
+
+test("an explicit default HTTPS port preserves authority and accepts the browser's canonical Origin", async () => {
+  const response = await fixture().request("/submit", { method: "POST", headers: { Origin: "https://site.test" } }, "site.test:443");
+  expect(response.status).toBe(200);
+  expect((await response.json()).headers["x-cloud-public-host"]).toBe("site.test:443");
+});
+
+test("development Origin must include its non-default port", async () => {
+  const f = fixture();
+  f.setSnapshot({ ...f.snapshot, development: true, domains: new Map() });
+  expect((await f.request("/submit", { method: "POST", headers: { Origin: "http://site.localhost" } }, "site.localhost:3100")).status).toBe(
+    403,
+  );
+});
+
+test("Authorization keeps the conservative compression rule without a cookie", async () => {
+  const html = "<p>private content</p>".repeat(200);
+  const response = await fixture(() => new Response(html, { headers: { "Content-Type": "text/html" } })).request("/", {
+    headers: { "Accept-Encoding": "br", "Sec-Fetch-Site": "cross-site", Authorization: "Basic dXNlcjpwYXNz" },
+  });
+  expect(response.headers.has("Content-Encoding")).toBe(false);
+  expect(await response.text()).toBe(html);
+});
+
+test("gateway-generated public responses get base headers and telemetry with the app ID", async () => {
+  const f = fixture();
+  const response = await f.request("/redirect", {}, "alias.test");
+  expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  expect(response.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+  expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ appId: "site", status: 301 }));
+});
+
+test("a live domain-check path cannot bypass a WebSocket handshake's Origin rule", async () => {
+  const f = fixture();
+  f.nonces.add(domainCheckKey("site.test", "nonce-value"));
+  expect(
+    (await f.request("/_cloud/domain-check/nonce-value", { headers: { Upgrade: "websocket", Origin: "https://foreign.test" } })).status,
+  ).toBe(403);
+});
+
+test("hosts awaiting the first durable domain snapshot get a retryable failure instead of 421", async () => {
+  const f = fixture();
+  f.setSnapshot({ ...f.snapshot, domains: new Map(), domainsReady: false });
+  const response = await f.request();
+  expect(response.status).toBe(503);
+  expect(response.headers.get("Retry-After")).toBe("5");
+  expect((await f.request("/health", {}, "unknown.test")).status).toBe(200);
+  expect((await f.request("/api/core", {}, "cloud.test")).status).toBe(200);
+  f.setSnapshot({ ...f.snapshot, domains: new Map(), domainsReady: true });
+  expect((await f.request()).status).toBe(421);
 });

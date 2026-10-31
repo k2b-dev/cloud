@@ -1,5 +1,5 @@
 import { PWA_SERVICE_WORKER_PATH, PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
-import { DOMAIN_CHECK_PATH_PREFIX, PUBLIC_HOST_HEADER, PUBLIC_SURFACE_PREFIX } from "@k2b/cloud/contracts/app-domains";
+import { PUBLIC_HOST_HEADER, PUBLIC_SURFACE_PREFIX } from "@k2b/cloud/contracts/app-domains";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
 import type { PublicTarget } from "./app-domains";
@@ -7,7 +7,7 @@ import type { ClientAddress } from "./client-address";
 import { compressBody } from "./compression";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
 import { publicResponseHeaders, stripCloudCookies, stripPublicHeaders } from "./public-protections";
-import { isInternalPath, upstreamUrl } from "./request-boundary";
+import { isDomainCheckPath, isInternalPath, upstreamUrl } from "./request-boundary";
 import type { RouteTable } from "./trie";
 import { matchRoute } from "./trie";
 
@@ -113,7 +113,7 @@ export const proxyRequest = async (
   publicTarget?: PublicTarget,
 ): Promise<Response> => {
   const url = new URL(req.url);
-  if (isInternalPath(url.pathname) && !(publicTarget && url.pathname.startsWith(DOMAIN_CHECK_PATH_PREFIX)))
+  if (isInternalPath(url.pathname, !!publicTarget) && !(publicTarget && isDomainCheckPath(url.pathname)))
     return new Response("Not found", { status: 404 });
   const start = performance.now();
   stats.totalRequests++;
@@ -253,11 +253,14 @@ export const proxyRequest = async (
       headers.set("X-Gateway-Ms", ms.toFixed(1));
     }
 
-    return new Response(compressBody(req, proxyRes, headers, !!publicTarget && !fwdHeaders.has("Cookie"), !!publicTarget), {
-      status: proxyRes.status,
-      statusText: proxyRes.statusText,
-      headers,
-    });
+    return new Response(
+      compressBody(req, proxyRes, headers, !!publicTarget && !fwdHeaders.has("Cookie") && !fwdHeaders.has("Authorization"), !!publicTarget),
+      {
+        status: proxyRes.status,
+        statusText: proxyRes.statusText,
+        headers,
+      },
+    );
   } catch (err) {
     const ms = performance.now() - start;
     appStats.totalMs += ms;
@@ -290,9 +293,8 @@ export const proxyRequest = async (
       });
     }
 
-    return new Response("Bad Gateway — upstream unavailable", {
-      status: publicTarget ? 503 : 502,
-      headers: { "Retry-After": "3" },
-    });
+    const headers = new Headers({ "Retry-After": "3" });
+    if (publicTarget) publicResponseHeaders(headers);
+    return new Response("Bad Gateway — upstream unavailable", { status: publicTarget ? 503 : 502, headers });
   }
 };

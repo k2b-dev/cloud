@@ -139,10 +139,23 @@ test("every package's server cookies are resolved and explicitly classified", as
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node)) {
         const callee = node.expression;
-        const name = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : "";
+        let name = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : "";
+        if (ts.isIdentifier(callee)) {
+          for (const statement of source.statements) {
+            if (!ts.isImportDeclaration(statement)) continue;
+            const bindings = statement.importClause?.namedBindings;
+            if (!bindings || !ts.isNamedImports(bindings)) continue;
+            const entry = bindings.elements.find((entry) => entry.name.text === name);
+            if (entry?.propertyName) name = entry.propertyName.text;
+          }
+        }
         if (["setCookie", "setSignedCookie"].includes(name))
           classify(node.arguments[1] ? resolveNames(node.arguments[1], source) : null, source, node);
         if (name === "setWebCookie") {
+          if (!["session.setWebCookie", "auth.session.setWebCookie"].includes(callee.getText(source))) {
+            classify(null, source, node);
+            return;
+          }
           const owner = sourceAt(`${root}packages/cloud/src/services/session/index.ts`);
           // The wrapper's leaf setCookie call is scanned too; resolve its declared literal here.
           const leaves: string[] = [];
@@ -155,12 +168,25 @@ test("every package's server cookies are resolved and explicitly classified", as
           classify(leaves.length ? leaves : null, source, node);
         }
         const first = node.arguments[0];
-        if (["header", "set", "append"].includes(name) && first && ts.isStringLiteral(first) && first.text.toLowerCase() === "set-cookie") {
+        if (
+          ["header", "set", "append", "setHeader"].includes(name) &&
+          first &&
+          resolveNames(first, source)?.some((value) => value.toLowerCase() === "set-cookie")
+        ) {
           classify(node.arguments[1] ? resolveNames(node.arguments[1], source, true) : null, source, node);
         }
       }
-      if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name) && node.name.text.toLowerCase() === "set-cookie")
-        classify(resolveNames(node.initializer, source, true), source, node);
+      if (ts.isPropertyAssignment(node)) {
+        const key = ts.isComputedPropertyName(node.name) ? node.name.expression : ts.isStringLiteral(node.name) ? node.name : null;
+        if (key && resolveNames(key, source)?.some((value) => value.toLowerCase() === "set-cookie"))
+          classify(resolveNames(node.initializer, source, true), source, node);
+      }
+      // HeadersInit can also carry repeated raw Set-Cookie fields as [name, value] tuples.
+      if (ts.isArrayLiteralExpression(node)) {
+        const [key, value] = node.elements;
+        if (key && resolveNames(key, source)?.some((value) => value.toLowerCase() === "set-cookie"))
+          classify(value ? resolveNames(value, source, true) : null, source, node);
+      }
       ts.forEachChild(node, visit);
     };
     visit(source);

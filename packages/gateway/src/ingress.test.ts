@@ -9,6 +9,7 @@ const snapshot: DomainSnapshot = {
   cloudHosts: new Set(["cloud.test"]),
   apps: new Map(),
   development: false,
+  domainsReady: true,
   domains: new Map([
     ["site.test", { host: "site.test", appId: "offline", redirectTo: null, createdAt: "2026-10-30T00:00:00Z" }],
     ["alias.test", { host: "alias.test", appId: "offline", redirectTo: "site.test", createdAt: "2026-10-30T00:00:00Z" }],
@@ -18,6 +19,7 @@ const handle = createIngressHandler(
   () => snapshot,
   "http://gateway:3000",
   () => "le",
+  "websecure",
 );
 const servers: Array<{ stop: (closeActiveConnections?: boolean) => unknown }> = [];
 afterEach(async () => {
@@ -72,4 +74,46 @@ test("private provider and public routing use separate listeners", async () => {
   const privateResponse = await fetch(new URL("/_cloud/ingress/traefik", privateServer.url));
   expect(privateResponse.status).toBe(200);
   await privateResponse.text();
+});
+
+test("ingress discovery returns retryable failure before the first durable snapshot", async () => {
+  const unavailable = createIngressHandler(
+    () => ({ ...snapshot, domainsReady: false }),
+    "http://gateway:3000",
+    () => "le",
+    "websecure",
+  );
+  for (const path of ["/_cloud/ingress/traefik", "/_cloud/ingress/allowed?domain=site.test"]) {
+    const response = unavailable(new Request(`http://gateway:3001${path}`));
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("5");
+  }
+});
+
+test("discovery uses the configured installation address and TLS entrypoint", async () => {
+  const isolated = createIngressHandler(
+    () => snapshot,
+    "http://cloud-gateway-example-org:3000",
+    () => "custom",
+    "https",
+  );
+  const body = await isolated(new Request("http://private/_cloud/ingress/traefik")).json();
+  expect(body.http.services.cloud.loadBalancer.servers).toEqual([{ url: "http://cloud-gateway-example-org:3000" }]);
+  expect(body.http.routers["app-domain-site.test"].entryPoints).toEqual(["https"]);
+  expect(body.http.routers["app-domain-site.test"].tls).toEqual({ certResolver: "custom" });
+});
+
+test("invalid durable host names never enter ingress rules or certificate admission", async () => {
+  const domains = new Map(snapshot.domains);
+  const invalid = "site.test`) || Host(`foreign.test";
+  domains.set(invalid, { host: invalid, appId: "offline", redirectTo: null, createdAt: "2026-10-30T00:00:00Z" });
+  const guarded = createIngressHandler(
+    () => ({ ...snapshot, domains }),
+    "http://gateway:3000",
+    () => "le",
+    "websecure",
+  );
+  const body = await guarded(new Request("http://private/_cloud/ingress/traefik")).json();
+  expect(Object.keys(body.http.routers)).toHaveLength(2);
+  expect(guarded(new Request(`http://private/_cloud/ingress/allowed?domain=${encodeURIComponent(invalid)}`)).status).toBe(404);
 });

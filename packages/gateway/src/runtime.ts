@@ -19,8 +19,16 @@ import { getRouteTable, setRouteTable, stats } from "./stats";
 import { buildRouteTable } from "./trie";
 
 const log = logger("gateway");
+// Keep the configured development entry address usable alongside saved app.url overrides.
+const configuredGatewayUrls = [...gatewayRouter.internalUrls, ...(env.IS_DEVELOPMENT && env.APP_URL ? [env.APP_URL] : [])];
 
-let domainSnapshot: DomainSnapshot = { cloudHosts: new Set(), domains: new Map(), apps: new Map(), development: env.IS_DEVELOPMENT };
+let domainSnapshot: DomainSnapshot = {
+  cloudHosts: cloudHostSet(env.APP_URL ?? "localhost:3000", configuredGatewayUrls, env.IS_DEVELOPMENT),
+  domains: new Map(),
+  domainsReady: false,
+  apps: new Map(),
+  development: env.IS_DEVELOPMENT,
+};
 let certResolver = "le";
 export const getDomainSnapshot = (): DomainSnapshot => domainSnapshot;
 export const getIngressCertResolver = (): string => certResolver;
@@ -83,20 +91,9 @@ export const refreshRoutes = async (): Promise<void> => {
   try {
     // A confirmed invalid snapshot closes its routes, even when every record was rejected.
     // Transport failures still retain the last table through the catch below.
-    const [{ apps }, domains, publicUrl, resolver] = await Promise.all([
-      readAppRegistrySnapshot(),
-      readAppDomains(sql),
-      get<string>("app.url"),
-      get<string>("gateway.ingress_cert_resolver"),
-    ]);
+    const { apps } = await readAppRegistrySnapshot();
     if (generation !== refreshGeneration) return;
-    domainSnapshot = {
-      cloudHosts: cloudHostSet(publicUrl, [gatewayRouter.baseUrl], env.IS_DEVELOPMENT),
-      domains: new Map(domains.map((domain) => [domain.host, domain])),
-      apps: new Map(apps.map((app) => [app.id, app])),
-      development: env.IS_DEVELOPMENT,
-    };
-    certResolver = resolver;
+    domainSnapshot = { ...domainSnapshot, apps: new Map(apps.map((app) => [app.id, app])) };
     const { routes: appRoutes, warnings } = buildAppRoutesDetailed(apps);
     const routeHash = JSON.stringify(
       appRoutes.map((r) => [r.prefix, r.appId, r.baseUrl, r.installable]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
@@ -127,6 +124,33 @@ export const refreshRoutes = async (): Promise<void> => {
   }
 };
 
+// Domain/settings database failures must not hold back the registry or its presence lease.
+// Retain the last durable assignment snapshot, including removals, until a read succeeds.
+let domainTask: Promise<void> | null = null;
+export const refreshDomains = (): Promise<void> => {
+  domainTask ??= (async () => {
+    try {
+      const [domains, publicUrl, resolver] = await Promise.all([
+        readAppDomains(sql),
+        get<string>("app.url"),
+        get<string>("gateway.ingress_cert_resolver"),
+      ]);
+      domainSnapshot = {
+        ...domainSnapshot,
+        cloudHosts: cloudHostSet(publicUrl, configuredGatewayUrls, env.IS_DEVELOPMENT),
+        domains: new Map(domains.map((domain) => [domain.host, domain])),
+        domainsReady: true,
+      };
+      certResolver = resolver;
+    } catch (error) {
+      log.error("Domain refresh failed; retaining the last snapshot", { error: error instanceof Error ? error.message : String(error) });
+    }
+  })().finally(() => {
+    domainTask = null;
+  });
+  return domainTask;
+};
+
 const startRegistryWatcher = (): void => {
   if (watcherTask) return;
   watcherAbort = new AbortController();
@@ -149,11 +173,13 @@ export const gatewayRuntime = {
     // The router is not a defineApp() app, so it owns its process Sync instance itself.
     processSync = await startProcessSync({ application: "gateway" });
     await refreshRoutes();
+    void refreshDomains();
   },
 
   start: async (): Promise<void> => {
     startRegistryWatcher();
     snapshotTimer ??= setInterval(() => {
+      void refreshDomains();
       if (snapshotTask) return;
       snapshotTask = refreshRoutes()
         .catch((error) => log.error("Route snapshot renewal failed", { error: error instanceof Error ? error.message : String(error) }))
@@ -171,6 +197,7 @@ export const gatewayRuntime = {
     watcherAbort = null;
     watcherTask = null;
     await snapshotTask;
+    await domainTask;
     await removeGatewayRouteSnapshot(gatewayRouter.id);
     await processSync?.stop();
     processSync = null;

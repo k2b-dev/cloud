@@ -21,6 +21,9 @@ reverse-proxy alias, IP address, or monitoring hostname no longer opens Cloud
 unless it is a configured Cloud/internal gateway host or an assigned app
 domain. Point Cloud clients at the host in `app.url`; assign a second site
 hostname to its application. `X-Forwarded-Host` does not select a host.
+Set `APP_URL` on the gateway as well as the applications, so the configured
+Cloud host remains available during settings-database outages. Saved `app.url`
+changes still take precedence after a successful refresh.
 Unassigned hosts retain `/health` and `/_cloud/ready` for container probes.
 
 ## Deploy in order
@@ -73,15 +76,23 @@ Add the HTTP provider to Traefik's static configuration:
 providers:
   docker: {}
   http:
-    endpoint: http://gateway:3001/_cloud/ingress/traefik
+    endpoint: http://cloud-gateway-cloud.example.org:3001/_cloud/ingress/traefik
     pollInterval: 5s
 ```
 
-Traefik must be able to resolve and reach `gateway` on its shared private
-network. The provider emits one `Host(...)` router per durable assignment,
-including redirect aliases, on `websecure`, with a `cloud` load-balancer
-service pointing at `http://gateway:3000`. This matches the supplied Compose
-entrypoint and gateway service names.
+Replace `cloud.example.org` with your `CLOUD_HOST`. The supplied production
+Compose gives the gateway the private alias `cloud-gateway-${CLOUD_HOST}` and
+sets `GATEWAY_INTERNAL_URL` to that origin on port `3000`. Traefik must reach
+that alias on its shared private network. A distinct alias prevents Docker
+DNS from selecting another installation's `gateway` service.
+
+The provider emits one `Host(...)` router per durable assignment, including
+redirect aliases, with a `cloud` load-balancer service pointing at
+`GATEWAY_INTERNAL_URL`. Other deployments default to `http://gateway:3000`;
+set the variable to the gateway origin that your ingress can reach. Routers
+use `websecure` by default; set `GATEWAY_INGRESS_ENTRYPOINT` when your HTTPS
+entrypoint has another name. Restart the gateway after changing these
+variables. The certificate resolver below is an administrator setting.
 
 Configure an ACME certificate resolver named `le` in Traefik, or change the
 admin setting to your existing resolver:
@@ -92,8 +103,11 @@ cld --profile operator admin settings set gateway.ingress_cert_resolver --value 
 
 The setting affects app-domain routers within five seconds. Configure your
 existing Cloud-host router separately, as in the production Compose labels.
-For other ingress names or network addresses, adapt the provider configuration
-to your deployment before exposing the domains.
+Before the first successful database read, discovery returns `503` rather
+than an empty configuration. Later read failures keep the last successful
+assignment list. Cloud routing continues to refresh independently. Until that first read,
+unrecognized public hosts receive retryable `503` responses; configured Cloud
+hosts and container probes remain available.
 
 ## Configure Caddy instead
 
@@ -104,7 +118,7 @@ below is for app domains:
 ```caddyfile
 {
     on_demand_tls {
-        ask http://gateway:3001/_cloud/ingress/allowed
+        ask http://cloud-gateway-cloud.example.org:3001/_cloud/ingress/allowed
     }
 }
 
@@ -112,11 +126,12 @@ https:// {
     tls {
         on_demand
     }
-    reverse_proxy gateway:3000
+    reverse_proxy cloud-gateway-cloud.example.org:3000
 }
 ```
 
-Caddy supplies `?domain=<host>`. Assigned domains receive `200`; every other
+Replace `cloud.example.org` with your `CLOUD_HOST`, or use your own private
+gateway address. Caddy supplies `?domain=<host>`. Assigned domains receive `200`; every other
 name receives `404`. Admission follows durable assignments, even while an
 application is offline. Removing an assignment prevents future admission;
 it does not revoke a certificate already issued by your ingress.
@@ -154,6 +169,9 @@ every WebSocket handshake. Server webhooks without either header pass.
 Requests have separate budgets per domain and client IP, derived from
 `security.rate_limit_per_second`. Each domain also has an aggregate budget of
 100 times that setting: capacity for 100 clients using their full individual
+budget. Visitors behind a shared NAT use the same client budget; IPv6 addresses in
+one /64 share a budget too. Large pages and crawlers can exhaust it.
+Requests already rejected by the client limit do not consume the domain
 budget. Exhaustion returns `429` with `Retry-After`. Valkey admission failure
 returns a retryable `503`.
 
@@ -165,8 +183,9 @@ those headers. Applications own CSP, framing policy, indexing, canonical URLs,
 sitemaps, and robots files. App-domain responses have no Cloud telemetry
 headers.
 
-Cookie-less requests can receive Brotli or gzip for text, JavaScript, JSON,
-XML, and SVG, including crawler visits and arrivals from another site. Cloud
+Cookie-less requests without `Authorization` can receive Brotli or gzip for
+text, JavaScript, JSON, XML, and SVG, including crawler visits and arrivals
+from another site. Cloud
 credential cookies are removed before deciding this; any remaining site cookie
 retains the existing conservative compression rule. Applications serving
 private content alongside attacker-controlled text should use
@@ -185,8 +204,8 @@ For a development domain behind TLS, assign the domain through the same
 administrator CLI and configure Caddy or Traefik to forward it to your local
 gateway, for example `127.0.0.1:3100`. An assigned `site.dev.example.org` uses
 HTTPS even in development. Preserve its original Host header. The Cloud host
-from `app.url` remains valid alongside these site domains, and development
-also accepts `localhost`, `127.0.0.1`, and IPv6 loopback for local Cloud tooling.
+from `app.url` and the development entry host configured through `APP_URL`
+remain valid alongside these site domains. Development also accepts `localhost`, `127.0.0.1`, and IPv6 loopback for local Cloud tooling.
 The internal `gateway` service host continues to support Collabora and other
 container callers. See [Serve the stack under another address](/en/docs/operations/monorepo-development#serve-the-stack-under-another-address)
 for the Cloud origin setup.

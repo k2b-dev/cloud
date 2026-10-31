@@ -21,7 +21,7 @@ import type { ClientAddress } from "./client-address";
 import { derivePathTemplate } from "./path-template";
 import { transportErrorFields } from "./proxy";
 import { stripCloudCookies } from "./public-protections";
-import { isInternalPath, upstreamUrl } from "./request-boundary";
+import { isDomainCheckPath, isInternalPath, upstreamUrl } from "./request-boundary";
 import { matchRoute, type RouteTable } from "./trie";
 
 const MAX_PENDING_FRAMES = 32;
@@ -114,7 +114,8 @@ export const tryUpgradeWebSocket = (
   publicTarget?: PublicTarget,
 ): Response | undefined => {
   const url = new URL(req.url);
-  if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
+  if (isInternalPath(url.pathname, !!publicTarget) && !(publicTarget && isDomainCheckPath(url.pathname)))
+    return new Response("Not found", { status: 404 });
   const match = publicTarget ? { ...publicTarget, matchedPrefix: "/" } : matchRoute(table, url.pathname);
   if (!match) {
     return new Response("WebSocket: no app registered for this path", { status: 502 });

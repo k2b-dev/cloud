@@ -5,7 +5,7 @@ section: Build an app
 order: 140
 description: Publish route prefixes and make an application reachable through the gateway.
 tags: [applications, routing, gateway, registry]
-updated: 2026-10-09
+updated: 2026-10-31
 ---
 
 # Routes and service discovery
@@ -99,12 +99,13 @@ Sec-Fetch-Dest`, also when it stays uncompressed. A compressed response loses
 weakly: `W/"x"` matches `"x"`, a list matches when one tag matches, and `*`
 matches any current representation.
 
-On an [app domain](/en/docs/operations/app-domains), requests without a Cookie
-header after Cloud credentials have been removed also compress `text/*`,
+On an [app domain](/en/docs/operations/app-domains), requests without Cookie
+or Authorization headers after Cloud credentials have been removed also compress `text/*`,
 JavaScript, JSON (`+json` included), XML (`+xml` included), and SVG. This
 includes cross-site landings, subresources, and crawlers without Fetch
-Metadata. Site cookies retain the Cloud-host compression rules above. App
-responses also vary on `Cookie` so shared caches distinguish these cases.
+Metadata. Site cookies or `Authorization` retain the Cloud-host compression
+rules above. App responses also vary on `Cookie` and `Authorization` so shared
+caches distinguish these cases.
 Precompressed bodies, `no-transform`, size thresholds, HEAD, conditional
 requests, and streaming keep the same behavior. Status codes, redirect
 locations, app cache directives, and representation bytes after decompression

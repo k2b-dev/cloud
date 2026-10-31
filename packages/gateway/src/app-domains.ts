@@ -5,6 +5,7 @@ export type PublicTarget = { appId: string; baseUrl: string; host: string; autho
 export type DomainSnapshot = {
   cloudHosts: ReadonlySet<string>;
   domains: ReadonlyMap<string, AppDomain>;
+  domainsReady: boolean;
   apps: ReadonlyMap<string, AppRegistryEntry>;
   development: boolean;
 };
@@ -36,7 +37,7 @@ export const cloudHostSet = (publicUrl: string, internalUrls: readonly string[],
 export type HostDecision =
   | { kind: "cloud" }
   | { kind: "unknown" }
-  | { kind: "assigned"; domain: AppDomain; target: PublicTarget | null; inactive: boolean };
+  | { kind: "assigned"; domain: AppDomain; target: PublicTarget | null; inactive: boolean; authority: string; scheme: "http" | "https" };
 
 export const decideHost = (req: Request, snapshot: DomainSnapshot): HostDecision => {
   const rawAuthority = req.headers.get("Host");
@@ -55,8 +56,11 @@ export const decideHost = (req: Request, snapshot: DomainSnapshot): HostDecision
   const app = snapshot.apps.get(domain.appId);
   const port = rawAuthority?.match(/:(\d+)$/)?.[1];
   const publicAuthority = host + (port ? `:${Number(port)}` : "");
+  const scheme = snapshot.development && host.endsWith(".localhost") ? "http" : "https";
   return {
     kind: "assigned",
+    authority: publicAuthority,
+    scheme,
     domain,
     inactive: !!app && !declaresPublicSurface(app),
     target:
@@ -66,7 +70,7 @@ export const decideHost = (req: Request, snapshot: DomainSnapshot): HostDecision
             baseUrl: app.baseUrl,
             host,
             authority: publicAuthority,
-            scheme: snapshot.development && host.endsWith(".localhost") ? "http" : "https",
+            scheme,
           }
         : null,
   };
