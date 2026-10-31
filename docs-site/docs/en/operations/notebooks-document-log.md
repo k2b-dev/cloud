@@ -228,6 +228,9 @@ Soft-deleted comments and replies remain restorable during their author's
 original ten-minute mutation window. Later writes purge expired deleted rows
 in bounded batches for that note or thread.
 
+For device storage failures and explicit tab-only editing, see
+[Keep unconfirmed input on the device](../data/shared-text-documents#keep-unconfirmed-input-on-the-device).
+
 ## Recover workspace updates after a broker outage
 
 Notebooks saves workspace hints in `notebooks.workspace_outbox` in the same
