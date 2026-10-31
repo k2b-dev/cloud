@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { isCloudCredentialCookie } from "@k2b/cloud/contracts/app-domains";
 import ts from "@typescript/typescript6";
@@ -43,7 +43,9 @@ const importedSource = (source: ts.SourceFile, name: string): { source: ts.Sourc
     const module = statement.moduleSpecifier.text;
     const base = module.startsWith(".") ? resolve(dirname(source.fileName), module) : null;
     if (!base) return null;
-    const path = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`].find(existsSync);
+    const path = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`].find((candidate) =>
+      statSync(candidate, { throwIfNoEntry: false })?.isFile(),
+    );
     return path ? { source: sourceAt(path), name: entry.propertyName?.text ?? name } : null;
   }
   return null;

@@ -57,7 +57,10 @@ const fixture = (
     apps: new Map<string, AppRegistryEntry>([["site", app(upstream.url.href)]]),
     development: false,
   };
-  const table = buildRouteTable([{ prefix: "/", appId: "core", baseUrl: upstream.url.href }]);
+  const table = buildRouteTable([
+    { prefix: "/", appId: "core", baseUrl: upstream.url.href },
+    { prefix: "/app/site", appId: "site", baseUrl: upstream.url.href },
+  ]);
   let storageCalls = 0;
   let active = snapshot;
   const nonces = new Set<string>();
@@ -106,16 +109,18 @@ const fixture = (
   };
 };
 
-test.each(["/api/core?x=1", "/_cloud/app-access", "/app/site/_cloud/access/site"])(
-  "Cloud host keeps path routing and gateway headers for %s",
-  async (path) => {
-    const f = fixture();
-    const response = await f.request(path, {}, "cloud.test");
-    expect(response.headers.get("X-Gateway-App")).toBe("core");
-    expect((await response.json()).path).toBe(path);
-    expect(f.rates).toEqual([]);
-  },
-);
+test.each([
+  ["/api/core?x=1", "core"],
+  ["/_cloud/app-access", "core"],
+  ["/app/site/_cloud/access/site", "site"],
+])("Cloud host keeps path routing and gateway headers for %s", async (path, appId) => {
+  const f = fixture();
+  const response = await f.request(path, {}, "cloud.test");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Gateway-App")).toBe(appId);
+  expect((await response.json()).path).toBe(path);
+  expect(f.rates).toEqual([]);
+});
 
 test.each(["/", "/api/anything", "/public/storage/files/a", "/health"])("app host owns %s", async (path) => {
   const f = fixture();
