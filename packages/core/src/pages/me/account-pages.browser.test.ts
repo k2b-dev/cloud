@@ -10,6 +10,7 @@ import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
 import * as cloudSsr from "@k2b/cloud/ssr";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
+import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
@@ -96,19 +97,27 @@ let freeIpaEnabled = false;
 let requestsEnabled = false;
 
 const spies: Array<{ mockRestore(): void }> = [];
+/** The title array the page last gave the shell's layout. */
+let layoutTitle: Parameters<typeof derivePageTrail>[0];
 beforeEach(() => {
   setSystemTime(new Date(now));
   user = localUser;
   freeIpaEnabled = false;
   requestsEnabled = false;
   spies.push(
-    spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) =>
-      createComponent(LocaleProvider, {
+    spyOn(cloudSsr, "Layout").mockImplementation(((props: {
+      c: Parameters<typeof server.getLocale>[0];
+      title?: Parameters<typeof derivePageTrail>[0];
+      children: JSX.Element;
+    }) => {
+      layoutTitle = props.title;
+      return createComponent(LocaleProvider, {
         locale: server.getLocale(props.c),
         get children() {
           return props.children;
         },
-      })) as never),
+      });
+    }) as never),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
     spyOn(services.coreSettings, "get").mockImplementation(
       async (key) =>
@@ -620,6 +629,12 @@ describe("account pages in a browser", () => {
     } finally {
       await tab.close();
     }
+  }, 30_000);
+
+  test("the delivery history shows no way up above the account tabs, which lead back to the notification preferences", async () => {
+    const html = await content("/me/notifications/history", "en");
+    expect(derivePageTrail(layoutTitle, "/me", "Cloud", "/me/notifications/history")).toEqual({ title: "Delivery history", ancestors: [] });
+    expect(html).toMatch(/<a [^>]*href="\/me\/notifications"/);
   }, 30_000);
 
   test("warn about the account expiry only when it is close", async () => {

@@ -31,7 +31,24 @@ const load = async () => {
     const { formattingKeymap } = await import("./EditorToolbar");
     const { markdownExtension } = await import("@k2b/editor/markdown");
     mock.module("@/api/client", () => ({
-      apiClient: { ":id": { "route-state": { $get: routeGet }, notes: { ":noteId": { "table-action": { $post: tablePost } } } } },
+      apiClient: {
+        ":id": { "route-state": { $get: routeGet }, notes: { ":noteId": { "table-action": { $post: tablePost } } } },
+        notes: {
+          ":noteId": {
+            annotations: {
+              $get: async ({ param }: { param: { noteId: string } }) =>
+                Response.json({
+                  text: savedTexts.get(param.noteId) ?? annotationText,
+                  contentHash: "fixture-hash",
+                  cursor: null,
+                  restoreRevision: "0",
+                  items: [],
+                  nextCursor: null,
+                }),
+            },
+          },
+        },
+      },
     }));
     const { default: NoteEditor } = await import("./NoteEditor.client");
     const { yjs } = await import("../../../lib/yjs");
@@ -76,6 +93,7 @@ const routeGet = mock(async ({ query: { href } }: { query: { href: string } }) =
 const tablePost = mock(async () => Response.json({ changed: false }));
 const loaded = isServer ? undefined : await load();
 const markdown = "# Keep me\n\nUnsaved **words**.";
+let annotationText = markdown;
 const tableMarkdown = `${markdown}\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n| Ink | 2 |\n`;
 const notePath = "/app/notebooks/Book01/Note01?mode=write";
 const flush = async () => {
@@ -187,6 +205,7 @@ const mountNoteEditor = ({
   initialRichMode?: "rich" | "source";
 } = {}) => {
   let pending = initialPending;
+  annotationText = initialContent;
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
   const previousBindings = new Map<string, PropertyDescriptor | undefined>();
@@ -591,6 +610,35 @@ describe("sync ended editor recovery", () => {
       instance.opts.doc.transact(() => ytext.insert(0, `${markdown}\n\nAdded by Ada.`), "remote");
       instance.opts.onReady?.();
       expect(ytext.toString()).toBe(`Mine ${markdown}\n\nAdded by Ada.`);
+    } finally {
+      savedTexts.clear();
+    }
+  });
+
+  test("before the first edit, a workspace replay reset covers the new saved text", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const coverages: Promise<void>[] = [];
+    savedTexts.set("Note01", `${markdown}\n\nSaved during a long disconnect.`);
+    try {
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: {
+            cursor: "reset-head",
+            event: {
+              v: 1,
+              type: "workspace.invalidated",
+              notebookId: "Book01",
+              reason: "unknown",
+              scopes: ["notebook", "tree", "tags", "references", "permissions"],
+            },
+            cover: (read: Promise<void>) => coverages.push(read),
+          },
+        }),
+      );
+      await Promise.all(coverages);
+      expect(routeGet).toHaveBeenCalledTimes(1);
+      expect(editor.view().state.doc.toString()).toBe(`${markdown}\n\nSaved during a long disconnect.`);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
     } finally {
       savedTexts.clear();
     }
