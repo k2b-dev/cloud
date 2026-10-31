@@ -287,7 +287,7 @@ suite("Mail list attachment images and thumbnail access", () => {
       const response = await call(`/messages/${newer.short_id}/attachments/${first.short_id}/thumbnail`);
       expect(response.status).toBe(200);
       expect(["image/jpeg", "image/png"]).toContain(response.headers.get("content-type") ?? "");
-      expect(response.headers.get("cache-control")).toBe("private, max-age=604800, immutable");
+      expect(response.headers.get("cache-control")).toBe("private, no-cache");
       expect(response.headers.get("x-content-type-options")).toBe("nosniff");
       expect(response.headers.get("content-disposition")).toBe("inline");
       const bytes = new Uint8Array(await response.arrayBuffer());

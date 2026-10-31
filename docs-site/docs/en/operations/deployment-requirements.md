@@ -1057,15 +1057,14 @@ people to a test conversation and check that
 
 ### Mail attachment thumbnails
 
-Mail's attachment thumbnail endpoint uses the existing isolated Linux image
-workers, with two workers per application process and a 15-second preparation
-deadline. The Mail image includes sharp's native dependencies through the shared
-worker build. No additional service, setting, or storage migration is required.
-Source images are limited to 25 MiB; responses fit within 96×96 pixels and 48 KiB.
-Access is checked before reading and again before returning the image. Clients
-cache successful responses privately for seven days. A failed image lookup leaves
-list rows available; a failed thumbnail request returns an error for the client's
-placeholder.
+Mail's list shows small thumbnails of image attachments. Its thumbnail endpoint
+uses the isolated Linux image workers that the shared build adds to the Mail
+image, two at once per process, with up to 64 requests waiting; beyond that it
+answers 503 and the list shows a placeholder. Sources are limited to 25 MiB and
+responses to 96×96 pixels and 48 KiB. Access is checked before reading and again
+before returning the image. Browsers revalidate each thumbnail, so a revoked
+access is never served from their cache. No setting, service, or migration is
+required.
 
 ### Mail draft signatures
 

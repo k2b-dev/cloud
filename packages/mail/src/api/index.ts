@@ -875,6 +875,15 @@ const acquireThumbnailSlot = (signal: AbortSignal): Promise<"acquired" | "busy" 
     signal.addEventListener("abort", abort, { once: true });
   });
 };
+/** Reading the source from the database may take this long before the thumbnail gives up and frees its slot. */
+const THUMBNAIL_READ_DEADLINE_MS = 10_000;
+const untilAborted = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> =>
+  new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
 const releaseThumbnailSlot = () => {
   const next = thumbnailQueue.shift();
   if (next) next();
@@ -891,6 +900,18 @@ export const attachmentThumbnailResponse = async (
   if (attachmentPreviewKind(attachment.contentType, attachment.total) !== "image") {
     return respondPublic(c, fail(err.notFound("Attachment")));
   }
+  // The browser asks again every time, so a revoked access is never served from its cache; an unchanged image only
+  // answers 304 after the access check above and costs no worker.
+  const etag = `"thumbnail-v1-${attachment.contentHash}"`;
+  const cacheHeaders = { ETag: etag, "Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff" };
+  if (
+    c.req
+      .header("if-none-match")
+      ?.split(",")
+      .some((tag) => tag.trim() === etag)
+  ) {
+    return new Response(null, { status: 304, headers: cacheHeaders });
+  }
   setRequestTimeout(c, 30);
   const slot = await acquireThumbnailSlot(c.req.raw.signal);
   if (slot !== "acquired") {
@@ -898,23 +919,24 @@ export const attachmentThumbnailResponse = async (
     c.header("Retry-After", "5");
     return respond(c, { ok: false, error: "Thumbnails are busy; try again shortly", code: "THUMBNAILS_BUSY", status: 503 });
   }
+  // A disconnect or a stalled database read gives the slot back; the read itself ends on its own.
+  const reading = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(THUMBNAIL_READ_DEADLINE_MS)]);
+  let source: ReadableStream<Uint8Array> | undefined;
   try {
-    const prefix = await messages.readAttachmentPrefix(attachment.blobId);
+    const prefix = await untilAborted(messages.readAttachmentPrefix(attachment.blobId), reading);
     if (!attachmentPreviewSignatureMatches(attachment.contentType, prefix)) {
       return respondPublic(c, fail(err.badInput("The attachment content does not match its declared preview type")));
     }
-    const bytes = await readBoundedBody(
-      messages.createAttachmentStream({
-        ...attachment,
-        start: 0,
-        endExclusive: attachment.total,
-        assertCurrentAccess: async () => {
-          c.req.raw.signal.throwIfAborted();
-          await assertCurrentAccess(attachment.blobId);
-        },
-      }),
-      attachment.total,
-    );
+    source = messages.createAttachmentStream({
+      ...attachment,
+      start: 0,
+      endExclusive: attachment.total,
+      assertCurrentAccess: async () => {
+        reading.throwIfAborted();
+        await assertCurrentAccess(attachment.blobId);
+      },
+    });
+    const bytes = await untilAborted(readBoundedBody(source, attachment.total), reading);
     if (!bytes.ok || bytes.data.byteLength !== attachment.total) {
       return respondPublic(c, fail(err.internal("Attachment could not be read")));
     }
@@ -933,14 +955,10 @@ export const attachmentThumbnailResponse = async (
     if (!variant) return respondPublic(c, fail(err.badInput("Attachment thumbnail exceeds the size limit")));
     await assertCurrentAccess(attachment.blobId);
     return new Response(variant.data, {
-      headers: {
-        "Content-Type": variant.type,
-        "Cache-Control": "private, max-age=604800, immutable",
-        "X-Content-Type-Options": "nosniff",
-        "Content-Disposition": "inline",
-      },
+      headers: { ...cacheHeaders, "Content-Type": variant.type, "Content-Disposition": "inline" },
     });
   } catch {
+    if (reading.aborted) void source?.cancel().catch(() => undefined);
     return respondPublic(c, fail(err.internal("Attachment thumbnail could not be prepared")));
   } finally {
     releaseThumbnailSlot();
@@ -2619,6 +2637,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       ...requiresAuth,
       responses: {
         200: { description: "An image fitted within 96 by 96 pixels (JPEG or PNG, at most 48 KiB)" },
+        304: { description: "The image the client holds is current" },
         400: jsonResponse(ErrorResponseSchema, "Image cannot be prepared"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Attachment not found or not an image"),

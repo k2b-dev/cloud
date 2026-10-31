@@ -1348,7 +1348,7 @@ describe("Mail image thumbnails in the columns view", () => {
       items: thumbnailItems,
       context: { viewport: { width: 1600, height: 900 } },
     });
-    // The row's height is set before any image arrives.
+    // settled: the boxes before any image arrives are the subject; the loaded state below is awaited.
     const first = await thumbnails(page);
     await page.waitForFunction(() =>
       [...document.querySelectorAll(".mail-row-thumbnail")].every(

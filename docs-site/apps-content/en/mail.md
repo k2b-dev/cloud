@@ -759,7 +759,8 @@ excluded. A failed image lookup leaves the list available with empty image metad
 `GET /api/mail/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/thumbnail`
 uses the same access check as opening the attachment. It validates the declared
 image type against the bytes and returns a JPEG or PNG fitted within 96×96 pixels
-and 48 KiB. The response is private and immutable for seven days. Invalid images,
+and 48 KiB. The response is private with an `ETag` and `no-cache`: the browser asks again
+every time, and an unchanged image answers 304 after the access check. Invalid images,
 unsupported files, and preparation failures return an error so the client can show
 a placeholder. GIF and WebP thumbnails use the first frame.
 

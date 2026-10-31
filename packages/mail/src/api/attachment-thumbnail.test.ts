@@ -63,7 +63,8 @@ describe("Mail image thumbnails", () => {
     const response = await request(ok(attachment), check);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
-    expect(response.headers.get("cache-control")).toBe("private, max-age=604800, immutable");
+    expect(response.headers.get("cache-control")).toBe("private, no-cache");
+    expect(response.headers.get("etag")).toBe(`"thumbnail-v1-${attachment.contentHash}"`);
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("content-disposition")).toBe("inline");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(pngPrefix);
@@ -107,6 +108,35 @@ describe("Mail image thumbnails", () => {
       throw new Error("revoked");
     });
     expect(response.status).toBe(500);
+  });
+
+  test("answers 304 for the image the browser holds, after the access check and without reading or a worker", async () => {
+    const read = spyOn(messages, "readAttachmentPrefix");
+    const prepare = spyOn(services, "preparePdfImage");
+    const app = new Hono<MailApiContext>().get("/", (c) => attachmentThumbnailResponse(c, ok(attachment), async () => {}));
+    const response = await app.request("/", { headers: { "If-None-Match": `W/"x", "thumbnail-v1-${attachment.contentHash}"` } });
+    expect(response.status).toBe(304);
+    expect(response.headers.get("cache-control")).toBe("private, no-cache");
+    expect(read).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+    // A revoked access never reaches the comparison.
+    const denied = await new Hono<MailApiContext>()
+      .get("/", (c) => attachmentThumbnailResponse(c, fail(err.forbidden("Access denied")), async () => {}))
+      .request("/", { headers: { "If-None-Match": `"thumbnail-v1-${attachment.contentHash}"` } });
+    expect(denied.status).toBe(403);
+  });
+
+  test("a disconnect during a stalled source read frees the slot for the next thumbnail", async () => {
+    const read = spyOn(messages, "readAttachmentPrefix").mockImplementation(() => new Promise(() => {}));
+    const app = new Hono<MailApiContext>().get("/", (c) => attachmentThumbnailResponse(c, ok(attachment), async () => {}));
+    const stalled = [new AbortController(), new AbortController()];
+    const responses = stalled.map((controller) => app.request("/", { signal: controller.signal }));
+    while (read.mock.calls.length < 2) await Bun.sleep(1);
+    for (const controller of stalled) controller.abort();
+    expect((await Promise.all(responses)).map((response) => response.status)).toEqual([500, 500]);
+    // Both slots are free again: the next thumbnail reaches its source read at once.
+    read.mockResolvedValue(new Uint8Array([0, 1, 2]));
+    expect((await app.request("/")).status).toBe(400);
   });
 
   test("prepares two thumbnails at once, queues 64 more, and answers busy beyond that", async () => {
