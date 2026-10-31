@@ -31,6 +31,7 @@ import { app } from "./config";
 import { coreHelp } from "./help";
 import { buildSearchIndexes as buildOutgoingMailSearchIndexes } from "./migrate/core/outgoing-mail";
 import { createCoreNotificationSender } from "./notifications";
+import { createAdminAppStatusRoutes } from "./pages/admin/apps/status-api";
 import { createPagesRouter } from "./pages/create";
 import { runCoreSetup, startCoreServices, stopCoreServices } from "./runtime-helpers";
 
@@ -48,6 +49,7 @@ const identityPublicRoutes = createIdentityPublicRoutes();
 // and non-user Skills readers cannot pass the Task router's user requirement.
 const coreApi = new Hono()
   .route("/admin/apps", createAdminAppListingRoutes())
+  .route("/admin/apps", createAdminAppStatusRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())
   .route("/ai/skills", aiSkillsRoutes)
   .route("/ai", aiChatTaskRoutes)

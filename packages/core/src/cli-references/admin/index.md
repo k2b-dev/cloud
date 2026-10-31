@@ -313,7 +313,7 @@ host-run override, configure `CLOUD_APP_CREDENTIAL` only in its owning app and
 `CLOUD_CORE_INTERNAL_ORIGIN` with Core's private origin. Mandates still control
 the allowed background actions. For rotation, create and deploy a replacement,
 verify its calls, then revoke the old credential. The equivalent UI is
-**Administration → App credentials**.
+**Administration → Apps**, then the app and **Keys → Tokens for host operation**.
 
 
 ## Agents
