@@ -58,7 +58,7 @@ test("the list names every app by name with its state in words and its most impo
   );
   const grids = page.locator('[data-app="grids"]');
   expect(await grids.innerText()).toContain("Gestört");
-  expect(await grids.innerText()).toContain("Fehlerquote 4,3% in 24 h · +1");
+  expect(await grids.innerText()).toContain("Fehlerquote 4,3% in 24 h · +2");
   expect(await page.locator('[data-app="tools"]').innerText()).toContain("Zugriff: niemand verwaltet ihn");
   expect(await page.getByText("Wähle eine App, um Zustand, Zugriff, Schlüssel und Ereignisse zu sehen.").isVisible()).toBe(true);
 }, 20_000);
@@ -154,7 +154,9 @@ test("keys: background access off says so and offers to turn it on; two active k
   expect(await page.locator("[data-background-off]").innerText()).toContain("Hintergrundzugriff ist aus.");
   expect(await page.getByRole("button", { name: "Wieder aktivieren" }).isVisible()).toBe(true);
   await open("?app=grids&view=keys");
-  expect(await page.getByText("Höchstens 2 sind aktiv. Widerrufe zuerst einen alten.").isVisible()).toBe(true);
+  expect(await page.getByText("Rotation läuft. Sobald keine Instanz mehr den alten Schlüssel nutzt, widerrufe ihn.").isVisible()).toBe(
+    true,
+  );
   expect(await page.getByRole("button", { name: "Schlüssel erzeugen" }).isDisabled()).toBe(true);
 }, 20_000);
 
@@ -188,4 +190,47 @@ test("on a phone each level is its own page with a way back", async () => {
       .isVisible(),
   ).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}, 20_000);
+
+test("key states: a running app without a key says it still starts with its environment, and its way out opens Create key", async () => {
+  await open("");
+  expect(await page.locator('[data-app="files"]').innerText()).toContain("Startet noch mit Env");
+  await open("?app=files");
+  const notice = page.locator('[data-hint="envStart"]');
+  expect(await notice.innerText()).toContain("Dateien holt Datenbank, Valkey und NATS aus der eigenen Env.");
+  expect(await notice.getByRole("link", { name: "Umstellung (Fibel)" }).getAttribute("href")).toBe(
+    "/docs/en/operations/app-keys#use-the-key-at-start",
+  );
+  expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("Kein Schlüssel · startet mit Env");
+  await notice.getByRole("link", { name: "Schlüssel erzeugen" }).click();
+  await page.waitForSelector('body[data-ready="true"]');
+  await page.locator("[data-key-create]").waitFor();
+  expect(new URL(page.url()).search).toBe("?app=files&view=keys");
+  expect(await page.locator('[data-keys="files"]').innerText()).toContain(
+    "Bis dahin startet Dateien mit den Zugängen aus der eigenen Env.",
+  );
+}, 20_000);
+
+test("key states: no valid key carries the page's one filled action; rotation names the old key", async () => {
+  await open("?app=notebooks");
+  const notice = page.locator('[data-hint="keyRevoked"]');
+  expect(await notice.innerText()).toContain("Kein gültiger Schlüssel.");
+  const action = notice.getByRole("link", { name: "Neuen Schlüssel erzeugen" });
+  expect(await action.getAttribute("href")).toBe("/admin/apps?app=notebooks&view=keys&create=1");
+  expect(await action.getAttribute("data-variant")).toBe("primary");
+  expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("kein gültiger Schlüssel");
+  await open("?app=notebooks&view=keys");
+  const keys = page.locator('[data-keys="notebooks"]');
+  expect(await keys.innerText()).toContain("Kein gültiger Schlüssel.");
+  expect(await keys.locator('[data-key="erststart"]').isVisible()).toBe(true);
+
+  await open("?app=grids&view=keys");
+  expect(await page.getByText("Rotation läuft. Sobald keine Instanz mehr den alten Schlüssel nutzt, widerrufe ihn.").isVisible()).toBe(
+    true,
+  );
+  expect(await page.locator('[data-key="produktion-2026-10"]').innerText()).toContain("produktion-2026-10 (alt)");
+  expect(await page.locator('[data-key="rotation-2026-11"]').innerText()).not.toContain("(alt)");
+  await open("?app=grids");
+  expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("2 aktiv · Rotation läuft");
+  expect(await page.locator('[data-hint="rotation"]').count()).toBe(0);
 }, 20_000);

@@ -48,7 +48,10 @@ export default function Keys(props: KeysProps) {
   const locale = useLocale();
   const t = () => keysMessages.resolve([locale()]).t;
   const context = () => ({ locale: locale(), timeZone: props.timeZone });
-  const [showRevoked, setShowRevoked] = createSignal(false);
+  // Without a valid key, the revoked ones explain why; they start open.
+  const [showRevoked, setShowRevoked] = createSignal(
+    Boolean(props.initialKeys?.length) && (props.initialKeys ?? []).every((key) => key.status === "revoked"),
+  );
   const [showTokens, setShowTokens] = createSignal(false);
   const [tokenPage, setTokenPage] = createSignal(1);
   const [tokenRevision, setTokenRevision] = createSignal(0);
@@ -105,6 +108,9 @@ export default function Keys(props: KeysProps) {
   const current = () => list().filter((key) => key.status !== "revoked");
   const revoked = () => list().filter((key) => key.status === "revoked");
   const active = () => list().filter((key) => key.status === "active");
+  /** During a rotation the older active key is the one to retire. */
+  const oldKeyId = () =>
+    active().length >= 2 ? active().toSorted((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0]!.keyId : null;
   createEffect(
     on(
       () => keys.data(),
@@ -149,7 +155,10 @@ export default function Keys(props: KeysProps) {
     >
       <div class="min-w-0">
         <div class="flex min-w-0 items-center gap-2 text-sm font-medium" classList={{ "text-dimmed": row.key.status === "revoked" }}>
-          <span class="truncate">{row.key.name}</span>
+          <span class="truncate">
+            {row.key.name}
+            {row.key.keyId === oldKeyId() ? ` ${t().oldKey}` : ""}
+          </span>
           <StatusBadge
             icon={null}
             tone={row.key.status === "active" ? "ok" : "neutral"}
@@ -258,8 +267,8 @@ export default function Keys(props: KeysProps) {
         >
           <Show when={active().length >= 2}>
             <p class="mx-2.5 mb-2 flex items-baseline gap-1.5 text-[13px] text-dimmed">
-              <i class="ti ti-info-circle" aria-hidden="true" />
-              {t().twoActive}
+              <i class="ti ti-refresh" aria-hidden="true" />
+              {t().rotation}
             </p>
           </Show>
           <Show

@@ -291,6 +291,10 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
                     revokedKeyName: keys.find((item) => item.status === "revoked")?.name ?? null,
                     providerFailures: state === "provider" ? ["Gateway"] : [],
                     keysSupported: entry.id !== "core",
+                    docs: {
+                      recover: "/docs/en/operations/app-keys#rotate-or-recover-a-key",
+                      migrate: "/docs/en/operations/app-keys#use-the-key-at-start",
+                    },
                     accessRule: entry.accessKind === "noGuests" ? "Alle außer Gästen" : "Alle angemeldeten Personen",
                     appNames: new Map([
                       ["contacts", "Kontakte"],

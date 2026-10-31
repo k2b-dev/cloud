@@ -15,6 +15,8 @@ export type AppHint =
   | { kind: "providerOnly"; provider: string; lastSeenAt: string | null }
   | { kind: "neverStarted"; hasKey: boolean }
   | { kind: "keyRevoked" }
+  | { kind: "envStart" }
+  | { kind: "rotation" }
   | { kind: "errorRate"; rate: number }
   | { kind: "failedDeliveries"; count: number }
   | { kind: "routeMissing"; prefix: string; owner: string | null }
@@ -26,6 +28,8 @@ export const HINT_PRESENTATION: Record<AppHint["kind"], { tone: "neutral" | "war
   providerOnly: { tone: "warning", icon: "ti ti-git-compare", target: "remove" },
   neverStarted: { tone: "neutral", icon: "ti ti-info-circle", target: "keys" },
   keyRevoked: { tone: "danger", icon: "ti ti-key-off", target: "keys" },
+  envStart: { tone: "neutral", icon: "ti ti-info-circle", target: "keys" },
+  rotation: { tone: "neutral", icon: "ti ti-refresh", target: "keys" },
   errorRate: { tone: "warning", icon: "ti ti-alert-triangle", target: "errors" },
   failedDeliveries: { tone: "danger", icon: "ti ti-alert-circle", target: "events" },
   routeMissing: { tone: "warning", icon: "ti ti-route-off", target: "routes" },
@@ -114,6 +118,10 @@ export function deriveApp(input: AppInput): AppEntry {
   if (input.failedDeliveries > 0) hints.push({ kind: "failedDeliveries", count: input.failedDeliveries });
   if (input.live) for (const route of input.missingRoutes) hints.push({ kind: "routeMissing", ...route });
   if (input.keys.active === 0 && input.keys.revoked + input.keys.expired > 0) hints.push({ kind: "keyRevoked" });
+  // A running app without any key still starts with the connections in its own environment; it should move to a key.
+  if (input.live && input.keys.active + input.keys.revoked + input.keys.expired === 0) hints.push({ kind: "envStart" });
+  // Two active keys mean a rotation: the old one goes once no instance uses it.
+  if (input.keys.active >= 2) hints.push({ kind: "rotation" });
   if (input.live && input.accessKind === "grants" && input.access && input.access.managers === 0) hints.push({ kind: "accessUnmanaged" });
   const status: AppStatusKind = neverStarted
     ? "idle"
@@ -136,6 +144,8 @@ export function deriveApp(input: AppInput): AppEntry {
     "failedDeliveries",
     "routeMissing",
     "accessUnmanaged",
+    "envStart",
+    "rotation",
   ];
   hints.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
   return { ...input, lastSeenAt: lastSeen, status, hints, neverStarted, removable: !input.live };
@@ -173,11 +183,13 @@ export function parseAppsQuery(query: Record<string, string | undefined>) {
 }
 export type AppsQuery = ReturnType<typeof parseAppsQuery>;
 
-export function appsHref(query: { app?: string | null; view?: AppView | null; window?: AppStatusWindow | null }): string {
+/** `create` asks the keys column to open "Create key" once, for a hint whose way out is a new key. */
+export function appsHref(query: { app?: string | null; view?: AppView | null; window?: AppStatusWindow | null; create?: boolean }): string {
   const params = new URLSearchParams();
   if (query.app) params.set("app", query.app);
   if (query.app && query.view) params.set("view", query.view);
   if (query.app && query.view === "routes" && query.window && query.window !== "24h") params.set("window", query.window);
+  if (query.app && query.view === "keys" && query.create) params.set("create", "1");
   const search = params.toString();
   return search ? `/admin/apps?${search}` : "/admin/apps";
 }

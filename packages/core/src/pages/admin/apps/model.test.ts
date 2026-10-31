@@ -19,7 +19,9 @@ test("each app gets one status in words and its hints, most severe first", () =>
     tools: "ok",
     wiki: "error",
   });
-  expect(derived.get("grids")!.hints.map((hint) => hint.kind)).toEqual(["errorRate", "failedDeliveries"]);
+  expect(derived.get("grids")!.hints.map((hint) => hint.kind)).toEqual(["errorRate", "failedDeliveries", "rotation"]);
+  expect(derived.get("files")!.hints.map((hint) => hint.kind)).toEqual(["envStart"]);
+  expect(derived.get("mail")!.hints).toEqual([]);
   expect(derived.get("wiki")!.hints.map((hint) => hint.kind)).toEqual(["providerOnly"]);
   expect(derived.get("inventar")!.hints.map((hint) => hint.kind)).toEqual(["neverStarted"]);
   expect(derived.get("notebooks")!.hints.map((hint) => hint.kind)).toEqual(["keyRevoked"]);

@@ -11,9 +11,14 @@ export type SelectionAllowance = { file: string; subject: string; reason: string
 /** CSS subjects match exactly; TS/TSX subjects match a substring of the trimmed source line. */
 export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   {
+    file: "packages/core/src/pages/admin/apps/view.tsx",
+    subject: 'variant={text().primary ? "primary" : "secondary"}',
+    reason: "Action: a notice's way out is the app page's one filled action when the app has no valid key.",
+  },
+  {
     file: "packages/core/src/pages/admin/apps/KeysCreate.island.tsx",
-    subject: 'variant={active() === 0 ? "primary" : "secondary"}',
-    reason: "Action: creating a key is the keys column's one main action while the app has no active key.",
+    subject: 'variant={props.neverStarted ? "primary" : "secondary"}',
+    reason: "Action: before an app's first start, creating its key is the page's one main action.",
   },
   {
     file: "packages/pulse/src/frontend/workspace/base-settings-dialog.tsx",
