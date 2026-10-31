@@ -1,5 +1,6 @@
 // Test subprocess only. Its own parent provides an isolated CLOUD_TEST_DATABASE_URL.
-import { SQL } from "bun";
+
+import { createSql } from "@k2b/cloud";
 import * as decoding from "lib0/decoding";
 import * as Y from "yjs";
 import { requireDatabaseUrl } from "../../../scripts/fixtures/test-infra";
@@ -7,7 +8,7 @@ import { message, updateFrame } from "../protocol";
 import { NotesService } from "./service";
 import { NotesStore } from "./store";
 
-const db = new SQL(requireDatabaseUrl());
+const db = createSql({ url: requireDatabaseUrl() });
 const token = process.env.NOTES_TEST_EDIT_ID;
 if (!token) throw new Error("test_token_missing");
 const service = new NotesService(new NotesStore(db, 1024 ** 3), { storageBytes: 1024 ** 3, maxConnections: 100, maxOpenPads: 100 });

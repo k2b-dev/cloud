@@ -1,7 +1,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { type AuthContext, createAccess, respond } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";

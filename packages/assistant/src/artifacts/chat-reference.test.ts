@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
+import { sql as platformSql } from "@k2b/cloud";
 import type { AiConversation } from "@k2b/cloud/ai";
 import * as ai from "@k2b/cloud/ai";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
@@ -10,6 +11,7 @@ import { ok } from "@k2b/stdlib";
 import * as bun from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { createArtifactServiceRoutes } from "./api";
 import { runtimeCapabilities } from "./capability-runtime";
 import { requireToolChat } from "./chat-access";
@@ -19,6 +21,8 @@ import * as frameAssets from "./html/assets";
 import { appChecks } from "./html/check-service";
 import * as service from "./service";
 import { testIdentity } from "./test-identity";
+
+useUnitClients();
 
 const identity = testIdentity("00000000-0000-4000-8000-000000000001");
 const conversation: AiConversation = {
@@ -115,7 +119,7 @@ function setup() {
       throw new Error(`Unexpected SQL: ${query}`);
     },
   });
-  const begin = spyOn(bun.sql, "begin").mockImplementation(async (run) => {
+  const begin = spyOn(platformSql, "begin").mockImplementation(async (run) => {
     if (typeof run !== "function") throw new Error("Expected transaction callback");
     return run(db);
   });

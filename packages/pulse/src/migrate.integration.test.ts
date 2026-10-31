@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { createDisposableDatabase, suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
 import { migrate as migratePulse } from "./migrate";
 

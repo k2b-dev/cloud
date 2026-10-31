@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "@k2b/cloud/contracts/user-notifications";
 import { sendPinnedWebPush } from "@k2b/cloud/services/notifications/web-push-transport";
 import type { Queue, QueueConfig, QueueMessage, Sync } from "@k2b/sync";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { RequestOptions as WebPushOptions } from "web-push";
 import { z } from "zod";
 

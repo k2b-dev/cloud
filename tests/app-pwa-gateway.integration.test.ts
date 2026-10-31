@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { z } from "zod";
 import { appPwaCommand, createAppPwa } from "../packages/cloud/src/app-pwa";
+import { sql } from "../packages/cloud/src/runtime/clients";
 import { suiteFor } from "../scripts/fixtures/test-infra";
 import "../scripts/fixtures/authorization-preload";
 import { invalidateIdentityRuntimeConfig } from "../packages/cloud/src/services/identity/runtime-config";

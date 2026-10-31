@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { aiChatTasks, aiConversations, createAiShortId } from "@k2b/cloud/ai";
 import * as settingsStore from "@k2b/cloud/services/settings/store";
-import { sql } from "bun";
 import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { agentHost, hostFetch } from "./agent-host";
 import { artifactDatabase } from "./database";

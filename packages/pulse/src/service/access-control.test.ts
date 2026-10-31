@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";

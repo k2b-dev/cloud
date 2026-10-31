@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export async function migrateActivity(): Promise<void> {
   const [extension] = await sql<{ exists: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_trgm')`;

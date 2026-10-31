@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { decodeContainer, repairJsonbContainers } from "./repair-jsonb-containers";
 
 test("preserves malformed JSON and scalar values instead of guessing their meaning", () => {

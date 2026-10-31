@@ -1,4 +1,5 @@
-import { type SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 
 /**
  * Paired phones of the mobile app. Additive: without the `pwa` application no row is ever

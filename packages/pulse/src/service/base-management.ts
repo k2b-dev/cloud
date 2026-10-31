@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   type AccessEntry,
   ensureManagerRemains,
@@ -10,7 +11,6 @@ import {
   resolveDisplayNames,
 } from "@k2b/cloud/server";
 import { type ServiceAccountKind, get as settingsGet, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { BaseAppearanceSchema, BaseTimezoneSchema } from "../base-settings";
 import type { PulseBase } from "../contracts";
 import { withShortId } from "../lib/short-id";

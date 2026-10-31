@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import {
   captureTableAction,
   captureTableFocus,
@@ -9,7 +10,6 @@ import {
   SHARED_TEXT_NAME,
 } from "@k2b/cloud/shared-text";
 import { findTables, gridLine, setAlign } from "@k2b/ui/text-editor/model";
-import { sql } from "bun";
 import * as Y from "yjs";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";

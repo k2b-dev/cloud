@@ -23,12 +23,9 @@
  * from it with `testSyncNamespace()`, are deleted once the process's tests are
  * done (`test-sync.ts`).
  *
- * Bun's default `redis` handle resolves `REDIS_URL` when the process starts,
- * before any preload runs. `bun run test` therefore exports the aliases into
- * the child environment first; under a direct `bun test`, the default handle
- * is only redirected when `REDIS_URL` was exported before Bun started. The
- * default `sql` handle binds on its first query and the NATS registry reads
- * lazily, so those follow the preload in both cases.
+ * The preload selects runtime URLs before initializing the platform's native
+ * clients. After selecting another private database, initializeTestPlatform()
+ * closes the old clients and binds both handles to the new snapshot.
  *
  *   CLOUD_TEST_DATABASE_URL   postgres://user:pass@host:5432/<name>_test
  *   CLOUD_TEST_NATS_SERVERS   nats://host:4222[,nats://host:4223]
@@ -43,7 +40,8 @@
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
 import { afterAll, afterEach, beforeAll, describe, test } from "bun:test";
-import { S3Client, SQL, sql } from "bun";
+import { S3Client, SQL } from "bun";
+import { sql } from "../../packages/cloud/src/runtime/clients";
 import {
   applyTestRuntimeEnv,
   dotenvLeak,
@@ -254,13 +252,8 @@ export const testFor = (...needs: InfraKind[]): typeof test => (needs.every((kin
 
 export const databaseSuite = (): typeof describe => suiteFor("database");
 
-/**
- * Points Bun's default `sql` handle at a private, empty database for suites
- * that build their own schema. The default handle binds `DATABASE_URL` on its
- * first query, so such a file must run in its own process (`bun test --isolate`)
- * before any other query; otherwise this throws instead of touching the shared
- * test database. Call `drop()` in `afterAll`.
- */
+/** Bind platform clients to a private, empty database for suites that build
+ * their own schema. Select it before importing domain code; call drop() in afterAll. */
 export const useFreshDatabase = async (prefix: string): Promise<{ url: string; name: string; drop: () => Promise<void> }> => {
   return bindDefaultDatabase(prefix, await createDisposableDatabase(prefix));
 };
@@ -289,18 +282,10 @@ const bindDefaultDatabase = async (prefix: string, database: Awaited<ReturnType<
   process.env.DATABASE_URL = database.url;
   ownTestDatabase(database.name);
   await initializeTestPlatform();
-  const { sql: platformSql } = await import("../../packages/cloud/src/runtime/clients");
-  for (const [label, client] of [
-    ["platform", platformSql],
-    ["Bun default", sql],
-  ] as const) {
-    const [row] = await client<{ name: string }[]>`SELECT current_database() AS name`;
-    if (row?.name !== database.name) {
-      await database.drop();
-      throw new Error(
-        `${prefix}: the ${label} sql handle is already bound to "${row?.name}"; run this file in its own process (bun test --isolate)`,
-      );
-    }
+  const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
+  if (row?.name !== database.name) {
+    await database.drop();
+    throw new Error(`${prefix}: the platform sql handle is already bound to "${row?.name}"; run this file in its own process`);
   }
   return database;
 };

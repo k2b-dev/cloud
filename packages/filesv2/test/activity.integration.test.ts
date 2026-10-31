@@ -1,10 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
 import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type WriteOptions } from "@k2b/filegate";
-import { sql } from "bun";
 import { endLingeringTestWork, suiteFor } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import { filesCapabilities } from "../src/capabilities";

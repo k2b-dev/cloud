@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isDeepStrictEqual } from "node:util";
+import { sql } from "@k2b/cloud";
 import type { AccessSubject, RequestActor } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { type DirectoryOptions, FilegateError, type TransferOptions, type WriteOptions } from "@k2b/filegate";
-import { deepEquals, sql, type TransactionSQL } from "bun";
+import { deepEquals, type TransactionSQL } from "bun";
 import { filegateErrorCode } from "../api/filegate-error";
 import { finishActivity, insertActivity } from "../data/activity";
 import { trash } from "../data/trash";

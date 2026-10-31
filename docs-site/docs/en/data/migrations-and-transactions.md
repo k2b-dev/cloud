@@ -42,7 +42,7 @@ side by side, so schema changes must stay backward compatible.
 Keep DDL in `src/migrate.ts`:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export const migrate = async (): Promise<void> => {
   await sql`
@@ -148,7 +148,7 @@ unique constraints or upserts. Record progress after the batch commits.
 Use `sql.begin()` when several database writes form one operation:
 
 ```ts
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { err, fail, ok } from "@k2b/cloud/server";
 
 const result = await sql.begin(async (tx) => {

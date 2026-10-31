@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export const AI_LIVE_FUNCTION_OUTDATED_SIGNAL =
   "AI live updates are not published: an older Core restored ai.enqueue_live_for_user. Stop every older Core replica, then restart one current Core replica";

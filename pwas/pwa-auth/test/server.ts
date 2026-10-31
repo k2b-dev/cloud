@@ -1,5 +1,6 @@
 /** Isolated real-service browser fixture. Never starts against development data. */
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { initializePlatform } from "@k2b/cloud/start";
 import { Hono } from "../../../packages/cloud/node_modules/hono";
 import { createAppApprovalRoutes } from "../../../packages/cloud/src/api/app-approval";
 import { appApproval } from "../../../packages/cloud/src/browser/app-approval";
@@ -17,6 +18,7 @@ if (
   cache.port !== "56399"
 )
   throw new Error("Dedicated test database/cache required");
+await initializePlatform({ appId: "cloud-login", source: "env" });
 const pwa = "http://localhost:4178";
 for (const port of [43220, 43221]) {
   const issuer = `http://127.0.0.1:${port}`;

@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -15,7 +16,6 @@ import {
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { z } from "zod";
 import { annotationActions, annotationQueries } from "./annotation-capabilities";
 import { notebooksEvents } from "./app-events";

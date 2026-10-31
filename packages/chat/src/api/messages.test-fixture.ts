@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect } from "bun:test";
+import { redis, sql } from "@k2b/cloud";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { accounts, serviceAccountCredentials, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";

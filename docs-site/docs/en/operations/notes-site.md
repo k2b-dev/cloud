@@ -13,6 +13,9 @@ updated: 2026-10-30
 The Notes website is a standalone service under `pwas/notes`. It uses a
 dedicated Postgres database. It does not connect to a Cloud installation.
 
+Server startup initializes the platform clients from the environment. Supply
+`DATABASE_URL` and `REDIS_URL`, even when this server uses only Postgres.
+
 Set `DATABASE_URL` to that database and start the server:
 
 ```bash

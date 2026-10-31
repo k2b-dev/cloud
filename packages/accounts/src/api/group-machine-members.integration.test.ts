@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import {
   type AuthContext,
   auth,
@@ -10,7 +11,6 @@ import {
 } from "@k2b/cloud/server";
 import { accountsAppService, serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";

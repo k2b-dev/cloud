@@ -1,6 +1,5 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { latestTopicCursor, logger } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { NotebookWorkspaceEvent, NotebookWorkspaceInvalidationScope } from "../lib/workspace-events";
 
 const log = logger("notebooks:workspace-events");

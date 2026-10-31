@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { accounts, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { prepareIdentitySigner } from "@k2b/cloud/services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "@k2b/cloud/services/identity/runtime-config";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { SignJWT } from "jose";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";

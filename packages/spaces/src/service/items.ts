@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { type AccessSubject, type AccessUser, listUsersWithAccess, recursiveServiceAccountGroupIdsSubquery } from "@k2b/cloud/server";
 import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   AssignedToFilter,
   CalendarItem,
@@ -791,7 +791,7 @@ const getLastActivityByItemIds = async (itemIds: string[]): Promise<Map<string, 
 };
 
 /** Open tasks with an active work claim (`activity: "claimed"`). */
-const claimedMatch = sql`EXISTS (SELECT 1 FROM spaces.task_work tw WHERE tw.item_id = i.id AND tw.claim IS NOT NULL)`;
+const claimedMatch = () => sql`EXISTS (SELECT 1 FROM spaces.task_work tw WHERE tw.item_id = i.id AND tw.claim IS NOT NULL)`;
 
 const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemClaim>> => {
   if (itemIds.length === 0) return new Map();
@@ -1182,7 +1182,7 @@ export const listFiltered = async (params: {
         i.updated_at
       ) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`;
   } else if (activityFilter === "claimed") {
-    conditions = sql`${conditions} AND ${claimedMatch}`;
+    conditions = sql`${conditions} AND ${claimedMatch()}`;
   }
 
   // Priority filter - use IN with parameterized values
@@ -1542,7 +1542,7 @@ export const searchAcross = async (params: {
         (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id AND activity.action NOT LIKE 'comment.%'),
         i.updated_at) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`
       : params.activity === "claimed"
-        ? claimedMatch
+        ? claimedMatch()
         : sql`true`;
   const window = deadlineWindow(params.dateConfig);
   const deadlineMatch =
