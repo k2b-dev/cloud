@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { connections, sql } from "@k2b/cloud";
 import { createMigratedDatabase, initializeTestPlatform, testFor } from "../../../../scripts/fixtures/test-infra";
 import { testUuid } from "../integration-test-utils";
 import { createDocumentIssuanceService, documentIssuanceService } from "./document-issuance";
@@ -11,6 +11,8 @@ const documents = createDocumentIssuanceService();
 
 testFor("database")("Grids readers use the current platform pool after a database reset", async () => {
   const previousUrl = process.env.DATABASE_URL;
+  // Later files in the same process keep the preload's app identity.
+  const previousAppId = connections().appId;
   const previousPool = sql;
   const database = await createMigratedDatabase("grids_clients");
   try {
@@ -28,7 +30,7 @@ testFor("database")("Grids readers use the current platform pool after a databas
     if (previousUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = previousUrl;
     try {
-      await initializeTestPlatform("grids");
+      await initializeTestPlatform(previousAppId);
     } finally {
       await database.drop();
     }
