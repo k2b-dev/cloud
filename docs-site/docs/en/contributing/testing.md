@@ -211,7 +211,13 @@ answer, waits until the status names the pending line, and only then releases
 the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
 
 The `test-waits` check rejects new awaited fixed waits of at least 1,000 ms
-with a numeric literal in `*.test.ts` and `*.test.tsx` files. A line comment
+with a numeric literal in test files and browser suites (`*.test.ts(x)`,
+`*.browser-suite.ts(x)`). It also rejects a polling loop whose attempt count
+decides the outcome, such as
+`for (let i = 0; i < 100 && writes.length < 2; i++) await sleep(20)`. That
+loop is a hidden 2 s budget, and a loaded runner outlasts it
+([#2204](https://github.com/k2b-dev/cloud/issues/2204)). Wake the wait from
+the condition's own signal instead, and let the test's timeout bound it. A line comment
 `// fixed wait: <reason>` on the same line or directly above allows a wait
 whose duration is the subject of the test. The reason must be non-empty.
 Known findings live in `scripts/checks/test-waits.baseline`. Its counts can

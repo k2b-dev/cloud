@@ -143,6 +143,8 @@ let css = "";
 let server: ReturnType<typeof Bun.serve>;
 const pages = new Map<string, string>();
 const writes: Array<{ method: string; path: string; body: unknown }> = [];
+/** Wakes each wait for a write: the server records one, so a test waits for the save itself, not a fixed time (#2204). */
+const writeWaiters = new Set<() => void>();
 /** What the server holds: saved properties come back with the next detail snapshot, as from the real route. */
 let stored: SpaceItem = task;
 let browser: Browser;
@@ -199,6 +201,7 @@ beforeAll(async () => {
         if (request.method === "GET") return Response.json([]);
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
         writes.push({ method: request.method, path: url.pathname, body });
+        for (const wake of writeWaiters) wake();
         const itemPath = `/api/spaces/${spaceId}/items/Item01`;
         if (url.pathname === `${itemPath}/claim` && request.method === "POST") {
           stored = {
@@ -422,8 +425,16 @@ const surface = (page: Page, term: string) =>
     return control ? getComputedStyle(control, "::before").backgroundColor : "none";
   });
 const transparent = "rgba(0, 0, 0, 0)";
+/** Waits until the server has recorded `count` writes, bounded by the test's own timeout, then checks there are no more. */
 const writesReach = async (count: number) => {
-  for (let attempt = 0; attempt < 100 && writes.length < count; attempt += 1) await Bun.sleep(20);
+  while (writes.length < count)
+    await new Promise<void>((wake) => {
+      const once = () => {
+        writeWaiters.delete(once);
+        wake();
+      };
+      writeWaiters.add(once);
+    });
   expect(writes.length).toBe(count);
 };
 const shot = (page: Page, name: string) =>

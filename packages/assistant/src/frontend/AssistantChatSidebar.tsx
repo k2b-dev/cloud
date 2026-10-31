@@ -923,7 +923,7 @@ export function AssistantChatSidebarContent(props: {
                   <For each={working().groups}>
                     {(timeGroup) => (
                       <div class="assistant-sidebar-timegroup">
-                        <p class="assistant-sidebar-timegroup__label">{groupLabel(timeGroup)}</p>
+                        <p class="assistant-sidebar-timegroup__label k2b-list-group-heading">{groupLabel(timeGroup)}</p>
                         <For each={timeGroup.items}>
                           {(working) => (
                             <WorkingGroupRow

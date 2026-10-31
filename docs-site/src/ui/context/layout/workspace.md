@@ -48,6 +48,7 @@ views and filters in the head, the detail beside the content.
 | R4 One surface | Head, filters, and content lie on the same white surface: no gray column trays, no `Paper` box, no line under the head. Space and a clear group heading (dot, name, count) separate groups. |
 | R5 Color from content | Status dots, tag colors, places, and stock carry color. The accent carries only the selection; controls stay platform blue, and only the one main action is filled. See [Colors and selection](/en/ui/surfaces/color). |
 | R6 Space, not lines | Rows and tables have no dividers and no grid; rows are 40–44 px high with a hover fill. |
+| R7 Quiet group headings | A heading that groups list rows by date or kind ("Today", "Yesterday", "This week") uses the `k2b-list-group-heading` class: muted ink, 0.75rem, semibold. It is one step quieter than the rows, the same in every list. |
 
 Three exceptions:
 

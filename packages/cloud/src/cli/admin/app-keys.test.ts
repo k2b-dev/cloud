@@ -235,3 +235,46 @@ test("create accepts explicit issuance or no grants, defaults to none, and rejec
   await expect(invoke({ grant: "unknown" })).rejects.toThrow();
   expect(requests.length).toBe(before);
 });
+
+test("key list renders a refusal once in text and preserves it in structured output", async () => {
+  const module = defineCliCommands({ name: "admin", summary: "App keys", commands: appKeyCommands });
+  const rejection = { at: "2030-01-02T03:04:05.000Z", reason: "revoked", keyId: KEY_ID };
+  for (const output of ["text", "json"] as const) {
+    for (const lastRejectedStart of [null, rejection]) {
+      const lines: unknown[] = [];
+      const json: unknown[] = [];
+      const tables: unknown[] = [];
+      const result = { installationId: INSTALLATION_ID, items: [], lastRejectedStart };
+      const ctx: CloudCliContext = {
+        args: ["apps", "keys", "list", "inventory"],
+        flags: {},
+        options: { profile: "test", server: "https://cloud.example.test", token: "fixture", output },
+        getDefault: async () => undefined,
+        setDefault: async () => {},
+        createApiClient: () => {
+          throw new Error("Unused");
+        },
+        fetch: async () => Response.json(result),
+        readJson: async (response) => response.json(),
+        print: (line) => {
+          lines.push(line);
+        },
+        write: async () => {},
+        error: () => {},
+        json: (value) => {
+          json.push(value);
+        },
+        jsonLine: () => {},
+        table: (rows) => {
+          tables.push(rows);
+        },
+      };
+      await module.run(ctx);
+      expect(json).toEqual(output === "json" ? [result] : []);
+      expect(tables).toEqual(output === "text" ? [[]] : []);
+      expect(lines).toEqual(
+        output === "text" && lastRejectedStart ? [`Last rejected start: ${rejection.at} · revoked · key ${KEY_ID}`] : [],
+      );
+    }
+  }
+});
