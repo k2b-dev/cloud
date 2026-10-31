@@ -6,7 +6,7 @@ import { appStatusCommands } from "./app-status";
 const module = defineCliCommands({ name: "admin", summary: "Application migration", commands: appStatusCommands });
 const invoke = async (args: string[], flags: CloudCliFlags, result: unknown, outputMode: "text" | "json" = "json") => {
   const output: unknown[] = [],
-    requests: { path: string; body: unknown }[] = [];
+    requests: { path: string; body: unknown; method: string | undefined }[] = [];
   const ctx: CloudCliContext = {
     args: ["apps", ...args],
     flags,
@@ -17,7 +17,7 @@ const invoke = async (args: string[], flags: CloudCliFlags, result: unknown, out
       throw new Error("Unused");
     },
     fetch: async (path, init) => {
-      requests.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
+      requests.push({ path, method: init?.method, body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
       return Response.json(result);
     },
     readJson: async (response) => response.json(),
@@ -42,7 +42,7 @@ test("status preserves machine JSON, explicit inventory and exceptions, and neve
     expect(await invoke(["status"], { strict: true, expect: "mail,inventory", "allow-env": "inventory" }, result)).toEqual({
       code: needsAttention ? 1 : 0,
       output: [result],
-      requests: [{ path: "/api/admin/apps/status?expect=mail%2Cinventory&allowEnv=inventory", body: null }],
+      requests: [{ path: "/api/admin/apps/status?expect=mail%2Cinventory&allowEnv=inventory", body: {}, method: "POST" }],
     });
     expect((await invoke(["status"], {}, result)).code).toBe(needsAttention ? 1 : 0);
   }
@@ -81,5 +81,7 @@ test("status includes rejected starts and attention reasons in text and machine 
 });
 test("observation begins through the administrator write endpoint", async () => {
   const result = { startedAt: "2030-01-02T00:00:00.000Z" };
-  expect((await invoke(["observation", "begin"], {}, result)).requests).toEqual([{ path: "/api/admin/apps/observation", body: {} }]);
+  expect((await invoke(["observation", "begin"], {}, result)).requests).toEqual([
+    { path: "/api/admin/apps/observation", body: {}, method: "POST" },
+  ]);
 });

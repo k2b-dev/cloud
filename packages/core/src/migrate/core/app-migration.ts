@@ -7,8 +7,9 @@ export const migrateAppMigration = async (): Promise<void> => {
     singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton), started_at TIMESTAMPTZ NOT NULL
   )`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.app_migration_legacy (
-    path TEXT PRIMARY KEY CHECK (path IN ('bearer', 'broker-secret')), last_used_at TIMESTAMPTZ NOT NULL
+    path TEXT PRIMARY KEY CHECK (path IN ('bearer', 'broker-secret')), last_used_at TIMESTAMPTZ
   )`.simple();
+    await db`INSERT INTO auth.app_migration_legacy (path) VALUES ('bearer'), ('broker-secret') ON CONFLICT (path) DO NOTHING`;
     // At most two receipts per enrolled key, replaced on each check; no request history.
     await db`CREATE TABLE IF NOT EXISTS auth.app_migration_probes (
     key_id UUID NOT NULL REFERENCES auth.service_account_credentials(id) ON DELETE CASCADE,

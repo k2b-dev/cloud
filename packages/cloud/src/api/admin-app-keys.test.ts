@@ -144,13 +144,13 @@ test("migration status validates the explicit inventory, keeps an admin actor, a
     input.push(params);
     return ok(result);
   });
-  const response = await routes.request("/status?expect=mail,inventory&allowEnv=inventory");
+  const response = await routes.request("/status?expect=mail,inventory&allowEnv=inventory", { method: "POST" });
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toContain("no-store");
   expect(await response.json()).toEqual(result);
   expect(input).toEqual([{ actor, expect: ["mail", "inventory"], allowEnv: ["inventory"], signal: expect.any(AbortSignal) }]);
   for (const query of ["expect=core", "allowEnv=../bad", "expect=gateway"])
-    expect((await routes.request(`/status?${query}`)).status).toBe(400);
+    expect((await routes.request(`/status?${query}`, { method: "POST" })).status).toBe(400);
   expect(input.length).toBe(1);
 });
 
@@ -178,9 +178,10 @@ test("the admin key-list OpenAPI response declares the nullable rejection and it
 
 test("starting an observation requires administrator write scope and validates its duration", async () => {
   let begins = 0;
-  const begin = async () => {
+  const begin: Parameters<typeof createAdminAppKeyRoutes>[3] = async (input) => {
+    expect(input.actor).toEqual(actor);
     begins++;
-    return { startedAt: "2030-01-02T00:00:00.000Z" };
+    return ok({ startedAt: "2030-01-02T00:00:00.000Z" });
   };
   const routes = createAdminAppKeyRoutes(authenticate, service, undefined, begin);
   expect((await routes.request("/observation", { method: "POST" })).status).toBe(200);
@@ -197,5 +198,11 @@ test("starting an observation requires administrator write scope and validates i
   );
   expect((await readOnly.request("/observation", { method: "POST" })).status).toBe(403);
   expect(begins).toBe(1);
-  for (const duration of ["0", "-1", "NaN", "1.5"]) expect((await routes.request(`/status?windowSeconds=${duration}`)).status).toBe(400);
+  expect((await readOnly.request("/status", { method: "POST" })).status).toBe(403);
+  expect((await routes.request("/status")).status).toBe(404);
+  const spec = await generateSpecs(routes);
+  expect(spec.paths?.["/status"]?.post).toBeDefined();
+  expect(spec.paths?.["/status"]?.get).toBeUndefined();
+  for (const duration of ["0", "-1", "NaN", "1.5"])
+    expect((await routes.request(`/status?windowSeconds=${duration}`, { method: "POST" })).status).toBe(400);
 });

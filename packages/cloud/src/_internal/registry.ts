@@ -67,6 +67,8 @@ export type AppInstanceRecord = {
   entries: Record<string, string>;
   /** Missing on older instances means unknown, never env or successful bootstrap. */
   bootstrap?: PlatformBootstrapMetadata;
+  /** Core can durably observe both accepted legacy identity paths. */
+  legacyEvidence?: 1;
 };
 
 // The id and owner are a cross-version contract: all replicas must use the same lock.

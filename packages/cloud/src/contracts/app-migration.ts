@@ -37,7 +37,12 @@ export const AppMigrationObservationSchema = z.object({
   windowSeconds: z.number().int().positive().nullable(),
   complete: z.boolean(),
 });
-export const AppMigrationProbeSchema = z.object({ keyId: z.uuid(), broker: z.boolean(), oauth: z.boolean().nullable() });
+export const AppMigrationProbeSchema = z.object({
+  keyId: z.uuid(),
+  broker: z.boolean(),
+  oauth: z.boolean().nullable(),
+  reason: z.enum(["probe_timeout", "probe_failed"]).optional(),
+});
 export const AppMigrationStatusSchema = z.object({
   needsAttention: z.boolean(),
   observation: AppMigrationObservationSchema,

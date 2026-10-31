@@ -10,11 +10,13 @@ import { migrateAppMigration } from "../../../core/src/migrate/core/app-migratio
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { appInstancePrefix, appInstanceRegistry, appRegistry } from "../../src/_internal/registry";
+import { createAdminAppKeyRoutes } from "../../src/api/admin-app-keys";
 import { APP_MIGRATION_RECEIPT_PATH, createAppMigrationProbeRoutes } from "../../src/api/app-migration-probe";
 import { APP_MIGRATION_TRIGGER_PATH, createAppMigrationTriggerRoutes } from "../../src/api/app-migration-trigger";
 import { authenticateSignedAppRequest } from "../../src/api/authenticate-app-request";
 import { type AppKey, formatAppKey } from "../../src/app-key";
 import { env } from "../../src/config/env";
+import { AppMigrationStatusSchema } from "../../src/contracts/app-migration";
 import { appKeys } from "../../src/services/app-keys";
 import { readAppMigrationStatus } from "../../src/services/app-migration";
 import { beginAppMigrationObservation, readAppMigrationObservation, recordLegacyAppUse } from "../../src/services/app-migration-evidence";
@@ -36,7 +38,7 @@ suiteFor(
   let restoreSigning: (() => void) | undefined;
   let restoreEnv: (() => void) | undefined;
   beforeAll(async () => {
-    database = await useFreshDatabase("cloud_app_key_migration_r2");
+    database = await useFreshDatabase("cloud_app_key_migration_r3");
     await migrateAuth();
     await Promise.all([migrateAppMigration(), migrateAppMigration()]);
     await migrateAudit();
@@ -92,6 +94,10 @@ suiteFor(
       },
     });
     await appInstanceRegistry().upsert({
+      key: `${appInstancePrefix("core")}new`,
+      value: { appId: "core", instanceId: "new", hostname: "test", startedAt: NOW, entries: {}, legacyEvidence: 1 },
+    });
+    await appInstanceRegistry().upsert({
       key: `${appInstancePrefix("acme")}one`,
       value: {
         appId: "acme",
@@ -133,7 +139,11 @@ suiteFor(
     if (!result.ok) return;
     expect(result.data.apps[0]?.probes).toEqual([{ keyId: key.keyId, broker: true, oauth: true }]);
     expect(result.data.needsAttention).toBe(true);
-    await beginAppMigrationObservation(replica);
+    const begun = await beginAppMigrationObservation({ actor }, replica);
+    expect(begun.ok).toBe(true);
+    const [audit] = await replica<{ action: string; actor_user_id: string }[]>`SELECT action, actor_user_id FROM audit.events
+      WHERE action = 'app_migration.observation_begin' ORDER BY id DESC LIMIT 1`;
+    expect(audit).toMatchObject({ action: "app_migration.observation_begin", actor_user_id: actor.id });
     expect((await readAppMigrationObservation(86400)).complete).toBe(false);
     await replica`UPDATE auth.app_migration_observation SET started_at = clock_timestamp() - interval '2 days'`;
     const complete = await status();
@@ -173,4 +183,140 @@ suiteFor(
       expect(result.data.apps[0]?.attentionReasons).toContain("last_rejected_start");
     }
   });
+  test("an older live Core refuses observation and keeps status in attention", async () => {
+    const oldKey = `${appInstancePrefix("core")}old`;
+    await appInstanceRegistry().upsert({
+      key: oldKey,
+      value: { appId: "core", instanceId: "old", hostname: "old", startedAt: NOW, entries: {} },
+    });
+    try {
+      const result = await beginAppMigrationObservation({ actor }, replica);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.status).toBe(409);
+      const checked = await status();
+      expect(checked.ok && checked.data.registryIssues.some((issue) => issue.reason === "core_legacy_evidence_missing")).toBe(true);
+    } finally {
+      await appInstanceRegistry().delete({ key: oldKey });
+    }
+  });
+  test("legacy evidence coalesces concurrent calls, skips locked rows and retains conservative coverage", async () => {
+    const writer = new SQL(database.url);
+    const contender = new SQL(database.url);
+    let unlock!: () => void;
+    let locked!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      unlock = resolve;
+    });
+    try {
+      await replica`UPDATE auth.app_migration_legacy SET last_used_at = NULL WHERE path = 'bearer'`;
+      const holding = replica.begin(async (tx) => {
+        await tx`SELECT path FROM auth.app_migration_legacy WHERE path = 'bearer' FOR UPDATE`;
+        locked();
+        await released;
+      });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([ready, holding]);
+        const results = await Promise.race([
+          Promise.allSettled(Array.from({ length: 20 }, () => recordLegacyAppUse("bearer", writer))),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("Evidence queued behind row lock")), 1_000);
+          }),
+        ]);
+        expect(results.every((result) => result.status === "rejected")).toBe(true);
+      } finally {
+        clearTimeout(timer);
+        unlock();
+        await holding;
+      }
+      await Promise.all(Array.from({ length: 20 }, () => recordLegacyAppUse("bearer", writer)));
+      const [before] = await replica<{ at: Date }[]>`SELECT last_used_at AS at FROM auth.app_migration_legacy WHERE path = 'bearer'`;
+      expect((await readAppMigrationObservation(1)).complete).toBe(false);
+      await writer.close();
+      // Requests within committed coverage do not depend on another evidence write succeeding.
+      await recordLegacyAppUse("bearer", writer);
+      await replica.begin(async (tx) => {
+        await tx`SELECT path FROM auth.app_migration_legacy WHERE path = 'bearer' FOR UPDATE`;
+        await recordLegacyAppUse("bearer", contender);
+      });
+      const [after] = await replica<{ at: Date }[]>`SELECT last_used_at AS at FROM auth.app_migration_legacy WHERE path = 'bearer'`;
+      expect(after?.at).toEqual(before?.at);
+    } finally {
+      await writer.close();
+      await contender.close();
+    }
+  });
+  test("a hanging app cannot starve a healthy probe or prevent a JSON status response", async () => {
+    const hanging = await appKeys.register({ actor, appId: "hang", publicKey: APP_KEY_FIXTURES[0].publicKey });
+    if (!hanging.ok) throw new Error(hanging.error.message);
+    const instanceKey = `${appInstancePrefix("hang")}one`;
+    const snapshot = await appInstanceRegistry().snapshot({ prefix: appInstancePrefix("acme") });
+    const metadata = snapshot.entries[0]?.value.bootstrap;
+    if (!metadata) throw new Error("Missing fixture metadata");
+    const hangingServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) =>
+        new Promise<Response>((resolve) => {
+          const aborted = () => resolve(new Response(null, { status: 499 }));
+          if (request.signal.aborted) aborted();
+          else request.signal.addEventListener("abort", aborted, { once: true });
+        }),
+    });
+    try {
+      await appRegistry().upsert({
+        key: "apps/hang",
+        value: {
+          id: "hang",
+          name: "Hang",
+          description: "Hanging fixture",
+          icon: "ti ti-app",
+          baseUrl: hangingServer.url.origin,
+          routes: ["/hang"],
+        },
+      });
+      await appInstanceRegistry().upsert({
+        key: instanceKey,
+        value: {
+          appId: "hang",
+          instanceId: "one",
+          hostname: "test",
+          startedAt: NOW,
+          entries: {},
+          bootstrap: { ...metadata, keyId: hanging.data.keyId },
+        },
+      });
+      const routes = createAdminAppKeyRoutes(async (c, next) => {
+        c.set("user", {
+          ...actor,
+          profile: "user",
+          givenname: "",
+          sn: "",
+          displayName: "",
+          mail: null,
+          avatarHash: null,
+          memberofGroup: [],
+          memberofGroupIds: [],
+          manages: [],
+          managesGroupIds: [],
+          accountExpires: null,
+          lastLoginLocal: null,
+          ipa: null,
+        });
+        await next();
+      });
+      const response = await routes.request("/status?windowSeconds=86400", { method: "POST" });
+      expect(response.status).toBe(200);
+      const result = AppMigrationStatusSchema.parse(await response.json());
+      expect(result.apps.find((app) => app.appId === "hang")?.attentionReasons).toContain(`probe_timeout:${hanging.data.keyId}`);
+      expect(result.apps.find((app) => app.appId === "acme")?.probes[0]?.broker).toBe(true);
+    } finally {
+      await hangingServer.stop(true);
+      await appRegistry().delete({ key: "apps/hang" });
+      await appInstanceRegistry().delete({ key: instanceKey });
+    }
+  }, 5_000);
 });
