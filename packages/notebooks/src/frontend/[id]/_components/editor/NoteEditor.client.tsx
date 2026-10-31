@@ -64,7 +64,6 @@ import {
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
-  PRESENCE_EVENT,
   PRESENCE_LOCATIONS_EVENT,
   RECONNECT_EVENT,
   RICH_MODE_CHANGED_EVENT,
@@ -796,12 +795,6 @@ function EditorInstance(
           syncState.ready();
           syncEnded.ready();
           structureChanged();
-        },
-        // Forwards every presence update to the OnlineSection island via a
-        // window event — the editor itself doesn't need to track participants
-        // anymore now that the toolbar no longer renders them.
-        onPresenceChange: (next) => {
-          window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: next }));
         },
         onFatal: (error) => {
           syncState.end();
