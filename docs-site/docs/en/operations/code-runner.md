@@ -42,24 +42,29 @@ and write the key through that CLI (use the development profile explicitly):
 bun run dev:cld -- --profile dev admin apps keys create runner --out-dir ./.local/app-keys
 ```
 
-The supervisor runs as container UID 0. After enrollment, set the key file to
-mode `0400`, owned by that UID; the runner refuses other ownership, modes or a
-symlink. The enrollment command initially creates a `0600` file:
-
-```sh
-sudo chown 0 ./.local/app-keys/runner.key
-sudo chmod 0400 ./.local/app-keys/runner.key
-```
-
 For production, use your explicit administrator profile with
-`cld --profile operator admin apps keys create runner --out-dir ./secrets`,
-then `sudo chown 0 ./secrets/runner.key` and
-`sudo chmod 0400 ./secrets/runner.key`. With Docker user-namespace remapping,
-use the host UID that maps to container UID 0 for the mounted file.
+`cld --profile operator admin apps keys create runner --out-dir ./secrets`.
+Keep the file produced by enrollment; no host `chown` or `chmod` is needed.
 
 The development template reads `./.local/app-keys/runner.key`; production reads
 `./secrets/runner.key`. Neither file belongs in Git. Both templates mount it at
-`/run/secrets/runner-app-key`. Only Core and runner share the internal
+`/run/runner-key/source`, inside an image-owned directory with UID 0 and mode
+`0700`. Use this same target for a custom read-only bind mount. Do not mount the
+source into a directory that workerd can traverse: the entrypoint refuses it.
+
+Local Compose secrets retain the source file's host UID and permissions. At
+startup, the image entrypoint reads that mount with a temporary `DAC_OVERRIDE`
+capability and creates a supervisor-owned `0400` copy in a private `0700`
+directory on `/tmp`. The original mount remains hidden behind its root-only
+directory, even if the secret provider presents it as `0444`. The entrypoint
+passes the copy through `CLOUD_APP_KEY_FILE`, removes the temporary capability
+from its permitted and effective sets, and enables `no-new-privileges` before
+executing the supervisor. The supervisor's ownership and exact `0400` check is
+unchanged. Temporary copies disappear with the container's tmpfs. For Docker
+user-namespace remapping, use a mount readable within the container's mapped
+user namespace; the image does not change the host file's metadata.
+
+Only Core and runner share the internal
 `runner-core` network. Runner has no published port, writable root filesystem,
 infrastructure environment, or persistent volume. Temporary workerd host
 configuration lives in a bounded `/tmp` tmpfs; bundles never go to disk.
@@ -89,7 +94,9 @@ to Core.
 
 The supervisor runs as UID 0 with only `SETUID`, `SETGID`, `CHOWN` and `KILL`.
 These let it assign identities, protect socket paths and stop its children.
-It has no `DAC_OVERRIDE`. Each organization/trust-tier group
+Compose grants `DAC_OVERRIDE` solely for the entrypoint's initial secret read;
+it is absent from the supervisor and workerd. `no-new-privileges` prevents a
+later root exec from recovering it from the capability bounding set. Each organization/trust-tier group
 gets a distinct UID and GID, starting at 20000, and a separate session. Identities
 are never reused during the supervisor's lifetime. Each replica has its own
 container PID namespace, so scaling needs no UID allocation across replicas.
@@ -117,8 +124,10 @@ privileged namespace setup or `SYS_ADMIN`. They protect against a native escape
 inside workerd; they do not replace the host kernel and container boundary.
 The engine refuses startup if its mandatory launcher or UID transition fails.
 
-CI runs the native engine and shutdown tests inside the image with the same
-capabilities and restrictions as Compose. The isolation probe starts in the
+CI runs the native engine, entrypoint and shutdown tests inside the image with
+the same startup path and restrictions as Compose. Its image smoke mounts an
+operator-owned `0600` fixture at `/run/runner-key/source` and uses the default
+entrypoint, then verifies the private copy and supervisor capability set. The isolation probe starts in the
 actual workerd process's UID, session and filter, tries to read the key and
 `/proc/<pid>/{environ,mem,fd}`, signal/ptrace the supervisor and a sibling,
 connect to a sibling socket, replace IPC paths, open IP sockets and regain

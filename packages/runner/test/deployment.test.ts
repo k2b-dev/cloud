@@ -37,8 +37,13 @@ test("runner has an application image and both Compose templates isolate its net
       "CLOUD_APP_KEY_FILE",
       "CLOUD_CORE_INTERNAL_ORIGIN",
     ]);
+    expect(runner.environment).toEqual({
+      CLOUD_APP_KEY_FILE: "/run/runner-key/source",
+      CLOUD_CORE_INTERNAL_ORIGIN: "http://app-core:3000",
+    });
+    expect(runner.secrets).toEqual([{ source: "runner-app-key", target: "/run/runner-key/source" }]);
     expect(runner.cap_drop).toEqual(["ALL"]);
-    expect(runner.cap_add).toEqual(["SETUID", "SETGID", "KILL", "CHOWN"]);
+    expect(runner.cap_add).toEqual(["SETUID", "SETGID", "KILL", "CHOWN", "DAC_OVERRIDE"]);
     expect(runner.security_opt).toEqual(["no-new-privileges:true"]);
     expect(runner.pid).toBeUndefined();
     expect(runner.read_only).toBe(true);

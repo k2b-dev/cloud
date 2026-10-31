@@ -5,7 +5,8 @@ USER root
 WORKDIR /app
 RUN apt-get update && apt-get install --no-install-recommends -y gcc libc6-dev
 COPY packages/runner/native /app/native
-RUN cc -O2 -Wall -Wextra -Werror /app/native/isolate.c -o /app/runner-isolate
+RUN cc -O2 -Wall -Wextra -Werror /app/native/isolate.c -o /app/runner-isolate \
+    && cc -O2 -Wall -Wextra -Werror /app/native/entrypoint.c -o /app/runner-entrypoint
 COPY package.json bun.lock bunfig.toml ./
 COPY patches/ patches/
 COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
@@ -23,8 +24,11 @@ COPY --from=build /app/runner.js /app/runner.js
 COPY --from=build /app/workerd /app/workerd
 COPY packages/runner/src/assets/host.js /app/assets/host.js
 COPY --from=build /app/runner-isolate /app/runner-isolate
-# Only the supervisor retains the four capabilities declared in Compose.
+COPY --from=build /app/runner-entrypoint /app/runner-entrypoint
+RUN mkdir /run/runner-key && chmod 0700 /run/runner-key
+# Entrypoint removes its startup-only DAC_OVERRIDE before exec of any command.
 USER root
+ENTRYPOINT ["/app/runner-entrypoint"]
 CMD ["bun", "/app/runner.js"]
 
 # CI exercises every native engine test in the same privilege envelope as production.
@@ -32,7 +36,7 @@ FROM build AS test-build
 COPY packages/runner/test packages/runner/test
 COPY scripts/fixtures/app-key-fixtures.ts scripts/fixtures/app-key-fixtures.ts
 RUN cc -O2 -Wall -Wextra -Werror packages/runner/test/isolation-probe.c -o /app/isolation-probe
-RUN bun build packages/runner/test/engine.test.ts packages/runner/test/isolation.test.ts packages/runner/test/shutdown.test.ts --target=bun --outdir=/app/tests --external=bun:test
+RUN bun build packages/runner/test/engine.test.ts packages/runner/test/isolation.test.ts packages/runner/test/shutdown.test.ts packages/runner/test/entrypoint.test.ts --target=bun --outdir=/app/tests --external=bun:test
 
 FROM runtime AS test
 COPY --from=test-build /app/tests/ /app/

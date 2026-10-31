@@ -1,6 +1,6 @@
 /** CI-only container smoke: compiled runner, native workerd, read-only root and no network outside loopback. */
 
-import { unlink } from "node:fs/promises";
+import { stat, unlink } from "node:fs/promises";
 import type { RunnerConfig } from "@k2b/cloud/code/runner";
 
 if (Bun.argv.includes("--help")) {
@@ -22,14 +22,17 @@ const config: RunnerConfig = {
   processMemoryBytes: 128 * 1024 * 1024,
 };
 const source = 'export async function main(input, cloud) { await cloud.call("smoke", input); }';
-const keyFile = "/tmp/runner-smoke.key";
+// The image entrypoint has already staged the mounted Compose-style secret.
+const keyFile = process.env.CLOUD_APP_KEY_FILE;
+if (!keyFile || keyFile === "/run/runner-key/source") throw new Error("runner_image_entrypoint_not_used");
+const keyInfo = await stat(keyFile);
+if (keyInfo.uid !== 0 || (keyInfo.mode & 0o7777) !== 0o400) throw new Error("runner_image_key_not_private");
+const status = await Bun.file("/proc/self/status").text();
+for (const field of ["CapEff", "CapPrm"]) {
+  if (BigInt(`0x${new RegExp(`${field}:\\s+(\\w+)`).exec(status)?.[1]}`) !== 0xe1n)
+    throw new Error("runner_image_startup_capabilities_retained");
+}
 const clockFile = "/tmp/runner-smoke-clock.js";
-// RFC 8032 public test-vector seed, never an installation credential.
-await Bun.write(
-  keyFile,
-  "cloud-app-key-v1.11111111-1111-4111-8111-111111111111.runner.22222222-2222-4222-8222-222222222222.nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A",
-  { mode: 0o400 },
-);
 await Bun.write(clockFile, `Date.now = () => ${NOW};`);
 const done = Promise.withResolvers<void>();
 let claimed = false;
@@ -116,5 +119,5 @@ try {
   if (runner.exitCode === null) runner.kill("SIGKILL");
   await runner.exited;
   await core.stop(true);
-  await Promise.all([keyFile, clockFile].map((file) => unlink(file)));
+  await Promise.all([clockFile].map((file) => unlink(file)));
 }

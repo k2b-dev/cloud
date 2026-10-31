@@ -46,17 +46,17 @@ services:
     image: ghcr.io/k2b-dev/cloud-app-runner:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     restart: unless-stopped
     environment:
-      CLOUD_APP_KEY_FILE: /run/secrets/runner-app-key
+      CLOUD_APP_KEY_FILE: /run/runner-key/source
       CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
     secrets:
       - source: runner-app-key
-        target: runner-app-key
+        target: /run/runner-key/source
     networks: [runner-core]
     read_only: true
     tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
     cap_drop: [ALL]
-    # Supervisor only; runner-isolate drops all of these before exec.
-    cap_add: [SETUID, SETGID, KILL, CHOWN]
+    # DAC_OVERRIDE is entrypoint-only; the supervisor retains the other four.
+    cap_add: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
     security_opt: [no-new-privileges:true]
     mem_limit: 1g
     pids_limit: 256
