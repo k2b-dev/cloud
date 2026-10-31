@@ -1,6 +1,6 @@
 import { CoreBridge } from "./bridge";
-import { runnerEnvironment } from "./config";
 import { WorkerdEngine } from "./engine";
+import { runnerEnvironment } from "./env";
 import { Runner } from "./runner";
 
 const { key, origin } = await runnerEnvironment();

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
+import { chmod, chown, mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunnerConfig, RunnerJsonValue, RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
@@ -26,7 +26,7 @@ type Loaded = {
 };
 type Group = {
   process: Bun.Subprocess<"ignore", "pipe", "ignore">;
-  origin: string;
+  socket: string;
   directory: string;
   server: ReturnType<typeof Bun.serve>;
   watchdog: ReturnType<typeof setInterval>;
@@ -39,6 +39,9 @@ type Group = {
 };
 const CallSchema = schema.object({ runId: schema.string(), operation: schema.string().min(1), input: schema.json() }).strict();
 
+// Never reuse identities within this supervisor, including across engine instances.
+let nextUid = 20000;
+
 /** One workerd process per organization and trust tier, independent of the number of replicas. */
 export class WorkerdEngine implements RunnerEngine {
   #loaded = new Map<string, Loaded>();
@@ -50,42 +53,52 @@ export class WorkerdEngine implements RunnerEngine {
     this.#loaded.set(lease.runId, { lease, source, config, call, signal, calls: 0 });
   }
   async #spawn(config: RunnerConfig, retire: () => void): Promise<Group> {
+    if (process.platform !== "linux" || process.getuid?.() !== 0) throw new Error("runner_isolation_requires_root");
+    if (nextUid > 0x7fffffff) throw new Error("runner_isolation_uid_exhausted");
+    const uid = nextUid++;
+    const directory = await mkdtemp(join(tmpdir(), "cloud-workerd-"));
+    const socket = join(directory, "workerd.sock");
+    const bridgeSocket = join(directory, "bridge.sock");
     const capability = crypto.randomUUID();
     const members = new Set<string>();
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      idleTimeout: 0,
-      maxRequestBodySize: config.bridgeBytes,
-      fetch: async (request) => {
-        if (request.method !== "POST" || new URL(request.url).pathname !== "/call" || request.headers.get("Authorization") !== capability)
-          return new Response(null, { status: 403 });
-        try {
-          const bytes = await readBytes(new Response(request.body), config.bridgeBytes, request.signal);
-          const call = CallSchema.parse(JSON.parse(new TextDecoder().decode(bytes)));
-          const loaded = this.#loaded.get(call.runId);
-          if (!members.has(call.runId) || !loaded || loaded.signal.aborted) return new Response(null, { status: 409 });
-          // Reject overload immediately; there is no unbounded per-worker queue of HTTP calls.
-          if (loaded.calls >= config.bridgeConcurrency) return Response.json({ ok: false, error: { code: "runner_bridge_busy" } });
-          loaded.calls++;
-          let result: RunnerJsonValue;
-          try {
-            result = await loaded.call(call.operation, call.input);
-          } finally {
-            loaded.calls--;
-          }
-          const body = JSON.stringify({ ok: true, data: result });
-          if (Buffer.byteLength(body) > config.bridgeBytes) throw new Error("runner_call_too_large");
-          return new Response(body, { headers: { "Content-Type": "application/json" } });
-        } catch (error) {
-          return Response.json({ ok: false, error: { code: error instanceof RunnerCallError ? error.code : "runner_bridge_unavailable" } });
-        }
-      },
-    });
-    let process: Group["process"] | undefined;
-    let directory: string | undefined;
+    let server: Group["server"] | undefined;
+    let child: Group["process"] | undefined;
     try {
-      directory = await mkdtemp(join(tmpdir(), "cloud-workerd-"));
+      server = Bun.serve({
+        unix: bridgeSocket,
+        maxRequestBodySize: config.bridgeBytes,
+        fetch: async (request, server) => {
+          server.timeout(request, 0);
+          if (request.method !== "POST" || new URL(request.url).pathname !== "/call" || request.headers.get("Authorization") !== capability)
+            return new Response(null, { status: 403 });
+          try {
+            const bytes = await readBytes(new Response(request.body), config.bridgeBytes, request.signal);
+            const call = CallSchema.parse(JSON.parse(new TextDecoder().decode(bytes)));
+            const loaded = this.#loaded.get(call.runId);
+            if (!members.has(call.runId) || !loaded || loaded.signal.aborted) return new Response(null, { status: 409 });
+            // Reject overload immediately; there is no unbounded per-worker queue of HTTP calls.
+            if (loaded.calls >= config.bridgeConcurrency) return Response.json({ ok: false, error: { code: "runner_bridge_busy" } });
+            loaded.calls++;
+            let result: RunnerJsonValue;
+            try {
+              result = await loaded.call(call.operation, call.input);
+            } finally {
+              loaded.calls--;
+            }
+            const body = JSON.stringify({ ok: true, data: result });
+            if (Buffer.byteLength(body) > config.bridgeBytes) throw new Error("runner_call_too_large");
+            return new Response(body, { headers: { "Content-Type": "application/json" } });
+          } catch (error) {
+            return Response.json({
+              ok: false,
+              error: { code: error instanceof RunnerCallError ? error.code : "runner_bridge_unavailable" },
+            });
+          }
+        },
+      });
+      await chown(directory, uid, uid);
+      // The enclosing 0700 directory admits only this group's UID and the supervisor.
+      await chmod(bridgeSocket, 0o666);
       await Bun.write(join(directory, "host.js"), Bun.file(join(import.meta.dir, "assets/host.js")));
       await Bun.write(
         join(directory, "config.capnp"),
@@ -99,25 +112,36 @@ const config :Workerd.Config = (
         (name = "BRIDGE", service = "bridge"), (name = "CAPABILITY", text = ${JSON.stringify(capability)})],
       globalOutbound = (name = "denied")
     )),
-    (name = "bridge", external = (address = "127.0.0.1:${server.port}", http = ())),
+    (name = "bridge", external = (address = "unix:${bridgeSocket}", http = ())),
     (name = "denied", network = (allow = []))
   ],
-  sockets = [(name = "http", address = "127.0.0.1:0", http = (), service = "host")]
+  sockets = [(name = "http", address = "unix:${socket}", http = (), service = "host")]
 );`,
       );
       // The workerd child has no environment, including no app key or Core origin.
-      const executable = this.executable ?? (import.meta.path.endsWith(".ts") ? (await import("workerd")).default : "/app/workerd");
-      process = Bun.spawn([executable, "serve", "--experimental", "--control-fd=1", join(directory, "config.capnp")], {
-        env: {},
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "ignore",
-      });
-      const reader = process.stdout.getReader();
-      let port: number;
+      const executable =
+        this.executable ?? (import.meta.path.endsWith(".ts") ? (await import("workerd")).default : join(import.meta.dir, "workerd"));
+      child = Bun.spawn(
+        [
+          join(import.meta.dir, "runner-isolate"),
+          String(uid),
+          executable,
+          "serve",
+          "--experimental",
+          "--control-fd=1",
+          join(directory, "config.capnp"),
+        ],
+        {
+          env: {},
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "ignore",
+        },
+      );
+      const reader = child.stdout.getReader();
       let readyTimer: ReturnType<typeof setTimeout> | undefined;
       try {
-        port = await Promise.race([
+        await Promise.race([
           (async () => {
             let text = "";
             while (text.length < 4096) {
@@ -126,8 +150,11 @@ const config :Workerd.Config = (
               text += new TextDecoder().decode(chunk.value);
               const line = text.split("\n")[0];
               if (line && text.includes("\n")) {
-                const event = schema.object({ port: schema.number().int().positive() }).passthrough().parse(JSON.parse(line));
-                return event.port;
+                schema
+                  .object({ event: schema.literal("listen"), socket: schema.literal("http") })
+                  .passthrough()
+                  .parse(JSON.parse(line));
+                return;
               }
             }
             throw new Error("runner_workerd_start_failed");
@@ -141,10 +168,10 @@ const config :Workerd.Config = (
         void reader.cancel().catch(() => undefined);
       }
       const group: Group = {
-        process,
+        process: child,
         directory,
         server,
-        origin: `http://127.0.0.1:${port}`,
+        socket,
         lastPing: performance.now(),
         checking: false,
         runs: members,
@@ -155,12 +182,12 @@ const config :Workerd.Config = (
       };
       return group;
     } catch {
-      if (process) {
-        process.kill("SIGKILL");
-        await process.exited;
+      if (child) {
+        child.kill("SIGKILL");
+        await child.exited;
       }
-      await server.stop(true);
-      if (directory) await this.#remove(directory);
+      await server?.stop(true);
+      await this.#remove(directory);
       throw new Error("runner_workerd_start_failed");
     }
   }
@@ -185,7 +212,7 @@ const config :Workerd.Config = (
     if (group.checking || group.closing) return;
     group.checking = true;
     try {
-      const response = await fetch(`${group.origin}/ping`, { signal: AbortSignal.timeout(1000), timeout: false });
+      const response = await fetch("http://workerd/ping", { unix: group.socket, signal: AbortSignal.timeout(1000), timeout: false });
       await response.body?.cancel();
       if (response.ok) group.lastPing = performance.now();
     } catch {
@@ -195,7 +222,9 @@ const config :Workerd.Config = (
     }
   }
   async #remove(directory: string) {
-    await Promise.all(["host.js", "config.capnp"].map((file) => unlink(join(directory, file)).catch(() => undefined)));
+    await Promise.all(
+      ["host.js", "config.capnp", "workerd.sock", "bridge.sock"].map((file) => unlink(join(directory, file)).catch(() => undefined)),
+    );
     await rmdir(directory).catch(() => undefined);
   }
   async #terminate(group: Group, outcome: RunnerOutcome) {
@@ -241,7 +270,8 @@ const config :Workerd.Config = (
     group.runs.add(lease.runId);
     try {
       signal.throwIfAborted();
-      const response = await fetch(`${group.origin}/run`, {
+      const response = await fetch("http://workerd/run", {
+        unix: group.socket,
         method: "POST",
         body: JSON.stringify({ runId: lease.runId, source: loaded.source, entrypoint: lease.entrypoint, input: lease.input }),
         signal,

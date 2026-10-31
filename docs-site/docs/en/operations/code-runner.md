@@ -39,13 +39,23 @@ For development, first start Core, sign in with the workspace CLI, then enroll
 and write the key through that CLI (use the development profile explicitly):
 
 ```sh
-bun run dev:cld -- --profile dev admin apps keys create runner --out-dir ./.local/app-keys --uid 1000
+bun run dev:cld -- --profile dev admin apps keys create runner --out-dir ./.local/app-keys
 ```
 
-The image runs as UID 1000. Mounted key files must be readable by that user;
-keep them private (`0600`) and ensure their parent directories can be traversed.
+The supervisor runs as container UID 0. After enrollment, set the key file to
+mode `0400`, owned by that UID; the runner refuses other ownership, modes or a
+symlink. The enrollment command initially creates a `0600` file:
+
+```sh
+sudo chown 0 ./.local/app-keys/runner.key
+sudo chmod 0400 ./.local/app-keys/runner.key
+```
+
 For production, use your explicit administrator profile with
-`cld --profile operator admin apps keys create runner --out-dir ./secrets --uid 1000`.
+`cld --profile operator admin apps keys create runner --out-dir ./secrets`,
+then `sudo chown 0 ./secrets/runner.key` and
+`sudo chmod 0400 ./secrets/runner.key`. With Docker user-namespace remapping,
+use the host UID that maps to container UID 0 for the mounted file.
 
 The development template reads `./.local/app-keys/runner.key`; production reads
 `./secrets/runner.key`. Neither file belongs in Git. Both templates mount it at
@@ -59,7 +69,7 @@ runner key. Production starts the runner by default; Compose cannot create
 it when the secret file is missing. Until Core's Code bridge is installed,
 the runner retries configuration and accepts no work.
 
-The image pins workerd to `1.20261028.1` and runs as an unprivileged user. Its
+The image pins workerd to `1.20261028.1`. Its
 Compose cgroup memory budget is 1 GiB with 256 process slots. These are host
 resource allocations, not Code execution settings. Budget replicas accordingly.
 Core supplies each replica's run and bridge concurrency, process memory, cache, transport,
@@ -67,6 +77,51 @@ and bundle budgets from administration settings; the runner adds no limit env.
 Configuration is read once per process; restart replicas after changing these
 budgets. Keep Core and runner host clocks synchronized, since leases and run
 deadlines use Unix milliseconds.
+
+## Process isolation
+
+Keep the runner's own container PID namespace, read-only root, `no-new-privileges`,
+private `/tmp` tmpfs and capability settings from the Compose templates. Do not
+use host/shared PID namespaces. The supervisor holds the app key and run tokens;
+workerd receives an empty environment and no inherited descriptor above stderr.
+Only the supervisor signs requests to Core.
+
+The supervisor runs as UID 0 with only `SETUID`, `SETGID`, `CHOWN`,
+`DAC_OVERRIDE` and `KILL`. These let it assign identities and private directories,
+reach its children's sockets and stop them. Each organization/trust-tier group
+gets a distinct UID and GID, starting at 20000, and a separate session. Identities
+are never reused during the supervisor's lifetime. Each replica has its own
+container PID namespace, so scaling needs no UID allocation across replicas.
+
+Before executing workerd, `runner-isolate` clears supplementary groups, sets all
+real/effective/saved IDs, clears capabilities, enables `no-new-privileges` and
+installs a mandatory seccomp filter. A workerd process cannot regain supervisor
+privileges, signal or inspect the memory/environment/descriptors of the
+supervisor or another group. Separate sessions also prevent Linux's cross-UID
+SIGCONT exception. A supervisor exit kills its children.
+
+Communication in both directions uses Unix sockets inside each group's `0700`
+directory. Other groups cannot traverse that directory or connect to its
+sockets. The child's filter permits only Unix sockets and blocks IP/packet
+sockets, process creation, cross-process memory/ptrace interfaces, namespace
+changes and io_uring. V8 threads remain available. There are no workerd TCP
+listeners, and a native workerd escape cannot connect directly to Core.
+
+Distinct UIDs and filesystem-protected IPC provide these boundaries without
+privileged namespace setup or `SYS_ADMIN`. They protect against a native escape
+inside workerd; they do not replace the host kernel and container boundary.
+The engine refuses startup if its mandatory launcher or UID transition fails.
+
+CI runs the native engine and shutdown tests inside the image with the same
+capabilities and restrictions as Compose. The isolation probe starts in the
+actual workerd process's UID, session and filter, tries to read the key and
+`/proc/<pid>/{environ,mem,fd}`, signal/ptrace the supervisor and a sibling,
+connect to a sibling socket, open IP sockets and regain privileges, then
+executes workerd in the same PID. C14 extends this attack coverage with hostile
+bundles and the real bridge. It must retain these OS-context checks and the
+CPU-loop watchdog test; sandbox JavaScript API checks alone do not cover a
+native escape. Unprivileged unit runs skip the native files; the image check
+runs them with isolation enabled.
 
 ## Add replicas
 

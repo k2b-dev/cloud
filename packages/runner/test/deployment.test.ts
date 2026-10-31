@@ -37,6 +37,11 @@ test("runner has an application image and both Compose templates isolate its net
       "CLOUD_APP_KEY_FILE",
       "CLOUD_CORE_INTERNAL_ORIGIN",
     ]);
+    expect(runner.cap_drop).toEqual(["ALL"]);
+    expect(runner.cap_add).toEqual(["SETUID", "SETGID", "KILL", "CHOWN", "DAC_OVERRIDE"]);
+    expect(runner.security_opt).toEqual(["no-new-privileges:true"]);
+    expect(runner.pid).toBeUndefined();
+    expect(runner.read_only).toBe(true);
     expect(runner.container_name).toBeUndefined();
     expect(runner.ports).toBeUndefined();
     expect(runner.mem_limit).toBe("1g");

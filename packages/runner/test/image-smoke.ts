@@ -28,7 +28,7 @@ const clockFile = "/tmp/runner-smoke-clock.js";
 await Bun.write(
   keyFile,
   "cloud-app-key-v1.11111111-1111-4111-8111-111111111111.runner.22222222-2222-4222-8222-222222222222.nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A",
-  { mode: 0o600 },
+  { mode: 0o400 },
 );
 await Bun.write(clockFile, `Date.now = () => ${NOW};`);
 const done = Promise.withResolvers<void>();

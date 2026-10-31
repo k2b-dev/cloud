@@ -1,11 +1,14 @@
 import { expect, jest, test } from "bun:test";
+import { chmod, mkdtemp, rmdir, symlink, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AppKey } from "@k2b/cloud/app-key";
-import { importAppPublicKey } from "@k2b/cloud/app-key";
+import { formatAppKey, importAppPublicKey } from "@k2b/cloud/app-key";
 import { RUNNER_PATHS } from "@k2b/cloud/code/runner";
 import { jwtVerify } from "jose";
 import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../scripts/fixtures/app-key-fixtures";
 import { CoreBridge, readBytes } from "../src/bridge";
-import { runnerEnvironment } from "../src/config";
+import { runnerEnvironment } from "../src/env";
 import { config } from "./fixtures";
 
 const NOW = Date.UTC(2030, 0, 2);
@@ -103,4 +106,36 @@ test("Core calls use the explicit abort budget rather than Bun's five-minute idl
   );
   await new CoreBridge(key, "http://core", send).configure(new AbortController().signal);
   expect(timeout).toBe(false);
+});
+
+test("mounted runner key requires supervisor ownership, exact 0400 and a regular file", async () => {
+  const prior = { key: process.env.CLOUD_APP_KEY, file: process.env.CLOUD_APP_KEY_FILE, origin: process.env.CLOUD_CORE_INTERNAL_ORIGIN };
+  const directory = await mkdtemp(join(tmpdir(), "runner-key-test-"));
+  const file = join(directory, "key");
+  const link = join(directory, "link");
+  try {
+    delete process.env.CLOUD_APP_KEY;
+    process.env.CLOUD_APP_KEY_FILE = file;
+    process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core";
+    await Bun.write(file, formatAppKey(key));
+    await chmod(file, 0o600);
+    await expect(runnerEnvironment()).rejects.toThrow("runner_key_file_requires_supervisor_owner_and_mode_0400");
+    await chmod(file, 0o400);
+    expect((await runnerEnvironment()).key.appId).toBe("runner");
+    await symlink(file, link);
+    process.env.CLOUD_APP_KEY_FILE = link;
+    await expect(runnerEnvironment()).rejects.toThrow("runner_key_file_requires_supervisor_owner_and_mode_0400");
+  } finally {
+    for (const [name, value] of [
+      ["CLOUD_APP_KEY", prior.key],
+      ["CLOUD_APP_KEY_FILE", prior.file],
+      ["CLOUD_CORE_INTERNAL_ORIGIN", prior.origin],
+    ]) {
+      if (value === undefined) delete process.env[name!];
+      else process.env[name!] = value;
+    }
+    await unlink(link).catch(() => undefined);
+    await unlink(file);
+    await rmdir(directory);
+  }
 });

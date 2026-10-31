@@ -1,8 +1,12 @@
-import { expect, test } from "bun:test";
+import { test as bunTest, expect } from "bun:test";
 import { formatAppKey } from "@k2b/cloud/app-key";
 import { RUNNER_PATHS } from "@k2b/cloud/code/runner";
 import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../scripts/fixtures/app-key-fixtures";
 import { config, lease, source } from "./fixtures";
+
+// UID changes require the production capability envelope. CI runs this entire file in
+// the runner image; the ordinary unprivileged unit suite must not weaken isolation.
+const test = bunTest.skipIf(process.getuid?.() !== 0);
 
 test("SIGTERM stops acquisition while an accepted sandbox finishes and reports completion", async () => {
   const entered = Promise.withResolvers<void>();
@@ -40,7 +44,13 @@ test("SIGTERM stops acquisition while an accepted sandbox finishes and reports c
     },
   });
   const child = Bun.spawn(
-    [process.execPath, "--no-env-file", "--preload", `${import.meta.dir}/fixed-clock.ts`, `${import.meta.dir}/../src/index.ts`],
+    [
+      process.execPath,
+      "--no-env-file",
+      "--preload",
+      `${import.meta.dir}/fixed-clock.ts`,
+      import.meta.path.endsWith(".ts") ? `${import.meta.dir}/../src/index.ts` : `${import.meta.dir}/runner.js`,
+    ],
     {
       env: {
         CLOUD_APP_KEY: formatAppKey({ installationId: INSTALLATION_ID, keyId: KEY_ID, appId: "runner", seed: APP_KEY_FIXTURES[0].seed }),

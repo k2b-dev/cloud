@@ -1,6 +1,10 @@
-import { expect, test } from "bun:test";
+import { test as bunTest, expect } from "bun:test";
 import { WorkerdEngine } from "../src/engine";
 import { config, lease, source } from "./fixtures";
+
+// UID changes require the production capability envelope. CI runs this entire file in
+// the runner image; the ordinary unprivileged unit suite must not weaken isolation.
+const test = bunTest.skipIf(process.getuid?.() !== 0);
 
 test("killing an attempt during process startup never executes its bundle", async () => {
   const engine = new WorkerdEngine();

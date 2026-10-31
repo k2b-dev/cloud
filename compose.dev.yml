@@ -59,6 +59,8 @@ services:
     read_only: true
     tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m]
     cap_drop: [ALL]
+    # Supervisor only; runner-isolate drops all of these before exec.
+    cap_add: [SETUID, SETGID, KILL, CHOWN, DAC_OVERRIDE]
     security_opt: [no-new-privileges:true]
     mem_limit: 1g
     pids_limit: 256
