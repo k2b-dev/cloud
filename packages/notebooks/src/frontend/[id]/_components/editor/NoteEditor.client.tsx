@@ -1427,7 +1427,6 @@ function EditorInstance(
               editor={editorState}
               notebookId={props.notebookId}
               noteId={props.noteId}
-              initialPanelOpen={panelOpen()}
               format={format()}
               onUndo={() => runHistory("undo")}
               canUndo={canHistory("canUndo")}

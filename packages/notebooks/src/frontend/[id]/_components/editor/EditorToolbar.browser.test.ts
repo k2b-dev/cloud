@@ -117,33 +117,25 @@ const open = async (device: BrowserContextOptions, options: { keyboard?: boolean
   return page;
 };
 
-test("a hidden navigation can be recovered from the editor toolbar at 900 px", async () => {
-  const page = await open({ viewport: { width: 900, height: 900 } });
-  try {
-    const toggle = page.locator(".notebooks-editor-toolbar .notebooks-navigation-toggle");
-    expect(await toggle.isVisible()).toBe(false);
-    // Follow the same shared visibility event as the navigation command and graph toolbar.
-    await page.evaluate(() =>
-      window.dispatchEvent(new CustomEvent("notebooks.navigation.visibilityChanged", { detail: { hidden: true } })),
-    );
-    const show = toggle.getByRole("button", { name: "Show navigation", exact: true });
-    await show.waitFor();
-    expect(await toggle.getAttribute("data-navigation-hidden")).toBe("");
-    expect(await toggle.evaluate((element) => getComputedStyle(element).display)).toBe("flex");
-    expect(await show.isVisible()).toBe(true);
-    // A keyboard press moves focus; a pointer press keeps it in the note anyway.
-    await show.focus();
-    await page.keyboard.press("Enter");
-    expect(await toggle.getAttribute("data-navigation-hidden")).toBeNull();
-    // The toggle hides again below a 64 rem host, so read the hidden button by selector, not by role.
-    expect(await toggle.locator("button").getAttribute("aria-expanded")).toBe("true");
-    expect(await toggle.isVisible()).toBe(false);
-    // Without a navigation that can take focus here, it returns to the note, never to the page start.
-    await page.waitForFunction(() => document.activeElement?.closest(".cm-editor") !== null);
-  } finally {
-    await page.context().close();
-  }
-});
+// The note page draws no workspace head: the toolbar's navigation button is the workspace's sidebar button from a
+// 48 rem window, where it opens the overlay navigation, and phones keep the header's menu. The shared controller runs
+// it (packages/ui workspace-app-toggles.browser.test.ts).
+for (const [width, visible] of [
+  [900, true],
+  [390, false],
+] as const)
+  test(`the navigation button in the editor toolbar ${visible ? "shows" : "stays hidden"} at ${width} px`, async () => {
+    const page = await open({ viewport: { width, height: 900 } });
+    try {
+      const toggle = page.locator(".notebooks-editor-toolbar .notebooks-navigation-toggle button");
+      expect(await toggle.isVisible()).toBe(visible);
+      expect(await toggle.getAttribute("aria-label")).toBe("Navigation");
+      expect(await toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
+      expect(await toggle.getAttribute("data-app-workspace-sidebar-toggle")).toBe("");
+    } finally {
+      await page.context().close();
+    }
+  });
 
 const load = (page: Page, doc: string) =>
   page.evaluate(async (doc) => {

@@ -347,7 +347,6 @@ function Harness() {
           editor={extensions}
           notebookId="Book01"
           noteId="Note01"
-          initialPanelOpen={false}
           format={format()}
           onUndo={() => {
             void actions.undo();
