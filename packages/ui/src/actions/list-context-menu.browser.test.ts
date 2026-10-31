@@ -9,17 +9,52 @@ const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "list-context-menu.fixture.ts");
 const fixture = `
-import { createComponent, render } from "solid-js/web";
-import { ListContextMenu, LocaleProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { createSignal } from "solid-js";
+import { createComponent, insert, render } from "solid-js/web";
+import { ContextMenu, ListContextMenu, LocaleProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
+const [gone, setGone] = createSignal(new Set());
+const row = (name) => {
+  const element = document.createElement("li");
+  element.dataset.row = name;
+  element.title = name + " tooltip";
+  element.innerHTML = '<a class="row-link" href="#' + name + '">' + name + "</a>";
+  return element;
+};
+const nested = () => {
+  const element = row("Nested");
+  insert(
+    element,
+    createComponent(ContextMenu, {
+      label: "Attachment actions",
+      tabIndex: -1,
+      items: [{ label: "Save attachment", action: () => {} }],
+      get children() {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "attachment";
+        button.textContent = "Attachment";
+        return button;
+      },
+    }),
+  );
+  return element;
+};
 const list = () => {
   const element = document.createElement("ul");
-  element.innerHTML = ["Alpha", "Beta", "Locked"]
-    .map((name) => '<li data-row="' + name + '" title="' + name + ' tooltip"><a class="row-link" href="#' + name + '">' + name + '</a></li>')
-    .join("") + '<li class="footer">Three rows</li>';
+  const footer = document.createElement("li");
+  footer.className = "footer";
+  footer.textContent = "Four rows";
+  element.append(row("Alpha"), row("Beta"), row("Locked"), nested(), footer);
   return element;
 };
 window.opened = [];
+window.actions = [];
+// As a keyed list does: the row leaves the DOM in the same update that drops its entries.
+window.removeRow = (name) => {
+  document.querySelector('[data-row="' + name + '"]').remove();
+  setGone(new Set([...gone(), name]));
+};
 render(
   () =>
     createComponent(LocaleProvider, {
@@ -28,7 +63,13 @@ render(
         return createComponent(ListContextMenu, {
           row: "[data-row]",
           label: "Row actions",
-          items: (row) => (row.dataset.row === "Locked" ? [] : [{ label: "Open " + row.dataset.row, action: () => {} }, { label: "Archive", action: () => {} }]),
+          items: (row) =>
+            ["Locked", "Nested"].includes(row.dataset.row) || gone().has(row.dataset.row)
+              ? []
+              : [
+                  { label: "Open " + row.dataset.row, action: () => window.actions.push("open " + row.dataset.row) },
+                  { label: "Archive", action: () => window.actions.push("archive " + row.dataset.row) },
+                ],
           onOpen: (row) => window.opened.push(row.dataset.row),
           onClose: () => window.opened.push("closed"),
           get children() {
@@ -102,6 +143,52 @@ describe("ListContextMenu", () => {
       expect(await outcome(page)).toEqual({ items: null, open: [], prevented: false });
       await page.locator('[data-row="Locked"] .row-link').click({ button: "right" });
       expect(await outcome(page)).toEqual({ items: null, open: [], prevented: false });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a context menu nested in a row without entries keeps its own menu, by pointer and by keyboard", async () => {
+    const page = await load();
+    try {
+      await page.locator(".attachment").click({ button: "right" });
+      expect((await outcome(page)).items).toEqual(["Save attachment"]);
+      await page.keyboard.press("Escape");
+      await page.locator(".k2b-context-menu").waitFor({ state: "detached" });
+      await page.locator(".attachment").focus();
+      await page.keyboard.press("Shift+F10");
+      expect((await outcome(page)).items).toEqual(["Save attachment"]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the menu closes when its row leaves the list, and focus stays in the list", async () => {
+    const page = await load();
+    try {
+      await page.locator('[data-row="Beta"] .row-link').focus();
+      await page.keyboard.press("Shift+F10");
+      expect((await outcome(page)).items).toEqual(["Open Beta", "Archive"]);
+      await page.evaluate(() => (window as unknown as { removeRow: (name: string) => void }).removeRow("Beta"));
+      await page.locator(".k2b-context-menu").waitFor({ state: "detached" });
+      expect(await outcome(page)).toEqual({ items: null, open: [], prevented: null });
+      expect(await page.evaluate(() => document.activeElement?.closest("[role='group']")?.getAttribute("aria-label"))).toBe("Row actions");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an entry chosen from the keyboard runs, and focus returns to its row", async () => {
+    const page = await load();
+    try {
+      await page.locator('[data-row="Alpha"] .row-link').focus();
+      await page.keyboard.press("Shift+F10");
+      await page.locator(".k2b-context-menu").waitFor();
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.locator(".k2b-context-menu").waitFor({ state: "detached" });
+      expect(await page.evaluate(() => (window as unknown as { actions: string[] }).actions)).toEqual(["archive Alpha"]);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Alpha");
     } finally {
       await page.close();
     }

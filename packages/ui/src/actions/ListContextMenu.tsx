@@ -1,5 +1,5 @@
-import { createSignal, type JSX, onCleanup, onMount } from "solid-js";
-import { ContextMenu } from "./ContextMenu";
+import { createEffect, createMemo, createSignal, type JSX, onCleanup } from "solid-js";
+import { ContextMenuBase } from "./ContextMenu";
 import type { DropdownItem } from "./Dropdown";
 
 export type ListContextMenuProps = {
@@ -16,52 +16,69 @@ export type ListContextMenuProps = {
   children: JSX.Element;
 };
 
-const opensMenu = (event: KeyboardEvent) => event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
-
 /**
  * One context menu for all rows of a list: right-click opens the menu of the row under the pointer, the Context Menu
  * key or Shift+F10 the menu of the row that holds focus, beside it. Outside a row, and on a row without entries, the
- * browser keeps its own menu. The open row carries `data-context-menu-open`, so it can look as it does on hover.
+ * browser keeps its own menu; a context menu nested in a row keeps its own. The open row carries
+ * `data-context-menu-open`, so it can look as it does on hover, and the menu closes when its row leaves the list or
+ * loses its entries.
  */
 export function ListContextMenu(props: ListContextMenuProps): JSX.Element {
   const [row, setRow] = createSignal<HTMLElement>();
-  let wrapper: HTMLDivElement | undefined;
-  let openRow: HTMLElement | undefined;
-  onMount(() => {
-    // Capture runs before the menu's own handler: it picks the row, and without entries the event never reaches the menu.
-    const target = (event: Event, element: EventTarget | null) => {
-      const found = element instanceof Element ? element.closest<HTMLElement>(props.row) : null;
-      if (found && wrapper?.contains(found) && props.items(found).length > 0) setRow(found);
-      else event.stopPropagation();
-    };
-    const fromPointer = (event: MouseEvent) => target(event, event.target);
-    const fromKey = (event: KeyboardEvent) => {
-      if (opensMenu(event)) target(event, document.activeElement);
-    };
-    wrapper?.addEventListener("contextmenu", fromPointer, true);
-    wrapper?.addEventListener("keydown", fromKey, true);
-    onCleanup(() => {
-      wrapper?.removeEventListener("contextmenu", fromPointer, true);
-      wrapper?.removeEventListener("keydown", fromKey, true);
-    });
+  const [open, setOpen] = createSignal(false);
+  let host: HTMLDivElement | undefined;
+  let closeMenu: (() => void) | undefined;
+  const entries = () => {
+    const current = row();
+    return current ? props.items(current) : [];
+  };
+  // The menu's own handlers ask first; a nested menu already handled and stopped its event.
+  const accept = (event: MouseEvent | KeyboardEvent) => {
+    const origin = event instanceof KeyboardEvent ? document.activeElement : event.target;
+    const found = origin instanceof Element ? origin.closest<HTMLElement>(props.row) : null;
+    if (!found || !host?.contains(found) || props.items(found).length === 0) return false;
+    setRow(found);
+    return true;
+  };
+  // An open menu keeps its last entries until it closes, so the focused entry stays while focus returns to the list.
+  let shown: readonly DropdownItem[] = [];
+  const menuItems = createMemo(() => {
+    const next = entries();
+    if (next.length > 0 || !open()) shown = next;
+    return shown;
+  });
+  createEffect(() => {
+    const current = row();
+    if (open() && current && (!current.isConnected || entries().length === 0)) closeMenu?.();
   });
   const opened = () => {
-    openRow = row();
-    if (!openRow) return;
-    openRow.setAttribute("data-context-menu-open", "");
-    props.onOpen?.(openRow);
+    const current = row();
+    if (!current) return;
+    current.setAttribute("data-context-menu-open", "");
+    setOpen(true);
+    props.onOpen?.(current);
   };
   const closed = () => {
-    openRow?.removeAttribute("data-context-menu-open");
-    openRow = undefined;
+    row()?.removeAttribute("data-context-menu-open");
+    setOpen(false);
     props.onClose?.();
   };
-  onCleanup(() => openRow?.removeAttribute("data-context-menu-open"));
+  onCleanup(() => row()?.removeAttribute("data-context-menu-open"));
   return (
-    <div ref={wrapper} class={props.class}>
-      <ContextMenu items={row() ? props.items(row()!) : []} tabIndex={-1} label={props.label} onOpen={opened} onClose={closed}>
+    <div ref={host} class={props.class}>
+      <ContextMenuBase
+        items={menuItems()}
+        tabIndex={-1}
+        label={props.label}
+        accept={accept}
+        closeWith={(close) => {
+          closeMenu = close;
+        }}
+        onOpen={opened}
+        onClose={closed}
+      >
         {props.children}
-      </ContextMenu>
+      </ContextMenuBase>
     </div>
   );
 }

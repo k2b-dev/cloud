@@ -174,9 +174,11 @@ so right-click on a row and the Context Menu key or Shift+F10 on its focused
 row open the same entries. `row` selects one row element, and `items` returns
 that row's menu, usually from the same function its "…" `Dropdown` uses. A
 right-click outside a row, or on a row without entries, keeps the browser's own
-menu. The open row carries `data-context-menu-open`, so it can keep its hover
-look; `onOpen(row)` and `onClose()` let the list hide the row's native `title`
-while the menu is open, so the tooltip never covers it.
+menu, and a `ContextMenu` nested in a row keeps its own. The open row carries
+`data-context-menu-open`, so it can keep its hover look; `onOpen(row)` and
+`onClose()` let the list hide the row's native `title` while the menu is open,
+so the tooltip never covers it. The menu closes when its row leaves the list or
+loses its entries, and focus then returns to the list.
 
 ```tsx
 <ListContextMenu row="[data-note-id]" label="Note actions" items={(row) => noteMenu(row.dataset.noteId!)}>
@@ -276,7 +278,7 @@ Labels must describe the action without relying on their icons. External links o
 
 Both menus require browser code. `Dropdown` uses the native Popover API, measures the trigger and menu, and clamps every supported position to an eight-pixel viewport inset. It repositions on viewport resize and ancestor scrolling.
 
-`ContextMenu` renders its menu through a Solid portal, clamps pointer and keyboard openings to the viewport, and closes on outside pointer input, a change of the viewport's size, or scrolling outside the menu. A resize event that leaves the viewport's size unchanged keeps it open. Closing with Escape restores focus to the element inside it that had focus as the menu opened, such as a row or a day of a composite widget, and otherwise to the wrapper.
+`ContextMenu` renders its menu through a Solid portal, clamps pointer and keyboard openings to the viewport, and closes on outside pointer input, a change of the viewport's size, or scrolling outside the menu. A resize event that leaves the viewport's size unchanged keeps it open. Closing with Escape or by choosing an entry restores focus to the element inside it that had focus as the menu opened, such as a row or a day of a composite widget, and otherwise to the wrapper.
 
 ## Example
 

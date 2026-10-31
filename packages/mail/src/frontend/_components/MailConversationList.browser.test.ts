@@ -1300,6 +1300,12 @@ describe("Mail row right-click menu", () => {
     return (await menu.count()) ? (await menu.getByRole("menuitem").allTextContents()).map((item) => item.trim()) : null;
   };
   const title = (page: Page, id: string) => page.locator(linkOf(id)).getAttribute("title");
+  /** A closed menu gives Cv0002 its tooltip back once the menu reports that it closed. */
+  const tooltipBack = (page: Page) =>
+    page.waitForFunction(
+      (selector) => document.querySelector(selector)?.getAttribute("title") === "Person 2: Room booking 2",
+      linkOf("Cv0002"),
+    );
   /** The "…" menu's entries, read once while it is open, with the row's tooltip at that moment. */
   const dotsMenu = async (page: Page, id: string) => {
     await pointAt(page, row(id));
@@ -1314,10 +1320,11 @@ describe("Mail row right-click menu", () => {
 
   test("right-click and Shift+F10 open the row's own menu, and no native tooltip covers either menu", async () => {
     const page = await load();
+    await page.locator(row("Cv0002")).waitFor();
     const dots = await dotsMenu(page, "Cv0002");
     expect(dots.items).toContain("Archive");
     expect(dots.tooltip).toBeNull();
-    expect(await title(page, "Cv0002")).toBe("Person 2: Room booking 2");
+    await tooltipBack(page);
 
     await page.locator(linkOf("Cv0002")).click({ button: "right" });
     expect(await contextItems(page)).toEqual(dots.items);
@@ -1325,7 +1332,7 @@ describe("Mail row right-click menu", () => {
     expect(await page.locator(`${row("Cv0002")}[data-context-menu-open]`).count()).toBe(1);
     await page.keyboard.press("Escape");
     await page.locator(".k2b-context-menu").waitFor({ state: "detached" });
-    expect(await title(page, "Cv0002")).toBe("Person 2: Room booking 2");
+    await tooltipBack(page);
 
     await page.locator(linkOf("Cv0002")).focus();
     await page.keyboard.press("Shift+F10");
@@ -1342,6 +1349,7 @@ describe("Mail row right-click menu", () => {
 
   test("the right-click menu matches each row's state, and selection mode leaves the browser its menu", async () => {
     const page = await load();
+    await page.locator(row("Cv0003")).waitFor();
     // Cv0003 is unread, Cv0002 read: their first entries differ as in their "…" menus.
     const unread = await dotsMenu(page, "Cv0003");
     await page.locator(linkOf("Cv0003")).click({ button: "right" });
