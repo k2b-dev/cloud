@@ -758,9 +758,8 @@ export const compileCapabilities = (
   }
 
   const codeAccess = generatedCodeAccess(appId, definitions);
-  for (const key of [...Object.keys(codeAccess.queries), ...Object.keys(codeAccess.actions)]) {
-    if (Object.hasOwn(definitions.queries ?? {}, key) || Object.hasOwn(definitions.actions ?? {}, key))
-      throw new Error(`Generated capability ${key} collides with a declared capability`);
+  for (const key of [...Object.keys(definitions.queries ?? {}), ...Object.keys(definitions.actions ?? {})]) {
+    if (key.startsWith("code.access.")) throw new Error(`Declared capability ${key} collides with the reserved Code access namespace`);
   }
   const localIds = new Set<string>();
   const registerLocalId = (localId: string, kind: string): void => {

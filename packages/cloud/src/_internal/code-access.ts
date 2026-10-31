@@ -15,6 +15,7 @@ import {
   CodeAccessSetInputSchema,
 } from "../contracts/code-access";
 import { codeAccessMessages } from "../shared/code-access-messages";
+import { canonicalLocale } from "../shared/locale";
 
 /** Author mistakes fail startup, including dynamically assembled or JavaScript declarations. */
 export const validateCodeAccess = (definitions: CapabilityDefinitions): void => {
@@ -168,7 +169,7 @@ export const generatedCodeAccess = (
 export const codeAccessPresentation = (presentation?: CapabilityPresentationCatalog): CapabilityPresentationCatalog => {
   const translations = { ...presentation?.translations };
   for (const locale of ["en", "de"]) {
-    if (locale === (presentation?.baseLocale ?? "en")) continue;
+    if (locale === (canonicalLocale(presentation?.baseLocale) ?? "en")) continue;
     const copy = codeAccessMessages(locale);
     const existing = translations[locale];
     translations[locale] = {
