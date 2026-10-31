@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { Code, CodeOwner, CodePermission } from "./contracts";
 
 /** All Code reads and writes retain the caller's credential ceiling. No ambient user field is authority. */
-export type CodeContext = { authority: RequestAuthority; locale?: string; signal?: AbortSignal };
+export type CodeContext = { authority: RequestAuthority; locale?: string; signal?: AbortSignal; requestId?: string };
 export class CodeDataError extends Error {
   constructor(
     readonly code: "FORBIDDEN" | "NOT_FOUND" | "BAD_INPUT" | "CONFLICT",

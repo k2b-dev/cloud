@@ -69,6 +69,9 @@ export const CodeSchema = z
     serviceAccountId: z.uuid().nullable(),
     state: z.enum(["draft", "active", "paused", "deleting"]),
     activeVersionId: z.uuid().nullable(),
+    pauseReason: z.string().nullable(),
+    pauseRows: z.array(z.string()),
+    pausePolicyRevision: z.number().int().positive().nullable(),
     createdBy: z.uuid().nullable(),
     createdAt: timestamp,
   })

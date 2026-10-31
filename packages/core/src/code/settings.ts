@@ -1,6 +1,6 @@
 import { createSettingsAPI } from "@k2b/cloud/services";
 
-/** Storage admission budgets, adjustable in Administration › Code; all sizes are UTF-8 bytes. */
+/** Storage and execution budgets, adjustable in Administration › Code; all sizes are UTF-8 bytes. */
 export const CODE_SETTINGS = {
   "core.code.source_bytes": {
     kind: "number",
@@ -84,16 +84,85 @@ export const CODE_SETTINGS = {
     integer: true,
     min: 1,
     max: 1000,
-    default: 1000,
-    label: "Capability calls per run",
-    description: "Maximum number of recorded capability calls in one attempt.",
+    default: 200,
+    label: "Bridge calls per run",
+    description: "Maximum bridge calls in one attempt, including recorded capability calls.",
     presentation: {
       translations: {
-        de: { label: "Capability-Aufrufe je Lauf", description: "Maximale Anzahl gespeicherter Capability-Aufrufe in einem Versuch." },
+        de: {
+          label: "Brückenaufrufe je Lauf",
+          description: "Maximale Brückenaufrufe je Versuch, einschließlich gespeicherter Capability-Aufrufe.",
+        },
+      },
+    },
+  },
+  "core.code.wall_clock_ms": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 300000,
+    default: 300000,
+    label: "Wall clock per run (ms)",
+    description: "Maximum elapsed time of one Code attempt.",
+    presentation: {
+      translations: { de: { label: "Wanduhr je Lauf (ms)", description: "Maximale verstrichene Zeit eines Code-Versuchs." } },
+    },
+  },
+  "core.code.database_bytes": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 1073741824,
+    default: 104857600,
+    label: "Database bytes per Code",
+    description: "Maximum size of the lazily created Code database.",
+    presentation: {
+      translations: { de: { label: "Datenbank je Code (Bytes)", description: "Maximale Größe der bei Bedarf angelegten Code-Datenbank." } },
+    },
+  },
+  "core.code.ai_budget_usd": {
+    kind: "number",
+    min: 0,
+    max: 100,
+    default: 1,
+    label: "AI reference budget per run (USD)",
+    description: "Maximum AI reference cost of one Code attempt; zero disables AI.",
+    presentation: {
+      translations: {
+        de: { label: "KI-Referenzbudget je Lauf (USD)", description: "Maximale KI-Referenzkosten je Code-Versuch; 0 sperrt KI." },
+      },
+    },
+  },
+  "core.code.concurrency_per_code": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 100,
+    default: 1,
+    label: "Concurrent runs per Code",
+    description: "Maximum simultaneous attempts for one Code.",
+    presentation: {
+      translations: { de: { label: "Gleichzeitige Läufe je Code", description: "Maximale Anzahl gleichzeitiger Versuche eines Codes." } },
+    },
+  },
+  "core.code.concurrency_per_owner": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 1000,
+    default: 10,
+    label: "Concurrent runs per owner",
+    description: "Maximum simultaneous attempts across all Code of one exact owner.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Gleichzeitige Läufe je Besitzer",
+          description: "Maximale Anzahl gleichzeitiger Versuche aller Codes eines genauen Besitzers.",
+        },
       },
     },
   },
 } as const;
 
-/** Typed access to Core-owned storage admission settings. Core registers the definitions at startup. */
+/** Typed access to Core-owned storage and execution settings. Core registers the definitions at startup. */
 export const codeSettings = createSettingsAPI<typeof CODE_SETTINGS>();

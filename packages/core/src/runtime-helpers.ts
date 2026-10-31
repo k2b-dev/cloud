@@ -5,9 +5,11 @@ import { refreshBuiltAvatarHashes } from "@k2b/cloud/services/accounts/avatar";
 import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
+import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
 import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 import { migrate as migrateCode } from "./migrate/core/code";
+import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
 /**
  * Core-specific lifecycle helpers.
  * Migrations, background jobs — nothing generic here.
@@ -122,6 +124,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "extensions", run: migrateExtensions },
     { name: "auth", run: migrateAuth },
     { name: "code", run: migrateCode },
+    { name: "code-policy", run: migrateCodePolicy },
     { name: "known-apps", run: migrateKnownApps },
     { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },
@@ -172,6 +175,7 @@ export const startCoreServices = async (
     stopCapabilityExecutionMaintenance = startCapabilityExecutionMaintenance();
     stopWorkflowEventRetention = startWorkflowEventRetention();
     stopCodeRunRetention = startCodeRunRetention();
+    codePolicyPauseOutbox.start();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
@@ -223,6 +227,7 @@ export const startCoreServices = async (
     stopMandateMaintenance = null;
     stopCapabilityExecutionMaintenance?.();
     stopCapabilityExecutionMaintenance = null;
+    await codePolicyPauseOutbox.stop();
     await stopCodeRunRetention?.();
     stopCodeRunRetention = undefined;
     stopWorkflowEventRetention?.();
@@ -264,6 +269,7 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     stopMandateMaintenance = null;
     stopCapabilityExecutionMaintenance?.();
     stopCapabilityExecutionMaintenance = null;
+    await codePolicyPauseOutbox.stop();
     await stopCodeRunRetention?.();
     stopCodeRunRetention = undefined;
     stopWorkflowEventRetention?.();

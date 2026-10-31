@@ -57,6 +57,8 @@ import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { codeQueryContracts } from "./code/contracts";
+import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
+import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
 import { listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { runGeoQuery } from "./geo-capability-result";
@@ -707,6 +709,28 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "code.policy.read": {
+      title: "Read Code policy",
+      description: "Read default and applicable group rules; Cloud admins read the complete editable table.",
+      ...codePolicyContracts.read,
+      openWorld: false,
+      run: (_input, context) => runCodeQuery(context, readCodePolicy),
+    },
+    "code.policy.effective": {
+      title: "Resolve Code policy",
+      description:
+        "Resolve current classification rules for the personal owner, or a resource/app author. Other views require Cloud administration.",
+      ...codePolicyContracts.effective,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => effectiveCodePolicy(input, ctx)),
+    },
+    "code.policy.preview": {
+      title: "Preview Code policy",
+      description: "Preview an exact pause count and a page of affected active Code without writing. Cloud administrators only.",
+      ...codePolicyContracts.preview,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
+    },
     "code.list": {
       title: "List Code",
       description:
@@ -1187,6 +1211,36 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "code.policy.update": {
+      title: "Update Code policy",
+      description:
+        "Replace the Code policy at the expected revision and enqueue visible pauses. Cloud administration required; stale changes fail.",
+      ...codePolicyContracts.update,
+      code: false,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "changes_access" },
+      async review(input: z.infer<typeof codePolicyContracts.update.input>, context: CapabilityExecutionContext) {
+        const preview = await runCodeQuery(context, (ctx) => previewCodePolicy({ ...input, limit: 20 }, ctx));
+        if (!preview.ok) return preview;
+        const de = context.locale?.startsWith("de");
+        return ok({
+          message: de
+            ? `Code-Richtlinie ändern (Stand ${input.revision}); ${preview.data.data.total} Codes pausieren.`
+            : `Update Code policy (revision ${input.revision}); ${preview.data.data.total} Codes pause.`,
+          details: CODE_POLICY_ROWS.map((row) => ({
+            label: row,
+            display: "block" as const,
+            value: input.definition.rules
+              .filter((rule) => rule.row === row)
+              .map((rule) => `${rule.groupId ?? (de ? "Standard" : "Default")}: ${rule.value}`)
+              .join("\n"),
+          })),
+        });
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => updateCodePolicy(input, ctx)),
+    },
     "ai.skill.access.change": {
       title: "Change Skill access",
       description:

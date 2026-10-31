@@ -4,7 +4,7 @@ import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "./ac
 
 const contextFor = (context: CapabilityExecutionContext): CodeContext => {
   if (!context.authority) throw new CodeDataError("FORBIDDEN", "Code requires request authority.");
-  return { authority: context.authority, locale: context.locale, signal: context.signal };
+  return { authority: context.authority, locale: context.locale, signal: context.signal, requestId: context.requestId };
 };
 export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: (context: CodeContext) => Promise<T>) {
   try {

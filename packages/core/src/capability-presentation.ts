@@ -23,6 +23,18 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.policy.read": {
+          title: "Code-Richtlinie lesen",
+          description: "Liest Standard und passende Gruppenregeln; Cloud-Admins sehen die vollständige Tabelle.",
+        },
+        "code.policy.effective": {
+          title: "Wirksame Code-Richtlinie",
+          description: "Ermittelt aktuelle Regeln je Einstufung für Besitzer oder Autor. Fremde Sichten erfordern Cloud-Administration.",
+        },
+        "code.policy.preview": {
+          title: "Code-Richtlinie prüfen",
+          description: "Zeigt Anzahl und Seite betroffener aktiver Codes ohne Änderung. Nur für Cloud-Admins.",
+        },
         "code.list": {
           title: "Code auflisten",
           description:
@@ -172,6 +184,10 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.policy.update": {
+          title: "Code-Richtlinie ändern",
+          description: "Ersetzt die Richtlinie am erwarteten Stand und plant sichtbare Pausen. Veraltete Änderungen werden abgelehnt.",
+        },
         "ai.skill.access.change": {
           title: "Skill-Zugriffsrechte ändern",
           description:
