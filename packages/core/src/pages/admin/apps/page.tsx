@@ -15,6 +15,7 @@ import {
   readAppAccess,
   serviceAccountCredentials,
 } from "@k2b/cloud/services";
+import { appDomains } from "@k2b/cloud/services/app-domains";
 import { appKeys } from "@k2b/cloud/services/app-keys";
 import { AdminLayout, getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
 import { createAppStatusReader } from "../../../app-status";
@@ -238,6 +239,21 @@ export default ssr<AuthContext>(async (c) => {
         })
       : null;
   const reservedKeys = entry ? RESERVED_KEYS.has(entry.id) : true;
+  // Only an app that declares public pages has domains; a stopped app keeps them listed while it still has some.
+  // Every other app shows no Domains entry at all.
+  const readDomains = (appId: string) =>
+    appDomains
+      .list({ actor: user, appId })
+      .then((result) => (result.ok ? result.data.domains : ("failed" as const)))
+      .catch(() => "failed" as const);
+  const domains = !entry
+    ? null
+    : liveApp
+      ? liveApp.public === true
+        ? await readDomains(liveApp.id)
+        : null
+      : // A failed read stays visible with its retry; only a successful empty read means "no Domains entry".
+        await readDomains(entry.id).then((read) => (read !== "failed" && read.length === 0 ? null : read));
   // The documentation link is optional: without the setting, hints and the keys column simply omit it.
   const documentationBase = entry ? await coreSettings.get<string>("app.documentation_url").catch(() => undefined) : undefined;
   const keyList =
@@ -312,6 +328,18 @@ export default ssr<AuthContext>(async (c) => {
           },
         };
       }
+      case "domains":
+        return domains === null
+          ? null
+          : {
+              view: "domains",
+              domains: {
+                app: { id: entry.id, name: entry.name },
+                initial: domains === "failed" ? null : [...domains],
+                timeZone: dateContext.timeZone ?? "UTC",
+                serverNow: Date.now(),
+              },
+            };
       case "events":
         return details ? { view: "events" } : null;
       case "routes":
@@ -411,6 +439,7 @@ export default ssr<AuthContext>(async (c) => {
             migrate: settingsDocumentationHref(documentationBase, "app-keys-start") ?? null,
           },
           accessRule: ruleLabel(locale, liveApp?.access ?? localized.get(entry.id)?.access),
+          domains,
           appNames: new Map(entries.map((candidate) => [candidate.id, candidate.name])),
         }
       : null,

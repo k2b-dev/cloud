@@ -82,9 +82,10 @@ drop unknown permission IDs without granting them and keep the application
 registered; that rule cannot change the behavior of older releases.
 
 Applications that perform reader checks declare `resources:readers` in their
-platform permissions and need `CLOUD_APP_CREDENTIAL` plus
-`CLOUD_CORE_INTERNAL_ORIGIN`. Provision the existing app-bound workload
-credential with `identity:invoke`; this change adds no automatic provisioning.
+platform permissions and need an app key (or legacy `CLOUD_APP_CREDENTIAL`) plus
+`CLOUD_CORE_INTERNAL_ORIGIN`. Without a key, Core automatically delivers an
+app-bound `identity:invoke` workload credential; host-run apps may provision
+an explicit legacy override.
 There is no separate operator approval toggle. Core checks the live registry
 permission and uses Valkey for the shared 1,501-request/minute app budget.
 An unavailable registry or limiter fails closed. Providers need the existing
@@ -551,10 +552,10 @@ environment fallback.
 | --- | --- | --- |
 | `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | **Core only** | Core identity issuance; generate an independent 32-byte key as 64 hex characters. `CLOUD_IDENTITY_NEXT_KEY` / `CLOUD_IDENTITY_PREVIOUS_KEY` are temporary rotation inputs, also Core-only. |
-| `CLOUD_OAUTH_BROKER_SECRET` | **Core and OAuth only** | Running OAuth. Generate an independent 32-byte secret as 64 hex characters. No admin credential provisioning is needed. Dev Compose provides a development-only default; production requires an explicit value. |
+| `CLOUD_OAUTH_BROKER_SECRET` | **Core and OAuth only** | Deprecated legacy authentication for OAuth without an app key. Generate an independent 32-byte secret as 64 hex characters. Prefer an enrolled `oauth` app key; retain the secret only for the parallel release. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | OAuth, background broker callers, resource-derived app discovery, and managed Assistant code hosts | Direct private Core origin, not the gateway. Compose supplies it. Code hosts use it for turn-bound capability callbacks and binary streams. |
-| `CLOUD_APP_CREDENTIAL` | Optional host-run app override | Core automatically issues and rotates app-bound `identity:invoke` credentials over NATS. No per-app Compose secret is needed. An explicit override wins; OAuth does not use it. See [runtime configuration](/en/docs/operations/runtime-configuration#shared-infrastructure-trust-limit) for the shared-infrastructure trust limit. |
-| `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Optional private transport origin for OAuth public keys. Core identity keys use `CLOUD_CORE_INTERNAL_ORIGIN`; the deprecated `CLOUD_IDENTITY_JWKS_ORIGIN` override is still honored this release. Neither value grants signing authority. |
+| `CLOUD_APP_CREDENTIAL` | Optional host-run app override | Core automatically issues and rotates app-bound `identity:invoke` credentials over NATS. No per-app Compose secret is needed. An explicit override wins among legacy credentials; a configured app key takes precedence. OAuth does not use this credential. See [runtime configuration](/en/docs/operations/runtime-configuration#shared-infrastructure-trust-limit) for the shared-infrastructure trust limit. |
+| `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Deprecated OAuth public-key transport override. Without it, applications use Core through `CLOUD_CORE_INTERNAL_ORIGIN`, then the public issuer. Core identity keys use `CLOUD_CORE_INTERNAL_ORIGIN`; the deprecated `CLOUD_IDENTITY_JWKS_ORIGIN` override is still honored this release. Neither value grants signing authority. |
 | `APP_URL` | Gateway and application services | Initial public URL; saved `app.url` takes precedence. Built-in images run in production mode on port 3000. |
 | `GOTENBERG_URL` | Application services | Optional initial Gotenberg URL for PDF rendering; saved `gotenberg.url` takes precedence. Dev Compose sets `http://gotenberg:3000`. |
 | `ADMIN_LOGIN_TOKEN` | **Core only** | Temporary first administrator access on a fresh installation; no production default. Remove after configuring and verifying normal administrator sign-in. |
@@ -638,7 +639,7 @@ or mutate real data without approval.
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
-| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
+| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and an enrolled `oauth` app key (or matching legacy broker secret). Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
@@ -781,17 +782,18 @@ image, to confirm that assets still load.
    token and a fresh database has no normal administrator account.
 2. Generate and store the independent deployment secrets. Set the public
    origin, private service addresses, database, Valkey and NATS connections. Give
-   Core and OAuth the same broker secret if OAuth is selected; only Core gets
-   the identity KEK.
+   only Core the identity KEK. OAuth will need its enrolled app key or the
+   matching legacy broker secret before starting.
 3. Start and check persistent infrastructure. Start Core and wait for schema
    setup, identity initialization and readiness before starting dependent
    apps. Start the gateway with private app reachability and keep public
    access restricted during setup.
-4. Start the selected apps. OAuth checks Core at startup and requires **no
-   credential-creation request**. The development and production Compose files
+4. Start the selected apps. OAuth checks Core at startup. Enroll its app key
+   before starting it, or keep the legacy broker secret for this release.
+   The development and production Compose files
    wait for Core's readiness healthcheck before starting OAuth.
    For mandate-backed background integrations,
-   provision the owning app's `identity:invoke` credential using
+   configure the owning app key, or provision a legacy `identity:invoke` credential using
    [Background mandates](/en/docs/identity/background-mandates), inject it only
    into that app, and recreate that app's container to apply environment changes.
 5. Open `/auth/login?method=admin` at the public origin and enter the temporary
@@ -1685,8 +1687,9 @@ Notebook, or application-schema upgrade checks.
    `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` for Core; Core creates its signing keys
    during startup. Do not replace a KEK protecting existing rows with a newly
    generated value.
-3. When running OAuth, supply the same independent
-   `CLOUD_OAUTH_BROKER_SECRET` to Core and OAuth. OAuth needs no app-credential
+3. When running OAuth, supply
+   an enrolled `oauth` app key, or give the same legacy
+   `CLOUD_OAUTH_BROKER_SECRET` to Core and OAuth. OAuth needs no workload-credential
    provisioning. Supply private Core/OAuth origins as described in
    [Runtime configuration](/en/docs/operations/runtime-configuration), and check
    NATS, database, cache, private-network, and clock prerequisites above.

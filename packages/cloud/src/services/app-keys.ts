@@ -14,6 +14,7 @@ export type AppKeyMetadata = {
   kind: "app_key";
   name: string;
   publicKey: string;
+  grants: "oauth:issue"[];
   fingerprint: string;
   status: "active" | "expired" | "revoked";
   accountStatus: "active" | "disabled";
@@ -30,6 +31,7 @@ type Row = {
   service_account_id: string;
   name: string;
   public_key: string;
+  oauth_issue_allowed: boolean;
   fingerprint: string;
   key_status: AppKeyMetadata["status"];
   account_status: AppKeyMetadata["accountStatus"];
@@ -47,6 +49,7 @@ const map = (row: Row): AppKeyMetadata => ({
   kind: "app_key",
   name: row.name,
   publicKey: row.public_key,
+  grants: row.oauth_issue_allowed ? ["oauth:issue"] : [],
   fingerprint: row.fingerprint,
   status: row.key_status,
   accountStatus: row.account_status,
@@ -89,6 +92,7 @@ export const registerAppKey = async (params: {
   publicKey: string;
   name?: string;
   expiresAt?: string;
+  grants?: "oauth:issue"[];
 }): Promise<
   Result<{
     keyId: string;
@@ -100,6 +104,7 @@ export const registerAppKey = async (params: {
 > => {
   const valid = validateAdmin(params.actor, params.appId);
   if (!valid.ok) return valid;
+  if (params.grants?.some((grant) => grant !== "oauth:issue")) return fail(err.badInput("Unknown app key grant"));
   const name = params.name?.trim() ?? "App key";
   if (!name || name.length > 120) return fail(err.badInput("Key name must contain 1 to 120 characters"));
   let fingerprint: string;
@@ -160,10 +165,11 @@ export const registerAppKey = async (params: {
     `;
     if ((count?.active ?? 0) >= 2)
       return fail({ ...err.conflict("App key"), message: "An app can have at most two active keys; revoke an old key first" });
+    // Grants are explicit on every new enrollment, including rotation.
     const [row] = await db<{ id: string }[]>`
       INSERT INTO auth.service_account_credentials
-        (service_account_id, name, kind, public_key, fingerprint, created_by, expires_at)
-      VALUES (${accountId}::uuid, ${name}, 'app_key', ${params.publicKey}, ${fingerprint}, ${params.actor.id}::uuid, ${expiresAt})
+        (service_account_id, name, kind, public_key, fingerprint, created_by, expires_at, oauth_issue_allowed)
+      VALUES (${accountId}::uuid, ${name}, 'app_key', ${params.publicKey}, ${fingerprint}, ${params.actor.id}::uuid, ${expiresAt}, ${params.grants?.includes("oauth:issue") ?? false})
       RETURNING id
     `;
     if (!row) throw new Error("App key registration returned no key");
@@ -173,7 +179,7 @@ export const registerAppKey = async (params: {
         outcome: "allowed",
         actor: actorForAudit(params.actor),
         target: { type: "service_account_credential", id: row.id, label: name },
-        metadata: { appId: params.appId, serviceAccountId: accountId, fingerprint },
+        metadata: { appId: params.appId, serviceAccountId: accountId, fingerprint, grants: params.grants ?? [] },
       },
       db,
     );
@@ -273,7 +279,7 @@ export const revokeAppKey = async (params: { actor: AdminActor; appId: string; k
 export const getActiveAppKey = async (
   params: { appId: string; keyId: string },
   db: SQL = sql,
-): Promise<(AppKeyMetadata & { connectionsAllowed: boolean }) | null> => {
+): Promise<(AppKeyMetadata & { connectionsAllowed: boolean; oauthIssueAllowed: boolean }) | null> => {
   try {
     validateAppKeyAppId(params.appId);
   } catch {
@@ -288,7 +294,7 @@ export const getActiveAppKey = async (
       AND (c.expires_at IS NULL OR c.expires_at > now()) AND sa.status = 'active'
       AND sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app' AND sa.resource_id = ${params.appId}
   `;
-  return row ? { ...map(row), connectionsAllowed: row.connections_allowed } : null;
+  return row ? { ...map(row), connectionsAllowed: row.connections_allowed, oauthIssueAllowed: row.oauth_issue_allowed } : null;
 };
 
 /** Call only after successful authentication; a late touch cannot revive a key. */

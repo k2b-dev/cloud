@@ -59,8 +59,8 @@ and durable data.
   forward a cookie, OAuth token, or API key directly to another application.
 - For one independently installed App-PWA per app, read **App-PWA** (`/en/docs/frontend/app-pwa`) and **App-PWA sessions** (`/en/docs/identity/app-pwa-sessions`). Device and visit actors never become employees; the app authorizes customer actions through the visit. Cloud resource operations intersect device ceilings with current owner grants. Commit domain writes in the supplied transaction; keep private pages and unfinished signatures out of offline storage.
 - Durable background work that calls another application stores one revocable
-  mandate for the workload. It authenticates to Core with its app-bound
-  workload credential and never stores the user's session or personal API key.
+  mandate for the workload. The platform signs each Core transmission with the app key; legacy workload credentials remain this release.
+  Never store the user's session or personal API key.
 - Keep transport conversion in handlers and domain rules in the application. Pass `c.req.raw.signal` to costly request work: the gateway cancels the upstream request when the client disconnects. A handler answering more than 10 seconds after the request raises its own idle timeout with `setRequestTimeout(c, seconds)` (at most 240) and restores it once answering; longer work streams or runs as a job.
 - Ship server-side files under `src/assets/` and resolve them with `appAssetPath()` from `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in the bundled image. Import Bun built-ins statically; the minified server
   bundle breaks `await import("bun")`.

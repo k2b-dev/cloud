@@ -48,6 +48,7 @@ export const app = defineApp({
       "/api/_internal/identity/v1/mandates/:mandateId/policy",
       "/api/_internal/identity/v1/mandates/:mandateId/pause",
       "/api/_internal/identity/v1/mandates/:mandateId/revoke",
+      "/api/_internal/identity/v1/oauth/jwks",
       "/api/_internal/identity/v1/oauth/ready",
       "/api/_internal/identity/v1/oauth/token",
       "/api/_internal/identity/v1/oauth/device-approval",

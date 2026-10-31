@@ -529,7 +529,7 @@ export const renderNotebookBook = (
       if (handle.type !== "data")
         prepared.push(
           "",
-          slot(() => `<div class="md-block-handle" id="${anchorId(`block-${handle.name}`)}">@${escape(handle.name)}</div>`),
+          slot(() => `<div class="md-block-handle" id="${anchorId(`block-${handle.name}`)}">${escape(handle.name)}</div>`),
           "",
         );
       continue;
@@ -627,7 +627,7 @@ export const renderNotebookBook = (
           const data = parseNamedDataBlockResult(body);
           if (data.diagnostics.length) return diagnostic(start + 1, kind) + source(body);
           const name = dataNames.get(start);
-          const title = name ? `<div class="md-block-handle" id="${anchorId(`block-${name}`)}">@${escape(name)}</div>` : "";
+          const title = name ? `<div class="md-block-handle" id="${anchorId(`block-${name}`)}">${escape(name)}</div>` : "";
           return `<div class="md-data-block">${title}${data.entries.length ? `<dl class="md-data-grid">${data.entries.map((entry) => `<div class="md-data-row"><dt class="md-data-key">${escape(text.humanize(entry.key))}</dt><dd class="md-data-value">${valueHtml(entry.value)}</dd></div>`).join("")}</dl>` : `<p class="notebook-book-empty">${escape(t.emptyData)}</p>`}</div>`;
         }
         if (!notice) return "";

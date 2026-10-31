@@ -78,7 +78,8 @@ export const enrollAppKey = async (input: {
   format: AppKeyArtifactFormat;
   uid?: number;
   name?: string;
-  register: (body: { publicKey: string; name?: string }) => Promise<unknown>;
+  grants?: "oauth:issue"[];
+  register: (body: { publicKey: string; name?: string; grants?: "oauth:issue"[] }) => Promise<unknown>;
 }) => {
   validateAppKeyAppId(input.appId);
   if (input.uid !== undefined && process.getuid?.() !== 0 && process.getuid?.() !== input.uid)
@@ -113,7 +114,11 @@ export const enrollAppKey = async (input: {
   if ((await deriveAppPublicKey(state.seed)) !== state.publicKey) throw new Error("Enrollment public key does not match its seed");
   await owner(provisional, input.uid);
   const registered = registrationSchema.parse(
-    await input.register({ publicKey: state.publicKey, ...(input.name ? { name: input.name } : {}) }),
+    await input.register({
+      publicKey: state.publicKey,
+      ...(input.name ? { name: input.name } : {}),
+      ...(input.grants ? { grants: input.grants } : {}),
+    }),
   );
   if (registered.fingerprint !== (await appKeyFingerprint(state.publicKey)))
     throw new Error("Core returned a different app-key fingerprint");
@@ -161,8 +166,11 @@ export const appKeyCommands = [
       format: flag.enum(["file", "env", "compose", "k8s-secret"] as const, { default: "file" }),
       uid: flag.int({ min: 0, description: "File owner UID; requires root or the current UID" }),
       name: flag.string({ description: "Human-readable key name" }),
+      grant: flag.enum(["oauth:issue"] as const, { description: "Grant OAuth issuance to each new key; repeat on rotation" }),
+      noGrant: flag.boolean({ name: "no-grant", description: "Enroll new keys without grants (the default)" }),
     },
     async run({ ctx, args, flags }) {
+      if (flags.grant && flags.noGrant) throw new Error("Choose either --grant or --no-grant");
       const apps = await resolveAppKeyApps(args.apps, flags.all, flags.apps);
       const results = [];
       for (const appId of apps)
@@ -174,6 +182,7 @@ export const appKeyCommands = [
             format: flags.format ?? "file",
             uid: flags.uid,
             name: flags.name,
+            grants: flags.grant ? [flags.grant] : flags.noGrant ? [] : undefined,
             register: (body) => apiJson(ctx, "POST", keyPath(appId), body),
           }),
         );

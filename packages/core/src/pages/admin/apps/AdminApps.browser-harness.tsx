@@ -5,6 +5,8 @@ import { createComponent, render } from "solid-js/web";
 import Access from "./Access.island.tsx";
 import AddApp from "./AddApp.island.tsx";
 import AppRowMenu from "./AppRowMenu.island.tsx";
+import Domains from "./Domains.island.tsx";
+import DomainsAdd from "./DomainsAdd.island.tsx";
 import Keys from "./Keys.island.tsx";
 import KeysCreate from "./KeysCreate.island.tsx";
 import MovedNotice from "./MovedNotice.island.tsx";
@@ -18,6 +20,8 @@ const islands: Record<string, Component<never>> = {
   "Access.island.tsx": Access as Component<never>,
   "AddApp.island.tsx": AddApp as Component<never>,
   "AppRowMenu.island.tsx": AppRowMenu as Component<never>,
+  "Domains.island.tsx": Domains as Component<never>,
+  "DomainsAdd.island.tsx": DomainsAdd as Component<never>,
   "Keys.island.tsx": Keys as Component<never>,
   "KeysCreate.island.tsx": KeysCreate as Component<never>,
   "MovedNotice.island.tsx": MovedNotice as Component<never>,

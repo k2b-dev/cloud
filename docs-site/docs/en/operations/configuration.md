@@ -46,12 +46,12 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | string | secret | unset | no | Core only: 64-hex KEK for platform identity signing keys stored in Postgres; generate once with `openssl rand -hex 32` and never distribute it to other apps. File alternative: `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY_FILE`. |
 | `CLOUD_IDENTITY_NEXT_KEY` | string | secret | unset | no | Core only: pre-distributed next KEK before promoting it to current; cannot be combined with `CLOUD_IDENTITY_PREVIOUS_KEY`. File alternative: `CLOUD_IDENTITY_NEXT_KEY_FILE`. |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | string | secret | unset | no | Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed. File alternative: `CLOUD_IDENTITY_PREVIOUS_KEY_FILE`. |
-| `CLOUD_OAUTH_BROKER_SECRET` | string | secret | unset | no | Core and OAuth only: 64-hex secret that lets the OAuth app request token signatures from Core; generate independently with `openssl rand -hex 32`. File alternative: `CLOUD_OAUTH_BROKER_SECRET_FILE`. |
-| `CLOUD_APP_KEY` | string | secret | unset | no | App Ed25519 private key for startup connection bootstrap; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Keep infrastructure env until the platform-client import migration is complete. File alternative: `CLOUD_APP_KEY_FILE`. |
+| `CLOUD_OAUTH_BROKER_SECRET` | string | secret | unset | no | Deprecated: Core and OAuth legacy 64-hex broker secret, used only when OAuth has no app key. Configure an OAuth app key instead; retained for this release. File alternative: `CLOUD_OAUTH_BROKER_SECRET_FILE`. |
+| `CLOUD_APP_KEY` | string | secret | unset | no | App Ed25519 private key for startup bootstrap, background calls and OAuth issuance; alternatively mount CLOUD_APP_KEY_FILE. Requires the direct Core origin. Core and Gateway refuse app keys. Keep infrastructure env until the platform-client import migration is complete. File alternative: `CLOUD_APP_KEY_FILE`. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | string | runtime | unset | no | Direct Core listener origin for app connection bootstrap, OAuth issuance, mandate-backed background work and internal callbacks; never the gateway. Cross-host bootstrap requires verified TLS; install private CAs through NODE_EXTRA_CA_CERTS before the first fetch. |
-| `CLOUD_APP_CREDENTIAL` | string | secret | unset | no | Optional host-run app override for the automatically delivered app workload credential; provision through Core's admin workload API with `identity:invoke`. File alternative: `CLOUD_APP_CREDENTIAL_FILE`. |
+| `CLOUD_APP_CREDENTIAL` | string | secret | unset | no | Deprecated: host-run override for the automatically delivered workload credential when no app key is configured; use CLOUD_APP_KEY or CLOUD_APP_KEY_FILE instead. Retained for this release. File alternative: `CLOUD_APP_CREDENTIAL_FILE`. |
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | string | runtime | unset | no | Deprecated: use `CLOUD_CORE_INTERNAL_ORIGIN`; the explicit old origin remains honored for this release. Optional private origin of the Core listener for session and invocation JWKS; unset uses `CLOUD_CORE_INTERNAL_ORIGIN`, then the public issuer origin. |
-| `CLOUD_OAUTH_JWKS_ORIGIN` | string | runtime | unset | no | Optional private origin of the OAuth listener for OAuth JWKS; unset fetches keys from the public issuer origin. |
+| `CLOUD_OAUTH_JWKS_ORIGIN` | string | runtime | unset | no | Deprecated: explicit legacy OAuth JWKS origin, honored for this release. Unset uses Core internal OAuth JWKS through CLOUD_CORE_INTERNAL_ORIGIN, then the public issuer origin. |
 | `APP_DIR` | string | development | unset | no | Application directory for standalone consumers running `@k2b/cloud/scripts/build.ts` or the SSR dev server outside the monorepo; defaults to the package directory. |
 | `CLOUD_DESKTOP_SQLITE_PATH` | string | development | unset | no | SQLite file used by `desktop.sql` in the Bun desktop process; defaults to `.local/desktop.sqlite` in the working directory. |
 
@@ -102,6 +102,19 @@ Declared in `packages/notebooks/src/env.ts`.
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
 | `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | list | runtime | empty list | no | Deprecated: bootstraps `notebooks.snapshot_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks that notebook S3 snapshots may upload to, for example `minio,10.20.0.0/16`; unset allows only public storage. Bare entries cover every port; host:port and [ipv6]:port restrict a host or IP to one port; `/0` entries and other invalid entries are ignored with a bootstrap warning. |
+
+## Application: notes
+
+Declared in `pwas/notes/server/env.ts`.
+
+| Variable | Type | Scope | Default | Required | Description |
+| --- | --- | --- | --- | --- | --- |
+| `NOTES_PUBLIC_ORIGIN` | string | runtime | unset | yes | Notes only: public website origin used for WebSocket, mutation, and administrator origin checks. |
+| `NOTES_ADMIN_PASSWORD_HASH` | string | secret | unset | no | Notes only: Argon2id operator password hash generated with Bun.password.hash; changing it invalidates all administrator sessions. |
+| `NOTES_TRUSTED_PROXY` | string | runtime | unset | no | Notes only: immediate proxy address allowed to supply the last X-Forwarded-For entry; unset trusts no forwarding header. |
+| `NOTES_STORAGE_BYTES` | number | runtime | unset | yes | Notes only: total reserved application storage budget in bytes; new notes and files pause at 90 percent and existing updates stop at capacity. |
+| `NOTES_MAX_CONNECTIONS` | number | runtime | unset | yes | Notes only: maximum simultaneous WebSockets in this single process, selected from the pre-launch load test. |
+| `NOTES_MAX_OPEN_PADS` | number | runtime | unset | yes | Notes only: maximum documents held in memory at once, selected from the pre-launch load test. |
 
 ## Application: pwa-auth
 

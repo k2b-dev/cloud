@@ -1,6 +1,7 @@
 import { env } from "@k2b/cloud/config";
 import type { User } from "@k2b/cloud/contracts";
 import { accounts, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
+import { resolveOAuthJwksUrl } from "@k2b/cloud/services/identity/runtime-config";
 import { sql } from "bun";
 import * as jose from "jose";
 import { DYNAMIC_CLIENT_SCOPES, type OAuthClient, type OAuthScope } from "@/contracts";
@@ -130,9 +131,9 @@ export const cleanupAuthorityGrants = async (): Promise<number> => {
 };
 
 const getOAuthVerificationKey = async (): Promise<jose.JWTVerifyGetKey> => {
-  const configuredOrigin = env.CLOUD_OAUTH_JWKS_ORIGIN;
+  const configuredOrigin = env.CLOUD_OAUTH_JWKS_ORIGIN ?? env.CLOUD_CORE_INTERNAL_ORIGIN;
   if (configuredOrigin) {
-    const url = new URL("/.well-known/jwks.json", configuredOrigin);
+    const url = resolveOAuthJwksUrl(configuredOrigin);
     const cacheKey = url.toString();
     const cached = remoteVerifiers.get(cacheKey);
     if (cached) return cached;
@@ -355,7 +356,7 @@ export const verifyAccessToken = async (params: { token: string; issuer: string 
     });
     return payload;
   } catch (error) {
-    if (error instanceof jose.errors.JWKSNoMatchingKey && !env.CLOUD_OAUTH_JWKS_ORIGIN) {
+    if (error instanceof jose.errors.JWKSNoMatchingKey && !env.CLOUD_OAUTH_JWKS_ORIGIN && !env.CLOUD_CORE_INTERNAL_ORIGIN) {
       const now = Date.now();
       if (now - lastUnknownKeyRefreshAt < 1_000) return null;
       lastUnknownKeyRefreshAt = now;

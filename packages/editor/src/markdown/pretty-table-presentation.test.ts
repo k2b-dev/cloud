@@ -18,7 +18,7 @@ describe("pretty table cell presentation", () => {
     );
     // Captured from the original renderer before extracting cell presentation.
     expect(html).toBe(
-      '<div class="md-block-handle" data-block-name="budget">@budget</div><div class="md-table-wrap"><table class="md-table"><thead><tr><th scope="col"><span class="md-table-cell">Hours</span></th><th scope="col"><span class="md-table-cell md-align-right">Cost</span></th></tr></thead><tbody><tr><td><span class="md-table-cell"><strong>Work</strong></span></td><td><span class="md-table-cell md-formula-ok md-align-right" title="=1.5"><i class="ti ti-math-function"></i>1,5</span></td></tr><tr class="md-table-total-row"><td><span class="md-table-cell">Sum</span></td><td><span class="md-table-cell md-formula-ok md-align-right" title="=SUM(Cost)"><i class="ti ti-math-function"></i>1,5</span></td></tr></tbody></table></div>',
+      '<div class="md-block-handle" data-block-name="budget">budget</div><div class="md-table-wrap"><table class="md-table"><thead><tr><th scope="col"><span class="md-table-cell">Hours</span></th><th scope="col"><span class="md-table-cell md-align-right">Cost</span></th></tr></thead><tbody><tr><td><span class="md-table-cell"><strong>Work</strong></span></td><td><span class="md-table-cell md-formula-ok md-align-right" title="=1.5"><i class="ti ti-math-function"></i>1,5</span></td></tr><tr class="md-table-total-row"><td><span class="md-table-cell">Sum</span></td><td><span class="md-table-cell md-formula-ok md-align-right" title="=SUM(Cost)"><i class="ti ti-math-function"></i>1,5</span></td></tr></tbody></table></div>',
     );
   });
 

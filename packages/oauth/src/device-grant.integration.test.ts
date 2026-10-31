@@ -982,7 +982,7 @@ suite("OAuth device authorization grant", () => {
       const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
         Object.assign(
           (input: RequestInfo | URL, init?: RequestInit) => {
-            if (String(input).endsWith("/oauth/device-approval")) {
+            if ((input instanceof Request ? input.url : String(input)).endsWith("/oauth/device-approval")) {
               calls++;
               return Promise.resolve(new Response(null, { status: 503 }));
             }
@@ -1073,7 +1073,7 @@ suite("OAuth device authorization grant", () => {
       const spy = spyOn(globalThis, "fetch").mockImplementation(
         Object.assign(
           (input: RequestInfo | URL, init?: RequestInit) => {
-            if (String(input).endsWith("/oauth/device-approval")) {
+            if ((input instanceof Request ? input.url : String(input)).endsWith("/oauth/device-approval")) {
               calls++;
               throw new Error("Unexpected Core call");
             }
@@ -1107,10 +1107,10 @@ suite("OAuth device authorization grant", () => {
         const deleteSpy = failure === "cleanup" ? spyOn(oauth.device, "deletePending").mockRejectedValue(new Error("Delete failed")) : null;
         const spy = spyOn(globalThis, "fetch").mockImplementation(
           Object.assign(
-            (input: RequestInfo | URL, init?: RequestInit) => {
-              if (String(input).endsWith("/oauth/device-approval")) {
+            async (input: RequestInfo | URL, init?: RequestInit) => {
+              if ((input instanceof Request ? input.url : String(input)).endsWith("/oauth/device-approval")) {
                 calls++;
-                const body: { deviceAuthorizationId: string } = JSON.parse(String(init?.body));
+                const body: { deviceAuthorizationId: string } = await new Request(input, init).json();
                 authorizationIds.push(body.deviceAuthorizationId);
                 if (failure === "network") throw new TypeError("Network failure");
                 return Promise.resolve(new Response(null, { status: 404 }));

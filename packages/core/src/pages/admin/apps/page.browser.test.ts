@@ -236,3 +236,89 @@ test("key states: no valid key carries the page's one filled action; rotation na
   expect(await page.locator('[data-row="Schlüssel"]').innerText()).toContain("2 aktiv · Rotation läuft");
   expect(await page.locator('[data-hint="rotation"]').count()).toBe(0);
 }, 20_000);
+
+test("domains: only an app with public pages has a Domains row; its column shows each domain's checks and redirect", async () => {
+  await open("?app=mail");
+  expect(await page.locator('[data-row="Domains"]').count()).toBe(0);
+  await open("?app=lager");
+  expect(await page.locator('[data-row="Domains"]').innerText()).toContain("lager.example.de +2 · 1 Problem");
+  await open("?app=lager&view=domains");
+  const column = page.locator('[data-domains="lager"]');
+  expect(await column.locator("[data-domain]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-domain")))).toEqual([
+    "lager.example.de",
+    "www.lager.example.de",
+    "bestand.example.de",
+  ]);
+  expect(await column.locator('[data-domain="lager.example.de"]').innerText()).toContain("Hauptdomain");
+  expect(await column.locator('[data-domain="www.lager.example.de"]').innerText()).toContain("Leitet mit 301 weiter auf lager.example.de");
+  const broken = column.locator('[data-domain="bestand.example.de"]');
+  expect(await broken.locator("[data-domain-status]").innerText()).toContain("Zertifikat fehlgeschlagen");
+  expect(await broken.innerText()).toContain("certificate has expired");
+  const check = broken.getByRole("button", { name: "Prüfen bestand.example.de" });
+  await check.click();
+  await page
+    .getByRole("button", { name: "Prüfen bestand.example.de" })
+    .getByText(/Erneut prüfen in \d+ s/)
+    .waitFor();
+  expect(await check.isDisabled()).toBe(true);
+}, 20_000);
+
+test("domains: adding keeps the input on a conflict, an alias appears under its primary, and the primary can change", async () => {
+  await open("?app=lager&view=domains");
+  await page.getByRole("button", { name: "Domain hinzufügen" }).click();
+  const dialog = page.locator("[data-domain-add]");
+  await dialog.getByRole("textbox", { name: "Domain" }).fill("mail.example.de");
+  await dialog.getByRole("button", { name: "Hinzufügen" }).click();
+  await dialog.getByRole("alert").waitFor();
+  expect(await dialog.getByRole("alert").innerText()).toContain("Diese Domain gehört schon zu einer App.");
+  expect(await dialog.getByRole("textbox", { name: "Domain" }).inputValue()).toBe("mail.example.de");
+  await dialog.getByRole("textbox", { name: "Domain" }).fill("lager");
+  await dialog.getByRole("button", { name: "Hinzufügen" }).click();
+  await dialog.getByRole("alert").getByText("Das ist kein gültiger Hostname.", { exact: false }).waitFor();
+  await dialog.getByRole("textbox", { name: "Domain" }).fill("shop.example.de");
+  await dialog.getByRole("button", { name: "Hinzufügen" }).click();
+  const added = page.locator('[data-domain="shop.example.de"]');
+  await added.waitFor();
+  expect(await added.innerText()).toContain("Erste Prüfung läuft …");
+
+  await page.getByRole("button", { name: "Aktionen für www.lager.example.de" }).click();
+  await page.getByRole("menuitem", { name: "Als Hauptdomain setzen" }).click();
+  await page.locator('[data-domain="lager.example.de"]').getByText("Leitet mit 301 weiter auf www.lager.example.de").waitFor();
+  expect(await page.locator('[data-domain="www.lager.example.de"]').innerText()).toContain("Hauptdomain");
+}, 20_000);
+
+test("domains: a domain others redirect to cannot be removed; removing another asks first", async () => {
+  await open("?app=lager&view=domains");
+  await page.getByRole("button", { name: "Aktionen für lager.example.de" }).click();
+  const blocked = page.getByRole("menuitem", { name: /Entfernen/ });
+  expect(await blocked.isDisabled()).toBe(true);
+  expect(await blocked.innerText()).toContain("Andere Domains leiten hierher weiter");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Aktionen für bestand.example.de" }).click();
+  await page.getByRole("menuitem", { name: "Entfernen …" }).click();
+  const dialog = page.getByRole("alertdialog");
+  expect(await dialog.innerText()).toContain("Lagerbestand antwortet danach nicht mehr unter bestand.example.de.");
+  await dialog.getByRole("button", { name: "Entfernen" }).click();
+  await page.locator('[data-domain="bestand.example.de"]').waitFor({ state: "detached" });
+}, 20_000);
+
+test("domains: an empty list and a failed read each say so in place", async () => {
+  await open("?app=lager&view=domains&state=domains-empty");
+  expect(await page.locator('[data-domains="lager"]').innerText()).toContain("Noch keine Domain.");
+  await open("?app=lager&view=domains&state=domains-error");
+  expect(await page.locator('[data-domains="lager"]').innerText()).toContain("Die Domains konnten nicht geladen werden.");
+  expect(await page.getByRole("button", { name: "Erneut versuchen" }).isVisible()).toBe(true);
+  await open("?app=lager&state=domains-error");
+  expect(await page.locator('[data-row="Domains"]').innerText()).toContain("Nicht geladen");
+}, 20_000);
+
+test("domains: a promotion that stops halfway says so and can be finished", async () => {
+  await open("?app=lager&view=domains&state=domains-partial");
+  await page.getByRole("button", { name: "Aktionen für www.lager.example.de" }).click();
+  await page.getByRole("menuitem", { name: "Als Hauptdomain setzen" }).click();
+  const alert = page.locator('[data-domains="lager"] [role="alert"]');
+  await alert.getByText("Nur teilweise geändert.", { exact: false }).waitFor();
+  await alert.getByRole("button", { name: "Änderung abschließen" }).click();
+  await page.locator('[data-domain="lager.example.de"]').getByText("Leitet mit 301 weiter auf www.lager.example.de").waitFor();
+  expect(await alert.count()).toBe(0);
+}, 20_000);

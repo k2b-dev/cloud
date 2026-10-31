@@ -142,6 +142,8 @@ export { createAdminAppKeyRoutes } from "./admin-app-keys";
 export { createAppAccessRoutes } from "./app-access";
 /** Core-owned internal startup protocol; applications use @k2b/cloud/start. */
 export { createAppBootstrapRoutes } from "./app-bootstrap";
+/** Core-owned app-key request authentication. */
+export { authenticateSignedAppRequest } from "./authenticate-app-request";
 export {
   CLOUD_MCP_PATH,
   CLOUD_MCP_PROTECTED_RESOURCE_PATH,

@@ -1079,6 +1079,25 @@ Never cut a random UUID or `Math.random()` to short-ID length: the small space
 repeats and fails a unique index at random. `bun run check` flags this with the
 `test-short-ids` rule.
 
+## Measure the public-site example
+
+`bun scripts/lighthouse-public-site.ts` builds
+`packages/cloud/examples/public-site` in production mode and serves it as
+`http://public-site.localhost:<port>/` on a free port through the gateway's own request handler
+(host decision, protections, compression) to the app's `app.public` surface.
+A fixed snapshot replaces only the domain table and the registry. It then runs
+Lighthouse 13.6.0 on Playwright's Chromium with mobile emulation and simulated
+throttling, prints the SEO and performance scores of `/` and `/de/`, and exits
+with 1 below SEO 100 or performance 95. Reports stay in
+`.local/lighthouse-public-site/`.
+
+The run uses the integration variables (`CLOUD_TEST_DATABASE_URL`,
+`CLOUD_TEST_VALKEY_URL`, `CLOUD_TEST_NATS_SERVERS`, and
+`CLOUD_TEST_NATS_CREDS_FILE` where needed): the measurement server starts like
+the gateway process, and its telemetry publishes to its own test namespace,
+which the script deletes. Run it before a release that changes the gateway's
+app-domain path or `app.public`; it is not part of the gate.
+
 ## Request cache checks
 
 The request-cache suites modify global settings and cache keys, so they run
