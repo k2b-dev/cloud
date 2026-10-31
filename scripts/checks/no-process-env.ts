@@ -28,7 +28,10 @@ const allowed: RegExp[] = [
   /^packages\/assistant\/src\/cli\/text-editor\.ts$/,
   // Locates cld's own configuration (XDG_CONFIG_HOME, CLD_CONFIG) so local file access can refuse it.
   /^packages\/assistant\/src\/cli\/local-paths\.ts$/,
+  // Slice 7 removes the legacy URL rewrite with the Bun-global client imports.
   /^packages\/cloud\/src\/_internal\/postgres-application-name\.ts$/,
+  // Startup rejects app keys until the bootstrap slice declares and consumes their registry entries.
+  /^packages\/cloud\/src\/start\.ts$/,
   /^packages\/cloud\/src\/_internal\/canvas-worker\.ts$/,
   // Evaluation harness invoked by scripts, not application runtime.
   /\.eval\.ts$/,

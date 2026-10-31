@@ -253,6 +253,7 @@ export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
 
 export { geoip } from "./geoip";
 export { appDetails } from "./app-details";
+export { appAdminFacts, type AppAdminFacts } from "./app-admin-facts";
 export {
   knownBrowsers,
   KNOWN_BROWSER_LIMITS,
@@ -282,7 +283,9 @@ export {
   type AppAccessSnapshot,
 } from "./app-access-management";
 
-export { storage } from "./object-store";
+import { storage as platformStorage } from "./object-store";
+/** @deprecated Import storage from @k2b/cloud. */
+export const storage = platformStorage;
 export type {
   ObjectStoreFile,
   ObjectVisibility,
@@ -292,3 +295,6 @@ export type {
   ObjectListOptions,
   ObjectListResult,
 } from "./object-store";
+
+export { links } from "./links";
+export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";

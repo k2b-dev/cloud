@@ -1215,7 +1215,8 @@ type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
 
 type AppWorkspaceSidebarItemProps = {
   variant?: "row" | "card" | "object"; context?: JSX.Element; contextMeta?: JSX.Element;
-  description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
+  description?: JSX.Element; note?: JSX.Element; noteTone?: "neutral" | "warning" | "danger";
+  preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void; active?: boolean | "ancestor"; activeClass?: string; disabled?: boolean;
@@ -1537,6 +1538,10 @@ reactive `layoutState`.
 `SidebarItem.description` supplies an optional passive second line. Compose a
 `StatusBadge`, short status text or progress there; keep interactive controls in
 `actions` or the preview. Existing one-line rows keep their compact layout.
+`note` adds a third line for the one fact about the row that needs attention,
+such as "3 deliveries failed"; `noteTone` (`warning`, `danger`) colours it. Keep
+the words complete, because the colour only repeats them. A row with several
+such facts shows the most important one and "+n" after it; the detail names all.
 Compound icon, label, metadata and action props remain reactive. Applications own
 the data source: no socket, task lifecycle or subscription belongs in the library.
 

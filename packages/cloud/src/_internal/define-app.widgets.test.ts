@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import { type Handler, Hono } from "hono";
-import { env } from "../config/env";
 import type { User } from "../contracts/shared";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import { getLocale } from "../server/locale";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { runtime } from "../server/middleware/runtime";
@@ -10,6 +10,7 @@ import { settings } from "../server/middleware/settings";
 import { getWidgetRequest } from "../server/widget-request";
 import * as invocationActor from "../services/identity/invocation-actor";
 import * as invocationToken from "../services/identity/invocation-token";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as settingsSnapshot from "../services/settings/snapshot";
@@ -70,13 +71,13 @@ const invocationCandidate = `${Buffer.from(
 test("internal invocation widgets receive runtime, settings, actor and locale like the public handler", async () => {
   let activeClaims = claims;
   let handlerCalls = 0;
-  const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-  Object.defineProperty(env, "APP_SECRET", { value: "widget-context-test-only", configurable: true });
+  const secretStub = stubConnections({ appSecret: { current: "widget-context-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   // The heartbeats are stubbed, so the registry handles declared on this fake are never used.
   const fakeSync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
     spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(fakeSync);
@@ -204,7 +205,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     for (const spy of spies) spy.mockRestore();
     processSync.unbindProcessSync();
     clearProcessApplicationId();
-    Object.defineProperty(env, "APP_SECRET", originalSecret);
+    secretStub.mockRestore();
     for (const [index, signal] of signals.entries()) {
       for (const listener of process.listeners(signal)) {
         if (!previousListeners[index]!.has(listener)) process.removeListener(signal, listener);

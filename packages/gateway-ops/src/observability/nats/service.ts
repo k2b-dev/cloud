@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { env } from "@k2b/cloud/config";
+import { connections } from "@k2b/cloud";
 import { connect, credsAuthenticator, nkeyAuthenticator } from "@nats-io/transport-node";
 import { z } from "zod";
-import { app } from "../../config";
+import { readNatsAccess } from "./access-state";
 import { credsContentAuthenticator, systemAccessKind } from "./settings";
 
 // The system JSZ API paginates accounts, not streams. Never request account
@@ -58,7 +58,12 @@ export type NatsConnectionConfig = {
   seed?: string;
   tlsCa?: string;
 };
-export type NatsDiagnosticsConfig = { admin: NatsConnectionConfig; application: NatsConnectionConfig; adminSettingsUnavailable?: true };
+export type NatsDiagnosticsConfig = {
+  admin: NatsConnectionConfig;
+  application: NatsConnectionConfig;
+  adminSettingsUnavailable?: true;
+  adminAccessRequired?: boolean;
+};
 export type NatsReplica = { name: string; current: boolean | null; offline: boolean | null; lag: number | null };
 export type NatsCluster = { name: string | null; leader: string | null; replicas: NatsReplica[] };
 export type NatsStream = {
@@ -102,7 +107,7 @@ export type NatsInventorySummary = {
 };
 export type NatsDiagnostics = {
   sampledAt: string;
-  cluster: { status: NatsDiagnosticStatus; issue?: string; nodes: NatsNode[]; settingsUnavailable?: true };
+  cluster: { status: NatsDiagnosticStatus; issue?: string; nodes: NatsNode[]; settingsUnavailable?: true; accessRequired?: true };
   inventory: {
     status: NatsDiagnosticStatus;
     issue?: string;
@@ -120,31 +125,20 @@ export type NatsDiagnostics = {
 export type NatsDiagnosticsOptions = { streamOffset?: number; consumerStream?: string; consumerOffset?: number };
 export const natsAccountDiagnosticsConfig = (): NatsDiagnosticsConfig => ({
   admin: { servers: [] },
-  application: { servers: env.NATS_SERVERS, credsFile: env.NATS_CREDS_FILE, tlsCaFile: env.NATS_TLS_CA_FILE },
+  application: { servers: connections().nats.servers, creds: connections().nats.creds, tlsCa: connections().nats.ca },
 });
 export const natsDiagnosticsConfig = async (): Promise<NatsDiagnosticsConfig> => {
   try {
-    const states = await Promise.all([
-      app.settings.read("gateway.nats_admin_servers"),
-      app.settings.read("gateway.nats_admin_access_kind"),
-      app.settings.read("gateway.nats_admin_access"),
-      app.settings.read("gateway.nats_admin_tls_ca"),
-    ]);
-    const servers = states[0].value;
-    const kind = states[1].value;
-    const access = states[2].value;
-    const ca = states[3].value;
-    // A format switch may be saved before its replacement secret. Never try the
-    // previous credentials under the new format. An explicitly empty access
-    // setting retains the existing anonymous-connection behavior.
-    const matches = states.every((state) => state.stored !== "unreadable") && (!access || systemAccessKind(access) === kind);
+    const { servers, kind, access, ca, unreadable, accessRequired } = await readNatsAccess();
+    const matches = !Object.values(unreadable).some(Boolean) && !accessRequired && (!access || systemAccessKind(access) === kind);
     return {
       admin: {
         servers: matches ? servers : [],
-        ...(access && kind === "creds" ? { creds: access } : {}),
-        ...(access && kind === "nkey" ? { seed: access } : {}),
+        ...(matches && access && kind === "creds" ? { creds: access } : {}),
+        ...(matches && access && kind === "nkey" ? { seed: access } : {}),
         ...(ca ? { tlsCa: ca } : {}),
       },
+      adminAccessRequired: accessRequired,
       application: natsAccountDiagnosticsConfig().application,
     };
   } catch {
@@ -226,6 +220,13 @@ export const getNatsClusterDiagnostics = async (
       nodes: [],
       issue: "NATS diagnostics settings could not be read. Retry when the settings service is available.",
       settingsUnavailable: true,
+    };
+  if (config.adminAccessRequired)
+    return {
+      status: "not_configured",
+      nodes: [],
+      accessRequired: true,
+      issue: "Enter system access for the current server list to enable cluster diagnostics.",
     };
   if (!config.admin.servers.length) return { status: "not_configured", nodes: [] };
   let connection: DiagnosticConnection | undefined;

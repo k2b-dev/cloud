@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../_internal/process-identity";
 import * as registry from "../_internal/registry";
+import { formatAppKey } from "../app-key";
+import { env } from "../config/env";
 import { ResourceReaderRateLimited, readResourcePrincipals } from "./resource-readers";
 import * as client from "./server-invoke";
 import { compileCapabilityManifest } from "./testing";
@@ -86,4 +89,26 @@ test("a container type without its generated readable query is not configured", 
     reason: "no_readable",
   });
   expect(invoke).not.toHaveBeenCalled();
+});
+
+test("an app key enables resource checks without a reusable workload credential", async () => {
+  const originalKey = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_KEY")!;
+  delete process.env.CLOUD_APP_CREDENTIAL;
+  Object.defineProperty(env, "CLOUD_APP_KEY", {
+    value: formatAppKey({
+      appId: "consumer",
+      installationId: "11111111-1111-4111-8111-111111111111",
+      keyId: "22222222-2222-4222-8222-222222222222",
+      seed: APP_KEY_FIXTURES[0].seed,
+    }),
+    configurable: true,
+  });
+  try {
+    expect(await readResourcePrincipals(input)).toEqual({ state: "checked", readable: [] });
+    const caller = invoke.mock.calls[0]?.[2];
+    expect(caller?.workload).toEqual({ appId: "consumer" });
+    expect(caller?.authorization).toBeUndefined();
+  } finally {
+    Object.defineProperty(env, "CLOUD_APP_KEY", originalKey);
+  }
 });

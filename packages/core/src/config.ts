@@ -8,6 +8,7 @@ export const app = defineApp({
   // These routes keep their own authentication, including workload and models-only credentials.
   access: appAccess.signedIn({
     publicRoutes: [
+      "/_internal/apps/bootstrap",
       "/auth/continue",
       "/auth/login",
       "/auth/new-password",
@@ -47,6 +48,7 @@ export const app = defineApp({
       "/api/_internal/identity/v1/mandates/:mandateId/policy",
       "/api/_internal/identity/v1/mandates/:mandateId/pause",
       "/api/_internal/identity/v1/mandates/:mandateId/revoke",
+      "/api/_internal/identity/v1/oauth/jwks",
       "/api/_internal/identity/v1/oauth/ready",
       "/api/_internal/identity/v1/oauth/token",
       "/api/_internal/identity/v1/oauth/device-approval",
@@ -161,6 +163,7 @@ export const app = defineApp({
     "/api/accounts/entities",
     "/api/admin/account-lifecycle",
     "/api/admin/core",
+    "/api/admin/apps",
     "/api/openapi.json",
     "/.well-known/cloud-session-jwks.json",
     "/.well-known/cloud-invocation-jwks.json",

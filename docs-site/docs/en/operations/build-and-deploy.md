@@ -15,6 +15,24 @@ The Cloud build creates one self-contained Bun bundle for one application.
 It emits the server, Solid island chunks, application CSS, static assets, and
 optional application-specific build output.
 
+## Roll out app status providers
+
+Deploy Core first. Its additive startup migration creates `core.known_apps`,
+with one retained registry snapshot and reporting-provider references per app.
+No configuration or backfill is required. Core's existing registry watcher
+records live apps; apps already offline appear through retained Core data or
+provider discovery. Core cannot reconstruct metadata it never observed.
+
+Deploy Gateway Ops with the matching Cloud package next. It registers the
+`appStatus` capability role. Existing telemetry and gateway registrations stay
+in place, including the older app-removal API. Other monitoring applications
+can provide the same role through
+[App status providers](/en/docs/platform/app-status).
+
+Hiding an offline app preserves its keys, grants, and event subscriptions.
+If a reporting provider is unavailable, removal fails visibly and the app
+stays listed. A later live lease restores a hidden listing automatically.
+
 ## Updating sharing controls
 
 Applications rebuilt with the current Cloud package include service accounts
@@ -103,6 +121,11 @@ NODE_ENV=production APP_ID=inventory bun run packages/cloud/scripts/build.ts
 That repository path is not an application API. Standalone builds always use
 the script shipped by their pinned package version.
 
+The generated server entry initializes platform connections before importing
+application code, then exports the application's default server. The development
+preload uses the same initializer before loading `src/config`. See
+[Platform start and connections](/en/docs/build/platform-start).
+
 ## Add build output
 
 Place browser assets in `public/`. The build copies them to
@@ -123,7 +146,8 @@ Do not locate server-side files relative to `import.meta.url`: the bundle
 flattens every module into `dist/server.js`, so such paths only work from the
 source tree.
 
-Import Bun built-ins statically, for example `import { sql } from "bun"`. The
+Import Cloud connections with `import { sql, redis } from "@k2b/cloud"`.
+Import other Bun built-ins statically. The
 minified server bundle breaks `await import("bun")`: it runs from source but
 throws a `ReferenceError` in the built image.
 

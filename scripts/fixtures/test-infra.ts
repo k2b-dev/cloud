@@ -53,9 +53,15 @@ import {
   readTestTarget,
 } from "./test-infra-env";
 import { connectTestNats } from "./test-nats";
+import { cancellingTestWork, finishTestWork, observeTestWork } from "./test-work";
 
 export type { InfraKind } from "./test-infra-env";
 export { connectTestNats } from "./test-nats";
+// Unit and CLI processes load this gate too; do not load server clients until needed.
+export const initializeTestPlatform = async (appId?: string): Promise<void> => {
+  const platform = await import("./platform");
+  await platform.initializeTestPlatform(appId);
+};
 
 const testOnlyDefaults: Record<string, string> = {
   APP_SECRET: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -129,6 +135,7 @@ const applyMappings = (): Record<InfraKind, string | undefined> => {
 
 /** Resolved `CLOUD_TEST_*` targets; `undefined` means the suite must skip. */
 export const testInfra: Readonly<Record<InfraKind, string | undefined>> = applyMappings();
+if (Object.values(testInfra).some(Boolean)) await initializeTestPlatform();
 
 const tcpReachable = async (url: string): Promise<void> => {
   const parsed = new URL(url);
@@ -281,6 +288,7 @@ export const useMigratedDatabase = async (prefix: string) => bindDefaultDatabase
 const bindDefaultDatabase = async (prefix: string, database: Awaited<ReturnType<typeof createDisposableDatabase>>) => {
   process.env.DATABASE_URL = database.url;
   ownTestDatabase(database.name);
+  await initializeTestPlatform();
   const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
   if (row?.name !== database.name) {
     await database.drop();
@@ -364,8 +372,12 @@ export const endLingeringTestWork = async (): Promise<string[]> => {
     const reports: string[] = [];
     for (const row of rows) {
       const action = row.state === "active" ? "cancelled" : "ended";
-      if (row.state === "active") await admin`SELECT pg_cancel_backend(${row.pid})`;
-      else await admin`SELECT pg_terminate_backend(${row.pid})`;
+      cancellingTestWork();
+      if (row.state === "active") {
+        await admin`SELECT pg_cancel_backend(${row.pid})`;
+      } else {
+        await admin`SELECT pg_terminate_backend(${row.pid})`;
+      }
       reports.push(
         `${action} ${row.state} work in ${row.database} after ${row.ms} ms (pid ${row.pid}, blocked by ${row.blockers.join(", ") || "nothing"}, waiting on ${row.wait}): ${row.query}`,
       );
@@ -379,6 +391,7 @@ export const endLingeringTestWork = async (): Promise<string[]> => {
 
 try {
   afterEach(async () => {
+    finishTestWork();
     await endLingeringTestWork();
   });
 } catch {
@@ -446,3 +459,7 @@ export const redactTarget = (target: string): string =>
       }
     })
     .join(",");
+
+// Install after registering the fixture's own hooks, but before test files load.
+// beforeAll may claim a private database only after its tests were registered.
+if (testInfra.database) observeTestWork();

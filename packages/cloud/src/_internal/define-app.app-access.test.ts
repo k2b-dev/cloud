@@ -1,10 +1,11 @@
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import { Hono } from "hono";
-import { env } from "../config/env";
 import { appAccess } from "../contracts/app-access";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import { defineHelp } from "../server/help";
 import * as authMiddleware from "../server/middleware/auth";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import * as applicationPackage from "./application-package";
@@ -19,14 +20,14 @@ import * as watcher from "./runtime-watcher";
 test.each(["roles", "resources"] as const)(
   "the %s framework gate precedes app mounts while framework probes remain reachable",
   async (rule) => {
-    const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-    Object.defineProperty(env, "APP_SECRET", { value: "gate-test-only", configurable: true });
+    const secretStub = stubConnections({ appSecret: { current: "gate-test-only" } });
     const signals = ["SIGTERM", "SIGINT"] as const;
     const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
     const sync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
     let authenticated = 0,
       appCalls = 0;
     const spies = [
+      spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
       spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
       spyOn(processSync, "startProcessSync").mockImplementation(async () => {
         processSync.bindProcessSync(sync);
@@ -109,7 +110,7 @@ test.each(["roles", "resources"] as const)(
       processSync.unbindProcessSync();
       clearProcessApplicationId();
       for (const spy of spies.toReversed()) spy.mockRestore();
-      Object.defineProperty(env, "APP_SECRET", originalSecret);
+      secretStub.mockRestore();
     }
   },
 );

@@ -17,7 +17,7 @@ Callers reserve before changing mail. A denial returns `scope` (`rule` or
 creating a reservation.
 
 These are call counters, separate from Cloud's [central AI accounting](/en/docs/ai/usage-and-feedback).
-The existing `WORKFLOW_AI_BUDGET` remains an independent operator control: its
+The existing `ai.workflow_budget` remains an independent operator control: its
 2,000-source default counts distinct message sources over a rolling 24 hours,
 not calls in a calendar day. Daily reservations do not replace that admission,
 its concurrency limits, or the person's own AI allowance.

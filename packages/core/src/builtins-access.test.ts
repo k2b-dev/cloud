@@ -97,6 +97,7 @@ const service = (
 // whose credentials ordinary Cloud authentication must never consume.
 const publicPaths: Record<string, string[]> = {
   core: [
+    "/_internal/apps/bootstrap",
     "/auth/login",
     "/auth/new-password",
     "/auth/password-reset",
@@ -154,6 +155,7 @@ const publicPaths: Record<string, string[]> = {
     "/api/_internal/ai/code/execute",
     "/api/_internal/identity/v1/mandates/mandate",
     ...["confirm", "policy", "pause", "revoke"].map((verb) => `/api/_internal/identity/v1/mandates/mandate/${verb}`),
+    "/api/_internal/identity/v1/oauth/jwks",
     "/api/_internal/identity/v1/oauth/ready",
     "/api/_internal/identity/v1/oauth/token",
     "/api/_internal/identity/v1/oauth/device-approval",
@@ -260,6 +262,7 @@ const publicPaths: Record<string, string[]> = {
 };
 const protectedPaths: Record<string, string[]> = {
   core: [
+    "/_internal/apps/bootstrap/private",
     "/me",
     "/admin",
     "/api/auth/pwa/v1/pairings",
@@ -271,6 +274,8 @@ const protectedPaths: Record<string, string[]> = {
     "/api/admin/identity",
     "/api/ai/tasks",
     "/api/_internal/identity/v1/other",
+    "/api/_internal/identity/v1/oauth/private",
+    "/api/_internal/identity/v1/oauth/jwks/private",
     "/api/capabilities/v1/streams/other",
     "/api/capabilities/v1/catalog/extra",
     "/api/capabilities/v1/queries/notebooks/get/extra",

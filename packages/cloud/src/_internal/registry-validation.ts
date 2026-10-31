@@ -20,6 +20,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   for (const field of ["id", "name", "icon", "description", "baseUrl"] as const) {
     if (!isString(value[field]) || value[field].length === 0) return invalid(field, "a non-empty string");
   }
+  if (value.public !== undefined && value.public !== true) return invalid("public", "true when present");
   if (value.package !== undefined && (typeof value.package !== "string" || !/^[a-z][a-z0-9-]{0,79}$/.test(value.package))) {
     return invalid("package", "a lowercase package name of 1–80 characters");
   }

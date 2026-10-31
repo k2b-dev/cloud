@@ -1,7 +1,7 @@
 import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
 import { createSettingsDraft, saveFailure } from "@k2b/cloud/ssr/settings-draft";
 import { Checkbox, NoticeCard, Select, TagsInput, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { responseErrorMessage } from "../../frontend/health-webhook-queries";
 import { gatewayOpsMessages } from "../../messages";
@@ -10,7 +10,7 @@ import { natsMessages } from "./messages";
 export type NatsAccessValues = { servers: string[]; kind: string; ca: string };
 type Values = NatsAccessValues & { access: string; clear: boolean };
 type Key = "servers" | "kind" | "access" | "ca";
-const keys = ["access", "kind", "ca", "servers"] as const;
+const keys = ["servers", "kind", "ca", "access"] as const;
 const setting: Record<Key, string> = {
   servers: "gateway.nats_admin_servers",
   kind: "gateway.nats_admin_access_kind",
@@ -18,15 +18,17 @@ const setting: Record<Key, string> = {
   ca: "gateway.nats_admin_tls_ca",
 };
 
-export default function NatsAccessForm(props: { values: NatsAccessValues; unreadable: Record<Key, boolean> }) {
+export default function NatsAccessForm(props: { values: NatsAccessValues; unreadable: Record<Key, boolean>; accessRequired?: boolean }) {
   const locale = useLocale();
   const t = () => natsMessages.resolve([locale()]).t;
   const g = () => gatewayOpsMessages.resolve([locale()]).t;
   const [unreadable, setUnreadable] = createSignal(props.unreadable);
+  const [accessRequired, setAccessRequired] = createSignal(props.accessRequired ?? false);
   const [replace, setReplace] = createSignal<Partial<Record<Key, boolean>>>({});
   const confirmed = (key: Key) => unreadable()[key] && replace()[key] === true;
   const label = (key: Key) => ({ servers: t().accessServers, kind: t().accessKind, access: t().accessSecret, ca: t().accessCa })[key];
   let stored: Values = { ...props.values, access: "", clear: false };
+  const serversChanged = (value: NatsAccessValues) => JSON.stringify(value.servers) !== JSON.stringify(stored.servers);
   const form = createSettingsDraft<Values>({
     initial: stored,
     locale,
@@ -37,10 +39,14 @@ export default function NatsAccessForm(props: { values: NatsAccessValues; unread
     },
     pending: () => keys.some(confirmed),
     validate: (value): Record<string, string> =>
-      confirmed("access") && !value.access && !value.clear ? { access: t().accessReplaceRequired } : {},
+      value.servers.length && (serversChanged(value) || accessRequired()) && !value.access && !value.clear
+        ? { access: t().accessEndpointHelp }
+        : confirmed("access") && !value.access && !value.clear
+          ? { access: t().accessReplaceRequired }
+          : {},
     save: async (value, commit) => {
       // Save only changed fields, keeping confirmed steps after a partial failure.
-      // The server list comes last so a new connection is enabled after its access.
+      // Changing servers discards saved access. Submit the replacement last.
       for (const key of keys) {
         if (
           key === "access"
@@ -58,6 +64,8 @@ export default function NatsAccessForm(props: { values: NatsAccessValues; unread
           if (response.status === 409) setUnreadable({ ...unreadable(), [key]: true });
           throw saveFailure(response.status, await responseErrorMessage(response, g().saveFailed));
         }
+        if (key === "servers") setAccessRequired(value.servers.length > 0);
+        if (key === "access") setAccessRequired(false);
         stored = { ...stored, [key]: value[key], ...(key === "access" ? { clear: value.clear } : {}) };
         setUnreadable({ ...unreadable(), [key]: false });
         setReplace({ ...replace(), [key]: false });
@@ -68,6 +76,8 @@ export default function NatsAccessForm(props: { values: NatsAccessValues; unread
       return stored;
     },
   });
+  const accessHelpId = createUniqueId();
+  const showAccessMessage = () => serversChanged(form.draft()) || accessRequired() || Boolean(form.errors().access);
   const disabled = (key: Key) => form.saving() || (unreadable()[key] && !replace()[key]);
   return (
     <div class="flex max-w-2xl flex-col gap-4 px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">
@@ -107,7 +117,23 @@ export default function NatsAccessForm(props: { values: NatsAccessValues; unread
       </Show>
       <TextInput
         label={t().accessSecret}
-        description={t().accessSecretHelp}
+        description={
+          <span class="grid">
+            <span class="col-start-1 row-start-1" classList={{ invisible: showAccessMessage() }} aria-hidden={showAccessMessage()}>
+              {t().accessSecretHelp}
+            </span>
+            <span
+              id={accessHelpId}
+              class="col-start-1 row-start-1"
+              classList={{ invisible: !showAccessMessage() }}
+              aria-hidden={!showAccessMessage()}
+              aria-live="polite"
+            >
+              {form.errors().access || t().accessEndpointHelp}
+            </span>
+          </span>
+        }
+        externalErrorId={showAccessMessage() ? accessHelpId : undefined}
         multiline
         autocomplete="off"
         spellcheck={false}

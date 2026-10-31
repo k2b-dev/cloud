@@ -133,13 +133,14 @@ test("a confirmed all-invalid registry snapshot removes the previous App-PWA rou
     import { strict as assert } from "node:assert";
     let table = { routeCount: 0, installables: [] };
     mock.module(${stats}, () => ({ stats: {}, getRouteTable: () => table, setRouteTable: (value) => { table = value; } }));
-    mock.module(${JSON.stringify(new URL("./config.ts", import.meta.url).pathname)}, () => ({ gatewayRouter: { id: "gateway-test", baseUrl: "http://gateway.test" } }));
+    mock.module(${JSON.stringify(new URL("./config.ts", import.meta.url).pathname)}, () => ({ gatewayRouter: { id: "gateway-test", baseUrl: "http://gateway.test", internalUrls: ["http://gateway.test"] } }));
     let rejected = false;
     mock.module(${cloud}, () => ({ buildRuntimeFromRegistry: () => ({}), startProcessSync: async () => ({}), watchAppRegistry: async () => {}, readAppRegistrySnapshot: async () => ({
       apps: rejected ? [] : [{ id: "inventory", name: "Inventory", icon: "ti ti-box", description: "", baseUrl: "http://inventory.invalid", routes: ["/app/inventory"], installable: ${JSON.stringify(surface("inventory"))} }],
       issues: rejected ? [{ key: "apps/inventory", reason: "invalid installable", version: "2" }] : []
     }) }));
     mock.module("@k2b/cloud/services", () => ({ logger: () => ({ info() {}, warn() {}, error(error) { throw new Error(String(error)); } }), buildGatewayRouteSnapshot: () => ({}), publishGatewayRouteSnapshot: async () => {}, removeGatewayRouteSnapshot: async () => {}, superviseRuntimeTask: async () => {} }));
+    mock.module("@k2b/cloud/services/settings/env-status", () => ({ readEnvSettingsStatus: async () => [] }));
     const { refreshRoutes } = await import(${runtime});
     const { getRouteTable } = await import(${stats});
     await refreshRoutes();

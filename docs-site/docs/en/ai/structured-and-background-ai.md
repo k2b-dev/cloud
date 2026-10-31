@@ -460,12 +460,12 @@ It does not deliver into an archived chat.
 ## Workflow inference limits and reuse
 
 Workflow inference has an absolute attempt budget, including admission and
-structured-output repair. `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` defaults to 60,000 ms:
+structured-output repair. `ai.workflow_attempt_timeout_ms` defaults to 60,000 ms:
 the pilot p95 was about four seconds, so a minute leaves substantial headroom
 while bounding occupied capacity. Timeout aborts the provider with
 `WORKFLOW_AI_TIMEOUT` and follows the existing three-attempt retry policy.
 
-`WORKFLOW_AI_QUEUE_TIMEOUT_MS` defaults to 60,000 ms. Recovery checks every ten
+`ai.workflow_queue_timeout_ms` defaults to 60,000 ms. Recovery checks every ten
 seconds in bounded batches. Overdue queued tasks become
 `WORKFLOW_AI_QUEUE_TIMEOUT`; a worker without a heartbeat for 30 seconds becomes
 `WORKFLOW_AI_INTERRUPTED`. Both persist a failure and wake the waiting workflow.
@@ -485,7 +485,7 @@ fails permanently as `WORKFLOW_AI_INPUT_TOO_LARGE`: narrow the supplied content
 or inspect the original manually, then start a new run. The original is retained;
 no content is silently truncated.
 
-Mail additionally rejects bodies over `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` before
+Mail additionally rejects bodies over `mail.workflow_ai_body_max_chars` before
 loading them into an AI step (pilot default: 20,000 characters). Frozen bodies and text supplied through source aliases
 receive the same per-string check. Attachments are metadata only, not extracted contents.
 Application value resolvers may throw `WorkflowValueError(message, code)` from
@@ -508,7 +508,7 @@ dispatch fail as `WORKFLOW_AI_MODEL_CHANGED` rather than recording an answer
 under an obsolete cache key. A provider response followed by a process crash
 before persistence can still incur another call: this remains at least once.
 
-Mail reserves new inference against `WORKFLOW_AI_BUDGET`, independently of
+Mail reserves new inference against `ai.workflow_budget`, independently of
 per-run effect caps and the installation's existing priced background budget.
 The pilot defaults are two active or successful logical requests per message in a rolling 24 hours,
 10 tasks per minute per mailbox with burst 20, 2,000 distinct messages per
@@ -585,7 +585,7 @@ coverage metadata that actually produced them.
 
 ```ts
 import { runApplicationAiTask } from "@k2b/cloud/ai";
-import { env } from "@k2b/cloud/config";
+import { getWorkflowAiBudget } from "@k2b/cloud/workflows/ai";
 
 const result = await runApplicationAiTask({
   appId: "inventory",
@@ -595,7 +595,7 @@ const result = await runApplicationAiTask({
   source: {
     sourceId: item.id,
     sourceRevision: item.revision,
-    budget: env.WORKFLOW_AI_BUDGET,
+    budget: await getWorkflowAiBudget(),
   },
   request: {
     kind: "classify",
@@ -672,3 +672,13 @@ trimmed length; values are trimmed before applying that minimum and `maxLength`.
 An optional `date_time` field validates a timestamp with a timezone inside the
 structured call. Omit it when the source supplies no date. These constraints
 apply before a durable task can become a cached success.
+
+## Administrator workflow budgets
+
+Read the current installation policy with `await getWorkflowAiBudget()` from
+`@k2b/cloud/workflows/ai` when constructing a workflow AI source scope. The
+operator manages `ai.workflow_budget`, `ai.workflow_attempt_timeout_ms`, and
+`ai.workflow_queue_timeout_ms` as settings. Admission uses the current budget
+for new work. Changing the budget's `globalConcurrent` also changes worker
+capacity and requires restarting all AI workers. See the
+[environment migration guide](/en/docs/operations/deprecations-and-migrations).

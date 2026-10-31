@@ -299,6 +299,7 @@ jobs:
           # prints the service log under "Stop containers"; the log options
           # below bound it. See contributing/testing.md.
           POSTGRES_INITDB_ARGS: &postgres-diagnostics >-
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
             -c shared_preload_libraries=auto_explain
             -c "log_line_prefix=%m [%p] %q%d %a: "
             -c log_min_duration_statement=250ms
@@ -309,6 +310,7 @@ jobs:
             -c auto_explain.log_parameter_max_length=256
         ports: ["5432:5432"]
         options: >-
+          --tmpfs /var/lib/postgresql/data:rw,size=4g
           --health-cmd "pg_isready -U cloud -d cloud_ci_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
           --log-opt max-size=4m --log-opt max-file=2
@@ -354,7 +356,47 @@ jobs:
       - name: Install the Playwright browser used by the Assistant code host
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
       # Grids certification runs in its own sharded job below.
+      - name: Start Postgres storage sampler
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" sh -ec 'test "$(stat -f -c %T "$PGDATA")" = tmpfs'
+          docker exec "$POSTGRES_CONTAINER" psql -U cloud -d cloud_ci_test \
+            -c 'SHOW fsync' -c 'SHOW synchronous_commit' -c 'SHOW full_page_writes'
+          # Run inside the disposable container so the sampler survives the
+          # step boundary. The always-step below stops it and prints its log.
+          docker exec -d "$POSTGRES_CONTAINER" sh -ec '
+            exec > /tmp/cloud-pg-storage-sampler.log 2>&1
+            echo "$$" > /tmp/cloud-pg-storage-sampler.pid
+            storage_sleep=
+            stop_sampler() {
+              if [ -n "$storage_sleep" ]; then
+                kill "$storage_sleep" 2>/dev/null || true
+                wait "$storage_sleep" || true
+              fi
+              exit 0
+            }
+            trap stop_sampler TERM INT
+            while true; do
+              df -k "$PGDATA"
+              sleep 30 &
+              storage_sleep=$!
+              wait "$storage_sleep"
+            done
+          '
       - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/4 --max-minutes 20
+      - name: Stop Postgres storage sampler and print samples
+        if: always()
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" sh -ec '
+            if [ -f /tmp/cloud-pg-storage-sampler.pid ]; then
+              kill "$(cat /tmp/cloud-pg-storage-sampler.pid)" 2>/dev/null || true
+            fi
+            cat /tmp/cloud-pg-storage-sampler.log
+            df -k "$PGDATA"
+          '
       - if: always()
         run: |
           docker compose -f compose.test-s3.yml logs
@@ -405,9 +447,11 @@ jobs:
           # Slow statements and plans as in the integration job; PostgreSQL 15
           # has no auto_explain.log_parameter_max_length.
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
+            --tmpfs /var/lib/postgresql/data:rw,size=4g \
             --log-opt max-size=4m --log-opt max-file=2 \
             --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
             postgres:15-alpine -c max_connections=300 \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off \
             -c shared_preload_libraries=auto_explain -c "log_line_prefix=%m [%p] %q%d %a: " \
             -c log_min_duration_statement=250ms -c log_parameter_max_length=256 \
             -c auto_explain.log_min_duration=250ms -c auto_explain.log_analyze=off \
@@ -514,6 +558,7 @@ jobs:
           POSTGRES_INITDB_ARGS: *postgres-diagnostics
         ports: ["5432:5432"]
         options: >-
+          --tmpfs /var/lib/postgresql/data:rw,size=4g
           --health-cmd "pg_isready -U cloud -d cloud_packed_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
           --log-opt max-size=4m --log-opt max-file=2
@@ -663,7 +708,9 @@ jobs:
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:17-alpine valkey/valkey:8-alpine
           docker network create cloud-smoke
           docker run --detach --name postgres --network cloud-smoke \
-            --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine
+            --tmpfs /var/lib/postgresql/data:rw,size=4g \
+            --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
           docker run --detach --name nats --network cloud-smoke --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           docker run --detach --name valkey --network cloud-smoke valkey/valkey:8-alpine
           timeout 60s bash -c 'until docker exec postgres pg_isready -U ipa -d ipa; do sleep 1; done'

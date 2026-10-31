@@ -168,7 +168,7 @@ export const openAssistantKnowledgeSearch = async (items: readonly { id: string;
           (item) =>
             !normalized || item.title.toLocaleLowerCase().includes(normalized) || item.content.toLocaleLowerCase().includes(normalized),
         )
-        .map((item) => ({ value: { title: item.title, content: item.content }, label: item.title, icon: "ti ti-bulb" }));
+        .map((item) => ({ id: item.id, value: { title: item.title, content: item.content }, label: item.title, icon: "ti ti-bulb" }));
     },
     {
       title: text("Project knowledge"),

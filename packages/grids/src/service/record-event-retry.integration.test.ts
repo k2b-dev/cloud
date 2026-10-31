@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager, RetentionPolicy } from "@nats-io/jetstream";
-import { connectTestNats, requireInfra, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, initializeTestPlatform, requireInfra, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { connectGridsTestSync } from "../sync-test-utils";
 import type { RecordEventDeliveryFailureInput } from "./record-event-delivery-failures";
 import { type GridsRecordEvent, RECORD_EVENT_WORK_PARTITIONS, recordEventWorkQueue, requeueRecordEventWork } from "./record-events";
@@ -155,6 +155,7 @@ natsTest(
       await previous.drain();
       // The process Sync of the Grids application, which adopts existing streams before first use.
       process.env.SYNC_NAMESPACE = namespace;
+      await initializeTestPlatform();
       current = await startProcessSync({ application: "grids" });
       const seen: Array<number | null> = [];
       await recordEventWorkQueue().process({ concurrency: 32 }, (delivery) =>
@@ -179,6 +180,7 @@ natsTest(
       else process.env.SYNC_NAMESPACE = processNamespace;
       await previous.drain({ timeoutMs: 5_000 });
       await current?.stop();
+      await initializeTestPlatform();
       const manager = await jetstreamManager(connection);
       for await (const stream of manager.streams.list()) {
         if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);

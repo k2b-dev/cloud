@@ -2,6 +2,7 @@ import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, valid
 import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
 import { createResourceAppAccessRoutes } from "../api/app-resource-access";
+import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/settings-ops";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
@@ -26,7 +27,7 @@ import { bindProcessApplicationId, clearProcessApplicationId } from "./process-i
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HtmlFn, SsrConfig } from "@k2b/ssr";
+import type { HtmlFn, SsrConfig, SsrOptions } from "@k2b/ssr";
 import { createConfig as createSsrConfig } from "@k2b/ssr";
 import { routes } from "@k2b/ssr/hono";
 import type { Sync } from "@k2b/sync";
@@ -47,6 +48,7 @@ import type {
   CloudLifecycleContext,
   WidgetEndpoint,
 } from "../contracts/app";
+import { PUBLIC_SURFACE_PREFIX } from "../contracts/app-domains";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_REQUEST_BYTES,
@@ -67,8 +69,10 @@ import { getLocale, resolveLocale } from "../server/locale";
 import { requireAppAccess, stopAppAccessConnections } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
+import { createPublicSurfaceHandler, validatePublicSurfaceRoutes } from "./public-surface";
 import "../events/app-access";
 import { createNestedCapabilityQuery } from "../capabilities/nested";
+import { connections } from "../runtime/connections";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
@@ -82,6 +86,7 @@ import {
   widgetInvocationOperation,
 } from "../services/identity/invocation-operations";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import { startLinksRuntime } from "../services/links/runtime";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { readRailSnapshot } from "../services/rail-snapshot";
@@ -163,6 +168,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   /** Shared object-store package. Defaults to the app ID. */
   package?: string;
   access?: AppAccessDeclaration;
+  /** Serve a separate public site on domains assigned by an administrator. */
+  public?: true;
   name: string;
   icon: string;
   description: string;
@@ -371,6 +378,10 @@ export type AppDefinition<S extends AppSettingsMap = {}, N extends NotificationD
   config: SsrConfig;
   meta: AppMeta;
   baseUrl: string;
+  /** Normal Hono router for the public site. Adding routes requires `public: true`. */
+  readonly public: Hono;
+  /** Public HTML template and island assets, reusing this app's single SSR plugin/build. Call before adding page routes. */
+  publicSsr: <T extends object = object>(template: NonNullable<SsrOptions<T>["template"]>) => { html: HtmlFn<T> };
   start: (opts: StartOptions) => Promise<StartResult>;
   /**
    * The process-wide @k2b/sync instance, connected and ready once `start()`
@@ -477,6 +488,8 @@ export const defineApp = <
 >(
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
+  validatePublicSurfaceRoutes(opts.routes);
+  const publicRouter = new Hono();
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
   configurePostgresApplicationName(opts.id);
@@ -691,7 +704,13 @@ export const defineApp = <
 
   // ── 3. start() — builds and boots the Hono server ────────────────────
   const start = async (startOpts: StartOptions): Promise<StartResult> => {
+    if (!opts.public && publicRouter.routes.length)
+      throw new Error(`App "${opts.id}" adds app.public routes without declaring public: true`);
     const port = startOpts.port ?? 3000;
+    if (env.GOTENBERG_URL)
+      console.warn("[deprecation] GOTENBERG_URL only bootstraps gotenberg.url; remove it after cld admin settings status --env succeeds.");
+    if (env.CLOUD_IDENTITY_JWKS_ORIGIN)
+      console.warn("[deprecation] CLOUD_IDENTITY_JWKS_ORIGIN is deprecated; use CLOUD_CORE_INTERNAL_ORIGIN instead.");
     const baseUrl = opts.baseUrl;
     const log = logger("app");
     const http = createHttpDrain();
@@ -700,7 +719,7 @@ export const defineApp = <
     // Settings are encrypted at rest, so every container needs the secret. It
     // is only read on the first decrypt, which meant a container without it
     // booted cleanly and failed much later with an unrelated-looking error.
-    if (!env.APP_SECRET.trim()) {
+    if (!connections().appSecret.current.trim()) {
       throw new Error(
         `APP_SECRET is not set (app "${meta.id}"). Settings are encrypted at rest and every app in the ` +
           "deployment must share the same value; without it the first settings read fails.",
@@ -746,6 +765,7 @@ export const defineApp = <
       const entry: AppRegistryEntry = {
         package: packageName,
         id: meta.id,
+        ...(opts.public ? { public: true as const } : {}),
         access: meta.access,
         name: meta.name,
         icon: meta.icon,
@@ -813,6 +833,7 @@ export const defineApp = <
         registry: appInstanceRegistry,
         lock: appMembershipLock,
         startedAt: entry.startedAt,
+        bootstrap: connections().bootstrap,
       });
       // Heartbeat
       const heartbeat = createHeartbeat(meta.id, entry, {
@@ -889,7 +910,10 @@ export const defineApp = <
       // app middleware cannot report their template. Without this, every hashed
       // island chunk would land in telemetry as its own route.
       const invocationApp = { getApp: async (id: string) => (id === meta.id ? meta : null) };
+      const publicSurface = createPublicSurfaceHandler(opts.public ? publicRouter : undefined, isDevelopment);
       const server = new Hono<AuthContext>()
+        .all(PUBLIC_SURFACE_PREFIX, publicSurface)
+        .all(`${PUBLIC_SURFACE_PREFIX}/*`, publicSurface)
         .use("*", routeTemplate)
         .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
         .route(ssrMountPath, routes(config))
@@ -911,6 +935,18 @@ export const defineApp = <
           if (!c.get("user")?.roles.includes("admin")) return c.json({ message: "Insufficient permissions" }, 403);
           return next();
         })
+        .use(
+          "/_internal/settings/*",
+          requireInvocation(
+            (c) => ({
+              targetAppId: meta.id,
+              operation: settingsInvocationOperation(c.req.method, new URL(c.req.url).pathname.slice("/_internal/settings/".length)),
+              schemaHash: null,
+            }),
+            invocationApp,
+          ),
+        )
+        .route("/_internal/settings", createSettingsOpsRoutes(Object.keys(opts.settings ?? {})))
         .route("/_internal/sync", createSyncOpsRoutes(getProcessSync));
 
       if (installable) server.route("/", createInstallableRoutes(meta.id, installable));
@@ -1162,6 +1198,8 @@ export const defineApp = <
       // Core creates it in its own setup, so it starts publishing after that.
       if (meta.id !== "core") await startOutbox();
 
+      cleanup.push(await startLinksRuntime());
+
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);
         const setup = startOpts.lifecycle.setup;
@@ -1247,6 +1285,14 @@ export const defineApp = <
     config,
     meta,
     baseUrl: opts.baseUrl,
+    public: publicRouter,
+    publicSsr: <T extends object = object>(template: NonNullable<SsrOptions<T>["template"]>) => {
+      if (!opts.public) throw new Error(`App "${opts.id}" uses publicSsr without declaring public: true`);
+      const site = createSsrConfig<T>({ dev: config.dev, rootDir: config.rootDir, basePath: "", template });
+      publicRouter.route("/_ssr", routes(site.config));
+      publicRouter.all("/_ssr/*", (c) => c.notFound());
+      return { html: site.html };
+    },
     start,
     get sync() {
       return getProcessSync();

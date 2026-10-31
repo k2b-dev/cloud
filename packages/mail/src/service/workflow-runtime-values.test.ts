@@ -1,4 +1,12 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { app } from "../config";
+
+let getBodyLimit: ReturnType<typeof spyOn<typeof app.settings, "get">>;
+beforeEach(() => {
+  getBodyLimit = spyOn(app.settings, "get").mockResolvedValue(20_000);
+});
+afterEach(() => getBodyLimit.mockRestore());
+
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
 import { sql } from "bun";
@@ -316,4 +324,14 @@ test("metric reads reuse and project frozen bodies and attachment metadata", asy
   // Receipt-time booleans stay stable even after a later step freezes metadata.
   expect(await resolve("inputs.message.hasAttachments")).toEqual({ state: "resolved", value: false });
   expect(Object.keys(frozen)).toEqual(["inputs.message.bodyText", "inputs.message.attachments"]);
+});
+
+test("the next AI body resolution observes a changed administrator limit", async () => {
+  getBodyLimit.mockResolvedValue(100);
+  const { resolve } = fixture({ "inputs.message.bodyText": "x".repeat(101) });
+  await expect(resolve("inputs.message.bodyText", ["steps", 0, "aiClassify", "input"])).rejects.toMatchObject({
+    code: "WORKFLOW_AI_INPUT_TOO_LARGE",
+  });
+  getBodyLimit.mockResolvedValue(200);
+  expect(await resolve("inputs.message.bodyText", ["steps", 0, "aiClassify", "input"])).toMatchObject({ state: "resolved" });
 });

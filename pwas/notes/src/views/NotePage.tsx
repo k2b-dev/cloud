@@ -12,17 +12,16 @@ import { preferences } from "../prefs";
 import { navigate } from "../router";
 import { app, t } from "../state";
 import { Accessory } from "../ui/Accessory";
-import { Footer, Icon, type IconName, Wordmark } from "../ui/common";
+import { Icon, type IconName, Wordmark } from "../ui/common";
 import { NoteEditor } from "../ui/Editor";
 import { openDelete } from "./Delete";
-import { EXAMPLE_TEXT } from "./example";
-import { overviewMenu } from "./menus";
+import { aboutMenu, overviewMenu } from "./menus";
 import { openPalette } from "./Palette";
 import { openReport } from "./Report";
 import { openSettings } from "./Settings";
 import { openShare, stopSharing } from "./Share";
 
-type Status = "local" | "shared" | "syncing" | "offline" | "read" | "example" | "unsaved" | "pendingDelete";
+type Status = "local" | "shared" | "syncing" | "offline" | "read" | "unsaved" | "pendingDelete";
 
 /** A draft opened on the first visit hands its text over to the store on the first keystroke. */
 let focusNext: string | null = null;
@@ -31,7 +30,7 @@ const [handingOff, setHandingOff] = createSignal(false);
 
 export { handingOff };
 
-const STATUSES: Status[] = ["local", "shared", "syncing", "offline", "read", "example", "unsaved", "pendingDelete"];
+const STATUSES: Status[] = ["local", "shared", "syncing", "offline", "read", "unsaved", "pendingDelete"];
 
 /** Every label sits in the same grid cell, so the status always takes the width of its longest wording. */
 function StatusLabel(props: { status: Status }) {
@@ -43,7 +42,6 @@ function StatusLabel(props: { status: Status }) {
       syncing: ["ti-loader-2", m.statusSyncing, m.statusSyncingShort, undefined],
       offline: ["ti-cloud-off", m.statusOffline, m.statusOfflineShort, undefined],
       read: ["ti-eye", m.statusRead, m.statusReadShort, undefined],
-      example: ["ti-sparkles", m.statusExample, m.statusExampleShort, undefined],
       unsaved: ["ti-alert-triangle", m.statusUnsaved, m.statusUnsavedShort, "danger"],
       pendingDelete: ["ti-trash", m.statusPendingDelete, m.statusPendingDeleteShort, "warn"],
     };
@@ -85,7 +83,7 @@ function Faces(props: { people: { name: string; color: string }[] }) {
   );
 }
 
-export type NoteMode = { kind: "local"; id: string } | { kind: "draft" } | { kind: "example" };
+export type NoteMode = { kind: "local"; id: string } | { kind: "draft" };
 
 export function NotePage(props: { mode: NoteMode }) {
   const toasts = new Set<ToastHandle>();
@@ -104,14 +102,13 @@ export function NotePage(props: { mode: NoteMode }) {
   const [editor, setEditor] = createSignal<TextEditorController>();
   const [undo, setUndo] = createSignal<() => void>(() => {});
 
-  // The open document: from the store for local notes, in memory for the draft and the example.
+  // The open document: from the store for local notes, in memory for the draft.
   const [opened] = createResource(
     () => (app.ready() ? props.mode : undefined),
     async (mode): Promise<OpenNote | { doc: Y.Doc; text: Y.Text; close: () => Promise<void>; id: null }> => {
       if (mode.kind === "local") return (await app.store()?.open(mode.id)) ?? Promise.reject(new Error("store"));
       const doc = new Y.Doc();
       const text = doc.getText(NOTE_TEXT);
-      if (mode.kind === "example") text.insert(0, EXAMPLE_TEXT[preferences.locale()]);
       return { id: null, doc, text, close: async () => doc.destroy() };
     },
   );
@@ -206,7 +203,6 @@ export function NotePage(props: { mode: NoteMode }) {
   );
 
   const status = createMemo<Status>(() => {
-    if (props.mode.kind === "example") return "example";
     const current = record();
     if (current?.pendingDelete) return "pendingDelete";
     if (app.storeError() === "quota") return "unsaved";
@@ -282,6 +278,29 @@ export function NotePage(props: { mode: NoteMode }) {
     }),
   );
 
+  // Files of this note as object URLs, so images show offline; a shared note falls back to the server copy.
+  const [files, setFiles] = createSignal<Record<string, string>>({});
+  const showFile = (key: string, blob: Blob) => setFiles((current) => ({ ...current, [key]: URL.createObjectURL(blob) }));
+  createEffect(
+    on(recordId, (id) => {
+      let active = true;
+      onCleanup(() => {
+        active = false;
+        for (const url of Object.values(untrack(files))) URL.revokeObjectURL(url);
+        setFiles({});
+      });
+      if (id)
+        void app
+          .store()
+          ?.listFiles(id)
+          .then((list) => {
+            if (active) for (const file of list) showFile(file.key, file.blob);
+          });
+    }),
+  );
+  // A string, so writing the record on every keystroke does not reconfigure the editor in the middle of its update.
+  const remoteReadId = createMemo(() => record()?.share?.readId);
+
   const keepCopy = async () => {
     const current = opened();
     if (!current) return;
@@ -329,6 +348,7 @@ export function NotePage(props: { mode: NoteMode }) {
         continue;
       }
       const key = await store.putFile(current.id, file, original.name);
+      showFile(key, file);
       room -= 1;
       const share = current.share;
       const editId = share?.kind === "own" ? share.editId : share?.kind === "foreign" && share.role === "edit" ? share.linkId : null;
@@ -394,17 +414,11 @@ export function NotePage(props: { mode: NoteMode }) {
     ];
     if (own)
       items.push({ items: [{ label: t().deleteNote, icon: "ti ti-trash", variant: "danger", action: () => void openDelete(current) }] });
+    items.push(aboutMenu());
     return items;
   };
 
   const shareButton = () => {
-    if (props.mode.kind === "example")
-      return (
-        <Button variant="primary" onClick={() => void app.createNote()}>
-          <Icon name="ti-plus" />
-          <span class="n-share-lbl">{t().startOwnNote}</span>
-        </Button>
-      );
     if (readOnly())
       return (
         <Button variant="secondary" onClick={() => void keepCopy()}>
@@ -459,7 +473,7 @@ export function NotePage(props: { mode: NoteMode }) {
           </Dropdown.Trigger>
         </Dropdown.Root>
       </header>
-      <main class="n-doc" data-first={first() ? "" : undefined}>
+      <main class="n-doc">
         <Show
           when={(() => {
             const current = opened();
@@ -474,7 +488,7 @@ export function NotePage(props: { mode: NoteMode }) {
               awareness={ready().awareness}
               label={editorLabel()}
               readOnly={editorReadOnly()}
-              placeholder={first() ? t().titlePlaceholder : undefined}
+              placeholder={first() ? t().bodyPlaceholder : undefined}
               autofocus={first() ? "start" : focusNext === record()?.id ? "end" : undefined}
               onReady={(value, undoLast) => {
                 setEditor(value);
@@ -482,48 +496,15 @@ export function NotePage(props: { mode: NoteMode }) {
                 if (focusNext === record()?.id) focusNext = null;
               }}
               onFiles={(list) => void addFiles(list)}
+              files={files()}
+              remoteReadId={remoteReadId()}
             />
           )}
-        </Show>
-        <Show when={first()}>
-          <p class="n-first-body n-ph">{t().bodyPlaceholder}</p>
-          <div class="n-md-hint n-ph">
-            <code># {t().titlePlaceholder}</code>
-            <span>{t().hintHeading}</span>
-            <code>**{t().hintBold}**</code>
-            <span>{t().hintBold}</span>
-            <code>- [ ] …</code>
-            <span>{t().hintTask}</span>
-            <code>#idee</code>
-            <span>{t().hintTag}</span>
-          </div>
-          <div class="n-example-link">
-            <a href="/beispiel">
-              <Icon name="ti-sparkles" />
-              {t().showExample}
-            </a>
-            <span>{t().showExampleHint}</span>
-          </div>
-          <div class="n-facts">
-            <span>
-              <Icon name="ti-device-desktop" />
-              {t().factBrowser}
-            </span>
-            <span>
-              <Icon name="ti-user-off" />
-              {t().factNoAccount}
-            </span>
-            <span>
-              <Icon name="ti-link" />
-              {t().factShare}
-            </span>
-          </div>
         </Show>
       </main>
       <Show when={!readOnly() && props.mode.kind !== "draft" ? editor() : undefined}>
         {(current) => <Accessory editor={current()} onUndo={() => undo()()} onFiles={(list) => void addFiles(list)} />}
       </Show>
-      <Footer narrow onReport={() => openReport(foreignLink())} />
     </div>
   );
 }
