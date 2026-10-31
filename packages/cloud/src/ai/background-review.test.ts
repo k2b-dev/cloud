@@ -26,6 +26,18 @@ const fixture = () => ({
 });
 
 describe("authorizeBackgroundAction", () => {
+  test("forwards normalized coordinates with the domain input to the routine gate", async () => {
+    const { input, authorizeCapability } = fixture();
+    const call = {
+      capability: "tasks.create",
+      target: { type: "tasks.list", id: "one" },
+      refs: { destination: { type: "tasks.list", id: "two" } },
+      input: input.args,
+    };
+    expect(await authorizeBackgroundAction({ ...input, approval: "none", call })).toBeNull();
+    expect(authorizeCapability).toHaveBeenCalledWith(expect.objectContaining({ call, input: call.input }));
+  });
+
   test("mandate denial precedes review and leaves no approval marker", async () => {
     const { input, authorizeCapability, markNeedsApproval } = fixture();
     const denied = new Error("Mandate denied");

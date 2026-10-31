@@ -175,7 +175,6 @@ export const runtimeCapabilities = {
     const untrusted = resource && resource.permission !== "admin";
     const target = await operation(request.name, caller.locale, identity.authority ?? null);
     const boundCall = target.operation.target !== undefined || target.operation.refs !== undefined;
-    if (task && boundCall) throw new Error("This capability requires a target-aware mandate");
     const call =
       request.target !== undefined || request.refs !== undefined
         ? normalizeCapabilityCall(target.appId, target.operation, { input: request.input, target: request.target, refs: request.refs })
@@ -199,7 +198,8 @@ export const runtimeCapabilities = {
             appId: target.appId,
             capabilityId: target.localId,
             kind: target.kind,
-            args: request.input,
+            args: body.input,
+            ...(call ? { call } : {}),
             approval: target.action.approval,
             policy: target.policy,
             hasReview: target.action.review === true,

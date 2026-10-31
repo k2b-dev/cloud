@@ -5,13 +5,13 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 
 # Background authority mandates
 
 A mandate records what one durable workload may ask Core to do later for a
-current user or resource service account. It is not a bearer token, does not
+current person or service account. It is not a bearer token, does not
 grant resource access, and cannot be sent to a target application by itself.
 
 Use a mandate when a job, workflow, or automation must call another Cloud
@@ -143,29 +143,34 @@ are never substituted for the machine's own grants. Grids binds its
 ## Grant capabilities to an unattended Assistant routine
 
 Assistant routines use explicit `grants` in their mandate policy. Each grant pairs
-one `appId`, local `capabilityId`, and `kind` (`query` or `action`) with optional
-fixed top-level inputs. The agent proposes the scope; the user reviews it when
+one `appId`, local `capabilityId`, and `kind` (`query` or `action`) with an
+explicit resource target and optional fixed top-level inputs. The agent proposes the scope; the user reviews it when
 creating or updating the routine. Capabilities need no additional metadata.
+
+For example, a fictional application `demo` declares `item.edit` with a
+`folder` target and an `itemId` domain input:
 
 ```json
 {
-  "appId": "notebooks",
-  "capabilityId": "note.edit",
+  "appId": "demo",
+  "capabilityId": "item.edit",
   "kind": "action",
-  "fixedInput": { "noteId": "abc123" }
+  "target": { "type": "demo.folder", "id": "folder123" },
+  "fixedInput": { "itemId": "abc123" }
 }
 ```
 
-This allows changes to that note while leaving the edit content unrestricted.
-An empty `fixedInput` allows any inputs to that exact capability within the
-user's current access. Fixed JSON values use exact equality: nested objects
+This allows changes to that item within the named folder while leaving the
+edit content unrestricted.
+An empty `fixedInput` allows any domain input to that exact capability at the
+granted target within the user's current access. Fixed JSON values use exact equality: nested objects
 must match completely, and array order matters. There are no wildcards,
-implicit parent-resource checks, or expressions. A notebook restriction cannot
-be inferred from a capability that only accepts a note ID.
+implicit parent-resource checks, or expressions. The provider must check that
+the item belongs to the declared target folder.
 
 Background runs discover and load only capabilities their mandate policy and
 routine grants can permit. Previously loaded tools outside that scope stay
-unavailable. Discovery ignores fixed inputs; Core checks them on every call.
+unavailable. Discovery ignores fixed inputs and target IDs; Core checks them on every call.
 If the mandate cannot be read, has changed, or its policy is invalid, the run
 stops before the model starts and the routine needs attention.
 
@@ -198,6 +203,59 @@ paused, revoked, expired, or changed, when the target app rejects the sponsor
 with HTTP 401 or 403, or when an action's outcome is unknown. Scheduled turns
 run server Code Mode tools under the same routine-scoped authority; see
 [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode).
+
+## Bind operations to targets
+
+`CapabilityGrant`, exported from `@k2b/cloud/services`, is the durable grant
+format for both person-owned routines and Code versions. `TaskGrant` includes
+this format alongside the existing HTTP and database grants.
+
+- `appId`, `capabilityId`, `kind`: one discovered operation, with its local ID.
+- `target`: `{ type, id }` using the qualified resource type, or `null` for an
+  app-wide Action. Omitting it does not authorize a resource-bound Action.
+- `refs`: the complete map of additional targets, keyed by the operation's
+  declared reference fields. Omitted means an empty map. Each type and ID must
+  match; grants for different targets cannot be combined into a broader pair.
+- `fixedInput`: exact top-level domain values, defaulting to `{}`. Target
+  fields belong in `target` and `refs`, never in `fixedInput`.
+
+Core compares the validated `NormalizedCapabilityCall` with one complete grant
+before issuing either a review or an execution. Another target, reference,
+operation or fixed input is denied. A workload cannot narrow its policy by
+removing or changing an existing target restriction.
+
+Existing routine grants with old target fields in `fixedInput` remain denied
+for converted capabilities until they are migrated. Move those fields into the
+explicit coordinates without broadening authority; if the mapping is unknown,
+stop the routine with `needs_attention` rather than drop the restriction.
+
+## Code version mandates
+
+`CodeVersionMandateBinding` and `CODE_VERSION_MANDATE_WORKLOAD_TYPE`, exported
+from `@k2b/cloud/services`, bind a mandate to `ownerAppId: "core"`,
+`workloadType: "code.version"`, and `workloadId` equal to the immutable version
+ID. All entry points share that version's mandate. A new version gets its own
+mandate; policy updates advance the revision and invalidate earlier invocations.
+
+Personal Code uses its current person as the subject. Its operation allowlist
+can permit dynamic targets; the target application still checks that person's
+current rights. Routine grants can restrict a person's calls to one target.
+
+Resource and application Code use a service account of kind `code`. Only its
+Core version mandate can issue invocations. Actions need explicit operation
+and target pairs, including `target: null` for app-wide Actions. Queries check
+the operation; their provider must return only resources with the Code
+account's own current access. Neither a mandate nor a signed-in, public or group
+grant supplies that access. Unattended `ask` Actions remain blocked.
+
+The signed invocation carries empty credential scopes. Once the platform has
+verified its current version mandate and Code principal, the mandate replaces
+credential scopes and human app-entry rules for this capability request. For
+existing app scope resolvers, `actor.scopes` projects a `read`/`write` ceiling;
+it never projects `admin`. The invocation's signed scopes and
+`RequestAuthority.scopes` remain empty. Applications must still intersect this
+ceiling with their current resource grants. Code cannot obtain this projection
+through an API key, OAuth, an ordinary app-access grant or a non-version mandate.
 
 ## Invoke from a worker
 
