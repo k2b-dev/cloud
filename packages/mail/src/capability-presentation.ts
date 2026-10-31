@@ -122,7 +122,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.activity.list": {
           title: "E-Mail-Aktivitäten auflisten",
           description:
-            "Listen Sie die Zusammenarbeitsaktivität für ein bekanntes Postfach oder eine bekannte Konversation auf. Holen Sie sich die Mailbox-ID von mailbox.list und optional die Konversations-ID von einem mail.conversation ref. Dies ist ein Prüfzeitplan, kein Nachrichteninhalt.",
+            "Listen Sie die Zusammenarbeitsaktivität für ein bekanntes Postfach oder eine bekannte Konversation auf. Wählen Sie das Postfachziel mit mailbox.list und optional die Konversations-ID von einem mail.conversation ref. Dies ist ein Prüfzeitplan, kein Nachrichteninhalt.",
           input: {
             conversationId: "Optionaler Konversationsfilter ID.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -132,7 +132,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.comment.list": {
           title: "Konversationskommentare auflisten",
           description:
-            "Listen Sie interne Teamkommentare für eine bekannte Konversation auf. Mailbox-ID und Konversations-ID von conversation.list, conversation.search oder conversation.read abrufen; Verwenden Sie das zurückgegebene mail.comment refs mit comment.read.",
+            "Listen Sie interne Teamkommentare für eine bekannte Konversation auf. Postfachziel und conversationId aus conversation.list, conversation.search oder conversation.read übernehmen; Verwenden Sie das zurückgegebene mail.comment refs mit comment.read.",
           input: {
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
@@ -184,7 +184,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.reminder.get": {
           title: "Eine persönliche Erinnerung abrufen",
           description:
-            "Überprüfen Sie, ob der aktuelle Benutzer eine Erinnerung an eine bekannte Konversation hat. Mailbox-ID und Konversations-ID von conversation.list, conversation.search oder conversation.read abrufen; Ein zurückgegebener mail.reminder ref kann mit reminder.read geöffnet werden.",
+            "Überprüfen Sie, ob der aktuelle Benutzer eine Erinnerung an eine bekannte Konversation hat. Postfachziel und conversationId aus conversation.list, conversation.search oder conversation.read übernehmen; Ein zurückgegebener mail.reminder ref kann mit reminder.read geöffnet werden.",
           input: {
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
@@ -204,7 +204,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "delivery.list": {
           title: "Geplante Zustellungen auflisten",
           description:
-            "Listen Sie Zustellungen, die sich noch in einem Rückgängig-Fenster befinden oder für einen späteren Zeitpunkt geplant sind, in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie zurückgegebenes mail.delivery refs mit delivery.read oder delivery.cancel.",
+            "Listen Sie Zustellungen, die sich noch in einem Rückgängig-Fenster befinden oder für einen späteren Zeitpunkt geplant sind, in einem bekannten Postfach auf. Postfachziel mit mailbox.list wählen; Verwenden Sie zurückgegebenes mail.delivery refs mit delivery.read oder delivery.cancel.",
           input: {
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -238,7 +238,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "draft.send.review": {
           title: "Die Sicherheit des Entwurfsversands prüfen",
           description:
-            "Überprüfen Sie unmittelbar vor draft.send einen bekannten Entwurf. Holen Sie sich die Mailbox-ID von mailbox.list und die Draft-ID sowie die erwartete Revision von draft.read. Geben Sie die zurückgegebene Sicherheitsgenehmigung an draft.send weiter. Bei dieser Abfrage wird keine E-Mail gesendet.",
+            "Überprüfen Sie unmittelbar vor draft.send einen bekannten Entwurf. Wählen Sie das Postfachziel mit mailbox.list und die Draft-ID sowie die erwartete Revision von draft.read. Geben Sie die zurückgegebene Sicherheitsgenehmigung an draft.send weiter. Bei dieser Abfrage wird keine E-Mail gesendet.",
           input: {
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
@@ -247,7 +247,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "folder.list": {
           title: "Ordner auflisten",
           description:
-            "Listen Sie Ordner in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie den zurückgegebenen Ordner IDs zum Filtern von conversation.list oder als Verschiebungsziele, sofern dies unterstützt wird. effectiveDisplay sagt, wo die E-Mails eines Ordners erscheinen: folder_only und hidden halten seine Unterhaltungen aus Alle E-Mails und den Arbeitsansichten heraus, außer eine Nachricht liegt auch in einem everywhere-Ordner.",
+            "Listen Sie Ordner in einem bekannten Postfach auf. Postfachziel mit mailbox.list wählen; Verwenden Sie den zurückgegebenen Ordner IDs zum Filtern von conversation.list oder als Verschiebungsziele, sofern dies unterstützt wird. effectiveDisplay sagt, wo die E-Mails eines Ordners erscheinen: folder_only und hidden halten seine Unterhaltungen aus Alle E-Mails und den Arbeitsansichten heraus, außer eine Nachricht liegt auch in einem everywhere-Ordner.",
           input: {
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -256,7 +256,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "mailbox.identity.list": {
           title: "Absenderidentitäten auflisten",
           description:
-            "Liste der konfigurierten Absenderidentitäten für ein Postfach vor draft.create oder draft.update. MailboxId von mailbox.list abrufen; Verwenden Sie beim Verfassen von E-Mails die zurückgegebene Absenderidentität ID.",
+            "Liste der konfigurierten Absenderidentitäten für ein Postfach vor draft.create oder draft.update. Postfachziel mit mailbox.list wählen; Verwenden Sie beim Verfassen von E-Mails die zurückgegebene Absenderidentität ID.",
           input: {
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -276,7 +276,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "mailbox.member.list": {
           title: "Postfachmitglieder auflisten",
           description:
-            "Listen Sie Personen, die Anspruch auf conversation.assign haben, in einem Postfach auf. Rufen Sie die Mailbox-ID von mailbox.list ab und übergeben Sie einen zurückgegebenen Benutzer ID an Action.",
+            "Listen Sie Personen, die Anspruch auf conversation.assign haben, in einem Postfach auf. Wählen Sie das Postfachziel mit mailbox.list und übergeben Sie einen zurückgegebenen Benutzer ID an Action.",
           input: {
             query: "Optionale Suche nach Mitgliedsnamen oder Benutzerkennung.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -294,7 +294,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "mailbox.tag.list": {
           title: "Postfach-Tags auflisten",
           description:
-            "Listen Sie Cloud-local-Collaboration-Tags in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie das zurückgegebene Tag IDs mit conversation.tag.update oder mailbox.tag.update/delete.",
+            "Listen Sie Cloud-local-Collaboration-Tags in einem bekannten Postfach auf. Postfachziel mit mailbox.list wählen; Verwenden Sie das zurückgegebene Tag IDs mit conversation.tag.update oder mailbox.tag.update/delete.",
           input: {
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -303,7 +303,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "mailing-list.subscription.get": {
           title: "Ein Abonnement für die Mailingliste abrufen",
           description:
-            "Lesen Sie aktuelle Abmeldeinformationen für eine Mailingliste. MailboxId und ListKey von mailing-list.subscription.list abrufen; Verwenden Sie mit mailing-list.unsubscribe ein explizit zurückgegebenes Abmeldeziel.",
+            "Lesen Sie aktuelle Abmeldeinformationen für eine Mailingliste. Postfachziel und listKey aus mailing-list.subscription.list übernehmen; Verwenden Sie mit mailing-list.unsubscribe ein explizit zurückgegebenes Abmeldeziel.",
           input: {
             listKey: "Stabil erkannter Mailinglistenschlüssel.",
           },
@@ -311,7 +311,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "mailing-list.subscription.list": {
           title: "Mailinglisten-Abonnements auflisten",
           description:
-            "Listen Sie Mailinglisten-Abonnements auf, die anhand von Nachrichtenkopfzeilen in einem bekannten Postfach erkannt wurden. MailboxId von mailbox.list abrufen; Verwenden Sie einen zurückgegebenen listKey mit mailing-list.subscription.get oder mailing-list.unsubscribe.",
+            "Listen Sie Mailinglisten-Abonnements auf, die anhand von Nachrichtenkopfzeilen in einem bekannten Postfach erkannt wurden. Postfachziel mit mailbox.list wählen; Verwenden Sie einen zurückgegebenen listKey mit mailing-list.subscription.get oder mailing-list.unsubscribe.",
           input: {
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl erkannter Listen, die zurückgegeben werden sollen.",

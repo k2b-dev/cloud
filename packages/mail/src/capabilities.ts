@@ -2010,7 +2010,7 @@ const queryDefinitions = {
   "conversation.comment.list": {
     title: "List conversation comments",
     description:
-      "List internal team comments for one known conversation. Get mailboxId and conversationId from conversation.list, conversation.search, or conversation.read; use returned mail.comment refs with comment.read.",
+      "List internal team comments for one known conversation. Get the mailbox target and conversationId from conversation.list, conversation.search, or conversation.read; use returned mail.comment refs with comment.read.",
     target: "mailbox",
     input: c.CommentListInputSchema,
     data: c.CommentListDataSchema,
@@ -2136,7 +2136,7 @@ const queryDefinitions = {
   "conversation.reminder.get": {
     title: "Get personal reminder",
     description:
-      "Check whether the current user has a reminder on one known conversation. Get mailboxId and conversationId from conversation.list, conversation.search, or conversation.read; a returned mail.reminder ref can be opened with reminder.read.",
+      "Check whether the current user has a reminder on one known conversation. Get the mailbox target and conversationId from conversation.list, conversation.search, or conversation.read; a returned mail.reminder ref can be opened with reminder.read.",
     target: "mailbox",
     input: c.ReminderGetInputSchema,
     data: c.ReminderGetDataSchema,
@@ -2337,7 +2337,7 @@ const queryDefinitions = {
   "mailing-list.subscription.get": {
     title: "Get mailing-list subscription",
     description:
-      "Read current unsubscribe information for one mailing list. Get mailboxId and listKey from mailing-list.subscription.list; use an explicit returned unsubscribe target with mailing-list.unsubscribe.",
+      "Read current unsubscribe information for one mailing list. Get the mailbox target and listKey from mailing-list.subscription.list; use an explicit returned unsubscribe target with mailing-list.unsubscribe.",
     target: "mailbox",
     input: c.SubscriptionGetInputSchema,
     data: c.SubscriptionGetDataSchema,
@@ -2390,14 +2390,14 @@ const requireConversationForReview = async (
 ) => {
   const scope = await resolveMailboxScope(mailboxId);
   if (!scope.ok) return scope;
-  const resolvedConversation = await resolveMailboxResource("conversations", scope.data.id, conversationId);
-  if (!resolvedConversation.ok) return resolvedConversation;
   const mailContext = requestContext(context);
   const access =
     permission === "admin"
       ? await mailboxAccess.requireMailboxPermission(mailContext, scope.data.id, permission)
       : await mailboxAccess.requireMailboxAccess(mailContext, scope.data.id, permission);
   if (!access.ok) return access;
+  const resolvedConversation = await resolveMailboxResource("conversations", scope.data.id, conversationId);
+  if (!resolvedConversation.ok) return resolvedConversation;
   const page = await messages.listConversationMessages({
     context: mailContext,
     mailboxId: scope.data.id,
@@ -3494,18 +3494,14 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
-      if (!scope.ok) return scope;
+      const conversation = await requireConversationForReview(mailboxId, input.conversationId, context);
+      if (!conversation.ok) return conversation;
       const [addTagIds, removeTagIds] = await Promise.all([
-        publicResources.resolveMailboxPublicIds("tags", scope.data.mailbox.id, input.addTagIds),
-        publicResources.resolveMailboxPublicIds("tags", scope.data.mailbox.id, input.removeTagIds),
+        publicResources.resolveMailboxPublicIds("tags", conversation.data.mailboxInternalId, input.addTagIds),
+        publicResources.resolveMailboxPublicIds("tags", conversation.data.mailboxInternalId, input.removeTagIds),
       ]);
       if (!addTagIds || !removeTagIds) return fail(err.notFound("Mail resource"));
-      const [conversation, tags] = await Promise.all([
-        requireConversationForReview(mailboxId, input.conversationId, context),
-        localTags.listLocalTags(requestContext(context), scope.data.mailbox.id),
-      ]);
-      if (!conversation.ok) return conversation;
+      const tags = await localTags.listLocalTags(requestContext(context), conversation.data.mailboxInternalId);
       if (!tags.ok) return tags;
       const publicTagIds = await publicResources.publicIds(
         "tags",
@@ -3697,10 +3693,10 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(mailboxId);
       if (!scope.ok) return scope;
-      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
-      if (!members.ok) return members;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
+      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
+      if (!members.ok) return members;
       const assignees =
         input.mode === "remove"
           ? await collaboration.listAssigneeCollaborators(input.assigneeUserIds)
@@ -3744,6 +3740,8 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(mailboxId);
       if (!scope.ok) return scope;
+      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
+      if (!access.ok) return access;
       const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
       if (!members.ok) return members;
       return mapResult(
@@ -3808,10 +3806,10 @@ const actionDefinitions = {
       const mailboxId = target.data;
       const scope = await resolveMailboxScope(mailboxId);
       if (!scope.ok) return scope;
-      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
-      if (!members.ok) return members;
       const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
+      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
+      if (!members.ok) return members;
       return ok(
         mailActionReviews["conversation.status.update.batch"](
           input.status,
@@ -3828,6 +3826,8 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(mailboxId);
       if (!scope.ok) return scope;
+      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
+      if (!access.ok) return access;
       const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
       if (!members.ok) return members;
       return mapResult(

@@ -2,7 +2,7 @@
 title: Mail capability targets
 navTitle: Mail capabilities
 section: Platform services
-order: 556
+order: 554
 description: Address Mail Actions at one mailbox and keep their contained resources in that mailbox.
 tags: [mail, capabilities, agents]
 updated: 2026-10-31

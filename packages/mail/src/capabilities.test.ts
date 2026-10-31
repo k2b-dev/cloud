@@ -418,6 +418,7 @@ describe("mail capabilities", () => {
   test.each(["conversation.assign.batch", "conversation.status.update.batch"] as const)(
     "%s checks every member before review or any mutation",
     async (id) => {
+      spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
       const action = mailCapabilities.actions[id];
       const resolve = spyOn(publicResources, "resolveMailboxPublicIds").mockResolvedValue(null);
       const assign = spyOn(conversationAssignments, "assignConversations");
@@ -442,6 +443,46 @@ describe("mail capabilities", () => {
       expect(complete).not.toHaveBeenCalled();
     },
   );
+
+  test.each(["conversation.assign.batch", "conversation.status.update.batch"] as const)(
+    "%s checks current access before resolving members",
+    async (id) => {
+      const denied = fail(err.forbidden("Access denied"));
+      spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
+      spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+      const members = spyOn(publicResources, "resolveMailboxPublicIds");
+      const assign = spyOn(conversationAssignments, "assignConversations");
+      const complete = spyOn(collaboration, "applyConversationCompletions");
+      for (const conversationIds of [[conversationId], [conversationId, "Other1"]]) {
+        if (id === "conversation.assign.batch") {
+          const action = mailCapabilities.actions[id];
+          const input = action.input.parse({ conversationIds, mode: "replace", assigneeUserIds: [] });
+          expect(await action.review(input, context)).toEqual(denied);
+          expect(await action.run(input, context)).toEqual(denied);
+        } else {
+          const action = mailCapabilities.actions[id];
+          const input = action.input.parse({ conversationIds, status: "done" });
+          expect(await action.review(input, context)).toEqual(denied);
+          expect(await action.run(input, context)).toEqual(denied);
+        }
+      }
+      expect(members).not.toHaveBeenCalled();
+      expect(assign).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+    },
+  );
+
+  test("conversation.tag.update checks current access before resolving contained resources", async () => {
+    const denied = fail(err.forbidden("Access denied"));
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    const resource = spyOn(publicResources, "resolveMailboxPublicId");
+    const tags = spyOn(publicResources, "resolveMailboxPublicIds");
+    const action = mailCapabilities.actions["conversation.tag.update"];
+    const input = action.input.parse({ conversationId, expectedRevision: 2, addTagIds: ["Other1"] });
+    for (const call of [action.review, action.run]) expect(await call(input, context)).toEqual(denied);
+    expect(resource).not.toHaveBeenCalled();
+    expect(tags).not.toHaveBeenCalled();
+  });
 
   test.each([undefined, null, "Sign01"])("draft.create resolves the signature choice %j", async (signatureTemplateId) => {
     const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({
