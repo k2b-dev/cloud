@@ -1,18 +1,29 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../_internal/process-identity";
 import * as registry from "../_internal/registry";
 import { formatAppKey } from "../app-key";
 import { env } from "../config/env";
+import { CloudResourceReaderViewSchema } from "../contracts/capabilities";
 import { ResourceReaderRateLimited, readResourcePrincipals } from "./resource-readers";
 import * as client from "./server-invoke";
 import { compileCapabilityManifest } from "./testing";
 
 const originalCredential = process.env.CLOUD_APP_CREDENTIAL;
 const originalOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+const reader = {
+  title: "Read item",
+  description: "Read the item.",
+  input: z.object({ id: z.string().min(1).max(512) }).strict(),
+  data: z.object({ view: CloudResourceReaderViewSchema }),
+  openWorld: false,
+  run: async () => ({ ok: true as const, data: { data: { view: { title: "Item", permission: "read" as const } } } }),
+};
 const manifest = compileCapabilityManifest("inventory", {
   protocolVersion: 2,
-  types: { item: { title: "Item", description: "An inventory item.", access: { readable: () => [] } } },
+  queries: { "item.read": reader },
+  types: { item: { title: "Item", description: "An inventory item.", reader: "item.read", access: { readable: () => [] } } },
 });
 const entry = {
   appId: "inventory",
@@ -78,9 +89,10 @@ test("rate admission carries Retry-After and defaults to the 60-second window", 
 test("a container type without its generated readable query is not configured", async () => {
   const containerManifest = compileCapabilityManifest("inventory", {
     protocolVersion: 2,
+    queries: { "item.read": { ...reader, data: z.object({ view: CloudResourceReaderViewSchema.required({ container: true }) }) } },
     types: {
       collection: { title: "Collection", description: "Collection." },
-      item: { title: "Item", description: "Item.", container: "collection", access: { readable: () => [] } },
+      item: { title: "Item", description: "Item.", container: "collection", reader: "item.read", access: { readable: () => [] } },
     },
   });
   lookup.mockResolvedValue({ ...entry, manifest: containerManifest });

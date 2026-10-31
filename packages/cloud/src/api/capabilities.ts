@@ -371,6 +371,12 @@ const runCapabilityDispatch = async (
     );
     return error;
   }
+  if (
+    "unattended" in operation &&
+    operation.unattended === false &&
+    (params.mandate || params.parentInvocation?.credential_kind === "mandate")
+  )
+    return errorResponse("FORBIDDEN", "This Action cannot execute unattended", 403);
   if ("appOnly" in operation && operation.appOnly !== undefined && !params.workload)
     return errorResponse("FORBIDDEN", "App authority required for this query", 403);
   if (params.appCaller) {

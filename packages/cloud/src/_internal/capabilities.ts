@@ -16,6 +16,7 @@ import { capabilityMessages } from "../shared/capability-messages";
 import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
 import { capabilityVia } from "./capability-origin";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
+import { generatedCodeAccess } from "./code-access";
 
 export { capabilityHash } from "./capability-schemas";
 
@@ -105,6 +106,7 @@ type DefinedFields<T> = Readonly<Record<keyof T, true>>;
 const DECLARATION_FIELDS = {
   protocolVersion: true,
   presentation: true,
+  code: true,
   types: true,
   queries: true,
   actions: true,
@@ -152,6 +154,7 @@ const ACTION_FIELDS = {
   target: true,
   refs: true,
   code: true,
+  unattended: true,
   app: true,
   title: true,
   description: true,
@@ -708,6 +711,9 @@ const compileOperationSchemas = (definition: QueryDefinition | CapabilityActionD
       ...(definition.target !== undefined ? { target: definition.target } : {}),
       ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
       ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...("unattended" in definition && definition.unattended !== undefined
+        ? { unattended: z.literal(false).parse(definition.unattended) }
+        : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...("appOnly" in definition && definition.appOnly !== undefined ? { appOnly: definition.appOnly } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
@@ -734,11 +740,6 @@ export const compileCapabilities = (
   if (definitions.appStatus !== undefined) CapabilityAppStatusManifestSchema.parse(definitions.appStatus);
   if (definitions.discussions !== undefined) CapabilityDiscussionsManifestSchema.parse(definitions.discussions);
   for (const [localId, type] of Object.entries(definitions.types ?? {})) {
-    if (type.access !== undefined) {
-      assertDefinedFields(type.access, { readable: true }, `Resource type ${localId} access`);
-      if (type.access.readable !== undefined && typeof type.access.readable !== "function")
-        throw new Error(`Resource type ${localId} access.readable must be a function`);
-    }
     const visited = new Set([localId]);
     let container = type.container;
     while (container !== undefined) {
@@ -752,6 +753,11 @@ export const compileCapabilities = (
     }
   }
 
+  const codeAccess = generatedCodeAccess(appId, definitions);
+  for (const key of [...Object.keys(codeAccess.queries), ...Object.keys(codeAccess.actions)]) {
+    if (Object.hasOwn(definitions.queries ?? {}, key) || Object.hasOwn(definitions.actions ?? {}, key))
+      throw new Error(`Generated capability ${key} collides with a declared capability`);
+  }
   const localIds = new Set<string>();
   const registerLocalId = (localId: string, kind: string): void => {
     assertLocalId(localId, kind);
@@ -825,8 +831,8 @@ export const compileCapabilities = (
     };
   }
   const queries = new Map<string, CompiledCapabilityQuery>();
-  for (const [localId, definition] of Object.entries({ ...definitions.queries, ...generated }).sort(([left], [right]) =>
-    left.localeCompare(right),
+  for (const [localId, definition] of Object.entries({ ...definitions.queries, ...generated, ...codeAccess.queries }).sort(
+    ([left], [right]) => left.localeCompare(right),
   )) {
     registerLocalId(localId, "Query");
     const label = `Query ${localId}`;
@@ -871,6 +877,9 @@ export const compileCapabilities = (
       ...(definition.target !== undefined ? { target: definition.target } : {}),
       ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
       ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...("unattended" in definition && definition.unattended !== undefined
+        ? { unattended: z.literal(false).parse(definition.unattended) }
+        : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       openWorld: definition.openWorld,
@@ -893,6 +902,8 @@ export const compileCapabilities = (
     });
   }
   for (const type of types) {
+    if (definitions.types?.[type.localId]?.access && !type.reader)
+      throw new Error(`Resource type ${type.localId}: access requires a reader`);
     if (!type.reader) continue;
     const reader = queries.get(type.reader);
     if (!reader) throw new Error(`Resource type ${type.localId} reader ${type.reader} must name an existing Query`);
@@ -902,7 +913,9 @@ export const compileCapabilities = (
     assertCanonicalReaderInput(reader.manifest.inputSchema, `Resource type ${type.localId} reader ${type.reader} input`);
   }
   const actions = new Map<string, CompiledCapabilityAction>();
-  for (const [localId, definition] of Object.entries(definitions.actions ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [localId, definition] of Object.entries({ ...definitions.actions, ...codeAccess.actions }).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
     registerLocalId(localId, "Action");
     const label = `Action ${localId}`;
     assertDefinedFields(definition, ACTION_FIELDS, label);
@@ -974,6 +987,9 @@ export const compileCapabilities = (
       ...(definition.target !== undefined ? { target: definition.target } : {}),
       ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
       ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...("unattended" in definition && definition.unattended !== undefined
+        ? { unattended: z.literal(false).parse(definition.unattended) }
+        : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       destructive: definition.destructive,
@@ -1090,6 +1106,20 @@ export const compileCapabilities = (
   });
   const manifestBase = {
     ...(resourceTypes.length ? { resourceTypes } : {}),
+    ...(definitions.code || Object.values(definitions.types ?? {}).some((type) => type.access?.grant)
+      ? {
+          code: {
+            access: {
+              app: !!definitions.code?.access?.app,
+              types: Object.entries(definitions.types ?? {})
+                .filter(([, type]) => !!type.access?.grant)
+                .map(([id]) => id)
+                .sort(),
+            },
+            owners: [...(definitions.code?.owners ?? [])].sort(),
+          },
+        }
+      : {}),
     ...(definitions.appStatus ? { appStatus: definitions.appStatus } : {}),
     ...(definitions.discussions ? { discussions: definitions.discussions } : {}),
     ...(resourcePages.length ? { resourcePages } : {}),
@@ -1290,6 +1320,7 @@ export const resolveCapabilityManifestPresentation = (
         : {}),
       ...(current.subscribes ? { subscribes: current.subscribes } : {}),
       ...(current.resourceTypes ? { resourceTypes: current.resourceTypes } : {}),
+      ...(current.code ? { code: current.code } : {}),
       ...(current.appStatus ? { appStatus: current.appStatus } : {}),
       ...(current.discussions ? { discussions: current.discussions } : {}),
       ...(current.resourcePages ? { resourcePages: current.resourcePages } : {}),
@@ -1339,6 +1370,7 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
     ...(operation.target !== undefined ? { target: operation.target } : {}),
     ...(operation.refs !== undefined ? { refs: operation.refs } : {}),
     ...("code" in operation && operation.code !== undefined ? { code: operation.code } : {}),
+    ...("unattended" in operation && operation.unattended !== undefined ? { unattended: operation.unattended } : {}),
     ...(operation.appPermission ? { appPermission: operation.appPermission } : {}),
     ...("appOnly" in operation && operation.appOnly !== undefined ? { appOnly: operation.appOnly } : {}),
     ...(operation.stream ? { stream: operation.stream } : {}),
@@ -1628,6 +1660,7 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
     issues.push(...schemaEvolutionIssues(operation.inputSchema, current.inputSchema, `Action ${operation.localId} input`, "input"));
     if (operation.target !== current.target || !sameSchema(operation.refs ?? {}, current.refs ?? {}))
       issues.push(`Action ${operation.localId} changed its target contract`);
+    if (operation.unattended !== current.unattended) issues.push(`Action ${operation.localId} changed unattended availability`);
     if (operation.code !== current.code) issues.push(`Action ${operation.localId} changed Code availability`);
     issues.push(...schemaEvolutionIssues(operation.dataSchema, current.dataSchema, `Action ${operation.localId} data`, "data"));
   }
@@ -1779,6 +1812,13 @@ export const invokeCompiledCapability = async (params: {
   }
   if (!isAppCapabilityContext(params.context) && "appOnly" in operation.definition && operation.definition.appOnly !== undefined)
     return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
+  if (
+    "unattended" in operation.manifest &&
+    operation.manifest.unattended === false &&
+    params.context.actor.kind !== "app" &&
+    (params.context.actor.delegation?.credentialKind === "mandate" || params.context.actor.delegation?.workloadType)
+  )
+    return { ok: false, error: { code: "FORBIDDEN", message: "This Action cannot execute unattended", status: 403 } };
   if (params.expectedSchemaHash !== operation.manifest.schemaHash) {
     return {
       ok: false,

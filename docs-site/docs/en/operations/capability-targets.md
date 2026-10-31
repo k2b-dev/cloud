@@ -38,3 +38,24 @@ operations remain available.
 
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the declaration, invocation and digest contract.
+
+## Enable target-side Code access
+
+Upgrade Core before deploying providers with Code access adapters. Core's
+capability migration creates `capabilities.code_access_grants`, the platform's
+routing and replay index. Applications keep owning their actual permission
+rows. No new environment settings are required; proofs use Core's existing
+invocation signing keys and public invocation JWKS.
+
+Deploy each provider with all four adapter functions together. A type with
+`access`, or a type named in `code.owners`, must have a declared reader or the
+provider refuses startup with the type's name. Existing reader-only adapters
+remain supported. New generated Actions carry `unattended: false`, so older
+Core readers omit them instead of stripping that restriction.
+
+Keep the adapter available while its app has Code grants to remove. Core must
+finish target cleanup before deleting the Code account; account deletion then
+removes the platform's replay index for that account. An unavailable target
+returns a retryable cleanup failure rather than reporting successful removal.
+See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
+for the adapter and Core proof contracts.

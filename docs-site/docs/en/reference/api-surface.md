@@ -659,3 +659,15 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+### Code access adapters and Core proofs
+
+`CodeAccessAdapter`, `CodeAccessDecision`, `CodeAccessEntry`,
+`CodeAccessGrant`, `CodeAccessTarget` and `CapabilityCodeDefinition` are
+application-facing types from `@k2b/cloud`; their schemas also come from
+`@k2b/cloud/contracts`.
+
+Core owns `signCodeAccessProof`, `verifyCodeAccessProof`, `CodeAccessProofInput`,
+`CodeAccessProofClaims`, `signCodeAccessCleanup`, `verifyCodeAccessCleanup` and
+`CodeAccessCleanupClaims` from `@k2b/cloud/capabilities/server`. Target adapters
+do not issue proofs. See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).

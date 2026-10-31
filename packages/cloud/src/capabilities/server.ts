@@ -174,6 +174,7 @@ export async function transferCapabilityStream(
   return caller.transport ? caller.transport(request) : fetch(request, { redirect: "error" });
 }
 
+export * from "../code/access-proof";
 export type { CapabilityInvocationBody, NormalizedCapabilityCall } from "../contracts/capabilities";
 export {
   CALENDAR_VIEW_MAX_RANGE_MS,

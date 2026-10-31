@@ -19,6 +19,7 @@ import { createAppQueryRoutes } from "./app-queries";
 import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
+import { createCodeAccessCleanupRoutes } from "./code-access-cleanup";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
@@ -957,6 +958,8 @@ export const defineApp = <
         server.route("/api/_internal/events/v1", createAppEventDeliveryRoutes(compiledCapabilities));
 
       if (compiledCapabilities) {
+        if (startOpts.capabilities && compiledCapabilities.actions.has("code.access.rm"))
+          server.route("/api/_internal/capabilities/v1/code-cleanup", createCodeAccessCleanupRoutes(meta.id, startOpts.capabilities));
         server.route("/api/_internal/capabilities/v1/app-queries", createAppQueryRoutes(compiledCapabilities));
         server.route("/api/_internal/capabilities/v1/app-capabilities", createAppCapabilityRoutes(compiledCapabilities));
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>
