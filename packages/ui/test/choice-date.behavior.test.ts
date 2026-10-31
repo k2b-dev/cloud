@@ -918,7 +918,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
-  test("keeps IconInput fuzzy search inside the active default group", async () => {
+  test("searches IconInput across every group unless a group was chosen", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
     const { IconInput } = await import("../src/inputs/SpecialInputs");
@@ -932,14 +932,31 @@ describe("@k2b/ui choice and date browser behavior", () => {
     );
 
     dom.root.querySelector<HTMLButtonElement>(".k2b-choice-trigger")?.click();
-    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']"))
-      .find((radio) => radio.textContent === "Food")
-      ?.click();
+    const optionLabels = () => Array.from(dom.root.querySelectorAll<HTMLElement>("[role='option'] strong"), (option) => option.textContent);
+    const chip = (label: string) =>
+      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']")).find((radio) => radio.textContent === label)!;
+    expect(chip("Recommended").getAttribute("aria-checked")).toBe("true");
 
+    // "Truck" is not recommended; the search still finds it.
     const search = dom.root.querySelector<HTMLInputElement>(".k2b-choice-search input")!;
+    setSolidInputValue(search, "truck");
+    expect(optionLabels()).toEqual(["Truck"]);
+    expect(chip("All").getAttribute("aria-checked")).toBe("true");
+
+    // No loose subsequence hits such as "warninG eRrOr" for "gro".
+    setSolidInputValue(search, "gro");
+    expect(optionLabels()).toEqual(["Friends"]);
+
+    setSolidInputValue(search, "start");
+    chip("Media").click();
+    expect(optionLabels()).toEqual(["Play"]);
+
+    // A group chosen before searching keeps narrowing the results.
+    chip("Food").click();
     setSolidInputValue(search, "piz");
-    const optionLabels = Array.from(dom.root.querySelectorAll<HTMLElement>("[role='option'] strong"), (option) => option.textContent);
-    expect(optionLabels).toEqual(["Pizza"]);
+    expect(optionLabels()).toEqual(["Pizza"]);
+    setSolidInputValue(search, "truck");
+    expect(optionLabels()).toEqual([]);
 
     dispose();
     popover.restore();

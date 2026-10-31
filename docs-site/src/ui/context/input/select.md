@@ -95,7 +95,10 @@ Each option lists its group values through `option.groups`; one option may
 belong to several groups. `defaultGroup` selects the initial group. The built-in
 **All** choice removes the group filter, and `allGroupLabel` can rename it.
 
-For static options, the active group and text search are combined. For remote
+For static options, the active group and text search are combined. The
+`defaultGroup` is a starting view: each opening returns to it, and the first
+letter typed switches to **All**, so a search finds every option. A group the
+person picks, before or during the search, keeps narrowing the results. For remote
 options, apply the third `group` argument in the data source and return the
 matching page. The component does not filter a partial remote result page in
 the browser.
@@ -427,7 +430,10 @@ screen keep the compact options, and grid tiles are already larger.
 The option list of `Select`, `MultiSelectInput`, `AutocompleteSelect`, and
 `Combobox` keeps the trigger's width, so it lines up with its field. A long
 option label or description wraps there instead of ending in an ellipsis;
-grid tiles keep their two-line clamp.
+grid tiles keep their two-line clamp and hyphenate long words in the page
+language. A `Select` with groups or the view switch is at least `26rem` wide,
+whatever its trigger, so the chips and tiles have room; it never grows past the
+viewport and spans a phone's width.
 
 Option labels must remain clear without icons or colors. If the surrounding
 toolbar already names a `SelectChip`, use the native `"aria-label"` property

@@ -7,15 +7,39 @@ const iconMessages = i18n.define({
     en: {
       filterIcons: "Filter icons",
       pickIcon: "Pick an icon...",
+      recommended: "Recommended",
+      people: "People",
+      work: "Work",
+      communication: "Communication",
+      files: "Files",
+      data: "Data & tech",
+      commerce: "Commerce",
+      places: "Places",
+      food: "Food",
+      media: "Media",
+      devices: "Devices",
     },
     de: {
       filterIcons: "Symbole filtern",
       pickIcon: "Symbol auswählen...",
+      recommended: "Empfohlen",
+      people: "Personen",
+      work: "Arbeit",
+      communication: "Kommunikation",
+      files: "Dateien",
+      data: "Daten & Technik",
+      commerce: "Handel",
+      places: "Orte",
+      food: "Essen",
+      media: "Medien",
+      devices: "Geräte",
     },
   },
 });
 
 export type IconMessages = ReturnType<(typeof iconMessages)["resolve"]>["t"];
+
+export type IconGroupMessage = keyof Omit<IconMessages, "filterIcons" | "pickIcon">;
 
 /** Resolved from the inherited render locale. */
 export const useIconMessages = (): (() => IconMessages) => {

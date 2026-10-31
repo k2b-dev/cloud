@@ -88,6 +88,8 @@ export function Select(props: SelectProps): JSX.Element {
   const [cache, setCache] = createSignal<Record<string, NormalizedOption>>({});
   const [selectedGroup, setSelectedGroup] = createSignal<string | null>(props.defaultGroup ?? null);
   const [selectedView, setSelectedView] = createSignal<SelectView>(props.defaultView ?? "list");
+  // Whether the person picked the group since opening, rather than seeing the default one.
+  let groupChosen = false;
   let searchRef: HTMLInputElement | undefined;
   let optionRefs: HTMLButtonElement[] = [];
   const value = () => resolveMaybeAccessor(props.value) ?? null;
@@ -162,6 +164,7 @@ export function Select(props: SelectProps): JSX.Element {
   const move = (direction: 1 | -1) => focus(nextEnabledChoiceIndex(listOptions(), focusedIndex(), direction));
   const chooseGroup = (group: string | null) => {
     if (group === activeGroup()) return;
+    groupChosen = true;
     setSelectedGroup(group);
     setFocusedIndex(nextEnabledChoiceIndex(listOptions(), -1, 1));
     if (isAsync()) loader.load(query(), true);
@@ -169,6 +172,8 @@ export function Select(props: SelectProps): JSX.Element {
   const open = () => {
     if (props.disabled) return;
     setQuery("");
+    groupChosen = false;
+    setSelectedGroup(props.defaultGroup ?? null);
     if (isAsync()) loader.load("", true);
     const selectedIndex = listOptions().findIndex((option) => option.value === (value() ?? CLEAR_VALUE));
     focus(selectedIndex >= 0 ? selectedIndex : nextEnabledChoiceIndex(listOptions(), -1, 1));
@@ -291,6 +296,7 @@ export function Select(props: SelectProps): JSX.Element {
           ref={popover.setPopover}
           popover="manual"
           class="k2b-choice-popover"
+          data-toolbar={(props.groups?.length ?? 0) > 0 || props.viewToggle ? "true" : undefined}
           role="group"
           onKeyDown={onKeyDown}
           aria-label={typeof props.label === "string" ? props.label : (props["aria-label"] ?? messages().options)}
@@ -307,6 +313,10 @@ export function Select(props: SelectProps): JSX.Element {
                 aria-controls={listboxId}
                 aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
                 onInput={(event) => {
+                  // A default group, such as "Recommended", is a starting view,
+                  // not a filter: a static search leaves it for "All". A group
+                  // the person chose keeps narrowing the results.
+                  if (!isAsync() && !groupChosen && event.currentTarget.value) setSelectedGroup(null);
                   setQuery(event.currentTarget.value);
                   if (isAsync()) loader.load(event.currentTarget.value);
                   focus(isAsync() ? -1 : nextEnabledChoiceIndex(options(), -1, 1));

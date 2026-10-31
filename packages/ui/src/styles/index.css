@@ -6522,6 +6522,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-height: min(23rem, calc(100dvh - 1rem));
 }
 
+/* Filter chips and a grid need room of their own: a popover with a toolbar is
+   at least 26rem wide, whatever the trigger's width, and never wider than the
+   viewport. On a phone that makes it a full-width sheet under the field. The
+   taller limit shows five rows of the small grid. */
+.k2b-ui .k2b-choice-popover[data-toolbar="true"] {
+  min-width: min(26rem, calc(100vw - 1rem));
+  max-height: min(27rem, calc(100dvh - 1rem));
+}
+
 .k2b-ui .k2b-choice-search {
   display: flex;
   min-height: 2rem;
@@ -6573,6 +6582,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-choice-groups::-webkit-scrollbar {
   display: none;
+}
+
+/* Chips that continue past an edge fade out there, so a cut chip reads as
+   "scroll for more" instead of a clipped control. */
+.k2b-ui .k2b-choice-groups-shell[data-overflow~="end"] > .k2b-choice-groups {
+  mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+}
+
+.k2b-ui .k2b-choice-groups-shell[data-overflow~="start"] > .k2b-choice-groups {
+  mask-image: linear-gradient(to left, #000 calc(100% - 2rem), transparent);
+}
+
+.k2b-ui .k2b-choice-groups-shell[data-overflow~="start"][data-overflow~="end"] > .k2b-choice-groups {
+  mask-image: linear-gradient(to right, transparent, #000 2rem, #000 calc(100% - 2rem), transparent);
 }
 
 .k2b-ui .k2b-choice-groups-scrollbar {
@@ -7062,6 +7085,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-choice-options[data-view="grid"] > .k2b-choice-option strong {
   color: var(--k2b-text-muted);
   font-weight: 400;
+  /* A long word, such as a German compound, breaks at a syllable, not after any letter. */
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 .k2b-ui .k2b-choice-options[data-view="grid"][data-grid-size="sm"] > .k2b-choice-option small {

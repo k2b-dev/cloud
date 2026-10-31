@@ -1,0 +1,194 @@
+import { i18n } from "@k2b/stdlib";
+import { DEFAULT_ICON_OPTIONS } from "./icon-options";
+
+type IconText = readonly [label: string, description: string, keywords: string];
+
+/**
+ * German names for the default catalogue, keyed by the Tabler glyph name.
+ * Keywords are extra German search words; the English label and keywords stay
+ * searchable in every locale.
+ */
+const de: Record<string, IconText> = {
+  activity: ["Aktivität", "Live-Aktivität oder Zustandssignale", "puls überwachung"],
+  adjustments: ["Regler", "Einstellungen oder Steuerung anpassen", "einstellungen steuerung"],
+  "alert-circle": ["Warnung", "Wichtiger Hinweis oder ein Problem", "fehler achtung"],
+  archive: ["Archiv", "Abgelegtes oder inaktives Material", "ablage kiste"],
+  bell: ["Glocke", "Benachrichtigungen und Erinnerungen", "benachrichtigung erinnerung"],
+  book: ["Buch", "Lesen, Wissen oder eine Bibliothek", "lesen bibliothek wissen"],
+  bookmark: ["Lesezeichen", "Für später gespeicherte Inhalte", "merken favorit"],
+  box: ["Kiste", "Ein Produkt, Paket oder Behälter", "paket lager karton"],
+  briefcase: ["Aktentasche", "Geschäft, Job oder Projekt", "geschäft arbeit projekt"],
+  building: ["Gebäude", "Eine Organisation oder ein Büro", "firma büro unternehmen"],
+  calendar: ["Kalender", "Termine, Pläne und Zeitpläne", "datum termin plan"],
+  camera: ["Kamera", "Fotografie oder Bildaufnahme", "foto bild"],
+  "chart-bar": ["Balkendiagramm", "Werte über Kategorien vergleichen", "statistik auswertung diagramm"],
+  "chart-line": ["Liniendiagramm", "Einen Verlauf über die Zeit zeigen", "statistik trend diagramm"],
+  check: ["Haken", "Eine erledigte oder bestätigte Aktion", "erledigt fertig ok"],
+  "circle-check": ["Haken im Kreis", "Erfolgreicher oder genehmigter Status", "erledigt erfolg genehmigt"],
+  clock: ["Uhr", "Zeit, Dauer oder eine Frist", "zeit dauer frist"],
+  cloud: ["Wolke", "Gehostete oder synchronisierte Dienste", "online synchronisation hosting"],
+  heart: ["Herz", "Favorit, Gefällt mir oder Gesundheit", "favorit liebe gesundheit"],
+  home: ["Haus", "Eine Startseite oder ein Zuhause", "start zuhause startseite"],
+  "layout-dashboard": ["Dashboard", "Eine Übersicht oder Steuerzentrale", "übersicht layout"],
+  search: ["Suche", "Inhalte oder Einträge finden", "suchen finden lupe"],
+  settings: ["Einstellungen", "Konfiguration und Vorlieben", "zahnrad konfiguration"],
+  sparkles: ["Funkeln", "KI, Magie oder etwas Neues", "ki magie neu"],
+  star: ["Stern", "Favorit, Bewertung oder Hervorhebung", "favorit bewertung"],
+  tag: ["Etikett", "Eine Markierung oder Kategorie", "schlagwort kategorie label"],
+  cube: ["Würfel", "Ein Modul, Objekt oder Baustein", "modul komponente baustein"],
+  download: ["Herunterladen", "Eine Datei speichern oder exportieren", "speichern export download"],
+  "external-link": ["Externer Link", "Eine andere Seite oder Website öffnen", "öffnen neuer tab"],
+  eye: ["Auge", "Ansehen, Vorschau oder Sichtbarkeit", "ansicht vorschau sichtbar"],
+  "help-circle": ["Hilfe", "Hilfe, Support oder eine Frage", "frage support"],
+  "info-circle": ["Info", "Zusätzliche Informationen oder Hinweise", "information hinweis"],
+  key: ["Schlüssel", "Zugang, Zugangsdaten oder Sicherheit", "zugang sicherheit passwort"],
+  link: ["Link", "Eine URL oder Verbindung", "verknüpfung verbindung adresse"],
+  list: ["Liste", "Eine Folge von Einträgen oder Zeilen", "einträge zeilen aufzählung"],
+  lock: ["Schloss", "Private oder geschützte Inhalte", "sicherheit privat gesperrt"],
+  package: ["Paket", "Eine Sendung oder ein Softwaremodul", "sendung modul"],
+  plus: ["Plus", "Etwas hinzufügen oder erstellen", "hinzufügen neu erstellen"],
+  shield: ["Schild", "Sicherheit oder Schutz", "sicherheit schutz"],
+  trash: ["Papierkorb", "Etwas löschen oder entfernen", "löschen entfernen mülleimer"],
+  upload: ["Hochladen", "Eine Datei importieren oder senden", "import datei hochladen"],
+  x: ["Schließen", "Schließen, abbrechen oder entfernen", "abbrechen entfernen kreuz"],
+
+  "address-book": ["Adressbuch", "Gespeicherte Personen und Kontaktdaten", "kontakte verzeichnis"],
+  friends: ["Freunde", "Freunde oder ein sozialer Kreis", "sozial gruppe"],
+  id: ["Ausweis", "Identität oder Kontodaten", "identität ausweis"],
+  "mood-smile": ["Lächeln", "Gute Stimmung oder Feedback", "fröhlich emoji"],
+  user: ["Person", "Eine Person oder ein Konto", "benutzer konto nutzer"],
+  "user-check": ["Bestätigte Person", "Eine genehmigte oder verifizierte Person", "genehmigt verifiziert"],
+  "user-circle": ["Profil", "Ein persönliches Profil oder Avatar", "profil avatar benutzer"],
+  "user-plus": ["Person hinzufügen", "Eine Person einladen oder hinzufügen", "einladen beitreten"],
+  users: ["Personen", "Eine Gruppe, ein Team oder Publikum", "gruppe team leute"],
+
+  award: ["Auszeichnung", "Eine Leistung oder Anerkennung", "medaille preis"],
+  "building-store": ["Laden", "Ein Geschäft oder eine Filiale", "geschäft einzelhandel"],
+  clipboard: ["Zwischenablage", "Kopierte Inhalte oder eine Aufgabe", "kopieren einfügen"],
+  "clipboard-list": ["Aufgabenliste", "Eine Checkliste oder Aufgaben", "aufgaben checkliste todo"],
+  edit: ["Bearbeiten", "Bestehende Inhalte ändern", "stift ändern"],
+  filter: ["Filter", "Ergebnisse eingrenzen", "eingrenzen suchen"],
+  flag: ["Flagge", "Eine Markierung, ein Meilenstein oder eine Meldung", "markierung meilenstein"],
+  presentation: ["Präsentation", "Folien oder ein Vortrag", "folien vortrag"],
+  printer: ["Drucker", "Eine Papierkopie drucken", "drucken papier"],
+  school: ["Schule", "Bildung, Schulung oder ein Campus", "bildung lernen"],
+  target: ["Ziel", "Ein Ziel oder eine Vorgabe", "zielscheibe"],
+  tool: ["Werkzeug", "Wartung oder praktische Arbeit", "wartung schraubenschlüssel"],
+  trophy: ["Pokal", "Ein Sieg oder großer Erfolg", "sieger gewinner"],
+
+  file: ["Datei", "Eine allgemeine Datei oder ein Dokument", "dokument"],
+  "file-code": ["Code-Datei", "Quellcode oder ein Skript", "quellcode skript"],
+  "file-spreadsheet": ["Tabellendokument", "Tabellendaten oder eine Arbeitsmappe", "tabellenkalkulation arbeitsmappe"],
+  "file-text": ["Dokument", "Text oder Dokumentation", "text doku"],
+  files: ["Dateien", "Eine Sammlung von Dokumenten", "dokumente mehrere"],
+  folder: ["Ordner", "Ein Verzeichnis mit Dateien", "verzeichnis"],
+  "folder-open": ["Offener Ordner", "Ein gerade geöffnetes Verzeichnis", "verzeichnis durchsuchen"],
+  note: ["Notiz", "Eine kurze Notiz oder Anmerkung", "anmerkung schreiben"],
+  notebook: ["Notizbuch", "Notizen, Tagebuch oder Recherche", "tagebuch notizen schreiben"],
+  paperclip: ["Anhang", "Eine angehängte Datei", "anhängen büroklammer"],
+  pencil: ["Stift", "Schreiben oder Inhalte verfassen", "schreiben verfassen"],
+
+  api: ["API", "Eine Programmierschnittstelle", "schnittstelle dienst"],
+  "brand-github": ["GitHub", "Ein GitHub-Repository oder -Projekt", "repository code"],
+  browser: ["Browser", "Eine Website oder ein Webbrowser", "web internet webseite"],
+  bug: ["Fehler", "Ein Softwarefehler oder Mangel", "käfer problem"],
+  code: ["Code", "Programmierung oder Quellcode", "quellcode entwicklung"],
+  database: ["Datenbank", "Strukturierte Datenspeicherung", "speicher daten"],
+  "git-branch": ["Git-Branch", "Ein Zweig von Quelländerungen", "zweig repository"],
+  network: ["Netzwerk", "Verbundene Systeme oder Knoten", "verbindung knoten"],
+  robot: ["Roboter", "Automatisierung, ein Bot oder KI", "bot ki automatisierung"],
+  server: ["Server", "Ein Host oder Infrastrukturdienst", "infrastruktur rechner"],
+  table: ["Tabelle", "Zeilen und Spalten mit Daten", "raster spalten zeilen"],
+  terminal: ["Terminal", "Eine Kommandozeile oder Shell", "konsole kommandozeile"],
+  wifi: ["WLAN", "Drahtloser Netzwerkzugang", "drahtlos internet"],
+
+  at: ["At-Zeichen", "Eine Erwähnung oder E-Mail-Adresse", "erwähnung email"],
+  mail: ["E-Mail", "E-Mail oder schriftliche Korrespondenz", "nachricht brief post"],
+  "mail-opened": ["Geöffnete E-Mail", "Eine gelesene oder geöffnete Nachricht", "gelesen nachricht"],
+  message: ["Nachricht", "Chat oder eine Unterhaltung", "chat kommentar"],
+  messages: ["Nachrichten", "Eine Unterhaltung mit mehreren Nachrichten", "chat unterhaltung"],
+  microphone: ["Mikrofon", "Spracheingabe oder Tonaufnahme", "audio stimme aufnahme"],
+  phone: ["Telefon", "Ein Anruf oder eine Telefonnummer", "anruf anrufen"],
+  send: ["Senden", "Eine Nachricht oder Einreichung zustellen", "abschicken zustellen"],
+  share: ["Teilen", "Inhalte an andere weitergeben", "weitergeben sozial"],
+
+  "building-bank": ["Bank", "Bankgeschäfte oder ein Finanzinstitut", "finanzen geld"],
+  calculator: ["Taschenrechner", "Berechnung oder Buchhaltung", "rechnen buchhaltung mathe"],
+  cash: ["Bargeld", "Bargeld oder eine Barzahlung", "geld geldschein"],
+  coin: ["Münze", "Geld, Währung oder Guthaben", "geld finanzen guthaben"],
+  "credit-card": ["Kreditkarte", "Kartenzahlungen und Abrechnung", "zahlung geld karte"],
+  "currency-dollar": ["Dollar", "Preise oder Beträge in Dollar", "währung geld"],
+  "currency-euro": ["Euro", "Preise oder Beträge in Euro", "währung geld"],
+  percentage: ["Prozent", "Ein Satz, Anteil oder Rabatt", "rabatt anteil"],
+  receipt: ["Beleg", "Ein Kauf, eine Rechnung oder Quittung", "rechnung quittung kassenbon"],
+  "shopping-bag": ["Einkaufstasche", "Einkaufen oder eine Bestellung", "einkaufen kaufen bestellung"],
+  "shopping-cart": ["Warenkorb", "Artikel zum Kaufen", "einkaufen kaufen"],
+  wallet: ["Geldbörse", "Geld, Karten oder ein Kontostand", "portemonnaie geld finanzen"],
+
+  bike: ["Fahrrad", "Radfahren oder Fahrradverkehr", "rad verkehr"],
+  bus: ["Bus", "Öffentlicher Straßenverkehr", "verkehr öffentlich"],
+  car: ["Auto", "Autofahren oder ein Fahrzeug", "fahrzeug wagen"],
+  compass: ["Kompass", "Richtung oder Navigation", "navigation richtung"],
+  map: ["Karte", "Geografie oder ein Gebietsüberblick", "ort geografie landkarte"],
+  "map-pin": ["Standort", "Ein bestimmter Ort oder eine Adresse", "ort adresse stecknadel"],
+  mountain: ["Berg", "Natur, draußen oder ein Gipfel", "natur gipfel draußen"],
+  plane: ["Flugzeug", "Flugreise oder ein Flug", "flug reise"],
+  rocket: ["Rakete", "Ein Start, Wachstum oder schneller Beginn", "start wachstum weltraum"],
+  route: ["Route", "Ein Weg, eine Reise oder ein Reiseplan", "weg reise"],
+  ship: ["Schiff", "Seeverkehr oder Versand", "boot see"],
+  tent: ["Zelt", "Camping oder ein Ort im Freien", "camping draußen"],
+  train: ["Zug", "Bahnreise oder öffentlicher Verkehr", "bahn verkehr"],
+  truck: ["Lastwagen", "Fracht, Logistik oder Lieferung", "lkw lieferung versand logistik"],
+  world: ["Welt", "Global, international oder Webinhalte", "globus erde web"],
+
+  apple: ["Apfel", "Obst, Essen oder gesunde Ernährung", "obst gesund"],
+  cake: ["Kuchen", "Nachtisch oder eine Feier", "torte geburtstag feier"],
+  "chef-hat": ["Kochmütze", "Kochen, Rezepte oder ein Restaurant", "kochen rezept restaurant"],
+  coffee: ["Kaffee", "Kaffee, ein Café oder eine Pause", "getränk café pause"],
+  cookie: ["Keks", "Ein Snack, Nachtisch oder Browser-Cookie", "plätzchen snack"],
+  glass: ["Glas", "Ein Getränk", "getränk wein"],
+  "ice-cream": ["Eis", "Ein gefrorener Nachtisch", "eiscreme nachtisch"],
+  lemon: ["Zitrone", "Zitrusfrucht oder ein frischer Geschmack", "obst zitrus"],
+  mug: ["Tasse", "Ein Heißgetränk oder Becher", "becher getränk"],
+  pizza: ["Pizza", "Essen, Lieferung oder ein Restaurant", "restaurant lieferung essen"],
+
+  headphones: ["Kopfhörer", "Musik oder Audio hören", "audio hören"],
+  music: ["Musik", "Lieder, Klang oder Audio", "lied audio"],
+  palette: ["Palette", "Farbe, Kunst oder visuelles Design", "farbe kunst design"],
+  photo: ["Foto", "Ein Bild", "bild"],
+  "player-pause": ["Pause", "Audio- oder Videowiedergabe pausieren", "anhalten wiedergabe"],
+  "player-play": ["Abspielen", "Audio- oder Videowiedergabe starten", "start wiedergabe"],
+  "player-stop": ["Stopp", "Audio- oder Videowiedergabe beenden", "beenden wiedergabe"],
+  video: ["Video", "Bewegte Bilder oder eine Aufnahme", "film kamera"],
+  volume: ["Lautstärke", "Ton oder Audiopegel", "ton audio laut"],
+
+  "device-desktop": ["Desktop", "Ein Desktop-Computer oder Monitor", "computer bildschirm rechner"],
+  "device-laptop": ["Laptop", "Ein tragbarer Computer", "computer notebook"],
+  "device-mobile": ["Handy", "Ein Smartphone oder die mobile Ansicht", "telefon smartphone mobil"],
+  "device-tablet": ["Tablet", "Ein Tablet oder die Tablet-Ansicht", "ipad computer"],
+  plug: ["Stecker", "Strom oder eine Systemverbindung", "strom verbinden"],
+};
+
+const glyphName = (value: string) => value.replace("ti ti-", "");
+
+const flatten = (texts: Record<string, IconText>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(texts).flatMap(([name, [label, description, keywords]]) => [
+      [`${name}.label`, label],
+      [`${name}.description`, description],
+      [`${name}.keywords`, keywords],
+    ]),
+  );
+
+// English is the catalogue itself; its texts stay the base locale.
+const en = flatten(
+  Object.fromEntries(
+    DEFAULT_ICON_OPTIONS.map((option) => [glyphName(option.value), [String(option.label), String(option.description ?? ""), ""] as const]),
+  ),
+);
+
+const iconTexts = i18n.define({ baseLocale: "en", messages: { en, de: flatten(de) } });
+
+export const resolveIconTexts = (locale: string) => iconTexts.resolve([locale]);
+
+export const checkIconTexts = () => iconTexts.check();
