@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as ai from "@k2b/cloud/ai";
 import * as live from "@k2b/cloud/ai/live";
+import * as capabilityServer from "@k2b/cloud/capabilities/server";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
@@ -11,6 +12,7 @@ import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import * as chatContext from "../chat-context";
 import * as projectContext from "../project-context";
 import * as sidebar from "../sidebar";
 
@@ -211,7 +213,7 @@ const approval = {
   expiresAt: "2026-10-09T09:00:00.000Z",
 };
 
-test("?approvals=1 renders the approvals view without selecting a chat, and the row only while something waits", async () => {
+test("?approvals=1 renders Waiting for you without selecting a chat, and the row stays when nothing waits", async () => {
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
       projects: [],
@@ -230,18 +232,121 @@ test("?approvals=1 renders the approvals view without selecting a chat, and the 
   expect(pending).toHaveBeenCalledWith(expect.anything(), { app: "assistant" });
   // The view replaces the chat: no chat is loaded, so the first open chat is not selected behind it.
   expect(lookup).not.toHaveBeenCalled();
-  expect(html).toContain("What the Assistant wants to do for you.");
+  expect(html).toContain("Waiting for you");
+  expect(html).toContain("What Gustav wants to do for you.");
   expect(html).toContain("Send the Q4 offer");
   expect(html).toContain('href="/app/assistant?approvals=1"');
   expect(html).toMatch(
     /href="\/app\/assistant\?approvals=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?approvals=1"/,
   );
 
-  // Nothing waits: a chat page has no Approvals row.
+  // Nothing waits: the row keeps its place, so the footer never moves; the view itself stays closed.
   pending.mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
   const plain = await (await request("https://cloud.example.test/app/assistant")).text();
-  expect(plain).not.toContain('href="/app/assistant?approvals=1"');
-  expect(plain).not.toContain("What the Assistant wants to do for you.");
+  expect(plain).toContain('href="/app/assistant?approvals=1"');
+  expect(plain).not.toContain("What Gustav wants to do for you.");
+});
+
+const codeItem = {
+  id: "c_week01",
+  owner: { kind: "person", userId: user.id },
+  title: "Weekly sales report",
+  serviceAccountId: null,
+  state: "active",
+  activeVersionId: null,
+  createdBy: user.id,
+  createdAt: "2026-10-12T07:00:00.000Z",
+  permission: "editor",
+};
+/** Core's public Code queries as the page calls them, with the person's credentials. */
+const mockCodeQueries = (items: unknown[], options: { fail?: boolean } = {}) => {
+  const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
+    if (options.fail) return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Core is unavailable", status: 503 } };
+    const data =
+      invocation.capabilityId === "code.list"
+        ? { items, nextCursor: null }
+        : {
+            items: [{ id: "run-1", state: "succeeded", createdAt: "2026-10-26T07:00:00.000Z", endedAt: "2026-10-26T07:00:04.000Z" }],
+            nextCursor: null,
+          };
+    return { ok: true, data: { data: schema.parse(data) } };
+  });
+  spies.push(invoke);
+  return invoke;
+};
+
+test("My apps & automations shows only for a person with Code, and ?code=1 renders their list from the server", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
+  const invoke = mockCodeQueries([]);
+  // No Code: no entry and no empty section.
+  const none = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(invoke).toHaveBeenCalledWith(
+    { appId: "core", capabilityId: "code.list", kind: "query", input: { owner: { kind: "person", userId: user.id }, limit: 1 } },
+    expect.anything(),
+    expect.objectContaining({ locale: "en" }),
+  );
+  expect(none).not.toContain('href="/app/assistant?code=1"');
+  expect(none).not.toContain("My apps &amp; automations");
+
+  invoke.mockRestore();
+  mockCodeQueries([codeItem]);
+  const withCode = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(withCode).toContain('href="/app/assistant?code=1"');
+  const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
+  expect(view).toContain("Your Code runs as you.");
+  expect(view).toContain("Weekly sales report");
+  expect(view).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
+});
+
+test("an unknown Code answer keeps the entry, and the list shows its error with a way to retry", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
+  mockCodeQueries([], { fail: true });
+  const plain = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(plain).toContain('href="/app/assistant?code=1"');
+  const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
+  expect(view).toContain("Your apps and automations could not be loaded");
+  expect(view).toContain("Try again");
+});
+
+test("an existing chat still loads at its old address under the name Gustav", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  mockCodeQueries([]);
+  const lookup = spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+  spies.push(lookup);
+  spies.push(spyOn(ai.aiConversations, "markConversationViewed").mockResolvedValue(true));
+  spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
+  spies.push(spyOn(ai, "loadAiStreamState").mockResolvedValue({ type: "state", conversation: chat, messages: [], activeTurn: null }));
+  spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+  const response = await request("https://cloud.example.test/app/assistant?conversation=chat1");
+  // Same address, no redirect: links and bookmarks to old chats keep working.
+  expect(response.status).toBe(200);
+  expect(lookup).toHaveBeenCalledWith({ shortId: "chat1", ownerUserId: user.id });
+  const html = await response.text();
+  expect(html).toContain("<title>Gustav</title>");
+  expect(html).toContain(chat.title);
 });
 
 test("the panel starts without selecting an unrelated recent chat and renders no second shell", async () => {

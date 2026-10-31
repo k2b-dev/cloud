@@ -184,9 +184,9 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
     <div class="flex min-h-0 flex-col gap-3" aria-busy={skills.loading || Boolean(busyId())}>
       <NoticeCard
         tone="info"
-        title={text("Skills teach Assistant how to handle specific tasks")}
+        title={text("Skills teach Gustav how to handle specific tasks")}
         detail={text(
-          "Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Assistant to use.",
+          "Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Gustav to use.",
         )}
       />
       <div class="flex items-center gap-2">
@@ -367,9 +367,7 @@ function AssistantSkillReferenceEditor(props: {
     <PanelDialog>
       <PanelDialog.Header
         title={text(props.reference ? "Edit reference" : "Create reference")}
-        subtitle={text(
-          props.readOnly ? "View supporting context for this Skill." : "Add supporting context Assistant can read when needed.",
-        )}
+        subtitle={text(props.readOnly ? "View supporting context for this Skill." : "Add supporting context Gustav can read when needed.")}
         icon="ti ti-file-text"
         close={() => void requestClose()}
       />
@@ -388,7 +386,7 @@ function AssistantSkillReferenceEditor(props: {
           />
           <MarkdownEditor
             label={text("Content")}
-            description={text("Add the supporting information Assistant may need for this workflow.")}
+            description={text("Add the supporting information Gustav may need for this workflow.")}
             value={content}
             onValueChange={setContent}
             placeholder={text("Add supporting context.")}
@@ -457,7 +455,7 @@ function AssistantSkillReferencesEditor(props: {
     <PanelDialog>
       <PanelDialog.Header
         title={text("Extra info")}
-        subtitle={text("Manage supporting information Assistant can read when this Skill needs it.")}
+        subtitle={text("Manage supporting information Gustav can read when this Skill needs it.")}
         icon="ti ti-files"
         close={props.close}
       />
@@ -470,7 +468,7 @@ function AssistantSkillReferencesEditor(props: {
               variant="panel"
               icon="ti ti-files"
               title={text("No extra info yet")}
-              description={text("Add supporting information Assistant can read when this Skill needs it.")}
+              description={text("Add supporting information Gustav can read when this Skill needs it.")}
               action={
                 !props.readOnly ? (
                   <Button type="button" onClick={() => void openReferenceEditor()} disabled={props.saving}>
@@ -636,7 +634,7 @@ export function AssistantSkillEditor(props: {
                             tone="info"
                             title={text("Description controls when this Skill loads")}
                             detail={text(
-                              "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.",
+                              "Gustav sees the name and description before deciding to load a Skill. Say what to do and when to use it.",
                             )}
                           />
                         }
@@ -704,7 +702,7 @@ export function AssistantSkillEditor(props: {
                 />
                 <Switch
                   label={text("Start only when selected")}
-                  description={text("Assistant does not choose this Skill on its own. Select it with / in a message.")}
+                  description={text("Gustav does not choose this Skill automatically. Select it with / in a message.")}
                   value={() => isAiSkillManualOnly(fields().extraFrontmatter)}
                   onValueChange={(manualOnly) =>
                     setFields((current) => ({ ...current, extraFrontmatter: withManualOnly(current.extraFrontmatter, manualOnly) }))
@@ -717,7 +715,7 @@ export function AssistantSkillEditor(props: {
                 class="min-h-[18rem] flex-1"
                 label={text("Instructions")}
                 description={text(
-                  "Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Assistant should work.",
+                  "Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Gustav should work.",
                 )}
                 value={() => fields().instructions}
                 onValueChange={(instructions) => setFields((current) => ({ ...current, instructions }))}

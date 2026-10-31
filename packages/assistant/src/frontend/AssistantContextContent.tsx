@@ -21,6 +21,7 @@ import {
   ScrollArea,
 } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
+import { z } from "zod";
 import { assistantBrowserCopy, assistantBrowserText, useAssistantText } from "./ui-copy";
 
 export type AssistantContextScope = "chat" | "project";
@@ -199,10 +200,15 @@ export const confirmOpenAssistantLink = async (title: string, href: string) => {
 
 export type ResolvedAssistantCloudResource = {
   ref: CloudResourceRef;
+  /** The resource type's title, such as "Mailbox". */
   title: string;
   icon: string;
   href?: string;
+  /** The resource's own name from its reader view, such as "info@example.test", when the reader returns one. */
+  name?: string;
 };
+
+const ReaderViewTitleSchema = z.object({ view: z.object({ title: z.string().min(1) }) });
 
 type AssistantCloudResourceDependencies = {
   listCatalog(input: { cursor?: string; limit?: number }): Promise<CapabilityCatalogClientResult>;
@@ -236,6 +242,7 @@ export const resolveAssistantCloudResource = async (
         title: resourceType?.title ?? app.appName,
         icon: resourceType?.icon ?? app.appIcon,
         href: result.data.links?.find((link) => link.rel === "open")?.href,
+        name: ReaderViewTitleSchema.safeParse(result.data.data).data?.view.title,
       };
     }
     cursor = catalog.data.page.hasMore ? catalog.data.page.nextCursor : undefined;

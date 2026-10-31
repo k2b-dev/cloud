@@ -6,7 +6,7 @@ description: Nützlichen Kontext geben, mit Dateien arbeiten, Antworten personal
 order: 120
 ---
 
-Der Assistent erzielt die besten Ergebnisse, wenn deine Anfrage das gewünschte Ergebnis, den relevanten Kontext und wichtige Grenzen nennt. Ein besonderes Prompt-Format ist nicht erforderlich.
+Gustav erzielt die besten Ergebnisse, wenn deine Anfrage das gewünschte Ergebnis, den relevanten Kontext und wichtige Grenzen nennt. Ein besonderes Prompt-Format ist nicht erforderlich.
 
 ## Eine hilfreiche Anfrage formulieren {icon="pencil"}
 
@@ -14,7 +14,7 @@ Der Assistent erzielt die besten Ergebnisse, wenn deine Anfrage das gewünschte 
 1. **Ergebnis benennen:** Beschreibe, was du erhalten möchtest, etwa eine Zusammenfassung, einen Plan, eine Erklärung, einen Entwurf, einen Vergleich oder eine Codeänderung.
 2. **Ausgangsmaterial angeben:** Füge den relevanten Text ein oder hänge die im Eingabefeld angebotenen Dateien an. Nenne die Stellen, auf die es besonders ankommt.
 3. **Wichtige Vorgaben nennen:** Gib Zielgruppe, Sprache, Länge, Format, Frist oder unveränderliche Inhalte an.
-4. **Um Prüfung bitten:** Bitte den Assistenten bei wichtigen Ergebnissen, Annahmen, Unsicherheiten oder fehlende Informationen zu benennen, bevor du dich auf die Antwort verlässt.
+4. **Um Prüfung bitten:** Bitte Gustav bei wichtigen Ergebnissen, Annahmen, Unsicherheiten oder fehlende Informationen zu benennen, bevor du dich auf die Antwort verlässt.
 :::
 
 ## Kontext gezielt verwenden {icon="point"}
@@ -27,22 +27,22 @@ Der Assistent erzielt die besten Ergebnisse, wenn deine Anfrage das gewünschte 
 
 ## Personalisierung {icon="point"}
 
-- **Personalisierung** speichert Tatsachen, Präferenzen und Standards für Cloud-Abläufe, die du prüfen, bearbeiten, anheften oder vergessen kannst. Manuell hinzugefügte Einträge sind zunächst angeheftet. Der Assistent verwendet eine kleine relevante Auswahl im Kontext, statt einen unbegrenzten Verlauf zu laden. Er verwendet einen Eintrag nur, wenn dieser die Antwort verändert; deine aktuelle Nachricht hat Vorrang vor einem älteren Eintrag.
-- **Aus Chats lernen** ist eingeschaltet, solange du nichts anderes gewählt hast. Hast du den Assistenten schon genutzt, bevor Lernen zum Standard wurde, bleibt deine bisherige Einstellung erhalten, meist ausgeschaltet. Es berücksichtigt Anfragen in deinen eigenen Chats einschließlich Projekt-Chats, die abgeschlossen werden, während es eingeschaltet ist, jede einmal; das Ausschalten wirkt sofort. Es lernt nur über dich, nie Tatsachen oder Meinungen über andere Personen; eine Person darf nur in einer von dir formulierten Regel vorkommen, etwa „Rechnungen an Anna schicken“. Sensible Angaben wie Gesundheit, Religion oder politische Ansichten lässt es aus, außer du bittest ausdrücklich darum, sich genau das zu merken; Projektwissen bleibt im Projekt. Ausdrückliche Angaben von dir können dauerhafte Tatsachen und Präferenzen aktualisieren. Drei erfolgreiche Verwendungen derselben Cloud-Capability und Ressource können einen Standardablauf begründen. Anhänge und unverarbeitete Tool-Ausgaben sind ausgeschlossen; die abschließende Antwort des Assistenten dient nur als Kontext. Beim Lernen im Hintergrund dürfen nur eigene, nicht angeheftete Einträge zusammengeführt, ersetzt oder entfernt werden. Archivierte und gelöschte Chats sind ausgeschlossen; Archivieren stoppt ausstehendes Lernen, und nach dem Wiederherstellen werden nur Anfragen berücksichtigt, die danach abgeschlossen werden.
+- **Personalisierung** speichert Tatsachen, Präferenzen und Standards für Cloud-Abläufe, die du prüfen, bearbeiten, anheften oder vergessen kannst. Manuell hinzugefügte Einträge sind zunächst angeheftet. Gustav verwendet eine kleine relevante Auswahl im Kontext, statt einen unbegrenzten Verlauf zu laden. Er verwendet einen Eintrag nur, wenn dieser die Antwort verändert; deine aktuelle Nachricht hat Vorrang vor einem älteren Eintrag.
+- **Aus Chats lernen** ist eingeschaltet, solange du nichts anderes gewählt hast. Hast du Gustav schon genutzt, bevor Lernen zum Standard wurde, bleibt deine bisherige Einstellung erhalten, meist ausgeschaltet. Es berücksichtigt Anfragen in deinen eigenen Chats einschließlich Projekt-Chats, die abgeschlossen werden, während es eingeschaltet ist, jede einmal; das Ausschalten wirkt sofort. Es lernt nur über dich, nie Tatsachen oder Meinungen über andere Personen; eine Person darf nur in einer von dir formulierten Regel vorkommen, etwa „Rechnungen an Anna schicken“. Sensible Angaben wie Gesundheit, Religion oder politische Ansichten lässt es aus, außer du bittest ausdrücklich darum, sich genau das zu merken; Projektwissen bleibt im Projekt. Ausdrückliche Angaben von dir können dauerhafte Tatsachen und Präferenzen aktualisieren. Drei erfolgreiche Verwendungen derselben Cloud-Capability und Ressource können einen Standardablauf begründen. Anhänge und unverarbeitete Tool-Ausgaben sind ausgeschlossen; die abschließende Antwort von Gustav dient nur als Kontext. Beim Lernen im Hintergrund dürfen nur eigene, nicht angeheftete Einträge zusammengeführt, ersetzt oder entfernt werden. Archivierte und gelöschte Chats sind ausgeschlossen; Archivieren stoppt ausstehendes Lernen, und nach dem Wiederherstellen werden nur Anfragen berücksichtigt, die danach abgeschlossen werden.
 - **System-Prompt** zeigt den vollständigen Prompt für einen neuen Chat einschließlich aktiver Personalisierung und Organisationsregeln.
-- **Freigaben** listet frühere, weiterhin geltende Entscheidungen für **Immer freigeben** und Websites, die du für eine Studio-App erlaubt hast. Widerrufe dort einen Eintrag, sobald der Assistent wieder nachfragen soll. Freigaben für einen Chat stehen unter **Secrets & Freigaben** in diesem Chat.
+- **Freigaben** listet frühere, weiterhin geltende Entscheidungen für **Immer freigeben** und Websites, die du für eine Studio-App erlaubt hast. Widerrufe dort einen Eintrag, sobald Gustav wieder nachfragen soll. Freigaben für einen Chat stehen unter **Secrets & Freigaben** in diesem Chat.
 - **API-Zugang** erscheint, wenn deine Administration die OpenAI-kompatible API anbietet. Dort stehen die Base-URL und die Modell-IDs für Apps wie eine Diktier-App. So eine App nutzt nur die Modelle und deine Nutzungslimits. Sie bekommt keine Chats, keine Dateien und keine Personalisierung. Den Schlüssel dafür erstellst du in deinem Profil mit dem Zugriff **Nur KI-Modelle**.
 - **Chat-Kontext** eignet sich weiterhin am besten für projektspezifische Tatsachen, Ausgangsmaterial und einmalige Vorgaben.
 
 ## Geteilte Skills {icon="sparkles"}
 
-Öffne **Assistenten-Einstellungen > Skills**, um wiederverwendbare Abläufe des Assistenten zu erstellen, zu importieren, zu bearbeiten, zu exportieren oder zu teilen. Ein Skill speichert seine Anweisungen in `SKILL.md` und kann Markdown-Referenzdateien enthalten.
+Öffne **Gustav-Einstellungen > Skills**, um wiederverwendbare Abläufe von Gustav zu erstellen, zu importieren, zu bearbeiten, zu exportieren oder zu teilen. Ein Skill speichert seine Anweisungen in `SKILL.md` und kann Markdown-Referenzdateien enthalten.
 
-Du kannst den Assistenten auch bitten, einen Skill zu erstellen oder zu verbessern. Cloud stellt allen angemeldeten Personen zunächst **Skill Creator** bereit. Dieser Skill führt durch den Entwurf und verwendet geprüfte Capabilities zur Skill-Verwaltung mit deinen aktuellen Berechtigungen. Wie jeder geteilte Skill lässt er sich für dich deaktivieren. Personen mit Administratorrechten können Zugriff vergeben, den Skill bearbeiten oder ihn löschen.
+Du kannst Gustav auch bitten, einen Skill zu erstellen oder zu verbessern. Cloud stellt allen angemeldeten Personen zunächst **Skill Creator** bereit. Dieser Skill führt durch den Entwurf und verwendet geprüfte Capabilities zur Skill-Verwaltung mit deinen aktuellen Berechtigungen. Wie jeder geteilte Skill lässt er sich für dich deaktivieren. Personen mit Administratorrechten können Zugriff vergeben, den Skill bearbeiten oder ihn löschen.
 
-Sieht eine Anfrage nach wiederkehrender Arbeit aus, etwa weil du „wieder“ schreibst oder das Format eines Ergebnisses zum zweiten Mal korrigierst, kann der Assistent einmal anbieten, das Vorgehen als Skill zu speichern. Stimmst du zu, entwirft er den Skill aus dem Chat: die Schritte, deine Korrekturen und das Ausgabeformat, ohne Namen, Beträge oder Inhalte aus deinen Anhängen. Die übliche Prüfung zeigt den Skill, bevor er gespeichert wird. Lehnst du ab, fragt er in diesem Chat nicht noch einmal. Das Angebot braucht Skill Creator; hast du ihn deaktiviert, bietet der Assistent es nicht an.
+Sieht eine Anfrage nach wiederkehrender Arbeit aus, etwa weil du „wieder“ schreibst oder das Format eines Ergebnisses zum zweiten Mal korrigierst, kann Gustav einmal anbieten, das Vorgehen als Skill zu speichern. Stimmst du zu, entwirft er den Skill aus dem Chat: die Schritte, deine Korrekturen und das Ausgabeformat, ohne Namen, Beträge oder Inhalte aus deinen Anhängen. Die übliche Prüfung zeigt den Skill, bevor er gespeichert wird. Lehnst du ab, fragt er in diesem Chat nicht noch einmal. Das Angebot braucht Skill Creator; hast du ihn deaktiviert, bietet Gustav es nicht an.
 
-Korrigierst du den Ton eines Entwurfs, etwa einer zu förmlichen Mail, und ist **Personalisierung in Assistenten-Chats verwenden** eingeschaltet, bietet der Assistent an, sich die Korrektur zu merken, und schlägt eine kurze Regel vor, etwa „Mails immer förmlich schreiben“. Ein einfaches Ja reicht dafür nicht: Schick ihm die Regel in eigenen Worten zurück, dann merkt er sie sich für dich. Steht in deiner Korrektur schon „immer“ oder „ab jetzt“, merkt er sie sich direkt. Eingebaute oder geteilte Skills ändert der Assistent nicht für alle, außer du bittest darum.
+Korrigierst du den Ton eines Entwurfs, etwa einer zu förmlichen Mail, und ist **Personalisierung in Gustav-Chats verwenden** eingeschaltet, bietet Gustav an, sich die Korrektur zu merken, und schlägt eine kurze Regel vor, etwa „Mails immer förmlich schreiben“. Ein einfaches Ja reicht dafür nicht: Schick ihm die Regel in eigenen Worten zurück, dann merkt er sie sich für dich. Steht in deiner Korrektur schon „immer“ oder „ab jetzt“, merkt er sie sich direkt. Eingebaute oder geteilte Skills ändert Gustav nicht für alle, außer du bittest darum.
 
 Skills und Projekte erfordern eine Anmeldung. Teile sie mit Nutzern, Gruppen, Dienstkonten oder allen angemeldeten Identitäten; öffentlicher Zugriff ist nicht möglich.
 
@@ -50,17 +50,17 @@ Skills und Projekte erfordern eine Anmeldung. Teile sie mit Nutzern, Gruppen, Di
 
 :::steps
 1. **Kurzen, handlungsorientierten Namen wählen:** Verwende Kleinbuchstaben, Zahlen und Bindestriche, etwa `weekly-status`.
-2. **Direkte Beschreibung schreiben:** Beschreibe, was der Assistent tun und wann er den Skill verwenden soll. Formuliere so konkret, dass er sich von ähnlichen Abläufen unterscheidet. Beispiel: `Erstelle wöchentliche Statusberichte aus den letzten Arbeiten. Verwende diesen Skill bei Anfragen nach Fortschrittsberichten.`
-3. **Nur nützliche Anweisungen hinzufügen:** Lege das erwartete Ergebnis, wichtige Vorgaben und den Ablauf fest. Verzichte auf allgemeine Hinweise, die der Assistent bereits kennt.
-4. **Ergänzende Details unter Zusatzinformationen ablegen:** Füge dort Richtlinien, Schemas, Beispiele oder Hintergrundinformationen ein, die der Assistent nur bei manchen Anfragen benötigt. Wesentliche Anweisungen bleiben im Skill selbst.
-5. **Mit realistischen Anfragen testen:** Prüfe, ob der Assistent den Skill bei passenden Anfragen lädt und ihn andernfalls ignoriert. Präzisiere die Beschreibung, wenn der Skill zu oft oder zu selten ausgewählt wird.
+2. **Direkte Beschreibung schreiben:** Beschreibe, was Gustav tun und wann er den Skill verwenden soll. Formuliere so konkret, dass er sich von ähnlichen Abläufen unterscheidet. Beispiel: `Erstelle wöchentliche Statusberichte aus den letzten Arbeiten. Verwende diesen Skill bei Anfragen nach Fortschrittsberichten.`
+3. **Nur nützliche Anweisungen hinzufügen:** Lege das erwartete Ergebnis, wichtige Vorgaben und den Ablauf fest. Verzichte auf allgemeine Hinweise, die Gustav bereits kennt.
+4. **Ergänzende Details unter Zusatzinformationen ablegen:** Füge dort Richtlinien, Schemas, Beispiele oder Hintergrundinformationen ein, die Gustav nur bei manchen Anfragen benötigt. Wesentliche Anweisungen bleiben im Skill selbst.
+5. **Mit realistischen Anfragen testen:** Prüfe, ob Gustav den Skill bei passenden Anfragen lädt und ihn andernfalls ignoriert. Präzisiere die Beschreibung, wenn der Skill zu oft oder zu selten ausgewählt wird.
 :::
 
 - Importiere eine einzelne `SKILL.md` oder verwende eine ZIP-Datei, wenn der Skill Referenzen enthält. Beim ZIP-Import bleiben `SKILL.md` und unterstützte Markdown-Dateien direkt in `references/` erhalten. Übersprungene Dateien wie Skripte und Assets werden aufgelistet. Cloud führt keine Skripte aus.
 - Teile einen Skill über die Cloud-Zugriffsverwaltung. Personen mit Lesezugriff können ihn verwenden und exportieren, Personen mit Schreibzugriff können ihn bearbeiten und Personen mit Administratorrechten können außerdem den Zugriff verwalten oder den Skill löschen.
-- Skills, die du lesen kannst, sind zunächst für dich aktiviert. Deaktiviere **Für mich aktiviert**, wenn der Assistent einen geteilten Skill nicht verwenden soll. Das ändert den Zugriff anderer Personen nicht.
+- Skills, die du lesen kannst, sind zunächst für dich aktiviert. Deaktiviere **Für mich aktiviert**, wenn Gustav einen geteilten Skill nicht verwenden soll. Das ändert den Zugriff anderer Personen nicht.
 - Setze `disable-model-invocation: true` in `SKILL.md` oder aktiviere **Nur bei Auswahl starten** im Editor, damit der Skill nur startet, wenn jemand ihn mit `/` auswählt.
-- Der Assistent sieht Namen und Beschreibungen deiner aktivierten Skills, die automatisch starten können. Er lädt einen passenden Skill, bevor er dessen Anweisungen anwendet, und liest Referenzen nur bei Bedarf.
+- Gustav sieht Namen und Beschreibungen deiner aktivierten Skills, die automatisch starten können. Er lädt einen passenden Skill, bevor er dessen Anweisungen anwendet, und liest Referenzen nur bei Bedarf.
 - Ein für eine laufende Anfrage geladener Skill bleibt bei seiner aktuellen Revision. Neue Anfragen verwenden spätere Änderungen. Ein widerrufener Zugriff gilt sofort.
 
 :::warning Folgenreiche Ergebnisse prüfen
@@ -76,7 +76,7 @@ Behandle erzeugte Tatsachen, Berechnungen, externe Aktionen und Änderungen an w
 
 ## Studio-App öffnen oder teilen {icon="share"}
 
-App-Nutzer öffnen die eigenständige Ansicht ohne Assistenten-Seitenleiste. App-Verwalter
+App-Nutzer öffnen die eigenständige Ansicht ohne Gustav-Seitenleiste. App-Verwalter
 wählen oben **Vollbild öffnen** oder im Aktionsmenü **App-Link kopieren**. Der Link startet
 immer die zuletzt veröffentlichte Version. Private Apps benötigen weiterhin eine
 Anmeldung und eine App-Berechtigung.

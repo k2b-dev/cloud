@@ -96,6 +96,8 @@ describe("app colors", () => {
     });
     expect(builtIn.length).toBeGreaterThan(0);
     expect(builtIn).toContainEqual({ id: "notebooks", accent: "#eab308" });
+    // Gustav's plum (the Assistant app) gets readable ink in both themes.
+    expect(builtIn).toContainEqual({ id: "assistant", accent: "#8e1b6f" });
     const accents: HexColor[] = [
       ...builtIn.map(({ accent }) => accent),
       "#ffff00",

@@ -480,6 +480,9 @@ const validateAppPanel = (opts: Pick<AppOptions, "id" | "routes" | "basePath" | 
   ) {
     throw new Error(`App "${opts.id}" declares panel.requiresRoles; it must be an array of strings`);
   }
+  if (panel.order !== undefined && !Number.isSafeInteger(panel.order)) {
+    throw new Error(`App "${opts.id}" declares panel.order; it must be a safe integer`);
+  }
   return { ...panel, requiresRoles: panel.requiresRoles ? [...panel.requiresRoles] : undefined };
 };
 

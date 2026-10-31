@@ -55,7 +55,15 @@ export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | un
     .sort((a, b) => a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id));
 };
 
-export type PanelProvider = { id: string; label: string; icon: string; href: string; appName: string; consent: boolean };
+export type PanelProvider = {
+  id: string;
+  label: string;
+  icon: string;
+  href: string;
+  appName: string;
+  consent: boolean;
+  order?: number;
+};
 
 /** Authorized presentation only: the panel route still authorizes every request. */
 export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: User | undefined, locale: string): PanelProvider[] => {
@@ -74,9 +82,15 @@ export const visiblePanelProviders = (apps: readonly RuntimeAppMeta[], user: Use
               href: panel.href,
               appName: presentation.name,
               consent: panelProviderNeedsConsent(app.id),
+              ...(app.panel.order !== undefined ? { order: app.panel.order } : {}),
             },
           ]
         : [];
     })
-    .sort((a, b) => a.label.localeCompare(b.label, locale) || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY) ||
+        a.label.localeCompare(b.label, locale) ||
+        a.id.localeCompare(b.id),
+    );
 };
