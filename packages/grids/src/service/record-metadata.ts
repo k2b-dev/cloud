@@ -1,5 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { type AccessUser, listUsersWithAccess } from "@k2b/cloud/server";
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import type { RecordMetaQuery, RecordMetaUserKey } from "../contracts";
 
 type RecordActor = {

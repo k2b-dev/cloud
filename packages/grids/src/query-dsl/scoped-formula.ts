@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { storageOf } from "../service/field-storage";
 import {

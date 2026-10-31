@@ -1,11 +1,11 @@
+import { sql } from "@k2b/cloud";
 import { escapeLikePattern, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { DocumentCatalogSort } from "../api/document-public-contracts";
 import type { Document, DocumentFolder, DocumentSummary, DocumentSummaryList } from "../contracts";
 import { type DocumentDbRow, hydrateDocumentSummaries } from "./document-mappers";
 import { decodeDocumentCursor, encodeDocumentCursor, normalizeDocumentTags } from "./document-values";
 
-const summaryColumns = sql`id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id,
+const summaryColumns = () => sql`id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id,
   document_number, filename, primary_artifact_key, tags, profile_id, profile_version, validation_status, created_by, created_at`;
 
 type DocumentPage = {
@@ -118,7 +118,7 @@ const listDocuments = async (params: {
       )`
     : sql`(${params.tableId ?? null}::uuid IS NULL OR table_id = ${params.tableId ?? null}::uuid)`;
   const rows = await sql<DocumentDbRow[]>`
-    SELECT ${summaryColumns} FROM grids.documents
+    SELECT ${summaryColumns()} FROM grids.documents
     WHERE base_id = ${params.baseId}::uuid
       AND ${scope}
       AND (${params.templateId ?? null}::uuid IS NULL OR template_id = ${params.templateId ?? null}::uuid)
@@ -153,7 +153,7 @@ export const listDocumentSummariesForRecordByTemplates = async (
   if (templateIds.length === 0) return [];
   const cap = Math.min(Math.max(limit, 1), 100);
   const rows = await sql<DocumentDbRow[]>`
-    SELECT ${summaryColumns}
+    SELECT ${summaryColumns()}
     FROM grids.documents
     WHERE table_id = ${tableId}::uuid
       AND record_id = ${recordId}::uuid
@@ -179,7 +179,7 @@ export const listDocumentsForWorkflow = async (
       AND (${accessWhere})
   `;
   const rows = await sql<DocumentDbRow[]>`
-    SELECT ${summaryColumns} FROM grids.documents
+    SELECT ${summaryColumns()} FROM grids.documents
     WHERE workflow_run_id = ${workflowRunId}::uuid
       AND (${accessWhere})
     ORDER BY created_at DESC, id DESC
@@ -329,7 +329,7 @@ const listDocumentPage = async (
     WHERE ${baseWhere}
   `;
   const rows = await sql<DocumentDbRow[]>`
-    SELECT ${summaryColumns}
+    SELECT ${summaryColumns()}
     FROM grids.documents
     WHERE ${where}
     ORDER BY ${documentOrder(sort)}

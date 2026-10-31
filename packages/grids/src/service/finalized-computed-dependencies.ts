@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
 import type { SqlClient } from "./audit";

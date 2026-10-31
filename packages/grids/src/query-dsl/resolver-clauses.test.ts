@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { parseGridsQueryDsl } from "./parser";
 import { resolveDslQueryToQueryPlan, resolveDslQueryToRecordQuery } from "./resolver";
 import {
@@ -17,6 +18,8 @@ import {
   statusFieldId,
 } from "./resolver-fixtures";
 import { compileDslGroupedQueryPlanToSql, compileDslQueryPlanToSql } from "./sql-compiler";
+
+useUnitClients();
 
 describe("GQL clauses: nulls, trash, grouped median/earliest/latest", () => {
   const planOf = (source: string) => {

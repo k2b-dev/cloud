@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { parseFormula } from "../formula/parser";
 import { rewriteFormulaIdentifierRefs } from "../ref-rewrite";
 import type { SqlClient } from "./audit";

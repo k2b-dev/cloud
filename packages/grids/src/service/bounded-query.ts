@@ -1,5 +1,5 @@
-import { createSql } from "@k2b/cloud";
-import { type SQL, sql } from "bun";
+import { createSql, sql } from "@k2b/cloud";
+import type { SQL } from "bun";
 import type { SqlClient } from "./audit";
 import { getQuerySettings } from "./query-settings";
 

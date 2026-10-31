@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { AggregationSpec, RecordQuery } from "../contracts";
 import type { Expr } from "../formula/types";
 import { formatIdentifierRef, normalizeRefKey } from "../ref-syntax";

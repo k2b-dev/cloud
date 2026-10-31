@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { createWorkflowCaptureTableAccess, createWorkflowEffectAccess, type GridsWorkflowActionScope } from "./workflow-action-scope";
 
 const scope = (app = true): GridsWorkflowActionScope => ({

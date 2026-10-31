@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { buildComputedFieldSqlMap } from "../service/computed-projections";
 import type { FormulaSqlExpression } from "../service/formula-sql-compiler";
 import { dslQueryCalculationFieldIds } from "./plan-dependencies";
 import { resolveDslQueryToQueryPlan } from "./resolver";
 import { ctx, customerFields, customers, field, fields, orders, parseOk } from "./resolver-fixtures";
 import { createDslScopedFormulaFieldResolver } from "./scoped-formula";
+
+useUnitClients();
 
 const margin = field({
   id: "ffffffff-ffff-4fff-8fff-fffffffffff1",

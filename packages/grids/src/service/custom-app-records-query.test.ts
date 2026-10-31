@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { stubConnections } from "../../../../scripts/fixtures/platform";
 import type { DslQueryPreviewResponse } from "../contracts";
 import { CustomAppCapabilitiesSchema, CustomAppDefinitionSchema } from "../custom-apps/contracts";

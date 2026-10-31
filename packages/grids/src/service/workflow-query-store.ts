@@ -1,9 +1,11 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { type WorkflowDocumentDataCapture, WorkflowDocumentDataPayloadSchema } from "../workflows/query-contracts";
 import { canonicalDocumentJson, MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./document-json";
 import { documentServiceText } from "./document-messages";
+
 export const WorkflowQueryReferenceSchema = z
   .object({
     kind: z.literal("queryResult"),

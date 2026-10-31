@@ -60,12 +60,14 @@ type Edge = {
   edge: "start" | "end";
   active: "data-workspace-resize-active" | "data-active";
   drawer?: boolean;
+  /** A column handle darkens its boundary's own shadow instead of painting one. */
+  column?: boolean;
   rtl?: boolean;
 };
 const workspaceEdges: Edge[] = [
-  { selector: '[data-app-workspace-resize="sidebar"]', axis: "width", edge: "end", active: "data-workspace-resize-active" },
-  { selector: '[data-app-workspace-resize="pane"]', axis: "width", edge: "end", active: "data-workspace-resize-active" },
-  { selector: '[data-app-workspace-resize="detail"]', axis: "width", edge: "start", active: "data-workspace-resize-active" },
+  { selector: '[data-app-workspace-resize="sidebar"]', axis: "width", edge: "end", active: "data-workspace-resize-active", column: true },
+  { selector: '[data-app-workspace-resize="pane"]', axis: "width", edge: "end", active: "data-workspace-resize-active", column: true },
+  { selector: '[data-app-workspace-resize="detail"]', axis: "width", edge: "start", active: "data-workspace-resize-active", column: true },
   { selector: '[data-app-workspace-resize="drawer"]', axis: "height", edge: "start", active: "data-workspace-resize-active", drawer: true },
 ];
 const separatorEdges: Edge[] = [
@@ -141,6 +143,16 @@ async function cue(page: Page, selector: string) {
     const line = getComputedStyle(handle, "::before");
     const grip = getComputedStyle(handle.querySelector("span")!);
     const { width, height } = handle.getBoundingClientRect();
+    // The column shadow of the boundary that the handle resizes.
+    const kind = handle.getAttribute("data-app-workspace-resize");
+    const boundary =
+      kind === "sidebar"
+        ? getComputedStyle(handle.closest(".k2b-app-workspace")!.querySelector(".k2b-app-workspace__content")!, "::before")
+        : kind === "detail"
+          ? getComputedStyle(handle.closest(".k2b-app-workspace__content")!, "::after")
+          : kind === "pane"
+            ? getComputedStyle(handle.nextElementSibling!, "::before")
+            : null;
     return {
       content: shadow.content,
       opacity: shadow.opacity,
@@ -158,6 +170,9 @@ async function cue(page: Page, selector: string) {
       focusColor: getComputedStyle(document.getElementById("focus-swatch")!).backgroundColor,
       shadowTransition: shadow.transitionDuration,
       gripTransition: grip.transitionDuration,
+      columnContent: boundary?.content ?? null,
+      columnEdge: boundary?.getPropertyValue("--k2b-workspace-shade-edge") ?? null,
+      columnTransition: boundary?.transitionDuration ?? null,
     };
   });
 }
@@ -208,12 +223,22 @@ async function exercise(page: Page, spec: Edge) {
   expect(Math.abs(initial.aria - initial.rendered)).toBeLessThanOrEqual(0.5);
   const baseline = await page.evaluate(geometry);
   const idle = await cue(page, spec.selector);
-  // Every edge renders its shadow; without it (the Detail handle before this fix) there is no ::after at all.
-  expect(idle.content).not.toBe("none");
-  expect(idle.content).not.toBe("normal");
-  expect(idle.opacity).toBe("0");
+  // The cue is shown when a separate shadow appears or the column shadow darkens.
+  const shown = (state: typeof idle) => (spec.column ? state.columnEdge !== idle.columnEdge : state.opacity === "1");
+  if (spec.column) {
+    // A column edge keeps one shadow: the boundary's own, never a second one on the handle.
+    expect(idle.content).toBe("none");
+    expect(idle.columnContent).not.toBe("none");
+    expect(idle.columnContent).not.toBe("normal");
+    expect(idle.columnTransition).toBe("0s");
+  } else {
+    // The drawer and every separator render their own shadow (#1652).
+    expect(idle.content).not.toBe("none");
+    expect(idle.content).not.toBe("normal");
+    expect(idle.opacity).toBe("0");
+    expect(idle.shadowTransition).toBe("0s");
+  }
   expect(idle.grip).toBe("0");
-  expect(idle.shadowTransition).toBe("0s");
   expect(idle.gripTransition).toBe("0s");
 
   await handle.hover();
@@ -221,7 +246,7 @@ async function exercise(page: Page, spec: Edge) {
   // settled: hover has painted for two frames; it must not move any region or handle.
   expect(await page.evaluate(geometry)).toEqual(baseline);
   const hovered = await cue(page, spec.selector);
-  expect(hovered.opacity).toBe("1");
+  expect(shown(hovered)).toBe(true);
   expect(hovered.grip).toBe("1");
   await page.mouse.down();
   await workspaceFrames(page);
@@ -244,12 +269,12 @@ async function exercise(page: Page, spec: Edge) {
   await waitSize(page, spec, initial.rendered + 8);
   expect(await handle.getAttribute(spec.active)).toBe("true");
   const dragging = await cue(page, spec.selector);
-  expect(dragging.content).not.toBe("none");
-  expect(dragging.content).not.toBe("normal");
-  expect(dragging.opacity).toBe("1");
+  expect(shown(dragging)).toBe(true);
   expect(dragging.grip).toBe("1");
   expect(dragging.line).toBe(spec.drawer === true);
-  if (spec.axis === "width") {
+  if (spec.column) {
+    expect(dragging.content).toBe("none");
+  } else if (spec.axis === "width") {
     expect(edge === "start" ? dragging.left : dragging.right).toBeCloseTo(dragging.width / 2, 1);
     expect(dragging.shadowWidth).toBeGreaterThan(0);
   } else {
@@ -259,7 +284,7 @@ async function exercise(page: Page, spec: Edge) {
   await page.mouse.up();
   await away(page);
   expect(await handle.getAttribute(spec.active)).toBeNull();
-  expect((await cue(page, spec.selector)).opacity).toBe("0");
+  expect(shown(await cue(page, spec.selector))).toBe(false);
   expect((await cue(page, spec.selector)).grip).toBe("0");
 
   await handle.dblclick();
@@ -271,7 +296,7 @@ async function exercise(page: Page, spec: Edge) {
   await workspaceFrames(page);
   const focused = await cue(page, spec.selector);
   expect(focused.grip).toBe("1");
-  expect(focused.opacity).toBe("1");
+  expect(shown(focused)).toBe(true);
   expect(focused.background).toBe(focused.focusColor);
   const increase = spec.axis === "width" ? (edge === "start" ? "ArrowLeft" : "ArrowRight") : edge === "start" ? "ArrowUp" : "ArrowDown";
   const decrease = spec.axis === "width" ? (edge === "start" ? "ArrowRight" : "ArrowLeft") : edge === "start" ? "ArrowDown" : "ArrowUp";
@@ -297,7 +322,7 @@ for (const group of ["workspace", "separators"] as const)
       await settled(page);
       for (const spec of edges) {
         const motion = await cue(page, spec.selector);
-        expect(motion.shadowTransition).not.toBe("0s");
+        expect(spec.column ? motion.columnTransition : motion.shadowTransition).not.toBe("0s");
         expect(motion.gripTransition).not.toBe("0s");
       }
       expect(errors).toEqual([]);

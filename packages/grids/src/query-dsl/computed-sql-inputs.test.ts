@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { buildDslComputedSqlInputs } from "./computed-sql-inputs";
 import { resolveDslQueryToQueryPlan } from "./resolver";
 import {
@@ -14,6 +15,8 @@ import {
   parseOk,
 } from "./resolver-fixtures";
 import { compileDslDerivedViewSourcePlanToSql, compileDslQueryPlanToSql } from "./sql-compiler";
+
+useUnitClients();
 
 const lookup = field({
   id: "ffffffff-ffff-4fff-8fff-fffffffffff1",

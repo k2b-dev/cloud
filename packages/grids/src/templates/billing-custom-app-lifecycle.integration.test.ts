@@ -1,8 +1,8 @@
 import { beforeAll, expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { createCustomAppsApi } from "../api/custom-apps";
