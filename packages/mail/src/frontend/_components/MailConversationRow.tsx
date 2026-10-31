@@ -1,10 +1,11 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { Dropdown, type DropdownItem, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { getMailAction, type MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { mailListRowKey } from "./mail-list-projection";
 import { buildMailAttachmentDownloadHref, buildMailSelectionHref, isMailListItemActive, type MailListItem } from "./mail-navigation";
 
 /** Tags shown as pills on a row's fourth line; the rest are counted. */
@@ -46,6 +47,70 @@ export type MailConversationRowColumns = {
   assignees: string[] | null;
 };
 
+type MailRowMessages = ReturnType<typeof mailConversationUiMessages.resolve>["t"];
+
+const actionLabel = (t: MailRowMessages, actionId: MailActionId): string => {
+  if (actionId === "mark_read") return t.markRead;
+  if (actionId === "mark_unread") return t.markUnread;
+  if (actionId === "flag") return t.flag;
+  if (actionId === "unflag") return t.unflag;
+  if (actionId === "archive") return t.archive;
+  if (actionId === "move") return t.moveToFolder;
+  if (actionId === "not_spam") return t.notSpam;
+  if (actionId === "junk") return t.junk;
+  return t.trash;
+};
+
+/** The menu of one row: its "…" button and a right-click in the list open these same entries. */
+export const mailRowMenuItems = (input: {
+  item: MailListItem;
+  canWrite: boolean;
+  spamAction: "junk" | "not_spam";
+  t: MailRowMessages;
+  cloudId: ReturnType<typeof useMailCloudId>;
+  actions: Pick<MailConversationRowActions, "itemAction" | "manageTags" | "merge">;
+}): DropdownItem[] => {
+  const { item, t, actions } = input;
+  const write = (): DropdownItem[] => [
+    {
+      label: actionLabel(t, item.unread ? "mark_read" : "mark_unread"),
+      icon: getMailAction(item.unread ? "mark_read" : "mark_unread").icon,
+      action: () => actions.itemAction(item, item.unread ? "mark_read" : "mark_unread"),
+    },
+    {
+      label: actionLabel(t, item.flagged ? "unflag" : "flag"),
+      icon: getMailAction(item.flagged ? "unflag" : "flag").icon,
+      action: () => actions.itemAction(item, item.flagged ? "unflag" : "flag"),
+    },
+    {
+      label: t.manageTags,
+      icon: "ti ti-tags",
+      action: () => actions.manageTags(item),
+    },
+    ...(["archive", "move", input.spamAction, "trash"] as const).map((actionId) => {
+      // Cloud refuses to delete a kept conversation or move it to Junk; the menu says why.
+      const blocked = item.kept ? (actionId === "trash" ? t.keptCannotDelete : actionId === "junk" ? t.keptCannotJunk : null) : null;
+      return blocked
+        ? { label: actionLabel(t, actionId), icon: getMailAction(actionId).icon, description: blocked, disabled: true as const }
+        : {
+            label: actionLabel(t, actionId),
+            icon: getMailAction(actionId).icon,
+            action: () => actions.itemAction(item, actionId),
+          };
+    }),
+    ...(actions.merge
+      ? [
+          {
+            label: t.mergeWithConversation,
+            icon: "ti ti-git-merge",
+            action: () => actions.merge?.(item),
+          },
+        ]
+      : []),
+  ];
+  return [...(input.canWrite ? write() : []), ...input.cloudId.section({ conversationId: item.conversationId })];
+};
+
 export default function MailConversationRow(props: {
   item: MailListItem;
   leaving?: boolean;
@@ -55,6 +120,8 @@ export default function MailConversationRow(props: {
   quickLook?: MailConversationRowQuickLook;
   /** Present in the columns view; absent for today's three- and four-line rows. */
   columns?: MailConversationRowColumns;
+  /** The list's right-click menu is open for this row. */
+  contextMenuOpen?: boolean;
 }) {
   // JSX object props are getters: share their derived context across field reads.
   const state = createMemo(() => props.state);
@@ -64,17 +131,6 @@ export default function MailConversationRow(props: {
   const canWrite = createMemo(() => state().canWrite);
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
-  const actionLabel = (actionId: MailActionId): string => {
-    if (actionId === "mark_read") return t().markRead;
-    if (actionId === "mark_unread") return t().markUnread;
-    if (actionId === "flag") return t().flag;
-    if (actionId === "unflag") return t().unflag;
-    if (actionId === "archive") return t().archive;
-    if (actionId === "move") return t().moveToFolder;
-    if (actionId === "not_spam") return t().notSpam;
-    if (actionId === "junk") return t().junk;
-    return t().trash;
-  };
   const correspondentLabels = (item: MailListItem): string[] =>
     item.participantLabels.length > 0 ? item.participantLabels : [item.participantSummary || t().unknownSender];
   const selected = () => isMailListItemActive(props.item, state().selectedConversationId, state().selectedMessageId);
@@ -99,49 +155,21 @@ export default function MailConversationRow(props: {
   });
 
   const cloudId = useMailCloudId();
-  const writeActions = (): DropdownItem[] => [
-    {
-      label: actionLabel(props.item.unread ? "mark_read" : "mark_unread"),
-      icon: getMailAction(props.item.unread ? "mark_read" : "mark_unread").icon,
-      action: () => props.actions.itemAction(props.item, props.item.unread ? "mark_read" : "mark_unread"),
-    },
-    {
-      label: actionLabel(props.item.flagged ? "unflag" : "flag"),
-      icon: getMailAction(props.item.flagged ? "unflag" : "flag").icon,
-      action: () => props.actions.itemAction(props.item, props.item.flagged ? "unflag" : "flag"),
-    },
-    {
-      label: t().manageTags,
-      icon: "ti ti-tags",
-      action: () => props.actions.manageTags(props.item),
-    },
-    ...(["archive", "move", spamAction(), "trash"] as const).map((actionId) => {
-      // Cloud refuses to delete a kept conversation or move it to Junk; the menu says why.
-      const blocked = props.item.kept
-        ? actionId === "trash"
-          ? t().keptCannotDelete
-          : actionId === "junk"
-            ? t().keptCannotJunk
-            : null
-        : null;
-      return blocked
-        ? { label: actionLabel(actionId), icon: getMailAction(actionId).icon, description: blocked, disabled: true as const }
-        : {
-            label: actionLabel(actionId),
-            icon: getMailAction(actionId).icon,
-            action: () => props.actions.itemAction(props.item, actionId),
-          };
-    }),
-    ...(canMerge()
-      ? [
-          {
-            label: t().mergeWithConversation,
-            icon: "ti ti-git-merge",
-            action: () => props.actions.merge?.(props.item),
-          },
-        ]
-      : []),
-  ];
+  // Reads only the memos above, so a selection or a new controller keeps the menu.
+  const menuItems = () =>
+    mailRowMenuItems({
+      item: props.item,
+      canWrite: canWrite(),
+      spamAction: spamAction(),
+      t: t(),
+      cloudId,
+      actions: {
+        itemAction: (item, actionId) => props.actions.itemAction(item, actionId),
+        manageTags: (item) => props.actions.manageTags(item),
+        merge: canMerge() ? (item) => props.actions.merge?.(item) : undefined,
+      },
+    });
+  const [menuOpen, setMenuOpen] = createSignal(false);
   return (
     <div
       ref={(element) => {
@@ -172,6 +200,7 @@ export default function MailConversationRow(props: {
       onPointerLeave={() => quickLook?.release(props.item)}
       role="listitem"
       data-conversation-id={props.item.conversationId ?? undefined}
+      data-mail-row-key={mailListRowKey(props.item)}
       data-message-id={props.item.selectionKind === "message" ? props.item.id : undefined}
     >
       <Show when={state().canWrite && state().selectionMode && props.item.conversationId}>
@@ -199,8 +228,12 @@ export default function MailConversationRow(props: {
         aria-expanded={quickLook ? peeking() : undefined}
         aria-keyshortcuts={quickLook ? "Space" : undefined}
         class="mail-list-row focus-ui"
-        // The open card already names sender and subject; a native tooltip would cover the row.
-        title={peeking() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
+        // The open card already names sender and subject, and an open menu covers the row; a native tooltip would cover either.
+        title={
+          peeking() || menuOpen() || props.contextMenuOpen
+            ? undefined
+            : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`
+        }
         draggable={state().canWrite && Boolean(props.item.conversationId && props.item.activeFolderIds.length > 0)}
         on:keydown={(event) => {
           // Runs on the link before the shared row anchor handles Space. Reopening
@@ -437,11 +470,7 @@ export default function MailConversationRow(props: {
       </Show>
       <Show when={!state().selectionMode && props.item.conversationId}>
         <div class="k2b-progressive-action absolute right-3 top-2 z-10">
-          <Dropdown.Root
-            position="bottom-left"
-            width="15rem"
-            items={[...(canWrite() ? writeActions() : []), ...cloudId.section({ conversationId: props.item.conversationId })]}
-          >
+          <Dropdown.Root position="bottom-left" width="15rem" items={menuItems()} onOpenChange={setMenuOpen}>
             <Dropdown.Trigger
               iconOnly
               size="sm"

@@ -39,8 +39,9 @@
     padding-left: 0.5rem;
   }
 
-  /* The row whose quick look is open keeps its hover tone while the pointer is in the card. */
-  .mail-list-entry-peek {
+  /* The row whose quick look or right-click menu is open keeps its hover tone while the pointer is elsewhere. */
+  .mail-list-entry-peek,
+  .mail-list-entry[data-context-menu-open] {
     background: var(--ui-hover);
   }
 
