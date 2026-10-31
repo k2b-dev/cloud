@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { RequestAuthority } from "../server/middleware/auth";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "./app-events";
 import { CommandPathSchema } from "./commands";
+import { type PlatformPermission, PlatformPermissionSchema } from "./outgoing-mail";
 import type { AccessSubject, RequestActor, User } from "./shared";
 import { AuthenticatedPrincipalSchema } from "./shared";
 
@@ -955,12 +956,12 @@ export type CapabilityPresentationCatalog = {
 
 /** App authority has no grant-bearing subject, user, nested exchange, or interactive credential. */
 export type CapabilityAppExecutionContext = {
-  actor: { kind: "app"; appId: string };
+  actor: { kind: "app"; appId: string; keyId?: string };
   accessSubject: { type: "none" };
   user: null;
   authority?: never;
   query?: never;
-  idempotencyKey?: never;
+  idempotencyKey?: string;
   locale: string;
   requestId: string;
   origin: CapabilityOrigin;
@@ -968,8 +969,18 @@ export type CapabilityAppExecutionContext = {
   signal: AbortSignal;
 };
 
+/** Explicit provider entry for calls paid for and authorized as the calling application. */
+export type CapabilityAppHandler<Input extends z.ZodType, Data extends z.ZodType> = {
+  permission: PlatformPermission;
+  run: (
+    input: z.output<Input>,
+    context: CapabilityAppExecutionContext,
+  ) => CapabilityInvocationResult<z.output<Data>> | Promise<CapabilityInvocationResult<z.output<Data>>>;
+};
+
 export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
   appOnly?: never;
+  app?: CapabilityAppHandler<Input, Data>;
   title: string;
   description: string;
   input: Input;
@@ -988,6 +999,7 @@ export type CapabilityActionApprovalPolicy = "rememberable" | "none";
 
 export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
   appOnly?: never;
+  app?: CapabilityAppHandler<Input, Data>;
   title: string;
   description: string;
   input: Input;
@@ -1104,6 +1116,7 @@ const CapabilityOperationManifestBaseSchema = z
     inputSchema: z.record(z.string(), z.unknown()),
     dataSchema: z.record(z.string(), z.unknown()),
     stream: CapabilityStreamPolicySchema.optional(),
+    appPermission: PlatformPermissionSchema.optional(),
     schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();

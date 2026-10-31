@@ -58,6 +58,8 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
   await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS invocation_id UUID`.simple();
   await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS parent_invocation_id UUID`.simple();
   await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS via_app_id TEXT`.simple();
+  await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS actor_app_id TEXT`.simple();
+  await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS actor_key_id UUID`.simple();
 
   await sql`DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'capabilities.executions'::regclass

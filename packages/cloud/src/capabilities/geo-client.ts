@@ -4,7 +4,7 @@ import { geoMapContract } from "../contracts/geo-map";
 import { geoRouteContract } from "../contracts/geo-route";
 import { type CapabilityCaller, invokeCapabilityWithDataSchema } from "./server";
 
-/** Calls Core using the caller's interactive identity, invocation transport, or durable mandate. */
+/** Calls Core using the caller's interactive identity, invocation transport, app authority, or durable mandate. */
 export const geoClient = {
   mapStyle: (input: z.input<typeof geoMapContract.style.input>, caller: CapabilityCaller) =>
     invokeCapabilityWithDataSchema(

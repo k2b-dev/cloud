@@ -67,6 +67,23 @@ TLS port 443, including through hairpin NAT or split DNS where required.
 See [Public site](/en/docs/build/public-surface#assign-and-check-domains) and
 [App domains](/en/docs/operations/app-domains).
 
+## App-paid capabilities
+
+Upgrade Core before deploying callers that use `appCaller()` or providers that
+add `app` handlers. These calls require the enrolled Ed25519 app key and
+`CLOUD_CORE_INTERNAL_ORIGIN`; a legacy workload token does not work.
+Before declaring `geo:query`, upgrade any registry readers older than the
+resource-reader release described below: those versions reject unknown
+platform permissions. Built-in and third-party applications follow this same
+upgrade order.
+
+The opted-in Core geo Queries have new schema hashes. Update older catalog
+consumers to this release so they retain these Queries; recreate any prepared
+capability call that reports a schema conflict. Existing interactive calls
+through the upgraded Core broker continue to work. See
+[App keys](/en/docs/operations/app-keys#app-paid-capability-calls) for shared
+request and cost limits, audit migration and key revocation.
+
 ## Resource reader checks and discussions
 
 Upgrade Core before deploying applications that declare resource containment,

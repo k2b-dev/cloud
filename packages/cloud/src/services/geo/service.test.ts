@@ -566,3 +566,20 @@ test("App-PWA autocomplete uses owner budget without constructing an employee ac
   expect(actor.kind).toBe("visit");
   expect("user" in actor).toBe(false);
 });
+
+test("app-paid requests use an app budget subject without a grant-bearing access subject", async () => {
+  const fixture = setup();
+  const context = {
+    actor: { kind: "app" as const, appId: "vendor-web", keyId: "22222222-2222-4222-8222-222222222222" },
+    accessSubject: { type: "none" as const },
+    locale: "de",
+  };
+  await fixture.service.autocomplete({ text: "Orle" }, context);
+  expect(fixture.reserve).toHaveBeenCalledWith(
+    { type: "app", appId: "vendor-web" },
+    expect.objectContaining({ personDailyCredits: geoTestConfig.personDailyCredits }),
+    expect.any(Number),
+    "address",
+    GEO_TEST_NOW,
+  );
+});
