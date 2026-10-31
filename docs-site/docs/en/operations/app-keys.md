@@ -199,9 +199,9 @@ reports how each instance started. Its page links to **Create key**, or to the
 keys when one exists, and to [Use the key at start](#use-the-key-at-start). When
 Core recorded a refused start (`lastRejectedStart`), **Start refused** and its
 reason lead the list row and the app page until the next successful start. The
-way out follows the reason: **Create new key** for a revoked, expired, or
-non-start key, **Turn on again** for disabled background access, or a restart
-once a valid key exists or background access is on again. The keys column marks
+way out follows what still blocks the next start: **Turn on again** while
+background access is off, **Create new key** while no other valid key exists,
+and otherwise the deployment and a restart. The keys column marks
 the refused key with the time of the refusal. An app with
 only revoked or expired keys has **no valid key**: its running instances keep
 working, the next start fails, and **Create new key** is the page's one filled

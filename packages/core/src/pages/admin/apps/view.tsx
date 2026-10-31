@@ -41,6 +41,11 @@ export type AppPageData = {
   details: AppDetails | null;
   /** Name of the newest revoked key, for the "key revoked" hint. */
   revokedKeyName: string | null;
+  /**
+   * Whether a key exists that Core would take at the next start: active and not the refused one (for a refusal while
+   * background access was off, any active key). Null when the keys could not be read; counts then stand in.
+   */
+  startKeyReady: boolean | null;
   /** Providers that did not answer for this app. */
   providerFailures: readonly string[];
   /** The app's access rule as one phrase, for a rule the app fixes itself. */
@@ -328,17 +333,18 @@ function Hint(props: { t: AppsPageMessages; f: AppsFormat; app: AppPageData; hin
     const hint = props.hint;
     switch (hint.kind) {
       case "startRejected": {
-        // The refusal stays until the next successful start, so its cause may already be gone in Core: a valid key
-        // exists or background access is on again. Then only the deployment and a restart remain.
-        const resolved =
-          hint.reason === "disabled"
-            ? entry.keys.accountStatus === "active"
-            : hint.reason !== "connections_not_permitted" && entry.keys.active > 0;
+        // The refusal stays until the next successful start, so its cause may be gone in Core by now. The way out
+        // follows what still blocks a start: background access, then a key Core would accept.
+        const off = entry.keys.accountStatus === "disabled";
+        const keyReady =
+          props.app.startKeyReady ??
+          (hint.reason === "disabled" ? entry.keys.active > 0 : entry.keys.active > (hint.reason === "connections_not_permitted" ? 1 : 0));
+        const next = off ? "reenable" : keyReady ? "restart" : "newKey";
         const lead = t.hintStartRejectedLead({ name: entry.name, live: entry.live });
-        const text = t.hintStartRejectedText({ reason: hint.reason, when: f.relative(hint.at), resolved });
+        const text = `${t.hintStartRejectedText({ reason: hint.reason, when: f.relative(hint.at), off })} ${t.hintStartRejectedNext({ next })}`;
         const docs = { docs: props.app.docs.recover, docsLabel: t.docsWhatNow };
-        if (resolved) return { lead, text, action: t.actKeysShow, ...docs };
-        if (hint.reason === "disabled") return { lead, text, action: t.actReenable, primary: true };
+        if (next === "reenable") return { lead, text, action: t.actReenable, primary: true };
+        if (next === "restart") return { lead, text, action: t.actKeysShow, ...docs };
         return { lead, text, action: t.actNewKey, create: true, primary: true, ...docs };
       }
       case "notRunning": {

@@ -446,6 +446,13 @@ export default ssr<AuthContext>(async (c) => {
           entry,
           details,
           revokedKeyName: keyList?.find((key) => key.status === "revoked")?.name ?? null,
+          startKeyReady: keyRead
+            ? keyRead.items.some(
+                (key) =>
+                  key.status === "active" &&
+                  (keyRead.lastRejectedStart?.reason === "disabled" || key.keyId !== keyRead.lastRejectedStart?.keyId),
+              )
+            : null,
           providerFailures,
           keysSupported: !reservedKeys,
           docs: {

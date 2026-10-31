@@ -324,6 +324,16 @@ const key = (input: Partial<KeyEntry> & Pick<KeyEntry, "keyId" | "name" | "finge
   ...input,
 });
 
+/** Pulse's replacement after the refusal: created, not yet in the deployment. */
+export const fixtureReplacementKey = (): KeyEntry =>
+  key({
+    keyId: "44444444-4444-4444-8444-444444444446",
+    name: "pulse-2026-10",
+    fingerprint: "5b0e9c2d7a1f43e8b6d0c9a2e4f17b38",
+    createdAt: ago(1),
+    lastUsedAt: null,
+  });
+
 export const fixtureKeys = (id: string): KeyEntry[] => {
   if (id === "inventar" || id === "files") return [];
   if (id === "pulse")

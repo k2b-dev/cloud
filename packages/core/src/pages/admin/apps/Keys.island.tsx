@@ -56,10 +56,16 @@ export default function Keys(props: KeysProps) {
   const locale = useLocale();
   const t = () => keysMessages.resolve([locale()]).t;
   const context = () => ({ locale: locale(), timeZone: props.timeZone });
-  // Without a valid key, or when Core refused a start with a revoked one, the revoked ones explain why and start open.
+  // Without a valid key, or when Core refused a start with a revoked one, the revoked ones explain why and open.
+  const explainsRevoked = (data: KeyList | undefined) => {
+    if (!data?.items.length) return false;
+    const refused = data.lastRejectedStart?.keyId;
+    return (
+      !data.items.some((key) => key.status === "active") || data.items.some((key) => key.status === "revoked" && key.keyId === refused)
+    );
+  };
   const [showRevoked, setShowRevoked] = createSignal(
-    (Boolean(props.initialKeys?.length) && !(props.initialKeys ?? []).some((key) => key.status === "active")) ||
-      (props.initialKeys ?? []).some((key) => key.status === "revoked" && key.keyId === props.initialRejection?.keyId),
+    explainsRevoked(props.initialKeys ? { items: props.initialKeys, lastRejectedStart: props.initialRejection } : undefined),
   );
   const [showTokens, setShowTokens] = createSignal(false);
   const [tokenPage, setTokenPage] = createSignal(1);
@@ -122,6 +128,16 @@ export default function Keys(props: KeysProps) {
   const revoked = () => list().filter((key) => key.status === "revoked");
   const active = () => list().filter((key) => key.status === "active");
   /** During a rotation the older active key is the one to retire. */
+  // A later read (after a failed first one, or a new refusal) opens them too; closing by hand stays until that changes.
+  createEffect(
+    on(
+      () => explainsRevoked(keys.data()),
+      (open) => {
+        if (open) setShowRevoked(true);
+      },
+      { defer: true },
+    ),
+  );
   const oldKeyId = () =>
     active().length >= 2 ? active().toSorted((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0]!.keyId : null;
   createEffect(

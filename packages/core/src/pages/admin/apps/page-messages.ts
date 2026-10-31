@@ -3,6 +3,7 @@ import type { StartRejection } from "./model";
 
 type N = { count: number };
 type StartRejectionReason = StartRejection["reason"];
+type StartRejectionNext = "restart" | "reenable" | "newKey";
 
 export const appsPageMessages = i18n.define({
   baseLocale: "en",
@@ -115,15 +116,18 @@ export const appsPageMessages = i18n.define({
         `Start refused · ${{ revoked: "key revoked", expired: "key expired", disabled: "background access off", connections_not_permitted: "key may not fetch connections" }[reason]}`,
       hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
         live ? `A start of ${name} was refused.` : `${name} does not start.`,
-      /** `resolved`: Core no longer has the cause (a valid key exists, background access is on again); a restart remains. */
-      hintStartRejectedText: ({ reason, when, resolved }: { reason: StartRejectionReason; when: string; resolved: boolean }) =>
+      /** Why Core refused the start; `off` says whether background access is still off. */
+      hintStartRejectedText: ({ reason, when, off }: { reason: StartRejectionReason; when: string; off: boolean }) =>
         reason === "disabled"
-          ? resolved
-            ? `Core refused the start ${when} because the app's background access was off. It is on again: restart the app.`
-            : `Core refused the start ${when} because the app's background access is off. Turn it on again and restart the app.`
-          : reason === "connections_not_permitted"
-            ? `Core refused the key ${when} because it may not fetch connections. Create a key for the app's start and replace it in the deployment.`
-            : `Core refused the key ${when} because it ${reason === "revoked" ? "was revoked" : "has expired"}. ${resolved ? "A valid key exists: put it into the deployment and restart the app." : "Create a new key and replace it in the deployment."}`,
+          ? `Core refused the start ${when} because the app's background access ${off ? "is" : "was"} off.`
+          : `Core refused the key ${when} because it ${{ revoked: "was revoked", expired: "has expired", connections_not_permitted: "may not fetch connections" }[reason]}.`,
+      /** What still stands between the app and its next start, as Core sees it now. */
+      hintStartRejectedNext: ({ next }: { next: StartRejectionNext }) =>
+        ({
+          restart: "A valid key exists and background access is on: put the key into the deployment and restart the app.",
+          reenable: "Turn background access on again and restart the app.",
+          newKey: "Create a new key and replace it in the deployment.",
+        })[next],
       actReenable: "Turn on again",
       hintRotationShort: "Rotation in progress",
       actNewKey: "Create new key",
@@ -357,14 +361,17 @@ export const appsPageMessages = i18n.define({
         `Start abgelehnt · ${{ revoked: "Schlüssel widerrufen", expired: "Schlüssel abgelaufen", disabled: "Hintergrundzugriff aus", connections_not_permitted: "Schlüssel darf keine Verbindungen holen" }[reason]}`,
       hintStartRejectedLead: ({ name, live }: { name: string; live: boolean }) =>
         live ? `Ein Start von ${name} wurde abgelehnt.` : `${name} startet nicht.`,
-      hintStartRejectedText: ({ reason, when, resolved }: { reason: StartRejectionReason; when: string; resolved: boolean }) =>
+      hintStartRejectedText: ({ reason, when, off }: { reason: StartRejectionReason; when: string; off: boolean }) =>
         reason === "disabled"
-          ? resolved
-            ? `Core hat den Start ${when} abgelehnt, weil der Hintergrundzugriff der App aus war. Er ist wieder an: Starte die App neu.`
-            : `Core hat den Start ${when} abgelehnt, weil der Hintergrundzugriff der App aus ist. Aktiviere ihn wieder und starte die App neu.`
-          : reason === "connections_not_permitted"
-            ? `Core hat den Schlüssel ${when} beim Start abgelehnt, weil er keine Verbindungen holen darf. Erzeuge einen Schlüssel für den Start der App und tausche ihn im Deployment aus.`
-            : `Core hat den Schlüssel ${when} beim Start abgelehnt, weil er ${reason === "revoked" ? "widerrufen" : "abgelaufen"} ist. ${resolved ? "Ein gültiger Schlüssel existiert: Hinterlege ihn im Deployment und starte die App neu." : "Erzeuge einen neuen Schlüssel und tausche ihn im Deployment aus."}`,
+          ? `Core hat den Start ${when} abgelehnt, weil der Hintergrundzugriff der App aus ${off ? "ist" : "war"}.`
+          : `Core hat den Schlüssel ${when} beim Start abgelehnt, weil er ${{ revoked: "widerrufen ist", expired: "abgelaufen ist", connections_not_permitted: "keine Verbindungen holen darf" }[reason]}.`,
+      hintStartRejectedNext: ({ next }: { next: StartRejectionNext }) =>
+        ({
+          restart:
+            "Ein gültiger Schlüssel existiert und der Hintergrundzugriff ist an: Hinterlege den Schlüssel im Deployment und starte die App neu.",
+          reenable: "Aktiviere den Hintergrundzugriff wieder und starte die App neu.",
+          newKey: "Erzeuge einen neuen Schlüssel und tausche ihn im Deployment aus.",
+        })[next],
       actReenable: "Wieder aktivieren",
       hintRotationShort: "Rotation läuft",
       actNewKey: "Neuen Schlüssel erzeugen",

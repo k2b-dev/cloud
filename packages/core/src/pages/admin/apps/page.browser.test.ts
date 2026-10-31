@@ -265,6 +265,25 @@ test("key states: a refused start leads the list and the app page, and the keys 
   expect(await page.locator("[data-background-off]").getByRole("button", { name: "Wieder aktivieren" }).isVisible()).toBe(true);
 }, 20_000);
 
+test("key states: once Core would take a start again, the refusal asks only for the deployment and a restart", async () => {
+  await open("?app=pulse&state=start-replaced");
+  const notice = page.locator('[data-hint="startRejected"]');
+  expect(await notice.innerText()).toContain(
+    "Ein gültiger Schlüssel existiert und der Hintergrundzugriff ist an: Hinterlege den Schlüssel im Deployment und starte die App neu.",
+  );
+  const action = notice.getByRole("link", { name: "Schlüssel ansehen" });
+  expect(await action.getAttribute("href")).toBe("/admin/apps?app=pulse&view=keys");
+  expect(await action.getAttribute("data-variant")).toBe("secondary");
+  expect(await notice.getByRole("link", { name: "Neuen Schlüssel erzeugen" }).count()).toBe(0);
+}, 20_000);
+
+test("key states: when the first keys read fails, the browser read still opens the refused revoked key", async () => {
+  await open("?app=pulse&view=keys&state=keys-late");
+  const key = page.locator('[data-keys="pulse"] [data-key="pulse-prod"]');
+  await key.waitFor();
+  expect(await key.innerText()).toContain("Start abgelehnt vor 3 Minuten");
+}, 20_000);
+
 test("domains: only an app with public pages has a Domains row; its column shows each domain's checks and redirect", async () => {
   await open("?app=mail");
   expect(await page.locator('[data-row="Domains"]').count()).toBe(0);
