@@ -217,6 +217,11 @@ The shadow is paint only: it does not move content, take pointer input, or
 scroll with a column. A waiting Detail keeps its stronger drawer shadow, and a
 phone, which shows one column at a time, has none.
 
+The boundary's resize handle uses this same shadow. On hover, keyboard focus,
+and drag, the shadow darkens to `--k2b-shadow-column-active-edge` (through
+`--k2b-shadow-column-active-mid`) and keeps its top, bottom, width, and side,
+so an edge never shows a second strip.
+
 Because the shadow marks both edges of a column, a column keeps the same space
 inside both side edges, as the sidebar does. A level body and a
 `surface="navigation"` pane keep 0.5 rem on each side: a row's fill, hover, and
@@ -1517,11 +1522,13 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 
 From 48 rem, 12 px of space separates adjacent MainPanes. The last pane has no
 trailing gap. Every resize handle (sidebar, panes, Detail, and drawer) shows the
-same short grip and soft shadow on the region it resizes during hover, keyboard
-focus, and drag, on top of the column shadow. Keyboard focus gives the grip the focus color. Only the drawer
-also draws its edge line. These cues move no content, and their transitions stop
-under reduced motion. Set `resizeShadow={false}` on `Sidebar` or `MainPane` to
-turn its shadow off.
+same short grip during hover, keyboard focus, and drag. The sidebar, pane, and
+Detail handles darken the column shadow of their boundary; the drawer, which
+has no column shadow, shows a soft shadow on the region it resizes. Keyboard
+focus gives the grip the focus color. Only the drawer also draws its edge line.
+These cues move no content, and their transitions stop under reduced motion.
+Set `resizeShadow={false}` on `Sidebar` or `MainPane` to keep its column shadow
+at rest during these states.
 
 A side pane keeps its size while the main region keeps 320 px and gives way
 down to its minimum; the stylesheet applies the same fit as the controller, so
