@@ -99,9 +99,12 @@ for (const [name, options] of Object.entries(profiles))
         expect(await page.locator(".k2b-ste-table").count()).toBe(0);
         await page.getByRole("button", { name: "Tabelle", exact: true }).click();
         expect(await page.evaluate(() => window.sharedComponentHarness.view.state.doc.toString())).toContain("Spalte 1");
-        await page.getByRole("radio", { name: "Formatiert", exact: true }).click();
+        await page.getByRole("radio", { name: "Markdown", exact: true }).focus();
+        await page.keyboard.press("ArrowLeft");
         await page.locator(".k2b-ste-table").first().waitFor();
         expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        // The switch is gone; keyboard focus continues in the text instead of falling back to the page.
+        await page.waitForFunction(() => document.activeElement?.closest(".k2b-text-editor") !== null);
         expect(errors).toEqual([]);
       } finally {
         await context.close();

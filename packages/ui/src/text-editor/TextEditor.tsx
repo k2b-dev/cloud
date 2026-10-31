@@ -801,7 +801,9 @@ export function TextEditor(props: TextEditorProps) {
     </Dropdown>
   );
   const selectMode = (next: TextEditorMode) => {
-    const restoreEditorFocus = !!editor?.view.contentDOM.contains(document.activeElement);
+    // Returning from the source view removes its switch; keyboard focus then moves into the text.
+    const restoreEditorFocus =
+      !!editor?.view.contentDOM.contains(document.activeElement) || !!root.querySelector(".k2b-ste-views")?.contains(document.activeElement);
     menuOpen = false;
     setCell(undefined);
     setMode(next);
