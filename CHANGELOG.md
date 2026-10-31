@@ -3,6 +3,25 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.55.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.54.0...cloud-v0.55.0) (2026-10-31)
+
+
+### Features
+
+* **admin:** edit network lists and the Mail AI limit in Administration ([#2185](https://github.com/k2b-dev/cloud/issues/2185)) ([2dc6286](https://github.com/k2b-dev/cloud/commit/2dc6286171de029b9c251797fd03147f7ad41e00))
+* **apps:** a shared App status contract with Gateway Ops as first provider ([#2196](https://github.com/k2b-dev/cloud/issues/2196)) ([1be3c7c](https://github.com/k2b-dev/cloud/commit/1be3c7cfd5d16dd3954f3a4ce0f998ce5eeb42df))
+* **cloud:** apps create single-use links and derive their own signing keys ([#2195](https://github.com/k2b-dev/cloud/issues/2195)) ([6a059bf](https://github.com/k2b-dev/cloud/commit/6a059bf67b591fcf6ab29c13fe10bdc672ea07ca))
+* **cloud:** apps fetch connections from Core with their key ([#2175](https://github.com/k2b-dev/cloud/issues/2175)) ([7ee2791](https://github.com/k2b-dev/cloud/commit/7ee2791f2ed31eeccd2d832abc94857199363bb3))
+* **cloud:** apps serve a public site on domains an administrator assigns ([#2198](https://github.com/k2b-dev/cloud/issues/2198)) ([0a28d4e](https://github.com/k2b-dev/cloud/commit/0a28d4e8a00829bbdb8ceb7a37646335cec7116d))
+* **cloud:** batch app administration facts ([#2192](https://github.com/k2b-dev/cloud/issues/2192)) ([a68c505](https://github.com/k2b-dev/cloud/commit/a68c505196115dd3d61c6c38bf1c0cfe71d5449a))
+* **cloud:** read service connections from the startup snapshot ([#2173](https://github.com/k2b-dev/cloud/issues/2173)) ([d756671](https://github.com/k2b-dev/cloud/commit/d756671833b42b01f5c3b1fdaaa05c1cf1da945d))
+* **core:** one Apps page in Administration ([#2197](https://github.com/k2b-dev/cloud/issues/2197)) ([97bfd2b](https://github.com/k2b-dev/cloud/commit/97bfd2be3e218edd6b53f9f73a860511a400d6bb))
+* **core:** the Apps page shows each app's key state ([#2200](https://github.com/k2b-dev/cloud/issues/2200)) ([c526eed](https://github.com/k2b-dev/cloud/commit/c526eedd98d3613786cabd0febba39346962ee8e))
+* **gateway:** app domains reach the app's public site, and unknown hosts are rejected ([#2193](https://github.com/k2b-dev/cloud/issues/2193)) ([d675cf3](https://github.com/k2b-dev/cloud/commit/d675cf30fdbf060cf366f21c6534036ca71a3ed0))
+* **notes-site:** charts in a note are drawn from its tables, and checklists show boxes ([#2163](https://github.com/k2b-dev/cloud/issues/2163)) ([019c6f6](https://github.com/k2b-dev/cloud/commit/019c6f67329fcdc540a6a69f6f31d568cd0d7fe4))
+* **notes-site:** the first visit opens a welcome note in the editor ([#2184](https://github.com/k2b-dev/cloud/issues/2184)) ([fc84407](https://github.com/k2b-dev/cloud/commit/fc84407b58c80dafb606dd412dadfda9173ec21b))
+* **notes-site:** write together through @k2b/editor/collab ([#2183](https://github.com/k2b-dev/cloud/issues/2183)) ([c8da802](https://github.com/k2b-dev/cloud/commit/c8da802d9340865189977623a7ef494240c58904))
+
 ## [0.54.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.53.0...cloud-v0.54.0) (2026-10-30)
 
 
