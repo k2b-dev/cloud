@@ -291,6 +291,7 @@ describe("Core OAuth issuance authority", () => {
     for (const invalid of [
       { ...account, appId: "mail" },
       { ...account, status: "disabled" },
+      { ...account, kind: "code" },
       { ...account, kind: "user_delegated", delegatedUserId: "7d2a3b4c-5d6e-4f70-8192-a3b4c5d6e7f8" },
     ]) {
       const denied = await setup(

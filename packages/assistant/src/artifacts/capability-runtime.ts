@@ -3,14 +3,23 @@ import { authorizeBackgroundAction, hasRememberedAiToolApproval, rememberAiToolA
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
   type CapabilityCaller,
+  capabilityCallFromTool,
+  capabilityInvocationBody,
   capabilityReviewRememberScope,
   getCapabilityActionWording,
   getCapabilityCatalogApp,
   invokeCapability,
+  normalizeCapabilityCall,
   reviewCapabilityAction,
   transferCapabilityStream,
 } from "@k2b/cloud/capabilities/server";
-import { CapabilityActionReviewDataSchema, CapabilityStreamSchema, capabilityActionPolicy } from "@k2b/cloud/contracts";
+import {
+  CapabilityActionReviewDataSchema,
+  CapabilityInvocationBodySchema,
+  CapabilityStreamSchema,
+  capabilityActionPolicy,
+  NormalizedCapabilityCallSchema,
+} from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import {
   APPROVAL_MAX_WAIT_MS,
@@ -36,6 +45,8 @@ export const RuntimeCapabilityRequest = z
       .regex(/^[a-z0-9-]+\.[a-zA-Z0-9_.-]+$/)
       .max(240),
     input: z.json(),
+    target: CapabilityInvocationBodySchema.shape.target,
+    refs: CapabilityInvocationBodySchema.shape.refs,
     artifactId: CodeResourceId.optional(),
     conversationId: z.string().min(1).max(80).optional(),
   })
@@ -46,6 +57,7 @@ const Prepared = z.object({
   localId: z.string(),
   kind: z.enum(["query", "action"]),
   schemaHash: z.string(),
+  call: NormalizedCapabilityCallSchema.optional(),
   approval: z.enum(["none", "rememberable"]).nullable(),
   resource: z.object({ id: CodeResourceId, title: z.string() }).optional(),
   title: z.string(),
@@ -162,9 +174,19 @@ export const runtimeCapabilities = {
     const { resource, conversationId } = await authorizeWithChat(request, identity, request.name);
     const untrusted = resource && resource.permission !== "admin";
     const target = await operation(request.name, caller.locale, identity.authority ?? null);
+    const boundCall = target.operation.target !== undefined || target.operation.refs !== undefined;
+    if (task && boundCall) throw new Error("This capability requires a target-aware mandate");
+    const call =
+      request.target !== undefined || request.refs !== undefined
+        ? normalizeCapabilityCall(target.appId, target.operation, { input: request.input, target: request.target, refs: request.refs })
+        : boundCall
+          ? capabilityCallFromTool(target.appId, target.operation, request.input)
+          : null;
+    const body = call ? capabilityInvocationBody(call) : { input: request.input };
+
     const getReview = async () => {
       const response = await reviewCapabilityAction(
-        { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
+        { appId: target.appId, capabilityId: target.localId, ...body, signal: caller.signal },
         caller,
       );
       if (!response.ok) throw new Error(response.error.message);
@@ -194,6 +216,7 @@ export const runtimeCapabilities = {
       localId: target.localId,
       kind: target.kind,
       schemaHash: target.operation.schemaHash,
+      ...(boundCall ? { call } : {}),
       approval: target.action?.approval ?? null,
       title: target.operation.title,
       review,
@@ -304,12 +327,13 @@ async function resolveCapability(
     (target.action?.approval ?? null) !== prepared.approval
   )
     throw new ArtifactError("CONFLICT");
+  const body = prepared.call ? capabilityInvocationBody(prepared.call) : { input: request.input };
   // Approval applies to the reviewed consequence, not a changed action.
   // The routine gate already reviewed this call. Interactive approvals still revalidate their reviewed consequence.
   let currentReview: z.infer<typeof CapabilityActionReviewDataSchema> | null = background ? prepared.review : null;
   if (!background && target.action?.review) {
     const response = await reviewCapabilityAction(
-      { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
+      { appId: target.appId, capabilityId: target.localId, ...body, signal: caller.signal },
       { ...caller, locale: prepared.locale ?? caller.locale },
     );
     if (!response.ok) throw new Error(response.error.message);
@@ -332,7 +356,7 @@ async function resolveCapability(
       appId: prepared.appId,
       capabilityId: prepared.localId,
       kind: prepared.kind,
-      input: request.input,
+      ...body,
       ...(target.action?.idempotency === "required" ? { idempotencyKey: `code-${id}` } : {}),
       signal: caller.signal,
     },
@@ -380,7 +404,7 @@ async function requestApprovalRecord(
           prepared.locale ?? "en",
         ),
       review: prepared.review,
-      input: request.input,
+      input: prepared.call ?? request.input,
       expiresInMs: options.expiresInMs,
     },
     db,
@@ -427,7 +451,11 @@ async function claimExecution(
         const request = RuntimeCapabilityRequest.parse(decoded(current.request));
         const consumed = await approvals.consume(
           approvalId,
-          { input: request.input, review, requester: { kind: "studio_app", ref: row.id } },
+          {
+            input: Prepared.parse(decoded(current.prepared)).call ?? request.input,
+            review,
+            requester: { kind: "studio_app", ref: row.id },
+          },
           db,
         );
         if (!consumed.ok) return false;

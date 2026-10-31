@@ -234,6 +234,10 @@ For automatic home provisioning, the trusted server-only `provisioningUsers`
 projection and `provisioningIdentity` live check are documented under
 [application event operations](/en/docs/operations/app-events#check-files-home-provisioning).
 
+`serviceAccountUsesOwnGrants` and `serviceAccountMayHoldCredentials` separate
+resource-grant resolution from credential eligibility. Code accounts have only
+the first property; see [Service accounts](/en/docs/identity/service-accounts#code-accounts).
+
 `readAccountCategoryPolicy` supplies server-side presentation settings;
 `isAccountCategoryAllowed` is for platform-owned credential eligibility checks,
 not application resource authorization. The browser-safe contracts barrel
@@ -486,7 +490,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/cli/capabilities` | Platform-owned | Built-in generic capability client | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/events` | Platform-owned | Built-in app event commands | [App events](/en/docs/platform/app-events) |
 | `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability clients, `readCapabilityReviewContent`, and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients and typed `actionReview` builder; `listCalendarSources(credentials, { deadline, signal? })`, `readCalendarEvents({ credentials, calendars, from, to, deadline, signal?, onSource? })`, and `listCapabilityCatalog({ caller, cursor?, limit? })` read a caller's calendar sources | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients, typed `actionReview` builder, normalized calls (`normalizeCapabilityCall`, `capabilityCallFromTool`, `capabilityInvocationBody`), flat tool schemas (`capabilityToolInputSchema`) and `capabilityCallDigest`; `listCalendarSources(credentials, { deadline, signal? })`, `readCalendarEvents({ credentials, calendars, from, to, deadline, signal?, onSource? })`, and `listCapabilityCatalog({ caller, cursor?, limit? })` read a caller's calendar sources | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest, evolution, resource-link and localized review checks | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/account` | Platform-owned | Built-in account commands | — |

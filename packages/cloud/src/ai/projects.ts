@@ -10,6 +10,7 @@ import {
   hasPermission,
   type PermissionLevel,
   type Principal,
+  updateAccess,
 } from "../server/services/access";
 import { stripImageMetadata } from "../services/image-metadata";
 import { toPgUuidArray } from "../services/postgres";
@@ -359,8 +360,7 @@ const updateProjectAccess = async (projectId: string, accessId: string, permissi
     after: before.map((entry) => (entry.shortId === accessId ? { ...entry, permission } : entry)),
   });
   if (!guarded.ok) throw new AiProjectLastAdminError();
-  const result = await db`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${bound.id}::uuid`;
-  return result.count === 1;
+  return (await updateAccess({ id: bound.id, permission }, db)).ok;
 };
 
 const revokeProjectAccess = async (projectId: string, accessId: string, db: SQL): Promise<boolean> => {

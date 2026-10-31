@@ -392,10 +392,11 @@ suiteFor(
     }
   });
 
-  test("directly inserted app keys on other account kinds or bindings are rejected like unknown keys", async () => {
+  test("invalid app-key owners are refused by storage and legacy keys are rejected like unknown keys", async () => {
     const bindings = [
       { kind: "standalone", appId: null, resourceType: null, resourceId: null, delegated: null },
       { kind: "agent", appId: null, resourceType: null, resourceId: null, delegated: null },
+      { kind: "code", appId: null, resourceType: null, resourceId: null, delegated: null },
       { kind: "user_delegated", appId: null, resourceType: null, resourceId: null, delegated: actor.id },
       { kind: "resource_bound", appId: "inventory", resourceType: "file", resourceId: "inventory", delegated: null },
       { kind: "resource_bound", appId: "inventory", resourceType: "cloud.app", resourceId: "other", delegated: null },
@@ -408,10 +409,23 @@ suiteFor(
           ${binding.resourceId}, ${binding.delegated}::uuid) RETURNING id`;
       if (!account) throw new Error("Missing test account");
       try {
-        const [credential] = await sql<{ id: string }[]>`INSERT INTO auth.service_account_credentials
+        await expect(
+          sql`INSERT INTO auth.service_account_credentials
           (service_account_id, name, kind, public_key, fingerprint)
           SELECT ${account.id}::uuid, 'test key', 'app_key', public_key, fingerprint
-          FROM auth.service_account_credentials WHERE id = ${key.keyId}::uuid RETURNING id`;
+          FROM auth.service_account_credentials WHERE id = ${key.keyId}::uuid`.execute(),
+        ).rejects.toMatchObject({ errno: "23514" });
+        // Model a legacy row predating the storage guard; retain proof validation
+        // coverage independently of the guard. Trigger state rolls back on failure.
+        const [credential] = await sql.begin(async (tx) => {
+          await tx`ALTER TABLE auth.service_account_credentials DISABLE TRIGGER service_account_credential_owner`;
+          const rows = await tx<{ id: string }[]>`INSERT INTO auth.service_account_credentials
+            (service_account_id, name, kind, public_key, fingerprint)
+            SELECT ${account.id}::uuid, 'legacy key', 'app_key', public_key, fingerprint
+            FROM auth.service_account_credentials WHERE id = ${key.keyId}::uuid RETURNING id`;
+          await tx`ALTER TABLE auth.service_account_credentials ENABLE TRIGGER service_account_credential_owner`;
+          return rows;
+        });
         if (!credential) throw new Error("Missing test credential");
         const proof = await signBootstrapProof({ ...key, keyId: credential.id });
         for (const route of routes) {

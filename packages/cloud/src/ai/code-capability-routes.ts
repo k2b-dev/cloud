@@ -4,7 +4,7 @@ import { readBoundedJson } from "../_internal/bounded-json";
 import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import { dispatchCapability } from "../api/capabilities";
 import { dispatchCapabilityStream } from "../api/capability-streams";
-import { CAPABILITY_MAX_REQUEST_BYTES } from "../contracts/capabilities";
+import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityInvocationBodySchema } from "../contracts/capabilities";
 import { type AuthContext, getLocale, type RequestAuthority } from "../server";
 import { requireInvocation } from "../server/middleware/invocation";
 import { getMandate } from "../services/mandates";
@@ -12,10 +12,7 @@ import { codeCapabilityOperation } from "./code-capability-transport";
 import { authorizeCodeExecution } from "./code-execution";
 import { aiConversations } from "./store";
 
-const Input = z
-  .object({ input: z.unknown() })
-  .strict()
-  .refine((value) => Object.hasOwn(value, "input"));
+const Input = CapabilityInvocationBodySchema;
 const denied = () => Response.json({ code: "ACCESS_DENIED", message: "Code execution is no longer authorized" }, { status: 403 });
 
 /** Core-only continuation of a code turn, not a general invocation exchange. */
@@ -62,7 +59,7 @@ export function createCodeCapabilityRoutes(
         kind: review || c.req.param("kind") === "actions" ? "actions" : "queries",
         appId,
         capabilityId,
-        input: input.data.input,
+        ...input.data,
         locale: getLocale(c),
       });
     });

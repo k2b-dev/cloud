@@ -871,6 +871,138 @@ state.
 
 Record security-sensitive mutations with [Audit events](/en/docs/platform/audit-events).
 
+### Name the resource an operation acts on
+
+Declare `target` when an Action acts on a resource. It names a local Type of
+this application. The caller supplies a resource ID for that fixed type;
+it cannot choose another type or containment level. A Query may also declare a
+target when it reads exactly one container. An operation without a target acts
+at application level; existing declarations continue to work during migration.
+Canonical resource readers, Universal Search, Action outcome checks and shared
+file, calendar and discussion provider contracts supply only their existing
+domain input. They cannot declare `target` or `refs`; publish a separate Query
+when an explicit caller needs a container target.
+
+```ts
+actions: {
+  "contact.move": {
+    target: "book",
+    refs: { targetBookId: "book" },
+    title: "Move contact",
+    description: "Move a contact to another book.",
+    input: z.object({
+      contactId: z.string().describe("Contact in the source book."),
+    }).strict(),
+    data: z.object({ id: z.string() }).strict(),
+    destructive: false,
+    openWorld: false,
+    idempotency: "required",
+    run: async (input, context) => {
+      // target and refs have been checked against this declaration.
+      if (!context.target || !context.refs?.targetBookId) {
+        throw new Error("Contact move requires source and destination books");
+      }
+      return moveContact(input.contactId, context.target.id, context.refs.targetBookId.id, context);
+    },
+  },
+},
+```
+
+The main resource ID belongs beside `input`, not inside the domain input.
+Keep IDs for contained objects in `input`, and check in the owning service that
+they belong to `context.target`. Check every member of a batch. A Type's
+existing `container` describes containment; it does not perform this check or
+grant access.
+
+Use `refs: { fieldName: "localType" }` only for additional targets. Each field
+is exactly one required resource, never a list. Both `target` and every ref
+type must be declared in the same application. References grant no permission;
+the owning service must authorize all affected resources.
+
+Declare `code: false` on an Action whose domain effect reaches another
+application. It records that the Action is unavailable to resource-owned Code;
+personal Code retains its person's authority. Code consumers enforce this
+marker when offering operations. It does not change ordinary person calls or
+replace the Action's service authorization.
+
+Call the public client with explicit coordinates:
+
+```ts
+await invokeCapability({
+  appId: "contacts",
+  capabilityId: "contact.move",
+  kind: "action",
+  target: { type: "contacts.book", id: sourceBookId },
+  refs: { targetBookId: { type: "contacts.book", id: destinationBookId } },
+  input: { contactId },
+  idempotencyKey: `move:${contactId}:${revision}`,
+}, caller);
+```
+
+HTTP uses the same `{ target, refs, input }` body. `reviewCapabilityAction`
+accepts the same coordinates. `run`, `review`, and app-authorized handlers
+receive validated `context.target` and `context.refs`. These context fields
+are optional because application-wide operations have no resource target.
+Supplying an undeclared target, the wrong resource type, extra ref fields, a
+list, or a missing declared ref fails with `VALIDATION_FAILED`.
+
+The generic CLI's `query`, `action` and `review` commands accept `--target`
+as a resource-reference JSON object and `--refs` as a named reference map.
+`--input` continues to contain only domain input:
+
+```bash
+cld capabilities action contacts contact.move \
+  --target '{"type":"contacts.book","id":"source"}' \
+  --refs '{"targetBookId":{"type":"contacts.book","id":"destination"}}' \
+  --input '{"contactId":"contact"}' --idempotency-key move-contact-1
+```
+
+Chat and MCP tools remain flat: the example has `book`, `targetBookId`, and
+`contactId` fields. The main field uses the declared Type name; refs retain
+their field names. Collisions with another target field, a domain input field,
+or reserved Action metadata (`idempotencyKey`, `approvalReason`) fail when the
+tool schema is generated, including at application startup. Tool names such as
+`contacts__action__contact.move` are transport encodings of
+`contacts.contact.move`, never capability IDs in a normalized call.
+
+#### Share a normalized call and digest
+
+`NormalizedCapabilityCall<Input>` and `NormalizedCapabilityCallSchema` from
+`@k2b/cloud/contracts` define the durable JSON contract:
+
+```ts
+{
+  capability: "contacts.contact.move",
+  target: { type: "contacts.book", id: sourceBookId },
+  refs: { targetBookId: { type: "contacts.book", id: destinationBookId } },
+  input: { contactId },
+}
+```
+
+An application-wide call uses `target: null` and `refs: {}`.
+`normalizeCapabilityCall(appId, operation, body)` from
+`@k2b/cloud/capabilities/server` checks the coordinates against a live operation.
+It leaves domain input validation to the operation's schema.
+`capabilityCallFromTool(appId, operation, args)` converts flat tool arguments;
+`capabilityToolInputSchema(operation)` generates their schema, and
+`capabilityInvocationBody(call)` returns the HTTP body.
+
+`capabilityCallDigest(call)` from the same server entry point returns a
+SHA-256 hexadecimal digest of the complete normalized call. It sorts object
+keys recursively, preserves array order, and excludes transport metadata.
+Validate domain input before hashing. Changing the capability, target, a ref,
+or domain input changes the digest. Review, approval snapshots, execution and
+idempotency use these same coordinates. Approval services receive the complete
+normalized call as their `input`, so `approvalArgsDigest(call)` equals
+`capabilityCallDigest(call)`.
+
+Existing operations with neither `target` nor `refs` keep their earlier
+input-only approval and idempotency hashes during the additive rollout.
+The repository's `capability-targets` rule reports Actions with ID-like input
+fields but no target; this migration report is not an authorization check.
+See [Roll out capability targets](/en/docs/operations/capability-targets) before
+converting an existing published Action.
+
 ### Retry an Action safely
 
 Idempotency is a platform mechanism. Applications write no claim code, no

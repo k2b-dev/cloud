@@ -4,7 +4,7 @@ import type { PermissionLevel, Principal } from "@k2b/cloud/server";
 import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { grantBaseAccess, revokeBaseAccess, updateBaseAccess } from "./base-management";
+import { checkBaseCreation, grantBaseAccess, revokeBaseAccess, updateBaseAccess } from "./base-management";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 
 const suite = databaseSuite();
@@ -65,6 +65,46 @@ const expectLastManager = (result: { ok: boolean; error?: { code: string; status
 };
 
 suite("Pulse base keeps a manager", () => {
+  test("normal sharing and base creation never grant a code account authority", async () => {
+    const baseId = await insertBase(),
+      userId = await insertUser(),
+      accountId = crypto.randomUUID();
+    await bind(baseId, { type: "user", userId }, "admin");
+    await sql`INSERT INTO auth.service_accounts(id, name, kind) VALUES (${accountId}::uuid, ${accountId}, 'code')`;
+    try {
+      expect(
+        (
+          await grantBaseAccess({
+            baseId,
+            user: { id: userId },
+            principal: { type: "service_account", serviceAccountId: accountId },
+            permission: "write",
+          })
+        ).ok,
+      ).toBe(false);
+      expect(
+        (
+          await checkBaseCreation({
+            user: {
+              subject: { type: "service_account", serviceAccountId: accountId },
+              serviceAccount: { kind: "code", appId: null, resourceType: null, resourceId: null },
+              scopes: ["admin"],
+            },
+            agent: true,
+          })
+        ).ok,
+      ).toBe(false);
+      const [own] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(service_account_id, permission) VALUES (${accountId}::uuid, 'write') RETURNING id`;
+      if (!own) throw new Error("Missing code grant");
+      await sql`INSERT INTO pulse.base_access(base_id, access_id) VALUES (${baseId}::uuid, ${own.id}::uuid)`;
+      expect((await updateBaseAccess({ baseId, accessId: own.id, user: { id: userId }, permission: "admin" })).ok).toBe(false);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${accountId}::uuid`;
+    }
+  });
+
   test("the only manager can neither lower nor remove their own access", async () => {
     const baseId = await insertBase();
     const userId = await insertUser();

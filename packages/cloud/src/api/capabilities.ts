@@ -11,6 +11,7 @@ import {
 } from "../_internal/capability-reviews";
 import { capabilityTimeoutMs, createCapabilityDeadline, withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import { getApp, getCapability, listApps } from "../_internal/registry";
+import { capabilityCallDigest, capabilityInvocationBody, normalizeCapabilityCall } from "../capabilities/calls";
 import { resolveCommandLink } from "../capabilities/command-link";
 import {
   type CapabilityClaimScope,
@@ -38,6 +39,8 @@ import {
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
   CapabilityIdempotencyKeySchema,
+  type CapabilityInvocationBody,
+  CapabilityInvocationBodySchema,
   type CapabilityOrigin,
   capabilityActionPolicy,
   capabilityResultJsonSchema,
@@ -110,7 +113,7 @@ const schemaValidator = (key: string, schema: Record<string, unknown>): z.ZodTyp
   return validator;
 };
 
-const CapabilityInvocationRequestSchema = z.object({ input: z.unknown() }).strict();
+const CapabilityInvocationRequestSchema = CapabilityInvocationBodySchema;
 const CapabilityCatalogQuerySchema = z
   .object({
     cursor: z.string().max(80).optional(),
@@ -283,6 +286,8 @@ export type CapabilityDispatchParams = {
   review?: boolean;
   appId: string;
   capabilityId: string;
+  target?: CapabilityInvocationBody["target"];
+  refs?: CapabilityInvocationBody["refs"];
   input: unknown;
   locale?: string;
   /** Cloud surface this invocation came from; recorded on the execution row. */
@@ -481,12 +486,24 @@ const runCapabilityDispatch = async (
     return invalid;
   }
 
+  let call: ReturnType<typeof normalizeCapabilityCall>;
+  try {
+    call = normalizeCapabilityCall(params.appId, operation, { input: input.data, target: params.target, refs: params.refs });
+  } catch (error) {
+    return errorResponse("VALIDATION_FAILED", error instanceof Error ? error.message : "Invalid capability target", 400);
+  }
+  const invocationBody = capabilityInvocationBody(call);
+  const boundCall = operation.target !== undefined || operation.refs !== undefined;
+  // Legacy mandates constrain domain input only. C2 adds target-aware grants; never discard a coordinate here.
+  if (boundCall && (params.mandate || params.parentInvocation?.credential_kind === "mandate"))
+    return errorResponse("MANDATE_POLICY_DENIED", "This capability requires a target-aware mandate", 403);
+
   if ((params.mandate || params.parentInvocation) && operation.stream)
     return errorResponse("STREAM_UNSUPPORTED_AUTHORITY", "Streams require an interactive user or service-account request", 403);
 
   let requestBody: string;
   try {
-    requestBody = JSON.stringify({ input: input.data });
+    requestBody = JSON.stringify(invocationBody);
   } catch {
     const invalid = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.inputNotSerializable, 400);
     return invalid;
@@ -597,7 +614,7 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     capabilityId: params.capabilityId,
                     schemaHash: operation.schemaHash,
-                    input: input.data,
+                    input: boundCall ? call : input.data,
                     requestId,
                     signer,
                   });
@@ -624,7 +641,7 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     capabilityId: params.capabilityId,
                     schemaHash: operation.schemaHash,
-                    input: input.data,
+                    input: boundCall ? call : input.data,
                     requestId,
                     signer,
                   });
@@ -754,7 +771,7 @@ const runCapabilityDispatch = async (
   if (claimScope) {
     let claim: Awaited<ReturnType<typeof claimCapabilityIdempotency>>;
     try {
-      claim = await claimCapabilityIdempotency(claimScope, capabilityRequestHash(input.data));
+      claim = await claimCapabilityIdempotency(claimScope, boundCall ? capabilityCallDigest(call) : capabilityRequestHash(input.data));
     } catch (error) {
       // Nothing has been forwarded yet, so refusing the call is the safe answer.
       log.error("Capability idempotency claim failed", {
@@ -1262,7 +1279,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
             origin: "http",
             appId: c.req.param("appId") ?? "",
             capabilityId: c.req.param("capabilityId") ?? "",
-            input: request.data.input,
+            ...request.data,
             authority: auth.getAuthority(c),
             locale,
             dependencies,
@@ -1315,7 +1332,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
             origin: "http",
             appId: c.req.param("appId") ?? "",
             capabilityId: c.req.param("capabilityId") ?? "",
-            input: request.data.input,
+            ...request.data,
             authority: auth.getAuthority(c),
             locale,
             dependencies,

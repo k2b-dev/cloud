@@ -11,7 +11,7 @@ import { defineCapabilities } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import * as categoryPolicy from "../services/account-category-policy";
 import { signInvocationToken } from "../services/identity/invocation-token";
-import { buildAiCapabilityCatalog } from "./capabilities";
+import { buildAiCapabilityCatalog, createLoadedAiCapabilityTools } from "./capabilities";
 import {
   AiCapabilityExecutionError,
   aiCapabilityCheckResult,
@@ -20,6 +20,7 @@ import {
   resolveAiCapabilityActor,
   reviewAiCapability,
 } from "./capability-execution";
+import { aiToolAudit } from "./tool-audit";
 import type { AiConversation } from "./types";
 
 useUnitClients();
@@ -585,4 +586,64 @@ describe("Action outcome checks", () => {
       "ACTION_OUTCOME_UNKNOWN: The app does not know the outcome yet. Do not retry the Action.",
     );
   });
+});
+
+test("chat tools expose flat coordinates and normalize both review and execution", async () => {
+  const registered = app();
+  const operation = registered.manifest.actions[0]!;
+  registered.manifest.actions = [{ ...operation, target: "item", refs: { destinationId: "item" } }];
+  const catalog = buildAiCapabilityCatalog([registered]);
+  const entry = catalog[0]!;
+  const current = user("11111111-1111-4111-8111-111111111111");
+  const tool = createLoadedAiCapabilityTools({
+    apps: [registered],
+    catalog,
+    loadedNames: [entry.name],
+    actor: { kind: "user", user: current },
+    execute: async () => ({}),
+  })[0]!;
+  expect(z.toJSONSchema(tool.def.inputSchema)).toMatchObject({
+    properties: { item: { type: "string" }, destinationId: { type: "string" }, title: { type: "string" } },
+  });
+  const seen: unknown[] = [];
+  const base = {
+    conversationId: "conversation-1",
+    authority: {
+      actor: { kind: "user" as const, user: current },
+      accessSubject: { type: "user" as const, userId: current.id },
+      credentialKind: "session" as const,
+      scopes: [],
+    },
+    entry,
+    args: { item: "source", destinationId: "destination", title: "Ada" },
+    context: {
+      callId: "target-call",
+      signal: new AbortController().signal,
+      requestApproval: async () => true,
+      requestClientTool: async () => {
+        throw new Error("No client tool expected");
+      },
+    },
+    dependencies: {
+      dispatch: async (params: Parameters<typeof dispatchCapability>[0]) => {
+        seen.push({ target: params.target, refs: params.refs, input: params.input });
+        return params.review ? Response.json({ message: "Create Ada." }) : Response.json({ data: { id: "created" } });
+      },
+    },
+  };
+  const audit = spyOn(aiToolAudit, "noteCapabilityDispatch").mockResolvedValue();
+  await expect(executeAiCapability({ ...base, turnId: "turn-1", args: { destinationId: "destination", title: "Ada" } })).rejects.toThrow(
+    '"item"',
+  );
+  expect(audit).not.toHaveBeenCalled();
+  expect(seen).toHaveLength(0);
+  await reviewAiCapability(base);
+  await executeAiCapability(base);
+  expect(seen).toEqual(
+    Array.from({ length: 2 }, () => ({
+      target: { type: "demo.item", id: "source" },
+      refs: { destinationId: { type: "demo.item", id: "destination" } },
+      input: { title: "Ada" },
+    })),
+  );
 });

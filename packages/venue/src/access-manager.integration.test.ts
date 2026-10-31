@@ -76,6 +76,24 @@ suite("Venue keeps a manager", () => {
     expectLastManager(await venueService.access.revoke(venueId, second.access, second));
   });
 
+  test("ordinary venue sharing cannot change an existing Code grant", async () => {
+    const venueId = await insertVenue();
+    const manager = await bindAdmin(venueId, "user");
+    const codeId = crypto.randomUUID();
+    await sql`INSERT INTO auth.service_accounts(id, name, kind) VALUES (${codeId}::uuid, ${`code:venue:${venueId}`}, 'code')`;
+    created.serviceAccounts.push(codeId);
+    const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id, permission)
+      VALUES (${codeId}::uuid, 'write') RETURNING id`;
+    if (!access) throw new Error("Missing Code access");
+    await sql`INSERT INTO venue.venue_access(venue_id, access_id) VALUES (${venueId}::uuid, ${access.id}::uuid)`;
+    for (const permission of ["read", "admin"] as const) {
+      expect((await venueService.access.update(venueId, access.id, permission, manager)).ok).toBe(false);
+      expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id = ${access.id}::uuid`).toEqual([
+        { permission: "write" },
+      ]);
+    }
+  });
+
   test("of two managers removing themselves at once, exactly one succeeds", async () => {
     const venueId = await insertVenue();
     const first = await bindAdmin(venueId, "user");

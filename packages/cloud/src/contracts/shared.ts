@@ -104,7 +104,7 @@ export const BaseGroupSchema = z.object({
 });
 export type BaseGroup = z.infer<typeof BaseGroupSchema>;
 
-export const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound", "standalone", "agent"]);
+export const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound", "standalone", "agent", "code"]);
 export type ServiceAccountKind = z.infer<typeof ServiceAccountKindSchema>;
 
 export const EntityKindSchema = z.enum(["user", "group", "service_account"]);

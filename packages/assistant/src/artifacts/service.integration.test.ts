@@ -358,11 +358,32 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`ALTER TABLE assistant.artifacts DROP CONSTRAINT artifacts_kind_check`.simple();
     await sql`UPDATE assistant.artifacts SET kind='script' WHERE short_id=${resource.id}`;
     await sql`INSERT INTO assistant.artifact_projects SELECT id,${projectId}::uuid FROM assistant.artifacts WHERE short_id=${resource.id}`;
-    await migrateArtifacts();
-    expect(await artifacts.get(resource.id, reader)).toMatchObject({ kind: "app", source, publishedVersion: 1 });
-    expect(await artifacts.projects(resource.id, owner)).toEqual([{ projectId, shortId: null, name: null }]);
-    await expect(artifacts.create({ kind: "script", title: "Rejected legacy kind", source }, owner)).rejects.toThrow();
-    await artifacts.remove(resource.id, owner);
+    const codeId = crypto.randomUUID();
+    await sql`INSERT INTO auth.service_accounts(id,name,kind) VALUES(${codeId}::uuid,${`code:app:${resource.id}`},'code')`;
+    const [codeGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id,permission)
+      VALUES(${codeId}::uuid,'write') RETURNING id`;
+    if (!codeGrant) throw new Error("Missing Code grant");
+    await sql`INSERT INTO assistant.artifact_access SELECT id,${codeGrant.id}::uuid FROM assistant.artifacts WHERE short_id=${resource.id}`;
+    try {
+      await migrateArtifacts();
+      expect(await artifacts.get(resource.id, reader)).toMatchObject({ kind: "app", source, publishedVersion: 1 });
+      expect(await artifacts.projects(resource.id, owner)).toEqual([{ projectId, shortId: null, name: null }]);
+      await expect(artifacts.create({ kind: "script", title: "Rejected legacy kind", source }, owner)).rejects.toThrow();
+      // Legacy promotion preserves Code grants, and normal sharing reports refusal.
+      for (const permission of ["read", "admin"] as const) {
+        await expect(artifacts.changeGrant(resource.id, codeGrant.id, permission, owner)).rejects.toMatchObject({ code: "NOT_FOUND" });
+        expect(await sql<{ permission: string }[]>`SELECT permission FROM auth.access WHERE id=${codeGrant.id}::uuid`).toEqual([
+          { permission: "write" },
+        ]);
+      }
+      await expect(
+        artifacts.grant(resource.id, { type: "service_account", serviceAccountId: codeId }, "read", owner),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    } finally {
+      await artifacts.remove(resource.id, owner);
+      await sql`DELETE FROM auth.access WHERE id=${codeGrant.id}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id=${codeId}::uuid`;
+    }
   });
 
   test("shared binary files have independent atomic byte budgets, pagination and no count ceiling", async () => {
@@ -1163,6 +1184,81 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       marker.mockRestore();
       review.mockRestore();
       invoke.mockRestore();
+    }
+  });
+
+  test("resource-bound script calls persist one normalized approval through execution", async () => {
+    const applet = await artifacts.create({ title: "Target capability", source }, owner);
+    const manifest = compileCapabilityManifest(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        types: { book: { title: "Book", description: "A book." } },
+        actions: {
+          move: {
+            title: "Move",
+            description: "Move a contact.",
+            target: "book",
+            refs: { destination: "book" },
+            input: z.object({ contactId: z.string().describe("Contact ID.") }).strict(),
+            data: z.unknown(),
+            approval: "rememberable",
+            idempotency: "required",
+            destructive: false,
+            openWorld: false,
+            review: async () => ok({ message: "Move contact?" }),
+            run: async () => ok({ data: {} }),
+          },
+        },
+      }),
+    );
+    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { appId: "demo", appName: "Demo", appIcon: "ti ti-book", appDescription: "Demo", manifest },
+    });
+    const review = spyOn(capabilityClient, "reviewCapabilityAction").mockResolvedValue({ ok: true, data: { message: "Move contact?" } });
+    const execute = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: {} } });
+    const wording = spyOn(capabilityClient, "getCapabilityActionWording").mockResolvedValue(null);
+    const caller = { cookie: "test-cookie", locale: "en" };
+    const request = {
+      id: crypto.randomUUID(),
+      name: "demo.move",
+      input: { book: "source", destination: "destination", contactId: "contact" },
+      artifactId: applet.id,
+    };
+    const call = {
+      capability: "demo.move",
+      target: { type: "demo.book", id: "source" },
+      refs: { destination: { type: "demo.book", id: "destination" } },
+      input: { contactId: "contact" },
+    };
+    try {
+      expect(await runtimeCapabilities.prepare(request, owner, caller)).toMatchObject({ status: "approval", call });
+      const [saved] = await sql<
+        { approval_id: string; prepared: { call: unknown } }[]
+      >`SELECT approval_id,prepared FROM assistant.capability_calls WHERE id=${request.id}::uuid`;
+      expect(saved?.prepared.call).toEqual(call);
+      const approval = await approvals.get(saved!.approval_id);
+      expect(approval?.argsDigest).toBe(capabilityClient.capabilityCallDigest(call));
+      expect(await runtimeCapabilities.resolve(request.id, { approved: true }, owner, caller)).toMatchObject({ status: "completed" });
+      expect(await approvals.get(saved!.approval_id)).toMatchObject({ status: "consumed" });
+      expect(review).toHaveBeenCalledTimes(2);
+      for (const [invocation] of review.mock.calls)
+        expect(invocation).toMatchObject({ appId: "demo", capabilityId: "move", ...capabilityClient.capabilityInvocationBody(call) });
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0]?.[0]).toMatchObject({
+        appId: "demo",
+        capabilityId: "move",
+        ...capabilityClient.capabilityInvocationBody(call),
+        idempotencyKey: `code-${request.id}`,
+      });
+      await runtimeCapabilities.resolve(request.id, { approved: true }, owner, caller);
+      expect(execute).toHaveBeenCalledTimes(1);
+    } finally {
+      catalog.mockRestore();
+      review.mockRestore();
+      execute.mockRestore();
+      wording.mockRestore();
     }
   });
 

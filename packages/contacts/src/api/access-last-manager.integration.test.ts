@@ -120,6 +120,22 @@ suite("Contacts keeps its last manager (ACC-06)", () => {
     }
   });
 
+  test("ordinary book sharing cannot change an existing Code grant", async () => {
+    const target = await book();
+    const manager = await person();
+    await grant(target.id, { userId: manager.id });
+    const codeId = await account(target.id, "agent");
+    const codeAccess = await grant(target.id, { serviceAccountId: codeId });
+    await sql`UPDATE auth.access SET permission = 'write' WHERE id = ${codeAccess}::uuid`;
+    await sql`UPDATE auth.service_accounts SET kind = 'code' WHERE id = ${codeId}::uuid`;
+    for (const permission of ["read", "admin"]) {
+      const response = await request(`/books/${target.shortId}/access/${codeAccess}`, manager, "PATCH", { permission });
+      expect(response.status).toBe(404);
+      expect((await permissions(target.id)).find((entry) => entry.id === codeAccess)?.permission).toBe("write");
+    }
+    expect(await accessChanges(target.id)).toBe(0);
+  });
+
   test("two managers lowering their own grants concurrently leave exactly one manager", async () => {
     const target = await book();
     const a = await person();

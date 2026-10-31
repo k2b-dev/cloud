@@ -177,6 +177,8 @@ const validateTaskGrants = async (input: unknown): Promise<TaskGrant[]> => {
       (item) => item.localId === grant.capabilityId,
     );
     if (!operation) throw new Error(`Capability unavailable: ${grant.appId}.${grant.capabilityId}`);
+    if (operation.target !== undefined || operation.refs !== undefined)
+      throw new Error(`Capability requires a target-aware mandate: ${grant.appId}.${grant.capabilityId}`);
     const policy = entry ? capabilityActionPolicy(entry.manifest, grant.capabilityId) : undefined;
     if (grant.kind === "action" && policy && (!("silent" in policy) || policy.routines === false))
       throw new Error(`Capability requires interactive approval: ${grant.appId}.${grant.capabilityId}`);

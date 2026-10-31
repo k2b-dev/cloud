@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import type { User } from "@k2b/cloud/contracts";
-import { accounts, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
+import { accounts, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
 import { resolveOAuthJwksUrl } from "@k2b/cloud/services/identity/runtime-config";
 import * as jose from "jose";
 import { DYNAMIC_CLIENT_SCOPES, type OAuthClient, type OAuthScope } from "@/contracts";
@@ -321,7 +321,8 @@ export const createClientCredentialsToken = async (params: {
   if (!serviceAccount || serviceAccount.status !== "active") throw new InvalidOAuthServiceAccountError();
   const resourceBound =
     serviceAccount.kind === "resource_bound" && serviceAccount.appId && serviceAccount.resourceType && serviceAccount.resourceId;
-  if (!resourceBound && !isStandaloneServiceAccountKind(serviceAccount.kind)) throw new InvalidOAuthServiceAccountError();
+  if (!resourceBound && !(serviceAccount.kind === "standalone" || serviceAccount.kind === "agent"))
+    throw new InvalidOAuthServiceAccountError();
 
   const requestedScopes = resolveRequestedScopes(client, scope);
   const expiresIn = ACCESS_TOKEN_LIFETIME_SECONDS;

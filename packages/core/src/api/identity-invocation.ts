@@ -9,6 +9,7 @@ import {
   CAPABILITY_MAX_REQUEST_BYTES,
   CapabilityAppIdSchema,
   CapabilityIdempotencyKeySchema,
+  CapabilityInvocationBodySchema,
   CapabilityLocalIdSchema,
 } from "@k2b/cloud/contracts";
 import { type AuthenticatedWorkload, authenticateWorkloadCredential, isAppRequestProof } from "@k2b/cloud/services/identity";
@@ -40,7 +41,7 @@ const InvocationRequestSchema = z
     kind: z.enum(["query", "action"]),
     targetApp: CapabilityAppIdSchema,
     capabilityId: CapabilityLocalIdSchema,
-    input: z.unknown(),
+    ...CapabilityInvocationBodySchema.shape,
     mandateId: z.string().uuid().optional(),
     mandateRevision: z.number().int().positive().optional(),
     idempotencyKey: CapabilityIdempotencyKeySchema.optional(),
@@ -145,6 +146,8 @@ export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationB
         appId: input.targetApp,
         capabilityId: input.capabilityId,
         input: input.input,
+        target: input.target,
+        refs: input.refs,
         appCaller: input.appCaller && workload.keyId ? { appId: workload.appId, keyId: workload.keyId } : undefined,
         workload: input.appCaller || input.mandateId ? undefined : workload,
         mandate:

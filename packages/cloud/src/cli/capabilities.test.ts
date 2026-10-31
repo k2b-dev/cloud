@@ -449,3 +449,43 @@ test("resolve reports the same failure for inaccessible resources without echoin
   );
   await expect(capabilitiesCliModule.run(ctx)).rejects.toThrow("Resource not found.");
 });
+
+for (const kind of ["query", "action", "review"] as const) {
+  test(`CLI ${kind} forwards resource coordinates beside domain input`, async () => {
+    const target = { type: "demo.book", id: "source" };
+    const refs = { destination: { type: "demo.book", id: "destination" } };
+    const requests: unknown[] = [];
+    const { ctx } = createContext(
+      [kind, "demo", "move"],
+      {
+        input: '{"contactId":"contact"}',
+        target: JSON.stringify(target),
+        refs: JSON.stringify(refs),
+        ...(kind === "action" ? { "idempotency-key": "move-1" } : {}),
+      },
+      async (path, init) => {
+        requests.push({ path, body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get("idempotency-key") });
+        return Response.json(kind === "review" ? { message: "Move contact?" } : { data: {} });
+      },
+    );
+    await capabilitiesCliModule.run(ctx);
+    expect(requests).toEqual([
+      {
+        path: `/api/capabilities/v1/${kind === "query" ? "queries" : "actions"}/demo/move${kind === "review" ? "/review" : ""}`,
+        body: { input: { contactId: "contact" }, target, refs },
+        key: kind === "action" ? "move-1" : null,
+      },
+    ]);
+  });
+}
+
+for (const flag of ["target", "refs"] as const) {
+  test(`CLI identifies invalid --${flag} JSON without sending a request`, async () => {
+    for (const value of ["{", "[]", '"wrong"']) {
+      const { ctx } = createContext(["query", "demo", "move"], { input: "{}", [flag]: value }, async () => {
+        throw new Error("Must not send invalid coordinates");
+      });
+      await expect(capabilitiesCliModule.run(ctx)).rejects.toThrow(`--${flag} must be`);
+    }
+  });
+}

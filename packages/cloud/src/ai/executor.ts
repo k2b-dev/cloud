@@ -2,6 +2,7 @@ import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop,
 import { compact, nessi } from "@k2b/nessi";
 import { capabilityReviewRememberScope } from "../_internal/capability-reviews";
 import { getCapability, listCapabilities } from "../_internal/registry";
+import { capabilityCallFromTool } from "../capabilities/calls";
 import type { CapabilityActionReviewData } from "../contracts/capabilities";
 import { CapabilityActionReviewDataSchema, capabilityActionPolicy } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
@@ -25,7 +26,13 @@ import {
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
 import { authorizeBackgroundActionWith } from "./background-review";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
-import { type AiCapabilityCatalogEntry, buildAiCapabilityCatalog, createAiToolResolver, createRunToolStore } from "./capabilities";
+import {
+  type AiCapabilityCatalogEntry,
+  aiCapabilityArguments,
+  buildAiCapabilityCatalog,
+  createAiToolResolver,
+  createRunToolStore,
+} from "./capabilities";
 import {
   AiCapabilityExecutionError,
   aiCapabilityCheckResult,
@@ -1076,6 +1083,7 @@ export class AiTurnExecutor {
     const linkedApprovals = new Map<string, string>();
     const freshApprovalRequired = new Set<string>();
     const capabilityActionReviews = new Map<string, CapabilityActionReviewData>();
+    const capabilityOperations = new Map<string, AiCapabilityCatalogEntry>();
     const storedReviews = new Map<string, AiStoredActionReview>();
     const dynamicToolRuntimeContext = {
       turnId,
@@ -1101,7 +1109,7 @@ export class AiTurnExecutor {
         const pending = await aiConversations.getPendingTurnAction({ conversationId, turnId, callId: approvalCallId });
         if (!pending?.approvalId) return "approved";
         const result = await approvals.consume(pending.approvalId, {
-          input,
+          input: capabilityApprovalArgs(capabilityOperations.get(pending.name), input),
           review: approvalReviewForCallId(capabilityActionReviews, approvalCallId) ?? null,
           requester: { kind: "assistant_turn", ref: `${turnId}/${approvalCallId}` },
         });
@@ -1300,8 +1308,9 @@ export class AiTurnExecutor {
           maxLoadedTools: resolved.profile.maxLoadedTools,
           ...(capabilityAuthority
             ? {
-                review: (entry, args, context) =>
-                  reviewAiCapability({
+                review: (entry, args, context) => {
+                  capabilityOperations.set(entry.name, entry);
+                  return reviewAiCapability({
                     conversationId,
                     authority: capabilityAuthority!,
                     mandate: config.mandate,
@@ -1309,7 +1318,8 @@ export class AiTurnExecutor {
                     entry,
                     args,
                     context,
-                  }),
+                  });
+                },
               }
             : {}),
           authorizeBackground: authorizeBackgroundMandate
@@ -1702,6 +1712,7 @@ export class AiTurnExecutor {
       allowRememberedApprovals: aiTurnAllowsRememberedApprovals(config),
       rememberableCapabilityApprovals,
       capabilityActionReviews,
+      capabilityOperations,
       approvalTargets,
       linkedApprovals,
       freshApprovalRequired,
@@ -1775,6 +1786,7 @@ export class AiTurnExecutor {
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: Map<string, CapabilityActionReviewData>;
+    capabilityOperations?: ReadonlyMap<string, AiCapabilityCatalogEntry>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
@@ -1828,6 +1840,7 @@ export class AiTurnExecutor {
             allowRememberedApprovals,
             rememberableCapabilityApprovals,
             capabilityActionReviews,
+            capabilityOperations: input.capabilityOperations,
             approvalTargets,
             linkedApprovals: input.linkedApprovals,
             freshApprovalRequired: input.freshApprovalRequired,
@@ -1961,6 +1974,7 @@ export class AiTurnExecutor {
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: Map<string, CapabilityActionReviewData>;
+    capabilityOperations?: ReadonlyMap<string, AiCapabilityCatalogEntry>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
@@ -2092,7 +2106,7 @@ export class AiTurnExecutor {
           assurance: approvalAssurance(target !== undefined || capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy)),
           sentence: event.message ?? toolName,
           review,
-          input: event.args,
+          input: capabilityApprovalArgs(input.capabilityOperations?.get(toolName), event.args),
           expiresInMs: AI_ACTION_BUDGET_MS,
         });
         if (!record.ok) throw new Error("This approval was already decided or has expired.");
@@ -2610,4 +2624,12 @@ export const __aiExecutorTest = {
   rebuildAttemptBaseline,
   rebuildBlocksFromMessages,
   toolRoundState,
+  capabilityApprovalArgs,
 };
+
+/** Uses the operation already loaded for this call; approvals never add a registry dependency. */
+function capabilityApprovalArgs(entry: AiCapabilityCatalogEntry | undefined, args: unknown): unknown {
+  return entry && (entry.operation.target !== undefined || entry.operation.refs !== undefined)
+    ? capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args))
+    : args;
+}
