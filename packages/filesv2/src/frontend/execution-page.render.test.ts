@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { LayoutBreadcrumb } from "@k2b/cloud/ssr/layout-runtime";
+import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { session } from "@k2b/cloud/services";
 import { LocaleProvider } from "@k2b/ui";
@@ -44,14 +46,18 @@ const pageSsr = Object.assign(renderPage, {
   },
 });
 mock.module("../config", () => ({ ssr: pageSsr }));
+/** The title array the page last gave the shell. */
+let layoutTitle: LayoutBreadcrumb[] | string | undefined;
 mock.module("@k2b/cloud/ssr", () => ({
-  Layout: (props: { c: Context<AuthContext>; children: JSX.Element }) =>
-    createComponent(LocaleProvider, {
+  Layout: (props: { c: Context<AuthContext>; title?: LayoutBreadcrumb[] | string; children: JSX.Element }) => {
+    layoutTitle = props.title;
+    return createComponent(LocaleProvider, {
       locale: getLocale(props.c),
       get children() {
         return props.children;
       },
-    }),
+    });
+  },
 }));
 const unused: Handler = (c) => c.text("Unrelated page");
 mock.module("./page", () => ({ default: [unused] }));
@@ -100,6 +106,14 @@ afterEach(() => {
 });
 
 describe("Files execution page guards and SSR", () => {
+  test("the record leads up to Activity, its only way back", async () => {
+    expect((await request()).status).toBe(200);
+    expect(derivePageTrail(layoutTitle, "/app/filesv2", "Files", executionUrl(id))).toEqual({
+      title: "Execution in Files",
+      ancestors: [{ title: "Activity", href: "/app/filesv2?view=activity" }],
+    });
+  });
+
   test("expired and guest credentials stop before the activity reader", async () => {
     expect((await request(undefined, "expired")).status).toBe(302);
     expect((await request(undefined, "guest")).status).toBe(403);
