@@ -52,6 +52,7 @@ export const readAiSettingsState = async (): Promise<AiSettingsState> => {
 };
 export const matchesAiModelPolicy = (profile: AiModelProfile, policy: AiModelPolicy): boolean =>
   profile.enabled &&
+  profile.capabilities.includes("live-transcription") === Boolean(policy.requiredCapabilities?.includes("live-transcription")) &&
   profile.capabilities.includes("transcription") === Boolean(policy.requiredCapabilities?.includes("transcription")) &&
   (!("allowedModelIds" in policy) || !policy.allowedModelIds || policy.allowedModelIds.includes(profile.id)) &&
   (!policy.allowedDataBoundaries || policy.allowedDataBoundaries.includes(profile.dataBoundary)) &&

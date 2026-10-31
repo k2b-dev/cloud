@@ -1,3 +1,4 @@
+import type { AiProviderType } from "@k2b/cloud/shared";
 import { Button, IconButton, useLocale } from "@k2b/ui";
 import { onMount } from "solid-js";
 import { aiAreaMessages } from "./messages";
@@ -8,6 +9,7 @@ export default function AiAreaActions(props: {
   kind: "add-provider" | "add-models";
   variant?: "row" | "button" | "icon";
   providerId?: string;
+  providerType?: AiProviderType;
   providerLabel?: string;
   existing?: string[];
 }) {
@@ -16,7 +18,12 @@ export default function AiAreaActions(props: {
   const open = () =>
     props.kind === "add-provider"
       ? openAddProvider()
-      : openAddModels({ providerId: props.providerId ?? "", providerLabel: props.providerLabel ?? "", existing: props.existing ?? [] });
+      : openAddModels({
+          providerType: props.providerType,
+          providerId: props.providerId ?? "",
+          providerLabel: props.providerLabel ?? "",
+          existing: props.existing ?? [],
+        });
   onMount(() => {
     if (props.kind !== "add-models" || props.variant !== "button") return;
     const params = new URLSearchParams(window.location.search);

@@ -503,6 +503,43 @@ export const CORE_SETTINGS = {
     default: false,
     description: "Enable Cloud AI features including personal conversations, Assistant, and app Capabilities.",
   },
+  "ai.live_dictation_concurrency": {
+    kind: "number",
+    integer: true,
+    default: 4,
+    min: 1,
+    max: 1024,
+    label: "Concurrent live dictations",
+    description:
+      "Installation-wide live model capacity. Each session uses one model connection; load-test before increasing (maximum 1024 connections).",
+    presentation: {
+      translations: {
+        de: {
+          label: "Gleichzeitige Live-Diktate",
+          description:
+            "Modellkapazität der Installation. Jede Sitzung belegt eine Modellverbindung; vor Erhöhungen einen Lasttest durchführen (höchstens 1024 Verbindungen).",
+        },
+      },
+    },
+  },
+  "ai.live_dictation_minutes_per_day": {
+    kind: "number",
+    integer: true,
+    default: 60,
+    min: 1,
+    max: 1440,
+    label: "Live dictation minutes per person per day",
+    description: "Resets at the installation's local midnight. At most 1440 minutes (24 hours). Separate from chat allowances.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Live-Diktat-Minuten pro Person und Tag",
+          description:
+            "Zurücksetzen um Mitternacht in der Zeitzone der Installation. Höchstens 1440 Minuten (24 Stunden). Unabhängig vom Chatkontingent.",
+        },
+      },
+    },
+  },
   "ai.enrich_cron": {
     kind: "cron",
     label: "Chat Enrichment Schedule",
