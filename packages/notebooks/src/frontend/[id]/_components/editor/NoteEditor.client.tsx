@@ -2,7 +2,6 @@ import { autocompletion } from "@codemirror/autocomplete";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
-import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { createEditor } from "@k2b/editor";
 import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
@@ -65,7 +64,6 @@ import {
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
-  PRESENCE_EVENT,
   PRESENCE_LOCATIONS_EVENT,
   RECONNECT_EVENT,
   RICH_MODE_CHANGED_EVENT,
@@ -773,8 +771,6 @@ function EditorInstance(
       if (!props.readOnly) window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail }));
     },
   });
-  // Who is here, as the server last said; the presence snapshot arrives once per connection.
-  let participants: NotebookPresenceParticipant[] = [];
   const provider = props.readOnly
     ? null
     : yjs.createYjsProvider({
@@ -799,12 +795,6 @@ function EditorInstance(
           syncState.ready();
           syncEnded.ready();
           structureChanged();
-        },
-        // Forwards every presence update to the detail panel via a window event. The last list stays here, so a panel
-        // that mounts after the snapshot still shows who is here.
-        onPresenceChange: (next) => {
-          participants = next;
-          window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: next }));
         },
         onFatal: (error) => {
           syncState.end();
@@ -899,10 +889,7 @@ function EditorInstance(
   );
   // A panel that mounts after the editor asks once for everything it mirrors, the text mode included.
   const onSyncStateRequest = () => {
-    if (provider) {
-      syncState.request();
-      window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: participants }));
-    }
+    if (provider) syncState.request();
     window.dispatchEvent(new CustomEvent(RICH_MODE_CHANGED_EVENT, { detail: { isRich: richMode() } }));
     lastActiveHeading = undefined;
     forcePresence = true;
