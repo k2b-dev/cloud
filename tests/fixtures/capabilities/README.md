@@ -28,3 +28,12 @@ The Weather geo migration removes only `city.search` from its baseline. Call
 Core `address.autocomplete` with `type: "city"` and pass the selected coordinates
 to Weather. The remaining evolution checks stay active. See the
 [Weather migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#weather-city-search-uses-core-geo).
+
+The coordinated Code target migration intentionally moves Spaces and Contacts
+resource Actions to fixed `space` and `book` targets. Creation inputs omit
+`spaceId` or `bookId`; `contact.move` supplies its destination through
+`refs.targetBookId`. The three Spaces calendar Actions with Mail draft effects
+also declare `code: false`. Only these input fields, target/ref declarations,
+Code availability, and their hashes change in these baselines; result contracts,
+query inputs, idempotency inventory, and future evolution checks remain active.
+See the [Spaces and Contacts migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#spaces-and-contacts-actions-name-their-container).
