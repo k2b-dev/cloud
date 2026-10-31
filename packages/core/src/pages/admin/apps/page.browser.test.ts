@@ -206,6 +206,8 @@ test("key states: a running app without a key says it still starts with its envi
   await page.waitForSelector('body[data-ready="true"]');
   await page.locator("[data-key-create]").waitFor();
   expect(new URL(page.url()).search).toBe("?app=files&view=keys");
+  // The way out opens exactly one dialog.
+  expect(await page.locator("[data-key-create]").count()).toBe(1);
   expect(await page.locator('[data-keys="files"]').innerText()).toContain(
     "Bis dahin startet Dateien mit den Zugängen aus der eigenen Env.",
   );

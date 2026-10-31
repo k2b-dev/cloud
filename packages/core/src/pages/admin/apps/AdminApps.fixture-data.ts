@@ -40,6 +40,8 @@ const base = (input: Partial<AppInput> & Pick<AppInput, "id" | "name" | "icon" |
   accessKind: "signedIn",
   access: null,
   keys: { active: 1, expired: 0, revoked: 0, lastUsedAt: ago(3), accountStatus: "active" },
+  keysSupported: true,
+  keysKnown: true,
   failedDeliveries: 0,
   runtimeIssues: [],
   missingRoutes: [],

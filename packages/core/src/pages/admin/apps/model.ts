@@ -73,6 +73,10 @@ export type AppInput = {
   accessKind: "grants" | "signedIn" | "noGuests" | "roles" | "resources" | "legacy" | null;
   access: { people: number; groups: number; serviceAccounts: number; managers: number } | null;
   keys: { active: number; expired: number; revoked: number; lastUsedAt: string | null; accountStatus: "active" | "disabled" | null };
+  /** False for platform services that can have no app key (Core, Gateway). */
+  keysSupported: boolean;
+  /** False when Core's facts could not be read: zero counts then mean "unknown", never "no key". */
+  keysKnown: boolean;
   failedDeliveries: number;
   /** A rejected registry entry or a runtime incompatibility of this app. */
   runtimeIssues: ReadonlyArray<{ severity: "warn" | "error"; message: string }>;
@@ -117,11 +121,13 @@ export function deriveApp(input: AppInput): AppEntry {
   if (rate !== null && rate >= ERROR_RATE_WARN) hints.push({ kind: "errorRate", rate });
   if (input.failedDeliveries > 0) hints.push({ kind: "failedDeliveries", count: input.failedDeliveries });
   if (input.live) for (const route of input.missingRoutes) hints.push({ kind: "routeMissing", ...route });
-  if (input.keys.active === 0 && input.keys.revoked + input.keys.expired > 0) hints.push({ kind: "keyRevoked" });
-  // A running app without any key still starts with the connections in its own environment; it should move to a key.
-  if (input.live && input.keys.active + input.keys.revoked + input.keys.expired === 0) hints.push({ kind: "envStart" });
-  // Two active keys mean a rotation: the old one goes once no instance uses it.
-  if (input.keys.active >= 2) hints.push({ kind: "rotation" });
+  if (input.keysSupported && input.keysKnown) {
+    if (input.keys.active === 0 && input.keys.revoked + input.keys.expired > 0) hints.push({ kind: "keyRevoked" });
+    // A running app without any key still starts with the connections in its own environment; it should move to a key.
+    if (input.live && input.keys.active + input.keys.revoked + input.keys.expired === 0) hints.push({ kind: "envStart" });
+    // Two active keys mean a rotation: the old one goes once no instance uses it.
+    if (input.keys.active >= 2) hints.push({ kind: "rotation" });
+  }
   if (input.live && input.accessKind === "grants" && input.access && input.access.managers === 0) hints.push({ kind: "accessUnmanaged" });
   const status: AppStatusKind = neverStarted
     ? "idle"

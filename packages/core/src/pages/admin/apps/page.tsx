@@ -57,6 +57,8 @@ const unknownApp = (id: string): AppInput => ({
   accessKind: null,
   access: null,
   keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
+  keysSupported: true,
+  keysKnown: true,
   failedDeliveries: 0,
   runtimeIssues: [],
   missingRoutes: [],
@@ -194,6 +196,8 @@ export default ssr<AuthContext>(async (c) => {
         accessKind: (app?.access?.kind as AppInput["accessKind"]) ?? null,
         access: fact?.access ?? null,
         keys: fact ? { ...fact.keys } : { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
+        keysSupported: !RESERVED_KEYS.has(entry.id),
+        keysKnown: Boolean(fact),
         failedDeliveries: fact?.events.failedDeliveries ?? 0,
         runtimeIssues: [
           ...(issue ? [{ severity: "error" as const, message: issue.reason }] : []),

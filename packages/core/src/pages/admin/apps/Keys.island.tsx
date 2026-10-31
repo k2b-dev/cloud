@@ -48,9 +48,9 @@ export default function Keys(props: KeysProps) {
   const locale = useLocale();
   const t = () => keysMessages.resolve([locale()]).t;
   const context = () => ({ locale: locale(), timeZone: props.timeZone });
-  // Without a valid key, the revoked ones explain why; they start open.
+  // Without a valid key, the revoked and expired ones explain why; revoked ones start open.
   const [showRevoked, setShowRevoked] = createSignal(
-    Boolean(props.initialKeys?.length) && (props.initialKeys ?? []).every((key) => key.status === "revoked"),
+    Boolean(props.initialKeys?.length) && !(props.initialKeys ?? []).some((key) => key.status === "active"),
   );
   const [showTokens, setShowTokens] = createSignal(false);
   const [tokenPage, setTokenPage] = createSignal(1);
@@ -271,12 +271,17 @@ export default function Keys(props: KeysProps) {
               {t().rotation}
             </p>
           </Show>
+          <Show when={active().length === 0 && list().length > 0}>
+            <p class="mx-2.5 my-1 text-[13.5px] text-dimmed">{t().noneActive}</p>
+          </Show>
           <Show
             when={current().length > 0}
             fallback={
-              <p class="mx-2.5 my-1 text-[13.5px] text-dimmed">
-                {revoked().length > 0 ? t().noneActive : props.neverStarted ? t().emptyNew : t().emptyEnv({ name: props.app.name })}
-              </p>
+              <Show when={list().length === 0}>
+                <p class="mx-2.5 my-1 text-[13.5px] text-dimmed">
+                  {props.neverStarted ? t().emptyNew : t().emptyEnv({ name: props.app.name })}
+                </p>
+              </Show>
             }
           >
             <div class="flex flex-col gap-0.5">

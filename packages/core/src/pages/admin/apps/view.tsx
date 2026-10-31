@@ -529,6 +529,7 @@ function AppOverview(props: { data: AppsViewData; app: AppPageData; t: AppsPageM
   };
   const keysValue = (): JSX.Element => {
     const keys = entry.keys;
+    if (!entry.keysKnown) return <span class="text-dimmed">{t.notLoaded}</span>;
     if (keys.active > 0)
       return (
         <>
