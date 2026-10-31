@@ -13555,8 +13555,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: var(--k2b-dictation-control);
 }
 
-.k2b-ui .k2b-chat-composer__footer .k2b-dictation-bar {
+.k2b-ui .k2b-chat-composer__footer .k2b-dictation-bar,
+.k2b-ui .k2b-chat-composer__dictation .k2b-dictation-bar {
   --k2b-dictation-control: 1.875rem;
+}
+
+/* In a conversation the bar takes the row above the field, where formatting opens; the field stays put. */
+.k2b-ui .k2b-chat-composer__dictation {
+  display: flex;
+  min-width: 0;
+  padding-bottom: 0.25rem;
 }
 
 .k2b-ui .k2b-dictation-bar__icon[aria-disabled="true"] {

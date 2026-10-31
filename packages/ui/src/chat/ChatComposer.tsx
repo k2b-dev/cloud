@@ -2804,7 +2804,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               {props.error}
             </div>
           </Show>
-          {formatRow()}
+          {/* While dictating, the bar takes the row above the field, as formatting does; the field stays put. */}
+          <Show when={dictating()} fallback={formatRow()}>
+            <div class="k2b-chat-composer__dictation">
+              <DictationBar dictation={liveDictation} />
+            </div>
+          </Show>
           {/* One row: attach, the field with its tools, and Send. */}
           <div class="k2b-chat-composer__row">
             {attachControl()}
@@ -2814,6 +2819,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               <div class="k2b-chat-composer__field-tools">
                 {formatToggle()}
                 {emojiButton()}
+                <Show when={props.dictation}>
+                  <DictationButton dictation={liveDictation} class="k2b-chat-composer__icon-action" cardAnchor={() => shellRef} />
+                </Show>
                 {microphoneControl()}
               </div>
             </div>
