@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { parse } from "yaml";
 import { z } from "zod";
-import { appIds, devServiceName, releaseImages } from "../../../scripts/workspace";
+import { appIds, devServiceName, httpAppIds, releaseImages } from "../../../scripts/workspace";
 
 const Compose = z.object({
   services: z.record(
@@ -22,6 +22,8 @@ const Compose = z.object({
 
 test("runner has an application image and both Compose templates isolate its network and environment", async () => {
   expect(appIds()).toContain("runner");
+  expect(httpAppIds()).not.toContain("runner");
+  expect(httpAppIds()).toContain("core");
   expect(devServiceName("runner")).toBe("runner");
   expect(releaseImages().find((image) => image.appId === "runner")).toEqual({
     image: "cloud-app-runner",

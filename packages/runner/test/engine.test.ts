@@ -2,6 +2,34 @@ import { expect, test } from "bun:test";
 import { WorkerdEngine } from "../src/engine";
 import { config, lease, source } from "./fixtures";
 
+test("killing an attempt during process startup never executes its bundle", async () => {
+  const engine = new WorkerdEngine();
+  const calls: string[] = [];
+  const signal = new AbortController().signal;
+  const run = lease();
+  try {
+    await engine.load(
+      run,
+      source,
+      config,
+      async (operation) => {
+        calls.push(operation);
+        return null;
+      },
+      signal,
+    );
+    const pending = engine.run(run, signal);
+    await engine.kill(run.runId);
+    expect(await pending).toBe("failed");
+    expect(calls).toEqual([]);
+    const next = lease({ runId: "after-startup-cancellation" });
+    await engine.load(next, source, config, async () => null, signal);
+    expect(await engine.run(next, signal)).toBe("succeeded");
+  } finally {
+    await engine.close();
+  }
+});
+
 // Deadlines belong to Runner; engine fixtures use fixed instants and no random output expectations.
 test("pinned workerd loads a fresh worker and exposes only cloud.call", async () => {
   const engine = new WorkerdEngine();

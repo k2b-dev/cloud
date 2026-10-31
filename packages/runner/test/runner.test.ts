@@ -184,3 +184,33 @@ test("a fenced heartbeat immediately ends its attempt before the previous lease 
     jest.useRealTimers();
   }
 });
+
+test("a fenced bundle download reports lease_lost without executing code", async () => {
+  const { RunnerLeaseLostError } = await import("@k2b/cloud/code/runner");
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([lease()]);
+  mock.bridge.bundle = async () => {
+    throw new RunnerLeaseLostError();
+  };
+  let executed = false;
+  const runner = new Runner(mock.bridge, {
+    load: async () => {
+      executed = true;
+    },
+    run: async () => "succeeded",
+    kill: async () => {},
+    close: async () => {},
+  });
+  const running = runner.start();
+  try {
+    await waitFor(() => mock.completions.length > 0);
+    runner.stop();
+    await running;
+    expect(mock.completions[0]?.outcome).toBe("lease_lost");
+    expect(executed).toBe(false);
+  } finally {
+    runner.stop();
+    await running;
+    jest.useRealTimers();
+  }
+});

@@ -54,6 +54,11 @@ The development template reads `./.local/app-keys/runner.key`; production reads
 infrastructure environment, or persistent volume. Temporary workerd host
 configuration lives in a bounded `/tmp` tmpfs; bundles never go to disk.
 
+Before upgrading an existing production deployment, enroll and mount the
+runner key. Production starts the runner by default; Compose cannot create
+it when the secret file is missing. Until Core's Code bridge is installed,
+the runner retries configuration and accepts no work.
+
 The image pins workerd to `1.20261028.1` and runs as an unprivileged user. Its
 Compose cgroup memory budget is 1 GiB with 256 process slots. These are host
 resource allocations, not Code execution settings. Budget replicas accordingly.

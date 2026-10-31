@@ -37,6 +37,9 @@ export const appIds = (root = workspaceRoot): string[] => {
   return [...ordered, ...ids.filter((id) => !ordered.includes(id)).toSorted()];
 };
 
+/** Applications with an HTTP entrypoint; runner is an outbound-only lease consumer. */
+export const httpAppIds = (root = workspaceRoot): string[] => appIds(root).filter((id) => id !== "runner");
+
 /** GHCR image name (without registry and owner) for an application id. */
 export const imageName = (appId: string): string => (appId === "gateway" || appId === "core" ? `cloud-${appId}` : `cloud-app-${appId}`);
 
@@ -59,12 +62,7 @@ export const releaseImages = (): ReleaseImage[] => [
 if (import.meta.main) {
   const command = Bun.argv[2];
   if (command === "apps") console.log(appIds().join("\n"));
-  else if (command === "http-apps")
-    console.log(
-      appIds()
-        .filter((id) => id !== "runner")
-        .join("\n"),
-    );
+  else if (command === "http-apps") console.log(httpAppIds().join("\n"));
   else if (command === "images") console.log(JSON.stringify(releaseImages()));
   else {
     console.error("usage: bun scripts/workspace.ts <apps|http-apps|images>");

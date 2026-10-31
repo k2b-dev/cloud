@@ -161,7 +161,8 @@ export class Runner {
       controller.signal.throwIfAborted();
       const result = await this.engine.run(lease, controller.signal);
       if (!controller.signal.aborted) outcome = result;
-    } catch {
+    } catch (error) {
+      if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) outcome = "lease_lost";
       /* A failed attempt is recorded without bundle exceptions or payloads. */
     } finally {
       clearTimeout(deadline);

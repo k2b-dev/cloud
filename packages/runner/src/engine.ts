@@ -233,6 +233,10 @@ const config :Workerd.Config = (
     if (group.closing) {
       return this.run(lease, signal);
     }
+    if (this.#loaded.get(lease.runId) !== loaded || signal.aborted) {
+      if (group.runs.size === 0) await this.#terminate(group, "failed");
+      return "failed";
+    }
     loaded.group = group;
     group.runs.add(lease.runId);
     try {
