@@ -235,12 +235,11 @@ suiteFor(
         idempotencyKey: "agent-source-create",
       };
       const agentSource = await pulseCapabilities.actions["source.create"].run(
-        { baseId: base.shortId, name: "Agent collector", kind: "http_ingest" },
+        { name: "Agent collector", kind: "http_ingest" },
         agentContext,
       );
       if (!agentSource.ok) throw new Error(agentSource.error.message);
       const agentInput = {
-        baseId: base.shortId,
         sourceId: agentSource.data.data.id,
         expectedRevision: 1,
         batch: { events: [{ kind: "agent_proof", ts: "2026-10-20T11:00:00Z" }] },
