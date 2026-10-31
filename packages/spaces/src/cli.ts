@@ -671,8 +671,8 @@ function spacesCommands(locale?: string) {
         flags: {
           column: flag.string({
             description: t({
-              en: "Column ID or exact name (default: first column)",
-              de: "Spalten-ID oder exakter Name (Standard: erste Spalte)",
+              en: "Column ID or exact name (default: first open column)",
+              de: "Spalten-ID oder exakter Name (Standard: erste offene Spalte)",
             }),
           }),
           ...itemFieldFlags,
@@ -719,8 +719,9 @@ function spacesCommands(locale?: string) {
           const description = await readText(flags.description, flags.from, "description");
           const container = address.kind === "path" ? address.container : address.ref;
           const space = await loadSpace(ctx, (await resolveSpace(ctx, `${container}:`)).id);
-          const columnId = flags.column ? resolveColumnId(space, flags.column) : space.columns[0]?.id;
-          if (!columnId) throw new Error(t({ en: `${space.name} has no column.`, de: `${space.name} hat keine Spalte.` }));
+          // Same default as spaces.task.create: the first column in board order that is not marked done.
+          const columnId = flags.column ? resolveColumnId(space, flags.column) : space.columns.find((column) => !column.isDone)?.id;
+          if (!columnId) throw new Error(t({ en: `${space.name} has no open column.`, de: `${space.name} hat keine offene Spalte.` }));
           const explicit = {
             title: title || undefined,
             description,

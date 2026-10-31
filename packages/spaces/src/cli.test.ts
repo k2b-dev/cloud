@@ -472,6 +472,21 @@ describe("changes", () => {
     }
   });
 
+  test("add without --column uses the first open column, like spaces.task.create", async () => {
+    const [first, second] = spaceDetail.columns;
+    try {
+      first!.isDone = true;
+      expect(writes((await run(["add", "Roadmap:Write notes"])).requests)[0]?.body).toMatchObject({ columnId: "Col002" });
+      second!.isDone = true;
+      const refused = await failing(["add", "Roadmap:Write notes"]);
+      expect(refused.stderr).toContain("Roadmap has no open column.");
+      expect(writes(refused.requests)).toEqual([]);
+    } finally {
+      first!.isDone = false;
+      second!.isDone = false;
+    }
+  });
+
   test("preserves real inline line breaks and literal file content", async () => {
     const description = "Caption:\nText";
     const added = await run(["add", "Roadmap:Write notes", "--description", description]);

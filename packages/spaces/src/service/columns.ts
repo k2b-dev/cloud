@@ -46,6 +46,20 @@ const selectColumns = async (db: typeof sql, spaceId: string): Promise<SpaceColu
 export const list = (params: { spaceId: string }): Promise<SpaceColumn[]> => selectColumns(sql, params.spaceId);
 
 /**
+ * The column a new task lands in when the caller names none: the first column that is not done, in board order.
+ */
+export const firstOpen = async (params: { spaceId: string }): Promise<SpaceColumn | null> => {
+  const [row] = await sql<DbColumn[]>`
+    SELECT id, space_id, name, color, rank::text AS rank, is_done, created_at
+    FROM spaces.columns
+    WHERE space_id = ${params.spaceId} AND NOT is_done
+    ORDER BY rank, id
+    LIMIT 1
+  `;
+  return row ? mapToColumn(row) : null;
+};
+
+/**
  * Get a column by ID
  */
 export const get = async (params: { id: string }): Promise<SpaceColumn | null> => {

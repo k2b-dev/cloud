@@ -214,6 +214,8 @@ test("capability assignee directories and compact entries preserve principal kin
 test("task capability deadline schemas accept both forms and remain JSON Schema compatible", () => {
   expect("deadlineAllDay" in TemplateDataSchema.shape).toBeFalse();
   for (const deadline of ["2026-10-24", "2024-02-29", "2026-10-24T17:00:00+02:00"]) {
+    // Without a column the service chooses the first open one, so callers need no Read space first.
+    expect(TaskCreateInputSchema.parse({ spaceId: "Spc001", title: "Task" }).columnId).toBeUndefined();
     expect(TaskCreateInputSchema.parse({ spaceId: "Spc001", columnId: "Col001", title: "Task", deadline }).deadline).toBe(deadline);
     expect(TaskUpdateInputSchema.parse({ itemId: "Itm001", deadline }).deadline).toBe(deadline);
     expect(TaskDataSchema.shape.deadline.parse(deadline)).toBe(deadline);
