@@ -22,6 +22,7 @@ const ids = {
   folder: "00000000-0000-4000-8000-000000000006",
   childFolder: "00000000-0000-4000-8000-000000000007",
   signature: "00000000-0000-4000-8000-000000000008",
+  message: "00000000-0000-4000-8000-000000000009",
 };
 const shorts = new Map([
   [ids.mailbox, "Box001"],
@@ -32,6 +33,7 @@ const shorts = new Map([
   [ids.folder, "Fold01"],
   [ids.childFolder, "Fold02"],
   [ids.signature, "Sign01"],
+  [ids.message, "Msg001"],
 ]);
 const loadIds = async (_table: string, values: Array<string | null | undefined>) =>
   new Map(values.flatMap((id) => (id && shorts.has(id) ? [[id, shorts.get(id)!] as const] : [])));
@@ -155,6 +157,8 @@ describe("Mail SSR public boundary", () => {
           activeFolderIds: [],
           unreadFolderIds: [],
           localTags: [],
+          imageAttachments: [{ messageId: ids.message, attachmentId: ids.attachment }],
+          imageAttachmentCount: 1,
         },
       ],
       detailMessages: [],
@@ -182,7 +186,12 @@ describe("Mail SSR public boundary", () => {
     expect(projected.selectedConversationId).toBe("Conv01");
     // A subfolder names the parent whose display it inherits by the same public ID as its parent.
     expect(projected.folders[1]).toMatchObject({ id: "Fold02", parentId: "Fold01", displayInheritedFromFolderId: "Fold01" });
-    expect(projected.listItems[0]).toMatchObject({ id: "Conv01", conversationId: "Conv01" });
+    expect(projected.listItems[0]).toMatchObject({
+      id: "Conv01",
+      conversationId: "Conv01",
+      imageAttachments: [{ messageId: "Msg001", attachmentId: "Attach" }],
+      imageAttachmentCount: 1,
+    });
     expect(projected.activity[0]).toMatchObject({
       conversationId: "Conv01",
       targetId: "Conv01",

@@ -44,6 +44,8 @@ describe("Mail workspace search results", () => {
       id: conversationId,
       conversationId,
       selectionKind: "conversation",
+      imageAttachments: [],
+      imageAttachmentCount: 0,
     });
   });
 

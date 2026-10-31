@@ -1055,6 +1055,18 @@ it changes are lost when Mail is updated again. After the rollout, assign two
 people to a test conversation and check that
 `cld --json mail show <conversation-id>` lists both.
 
+### Mail attachment thumbnails
+
+Mail's attachment thumbnail endpoint uses the existing isolated Linux image
+workers, with two workers per application process and a 15-second preparation
+deadline. The Mail image includes sharp's native dependencies through the shared
+worker build. No additional service, setting, or storage migration is required.
+Source images are limited to 25 MiB; responses fit within 96×96 pixels and 48 KiB.
+Access is checked before reading and again before returning the image. Clients
+cache successful responses privately for seven days. A failed image lookup leaves
+list rows available; a failed thumbnail request returns an error for the client's
+placeholder.
+
 ### Mail draft signatures
 
 Mail adds the column `mail.drafts.signature_template_id` on its next start. No

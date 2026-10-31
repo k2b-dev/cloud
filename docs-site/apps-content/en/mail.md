@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-22
+updated: 2026-10-31
 ---
 
 # Mail
@@ -748,6 +748,20 @@ their group names, such as `cld mail admin` and `cld mail provider`. Run
 supported attachments in a traced background job. Attachment matches identify
 the file and show a bounded excerpt; an explicit body search excludes
 attachment text, and `--attachment-name` searches only filenames.
+
+Workspace list rows include `imageAttachments` (at most three public message and
+attachment ID pairs) and `imageAttachmentCount`. Conversation rows cover all
+visible messages, newest first, then MIME attachment order, counting repeated
+checksums once. Message rows cover only that message. Qualifying files are JPEG,
+PNG, GIF, or WebP from 4 KiB through 25 MiB; inline parts with a content ID are
+excluded. A failed image lookup leaves the list available with empty image metadata.
+
+`GET /api/mail/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/thumbnail`
+uses the same access check as opening the attachment. It validates the declared
+image type against the bytes and returns a JPEG or PNG fitted within 96×96 pixels
+and 48 KiB. The response is private and immutable for seven days. Invalid images,
+unsupported files, and preparation failures return an error so the client can show
+a placeholder. GIF and WebP thumbnails use the first frame.
 
 Agents and other Cloud clients can inspect one attachment's current extraction
 status and page through already persisted text with the public Mail Capability:

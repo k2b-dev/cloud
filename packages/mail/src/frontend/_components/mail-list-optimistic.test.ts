@@ -16,6 +16,8 @@ const item = (unread: boolean, flagged: boolean, overrides: Partial<MailListItem
   unread,
   activeFolderIds: [],
   flagged,
+  imageAttachments: [],
+  imageAttachmentCount: 0,
   hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
