@@ -484,6 +484,35 @@ describe("mail capabilities", () => {
     expect(tags).not.toHaveBeenCalled();
   });
 
+  test("comment Actions check current access before resolving contained resources", async () => {
+    const denied = fail(err.forbidden("Access denied"));
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    const resource = spyOn(publicResources, "resolveMailboxPublicId");
+    const update = mailCapabilities.actions["conversation.comment.update"];
+    const remove = mailCapabilities.actions["conversation.comment.delete"];
+    const updateInput = update.input.parse({ conversationId, commentId, expectedRevision: 3, body: "Updated comment" });
+    const removeInput = remove.input.parse({ conversationId, commentId, expectedRevision: 3 });
+    for (const call of [
+      () => update.review(updateInput, context),
+      () => update.run(updateInput, context),
+      () => remove.review(removeInput, context),
+      () => remove.run(removeInput, context),
+    ])
+      expect(await call()).toEqual(denied);
+    expect(resource).not.toHaveBeenCalled();
+  });
+
+  test("conversation.related checks current access before resolving its conversation", async () => {
+    const denied = fail(err.forbidden("Access denied"));
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    const resource = spyOn(publicResources, "resolveMailboxPublicId");
+    const related = spyOn(conversationContext, "listRelatedConversations");
+    const query = mailCapabilities.queries["conversation.related"];
+    expect(await query.run(query.input.parse({ conversationId }), context)).toEqual(denied);
+    expect(resource).not.toHaveBeenCalled();
+    expect(related).not.toHaveBeenCalled();
+  });
+
   test.each([undefined, null, "Sign01"])("draft.create resolves the signature choice %j", async (signatureTemplateId) => {
     const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({
       ok: true,

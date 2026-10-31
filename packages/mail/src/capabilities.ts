@@ -1401,12 +1401,16 @@ const queryDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveMailboxScope(mailboxId);
       if (!scope.ok) return scope;
+      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "read");
+      if (!access.ok) return access;
+      const conversation = await resolveMailboxResource("conversations", scope.data.id, input.conversationId);
+      if (!conversation.ok) return conversation;
       const result = await conversationContext.listRelatedConversations({
         context: requestContext(context),
-        mailboxId: scope.data.mailbox.id,
-        conversationId: scope.data.conversationId,
+        mailboxId: scope.data.id,
+        conversationId: conversation.data,
         limit: input.limit,
       });
       if (!result.ok) return result;
@@ -1424,7 +1428,7 @@ const queryDefinitions = {
           latestMessageAt: item.latestMessageAt,
           ...(preview ? { preview } : {}),
           reasons: item.reasons.map((reason) => ({ ...reason, value: truncateText(reason.value, 500).text })),
-          links: [openLink(conversationHref(scope.data.mailbox.shortId, id))],
+          links: [openLink(conversationHref(scope.data.shortId, id))],
         };
       });
       return ok({ data });
@@ -2440,18 +2444,14 @@ const requireCommentForReview = async (
   const target = requireMailboxTarget(context);
   if (!target.ok) return target;
   const mailboxId = target.data;
-  const scope = await resolveConversationScope(mailboxId, input.conversationId);
-  if (!scope.ok) return scope;
-  const [conversation, commentId] = await Promise.all([
-    requireConversationForReview(mailboxId, input.conversationId, context),
-    resolveMailboxResource("comments", scope.data.mailbox.id, input.commentId),
-  ]);
+  const conversation = await requireConversationForReview(mailboxId, input.conversationId, context);
   if (!conversation.ok) return conversation;
+  const commentId = await resolveMailboxResource("comments", conversation.data.mailboxInternalId, input.commentId);
   if (!commentId.ok) return commentId;
   const comment = await collaboration.getConversationComment({
     context: requestContext(context),
-    mailboxId: scope.data.mailbox.id,
-    conversationId: scope.data.conversationId,
+    mailboxId: conversation.data.mailboxInternalId,
+    conversationId: conversation.data.conversationInternalId,
     commentId: commentId.data,
   });
   if (!comment.ok) return comment;
