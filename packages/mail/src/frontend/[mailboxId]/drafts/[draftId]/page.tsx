@@ -4,7 +4,7 @@ import { MarkdownView } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { ssr } from "../../../../config";
 import type { MailAddress } from "../../../../contracts";
-import { drafts } from "../../../../service";
+import { drafts, mailboxes } from "../../../../service";
 import { loadSendReviewContent } from "../../../../service/capability-review-readers";
 import { mailConversationUiMessages } from "../../../_components/mail-conversation-ui-messages";
 import { mailPageMessages } from "../../../pages-messages";
@@ -24,7 +24,9 @@ export default ssr<AuthContext>(async (c) => {
   const draftId = await resolveSsrMailboxResourceId("drafts", mailboxId, c.req.param("draftId") ?? "");
   if (!draftId) return ssr.error(c, 404);
   const context = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), requestId: c.req.header("x-request-id") ?? null };
-  const result = await drafts.getDraft(context, mailboxId, draftId);
+  // The way back names the mailbox it leads to; both reads refuse a caller without access to it.
+  const [mailbox, result] = await Promise.all([mailboxes.getMailbox(context, mailboxId), drafts.getDraft(context, mailboxId, draftId)]);
+  if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
   if (!result.ok) return ssr.error(c, result.error.status);
   const draft = result.data;
   const revision = c.req.query("revision");
@@ -57,7 +59,7 @@ export default ssr<AuthContext>(async (c) => {
     <Layout
       c={c}
       printHint={t.printHint}
-      title={[{ title: t.breadcrumbMail, href: `/app/mail/${encodeURIComponent(mailboxShortId)}` }, { title: subject }]}
+      title={[{ title: mailbox.data.name, href: `/app/mail/${encodeURIComponent(mailboxShortId)}` }, { title: subject }]}
     >
       <article class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4">
         {/* The shell's page title already shows the subject. */}
