@@ -60,6 +60,8 @@ const unknownApp = (id: string): AppInput => ({
   keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
   keysSupported: true,
   keysKnown: true,
+  startRejected: null,
+  startsWithEnv: null,
   failedDeliveries: 0,
   runtimeIssues: [],
   missingRoutes: [],
@@ -111,6 +113,12 @@ const missingRoutes = (
       const owner = routed.get(prefix);
       return { prefix, owner: owner ? (names.get(owner) ?? owner) : null };
     });
+};
+
+/** How the live instances started: env as soon as one took its connections from its own environment. */
+const startsWithEnv = (app: AppRegistryDetail | null | undefined): boolean | null => {
+  const modes = (app?.instances ?? []).flatMap((instance) => (instance.bootstrap ? [instance.bootstrap.mode] : []));
+  return modes.length ? modes.includes("env") : null;
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -199,6 +207,8 @@ export default ssr<AuthContext>(async (c) => {
         keys: fact ? { ...fact.keys } : { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
         keysSupported: !RESERVED_KEYS.has(entry.id),
         keysKnown: Boolean(fact),
+        startRejected: fact?.lastRejectedStart ?? null,
+        startsWithEnv: startsWithEnv(app),
         failedDeliveries: fact?.events.failedDeliveries ?? 0,
         runtimeIssues: [
           ...(issue ? [{ severity: "error" as const, message: issue.reason }] : []),
@@ -256,13 +266,16 @@ export default ssr<AuthContext>(async (c) => {
         await readDomains(entry.id).then((read) => (read !== "failed" && read.length === 0 ? null : read));
   // The documentation link is optional: without the setting, hints and the keys column simply omit it.
   const documentationBase = entry ? await coreSettings.get<string>("app.documentation_url").catch(() => undefined) : undefined;
-  const keyList =
+  const keyRead =
     entry && !reservedKeys
       ? await appKeys
           .list({ actor: user, appId: entry.id, page: 1, perPage: 500 })
-          .then((result) => (result.ok ? (result.data.items as KeyEntry[]) : null))
+          .then((result) =>
+            result.ok ? { items: result.data.items as KeyEntry[], lastRejectedStart: result.data.lastRejectedStart } : null,
+          )
           .catch(() => null)
       : null;
+  const keyList = keyRead?.items ?? null;
   const providerFailures = summaries?.failures.map((failure) => failure.provider.name) ?? [];
 
   // Level 3: the column the URL names.
@@ -307,6 +320,7 @@ export default ssr<AuthContext>(async (c) => {
             app: { id: entry.id, name: entry.name },
             neverStarted: entry.neverStarted,
             initialKeys: keyList,
+            initialRejection: keyRead?.lastRejectedStart ?? null,
             people,
             accountStatus: entry.keys.accountStatus,
             tokens: tokens
@@ -432,6 +446,13 @@ export default ssr<AuthContext>(async (c) => {
           entry,
           details,
           revokedKeyName: keyList?.find((key) => key.status === "revoked")?.name ?? null,
+          startKeyReady: keyRead
+            ? keyRead.items.some(
+                (key) =>
+                  key.status === "active" &&
+                  (keyRead.lastRejectedStart?.reason === "disabled" || key.keyId !== keyRead.lastRejectedStart?.keyId),
+              )
+            : null,
           providerFailures,
           keysSupported: !reservedKeys,
           docs: {

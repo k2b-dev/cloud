@@ -4,6 +4,7 @@
  */
 import type { AppDetails } from "@k2b/cloud/contracts";
 import type { AppDomainEntry } from "./domains-model";
+import type { StartRejection } from "./Keys.island";
 import type { KeyEntry } from "./keys-dialogs";
 import type { AppInput, ProviderNumbers } from "./model";
 
@@ -11,6 +12,10 @@ export const FIXTURE_NOW = Date.parse("2026-10-30T14:30:00.000Z");
 const ago = (minutes: number) => new Date(FIXTURE_NOW - minutes * 60_000).toISOString();
 export const ADMIN_ID = "11111111-1111-4111-8111-111111111111";
 const gateway = { appId: "gateway-ops", name: "Gateway" };
+const PULSE_KEY_ID = "44444444-4444-4444-8444-444444444445";
+/** Pulse's refused start three minutes ago, with its revoked key (key mockup v3, "Problem: Start abgelehnt"). */
+export const fixtureRejection = (id: string, reason: StartRejection["reason"] = "revoked"): StartRejection | null =>
+  id === "pulse" ? { at: ago(3), reason, keyId: PULSE_KEY_ID } : null;
 
 const numbers = (requests: number, errors: number, avgMs: number, minutes = 1): ProviderNumbers[] => [
   {
@@ -43,6 +48,8 @@ const base = (input: Partial<AppInput> & Pick<AppInput, "id" | "name" | "icon" |
   keys: { active: 1, expired: 0, revoked: 0, lastUsedAt: ago(3), accountStatus: "active" },
   keysSupported: true,
   keysKnown: true,
+  startRejected: null,
+  startsWithEnv: false,
   failedDeliveries: 0,
   runtimeIssues: [],
   missingRoutes: [],
@@ -72,6 +79,7 @@ export const fixtureApps = (): AppInput[] => [
     accessKind: "resources",
     // Still starts with its environment: running, no key yet.
     keys: { active: 0, expired: 0, revoked: 0, lastUsedAt: null, accountStatus: null },
+    startsWithEnv: true,
     numbers: numbers(13_610, 6, 62),
   }),
   base({
@@ -149,6 +157,8 @@ export const fixtureApps = (): AppInput[] => [
     instances: null,
     lastSeenAt: "2026-10-30T13:02:00.000Z",
     adminHref: null,
+    keys: { active: 0, expired: 0, revoked: 1, lastUsedAt: ago(90), accountStatus: "active" },
+    startRejected: fixtureRejection("pulse"),
     numbers: numbers(0, 0, 0, 88),
   }),
   base({
@@ -314,8 +324,30 @@ const key = (input: Partial<KeyEntry> & Pick<KeyEntry, "keyId" | "name" | "finge
   ...input,
 });
 
+/** Pulse's replacement after the refusal: created, not yet in the deployment. */
+export const fixtureReplacementKey = (): KeyEntry =>
+  key({
+    keyId: "44444444-4444-4444-8444-444444444446",
+    name: "pulse-2026-10",
+    fingerprint: "5b0e9c2d7a1f43e8b6d0c9a2e4f17b38",
+    createdAt: ago(1),
+    lastUsedAt: null,
+  });
+
 export const fixtureKeys = (id: string): KeyEntry[] => {
   if (id === "inventar" || id === "files") return [];
+  if (id === "pulse")
+    return [
+      key({
+        keyId: PULSE_KEY_ID,
+        name: "pulse-prod",
+        fingerprint: "9e214a0c73d5b1186a0e2c4d8f1b3a57",
+        status: "revoked",
+        createdAt: "2026-09-02T09:00:00.000Z",
+        revokedAt: ago(438),
+        lastUsedAt: ago(90),
+      }),
+    ];
   if (id === "notebooks")
     return [
       key({
