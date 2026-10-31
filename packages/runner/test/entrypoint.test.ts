@@ -1,5 +1,5 @@
 import { test as bunTest, expect } from "bun:test";
-import { chmod, lstat, mkdtemp, readFile, rmdir, symlink, unlink } from "node:fs/promises";
+import { chmod, chown, lstat, mkdtemp, readFile, rmdir, symlink, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 // CI executes this bundle as root under the image's startup capability envelope.
@@ -80,6 +80,38 @@ test("entrypoint refuses exposed source directories, symlinks and conflicting ke
     expect(await run(source, "public-conflicting-key")).toContain("runner_key_sources_must_not_both_be_set");
   } finally {
     await unlink(link).catch(() => undefined);
+    await unlink(source);
+    await rmdir(directory);
+  }
+});
+
+test("entrypoint reads an operator-owned 0600 bind secret without changing the source", async () => {
+  const directory = await mkdtemp("/tmp/runner-entrypoint-operator-");
+  const source = join(directory, "source");
+  let copy: string | undefined;
+  try {
+    await chmod(directory, 0o700);
+    await Bun.write(source, "public-operator-key");
+    await chmod(source, 0o600);
+    await chown(source, 12345, 12345);
+    const child = Bun.spawn([entrypoint, "/bin/sh", "-c", 'printf "%s" "$CLOUD_APP_KEY_FILE"'], {
+      env: { CLOUD_APP_KEY_FILE: source },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = await new Response(child.stdout).text();
+    expect(await child.exited).toBe(0);
+    copy = output;
+    expect(await readFile(copy, "utf8")).toBe("public-operator-key");
+    expect((await lstat(copy)).uid).toBe(0);
+    expect((await lstat(copy)).mode & 0o7777).toBe(0o400);
+    expect((await lstat(source)).uid).toBe(12345);
+    expect((await lstat(source)).mode & 0o7777).toBe(0o600);
+  } finally {
+    if (copy) {
+      await unlink(copy);
+      await rmdir(dirname(copy));
+    }
     await unlink(source);
     await rmdir(directory);
   }

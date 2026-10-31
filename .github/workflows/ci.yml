@@ -717,7 +717,10 @@ jobs:
             --security-opt no-new-privileges --memory 1g --pids-limit 256
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777)
           docker run "${runner_limits[@]}" cloud-runner:ci \
-            bun --no-env-file test /app/engine.test.js /app/isolation.test.js /app/shutdown.test.js /app/entrypoint.test.js
+            bun --no-env-file test /app/engine.test.js /app/isolation.test.js /app/shutdown.test.js
+          # This test invokes the entrypoint itself, including its startup-only cap.
+          docker run "${runner_limits[@]}" --entrypoint bun cloud-runner:ci \
+            --no-env-file test /app/entrypoint.test.js
           # Local Compose secrets keep the host user's UID and mode. Exercise that
           # exact mount path, including a 0600 file not owned by container root.
           install -m 0600 packages/runner/test/runner-key.fixture "$RUNNER_TEMP/runner-smoke.key"
