@@ -177,3 +177,7 @@ the bridge and executes its Code directly instead.
 `CodeSdkPhaseDiagnostic` are exported with doc comments for checker, test-kit,
 CLI and chat consumers. The SDK imports no database, broker, storage or
 credential clients.
+
+The [Code checker](/en/docs/platform/code-checker) consumes this generation
+manifest to produce the immutable `CodeVersionManifest`, source locations,
+permission changes, and the runner's ESM bundle.
