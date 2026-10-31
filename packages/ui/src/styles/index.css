@@ -6524,11 +6524,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Filter chips and a grid need room of their own: a popover with a toolbar is
    at least 26rem wide, whatever the trigger's width, and never wider than the
-   viewport. On a phone that makes it a full-width sheet under the field. The
-   taller limit shows five rows of the small grid. */
+   viewport. On a phone that makes it a full-width sheet under the field. Its
+   height is fixed, five rows of the small grid, so filtering or switching a
+   group never resizes it, and a popover placed above its field never moves. */
 .k2b-ui .k2b-choice-popover[data-toolbar="true"] {
   min-width: min(26rem, calc(100vw - 1rem));
-  max-height: min(27rem, calc(100dvh - 1rem));
+  height: min(27rem, calc(100dvh - 1rem));
+  max-height: none;
 }
 
 .k2b-ui .k2b-choice-search {

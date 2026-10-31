@@ -689,6 +689,13 @@ describe("@k2b/ui choice and date browser behavior", () => {
     await Bun.sleep(0);
     expect(calls.at(-1)).toEqual({ query: "ops", group: "group" });
 
+    // A remote filter the person chose survives closing and reopening.
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-choice-trigger")!;
+    trigger.click();
+    trigger.click();
+    await Bun.sleep(0);
+    expect(calls.at(-1)).toEqual({ query: "", group: "group" });
+
     dispose();
     popover.restore();
     dom.cleanup();
@@ -951,7 +958,12 @@ describe("@k2b/ui choice and date browser behavior", () => {
     chip("Media").click();
     expect(optionLabels()).toEqual(["Play"]);
 
-    // A group chosen before searching keeps narrowing the results.
+    // A group chosen before searching keeps narrowing the results, also the
+    // default group clicked on purpose.
+    setSolidInputValue(search, "");
+    chip("Recommended").click();
+    setSolidInputValue(search, "truck");
+    expect(optionLabels()).toEqual([]);
     chip("Food").click();
     setSolidInputValue(search, "piz");
     expect(optionLabels()).toEqual(["Pizza"]);

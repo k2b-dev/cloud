@@ -25,11 +25,15 @@ beforeAll(async () => {
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: (request) =>
-      new Response(
-        `<!doctype html><html lang="${new URL(request.url).searchParams.get("lang") ?? "en"}"><head><title>Icon picker fixture</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><main style="padding:32px"><div id="field" style="width:300px"></div></main></body></html>`,
+    fetch: (request) => {
+      const params = new URL(request.url).searchParams;
+      // `place=end-low` puts the field at the right edge, low in the viewport.
+      const field = params.get("place") === "end-low" ? "width:300px;margin:560px 0 0 auto" : "width:300px";
+      return new Response(
+        `<!doctype html><html lang="${params.get("lang") ?? "en"}"><head><title>Icon picker fixture</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><main style="padding:32px"><div id="field" style="${field}"></div></main></body></html>`,
         { headers: { "content-type": "text/html" } },
-      ),
+      );
+    },
   });
 }, 30_000);
 afterAll(async () => {
@@ -37,11 +41,11 @@ afterAll(async () => {
   await server?.stop(true);
 });
 
-const open = async (lang: "de" | "en", viewport: { width: number; height: number }) => {
+const open = async (lang: "de" | "en", viewport: { width: number; height: number }, place = "start") => {
   const context = await browser.newContext({ viewport, reducedMotion: "reduce" });
   try {
     const page = await context.newPage();
-    await page.goto(new URL(`/?lang=${lang}`, server.url).href);
+    await page.goto(new URL(`/?lang=${lang}&place=${place}`, server.url).href);
     await page.addScriptTag({ content: script });
     await page.getByRole("combobox", { name: "Symbol" }).click();
     await page.locator(".k2b-choice-popover:popover-open").waitFor();
@@ -138,6 +142,27 @@ describe("IconInput picker", () => {
       expect(after.popover.width).toBe(before.popover.width);
       expect(after.search).toEqual(before.search);
       expect(after.groups).toEqual(before.groups);
+    } finally {
+      await close();
+    }
+  });
+
+  test("shifts left at the right edge and keeps its place above a low field while filtering", async () => {
+    const { page, close } = await open("de", { width: 1280, height: 800 }, "end-low");
+    try {
+      const before = await geometry(page);
+      expect(before.trigger.right).toBeGreaterThan(1280 - 48);
+      expect(before.popover.width).toBeGreaterThanOrEqual(416);
+      expect(before.popover.right).toBeLessThanOrEqual(1280 - 8);
+      expect(before.popover.left).toBeLessThan(before.trigger.left);
+      expect(before.popover.bottom).toBeLessThanOrEqual(before.trigger.top);
+
+      await page.getByRole("searchbox").fill("pizza");
+      await settled(page);
+      expect(await labels(page)).toEqual(["Pizza"]);
+      const after = await geometry(page);
+      expect(after.popover).toEqual(before.popover);
+      expect(after.search).toEqual(before.search);
     } finally {
       await close();
     }

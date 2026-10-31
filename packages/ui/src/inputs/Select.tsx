@@ -88,7 +88,7 @@ export function Select(props: SelectProps): JSX.Element {
   const [cache, setCache] = createSignal<Record<string, NormalizedOption>>({});
   const [selectedGroup, setSelectedGroup] = createSignal<string | null>(props.defaultGroup ?? null);
   const [selectedView, setSelectedView] = createSignal<SelectView>(props.defaultView ?? "list");
-  // Whether the person picked the group since opening, rather than seeing the default one.
+  // Whether the person picked the group, rather than seeing the default one.
   let groupChosen = false;
   let searchRef: HTMLInputElement | undefined;
   let optionRefs: HTMLButtonElement[] = [];
@@ -163,8 +163,8 @@ export function Select(props: SelectProps): JSX.Element {
   };
   const move = (direction: 1 | -1) => focus(nextEnabledChoiceIndex(listOptions(), focusedIndex(), direction));
   const chooseGroup = (group: string | null) => {
-    if (group === activeGroup()) return;
     groupChosen = true;
+    if (group === activeGroup()) return;
     setSelectedGroup(group);
     setFocusedIndex(nextEnabledChoiceIndex(listOptions(), -1, 1));
     if (isAsync()) loader.load(query(), true);
@@ -172,8 +172,9 @@ export function Select(props: SelectProps): JSX.Element {
   const open = () => {
     if (props.disabled) return;
     setQuery("");
-    groupChosen = false;
-    setSelectedGroup(props.defaultGroup ?? null);
+    // A static list that only left its default group for a search starts
+    // there again; a group the person picked, or a remote filter, stays.
+    if (!isAsync() && !groupChosen) setSelectedGroup(props.defaultGroup ?? null);
     if (isAsync()) loader.load("", true);
     const selectedIndex = listOptions().findIndex((option) => option.value === (value() ?? CLEAR_VALUE));
     focus(selectedIndex >= 0 ? selectedIndex : nextEnabledChoiceIndex(listOptions(), -1, 1));
