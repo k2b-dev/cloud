@@ -14,7 +14,7 @@ import { readMailWorkspacePreferences } from "../_components/mail-workspace-pref
 import MailWorkspace from "../MailWorkspace.island";
 import { loadMailSidebarData } from "../mail-sidebar-data";
 import { mailPageMessages } from "../pages-messages";
-import { projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
+import { pageReadStatus, projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
@@ -45,7 +45,7 @@ export default ssr<AuthContext>(async (c) => {
     loadMailSidebarData(context),
     coreSettings.get<string>("app.url"),
   ]);
-  if (!internalData.ok) return ssr.error(c, internalData.error.status);
+  if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
   const data = { ...(await projectMailboxPageData(internalData.data)), codeAttention: await codeAttention.settle() };
   const dateConfig = getDateConfig(c);
 

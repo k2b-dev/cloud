@@ -1,5 +1,6 @@
 import { type MailFocusView, mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
-import { activityPublic, publicResources } from "../service";
+import { activityPublic, mailboxAccess, publicResources } from "../service";
+import type { MailRequestContext } from "../service/auth";
 import type { MailAutomationAccessData } from "../service/automation-workspace";
 import type { MailFocusItem as InternalMailFocusItem, MailFocusMailboxCounts } from "../service/focus";
 import type { MailboxCodePageData, MailboxPageData, MailConversationDetailData } from "../service/workspace";
@@ -365,4 +366,15 @@ export const projectComposeData = async <
     if (Array.isArray(draft.attachments)) addResourceList(paths, "draftAttachments", ["draft", "attachments"], draft.attachments);
   }
   return projectSsrPaths(data, paths, loadPublicIds);
+};
+
+/**
+ * The status a Mail page answers when a read fails. A refusal for a caller who cannot read the mailbox answers as for an
+ * unknown address, so no page tells that a mailbox or one of its drafts exists. A refusal for a caller who can read the
+ * mailbox, such as a missing administration permission, stays 403, and every other status stays as it is.
+ */
+export const pageReadStatus = async <S extends number>(context: MailRequestContext, mailboxId: string, status: S): Promise<S | 404> => {
+  if (status !== 403) return status;
+  const readable = await mailboxAccess.requireMailboxAccess(context, mailboxId, "read");
+  return readable.ok ? status : 404;
 };

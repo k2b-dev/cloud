@@ -28,6 +28,7 @@ import {
   APP_WORKSPACE_DETAIL_OPEN_EVENT,
   APP_WORKSPACE_DETAIL_STEP_EVENT,
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
+  APP_WORKSPACE_SIDEBAR_SHOW_EVENT,
   type AppWorkspaceDetailStep,
   installAppWorkspaceController,
 } from "./app-workspace-controller";
@@ -245,6 +246,14 @@ export type AppWorkspaceProps = {
   /** Called with the full layout whenever a resize settles. Persist it here. */
   onLayoutChange?: (state: AppWorkspaceLayoutState) => void;
   /**
+   * `false` draws no head row. The application then shows the page's title itself and gives people the sidebar and
+   * Detail buttons the head would hold: a control with `data-app-workspace-sidebar-toggle` (it opens the overlay
+   * sidebar, and shows or hides a sidebar with `onHiddenChange` where it is a column) and, for each Detail with
+   * `toggle={false}`, a control with `data-app-workspace-detail-toggle` and `aria-controls` set to
+   * `appWorkspaceDetailElementId(id)`. The controller runs both and keeps their `aria-expanded` current.
+   */
+  head?: false;
+  /**
    * Opt out of the built-in controller. Only needed when the application calls
    * `installAppWorkspaceController` itself — installing twice would double up
    * every listener.
@@ -313,6 +322,12 @@ export type AppWorkspaceDetailProps = {
   open: boolean;
   /** Keeps the shared head control reachable while closed; set the app's existing open state synchronously. */
   onOpen?: () => void;
+  /**
+   * `false` draws no Details button of the workspace's own: the application gives one with
+   * `data-app-workspace-detail-toggle` and `aria-controls` set to `appWorkspaceDetailElementId(id)`, as with
+   * `AppWorkspace head={false}`.
+   */
+  toggle?: false;
   /** Whether the current object may show details. False disables reopening and hides the panel. */
   available?: boolean;
   /**
@@ -1002,19 +1017,21 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   return (
     <>
       <style innerHTML={workspaceRule()} />
-      <Button
-        type="button"
-        variant="ghost"
-        aria-controls={domId()}
-        aria-expanded="false"
-        data-app-workspace-detail-toggle=""
-        data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
-        disabled={props.available === false}
-        class="k2b-app-workspace__detail-toggle"
-      >
-        <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
-        {workspaceMessages().details}
-      </Button>
+      <Show when={props.toggle !== false}>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-controls={domId()}
+          aria-expanded="false"
+          data-app-workspace-detail-toggle=""
+          data-workspace-detail-reopen={props.onOpen ? "true" : undefined}
+          disabled={props.available === false}
+          class="k2b-app-workspace__detail-toggle"
+        >
+          <i class="ti ti-layout-sidebar-right" aria-hidden="true" />
+          {workspaceMessages().details}
+        </Button>
+      </Show>
       <Show when={resizable()}>
         <ResizeHandle
           kind="detail"
@@ -1131,8 +1148,13 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
   );
   onMount(() => {
     const requestHide = () => props.onHiddenChange?.(true);
+    const requestShow = () => props.onHiddenChange?.(false);
     aside?.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide);
-    onCleanup(() => aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide));
+    aside?.addEventListener(APP_WORKSPACE_SIDEBAR_SHOW_EVENT, requestShow);
+    onCleanup(() => {
+      aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide);
+      aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_SHOW_EVENT, requestShow);
+    });
     // A client-rendered row settles here; server markup settled in its inline script.
     if (stacked() && row) settleChipRow(row, scrollFadeEdges);
   });
@@ -2534,6 +2556,8 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
     // before it must also precede its view controls in SSR and keyboard order.
     // Callers without a slot retain the automatic leading head.
     const renderedHead = <AppWorkspaceHead sidebarId={sidebarId} nested={nested} head={head()} />;
+    // Without a head row its slot draws nothing either.
+    if (props.head === false) return <>{slots().filter((value) => !headSlot(value)) as JSX.Element}</>;
     return (
       <>
         {

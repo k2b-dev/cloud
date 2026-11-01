@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
+import type { CapabilityExecutionContext, ResourcePrincipal, User } from "@k2b/cloud/contracts";
 import { serviceAccounts } from "@k2b/cloud/services";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
@@ -111,13 +111,12 @@ suite("Mail mailbox Code access", () => {
   });
 
   afterAll(async () => {
-    for (const id of mailboxIds) {
-      const rows = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${id}::uuid`;
-      await sql`DELETE FROM mail.mailboxes WHERE id = ${id}::uuid`;
-      for (const row of rows) await sql`DELETE FROM auth.access WHERE id = ${row.access_id}::uuid`;
-    }
-    for (const id of ordinaryAccessIds) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
-    for (const id of accountIds) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+    const rows = await sql<
+      { access_id: string }[]
+    >`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id=ANY(${sql.array(mailboxIds, "uuid")})`;
+    await sql`DELETE FROM mail.mailboxes WHERE id=ANY(${sql.array(mailboxIds, "uuid")})`;
+    await sql`DELETE FROM auth.access WHERE id=ANY(${sql.array([...ordinaryAccessIds, ...rows.map((row) => row.access_id)], "uuid")})`;
+    await sql`DELETE FROM auth.service_accounts WHERE id=ANY(${sql.array(accountIds, "uuid")})`;
     if (groupId) await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
     if (owner) await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
   });
@@ -128,8 +127,8 @@ suite("Mail mailbox Code access", () => {
     expect(await manages(capabilityContext(code), target.shortId)).toBe(false);
     const read = await grant(target.shortId, code, ["mail.mailbox.read"]);
     const write = await grant(target.shortId, code, ["mail.draft.create"]);
-    expect(read.decision).toMatchObject({ granted: true, level: "read" });
-    expect(write.decision).toMatchObject({ granted: true, level: "write" });
+    expect(read.decision).toEqual({ granted: true, level: "read" });
+    expect(write.decision).toEqual({ granted: true, level: "write" });
     expect(await getMailboxPermission(code, target.id)).toBe("write");
     expect((await mailCapabilities.queries["mailbox.read"].run({ id: target.shortId }, capabilityContext(code))).ok).toBe(true);
     expect((await grant(target.shortId, code, ["mail.draft.create"], write.grantId)).decision).toEqual(write.decision);
@@ -218,6 +217,39 @@ suite("Mail mailbox Code access", () => {
     expect(await revoke(target.shortId, granted.grantId)).toBe(true);
   });
 
+  test("mailbox access.readable follows current Mail grants and excludes foreign Code readers", async () => {
+    const target = await mailbox(),
+      another = await mailbox();
+    const person: ResourcePrincipal = { type: "user", userId: owner.id };
+    const account: ResourcePrincipal = { type: "service_account", serviceAccountId: principal(code) };
+    const readable = mailCapabilities.types.mailbox.access.readable;
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person]);
+    const granted = await grant(target.shortId, code, ["mail.mailbox.read"]);
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person, account]);
+    const [signedIn] = await sql<{ id: string }[]>`INSERT INTO auth.access(authenticated_only,permission) VALUES(true,'read') RETURNING id`;
+    ordinaryAccessIds.push(signedIn!.id);
+    await sql`INSERT INTO mail.mailbox_access(mailbox_id,access_id) VALUES(${another.id}::uuid,${signedIn!.id}::uuid)`;
+    expect(await readable({ id: another.shortId, principals: [account] })).toEqual([]);
+    await revoke(target.shortId, granted.grantId);
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person]);
+    const assigned: ResourcePrincipal = { type: "service_account", serviceAccountId: principal(ordinary) };
+    expect(
+      (
+        await grantMailboxAccess({
+          context: ownerContext,
+          mailboxId: target.id,
+          principal: assigned,
+          permission: "read",
+          scope: "assigned",
+        })
+      ).ok,
+    ).toBe(true);
+    expect(await readable({ id: target.shortId, principals: [assigned] })).toEqual([assigned]);
+    expect(await getMailboxPermission(ordinary, target.id)).toBe("none");
+    expect(await getMailboxPermission(ownerContext, target.id)).toBe("admin");
+    await sql`UPDATE mail.mailboxes SET deleted_at=now() WHERE id=${target.id}::uuid`;
+    expect(await readable({ id: target.shortId, principals: [person] })).toEqual([]);
+  });
   test("lists only this account's grants and ignores group, signed-in and public access for Code", async () => {
     const target = await mailbox();
     const first = await grant(target.shortId, code, ["mail.mailbox.read"]);
@@ -250,11 +282,14 @@ suite("Mail mailbox Code access", () => {
 
   test("Code cannot receive admin or replace the last mailbox administrator", async () => {
     const target = await mailbox();
-    await expect(sql`INSERT INTO auth.access (service_account_id, permission)
-      VALUES (${principal(code)}::uuid, 'admin')`).rejects.toMatchObject({ code: "23514" });
+    // Bun SQL queries are lazy; start them before a rejection matcher observes their state.
+    await expect(
+      sql`INSERT INTO auth.access (service_account_id, permission)
+      VALUES (${principal(code)}::uuid, 'admin')`.execute(),
+    ).rejects.toMatchObject({ errno: "23514" });
     const write = await grant(target.shortId, code, ["mail.draft.create"]);
-    await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${write.grantId}::uuid`).rejects.toMatchObject({
-      code: "23514",
+    await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${write.grantId}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23514",
     });
     const [admin] = await sql<{ id: string }[]>`SELECT a.id FROM mail.mailbox_access ma JOIN auth.access a ON a.id = ma.access_id
       WHERE ma.mailbox_id = ${target.id}::uuid AND a.user_id = ${owner.id}::uuid`;
@@ -470,7 +505,7 @@ suite("Mail mailbox Code access", () => {
     await sql.begin(async (writer) => {
       await writer`LOCK TABLE auth.groups, auth.user_groups_v2, auth.group_groups_v2 IN ROW EXCLUSIVE MODE`;
       await expect(sql.begin((tx) => mailboxCodeAccess.manages(tx, capabilityContext(ownerContext), target.shortId))).rejects.toMatchObject(
-        { code: "55P03" },
+        { errno: "55P03" },
       );
       // Admin authority is checked by the platform, so the adapter only needs
       // its target lock and a single-snapshot manager list during preflight.

@@ -670,7 +670,9 @@ Readers and discovery Queries retain their existing inputs.
 
 Chat and MCP tools keep flat arguments: use `space` for the target alongside
 fields such as `itemId`, `columnId`, and `title`. For example, `task.create`
-takes `{ space, columnId, title }`.
+takes `{ space, title }`. Without `columnId`, it uses the first open column
+in board order (numeric rank, then public ID). Pass `columnId` only for an
+explicit column choice; no prior Space read is needed for the default.
 
 `event.invitation.prepare`, `event.invitation.commit`, and
 `calendar-invitation.response.commit` declare `code: false` for their Mail
@@ -711,6 +713,9 @@ for activation proofs, dry runs, retry safety, and cleanup.
 
 Code activation checks the person's current target administration rights in the
 same transaction as the grant. Changes to target shares or manager-group
-membership wait until that transaction completes. Successful dry runs return
-`managerUserIds`, including people in nested manager groups, for Core's activation
-notifications. Code accounts never appear among these managers.
+membership wait until that transaction completes. Adapter dry runs identify
+human managers, including nested manager-group members. Generated answers return
+the Space title and `managerUserIds` only when the activating person passes the
+existing Space `access.readable` check. Core obtains activation-notification
+recipients through its separate server-only lookup. Code accounts never appear
+among these managers.

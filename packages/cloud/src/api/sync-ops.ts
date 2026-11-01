@@ -25,7 +25,9 @@ export const createSyncOpsProxyRoutes = (dependencies: Dependencies = {}) =>
     .use("*", noTransform())
     .use(dependencies.authenticate ?? auth.requireRole("admin"))
     .use(rejectReservedWorkloadCredential)
-    .use(auth.requireOAuthScope("admin"))
+    .use((c, next) =>
+      auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next),
+    )
     .get("/", async (c) => c.json({ apps: await (dependencies.listApps ?? listApps)() }, 200, { "cache-control": "no-store" }))
     .all("/:appId/*", async (c) => {
       const path = new URL(c.req.url).pathname.split(`/sync/${c.req.param("appId")}`)[1] ?? "";

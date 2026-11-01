@@ -1,6 +1,7 @@
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
+import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
 import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
@@ -2633,6 +2634,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       `  ! ${legacyPaths.files} conversation and ${legacyPaths.project_files} project file paths keep a non-NFC Unicode form because a normalized twin exists`,
     );
   }
+  await migrateAiCapabilityTargets();
   await backfillApprovalRequests();
   await sql`CREATE INDEX IF NOT EXISTS idx_ai_messages_submitted_draft
     ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();

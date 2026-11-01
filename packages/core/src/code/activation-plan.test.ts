@@ -14,11 +14,22 @@ const operation = {
   data: z.object({}).strict(),
   run: () => ({ ok: true as const, data: { data: {} } }),
 };
+const action = {
+  ...operation,
+  review: () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      slots: {},
+      sentence: { action: "Change fixture", running: "Changing fixture", done: "Changed fixture", confirm: "Confirm", decline: "Cancel" },
+    },
+  }),
+};
 const definitions = {
   protocolVersion: 2,
   types: { item: { title: "Item", description: "Fixture item.", reader: "item.read" } },
   queries: { "item.read": { ...operation, input: z.object({ id: z.string().describe("Item ID.") }).strict() } },
-  actions: { "item.change": { ...operation, target: "item", destructive: false, idempotency: "none", policy: { silent: "shared" } } },
+  actions: { "item.change": { ...action, target: "item", destructive: false, idempotency: "none", policy: { silent: "shared" } } },
 } satisfies CapabilityDefinitions;
 const catalog = compileCapabilityManifest("example", definitions);
 const code: Code = {

@@ -1,0 +1,1736 @@
+[
+  {
+    "appId": "spaces",
+    "capabilityId": "calendar-destination.list",
+    "kind": "query",
+    "providerName": "spaces__query__calendar-destination_dot_list"
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "calendar-invitation.preview",
+    "kind": "query",
+    "providerName": "spaces__query__calendar-invitation_dot_preview"
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "calendar-invitation.response.prepare",
+    "kind": "query",
+    "providerName": "spaces__query__calendar-invitation_dot_response_dot_prepare"
+  },
+  { "appId": "spaces", "capabilityId": "calendar.events", "kind": "query", "providerName": "spaces__query__calendar_dot_events" },
+  { "appId": "spaces", "capabilityId": "calendar.list", "kind": "query", "providerName": "spaces__query__calendar_dot_list" },
+  { "appId": "spaces", "capabilityId": "comment.list", "kind": "query", "providerName": "spaces__query__comment_dot_list" },
+  { "appId": "spaces", "capabilityId": "comment.read", "kind": "query", "providerName": "spaces__query__comment_dot_read" },
+  { "appId": "spaces", "capabilityId": "event.agenda", "kind": "query", "providerName": "spaces__query__event_dot_agenda" },
+  { "appId": "spaces", "capabilityId": "event.list", "kind": "query", "providerName": "spaces__query__event_dot_list" },
+  {
+    "appId": "spaces",
+    "capabilityId": "item.link-candidate.search",
+    "kind": "query",
+    "providerName": "spaces__query__item_dot_link-candidate_dot_search"
+  },
+  { "appId": "spaces", "capabilityId": "item.read", "kind": "query", "providerName": "spaces__query__item_dot_read" },
+  { "appId": "spaces", "capabilityId": "item.readable", "kind": "query", "providerName": "spaces__query__item_dot_readable" },
+  {
+    "appId": "spaces",
+    "capabilityId": "item.reference.find",
+    "kind": "query",
+    "providerName": "spaces__query__item_dot_reference_dot_find"
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "item.reference.list",
+    "kind": "query",
+    "providerName": "spaces__query__item_dot_reference_dot_list"
+  },
+  { "appId": "spaces", "capabilityId": "item.search", "kind": "query", "providerName": "spaces__query__item_dot_search" },
+  { "appId": "spaces", "capabilityId": "space.activity", "kind": "query", "providerName": "spaces__query__space_dot_activity" },
+  {
+    "appId": "spaces",
+    "capabilityId": "space.assignee.list",
+    "kind": "query",
+    "providerName": "spaces__query__space_dot_assignee_dot_list"
+  },
+  { "appId": "spaces", "capabilityId": "space.browse", "kind": "query", "providerName": "spaces__query__space_dot_browse" },
+  { "appId": "spaces", "capabilityId": "space.containers", "kind": "query", "providerName": "spaces__query__space_dot_containers" },
+  { "appId": "spaces", "capabilityId": "space.list", "kind": "query", "providerName": "spaces__query__space_dot_list" },
+  { "appId": "spaces", "capabilityId": "space.read", "kind": "query", "providerName": "spaces__query__space_dot_read" },
+  { "appId": "spaces", "capabilityId": "space.readable", "kind": "query", "providerName": "spaces__query__space_dot_readable" },
+  { "appId": "spaces", "capabilityId": "space.search", "kind": "query", "providerName": "spaces__query__space_dot_search" },
+  { "appId": "spaces", "capabilityId": "task.blocker.list", "kind": "query", "providerName": "spaces__query__task_dot_blocker_dot_list" },
+  { "appId": "spaces", "capabilityId": "task.blocks.list", "kind": "query", "providerName": "spaces__query__task_dot_blocks_dot_list" },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.checklist.list",
+    "kind": "query",
+    "providerName": "spaces__query__task_dot_checklist_dot_list"
+  },
+  { "appId": "spaces", "capabilityId": "task.focus", "kind": "query", "providerName": "spaces__query__task_dot_focus" },
+  { "appId": "spaces", "capabilityId": "task.list", "kind": "query", "providerName": "spaces__query__task_dot_list" },
+  { "appId": "spaces", "capabilityId": "task.work.read", "kind": "query", "providerName": "spaces__query__task_dot_work_dot_read" },
+  { "appId": "spaces", "capabilityId": "template.list", "kind": "query", "providerName": "spaces__query__template_dot_list" },
+  { "appId": "spaces", "capabilityId": "template.read", "kind": "query", "providerName": "spaces__query__template_dot_read" },
+  {
+    "appId": "spaces",
+    "capabilityId": "calendar-invitation.import",
+    "kind": "action",
+    "providerName": "spaces__action__calendar-invitation_dot_import",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["mailboxId", "messageId", "calendar", "conversation"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "calendar-invitation.response.commit",
+    "kind": "action",
+    "providerName": "spaces__action__calendar-invitation_dot_response_dot_commit"
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "comment.create",
+    "kind": "action",
+    "providerName": "spaces__action__comment_dot_create",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "recurrenceId", "content"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "comment.delete",
+    "kind": "action",
+    "providerName": "spaces__action__comment_dot_delete",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["commentId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "comment.update",
+    "kind": "action",
+    "providerName": "spaces__action__comment_dot_update",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["commentId", "content"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "event.create",
+    "kind": "action",
+    "providerName": "spaces__action__event_dot_create",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": [
+      "columnId",
+      "title",
+      "description",
+      "location",
+      "url",
+      "startsAt",
+      "endsAt",
+      "allDay",
+      "recurrence",
+      "assigneeIds",
+      "tagIds",
+      "references",
+      "templateId",
+      "date",
+      "timeZone"
+    ]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "event.invitation.commit",
+    "kind": "action",
+    "providerName": "spaces__action__event_dot_invitation_dot_commit",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["deliveryId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "event.invitation.prepare",
+    "kind": "action",
+    "providerName": "spaces__action__event_dot_invitation_dot_prepare",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "mailboxId", "draftId", "senderIdentityId", "organizer", "attendees"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "event.update",
+    "kind": "action",
+    "providerName": "spaces__action__event_dot_update",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "assigneeIds", "tagIds", "title", "description", "location", "url", "startsAt", "endsAt", "allDay", "recurrence"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "item.delete",
+    "kind": "action",
+    "providerName": "spaces__action__item_dot_delete",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "item.reference.add",
+    "kind": "action",
+    "providerName": "spaces__action__item_dot_reference_dot_add",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "reference"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "item.reference.remove",
+    "kind": "action",
+    "providerName": "spaces__action__item_dot_reference_dot_remove",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "ref"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "item.tags.set",
+    "kind": "action",
+    "providerName": "spaces__action__item_dot_tags_dot_set",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "tagIds"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "reaction.add",
+    "kind": "action",
+    "providerName": "spaces__action__reaction_dot_add",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "emoji"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "reaction.remove",
+    "kind": "action",
+    "providerName": "spaces__action__reaction_dot_remove",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "emoji"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.blocker.add",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_blocker_dot_add",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "blockerItemId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.blocker.remove",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_blocker_dot_remove",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "blockerItemId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.checklist.create",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_checklist_dot_create",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["label", "completed", "itemId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.checklist.delete",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_checklist_dot_delete",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "entryId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.checklist.update",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_checklist_dot_update",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["label", "completed", "itemId", "entryId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.claim",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_claim",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["claimId", "itemId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.create",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_create",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": [
+      "columnId",
+      "title",
+      "description",
+      "deadline",
+      "estimatedDurationMinutes",
+      "priority",
+      "assigneeIds",
+      "tagIds",
+      "references",
+      "templateId",
+      "date",
+      "timeZone",
+      "noDate"
+    ]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.progress",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_progress",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["content", "claimId", "itemId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.release",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_release",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["claimId", "force", "itemId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.set-completed",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_set-completed",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["completed", "result", "commit", "claimId", "force", "itemId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "task.update",
+    "kind": "action",
+    "providerName": "spaces__action__task_dot_update",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["itemId", "assigneeIds", "tagIds", "title", "description", "deadline", "estimatedDurationMinutes", "priority"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "template.create",
+    "kind": "action",
+    "providerName": "spaces__action__template_dot_create",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": [
+      "kind",
+      "name",
+      "title",
+      "description",
+      "priority",
+      "tagIds",
+      "assigneeIds",
+      "assignCreator",
+      "checklist",
+      "estimatedDurationMinutes",
+      "location",
+      "url",
+      "allDay",
+      "durationMinutes",
+      "timeOfDay",
+      "dateRule"
+    ]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "template.delete",
+    "kind": "action",
+    "providerName": "spaces__action__template_dot_delete",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": ["templateId"]
+  },
+  {
+    "appId": "spaces",
+    "capabilityId": "template.update",
+    "kind": "action",
+    "providerName": "spaces__action__template_dot_update",
+    "target": "space",
+    "legacyTarget": "spaceId",
+    "fields": [
+      "name",
+      "title",
+      "description",
+      "priority",
+      "tagIds",
+      "assigneeIds",
+      "assignCreator",
+      "checklist",
+      "estimatedDurationMinutes",
+      "location",
+      "url",
+      "allDay",
+      "durationMinutes",
+      "timeOfDay",
+      "dateRule",
+      "templateId"
+    ]
+  },
+  { "appId": "contacts", "capabilityId": "book.list", "kind": "query", "providerName": "contacts__query__book_dot_list" },
+  { "appId": "contacts", "capabilityId": "book.read", "kind": "query", "providerName": "contacts__query__book_dot_read" },
+  { "appId": "contacts", "capabilityId": "contact.list", "kind": "query", "providerName": "contacts__query__contact_dot_list" },
+  { "appId": "contacts", "capabilityId": "contact.read", "kind": "query", "providerName": "contacts__query__contact_dot_read" },
+  { "appId": "contacts", "capabilityId": "contact.resolve", "kind": "query", "providerName": "contacts__query__contact_dot_resolve" },
+  { "appId": "contacts", "capabilityId": "contact.search", "kind": "query", "providerName": "contacts__query__contact_dot_search" },
+  { "appId": "contacts", "capabilityId": "contact.suggest", "kind": "query", "providerName": "contacts__query__contact_dot_suggest" },
+  { "appId": "contacts", "capabilityId": "note.list", "kind": "query", "providerName": "contacts__query__note_dot_list" },
+  { "appId": "contacts", "capabilityId": "note.read", "kind": "query", "providerName": "contacts__query__note_dot_read" },
+  { "appId": "contacts", "capabilityId": "tag.list", "kind": "query", "providerName": "contacts__query__tag_dot_list" },
+  { "appId": "contacts", "capabilityId": "tag.read", "kind": "query", "providerName": "contacts__query__tag_dot_read" },
+  {
+    "appId": "contacts",
+    "capabilityId": "contact.create",
+    "kind": "action",
+    "providerName": "contacts__action__contact_dot_create",
+    "target": "book",
+    "legacyTarget": "bookId",
+    "fields": [
+      "label",
+      "firstName",
+      "lastName",
+      "companyName",
+      "department",
+      "jobTitle",
+      "vatId",
+      "birthday",
+      "salutation",
+      "pronouns",
+      "preferredLanguage",
+      "parentContactId",
+      "tagIds",
+      "emails",
+      "phones",
+      "addresses",
+      "websites",
+      "bankAccounts"
+    ]
+  },
+  {
+    "appId": "contacts",
+    "capabilityId": "contact.delete",
+    "kind": "action",
+    "providerName": "contacts__action__contact_dot_delete",
+    "target": "book",
+    "legacyTarget": "bookId",
+    "fields": ["contactId", "expectedUpdatedAt"]
+  },
+  {
+    "appId": "contacts",
+    "capabilityId": "contact.move",
+    "kind": "action",
+    "providerName": "contacts__action__contact_dot_move",
+    "target": "book",
+    "legacyTarget": "bookId",
+    "fields": ["contactId", "expectedUpdatedAt"],
+    "refs": { "targetBookId": { "type": "book", "field": "targetBookId" } }
+  },
+  {
+    "appId": "contacts",
+    "capabilityId": "contact.update",
+    "kind": "action",
+    "providerName": "contacts__action__contact_dot_update",
+    "target": "book",
+    "legacyTarget": "bookId",
+    "fields": [
+      "contactId",
+      "expectedUpdatedAt",
+      "label",
+      "firstName",
+      "lastName",
+      "companyName",
+      "department",
+      "jobTitle",
+      "vatId",
+      "birthday",
+      "salutation",
+      "pronouns",
+      "preferredLanguage",
+      "parentContactId",
+      "tagIds",
+      "emails",
+      "phones",
+      "addresses",
+      "websites",
+      "bankAccounts"
+    ]
+  },
+  {
+    "appId": "contacts",
+    "capabilityId": "favorite.set",
+    "kind": "action",
+    "providerName": "contacts__action__favorite_dot_set",
+    "target": "book",
+    "legacyTarget": "bookId",
+    "fields": ["contactId", "favorite"]
+  },
+  {
+    "appId": "contacts",
+    "capabilityId": "note.create",
+    "kind": "action",
+    "providerName": "contacts__action__note_dot_create",
+    "target": "book",
+    "legacyTarget": "bookId",
+    "fields": ["contactId", "content"]
+  },
+  {
+    "appId": "contacts",
+    "capabilityId": "tag.change",
+    "kind": "action",
+    "providerName": "contacts__action__tag_dot_change",
+    "target": "book",
+    "legacyTarget": "bookId",
+    "fields": ["contactId", "addTagIds", "removeTagIds"]
+  },
+  { "appId": "mail", "capabilityId": "attachment.read", "kind": "query", "providerName": "mail__query__attachment_dot_read" },
+  {
+    "appId": "mail",
+    "capabilityId": "attachment.read-content",
+    "kind": "query",
+    "providerName": "mail__query__attachment_dot_read-content"
+  },
+  { "appId": "mail", "capabilityId": "code.access.list", "kind": "query", "providerName": "mail__query__code_dot_access_dot_list" },
+  { "appId": "mail", "capabilityId": "comment.read", "kind": "query", "providerName": "mail__query__comment_dot_read" },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.activity.list",
+    "kind": "query",
+    "providerName": "mail__query__conversation_dot_activity_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "cursor", "limit"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.comment.list",
+    "kind": "query",
+    "providerName": "mail__query__conversation_dot_comment_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "order", "cursor", "limit"]
+  },
+  { "appId": "mail", "capabilityId": "conversation.focus", "kind": "query", "providerName": "mail__query__conversation_dot_focus" },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.list",
+    "kind": "query",
+    "providerName": "mail__query__conversation_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["folderId", "workStatus", "unread", "view", "cursor", "limit"]
+  },
+  { "appId": "mail", "capabilityId": "conversation.read", "kind": "query", "providerName": "mail__query__conversation_dot_read" },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.related",
+    "kind": "query",
+    "providerName": "mail__query__conversation_dot_related",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "limit"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.reminder.get",
+    "kind": "query",
+    "providerName": "mail__query__conversation_dot_reminder_dot_get",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.search",
+    "kind": "query",
+    "providerName": "mail__query__conversation_dot_search",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["expression", "sort", "cursor", "limit"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "delivery.list",
+    "kind": "query",
+    "providerName": "mail__query__delivery_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["cursor", "limit"]
+  },
+  { "appId": "mail", "capabilityId": "delivery.read", "kind": "query", "providerName": "mail__query__delivery_dot_read" },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.list",
+    "kind": "query",
+    "providerName": "mail__query__draft_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["cursor", "limit"]
+  },
+  { "appId": "mail", "capabilityId": "draft.read", "kind": "query", "providerName": "mail__query__draft_dot_read" },
+  { "appId": "mail", "capabilityId": "draft.send.check", "kind": "query", "providerName": "mail__query__draft_dot_send_dot_check" },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.send.review",
+    "kind": "query",
+    "providerName": "mail__query__draft_dot_send_dot_review",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["draftId", "expectedRevision"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "folder.list",
+    "kind": "query",
+    "providerName": "mail__query__folder_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["cursor", "limit"]
+  },
+  { "appId": "mail", "capabilityId": "mailbox.browse", "kind": "query", "providerName": "mail__query__mailbox_dot_browse" },
+  {
+    "appId": "mail",
+    "capabilityId": "mailbox.identity.list",
+    "kind": "query",
+    "providerName": "mail__query__mailbox_dot_identity_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["cursor", "limit"]
+  },
+  { "appId": "mail", "capabilityId": "mailbox.list", "kind": "query", "providerName": "mail__query__mailbox_dot_list" },
+  {
+    "appId": "mail",
+    "capabilityId": "mailbox.member.list",
+    "kind": "query",
+    "providerName": "mail__query__mailbox_dot_member_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["query", "cursor", "limit"]
+  },
+  { "appId": "mail", "capabilityId": "mailbox.read", "kind": "query", "providerName": "mail__query__mailbox_dot_read" },
+  {
+    "appId": "mail",
+    "capabilityId": "mailbox.tag.list",
+    "kind": "query",
+    "providerName": "mail__query__mailbox_dot_tag_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["cursor", "limit"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "mailing-list.subscription.get",
+    "kind": "query",
+    "providerName": "mail__query__mailing-list_dot_subscription_dot_get",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["listKey"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "mailing-list.subscription.list",
+    "kind": "query",
+    "providerName": "mail__query__mailing-list_dot_subscription_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["cursor", "limit"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "message.list",
+    "kind": "query",
+    "providerName": "mail__query__message_dot_list",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "cursor", "limit"]
+  },
+  { "appId": "mail", "capabilityId": "message.read", "kind": "query", "providerName": "mail__query__message_dot_read" },
+  { "appId": "mail", "capabilityId": "message.read-content", "kind": "query", "providerName": "mail__query__message_dot_read-content" },
+  { "appId": "mail", "capabilityId": "reminder.read", "kind": "query", "providerName": "mail__query__reminder_dot_read" },
+  { "appId": "mail", "capabilityId": "search", "kind": "query", "providerName": "mail__query__search" },
+  { "appId": "mail", "capabilityId": "code.access.rm", "kind": "action", "providerName": "mail__action__code_dot_access_dot_rm" },
+  { "appId": "mail", "capabilityId": "code.access.set", "kind": "action", "providerName": "mail__action__code_dot_access_dot_set" },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.assign",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_assign",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "assigneeUserIds", "mode"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.assign.batch",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_assign_dot_batch",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationIds", "assigneeUserIds", "mode"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.comment.create",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_comment_dot_create",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "body", "referencedMessageId"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.comment.delete",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_comment_dot_delete",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "commentId", "expectedRevision"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.comment.update",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_comment_dot_update",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "commentId", "expectedRevision", "body"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.keep",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_keep",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.keep.release",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_keep_dot_release",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "reason"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.mark",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_mark",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["target", "read", "flagged"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.move",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_move",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["target", "destination"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.reminder.cancel",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_reminder_dot_cancel",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "expectedRevision"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.reminder.set",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_reminder_dot_set",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "dueAt", "expectedRevision"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.snooze",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_snooze",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "expectedRevision", "snoozedUntil"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.status.update",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_status_dot_update",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "expectedRevision", "status"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.status.update.batch",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_status_dot_update_dot_batch",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationIds", "status"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "conversation.tag.update",
+    "kind": "action",
+    "providerName": "mail__action__conversation_dot_tag_dot_update",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["conversationId", "expectedRevision", "addTagIds", "removeTagIds"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "delivery.cancel",
+    "kind": "action",
+    "providerName": "mail__action__delivery_dot_cancel",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["deliveryId", "disposition"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.attachment.add",
+    "kind": "action",
+    "providerName": "mail__action__draft_dot_attachment_dot_add",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["draftId", "expectedRevision", "attachment"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.attachment.remove",
+    "kind": "action",
+    "providerName": "mail__action__draft_dot_attachment_dot_remove",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["draftId", "attachmentId", "expectedRevision"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.create",
+    "kind": "action",
+    "providerName": "mail__action__draft_dot_create",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": [
+      "senderIdentityId",
+      "signatureTemplateId",
+      "to",
+      "cc",
+      "bcc",
+      "subject",
+      "body",
+      "format",
+      "priority",
+      "requestDeliveryReceipt",
+      "requestReadReceipt",
+      "intent",
+      "conversationId",
+      "sourceMessageId",
+      "includeSourceAttachments",
+      "attachments"
+    ]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.discard",
+    "kind": "action",
+    "providerName": "mail__action__draft_dot_discard",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["draftId", "expectedRevision"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.patch",
+    "kind": "action",
+    "providerName": "mail__action__draft_dot_patch",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["draftId", "expectedRevision", "patch"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.send",
+    "kind": "action",
+    "providerName": "mail__action__draft_dot_send",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["draftId", "expectedRevision", "expectedContentHash", "senderIdentityId", "scheduledAt", "undoSeconds", "safetyApproval"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "draft.update",
+    "kind": "action",
+    "providerName": "mail__action__draft_dot_update",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["draftId", "expectedRevision", "draft"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "folder.display.set",
+    "kind": "action",
+    "providerName": "mail__action__folder_dot_display_dot_set",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["folderId", "display"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "mailbox.tag.create",
+    "kind": "action",
+    "providerName": "mail__action__mailbox_dot_tag_dot_create",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["name", "color"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "mailbox.tag.delete",
+    "kind": "action",
+    "providerName": "mail__action__mailbox_dot_tag_dot_delete",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["tagId", "expectedRevision"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "mailbox.tag.update",
+    "kind": "action",
+    "providerName": "mail__action__mailbox_dot_tag_dot_update",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["tagId", "expectedRevision", "name", "color"]
+  },
+  {
+    "appId": "mail",
+    "capabilityId": "mailing-list.unsubscribe",
+    "kind": "action",
+    "providerName": "mail__action__mailing-list_dot_unsubscribe",
+    "target": "mailbox",
+    "legacyTarget": "mailboxId",
+    "fields": ["listKey", "href"]
+  },
+  { "appId": "grids", "capabilityId": "base.list", "kind": "query", "providerName": "grids__query__base_dot_list" },
+  { "appId": "grids", "capabilityId": "base.read", "kind": "query", "providerName": "grids__query__base_dot_read" },
+  { "appId": "grids", "capabilityId": "base.search", "kind": "query", "providerName": "grids__query__base_dot_search" },
+  {
+    "appId": "grids",
+    "capabilityId": "document.content.read",
+    "kind": "query",
+    "providerName": "grids__query__document_dot_content_dot_read"
+  },
+  { "appId": "grids", "capabilityId": "document.list", "kind": "query", "providerName": "grids__query__document_dot_list" },
+  { "appId": "grids", "capabilityId": "document.read", "kind": "query", "providerName": "grids__query__document_dot_read" },
+  { "appId": "grids", "capabilityId": "document.templates", "kind": "query", "providerName": "grids__query__document_dot_templates" },
+  {
+    "appId": "grids",
+    "capabilityId": "gql.context",
+    "kind": "query",
+    "providerName": "grids__query__gql_dot_context",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["kind", "tableId", "fieldId", "includeWriteContext", "cursor", "limit"]
+  },
+  {
+    "appId": "grids",
+    "capabilityId": "gql.execute",
+    "kind": "query",
+    "providerName": "grids__query__gql_dot_execute",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["query", "currentTableId", "currentSource", "cursor", "parameters", "showTableToUser", "pageSize", "limit"]
+  },
+  {
+    "appId": "grids",
+    "capabilityId": "gql.preview",
+    "kind": "query",
+    "providerName": "grids__query__gql_dot_preview",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["query", "currentTableId", "currentSource", "cursor", "parameters", "showTableToUser", "pageSize"]
+  },
+  {
+    "appId": "grids",
+    "capabilityId": "gql.view.execute",
+    "kind": "query",
+    "providerName": "grids__query__gql_dot_view_dot_execute",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["viewId", "showTableToUser", "pageSize", "cursor"]
+  },
+  { "appId": "grids", "capabilityId": "record.read", "kind": "query", "providerName": "grids__query__record_dot_read" },
+  { "appId": "grids", "capabilityId": "table.read", "kind": "query", "providerName": "grids__query__table_dot_read" },
+  { "appId": "grids", "capabilityId": "view.read", "kind": "query", "providerName": "grids__query__view_dot_read" },
+  {
+    "appId": "grids",
+    "capabilityId": "workflow.record-actions",
+    "kind": "query",
+    "providerName": "grids__query__workflow_dot_record-actions"
+  },
+  { "appId": "grids", "capabilityId": "workflow.run.read", "kind": "query", "providerName": "grids__query__workflow_dot_run_dot_read" },
+  {
+    "appId": "grids",
+    "capabilityId": "document.create",
+    "kind": "action",
+    "providerName": "grids__action__document_dot_create",
+    "target": "table",
+    "legacyTarget": "tableId",
+    "fields": ["templateId", "recordId"]
+  },
+  {
+    "appId": "grids",
+    "capabilityId": "record.create",
+    "kind": "action",
+    "providerName": "grids__action__record_dot_create",
+    "target": "table",
+    "legacyTarget": "tableId",
+    "fields": ["values"]
+  },
+  {
+    "appId": "grids",
+    "capabilityId": "record.update",
+    "kind": "action",
+    "providerName": "grids__action__record_dot_update",
+    "target": "table",
+    "legacyTarget": "tableId",
+    "fields": ["recordId", "values", "ifVersion", "audit"]
+  },
+  {
+    "appId": "grids",
+    "capabilityId": "record.upsert-external",
+    "kind": "action",
+    "providerName": "grids__action__record_dot_upsert-external",
+    "target": "table",
+    "legacyTarget": "tableId",
+    "fields": ["externalRef", "values", "ifVersion", "audit"]
+  },
+  {
+    "appId": "grids",
+    "capabilityId": "view.create",
+    "kind": "action",
+    "providerName": "grids__action__view_dot_create",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["query", "currentSource", "name", "shared"]
+  },
+  {
+    "appId": "grids",
+    "capabilityId": "workflow.record-action",
+    "kind": "action",
+    "providerName": "grids__action__workflow_dot_record-action",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["launcherId", "recordId", "expectedRevision"]
+  },
+  { "appId": "filesv2", "capabilityId": "activity.chain", "kind": "query", "providerName": "filesv2__query__activity_dot_chain" },
+  { "appId": "filesv2", "capabilityId": "activity.get", "kind": "query", "providerName": "filesv2__query__activity_dot_get" },
+  { "appId": "filesv2", "capabilityId": "activity.list", "kind": "query", "providerName": "filesv2__query__activity_dot_list" },
+  { "appId": "filesv2", "capabilityId": "bases.list", "kind": "query", "providerName": "filesv2__query__bases_dot_list" },
+  { "appId": "filesv2", "capabilityId": "content.download", "kind": "query", "providerName": "filesv2__query__content_dot_download" },
+  { "appId": "filesv2", "capabilityId": "content.read", "kind": "query", "providerName": "filesv2__query__content_dot_read" },
+  {
+    "appId": "filesv2",
+    "capabilityId": "entry.list",
+    "kind": "query",
+    "providerName": "filesv2__query__entry_dot_list",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["sort", "order", "type", "groupFolders", "path", "after"]
+  },
+  { "appId": "filesv2", "capabilityId": "entry.read", "kind": "query", "providerName": "filesv2__query__entry_dot_read" },
+  { "appId": "filesv2", "capabilityId": "entry.search", "kind": "query", "providerName": "filesv2__query__entry_dot_search" },
+  {
+    "appId": "filesv2",
+    "capabilityId": "entry.search-in-base",
+    "kind": "query",
+    "providerName": "filesv2__query__entry_dot_search-in-base",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": [
+      "sort",
+      "order",
+      "type",
+      "groupFolders",
+      "path",
+      "after",
+      "q",
+      "match",
+      "in",
+      "ext",
+      "minSize",
+      "maxSize",
+      "modifiedAfter",
+      "modifiedBefore"
+    ]
+  },
+  { "appId": "filesv2", "capabilityId": "provider.list", "kind": "query", "providerName": "filesv2__query__provider_dot_list" },
+  { "appId": "filesv2", "capabilityId": "share.access", "kind": "query", "providerName": "filesv2__query__share_dot_access" },
+  {
+    "appId": "filesv2",
+    "capabilityId": "trash.list",
+    "kind": "query",
+    "providerName": "filesv2__query__trash_dot_list",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["after"]
+  },
+  {
+    "appId": "filesv2",
+    "capabilityId": "content.create",
+    "kind": "action",
+    "providerName": "filesv2__action__content_dot_create",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["path", "size", "mediaType", "onConflict", "expectedRevision"]
+  },
+  {
+    "appId": "filesv2",
+    "capabilityId": "entry.copy",
+    "kind": "action",
+    "providerName": "filesv2__action__entry_dot_copy",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["path", "folder"],
+    "refs": { "targetRootId": { "type": "entry", "field": "targetBaseId", "encoding": "root-entry" } }
+  },
+  {
+    "appId": "filesv2",
+    "capabilityId": "entry.move",
+    "kind": "action",
+    "providerName": "filesv2__action__entry_dot_move",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["path", "folder"]
+  },
+  {
+    "appId": "filesv2",
+    "capabilityId": "entry.rename",
+    "kind": "action",
+    "providerName": "filesv2__action__entry_dot_rename",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["path", "name"]
+  },
+  {
+    "appId": "filesv2",
+    "capabilityId": "entry.trash",
+    "kind": "action",
+    "providerName": "filesv2__action__entry_dot_trash",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["path"]
+  },
+  {
+    "appId": "filesv2",
+    "capabilityId": "folder.create",
+    "kind": "action",
+    "providerName": "filesv2__action__folder_dot_create",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["path"]
+  },
+  { "appId": "filesv2", "capabilityId": "provider.save", "kind": "action", "providerName": "filesv2__action__provider_dot_save" },
+  {
+    "appId": "filesv2",
+    "capabilityId": "trash.restore",
+    "kind": "action",
+    "providerName": "filesv2__action__trash_dot_restore",
+    "target": "entry",
+    "legacyTarget": "baseId",
+    "encoding": "root-entry",
+    "fields": ["id", "path"]
+  },
+  { "appId": "notebooks", "capabilityId": "annotation.list", "kind": "query", "providerName": "notebooks__query__annotation_dot_list" },
+  { "appId": "notebooks", "capabilityId": "annotation.read", "kind": "query", "providerName": "notebooks__query__annotation_dot_read" },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.replies",
+    "kind": "query",
+    "providerName": "notebooks__query__annotation_dot_replies"
+  },
+  { "appId": "notebooks", "capabilityId": "comment.browse", "kind": "query", "providerName": "notebooks__query__comment_dot_browse" },
+  { "appId": "notebooks", "capabilityId": "comment.list", "kind": "query", "providerName": "notebooks__query__comment_dot_list" },
+  { "appId": "notebooks", "capabilityId": "comment.read", "kind": "query", "providerName": "notebooks__query__comment_dot_read" },
+  { "appId": "notebooks", "capabilityId": "note.children", "kind": "query", "providerName": "notebooks__query__note_dot_children" },
+  { "appId": "notebooks", "capabilityId": "note.links", "kind": "query", "providerName": "notebooks__query__note_dot_links" },
+  { "appId": "notebooks", "capabilityId": "note.preview", "kind": "query", "providerName": "notebooks__query__note_dot_preview" },
+  { "appId": "notebooks", "capabilityId": "note.read", "kind": "query", "providerName": "notebooks__query__note_dot_read" },
+  { "appId": "notebooks", "capabilityId": "note.readable", "kind": "query", "providerName": "notebooks__query__note_dot_readable" },
+  { "appId": "notebooks", "capabilityId": "note.search", "kind": "query", "providerName": "notebooks__query__note_dot_search" },
+  { "appId": "notebooks", "capabilityId": "note.tree", "kind": "query", "providerName": "notebooks__query__note_dot_tree" },
+  { "appId": "notebooks", "capabilityId": "notebook.activity", "kind": "query", "providerName": "notebooks__query__notebook_dot_activity" },
+  { "appId": "notebooks", "capabilityId": "notebook.browse", "kind": "query", "providerName": "notebooks__query__notebook_dot_browse" },
+  {
+    "appId": "notebooks",
+    "capabilityId": "notebook.containers",
+    "kind": "query",
+    "providerName": "notebooks__query__notebook_dot_containers"
+  },
+  { "appId": "notebooks", "capabilityId": "notebook.list", "kind": "query", "providerName": "notebooks__query__notebook_dot_list" },
+  { "appId": "notebooks", "capabilityId": "notebook.read", "kind": "query", "providerName": "notebooks__query__notebook_dot_read" },
+  { "appId": "notebooks", "capabilityId": "notebook.readable", "kind": "query", "providerName": "notebooks__query__notebook_dot_readable" },
+  { "appId": "notebooks", "capabilityId": "notebook.search", "kind": "query", "providerName": "notebooks__query__notebook_dot_search" },
+  { "appId": "notebooks", "capabilityId": "tag.list", "kind": "query", "providerName": "notebooks__query__tag_dot_list" },
+  { "appId": "notebooks", "capabilityId": "tag.notes", "kind": "query", "providerName": "notebooks__query__tag_dot_notes" },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.accept",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_accept",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["operationId", "expectedText", "replyId", "noteId", "annotationId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.create",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_create",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["quote", "prefix", "suffix", "occurrence", "offsetHint", "body", "suggestion", "noteId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.delete",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_delete",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["noteId", "annotationId", "replyId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.edit",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_edit",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["body", "suggestion", "noteId", "annotationId", "replyId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.reject",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_reject",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["replyId", "rejected", "noteId", "annotationId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.reply",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_reply",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["body", "suggestion", "noteId", "annotationId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.resolve",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_resolve",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["noteId", "annotationId", "resolved"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.restore",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_restore",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["noteId", "annotationId", "replyId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "annotation.undo-accept",
+    "kind": "action",
+    "providerName": "notebooks__action__annotation_dot_undo-accept",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["operationId", "expectedText", "noteId", "annotationId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "comment.create",
+    "kind": "action",
+    "providerName": "notebooks__action__comment_dot_create",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["noteId", "content"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "comment.delete",
+    "kind": "action",
+    "providerName": "notebooks__action__comment_dot_delete",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["commentId"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "comment.update",
+    "kind": "action",
+    "providerName": "notebooks__action__comment_dot_update",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["commentId", "content"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "note.create",
+    "kind": "action",
+    "providerName": "notebooks__action__note_dot_create",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["parentId", "position", "content"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "note.edit",
+    "kind": "action",
+    "providerName": "notebooks__action__note_dot_edit",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["noteId", "operations", "ifUpdatedAt", "ifContentHash", "ifBlockHash", "blockLimit"]
+  },
+  {
+    "appId": "notebooks",
+    "capabilityId": "note.move",
+    "kind": "action",
+    "providerName": "notebooks__action__note_dot_move",
+    "target": "notebook",
+    "legacyTarget": "notebookId",
+    "fields": ["noteId", "parentId", "position", "before", "after"]
+  },
+  { "appId": "pulse", "capabilityId": "alert.list", "kind": "query", "providerName": "pulse__query__alert_dot_list" },
+  { "appId": "pulse", "capabilityId": "alert.read", "kind": "query", "providerName": "pulse__query__alert_dot_read" },
+  { "appId": "pulse", "capabilityId": "base.list", "kind": "query", "providerName": "pulse__query__base_dot_list" },
+  { "appId": "pulse", "capabilityId": "base.read", "kind": "query", "providerName": "pulse__query__base_dot_read" },
+  { "appId": "pulse", "capabilityId": "base.search", "kind": "query", "providerName": "pulse__query__base_dot_search" },
+  { "appId": "pulse", "capabilityId": "saved_query.list", "kind": "query", "providerName": "pulse__query__saved__query_dot_list" },
+  { "appId": "pulse", "capabilityId": "source.list", "kind": "query", "providerName": "pulse__query__source_dot_list" },
+  { "appId": "pulse", "capabilityId": "source.read", "kind": "query", "providerName": "pulse__query__source_dot_read" },
+  { "appId": "pulse", "capabilityId": "sql.run", "kind": "query", "providerName": "pulse__query__sql_dot_run" },
+  {
+    "appId": "pulse",
+    "capabilityId": "alert.delete",
+    "kind": "action",
+    "providerName": "pulse__action__alert_dot_delete",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["ruleId", "expectedRevision"]
+  },
+  {
+    "appId": "pulse",
+    "capabilityId": "alert.save",
+    "kind": "action",
+    "providerName": "pulse__action__alert_dot_save",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": [
+      "comparison",
+      "warn",
+      "critical",
+      "minDurationSeconds",
+      "intervalSeconds",
+      "name",
+      "sql",
+      "params",
+      "ruleId",
+      "expectedRevision"
+    ]
+  },
+  {
+    "appId": "pulse",
+    "capabilityId": "base.clear_data",
+    "kind": "action",
+    "providerName": "pulse__action__base_dot_clear__data",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["expectedUpdatedAt"]
+  },
+  { "appId": "pulse", "capabilityId": "base.create", "kind": "action", "providerName": "pulse__action__base_dot_create" },
+  {
+    "appId": "pulse",
+    "capabilityId": "base.delete",
+    "kind": "action",
+    "providerName": "pulse__action__base_dot_delete",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["expectedUpdatedAt"]
+  },
+  {
+    "appId": "pulse",
+    "capabilityId": "ingest.write",
+    "kind": "action",
+    "providerName": "pulse__action__ingest_dot_write",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["sourceId", "expectedRevision", "batch"]
+  },
+  {
+    "appId": "pulse",
+    "capabilityId": "saved_query.delete",
+    "kind": "action",
+    "providerName": "pulse__action__saved__query_dot_delete",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["queryId", "expectedRevision"]
+  },
+  {
+    "appId": "pulse",
+    "capabilityId": "saved_query.save",
+    "kind": "action",
+    "providerName": "pulse__action__saved__query_dot_save",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["sql", "params", "pinned", "queryId", "expectedRevision", "name"]
+  },
+  {
+    "appId": "pulse",
+    "capabilityId": "source.create",
+    "kind": "action",
+    "providerName": "pulse__action__source_dot_create",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": ["kind", "name", "endpointUrl", "scrapeIntervalSeconds", "metricFilters", "expectEverySeconds", "expectDailyBy"]
+  },
+  {
+    "appId": "pulse",
+    "capabilityId": "source.update",
+    "kind": "action",
+    "providerName": "pulse__action__source_dot_update",
+    "target": "base",
+    "legacyTarget": "baseId",
+    "fields": [
+      "expectedRevision",
+      "name",
+      "enabled",
+      "endpointUrl",
+      "scrapeIntervalSeconds",
+      "metricFilters",
+      "expectEverySeconds",
+      "expectDailyBy",
+      "sourceId"
+    ]
+  },
+  { "appId": "venue", "capabilityId": "assignment.mine", "kind": "query", "providerName": "venue__query__assignment_dot_mine" },
+  { "appId": "venue", "capabilityId": "assignment.read", "kind": "query", "providerName": "venue__query__assignment_dot_read" },
+  { "appId": "venue", "capabilityId": "feedback.summary", "kind": "query", "providerName": "venue__query__feedback_dot_summary" },
+  { "appId": "venue", "capabilityId": "shift.list", "kind": "query", "providerName": "venue__query__shift_dot_list" },
+  { "appId": "venue", "capabilityId": "shift.read", "kind": "query", "providerName": "venue__query__shift_dot_read" },
+  { "appId": "venue", "capabilityId": "venue.list", "kind": "query", "providerName": "venue__query__venue_dot_list" },
+  { "appId": "venue", "capabilityId": "venue.read", "kind": "query", "providerName": "venue__query__venue_dot_read" },
+  { "appId": "venue", "capabilityId": "venue.search", "kind": "query", "providerName": "venue__query__venue_dot_search" },
+  { "appId": "venue", "capabilityId": "venue.status", "kind": "query", "providerName": "venue__query__venue_dot_status" },
+  {
+    "appId": "venue",
+    "capabilityId": "assignment.cancel",
+    "kind": "action",
+    "providerName": "venue__action__assignment_dot_cancel",
+    "target": "venue",
+    "legacyTarget": "venueId",
+    "fields": ["assignmentId"]
+  },
+  {
+    "appId": "venue",
+    "capabilityId": "assignment.signup",
+    "kind": "action",
+    "providerName": "venue__action__assignment_dot_signup",
+    "target": "venue",
+    "legacyTarget": "venueId",
+    "fields": ["templateId", "date"]
+  },
+  {
+    "appId": "venue",
+    "capabilityId": "assignment.signup_free",
+    "kind": "action",
+    "providerName": "venue__action__assignment_dot_signup__free",
+    "target": "venue",
+    "legacyTarget": "venueId",
+    "fields": ["startsAt", "endsAt", "note"]
+  },
+  { "appId": "weather", "capabilityId": "forecast.current", "kind": "query", "providerName": "weather__query__forecast_dot_current" },
+  { "appId": "weather", "capabilityId": "forecast.get", "kind": "query", "providerName": "weather__query__forecast_dot_get" },
+  { "appId": "weather", "capabilityId": "location.list", "kind": "query", "providerName": "weather__query__location_dot_list" },
+  { "appId": "weather", "capabilityId": "location.read", "kind": "query", "providerName": "weather__query__location_dot_read" },
+  { "appId": "weather", "capabilityId": "location.search", "kind": "query", "providerName": "weather__query__location_dot_search" },
+  { "appId": "weather", "capabilityId": "location.create", "kind": "action", "providerName": "weather__action__location_dot_create" },
+  {
+    "appId": "weather",
+    "capabilityId": "location.delete",
+    "kind": "action",
+    "providerName": "weather__action__location_dot_delete",
+    "target": "location",
+    "legacyTarget": "locationId",
+    "fields": []
+  },
+  { "appId": "core", "capabilityId": "address.autocomplete", "kind": "query", "providerName": "core__query__address_dot_autocomplete" },
+  { "appId": "core", "capabilityId": "address.geocode", "kind": "query", "providerName": "core__query__address_dot_geocode" },
+  { "appId": "core", "capabilityId": "address.reverse", "kind": "query", "providerName": "core__query__address_dot_reverse" },
+  { "appId": "core", "capabilityId": "ai.chat.read", "kind": "query", "providerName": "core__query__ai_dot_chat_dot_read" },
+  { "appId": "core", "capabilityId": "ai.chat.resources", "kind": "query", "providerName": "core__query__ai_dot_chat_dot_resources" },
+  { "appId": "core", "capabilityId": "ai.chat.search", "kind": "query", "providerName": "core__query__ai_dot_chat_dot_search" },
+  { "appId": "core", "capabilityId": "ai.chats.resources", "kind": "query", "providerName": "core__query__ai_dot_chats_dot_resources" },
+  { "appId": "core", "capabilityId": "ai.chats.search", "kind": "query", "providerName": "core__query__ai_dot_chats_dot_search" },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.access.read",
+    "kind": "query",
+    "providerName": "core__query__ai_dot_skill_dot_access_dot_read"
+  },
+  { "appId": "core", "capabilityId": "ai.skill.read", "kind": "query", "providerName": "core__query__ai_dot_skill_dot_read" },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.reference.read",
+    "kind": "query",
+    "providerName": "core__query__ai_dot_skill_dot_reference_dot_read"
+  },
+  { "appId": "core", "capabilityId": "ai.skills.list", "kind": "query", "providerName": "core__query__ai_dot_skills_dot_list" },
+  { "appId": "core", "capabilityId": "ai.task.read", "kind": "query", "providerName": "core__query__ai_dot_task_dot_read" },
+  { "appId": "core", "capabilityId": "ai.task.run.read", "kind": "query", "providerName": "core__query__ai_dot_task_dot_run_dot_read" },
+  { "appId": "core", "capabilityId": "ai.tasks.list", "kind": "query", "providerName": "core__query__ai_dot_tasks_dot_list" },
+  { "appId": "core", "capabilityId": "entities.search", "kind": "query", "providerName": "core__query__entities_dot_search" },
+  { "appId": "core", "capabilityId": "geo.availability", "kind": "query", "providerName": "core__query__geo_dot_availability" },
+  { "appId": "core", "capabilityId": "map.style", "kind": "query", "providerName": "core__query__map_dot_style" },
+  { "appId": "core", "capabilityId": "place.search", "kind": "query", "providerName": "core__query__place_dot_search" },
+  { "appId": "core", "capabilityId": "route.calculate", "kind": "query", "providerName": "core__query__route_dot_calculate" },
+  { "appId": "core", "capabilityId": "route.update", "kind": "query", "providerName": "core__query__route_dot_update" },
+  {
+    "appId": "core",
+    "capabilityId": "ai.chat.message",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_chat_dot_message",
+    "target": "ai.chat",
+    "legacyTarget": "chatId",
+    "fields": ["text"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.access.change",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_skill_dot_access_dot_change",
+    "target": "ai.skill",
+    "legacyTarget": "skillId",
+    "fields": ["expectedAccessRevision", "principal", "accessId", "permission"]
+  },
+  { "appId": "core", "capabilityId": "ai.skill.create", "kind": "action", "providerName": "core__action__ai_dot_skill_dot_create" },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.delete",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_skill_dot_delete",
+    "target": "ai.skill",
+    "legacyTarget": "skillId",
+    "fields": []
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.enabled.set",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_skill_dot_enabled_dot_set",
+    "target": "ai.skill",
+    "legacyTarget": "skillId",
+    "fields": ["enabled"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.reference.remove",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_skill_dot_reference_dot_remove",
+    "target": "ai.skill",
+    "legacyTarget": "skillId",
+    "fields": ["expectedRevision", "path"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.reference.set",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_skill_dot_reference_dot_set",
+    "target": "ai.skill",
+    "legacyTarget": "skillId",
+    "fields": ["expectedRevision", "path", "content"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.references.set",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_skill_dot_references_dot_set",
+    "target": "ai.skill",
+    "legacyTarget": "skillId",
+    "fields": ["expectedRevision", "references"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.skill.update",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_skill_dot_update",
+    "target": "ai.skill",
+    "legacyTarget": "skillId",
+    "fields": ["expectedRevision", "name", "description", "instructions"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.task.create",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_task_dot_create",
+    "target": "ai.chat",
+    "legacyTarget": "chatId",
+    "fields": ["title", "prompt", "grants", "schedule", "timezone"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.task.delete",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_task_dot_delete",
+    "target": "ai.chat",
+    "legacyTarget": "chatId",
+    "fields": ["taskId"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.task.pause",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_task_dot_pause",
+    "target": "ai.chat",
+    "legacyTarget": "chatId",
+    "fields": ["taskId"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.task.resume",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_task_dot_resume",
+    "target": "ai.chat",
+    "legacyTarget": "chatId",
+    "fields": ["taskId"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.task.run",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_task_dot_run",
+    "target": "ai.chat",
+    "legacyTarget": "chatId",
+    "fields": ["taskId"]
+  },
+  {
+    "appId": "core",
+    "capabilityId": "ai.task.update",
+    "kind": "action",
+    "providerName": "core__action__ai_dot_task_dot_update",
+    "target": "ai.chat",
+    "legacyTarget": "chatId",
+    "fields": ["taskId", "title", "prompt", "grants", "schedule", "timezone"]
+  },
+  { "appId": "chat", "capabilityId": "discussion.list", "kind": "query", "providerName": "chat__query__discussion_dot_list" },
+  { "appId": "chat", "capabilityId": "message.read", "kind": "query", "providerName": "chat__query__message_dot_read" },
+  { "appId": "chat", "capabilityId": "notifications.read", "kind": "query", "providerName": "chat__query__notifications_dot_read" },
+  { "appId": "chat", "capabilityId": "discussion.post", "kind": "action", "providerName": "chat__action__discussion_dot_post" },
+  {
+    "appId": "chat",
+    "capabilityId": "message.delete",
+    "kind": "action",
+    "providerName": "chat__action__message_dot_delete",
+    "target": "message",
+    "legacyTarget": "id",
+    "fields": ["revision"]
+  },
+  {
+    "appId": "chat",
+    "capabilityId": "message.edit",
+    "kind": "action",
+    "providerName": "chat__action__message_dot_edit",
+    "target": "message",
+    "legacyTarget": "id",
+    "fields": ["revision", "body"]
+  },
+  {
+    "appId": "chat",
+    "capabilityId": "notifications.set",
+    "kind": "action",
+    "providerName": "chat__action__notifications_dot_set",
+    "target": "conversation",
+    "legacyTarget": "conversation",
+    "fields": ["notifications"]
+  },
+  {
+    "appId": "chat",
+    "capabilityId": "thread.follow",
+    "kind": "action",
+    "providerName": "chat__action__thread_dot_follow",
+    "target": "conversation",
+    "legacyTarget": "conversation",
+    "fields": ["thread", "following"]
+  },
+  { "appId": "assistant", "capabilityId": "app.search", "kind": "query", "providerName": "assistant__query__app_dot_search" },
+  { "appId": "assistant", "capabilityId": "project.search", "kind": "query", "providerName": "assistant__query__project_dot_search" },
+  { "appId": "assistant", "capabilityId": "chat.search", "kind": "query", "providerName": "assistant__query__chat_dot_search" },
+  { "appId": "accounts", "capabilityId": "search", "kind": "query", "providerName": "accounts__query__search" },
+  { "appId": "capabilities", "capabilityId": "search", "kind": "query", "providerName": "capabilities__query__search" },
+  {
+    "appId": "gateway-ops",
+    "capabilityId": "app-status.summary",
+    "kind": "query",
+    "providerName": "gateway-ops__query__app-status_dot_summary"
+  },
+  {
+    "appId": "gateway-ops",
+    "capabilityId": "app-status.detail",
+    "kind": "query",
+    "providerName": "gateway-ops__query__app-status_dot_detail"
+  },
+  {
+    "appId": "gateway-ops",
+    "capabilityId": "app-status.forget",
+    "kind": "action",
+    "providerName": "gateway-ops__action__app-status_dot_forget"
+  }
+]

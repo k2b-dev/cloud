@@ -9,7 +9,7 @@ import {
   type Sync,
   SyncUsageError,
 } from "@k2b/sync";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { respond } from "../server/api/respond";
 import type { AuthContext, RequestActor } from "../server/middleware/auth";
@@ -84,18 +84,27 @@ const previewData = (data: unknown, limit = DATA_PREVIEW_BYTES) => {
   };
 };
 
-const toEntry = (entry: DeadLetter<unknown> & { streamSequence?: number }, limit = DATA_PREVIEW_BYTES): SyncDeadLetterEntry => ({
+const canReadContent = (c: Context<AuthContext>): boolean => {
+  const kind = c.get("credentialKind") === "invocation" ? c.get("actor")?.delegation?.credentialKind : c.get("credentialKind");
+  return kind === "session" || kind === "api_key" || (kind === "oauth" && (c.get("credentialScopes") ?? []).includes("admin"));
+};
+
+const toEntry = (
+  entry: DeadLetter<unknown> & { streamSequence?: number },
+  limit = DATA_PREVIEW_BYTES,
+  content = true,
+): SyncDeadLetterEntry => ({
   messageId: entry.messageId,
   tenantId: entry.tenantId,
   attempts: entry.attempts,
   failedAt: iso(entry.failedAt),
-  reason: entry.reason,
-  error: entry.error ?? null,
-  ...previewData(entry.data, limit),
+  reason: content ? entry.reason : "[redacted]",
+  error: content ? (entry.error ?? null) : null,
+  ...(content ? previewData(entry.data, limit) : { dataPreview: "[redacted]" }),
   ...(entry.streamSequence !== undefined ? { streamSequence: entry.streamSequence } : {}),
 });
 
-const toScheduleView = (schedulerId: string, info: ScheduleInfo): SyncScheduleView => ({
+const toScheduleView = (schedulerId: string, info: ScheduleInfo, content = true): SyncScheduleView => ({
   schedulerId,
   id: info.id,
   cron: info.cron,
@@ -104,13 +113,13 @@ const toScheduleView = (schedulerId: string, info: ScheduleInfo): SyncScheduleVi
   nextRunAt: iso(info.nextRunAt),
   runNumber: info.runNumber,
   failureCount: info.failureCount,
-  lastError: info.lastError ?? null,
+  lastError: content ? (info.lastError ?? null) : null,
   lastRunId: info.lastRunId ?? null,
   lastCompletedAt: info.lastCompletedAt ? iso(info.lastCompletedAt) : null,
   handlerAvailable: info.handlerAvailable,
   createdAt: iso(info.createdAt),
   updatedAt: iso(info.updatedAt),
-  meta: info.meta ?? null,
+  meta: content ? (info.meta ?? null) : null,
 });
 
 const auditActor = (actor: RequestActor | undefined): AuditActor | null => {
@@ -120,11 +129,11 @@ const auditActor = (actor: RequestActor | undefined): AuditActor | null => {
   return actor.kind === "service_account" ? { uid: actor.serviceAccount.name, roles: [] } : null;
 };
 
-const asFailure = <T>(error: unknown, notFoundLabel: string): Result<T> => {
+const asFailure = <T>(error: unknown, notFoundLabel: string, content = true): Result<T> => {
   if (error instanceof NotFoundError) return fail(err.notFound(notFoundLabel));
-  if (error instanceof ConflictError) return fail(err.conflict(error.message));
-  if (error instanceof SyncUsageError) return fail(err.badInput(error.message));
-  return fail(err.internal(error instanceof Error ? error.message : String(error)));
+  if (error instanceof ConflictError) return fail(err.conflict(content ? error.message : "Sync operation conflict"));
+  if (error instanceof SyncUsageError) return fail(err.badInput(content ? error.message : "Invalid Sync operation"));
+  return fail(err.internal(content ? (error instanceof Error ? error.message : String(error)) : "Sync operation failed"));
 };
 
 const DeadLettersQuerySchema = z.object({
@@ -176,12 +185,17 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
   const findStore = (kind: SyncDeadLetterKind, name: string) => stores().find((entry) => entry.kind === kind && entry.id === name) ?? null;
   const findScheduler = (name: string) => schedulers().find((entry) => entry.id === name) ?? null;
 
-  const readPage = async (store: NonNullable<ReturnType<typeof findStore>>, limit: number, cursor?: string) => {
+  const readPage = async (
+    store: NonNullable<ReturnType<typeof findStore>>,
+    limit: number,
+    cursor: string | undefined,
+    content: boolean,
+  ) => {
     if (store.kind === "topic") {
       const entries = await store.deadLetters.list({ limit: limit + 1, after: cursor });
       return {
         entries: entries.slice(0, limit).map((entry) => ({
-          ...toEntry(entry),
+          ...toEntry(entry, DATA_PREVIEW_BYTES, content),
           consumer: entry.consumer,
           eventId: entry.eventId,
           replayAvailable: entry.replayAvailable,
@@ -190,7 +204,7 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
       };
     }
     const page = await store.deadLetters.page({ limit, cursor });
-    return { entries: page.entries.map((entry) => toEntry(entry)), nextCursor: page.nextCursor };
+    return { entries: page.entries.map((entry) => toEntry(entry, DATA_PREVIEW_BYTES, content)), nextCursor: page.nextCursor };
   };
 
   return (
@@ -199,7 +213,13 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
       .get("/resources", async (c) => {
         const sync = getSync();
         const resources = await sync.resources();
-        return respond(c, ok({ health: sync.health(), resources }));
+        return respond(
+          c,
+          ok({
+            health: sync.health(),
+            resources: canReadContent(c) ? resources : resources.map(({ error: _error, ...resource }) => resource),
+          }),
+        );
       })
 
       /** Every declared dead-letter store with a bounded page of entries. */
@@ -207,7 +227,7 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         const { limit } = c.req.valid("query");
         const entries = await Promise.all(
           stores().map(async (registration): Promise<SyncDeadLetterStoreView> => {
-            const page = await readPage(registration, limit);
+            const page = await readPage(registration, limit, undefined, canReadContent(c));
             return {
               name: registration.id,
               kind: registration.kind,
@@ -227,7 +247,7 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         const store = findStore(kind, name);
         if (!store) return respond(c, fail(err.notFound("Dead-letter store")));
         try {
-          const page = await readPage(store, limit, cursor);
+          const page = await readPage(store, limit, cursor, canReadContent(c));
           return respond(
             c,
             ok({
@@ -237,7 +257,7 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
             }),
           );
         } catch (error) {
-          return respond(c, asFailure(error, "Dead-letter store"));
+          return respond(c, asFailure(error, "Dead-letter store", canReadContent(c)));
         }
       })
       .get(
@@ -259,7 +279,7 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
                 c,
                 ok({
                   entry: {
-                    ...toEntry(entry, DETAIL_PREVIEW_BYTES),
+                    ...toEntry(entry, DETAIL_PREVIEW_BYTES, canReadContent(c)),
                     consumer: entry.consumer,
                     eventId: entry.eventId,
                     replayAvailable: entry.replayAvailable,
@@ -272,11 +292,11 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
             return respond(
               c,
               entry
-                ? ok({ entry: toEntry(entry, DETAIL_PREVIEW_BYTES), sampledAt: new Date().toISOString() })
+                ? ok({ entry: toEntry(entry, DETAIL_PREVIEW_BYTES, canReadContent(c)), sampledAt: new Date().toISOString() })
                 : fail(err.notFound("Dead letter")),
             );
           } catch (error) {
-            return respond(c, asFailure(error, "Dead letter"));
+            return respond(c, asFailure(error, "Dead letter", canReadContent(c)));
           }
         },
       )
@@ -357,7 +377,7 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         const schedules = (
           await Promise.all(
             schedulers().map(async (registration) =>
-              (await registration.scheduler.list()).map((info) => toScheduleView(registration.id, info)),
+              (await registration.scheduler.list()).map((info) => toScheduleView(registration.id, info, canReadContent(c))),
             ),
           )
         ).flat();
@@ -393,8 +413,8 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         if (!registration) return respond(c, fail(err.notFound("Scheduler")));
         const result = await registration.scheduler
           .awaitRun({ id, runId, timeoutMs })
-          .then((run) => ok({ completed: run.completed, error: run.error ?? null }))
-          .catch((error: unknown) => asFailure<{ completed: boolean; error: string | null }>(error, "Schedule"));
+          .then((run) => ok({ completed: run.completed, error: canReadContent(c) ? (run.error ?? null) : null }))
+          .catch((error: unknown) => asFailure<{ completed: boolean; error: string | null }>(error, "Schedule", canReadContent(c)));
         return respond(c, result);
       })
   );
