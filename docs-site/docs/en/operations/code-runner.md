@@ -196,8 +196,8 @@ queue wakeups; brief transport outages do not discard queued runs.
 ## Configure runner budgets
 
 Change these settings in Administration › Code or through `cld settings apply`.
-Restart runner replicas after changing their configuration. Keep the transport
-timeout above the long-poll duration so acquisition can finish normally.
+Restart runner replicas after changing their configuration. Acquisition requests
+may take the long-poll duration plus the transport timeout.
 
 | Setting | Default | Controls |
 | --- | --- | --- |
