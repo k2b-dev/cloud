@@ -88,18 +88,31 @@ If a later target refuses, Core removes only grant IDs belonging to that
 activation, including attempts whose responses were lost. Reused grants remain.
 Each target adapter must keep grants with different IDs independent.
 
-For Cloud-admin notifications, a successful adapter `grant` decision includes
-`managerUserIds`, the current concrete human administrators, including members
-of administrator groups. Return these IDs on dry runs; Core persists that
-audience before applying grants, so retries and real sets may omit it. Core refuses a
-Cloud-admin activation when the audience is unavailable; an empty list means the
-target has no human managers. This additive field belongs to `CodeAccessDecision`
-and `CodeAccessSetData`; the four adapter functions and proof v1 stay unchanged.
-Every target adapter, including third-party adapters, must supply this audience
-for Cloud-admin activation. Mail's mailbox adapter supplies bounded UUID pages
-through the shared access resolver, without scanning the whole user directory.
-If that audience exceeds the capability result budget, Mail refuses the dry run;
-this limit also applies to activation by an ordinary owner administrator.
+Dry-run answers reveal only what the person may read. A target's existing
+`access.readable` check controls whether an activation refusal includes its
+`title` and `managerUserIds`. Otherwise the answer keeps the target ID and the
+stable reason code, with “Only someone who manages this target can activate it”
+(“Einschalten kann nur, wer dieses Ziel verwaltet” in German). The Code link
+remains available to copy. Status reads check the current reader again before
+returning a saved title or manager list.
+
+Cloud-admin notification audiences use a separate Core-only, target-bound
+`signCodeAccessNotifications` proof. Each successful adapter dry run identifies
+current human managers in `managerUserIds`, including administrator-group
+members. Core obtains this audience through the server-only notification lookup,
+then records one durable notice per manager and target when activation commits.
+Recipients do not enter the target plan or the person's set answer when the
+target is unreadable. A retry repeats preflight and obtains the current audience;
+real sets need not return it. A target that omits the audience refuses activation with
+`managers_unavailable`; a network outage retries. An empty array means there are
+no human managers. Every adapter, including a
+third-party adapter, supplies this audience for Cloud-admin activation. The
+shared capability result budget bounds it; refuse an oversized audience rather
+than truncate it.
+
+Activation stores target references, plans and failures as JSON objects or
+arrays. Rollback routes every persisted grant to its target provider before
+marking it released, including a write whose response was lost.
 
 ## Version mandates and old runs
 

@@ -711,6 +711,9 @@ for activation proofs, dry runs, retry safety, and cleanup.
 
 Code activation checks the person's current target administration rights in the
 same transaction as the grant. Changes to target shares or manager-group
-membership wait until that transaction completes. Successful dry runs return
-`managerUserIds`, including people in nested manager groups, for Core's activation
-notifications. Code accounts never appear among these managers.
+membership wait until that transaction completes. Adapter dry runs identify
+human managers, including nested manager-group members. Generated answers return
+the Space title and `managerUserIds` only when the activating person passes the
+existing Space `access.readable` check. Core obtains activation-notification
+recipients through its separate server-only lookup. Code accounts never appear
+among these managers.

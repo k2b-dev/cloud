@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
+import type { CapabilityExecutionContext, ResourcePrincipal, User } from "@k2b/cloud/contracts";
 import { serviceAccounts } from "@k2b/cloud/services";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
@@ -218,6 +218,39 @@ suite("Mail mailbox Code access", () => {
     expect(await revoke(target.shortId, granted.grantId)).toBe(true);
   });
 
+  test("mailbox access.readable follows current Mail grants and excludes foreign Code readers", async () => {
+    const target = await mailbox(),
+      another = await mailbox();
+    const person: ResourcePrincipal = { type: "user", userId: owner.id };
+    const account: ResourcePrincipal = { type: "service_account", serviceAccountId: principal(code) };
+    const readable = mailCapabilities.types.mailbox.access.readable;
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person]);
+    const granted = await grant(target.shortId, code, ["mail.mailbox.read"]);
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person, account]);
+    const [signedIn] = await sql<{ id: string }[]>`INSERT INTO auth.access(authenticated_only,permission) VALUES(true,'read') RETURNING id`;
+    ordinaryAccessIds.push(signedIn!.id);
+    await sql`INSERT INTO mail.mailbox_access(mailbox_id,access_id) VALUES(${another.id}::uuid,${signedIn!.id}::uuid)`;
+    expect(await readable({ id: another.shortId, principals: [account] })).toEqual([]);
+    await revoke(target.shortId, granted.grantId);
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person]);
+    const assigned: ResourcePrincipal = { type: "service_account", serviceAccountId: principal(ordinary) };
+    expect(
+      (
+        await grantMailboxAccess({
+          context: ownerContext,
+          mailboxId: target.id,
+          principal: assigned,
+          permission: "read",
+          scope: "assigned",
+        })
+      ).ok,
+    ).toBe(true);
+    expect(await readable({ id: target.shortId, principals: [assigned] })).toEqual([assigned]);
+    expect(await getMailboxPermission(ordinary, target.id)).toBe("none");
+    expect(await getMailboxPermission(ownerContext, target.id)).toBe("admin");
+    await sql`UPDATE mail.mailboxes SET deleted_at=now() WHERE id=${target.id}::uuid`;
+    expect(await readable({ id: target.shortId, principals: [person] })).toEqual([]);
+  });
   test("lists only this account's grants and ignores group, signed-in and public access for Code", async () => {
     const target = await mailbox();
     const first = await grant(target.shortId, code, ["mail.mailbox.read"]);
