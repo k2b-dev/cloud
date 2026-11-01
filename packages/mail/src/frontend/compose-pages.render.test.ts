@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as cloudAi from "@k2b/cloud/ai";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
@@ -98,6 +99,7 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 beforeEach(() => {
+  spies.push(spyOn(cloudAi, "getLiveDictationStatus").mockResolvedValue({ available: false, reason: "not_configured" }));
   spies.push(spyOn(services.coreSettings, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));

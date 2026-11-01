@@ -97,7 +97,16 @@ selbst dazu, zum Beispiel: „Transkribiere diese Aufnahme und fasse die nächst
 Schritte zusammen.“ Das Anhängen allein startet keine Transkription. Der
 Assistent kann das Transkript als Textdatei im Chat speichern.
 
-Mit **Diktieren** sprichst du deinen Prompt ein. Die neutrale Wellenform zeigt
+Wenn deine Administration Live-Diktat eingerichtet hat, schreibt das Mikrofon
+neben Senden den Text, während du sprichst. Die Wörter erscheinen an der
+Schreibmarke; die neuesten sind kurz blau getönt. Du kannst gleichzeitig an
+anderer Stelle tippen. Stopp zeigt **Wird abgeschlossen …**, bis die letzten
+Wörter da sind. × entfernt nur die diktierten Wörter; Text, der vorher dastand,
+bleibt. Beim Live-Diktat speichert Cloud keinen Ton. Ist Live-Diktat
+ausgelastet, nutzt **Stattdessen aufnehmen** die Aufnahme unten; sie wird dann
+im Gespräch gespeichert.
+
+Ohne Live-Diktat sprichst du mit **Diktieren** eine Aufnahme ein. Die neutrale Wellenform zeigt
 deinen Mikrofonpegel. Mit × verwirfst du die Aufnahme; die quadratische Stopptaste
 beendet sie. **Aufnahme stoppen** lädt die
 vollständige Aufnahme hoch. Ist dein Eingabefeld unverändert geblieben, wird
