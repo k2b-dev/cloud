@@ -1,7 +1,13 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { appAccess } from "../contracts/app-access";
 import type { RequestAuthority } from "../server/middleware/auth";
-import { appAccessGrantCounts, canManageAppAccess, canRepairAppAccess, requireAppAccessManager } from "./app-access-management";
+import {
+  appAccessGrantCounts,
+  canManageAppAccess,
+  canReadAppAdministration,
+  canRepairAppAccess,
+  requireAppAccessManager,
+} from "./app-access-management";
 import { buildProjectedUser } from "./session/user";
 
 const user = buildProjectedUser({ id: "11111111-1111-4111-8111-111111111111", provider: "local", profile: "user", effective_admin: true });
@@ -90,7 +96,7 @@ test("expired people, disabled service accounts and expired or resource-bound ke
 });
 
 test("repair overview counts require administration and skip fixed apps without a database query", async () => {
-  await expect(appAccessGrantCounts({ ...authority(), credentialKind: "oauth", scopes: ["read"] }, [])).rejects.toMatchObject({
+  await expect(appAccessGrantCounts({ ...authority(), credentialKind: "oauth", scopes: ["write"] }, [])).rejects.toMatchObject({
     code: "FORBIDDEN",
   });
   expect(await appAccessGrantCounts(authority(), [{ id: "fixed", name: "Fixed", access: appAccess.signedIn() }])).toEqual(new Map());
@@ -108,4 +114,21 @@ test("management visibility never invokes the app callback to bypass a fixed rul
       restriction,
     ),
   ).toBe(false);
+});
+
+test("administration metadata needs live admin plus read without granting repair", () => {
+  for (const scopes of [["read"], ["read", "write"], ["admin"]]) {
+    const request = { ...authority(), credentialKind: "oauth" as const, scopes };
+    expect(canReadAppAdministration(request)).toBe(true);
+    expect(canRepairAppAccess(request)).toBe(scopes.includes("admin"));
+    expect(canReadAppAdministration({ ...request, actor: { kind: "user", user: { ...user, roles: ["user"] } } })).toBe(false);
+    expect(canReadAppAdministration({ ...request, actor: { kind: "user", user, sessionKind: "app" } })).toBe(false);
+    expect(canReadAppAdministration({ ...request, accessSubject: { type: "user", userId: "other" } })).toBe(false);
+    const client = service();
+    if (client.actor.kind !== "service_account") throw new Error("Expected client fixture");
+    expect(canReadAppAdministration({ ...client, credentialKind: "oauth", scopes, actor: { ...client.actor, delegatedUser: null } })).toBe(
+      false,
+    );
+  }
+  for (const scopes of [[], ["write"]]) expect(canReadAppAdministration({ ...authority(), credentialKind: "oauth", scopes })).toBe(false);
 });
