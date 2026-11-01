@@ -1,4 +1,5 @@
 import type { CloudResourceRef, NormalizedCapabilityCall } from "../contracts/capabilities";
+import type { CodeHttpRequest } from "../contracts/code-secrets";
 
 /** Resource/app Code has statically enumerable targets; personal Code and code_run may use dynamic IDs. */
 export type CodeSdkMode = "resource" | "personal" | "code_run";
@@ -19,7 +20,10 @@ export type CodeSdkCallMetadata = { idempotencyKey?: string };
 export type CodeSdkInvocation = { call: NormalizedCapabilityCall; metadata: CodeSdkCallMetadata };
 
 /** Runner-compatible object capability. Resolves domain data; the host throws on bridge refusals. No tokens enter the SDK. */
-export type CodeSdkBridge = { call(operation: string, input: CodeSdkInvocation): Promise<unknown> };
+export type CodeSdkBridge = {
+  call(operation: string, input: CodeSdkInvocation): Promise<unknown>;
+  call(operation: "http.fetch", input: CodeHttpRequest): Promise<unknown>;
+};
 
 /** One named export and its originating manifest hash; export names replace hyphens with underscores. */
 export type CodeSdkApp = { appId: string; exportName: string; manifestHash: string };

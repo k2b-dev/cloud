@@ -16,6 +16,7 @@ import { migrate as migrateCodeActivation } from "./migrate/core/code-activation
 import { migrate as migrateCodeJobs } from "./migrate/core/code-jobs";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
 import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
+import { migrate as migrateCodeSecrets } from "./migrate/core/code-secrets";
 import { migrate as migrateCodeVersions } from "./migrate/core/code-versions";
 /**
  * Core-specific lifecycle helpers.
@@ -138,6 +139,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "code-scheduling", run: migrateCodeScheduling },
     { name: "code-jobs", run: migrateCodeJobs },
     { name: "code-activation", run: migrateCodeActivation },
+    { name: "code-secrets", run: migrateCodeSecrets },
     { name: "known-apps", run: migrateKnownApps },
     { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },
