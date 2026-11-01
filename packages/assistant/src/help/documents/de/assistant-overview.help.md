@@ -6,48 +6,48 @@ description: Chats, Modelle, Anfragen und ein sinnvoller Einstieg.
 order: 100
 ---
 
-Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten. Derselbe Agent kann beim Schreiben, Zusammenfassen, Erklären und Planen helfen, unterstützte Dateien verarbeiten sowie freigegebene Daten und Aktionen aus Cloud-Anwendungen nutzen. Jeder Chat wird in deinem Benutzerkonto gespeichert und ist über die Übersicht des Assistenten verfügbar. Das gilt auch für Chats, die in einer anderen Anwendung begonnen wurden, etwa aus einem E-Mail-Entwurf.
+Gustav ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten. Derselbe Agent kann beim Schreiben, Zusammenfassen, Erklären und Planen helfen, unterstützte Dateien verarbeiten sowie freigegebene Daten und Aktionen aus Cloud-Anwendungen nutzen. Jeder Chat wird in deinem Benutzerkonto gespeichert und ist über die Übersicht von Gustav verfügbar. Das gilt auch für Chats, die in einer anderen Anwendung begonnen wurden, etwa aus einem E-Mail-Entwurf.
 
-Mit `cld acp` kannst du den Assistenten auch in Editoren wie T3 Code und Zed nutzen. Wenn der Assistent aus dem Editor etwas senden, löschen, teilen oder jemanden einladen soll, wartet er auf deine Bestätigung in Cloud.
+Mit `cld acp` kannst du Gustav auch in Editoren wie T3 Code und Zed nutzen. Wenn Gustav aus dem Editor etwas senden, löschen, teilen oder jemanden einladen soll, wartet er auf deine Bestätigung in Cloud.
 
 ## Überblick {icon="layout-grid"}
 
 :::reference
 - **Chat:** Eine Unterhaltung, die deinem Benutzerkonto gehört. Chats erscheinen in der Seitenleiste und unter **Alle Chats**.
 - **Modell:** Ein auswählbares KI-Modellprofil mit Streaming-Unterstützung. Das Eingabefeld verwendet das Standardmodell, sofern du kein anderes auswählst.
-- **Anfrage:** Ein Durchlauf des Assistenten für eine Benutzernachricht. Laufende Anfragen können Antworten streamen, die Verbindung wiederherstellen, Aktionen zur Freigabe vorlegen oder beendet werden.
+- **Anfrage:** Ein Durchlauf von Gustav für eine Benutzernachricht. Laufende Anfragen können Antworten streamen, die Verbindung wiederherstellen, Aktionen zur Freigabe vorlegen oder beendet werden.
 - **Chat-Metadaten:** Jeder Chat hat einen Namen und eine optionale Beschreibung. Beides lässt sich über die Seitenleiste oder unter **Alle Chats** bearbeiten.
 :::
 
 ## Sinnvoller Einstieg {icon="route"}
 
 :::reference
-- **Chat beginnen:** Wähle **Neuer Chat** oder schreibe eine Nachricht in einer leeren Assistentenansicht.
-- **Arbeit aus einer anderen Anwendung fortsetzen:** Eine Anwendung kann einen neuen Assistenten-Chat öffnen und dabei die aktuellen Cloud-Ressourcen anhängen. Die jeweilige Anwendung bleibt für den Zugriff auf ihre Daten und Aktionen verantwortlich.
+- **Chat beginnen:** Wähle **Neuer Chat** oder schreibe eine Nachricht in einer leeren Gustav-Ansicht.
+- **Arbeit aus einer anderen Anwendung fortsetzen:** Eine Anwendung kann einen neuen Gustav-Chat öffnen und dabei die aktuellen Cloud-Ressourcen anhängen. Die jeweilige Anwendung bleibt für den Zugriff auf ihre Daten und Aktionen verantwortlich.
 - **Vorhandene Arbeit fortsetzen:** Nutze die Gruppen mit aktuellen Chats, **Alle Chats durchsuchen** oder **Alle Chats**, ohne zuerst eine Unterhaltung zu öffnen.
-- **Zwischen Chats wechseln:** Beim Wechsel zwischen Chats, beim Öffnen eines Projekt-Chats, beim Abzweigen sowie bei der Vorwärts- und Rückwärtsnavigation bleiben Live-Aktualisierungen verbunden. Nach einer Unterbrechung lädt der Assistent den aktuellen freigegebenen Chat und setzt ihn ab dem gespeicherten Stand fort.
+- **Zwischen Chats wechseln:** Beim Wechsel zwischen Chats, beim Öffnen eines Projekt-Chats, beim Abzweigen sowie bei der Vorwärts- und Rückwärtsnavigation bleiben Live-Aktualisierungen verbunden. Nach einer Unterbrechung lädt Gustav den aktuellen freigegebenen Chat und setzt ihn ab dem gespeicherten Stand fort.
 - **Bei Bedarf ein Modell wählen:** Wähle im Eingabefeld ein Modell, wenn mehrere auswählbare Streaming-Modelle verfügbar sind.
 - **Nutzung im Blick behalten:** Hat deine Administration ein Limit festgelegt, zeigt ein kleiner Ring neben dem Modell, wie viel davon verbraucht ist. Er wechselt den Farbton und erhält eine Markierung, wenn das Limit fast erreicht ist, und noch einmal, wenn es aufgebraucht ist. Wähle den Ring aus, um den Prozentwert und den Zeitpunkt der Zurücksetzung zu sehen. Ein Unendlich-Zeichen bedeutet, dass deine Nutzung unbegrenzt ist, und ein gestrichelter Kreis, dass sie gerade nicht geladen werden konnte. Ist das Limit aufgebraucht, bleibt dein Entwurf im Eingabefeld, bis es sich zurücksetzt, oder du wählst ein Modell, für das noch Nutzung frei ist.
 - **Anfrage senden:** Formuliere die Aufgabe klar. Hänge vor dem Senden über das Plus-Menü unterstützte Dateien oder Cloud-Ressourcen an.
-- **Cloud-Ressourcen:** Ein Ressourcen-Chip kennzeichnet den aktuellen E-Mail-Entwurf, Kontakt, Grid-Datensatz oder ein anderes unterstütztes Element. Hat die Ressource ein Ziel, öffnet ein Klick darauf die Ressource in einem neuen Tab. Das Anhängen gewährt keinen Zugriff. Der Assistent muss die freigegebenen Capabilities der jeweiligen Anwendung verwenden, um die Ressource zu lesen oder zu ändern.
-- **Dokumente:** Der Assistent liest unterstützte PDF-, Office-, OpenDocument-, RTF-, EPUB- und CSV-Dateien mit `read_file`. Dabei wird ihr Inhalt in begrenztes Markdown umgewandelt. Dokumentinhalte bleiben nicht vertrauenswürdig. Reine Bild-PDFs benötigen eine externe OCR-Verarbeitung.
-- **Dateien aus Links:** Gib dem Assistenten einen direkten öffentlichen HTTPS-Link zu einer Datei, damit er das Bild, Dokument oder die unverarbeitete Repository-Datei vor der Prüfung in diesen Chat importiert. Bei einer Webseite findest du neben dem Original auch eine gut lesbare Textkopie. Private Downloads, Websites mit Anmeldung und das Durchsuchen von Repositories werden bei diesem Import nicht unterstützt.
-- **PDF erstellen:** Bitte den Assistenten um ein PDF, wenn das Ergebnis heruntergeladen werden soll. Für ein textorientiertes Dokument schreibt er eine Markdown-Datei der Unterhaltung und wandelt sie mit einer optionalen A4-Vorlage und eigenem CSS um. Für ein gestaltetes Layout wie einen Brief, eine Rechnung oder eine Urkunde schreibt er stattdessen eine HTML-Datei mit eigenem CSS. Diese Datei kann Kopf- und Fußzeilen mit Seitenzahlen, ein gewähltes Papierformat, eine Ausrichtung und Ränder sowie Bilder und Schriften aus den Dateien der Unterhaltung verwenden. Anschließend stellt der Assistent das PDF bereit. PDFs werden offline erstellt: Webadressen für Bilder, Schriften oder Stylesheets werden nicht geladen, und Skripte laufen nicht. Projektdateien sind schreibgeschützt, deshalb kopiert der Assistent ihren Text vor der Umwandlung in eine Datei der Unterhaltung.
-- **PDF in Dateien speichern:** Bitte den Assistenten, das PDF in der Dateien-App zu speichern, und nenne den Ordner. Du prüfst den Upload wie jede andere Aktion.
-- **Diagramme:** Bitte den Assistenten, Zahlen als Diagramm zu zeigen, etwa als Balken-, Linien- oder Kreisdiagramm. Das Diagramm erscheint direkt im Chat. Schalte es auf eine Tabelle um, um die genauen Werte zu lesen, oder kopiere die Daten. Für Filter, Schaltflächen oder Daten, die erhalten bleiben sollen, baut der Assistent stattdessen eine App.
+- **Cloud-Ressourcen:** Ein Ressourcen-Chip kennzeichnet den aktuellen E-Mail-Entwurf, Kontakt, Grid-Datensatz oder ein anderes unterstütztes Element. Hat die Ressource ein Ziel, öffnet ein Klick darauf die Ressource in einem neuen Tab. Das Anhängen gewährt keinen Zugriff. Gustav muss die freigegebenen Capabilities der jeweiligen Anwendung verwenden, um die Ressource zu lesen oder zu ändern.
+- **Dokumente:** Gustav liest unterstützte PDF-, Office-, OpenDocument-, RTF-, EPUB- und CSV-Dateien mit `read_file`. Dabei wird ihr Inhalt in begrenztes Markdown umgewandelt. Dokumentinhalte bleiben nicht vertrauenswürdig. Reine Bild-PDFs benötigen eine externe OCR-Verarbeitung.
+- **Dateien aus Links:** Gib Gustav einen direkten öffentlichen HTTPS-Link zu einer Datei, damit er das Bild, Dokument oder die unverarbeitete Repository-Datei vor der Prüfung in diesen Chat importiert. Bei einer Webseite findest du neben dem Original auch eine gut lesbare Textkopie. Private Downloads, Websites mit Anmeldung und das Durchsuchen von Repositories werden bei diesem Import nicht unterstützt.
+- **PDF erstellen:** Bitte Gustav um ein PDF, wenn das Ergebnis heruntergeladen werden soll. Für ein textorientiertes Dokument schreibt er eine Markdown-Datei der Unterhaltung und wandelt sie mit einer optionalen A4-Vorlage und eigenem CSS um. Für ein gestaltetes Layout wie einen Brief, eine Rechnung oder eine Urkunde schreibt er stattdessen eine HTML-Datei mit eigenem CSS. Diese Datei kann Kopf- und Fußzeilen mit Seitenzahlen, ein gewähltes Papierformat, eine Ausrichtung und Ränder sowie Bilder und Schriften aus den Dateien der Unterhaltung verwenden. Anschließend stellt Gustav das PDF bereit. PDFs werden offline erstellt: Webadressen für Bilder, Schriften oder Stylesheets werden nicht geladen, und Skripte laufen nicht. Projektdateien sind schreibgeschützt, deshalb kopiert Gustav ihren Text vor der Umwandlung in eine Datei der Unterhaltung.
+- **PDF in Dateien speichern:** Bitte Gustav, das PDF in der Dateien-App zu speichern, und nenne den Ordner. Du prüfst den Upload wie jede andere Aktion.
+- **Diagramme:** Bitte Gustav, Zahlen als Diagramm zu zeigen, etwa als Balken-, Linien- oder Kreisdiagramm. Das Diagramm erscheint direkt im Chat. Schalte es auf eine Tabelle um, um die genauen Werte zu lesen, oder kopiere die Daten. Für Filter, Schaltflächen oder Daten, die erhalten bleiben sollen, baut Gustav stattdessen eine App.
 - **Bilder:** Ein Vision-Modell prüft neu angehängte Bilder direkt. Ein Modell mit Tool-Unterstützung kann stattdessen das konfigurierte Modell zur Bildanalyse verwenden. Anhänge bleiben Dateien der Unterhaltung. Dadurch wird der Dateikontext aktualisiert, ohne Bilddaten in der Nachricht zu speichern.
 - **Nützliche Chats wiederfinden:** Benenne den Chat um oder füge eine Beschreibung hinzu, wenn du ihn später leicht wiederfinden möchtest.
 - **Im Chat suchen:** Nutze `/search`, um sichtbare Nachrichten zu finden oder die strukturierten Cloud-Ressourcen zu prüfen, die in diesem oder anderen aktiven Chats verwendet wurden.
-- **Künftige Arbeit planen:** Bitte den Assistenten um eine Routine. Sie setzt einen Chat einmalig zu einem bestimmten lokalen Datum und Zeitpunkt oder nach einem wiederkehrenden Zeitplan fort. Vor dem Anlegen oder Ändern der Routine zeigt der Assistent eine Aktion zur Freigabe an.
-- **Nächste Schritte:** Wenn ein konkreter nächster Schritt dir Arbeit spart, beendet der Assistent seine Antwort manchmal mit einem Angebot, etwa einen Antwortentwurf zu schreiben. Antworte mit Ja, um es anzunehmen. Möchtest du keine solchen Angebote, sag es dem Assistenten.
-- **Arbeitsdateien:** Zwischenstände legt der Assistent im Chat-Ordner `temp/` ab, Ergebnisse außerhalb davon, zusammen mit der Markdown- oder HTML-Quelle, aus der ein PDF entstanden ist.
+- **Künftige Arbeit planen:** Bitte Gustav um eine Routine. Sie setzt einen Chat einmalig zu einem bestimmten lokalen Datum und Zeitpunkt oder nach einem wiederkehrenden Zeitplan fort. Vor dem Anlegen oder Ändern der Routine zeigt Gustav eine Aktion zur Freigabe an.
+- **Nächste Schritte:** Wenn ein konkreter nächster Schritt dir Arbeit spart, beendet Gustav seine Antwort manchmal mit einem Angebot, etwa einen Antwortentwurf zu schreiben. Antworte mit Ja, um es anzunehmen. Möchtest du keine solchen Angebote, sag es Gustav.
+- **Arbeitsdateien:** Zwischenstände legt Gustav im Chat-Ordner `temp/` ab, Ergebnisse außerhalb davon, zusammen mit der Markdown- oder HTML-Quelle, aus der ein PDF entstanden ist.
 :::
 
 ## Routinen {icon="clock"}
 
 Eine Routine sendet eine gespeicherte Anfrage zur gewählten Zeit zurück in einen Chat. Gehört dieser Chat zu einem Projekt, verwendet der Durchlauf die Zugriffsrechte, Anweisungen, Dateien, Wissenseinträge, Referenzen und das Standardmodell des Projekts, die zum Startzeitpunkt gelten.
 
-Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone der Cloud-Anwendung. Eine wiederkehrende Routine verwendet einen Cron-Ausdruck mit fünf Feldern in derselben Zeitzone. Bitte den Assistenten, deine Routinen aufzulisten oder zu lesen. In der CLI heißen sie Tasks: `cld assistant tasks`. Schlägt eine Routine fehl, wechselt sie in den Status **Braucht dich**. Die Benachrichtigung nennt die Routine beim Namen und sagt, warum sie angehalten wurde. Beim Löschen eines Chats werden auch seine Routinen und ihr Ausführungsverlauf gelöscht.
+Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone der Cloud-Anwendung. Eine wiederkehrende Routine verwendet einen Cron-Ausdruck mit fünf Feldern in derselben Zeitzone. Bitte Gustav, deine Routinen aufzulisten oder zu lesen. In der CLI heißen sie Tasks: `cld assistant tasks`. Schlägt eine Routine fehl, wechselt sie in den Status **Braucht dich**. Die Benachrichtigung nennt die Routine beim Namen und sagt, warum sie angehalten wurde. Beim Löschen eines Chats werden auch seine Routinen und ihr Ausführungsverlauf gelöscht.
 
 Öffne **Kontext** in der Seitenleiste **In diesem Chat** und wähle eine Routine, um sie anzupassen, zu pausieren, fortzusetzen, auszuführen oder zu löschen oder um ihren Ausführungsverlauf zu prüfen.
 
@@ -59,6 +59,6 @@ Archivierst du einen Chat, pausieren seine Routinen. Stellst du ihn wieder her, 
 
 Pausieren und Löschen halten eine laufende Routine sofort an. Im Chat steht „Angehalten, während die Routine lief“ und was sie schon erfolgreich geändert hat. Nichts wird rückgängig gemacht. Den ganzen Lauf siehst du unter **Hintergrundlauf**.
 
-:::info Wenn der Assistent nicht verfügbar ist
+:::info Wenn Gustav nicht verfügbar ist
 Wenn KI deaktiviert oder falsch konfiguriert ist oder kein auswählbares Streaming-Modell bereitsteht, ist das Eingabefeld deaktiviert und die Seite zeigt den aktuellen Statusfehler.
 :::

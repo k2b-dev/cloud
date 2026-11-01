@@ -14,23 +14,23 @@ Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Cha
 :::reference
 - **Chatzeilen:** Jede Zeile zeigt den Titel des Chats. Ein Symbol am Zeilenende zeigt, dass ein Chat läuft, auf dich wartet, fehlgeschlagen ist, eine neue Antwort hat oder einen aktiven Zeitplan; der Tooltip nennt den Zustand. Wartet ein Chat auf dich, etwa mit einer offenen Frage, ist dieses Zeichen ein Punkt.
 - **Projekte:** Erstelle über die Plus-Schaltfläche im Fenster **Projekte** ein Projekt mit einem Namen und optionalen Anweisungen.
-- **Neuer Chat:** Öffnet einen leeren Chat. Ist der geöffnete Chat noch leer, bleibt der Assistent in diesem Chat, statt einen weiteren anzulegen. Das gilt nicht, wenn er zu einem Projekt gehört, von einer anderen App geöffnet wurde, einen von dir vergebenen Namen oder eine Beschreibung hat oder angeheftet, fertig oder archiviert ist.
+- **Neuer Chat:** Öffnet einen leeren Chat. Ist der geöffnete Chat noch leer, bleibt Gustav in diesem Chat, statt einen weiteren anzulegen. Das gilt nicht, wenn er zu einem Projekt gehört, von einer anderen App geöffnet wurde, einen von dir vergebenen Namen oder eine Beschreibung hat oder angeheftet, fertig oder archiviert ist.
 - **Leerer Chat:** Wähle unter dem mittig angeordneten Eingabefeld optional ein Projekt aus, bevor du die erste Nachricht sendest. Vorschlagskarten füllen eine bearbeitbare Anfrage aus, senden sie aber nicht automatisch.
-- **Projektseite:** Gib die erste Nachricht in das normale Eingabefeld ein und füge bei Bedarf Dateien hinzu. Der Assistent erstellt einen privaten Projekt-Chat, sendet die Nachricht und öffnet anschließend die normale Chatansicht. Unter dem Eingabefeld kannst du vorhandene Projekt-Chats durchsuchen und durchblättern.
+- **Projektseite:** Gib die erste Nachricht in das normale Eingabefeld ein und füge bei Bedarf Dateien hinzu. Gustav erstellt einen privaten Projekt-Chat, sendet die Nachricht und öffnet anschließend die normale Chatansicht. Unter dem Eingabefeld kannst du vorhandene Projekt-Chats durchsuchen und durchblättern.
 - **Projektkontext:** Die Projektseite zeigt Anweisungen, Wissen, Bilder, Dateien und Referenzen des Projekts. Personen mit Schreibzugriff können diesen gemeinsamen Kontext dort ergänzen oder bearbeiten.
 - **Alle Chats durchsuchen:** Nutze die Suchschaltfläche in der Seitenleiste, um alle gespeicherten Chats zu durchsuchen.
 - **Alle Chats:** Projekt-Badges kennzeichnen Projekt-Chats im seitenweise geladenen Verlauf. Durchsuche Titel und Nachrichten und filtere über ein Menü: alle Chats, neue Antworten, läuft, wartet auf dich, fehlgeschlagen, fertig oder archiviert.
 - **In diesem Chat:** Die Seitenleiste rechts neben einem Chat zeigt, was der Chat enthält. Auf großen Bildschirmen ist sie offen. Schließt du sie über die Schaltfläche in ihrem Kopf, bleibt sie geschlossen, bis du sie mit der Schaltfläche oben rechts im Chat wieder öffnest. In schmaleren Fenstern öffnet diese Schaltfläche sie über dem Rand des Chats, auf dem Telefon als Sheet, das du mit Zurück schließt.
-- **Ergebnisse zuerst:** Dateien, Studio-Apps und Visualisierungen, die der Assistent für dich erstellt hat, stehen oben, die neuesten mit dem Satz, den der Assistent dazu geschrieben hat. Öffne oder lade sie direkt herunter, oder wähle einen Titel, um zur Stelle im Chat zu springen, an der sie übergeben wurden. Ältere Ergebnisse sind nach Tagen und nach einer Woche nach Monaten gruppiert.
+- **Ergebnisse zuerst:** Dateien, Studio-Apps und Visualisierungen, die Gustav für dich erstellt hat, stehen oben, die neuesten mit dem Satz, den Gustav dazu geschrieben hat. Öffne oder lade sie direkt herunter, oder wähle einen Titel, um zur Stelle im Chat zu springen, an der sie übergeben wurden. Ältere Ergebnisse sind nach Tagen und nach einer Woche nach Monaten gruppiert.
 - **Nichts verschiebt sich beim Lesen:** Solange Zeiger oder Fokus in der Seitenleiste sind, zeigen neue Ergebnisse nur **Neu · N** in der Überschrift, andere Änderungen **Aktualisieren**. Sie erscheinen, wenn du die Seitenleiste verlässt oder die Schaltfläche wählst. Auf einem Touchscreen bleibt die Seitenleiste ruhig, bis du außerhalb von ihr tippst.
 - **Deine Dateien:** Deine Uploads und Sprachaufnahmen. Bilder öffnen sich in der Bildansicht, andere Dateien im Arbeitsbereich.
-- **Quellen:** Webseiten, die der Assistent gelesen hat, jede Websuche mit dem, wonach er gesucht hat, und die Cloud-Inhalte, die ein Werkzeug gelesen hat, eine Zeile pro Anfrage. Wähle eine Quelle aus, um ihr Ziel zu prüfen, bevor du es in einem neuen Tab öffnest.
-- **Arbeitsdateien:** Zwischenschritte, die der Assistent im Chat-Ordner `temp/` ablegt, gruppiert nach ihrem Zweck. Belegt der Chat mehr als 70 % seines Speichers, zeigt die Zeile, wie viel. Eine ganze Gruppe kannst du nach Bestätigung löschen; Ergebnisse darin werden dabei genannt, weil sie mit gelöscht werden.
+- **Quellen:** Webseiten, die Gustav gelesen hat, jede Websuche mit dem, wonach er gesucht hat, und die Cloud-Inhalte, die ein Werkzeug gelesen hat, eine Zeile pro Anfrage. Wähle eine Quelle aus, um ihr Ziel zu prüfen, bevor du es in einem neuen Tab öffnest.
+- **Arbeitsdateien:** Zwischenschritte, die Gustav im Chat-Ordner `temp/` ablegt, gruppiert nach ihrem Zweck. Belegt der Chat mehr als 70 % seines Speichers, zeigt die Zeile, wie viel. Eine ganze Gruppe kannst du nach Bestätigung löschen; Ergebnisse darin werden dabei genannt, weil sie mit gelöscht werden.
 - **Kontext:** Das Projekt mit Anweisungen, Wissen, Dateien und Referenzen, die Skills, die der Chat verwendet hat, was aus ihm gemerkt wurde, seine Routinen und Secrets. Ein Projekt-Chat enthält seinen geerbten Projektkontext ohne Aktionen zur Projektbearbeitung.
 - **Suchen:** Über die Suchschaltfläche im Kopf der Seitenleiste findest du Ergebnisse, Dateien und Quellen dieses Chats. Escape schließt die Suche.
-- **Chatdateien löschen:** Zeige auf einen Upload, eine Sprachaufnahme oder eine Arbeitsdatei oder erreiche sie mit der Tab-Taste und wähle rechts das Papierkorbsymbol; bei einem Ergebnis nutzt du sein Menü. Auf Touch-Geräten ist das Symbol immer sichtbar. Nach deiner Bestätigung entfernt der Assistent die Datei aus diesem Chat und schließt ihren geöffneten Tab. Frühere Nachrichten bleiben erhalten, ihre Verweise öffnen die Datei aber nicht mehr. Projektdateien verwaltest du auf der Projektseite.
+- **Chatdateien löschen:** Zeige auf einen Upload, eine Sprachaufnahme oder eine Arbeitsdatei oder erreiche sie mit der Tab-Taste und wähle rechts das Papierkorbsymbol; bei einem Ergebnis nutzt du sein Menü. Auf Touch-Geräten ist das Symbol immer sichtbar. Nach deiner Bestätigung entfernt Gustav die Datei aus diesem Chat und schließt ihren geöffneten Tab. Frühere Nachrichten bleiben erhalten, ihre Verweise öffnen die Datei aber nicht mehr. Projektdateien verwaltest du auf der Projektseite.
 - **Cloud-Ressourcen:** Wähle **+ → Aus Cloud einfügen**, um einen Verweis auf eine unterstützte Cloud-Ressource an der Textposition einzufügen. Das Modell erhält dieselbe Ressource wie bei einem Anhang, ohne ihren Inhalt in den Chat zu kopieren. Ein Chat, der aus Mail oder einer anderen Anwendung geöffnet wurde, kann bereits eine oder mehrere Ressourcen enthalten. Ressourcenlinks öffnen die zuständige Anwendung in einem neuen Tab. Jeder Lesezugriff und jede Aktion prüft weiterhin deine aktuelle Berechtigung in dieser Anwendung.
-- **Cloud-Link einfügen:** Füge einen Link auf etwas in dieser Cloud ein, etwa aus der Adressleiste oder über **Cloud-ID kopieren**. Sobald Assistant ihn erkennt, wird er zu einem Ressourcen-Anhang mit Titel. Ein Link, den du nicht öffnen darfst, bleibt Text. Um den Link als Text zu behalten, füge mit **Strg+Umschalt+V** (**⌘+Umschalt+V** am Mac) ein.
+- **Cloud-Link einfügen:** Füge einen Link auf etwas in dieser Cloud ein, etwa aus der Adressleiste oder über **Cloud-ID kopieren**. Sobald Gustav ihn erkennt, wird er zu einem Ressourcen-Anhang mit Titel. Ein Link, den du nicht öffnen darfst, bleibt Text. Um den Link als Text zu behalten, füge mit **Strg+Umschalt+V** (**⌘+Umschalt+V** am Mac) ein.
 Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Als Nutzung zählen eine gesendete Nachricht, ein Lauf und das Wiederöffnen; Öffnen und Lesen markieren einen Chat nur als gelesen, und automatische Metadatenänderungen zählen ebenfalls nicht. Laufende Chats und Chats, die auf eine Bestätigung warten, bleiben aktiv. **Chat wieder öffnen** hält einen Chat aktiv, bis du ihn erneut als fertig markierst. Die Sidebar zeigt alle aktiven Chats und direkt darunter **Fertig** mit dem Zugang zu **Alle Chats**.
 
 - **Abschließen oder fortsetzen:** Markiere einen Chat als fertig, um ihn unter **Fertig** abzulegen. Stoppe vorher eine laufende Antwort. Öffne ihn wieder oder sende eine neue Nachricht; Dateien, Apps und Anheftung bleiben erhalten.
@@ -40,9 +40,9 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 ## Nachrichtenaktionen {icon="point"}
 
 :::reference
-- **Beenden:** Beendet die laufende Antwort des Assistenten im geöffneten Chat.
+- **Beenden:** Beendet die laufende Antwort von Gustav im geöffneten Chat.
 - **Erneut versuchen:** Führt eine Benutzernachricht erneut aus und ersetzt spätere Nachrichten dieses Chat-Zweigs.
-- **Weiterarbeiten:** Wenn eine Antwort wegen eines fehlgeschlagenen Schritts oder eines Fehlers beim KI-Dienst endet, zeigt der Chat den Grund. **Weiterarbeiten** lässt den Assistenten dort fortfahren, wo er aufgehört hat; die bisherigen Ergebnisse bleiben erhalten.
+- **Weiterarbeiten:** Wenn eine Antwort wegen eines fehlgeschlagenen Schritts oder eines Fehlers beim KI-Dienst endet, zeigt der Chat den Grund. **Weiterarbeiten** lässt Gustav dort fortfahren, wo er aufgehört hat; die bisherigen Ergebnisse bleiben erhalten.
 - **In neuem Chat fortsetzen:** Erstellt einen neuen Chat, der bis einschließlich der ausgewählten Antwort kopiert wird.
 - **Details zur Antwort:** Zeigt Modell, Zeit und Token-Verbrauch einer Antwort.
 - **Kontext kürzen:** Öffne die Kontextanzeige beim Eingabefeld und wähle **Kontext kürzen**, um den bisherigen Chat-Kontext zusammenzufassen. Alternativ kannst du `/compact` verwenden. Hover zeigt die Details; ein Klick hält sie offen. Escape oder ein Klick außerhalb schließt sie.
@@ -56,11 +56,11 @@ Jede Frage zeigt einen Satz mit Chips für Personen und Dinge, Clouds Grund für
 die Rückfrage und eine Vorschau der Änderung. Zwei Schaltflächen nennen die
 Handlung und ihr Ziel: eine stimmt zu, die andere lehnt ab. Die Freigabe gilt
 einmal für das, was die Karte zeigt. Ändert sich das vor der Ausführung, fragt
-der Assistent erneut. Nach dem Neuladen bleiben Satz und Vorschau erhalten.
+Gustav erneut. Nach dem Neuladen bleiben Satz und Vorschau erhalten.
 
 Solange Fragen offen sind, listet **Wartet auf dich** über dem Eingabefeld jede
 in ihrer Kurzform, auch die aus deinen anderen Chats mit dem Namen des Chats.
-Wähle eine aus, um zu ihrer Frage zu springen: Der Assistent öffnet bei Bedarf
+Wähle eine aus, um zu ihrer Frage zu springen: Gustav öffnet bei Bedarf
 den Chat und setzt den Fokus auf den Satz der Frage. Nach dem Neuladen bist du
 wieder bei dieser Frage. Warten mehr Fragen, als die Leiste zeigt, öffnet ihr
 letzter Eintrag **Freigaben**. Bei einer einzigen Frage im offenen Chat
@@ -77,25 +77,25 @@ erlauben** genau diese Website. Jeder weitere Abruf zeigt seine vollständige Ad
 **Entziehen**.
 
 Eine Ergebniszeile zeigt: läuft, erledigt, abgelehnt, nicht ausgeführt oder
-unbekannt. Bietet die App eine Ergebnisprüfung an, führt der Assistent sie nach
+unbekannt. Bietet die App eine Ergebnisprüfung an, führt Gustav sie nach
 einer verlorenen Antwort einmal aus. Ein bekanntes Ergebnis schließt die Karte
 ab; bei einer offenen oder fehlgeschlagenen Prüfung bleibt der Ausgang
 unbekannt. **Noch einmal prüfen** prüft nur das Ergebnis und wiederholt nie die
 Aktion. Ohne Ergebnisprüfung gibt es keine Schaltfläche zum Wiederholen.
 :::
 
-## Assistent mit Chat-Kontext {icon="message-forward"}
+## Gustav mit Chat-Kontext {icon="message-forward"}
 
-Der Assistent kann seine verfügbaren Capabilities verwenden, wenn deine Anfrage vom Chatverlauf abhängt. Er kann den aktuellen Chat durchsuchen, einen anderen eigenen Chat finden und lesen sowie strukturierte Cloud-Ressourcen suchen, die in einem der beiden Bereiche verwendet wurden.
+Gustav kann seine verfügbaren Capabilities verwenden, wenn deine Anfrage vom Chatverlauf abhängt. Er kann den aktuellen Chat durchsuchen, einen anderen eigenen Chat finden und lesen sowie strukturierte Cloud-Ressourcen suchen, die in einem der beiden Bereiche verwendet wurden.
 
-Wenn du den Assistenten ausdrücklich bittest, einer anderen Unterhaltung einen genauen Text mitzuteilen, sie danach zu fragen, sie zu benachrichtigen oder Text weiterzuleiten oder zu senden, kann er die Aktion `core.ai.chat.message` anfordern. Vor dem Einreihen zeigt die Freigabeaufforderung das Ziel und den genauen Text. Zugestellte Nachrichten erscheinen mit ihrem Quell-Chat im Zielverlauf. Sie werden nicht als von dir verfasste Nachrichten dargestellt.
+Wenn du Gustav ausdrücklich bittest, einer anderen Unterhaltung einen genauen Text mitzuteilen, sie danach zu fragen, sie zu benachrichtigen oder Text weiterzuleiten oder zu senden, kann er die Aktion `core.ai.chat.message` anfordern. Vor dem Einreihen zeigt die Freigabeaufforderung das Ziel und den genauen Text. Zugestellte Nachrichten erscheinen mit ihrem Quell-Chat im Zielverlauf. Sie werden nicht als von dir verfasste Nachrichten dargestellt.
 
 ## Audio und Diktieren {icon="microphone"}
 
 Hänge eine Sprachmemo wie jede andere Datei an und schreibe deinen Auftrag
 selbst dazu, zum Beispiel: „Transkribiere diese Aufnahme und fasse die nächsten
-Schritte zusammen.“ Das Anhängen allein startet keine Transkription. Der
-Assistent kann das Transkript als Textdatei im Chat speichern.
+Schritte zusammen.“ Das Anhängen allein startet keine Transkription. Gustav
+kann das Transkript als Textdatei im Chat speichern.
 
 Mit **Diktieren** sprichst du deinen Prompt ein. Die neutrale Wellenform zeigt
 deinen Mikrofonpegel. Mit × verwirfst du die Aufnahme; die quadratische Stopptaste
@@ -157,7 +157,7 @@ vorher abgeschlossen sein.
 ## Chats durchsuchen {icon="search"}
 
 **Alle Chats durchsuchen** öffnet die globale Suche für Titel und Nachrichteninhalte
-deiner Assistenten-Chats. **Diesen Chat durchsuchen** begrenzt sie auf Nachrichten im
+deiner Gustav-Chats. **Diesen Chat durchsuchen** begrenzt sie auf Nachrichten im
 geöffneten Chat. Der entfernbare Filter zeigt den Suchbereich. Eine Suchaktion
 in der Palette setzt ihn direkt im offenen Fenster. Entfernst du den Filter,
 suchst du wieder in allen Cloud-Apps.

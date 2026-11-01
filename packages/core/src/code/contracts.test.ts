@@ -62,11 +62,13 @@ describe("Core Code data contracts", () => {
         .sort(),
     ).toEqual([
       "code.attention",
+      "code.attention.list",
       "code.list",
       "code.policy.effective",
       "code.policy.preview",
       "code.policy.read",
       "code.read",
+      "code.run.count",
       "code.run.list",
       "code.run.read",
       "code.secret.list",

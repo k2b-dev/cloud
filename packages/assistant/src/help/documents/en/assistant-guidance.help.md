@@ -6,7 +6,7 @@ description: Give useful context, work with files, personalize responses, and re
 order: 120
 ---
 
-Assistant works best when the request states the outcome, the relevant context, and any limits that matter. You do not need a special prompt format.
+Gustav works best when the request states the outcome, the relevant context, and any limits that matter. You do not need a special prompt format.
 
 ## Write a useful request {icon="pencil"}
 
@@ -14,7 +14,7 @@ Assistant works best when the request states the outcome, the relevant context, 
 1. **Name the outcome:** Say what you want to receive, such as a summary, plan, explanation, draft, comparison, or code change.
 2. **Include the source material:** Paste the relevant text or attach the files offered by the composer. Mention which parts matter most.
 3. **State important constraints:** Include the audience, language, length, format, deadline, or things that must not change.
-4. **Ask for a check:** For important work, ask Assistant to identify assumptions, uncertainties, or missing information before relying on the answer.
+4. **Ask for a check:** For important work, ask Gustav to identify assumptions, uncertainties, or missing information before relying on the answer.
 :::
 
 ## Keep context under control {icon="point"}
@@ -27,22 +27,22 @@ Assistant works best when the request states the outcome, the relevant context, 
 
 ## Personalization {icon="point"}
 
-- **Personalization** stores facts, preferences, and Cloud workflow defaults you can review, edit, pin, or forget. Manually added entries start pinned, and Assistant keeps a small relevant set in context instead of loading an unbounded history. Assistant uses an entry only when it changes the answer, and the current message wins over an older entry.
-- **Learn from chats** is on for anyone who has not chosen. If you used Assistant before learning became the default, your earlier setting stays, usually off. Learning considers turns from your own chats, including Project chats, that finish while it is on, each once, and switching it off takes effect right away. It learns only about you, never facts or opinions about other people; a person may appear only in a rule you state, such as "send invoices to Anna". It skips sensitive details such as health, religion, or political views unless you explicitly ask to remember exactly that; Project knowledge stays in the Project. Explicit user text can update durable facts and preferences; three successful uses of the same Cloud capability and resource can establish a workflow default. Attached content and raw tool output are excluded, while the final Assistant message is context only. Background learning may merge, replace, or retire only its own unpinned entries. Archived and deleted chats are excluded; archiving stops pending learning, and restoring a chat allows learning only from turns that finish after restore.
+- **Personalization** stores facts, preferences, and Cloud workflow defaults you can review, edit, pin, or forget. Manually added entries start pinned, and Gustav keeps a small relevant set in context instead of loading an unbounded history. Gustav uses an entry only when it changes the answer, and the current message wins over an older entry.
+- **Learn from chats** is on for anyone who has not chosen. If you used Gustav before learning became the default, your earlier setting stays, usually off. Learning considers turns from your own chats, including Project chats, that finish while it is on, each once, and switching it off takes effect right away. It learns only about you, never facts or opinions about other people; a person may appear only in a rule you state, such as "send invoices to Anna". It skips sensitive details such as health, religion, or political views unless you explicitly ask to remember exactly that; Project knowledge stays in the Project. Explicit user text can update durable facts and preferences; three successful uses of the same Cloud capability and resource can establish a workflow default. Attached content and raw tool output are excluded, while Gustav's final message is context only. Background learning may merge, replace, or retire only its own unpinned entries. Archived and deleted chats are excluded; archiving stops pending learning, and restoring a chat allows learning only from turns that finish after restore.
 - **System prompt** shows the complete prompt a new chat would receive, including active personalization and organization rules.
-- **Approvals** lists earlier **Always approve** choices, which still apply, and websites you allowed for a Studio app. Revoke an entry there whenever Assistant should ask again. Approvals for one chat are listed under **Secrets & approvals** in that chat.
+- **Approvals** lists earlier **Always approve** choices, which still apply, and websites you allowed for a Studio app. Revoke an entry there whenever Gustav should ask again. Approvals for one chat are listed under **Secrets & approvals** in that chat.
 - **API access** appears when your administrator offers the OpenAI-compatible API. It shows the base URL and the model IDs for apps such as a dictation app. Such an app uses only the models and your usage limits. It gets no chats, files, or personalization. Create its key in your profile with the access **AI models only**.
 - **Chat context** is still the best place for project-specific facts, source material, and one-off constraints.
 
 ## Shared Skills {icon="sparkles"}
 
-Open **Assistant settings > Skills** to create, import, edit, export, or share reusable Assistant workflows. A Skill keeps its instructions in `SKILL.md` and may include Markdown reference files.
+Open **Gustav settings > Skills** to create, import, edit, export, or share reusable Gustav workflows. A Skill keeps its instructions in `SKILL.md` and may include Markdown reference files.
 
-You can also ask Assistant to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current permissions. Like any shared Skill, it can be disabled for yourself; administrators can grant access, edit it, or delete it.
+You can also ask Gustav to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current permissions. Like any shared Skill, it can be disabled for yourself; administrators can grant access, edit it, or delete it.
 
-When a request looks like it will come back, for example because you say "again" or correct the format of a result a second time, Assistant may offer once to save the approach as a Skill. If you agree, it drafts the Skill from the chat: the steps, your corrections, and the output format, without names, amounts, or content from your attachments. The usual review shows the Skill before it is saved. If you decline, Assistant does not ask again in that chat. The offer needs Skill Creator; if you disabled it, Assistant does not offer.
+When a request looks like it will come back, for example because you say "again" or correct the format of a result a second time, Gustav may offer once to save the approach as a Skill. If you agree, it drafts the Skill from the chat: the steps, your corrections, and the output format, without names, amounts, or content from your attachments. The usual review shows the Skill before it is saved. If you decline, Gustav does not ask again in that chat. The offer needs Skill Creator; if you disabled it, Gustav does not offer.
 
-If you correct the tone of a draft, such as a mail that is too formal, and **Use personalization in Assistant chats** is on, Assistant offers to remember the correction and suggests a short rule, such as "always write mails formally". A plain yes is not enough: send that rule back in your own words, and it remembers it for you. If your correction already says "always" or "from now on", it remembers it right away. Assistant does not change a built-in or shared Skill for everyone unless you ask.
+If you correct the tone of a draft, such as a mail that is too formal, and **Use personalization in Gustav chats** is on, Gustav offers to remember the correction and suggests a short rule, such as "always write mails formally". A plain yes is not enough: send that rule back in your own words, and it remembers it for you. If your correction already says "always" or "from now on", it remembers it right away. Gustav does not change a built-in or shared Skill for everyone unless you ask.
 
 Skills and Projects require sign-in. Share them with users, groups, service accounts, or all signed-in identities; public access is not supported.
 
@@ -50,17 +50,17 @@ Skills and Projects require sign-in. Share them with users, groups, service acco
 
 :::steps
 1. **Choose a short, action-oriented name:** Use lowercase letters, numbers, and hyphens, such as `weekly-status`.
-2. **Write a direct description:** Say what Assistant should do and when it should use the Skill. Keep it specific enough to distinguish the Skill from similar workflows. For example: `Create weekly status reports from recent work. Use when asked for progress updates.`
-3. **Add only useful instructions:** Define the expected outcome, important constraints, and workflow. Omit generic advice Assistant already knows.
-4. **Move supporting detail to Extra info:** Add policies, schemas, examples, or background material that Assistant needs only for some requests. Keep essential instructions in the Skill itself.
-5. **Try realistic requests:** Check that Assistant loads the Skill for relevant requests and ignores it otherwise. Refine the description when selection is too broad or too narrow.
+2. **Write a direct description:** Say what Gustav should do and when it should use the Skill. Keep it specific enough to distinguish the Skill from similar workflows. For example: `Create weekly status reports from recent work. Use when asked for progress updates.`
+3. **Add only useful instructions:** Define the expected outcome, important constraints, and workflow. Omit generic advice Gustav already knows.
+4. **Move supporting detail to Extra info:** Add policies, schemas, examples, or background material that Gustav needs only for some requests. Keep essential instructions in the Skill itself.
+5. **Try realistic requests:** Check that Gustav loads the Skill for relevant requests and ignores it otherwise. Refine the description when selection is too broad or too narrow.
 :::
 
 - Import a bare `SKILL.md`, or use a ZIP when the Skill has references. ZIP import keeps `SKILL.md` and supported Markdown files directly in `references/`, and lists skipped files such as scripts and assets. Cloud does not run scripts.
 - Use Cloud access to share a Skill. Readers can use and export it, writers can edit it, and admins can also manage access or delete it.
-- Skills you can read start enabled for you. Turn off **Enabled for me** when you do not want Assistant to use a shared Skill; this does not change anyone else's access.
+- Skills you can read start enabled for you. Turn off **Enabled for me** when you do not want Gustav to use a shared Skill; this does not change anyone else's access.
 - Set `disable-model-invocation: true` in `SKILL.md`, or turn on **Start only when selected** in the editor, to start a Skill only when someone selects it with `/`.
-- Assistant sees the names and descriptions of your enabled Skills that can start automatically. It loads a relevant Skill before applying its instructions and reads references only when needed.
+- Gustav sees the names and descriptions of your enabled Skills that can start automatically. It loads a relevant Skill before applying its instructions and reads references only when needed.
 - A Skill loaded for an in-progress turn stays on that revision. New turns use later edits, while revoked access takes effect immediately.
 
 :::warning Review consequential output
@@ -76,7 +76,7 @@ Treat generated facts, calculations, external actions, and changes to important 
 
 ## Open or share a Studio app {icon="share"}
 
-App users open the standalone view without the Assistant sidebar. App managers
+App users open the standalone view without the Gustav sidebar. App managers
 can select **Open fullscreen** in the header or **Copy app link** from the action menu. The link always
 runs the latest published version. Private apps still require sign-in and access.
 

@@ -110,6 +110,9 @@ test("validates panel shape, owned href, presentation and role array", () => {
   }
   for (const requiresRoles of ["user", [1], null])
     expect(validateAppRegistryEntry({ ...entry, panel: { ...panel, requiresRoles } })).toContain("panel.requiresRoles");
+  expect(validateAppRegistryEntry({ ...entry, panel: { ...panel, order: -1 } })).toBeNull();
+  for (const order of [1.5, "1", null, Number.POSITIVE_INFINITY])
+    expect(validateAppRegistryEntry({ ...entry, panel: { ...panel, order } })).toContain("panel.order");
   for (const value of [null, [], "fixture"]) expect(validateAppRegistryEntry({ ...entry, panel: value })).toContain("panel");
   const presentation = { baseLocale: "en", translations: { de: { panelLabel: "Inventar" } } };
   expect(validateAppRegistryEntry({ ...entry, panel, presentation })).toBeNull();
