@@ -459,6 +459,17 @@ describe("sync ended editor recovery", () => {
     }
   });
 
+  test("the bar that replaces the toolbar keeps the workspace's navigation and Details buttons", async () => {
+    // The note page draws no workspace head; without these two, a narrow window could reach neither.
+    using editor = await mountNoteEditor({ pending: false });
+    const { opts } = editor.providers[0]!;
+    opts.onReady?.();
+    editor.end();
+    const bar = editor.dom.root.querySelector("[data-sync-ended]")!;
+    expect(bar.querySelector('[data-app-workspace-sidebar-toggle][aria-controls="notebook-navigation"]')).not.toBeNull();
+    expect(bar.querySelector('[data-app-workspace-detail-toggle][aria-controls="k2b-workspace-detail-notebook-detail"]')).not.toBeNull();
+  });
+
   test("ended sync before the first replay copies the visible edits instead of the empty Yjs document", async () => {
     using editor = await mountNoteEditor({ pending: false });
     editor.view().dispatch({ changes: { from: 0, insert: "My first words. " }, userEvent: "input.type" });
@@ -1298,7 +1309,9 @@ describe("sync ended editor recovery", () => {
     expect(editor.sync.ended()).toBe(originalEnd);
     expect(editor.bar()).toBe(originalBar);
     const signIn = code === "SESSION_EXPIRED" || code === "LOGIN_REQUIRED";
-    expect(editor.bar().querySelectorAll("button")).toHaveLength(signIn ? 1 : 2);
+    expect(
+      editor.bar().querySelectorAll("button:not([data-app-workspace-sidebar-toggle], [data-app-workspace-detail-toggle])"),
+    ).toHaveLength(signIn ? 1 : 2);
     expect(document.activeElement).toBe(editor.button(signIn ? "Sign in again" : "Copy text"));
     if (signIn) {
       editor.button("Sign in again").click();
@@ -1338,7 +1351,9 @@ describe("sync ended editor recovery", () => {
     expect(refreshCurrentPath).not.toHaveBeenCalled();
     expect(editor.bar().querySelector('[role="alert"]')?.getAttribute("data-tone")).toBe("warning");
     if (code === "SESSION_EXPIRED" || code === "LOGIN_REQUIRED") {
-      expect(editor.bar().querySelectorAll("button")).toHaveLength(1);
+      expect(
+        editor.bar().querySelectorAll("button:not([data-app-workspace-sidebar-toggle], [data-app-workspace-detail-toggle])"),
+      ).toHaveLength(1);
       editor.button("Sign in again").click();
       expect(editor.opened).toHaveBeenCalledTimes(1);
     } else {

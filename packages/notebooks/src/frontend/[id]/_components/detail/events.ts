@@ -19,6 +19,8 @@ export const TOC_UPDATE_EVENT = "notebooks.toc.updated";
 export const TOC_SCROLL_EVENT = "notebooks.editor.scrollToHeading";
 /** Editor → panel: GFM task-list progress after every doc change. */
 export const TASKS_UPDATE_EVENT = "notebooks.tasks.updated";
+/** The note's detail panel (`AppWorkspace.Detail` id), for controls that open it. */
+export const NOTEBOOK_DETAIL_ID = "notebook-detail";
 /** Workspace socket → panel: participants of the opened note, including readers. */
 export const PRESENCE_EVENT = "notebooks.presence.changed";
 

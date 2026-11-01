@@ -60,6 +60,7 @@ import {
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
+  NOTEBOOK_DETAIL_ID,
   PRESENCE_EVENT,
   PRESENCE_LOCATIONS_EVENT,
   type PresenceLocationsEventDetail,
@@ -771,7 +772,9 @@ export default function NotebookDetailPanel(props: Props) {
 
   return (
     <AppWorkspace.Detail
-      id="notebook-detail"
+      id={NOTEBOOK_DETAIL_ID}
+      // In Write the editor toolbar holds the Details button; Read keeps the workspace's own.
+      toggle={props.mode === "edit" ? false : undefined}
       open={open()}
       onOpen={() => {
         setOpen(true);
