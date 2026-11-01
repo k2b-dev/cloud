@@ -23,6 +23,11 @@ activate a version or grant resource access.
 or null for the first push. The caller needs Code editor access and a write
 credential. Phone sessions cannot submit lasting Code authority.
 
+The submission review names the Code and shows the exact proposed bundle,
+manifest and complete source comparison. It explains that the active version
+keeps running and older pending version requests are cancelled after a successful
+submission. Reviews only read and validate; they save no version or decision.
+
 The result contains `version`, `binding`, `status`, `approvalId` and `decision`.
 `status: "submitted"` means the current policy needs no administrator's
 approval. `status: "pending"` has a platform approval request. Neither status
@@ -169,6 +174,9 @@ of transient platform approval requests. An undecided expired request has
 before resuming that same version. Events arriving during the pause are not
 replayed. A pending newer version remains pending. Cloud administrators and
 Code editors may pause or resume with write authority; phone sessions cannot.
+Their reviews name the Code and exact active version, show the state change and
+explain how future events are handled. Resume also checks current approval and
+policy before presenting that change.
 Activate a version before using either operation.
 
 ## Maintainer integration
@@ -183,6 +191,8 @@ storage primitive and does not implement submission or approval lifecycle.
   schemas;
 - `submitCodeVersion`, `diffCodeVersion`, `listCodeVersions`,
   `decideCodeVersion`, `readCodeVersionDiff` and `setCodePaused` for permission-aware callers;
+- `reviewCodeVersionSubmission`, `reviewCodeExecutionChange` and
+  `reviewCodeVersionDecision` for read-only capability reviews;
 - `startCodeVersionApprovals` and `applyCodeVersionDecision` for the lifecycle
   owner of the platform decision handler;
 - `requireCodeVersionApproval(code, versionId, tx)` for activation and dispatch.
