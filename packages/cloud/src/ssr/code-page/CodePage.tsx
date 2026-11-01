@@ -349,7 +349,15 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
     <>
       <header class="cloud-code__head">
         <div class="cloud-code__head-text">
-          <p class="cloud-code__lead">{personal(props.data) ? t().personalLead : t().actsAs({ name: props.data.owner.title })}</p>
+          <p class="cloud-code__lead">
+            {!personal(props.data)
+              ? t().actsAs({ name: props.data.owner.title })
+              : !props.data.owner.runsAs
+                ? t().personalLead
+                : props.data.owner.runsAs.name
+                  ? t().personalLeadOf({ name: props.data.owner.runsAs.name })
+                  : t().personalLeadOfSomeone}
+          </p>
           <VersionLine data={props.data} state={props.state} text={props.text} />
         </div>
         <div class="cloud-code__head-actions">
@@ -626,7 +634,11 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
           )}
         </Show>
       </Section>
-      <Section id="cloud-code-access" title={t().access} description={personal(props.data) ? t().personalAccess : t().accessDescription}>
+      <Section
+        id="cloud-code-access"
+        title={t().access}
+        description={!personal(props.data) ? t().accessDescription : props.data.owner.runsAs ? t().personalAccessOf : t().personalAccess}
+      >
         <Show when={!personal(props.data)}>
           <Show when={props.state.access} fallback={<InlineError text={t().accessFailed} retry={t().tryAgain} />}>
             {(access) => (

@@ -493,13 +493,14 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
         })
         .catch(() => null)
     : null;
+  const owner: CodePageData["owner"] = {
+    kind: ownerRef ? "resource" : "person",
+    ref: ownerRef,
+    title: ownerTitleOf(options.owner),
+    typeTitle: appTypeTitle,
+  };
   const base = {
-    owner: {
-      kind: ownerRef ? ("resource" as const) : ("person" as const),
-      ref: ownerRef,
-      title: ownerTitleOf(options.owner),
-      typeTitle: appTypeTitle,
-    },
+    owner,
     href: options.href,
     tab,
     canManageOwner: options.canManageOwner,
@@ -522,8 +523,16 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     // Personal Code is read by its ID; Core answers "not found" for Code the person may not see.
     const read = await invoke(coreQuery("code.read", { codeId: options.owner.codeId }), wrapped(CodeReadSchema)).catch(() => null);
     if (!read?.ok) return { ...base, state: { kind: read?.error.status === 404 || read?.error.status === 403 ? "no-access" : "error" } };
+    const codeOwner = read.data.data.data.code.owner;
+    // Only personal Code belongs here; Code of a place is shown at that place.
+    if (codeOwner.kind !== "person") return { ...base, state: { kind: "no-access" } };
     code = { ...read.data.data.data.code, permission: read.data.data.data.permission };
     base.owner.title = code.title;
+    if (codeOwner.userId !== user?.id) {
+      const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };
+      const people = await loadPeople([codeOwner.userId], viewer).catch(() => new Map<string, CodePagePerson>());
+      base.owner.runsAs = { name: people.get(codeOwner.userId)?.name ?? null };
+    } else base.owner.runsAs = null;
   }
   try {
     // Like directory search: members see other people's names, guests only their own.
