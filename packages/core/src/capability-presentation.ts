@@ -321,6 +321,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Code ausführen",
           description:
             "Startet den aktiven geprüften Code. Derselbe Anfrageschlüssel liefert den bestehenden Lauf; ein neuer Schlüssel startet erneut.",
+          input: {
+            ...codeIdInput,
+            entrypoint: "Name des erklärten Einstiegspunkts der aktiven Version.",
+            input: "JSON-Eingabe für den Einstiegspunkt.",
+          },
         },
         "code.version.submit": {
           title: "Code-Version einreichen",
