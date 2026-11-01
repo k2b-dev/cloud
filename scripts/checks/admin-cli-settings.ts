@@ -28,11 +28,27 @@ const structured: Readonly<Record<string, { file: string; command: string }>> = 
     "default_profile",
   ].map((key) => [`pulse.${key}`, { file: "packages/pulse/src/cli/admin.ts", command: "admin policy set" }]),
   ["pulse.clickhouse_connection", { file: "packages/pulse/src/cli/admin.ts", command: "admin store set" }],
+  ...["notebooks.reindex_cron", "notebooks.snapshot_cron", "gateway.health_check_schedule"].map((key) => [
+    key,
+    { file: "packages/cloud/src/cli/admin/settings.ts", command: "settings set" },
+  ]),
   ["filesv2.configuration", { file: "packages/filesv2/src/cli-admin.ts", command: "admin configuration set" }],
   ...["weather.default_lat", "weather.default_lon", "weather.cache_minutes"].map((key) => [
     key,
     { file: "packages/cloud/src/cli/admin/administration.ts", command: "weather config set" },
   ]),
+  ...[
+    "freeipa.ca_cert",
+    "freeipa.sync_guard.max_user_changes",
+    "freeipa.sync_guard.max_group_deletions",
+    "user.category.guest.enabled",
+    "user.category.guest.visible",
+    "user.category.login.enabled",
+    "user.category.login.visible",
+    "user.category.login.label",
+    "user.category.freeipa.enabled",
+    "user.category.freeipa.visible",
+  ].map((key) => [key, { file: "packages/cloud/src/cli/admin/settings.ts", command: "settings set" }]),
   ["geo.api_key", { file: "packages/cloud/src/cli/admin/administration.ts", command: "geo key set" }],
 ]);
 

@@ -8,6 +8,8 @@ import {
   capabilityContractIssues,
   contactDirectory,
 } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
+import { audit } from "@k2b/cloud/services";
 import { invalidateSettingsCache, read, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Context } from "hono";
@@ -23,7 +25,7 @@ import {
   resolveMailContactDirectory,
 } from "../contact-directory-settings";
 import { isCurrentPlatformAdmin } from "./access";
-import type { MailRequestContext } from "./auth";
+import { auditActorFromRequest, type MailRequestContext } from "./auth";
 
 export type ContactDirectoryCapabilityOption = { id: string; title: string };
 export type ContactDirectoryAppOption = {
@@ -58,6 +60,7 @@ export type ContactDirectoryDependencies = {
   writeSetting: (key: ContactDirectorySettingKey, value: string, options: { replaceUnreadable?: boolean }, tx: typeof sql) => Promise<void>;
   transaction: (write: (tx: typeof sql) => Promise<ContactDirectorySaveResult>) => Promise<ContactDirectorySaveResult>;
   invalidateSettings: (keys: readonly string[]) => Promise<void>;
+  recordAudit: typeof audit.record;
 };
 const platform: ContactDirectoryDependencies = {
   listCatalog: listCapabilityCatalog,
@@ -72,6 +75,7 @@ const platform: ContactDirectoryDependencies = {
   writeSetting: (key, value, options, tx) => set(key, value, tx, options),
   transaction: (write) => sql.begin(write),
   invalidateSettings: invalidateSettingsCache,
+  recordAudit: audit.record,
 };
 
 const requireAdmin = async (context: MailRequestContext, deps: ContactDirectoryDependencies): Promise<Result<void>> =>
@@ -147,12 +151,16 @@ export const contactDirectoryIssues = (
   return issues;
 };
 
-const loadCatalogApps = async (locale: string, deps: ContactDirectoryDependencies): Promise<CapabilityCatalogApp[] | null> => {
+const loadCatalogApps = async (
+  authority: RequestAuthority,
+  locale: string,
+  deps: ContactDirectoryDependencies,
+): Promise<CapabilityCatalogApp[] | null> => {
   const apps: CapabilityCatalogApp[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
   while (true) {
-    const page = await deps.listCatalog({ cursor, limit: 25, locale });
+    const page = await deps.listCatalog({ cursor, limit: 25, locale, authority });
     if (!page.ok) return null;
     apps.push(...page.data.apps);
     if (!page.data.page.hasMore) return apps;
@@ -171,9 +179,9 @@ export type ContactDirectoryAdminView = {
   issues: ContactDirectoryIssue[];
 };
 
-/** Loads the admin form: installed apps with their compatible capabilities and problems with the saved mapping. */
+/** Loads the admin form: apps available to the acting administrator with their compatible capabilities and problems with the saved mapping. */
 export const loadContactDirectoryAdmin = async (
-  context: MailRequestContext,
+  context: MailRequestContext & { authority: RequestAuthority },
   config: MailContactDirectoryConfig,
   locale: string,
   overrides: Partial<ContactDirectoryDependencies> = {},
@@ -188,7 +196,7 @@ export const loadContactDirectoryAdmin = async (
     config = { ...config, [field]: state.value };
     unreadable[key] = state.stored === "unreadable";
   }
-  const catalogApps = await loadCatalogApps(locale, deps);
+  const catalogApps = await loadCatalogApps(context.authority, locale, deps);
   const apps =
     catalogApps
       ?.map((catalogApp) => ({
@@ -213,9 +221,9 @@ export type ContactDirectorySaveResult =
   | { ok: false; status: 400; issues: ContactDirectoryIssue[] }
   | { ok: false; status: 403 | 503; message: string };
 
-/** Validates a mapping against the provider's live catalog and stores it only when Mail can use it. */
+/** Validates a mapping against the provider's live catalog and stores it only when the acting administrator can use the provider. */
 export const saveContactDirectory = async (
-  context: MailRequestContext,
+  context: MailRequestContext & { authority: RequestAuthority },
   input: Partial<MailContactDirectoryConfig> & { replaceUnreadable?: ContactDirectorySettingKey[] },
   locale: string,
   overrides: Partial<ContactDirectoryDependencies> = {},
@@ -235,7 +243,7 @@ export const saveContactDirectory = async (
         throw new SettingUnreadableError(key);
       config[field] = (input[field] ?? state.value).trim();
     }
-    const catalog = await deps.getCatalogApp(config.appId, locale);
+    const catalog = await deps.getCatalogApp(config.appId, locale, context.authority);
     if (!catalog.ok) return { ok: false, status: 503, message: catalog.error.message };
     const issues = contactDirectoryIssues(config, catalog.data, locale);
     if (issues.length > 0) return { ok: false, status: 400, issues };
@@ -246,6 +254,17 @@ export const saveContactDirectory = async (
         changed.push(key);
       }
     }
+    await deps.recordAudit(
+      {
+        action: "settings.update",
+        outcome: "allowed",
+        actor: auditActorFromRequest(context),
+        target: { type: "settings", id: "mail.contact_directory" },
+        requestId: context.requestId,
+        metadata: { keys: changed },
+      },
+      tx,
+    );
     return { ok: true, config };
   });
   if (saved.ok) await deps.invalidateSettings(changed);

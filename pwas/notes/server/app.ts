@@ -17,6 +17,10 @@ const createPad = z.strictObject({
 
 const presenceQuery = z.strictObject({ readIds: z.array(z.string().regex(/^[0-9A-Za-z]{22}$/)).max(limits.presencePads) });
 
+/** Also served by the browser test, so the SPA is tested under the policy it ships with. */
+export const contentSecurityPolicy = (origin?: string) =>
+  `default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'${origin ? ` ${origin.replace(/^http/, "ws")}` : ""}; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
+
 export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesService, options?: HttpOptions) => {
   const app = new Hono<{ Bindings: NotesBindings }>();
   app.use("*", async (c, next) => {
@@ -25,10 +29,7 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("X-Content-Type-Options", "nosniff");
     if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "private, no-store");
-    c.header(
-      "Content-Security-Policy",
-      `default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'${options ? ` ${options.origin.replace(/^http/, "ws")}` : ""}; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`,
-    );
+    c.header("Content-Security-Policy", contentSecurityPolicy(options?.origin));
   });
   app.onError((error, c) => {
     if (error instanceof NotesError) return c.json({ code: error.code, ...(error.reason ? { reason: error.reason } : {}) }, error.status);

@@ -76,6 +76,7 @@ export const app = defineApp({
     },
 
     "notebooks.reindex_cron": {
+      adminWrite: "application",
       kind: "cron",
       label: "Reindex Cron",
       default: "0 */12 * * *",
@@ -91,6 +92,7 @@ export const app = defineApp({
       },
     },
     "notebooks.snapshot_cron": {
+      adminWrite: "application",
       kind: "cron",
       label: "Snapshot Cron",
       default: "0 3 * * *",
