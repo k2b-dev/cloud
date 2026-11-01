@@ -158,6 +158,7 @@ export async function activateCodeVersion(
       return receipt(existing);
     }
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
+    await tx`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
     const code = await authorizedCode(input.codeId, context, tx);
     await requireCodeVersionApproval(code, input.versionId, tx);
     const created = await tx`INSERT INTO code.activations(id,code_id,version_id,activating_person,authority,locale,cloud_admin)
@@ -260,6 +261,8 @@ async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDepen
     plan.push({ ...item, grantId: reusable?.grant_id ?? crypto.randomUUID(), reused: Boolean(reusable), owner: false });
   }
   await sql.begin(async (tx) => {
+    await tx`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
+    if ((await findCode(code.id, tx))?.state === "deleting") refuse(null, "code_unavailable", "Code is being deleted.");
     await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::jsonb,mandate_policy=${JSON.stringify(built.policy)}::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
     for (const item of plan.filter((item) => !item.reused && !item.owner))
       await tx`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)

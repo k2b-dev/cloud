@@ -627,6 +627,10 @@ and sends one durable notification per affected target and manager after the
 version becomes active. See [Code activation](/en/docs/platform/code-activation).
 The four adapter functions and signed proof v1 remain unchanged.
 
+Generated titles, descriptions and all input-field descriptions include English
+and German presentation. Apps do not need to repeat these translations; any
+field overrides retain the platform's remaining input descriptions.
+
 Resource targets use qualified Types, for example
 `{ type: "inventory.item", id: "item-1" }`; an app target uses
 `{ type: "app", id: "inventory" }`. Operations are unique qualified capability

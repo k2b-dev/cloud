@@ -40,9 +40,18 @@ export const validateCodeAccess = (definitions: CapabilityDefinitions): void => 
     if (code.owners && !Array.isArray(code.owners)) throw new Error("code.owners must be a list of declared types");
   }
   for (const [id, type] of Object.entries(definitions.types ?? {})) if (type.access) check(type.access, `Resource type ${id} access`, true);
-  for (const id of code?.owners ?? []) {
+  const lifecycleTypes = new Set([
+    ...(code?.owners ?? []),
+    ...Object.entries(definitions.types ?? {})
+      .filter(([, type]) => type.access?.grant)
+      .map(([id]) => id),
+  ]);
+  for (const id of lifecycleTypes) {
     const type = Object.hasOwn(definitions.types ?? {}, id) ? definitions.types?.[id] : undefined;
-    if (!type?.reader) throw new Error(`code.owners: ${id} must be a declared type with a reader`);
+    if (!type?.reader) throw new Error(`Code lifecycle: ${id} must be a declared type with a reader`);
+    const reader = definitions.queries?.[type.reader];
+    if (reader && typeof reader.codeResourceTitle !== "function")
+      throw new Error(`Code lifecycle: ${id} reader must supply codeResourceTitle for lifecycle checks`);
   }
 };
 

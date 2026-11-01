@@ -36,7 +36,7 @@ export const CodeAccessLevelSchema = z
 export const CODE_ACCESS_MAX_MANAGER_USER_IDS = Math.floor(CAPABILITY_MAX_RESULT_BYTES / 39);
 const managerUserIdsSchema = z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS);
 export const CodeAccessDecisionSchema = z.discriminatedUnion("granted", [
-  z.object({ granted: z.literal(true), level: CodeAccessLevelSchema, managerUserIds: z.array(z.uuid()).optional() }).strict(),
+  z.object({ granted: z.literal(true), level: CodeAccessLevelSchema, managerUserIds: managerUserIdsSchema.optional() }).strict(),
   z.object({ granted: z.literal(false), reason: z.string().min(1).max(1000) }).strict(),
 ]);
 export type CodeAccessDecision = z.infer<typeof CodeAccessDecisionSchema>;
@@ -121,7 +121,7 @@ export type CodeAccessRefusalCode = z.infer<typeof CodeAccessRefusalCodeSchema>;
 
 export const CodeAccessSetDataSchema = z.discriminatedUnion("granted", [
   z
-    .object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema, managerUserIds: z.array(z.uuid()).optional() })
+    .object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema, managerUserIds: managerUserIdsSchema.optional() })
     .strict(),
   z.object({ granted: z.literal(false), reasonCode: CodeAccessRefusalCodeSchema, reason: z.string().min(1).max(1000) }).strict(),
 ]);

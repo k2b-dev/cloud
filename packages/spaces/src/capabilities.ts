@@ -26,6 +26,7 @@ import { type AuditActor, audit, serviceAccountUsesOwnGrants } from "@k2b/cloud/
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { spacesEvents } from "./app-events";
@@ -2577,6 +2578,10 @@ export const spacesCapabilities = defineCapabilities({
       run: runSpaceList,
     },
     "space.read": {
+      codeResourceTitle: async (tx: SQL, id: string) => {
+        const [space] = await tx<{ name: string }[]>`SELECT name FROM spaces.spaces WHERE short_id=${id}`;
+        return space?.name ?? null;
+      },
       title: "Read space",
       description:
         "Read one spaces.space ref returned by space.list or space.search, including column and tag IDs required by filtered lists and item Actions.",

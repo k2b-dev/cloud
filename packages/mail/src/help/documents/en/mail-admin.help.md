@@ -314,4 +314,6 @@ See [Mail workflow YAML reference](/app/mail/help/mail-workflows) for all suppor
 
 **Danger zone → Move to recently deleted** moves the mailbox into a deleted state that you can recover. Mail does not purge provider mail and kept Cloud data.
 
+The confirmation names what is permanently deleted: the mailbox’s Code, its versions and runs, its Code account, and every permission granted to that account. Cloud keeps retrying permission removal if a target app is unavailable. Restoring the mailbox does not restore its Code.
+
 Deleted mailboxes appear under **Recently deleted** on the Mail overview for people who can restore them. A restored mailbox starts paused. In **… → Mailbox health**, verify the connection, folder discovery, and health. Then choose **Resume mailbox**.
