@@ -52,8 +52,8 @@ const route = async <T extends z.ZodType>(ctx: CloudCliContext, path: string, bo
       signal: AbortSignal.timeout(ROUTE_TIMEOUT_MS),
     });
     if (!response.ok) return null;
-    const body: unknown = await response.json();
-    const parsed = schema.safeParse(body && typeof body === "object" && "data" in body ? body.data : undefined);
+    const answer: unknown = await response.json();
+    const parsed = schema.safeParse(answer && typeof answer === "object" && "data" in answer ? answer.data : undefined);
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
