@@ -1,3 +1,4 @@
+import type { GeneratedCodeSdk } from "@k2b/cloud/code";
 import { env } from "@k2b/cloud/config";
 import { ArtifactCompileError, sourceActions } from "../actions";
 import { ArtifactSource } from "../contracts";
@@ -57,7 +58,7 @@ export function runtimeSource(): Promise<string> {
   return runtime;
 }
 
-export async function compileArtifact(input: unknown, invocation?: { action: string; input?: unknown }) {
+export async function compileArtifact(input: unknown, invocation?: { action: string; input?: unknown }, sdk?: GeneratedCodeSdk) {
   const source = ArtifactSource.parse(input);
   const actions = sourceActions(source);
   const action = invocation ? actions.find((action) => action.name === invocation.action) : undefined;
@@ -82,7 +83,7 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
         setup(builder) {
           builder.onResolve({ filter: /.*/ }, (args) => ({
             path:
-              args.path === "__artifact_entry__"
+              args.path === "__artifact_entry__" || (sdk && args.path === "@sdk")
                 ? args.path
                 : args.importer === "__artifact_entry__"
                   ? entry
@@ -91,15 +92,30 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
           }));
           builder.onLoad({ filter: /.*/, namespace: "artifact" }, (args) => {
             const contents =
-              args.path === "__artifact_entry__"
-                ? headless
-                  ? "globalThis.__artifactStart(() => null);"
-                  : `import entry from ${JSON.stringify("./" + entry)}; globalThis.__artifactStart(${invocation ? `entry, ${JSON.stringify(invocation.input ?? null)}` : "entry"});`
-                : files.get(args.path);
+              args.path === "@sdk" && sdk
+                ? sdk.runtime + "\nexport const sheet = globalThis.cloud.sheet;"
+                : args.path === "__artifact_entry__"
+                  ? headless
+                    ? "globalThis.__artifactStart(() => null);"
+                    : sdk
+                      ? `import {__codeSdk} from "@sdk";
+                       globalThis.__artifactStart(async (...args) => {
+                         __codeSdk.bind({call: async (name, {call, metadata}) => {
+                           const envelope = await globalThis.cloud.capabilities.run(name, call.input, {
+                             ...(call.target ? {target: call.target} : {}), refs: call.refs, ...metadata
+                           });
+                           return envelope.data;
+                         }});
+                         const {default: entry} = await import(${JSON.stringify("./" + entry)});
+                         if (typeof entry !== "function") throw new Error("The entry module must default-export a function: export default (input, { files, signal, progress }) => result. An exported object is not executable.");
+                         return entry(...args);
+                       });`
+                      : `import entry from ${JSON.stringify("./" + entry)}; globalThis.__artifactStart(${invocation ? `entry, ${JSON.stringify(invocation.input ?? null)}` : "entry"});`
+                  : files.get(args.path);
             if (contents === undefined) throw new Error(`Missing source file: ${args.path}`);
             if (args.path.endsWith(".json")) return { contents, loader: "json" };
             if (/\.(?:csv|tsv|txt)$/.test(args.path)) return { contents, loader: "text" };
-            if (args.path !== "__artifact_entry__" && !/\.(?:js|ts)$/.test(args.path))
+            if (args.path !== "__artifact_entry__" && args.path !== "@sdk" && !/\.(?:js|ts)$/.test(args.path))
               throw new Error("Import JavaScript, TypeScript, JSON, CSV, TSV or text files.");
             return { contents, loader: args.path.endsWith(".ts") ? "ts" : "js" };
           });

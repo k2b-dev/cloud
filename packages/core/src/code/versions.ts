@@ -24,10 +24,12 @@ import {
 import type { SQL } from "bun";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
+import { verifyCodeSubmission } from "./authoring-check";
 import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
+import { validateCodeSecretBindings } from "./secrets";
 import { codeSettings } from "./settings";
 import {
   codeBundleHash,
@@ -240,6 +242,7 @@ export async function submitCodeVersion(
   const author = codePerson(context, true);
   const { code: authorizedCode } = await readCode(input.codeId, context);
   await validateOperationRows(input.manifest, context, authorizedCode.owner.kind);
+  await verifyCodeSubmission(input, context);
   return sql.begin(async (tx) => {
     // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
     const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r
@@ -265,6 +268,7 @@ export async function submitCodeVersion(
       superseded.map((row) => row.id),
       tx,
     );
+    await validateCodeSecretBindings(code.id, input.manifest.secrets ?? [], tx);
     const version = await createCodeVersion({ ...input, entry: input.manifest.entry }, context, tx);
     const snapshot = await versionSnapshot(code.id, version.id, tx);
     const comparison = await baseline(code, tx);
@@ -285,7 +289,13 @@ export async function submitCodeVersion(
           kind: "code_version",
           appId: "core",
           action: "code.version.approve",
-          requester: { kind: "code_version", ref: version.id, appId: "core", title: code.title, href: `/me/approvals?app=core` },
+          requester: {
+            kind: "code_version",
+            ref: version.id,
+            appId: "core",
+            title: code.title,
+            href: `/admin/code?sec=approvals&id=${version.id}`,
+          },
           authorUserId: author.id,
           approverRole: "admin",
           sentence: review.sentence.action,
@@ -337,6 +347,7 @@ export async function diffCodeVersion(input: z.infer<typeof codeVersionContracts
       binding,
       staleComparison: !submission || !sameBinding(binding, submission.binding),
       files: codeVersionDiff(comparison?.source_files ?? {}, version.source_files),
+      secrets: manifest.secrets ?? [],
       permissions: manifest.permissions,
       policyRows: manifest.policyRows,
     };

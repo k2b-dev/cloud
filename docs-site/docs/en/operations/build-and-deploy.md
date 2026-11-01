@@ -607,6 +607,11 @@ strings out of proxy logs and error reports. See the
 
 ## Roll out a release
 
+Before starting the production runner service, install the matching release's
+AppArmor policy on every runner host and place its seccomp file at the path
+configured in Compose. Coordinate Core and runner upgrades; see
+[runner host prerequisites](/en/docs/operations/code-runner).
+
 Render and inspect the deployment before changing platform containers:
 
 ```bash

@@ -99,6 +99,12 @@ const publicPaths: Record<string, string[]> = {
   core: [
     "/_internal/apps/bootstrap",
     "/_internal/code/runner/call",
+    "/_internal/code/runner/config",
+    "/_internal/code/runner/fetch",
+    "/_internal/code/runner/bundle",
+    "/_internal/code/runner/heartbeat",
+    "/_internal/code/runner/complete",
+    "/_internal/code/runner/job-input",
     "/auth/login",
     "/auth/new-password",
     "/auth/password-reset",

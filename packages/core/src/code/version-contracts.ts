@@ -1,4 +1,4 @@
-import { CodeCheckedVersionManifestSchema, CodeVersionPermissionSchema } from "@k2b/cloud/contracts";
+import { CodeCheckedVersionManifestSchema, CodeSecretVersionBindingSchema, CodeVersionPermissionSchema } from "@k2b/cloud/contracts";
 
 export {
   type CodeCheckedVersionManifest,
@@ -84,6 +84,7 @@ export const codeVersionContracts = {
         binding: CodeVersionBindingSchema,
         staleComparison: z.boolean(),
         files: z.array(CodeVersionDiffFileSchema),
+        secrets: z.array(CodeSecretVersionBindingSchema),
         permissions: z.array(CodeVersionPermissionSchema),
         policyRows: z.array(CodePolicyRowSchema),
       })

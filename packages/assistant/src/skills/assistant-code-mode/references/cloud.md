@@ -99,7 +99,12 @@ type StreamRef = { readonly [key: string]: unknown };
 /** Cloud operations of other apps (Grids, Files, Mail, ...), with the viewer's permissions and approvals. */
 interface CloudCapabilities {
   /** Runs a capability; returns its own envelope (`data`, `refs`, `stream` when supplied). */
-  run<T = unknown>(name: string, input?: Json): Promise<T>;
+  run<T = unknown>(name: string, input?: Json, options?: {
+    target?: {type: string; id: string};
+    refs?: Record<string, {type: string; id: string}>;
+    /** Only for Actions declaring required idempotency; retained across retries. */
+    idempotencyKey?: string;
+  }): Promise<T>;
   streams: {
     /** Reads a capability stream as a File. */
     read(stream: StreamRef): Promise<File>;

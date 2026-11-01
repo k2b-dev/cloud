@@ -10,7 +10,7 @@ import { generateCodeSdk } from "./generator";
 import { sdkFixture } from "./sdk.test-fixture";
 
 let directory: string;
-let host: CodeCheckHost;
+let host: Extract<CodeCheckHost, { bun: string }>;
 const sdk = generateCodeSdk([sdkFixture()], {
   mode: "resource",
   owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "owner-shop" } },
@@ -437,4 +437,31 @@ test("checker children inherit neither secrets nor an IP network", async () => {
   const [exit, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
   expect(exit).toBe(0);
   expect(JSON.parse(stdout)).toEqual({ network: "denied" });
+});
+
+test("HTTP and secret placeholders compile and mark internet use without granting a capability target", async () => {
+  const result = await check(
+    'import { app, http, secrets } from "@sdk";\napp.schedule("0 8 * * 1", async () => { await http.fetch("https://api.example/v1", { headers: { authorization: "Bearer " + secrets.API } }); });\nexport default app;',
+  );
+  expect(result).toMatchObject({ ok: true });
+  if (result.ok) {
+    expect(result.manifest.internet).toBe(true);
+    expect(result.manifest.permissions).toEqual([]);
+  }
+});
+
+test("HTTP methods cannot be detached to hide their internet use from checking", async () => {
+  const result = await check(
+    'import { app, http } from "@sdk"; const send = http.fetch; app.schedule("0 8 * * 1", async () => { await send("https://api.example/v1"); }); export default app;',
+  );
+  expect(result.ok).toBe(false);
+  expect(result.diagnostics.some((diagnostic) => diagnostic.code === "code_detached_sdk_method")).toBe(true);
+});
+
+test("destructured HTTP methods retain internet evidence through their SDK signature", async () => {
+  const result = await check(
+    'import { app, http } from "@sdk"; const { fetch: send } = http; app.schedule("0 8 * * 1", async () => { await send("https://api.example/v1"); }); export default app;',
+  );
+  expect(result).toMatchObject({ ok: true });
+  if (result.ok) expect(result.manifest.internet).toBe(true);
 });

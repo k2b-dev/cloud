@@ -302,3 +302,5 @@ export type {
 
 export { links } from "./links";
 export type { CreateLinkInput, CreatedLink, RedeemedLink, LinkOptions, PeekedLink, PeekLinkResult, RedeemLinkResult } from "./links";
+
+export { type PurposeSecretRoots, purposeSecretCipher } from "./purpose-secrets";

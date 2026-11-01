@@ -1,25 +1,34 @@
 ---
-title: Code runner
-navTitle: Code runner
+title: Scaling runners
+navTitle: Scaling runners
 section: Operations
 order: 1155
 description: Configure, scale, and stop the stateless workerd runner for Code.
 tags: [code, runner, scaling, shutdown]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
-# Code runner
+# Scaling runners
 
 The `runner` service executes Code bundles in workerd. Add replicas with
 `--scale runner=N`; every replica uses the same app key. Core owns durable run
 state, scheduling, generation fencing, and leases. Runners keep only active
 attempts and a bounded bundle cache in memory.
 
-Core supplies the [per-call Code bridge](/en/docs/platform/code-bridge).
-Run acquisition and queue coordination arrive with the execution slice; until
-then a runner reports
-`runner_configuration_unavailable` and retries without accepting work. App-key
-signing and Core's refusal to deliver installation connections are active.
+Core supplies the [per-call Code bridge](/en/docs/platform/code-bridge) and
+distributes [Code runs](/en/docs/platform/code-runs) through one shared Sync
+queue. Every Core instance can serve a poll, heartbeat, bundle request, or
+completion; runners need no affinity to a Core instance.
+
+## Authoring commands
+
+Core serves the `code` CLI module for SDK pull, check, test, simulation and
+version submission. Install the matching module with `cld plugins install code`.
+[Code CLI](/en/docs/platform/code-cli) describes the commands and JSON contracts.
+Check/test/simulate share the runner job pool and Administration > Code budgets;
+Core and Runner must support the same job protocol. Busy requests fail visibly
+instead of building an unbounded HTTP queue. Disconnects cancel outstanding
+jobs, and authoring HTTP requests stop at the platform's 240-second budget.
 
 ## Configure the service
 
@@ -74,8 +83,7 @@ configuration lives in a bounded `/tmp` tmpfs; bundles never go to disk.
 
 Before upgrading an existing production deployment, enroll and mount the
 runner key. Production starts the runner by default; Compose cannot create
-it when the secret file is missing. Until Core's Code bridge is installed,
-the runner retries configuration and accepts no work.
+it when the secret file is missing. Core and runner must use the same runner protocol version.
 
 The image pins workerd to `1.20261028.1`. Its
 Compose cgroup memory budget is 1 GiB with 256 process slots. These are host
@@ -136,10 +144,10 @@ actual workerd process's UID, session and filter, tries to read the key and
 `/proc/<pid>/{environ,mem,fd}`, signal/ptrace the supervisor and a sibling,
 connect to a sibling socket, replace IPC paths, open IP sockets and regain
 privileges, then
-executes workerd in the same PID. C14 extends this attack coverage with hostile
-bundles and the real bridge. It must retain these OS-context checks and the
-CPU-loop watchdog test; sandbox JavaScript API checks alone do not cover a
-native escape. Unprivileged unit runs skip the native files; the image check
+executes workerd in the same PID. [Verify the isolation
+boundary](#verify-the-isolation-boundary) adds hostile bundles and the real
+bridge. Sandbox JavaScript API checks alone do not cover a native escape, so
+these OS-context checks and the CPU-loop watchdog test stay required. Unprivileged unit runs skip the native files; the image check
 runs them with isolation enabled.
 
 ## Add replicas
@@ -164,6 +172,58 @@ LRU cache. Replicas do not coordinate with each other or connect to NATS,
 Postgres, or Valkey.
 Concurrent cache misses download independently with each attempt's own lease
 and cancellation signal; only completed, verified bundles are shared.
+
+## Check capacity and waiting time
+
+Core's administration read model reports fresh runner instances, their free
+slots, the number of queued and running runs, and the oldest queued run's
+waiting time in milliseconds. An instance remains fresh for the configured
+long-poll duration plus the 15-second lease window. A stale instance contributes
+no capacity. Polls report free slots; Core subtracts the leases it returns. Heartbeats keep
+fully occupied instances visible until they can poll again.
+These values are observations, not a promise that a slot remains available.
+
+The Core service `readCodeRunnerMetrics(context, { cursor, limit })` requires
+Cloud administration and returns `CodeRunnerMetrics` for Administration › Code.
+It includes an installation-wide summary and a page of at most 50 instances.
+The projection contains no run inputs, results, source, or tokens.
+
+Add replicas when waiting time grows while runners have no free slots.
+If slots remain free, check Code and owner concurrency settings and active
+version/mandate status first. More runners cannot override those limits.
+
+Administration settings default to one concurrent run per Code and ten per
+owner. All Core instances enforce the same limits. Each replica defaults to
+four slots. Queue selection rotates between eligible Codes, so a Code with a
+large backlog cannot occupy the front of every runner's poll.
+
+The runner requests lease renewal every five seconds, for at most fifteen seconds ahead and
+never beyond the original run deadline. Its five-second recovery pass detects
+lost leases. Work committed before a publisher or Core restart remains in the
+Postgres outbox. The repair pass republishes waiting work after lost or expired
+queue wakeups; brief transport outages do not discard queued runs.
+
+## Configure runner budgets
+
+Change these settings in Administration › Code or through `cld admin settings apply`.
+Restart runner replicas after changing their configuration. Acquisition requests
+may take the long-poll duration plus the transport timeout.
+
+| Setting | Default | Controls |
+| --- | --- | --- |
+| `core.code.automatic_attempts` | `3` | Maximum lease generations before a possible Action; the original deadline still applies. |
+| `core.code.runner_slots` | `4` | Shared concurrent runs and authoring jobs per replica. |
+| `core.code.runner_poll_ms` | `20000` | Maximum acquisition request duration, in milliseconds. |
+| `core.code.runner_transport_ms` | `30000` | Runner request timeout, in milliseconds. |
+| `core.code.runner_retry_ms` | `1000` | Delay before retrying a failed transport request, in milliseconds. |
+| `core.code.runner_cache_bytes` | `33554432` | In-memory bundle cache per replica, in bytes. |
+| `core.code.runner_bridge_concurrency` | `4` | Simultaneous bridge calls per run. |
+| `core.code.runner_process_memory_bytes` | `134217728` | Memory budget per organization and trust-tier process, in bytes. |
+| `core.code.runner_job_slots` | `1` | Simultaneous authoring jobs within the replica's shared slots. |
+| `core.code.job_pending` | `100` | Installation-wide queued and running authoring jobs before admission returns busy. |
+| `core.code.job_wait_ms` | `30000` | Queue allowance added to the role's work budget, in milliseconds. |
+| `core.code.test_cases` | `64` | Declarative fixtures per test job. |
+| `core.code.test_runs` | `200` | Total fixture invocations per test job. |
 
 ## Stop and recover
 
@@ -199,13 +259,86 @@ enforce it: a bounded 100-million-iteration CPU probe completed despite a
 1 ms limit on both the worker and entrypoint. The supervisor watchdog remains
 the stall control; a native per-attempt CPU budget is not claimed.
 
+## Verify the isolation boundary
+
+The required `runner-attacks` CI job builds the real runner Dockerfile's test
+target. That target adds probes to the production runtime without replacing
+the supervisor, workerd, entrypoint, or native launcher. The job runs when the
+runner, bridge, fencing, identity transport, dependencies, or its workflow
+changes. The PR gate fails if this job fails, times out, or is cancelled.
+
+Every organization and trust tier has a unique Unix UID/GID and session.
+Workerd inherits an empty environment and one listening Unix descriptor; it
+does not inherit the key, a key descriptor, or the supervisor's sockets.
+Root owns the group directory and IPC paths. A group can traverse its own
+directory but cannot replace its configuration, listener, or bridge socket.
+Different UIDs and sessions protect the supervisor and sibling groups,
+including Linux's same-session SIGCONT exception. Seccomp denies IP sockets,
+process creation, ptrace, and cross-process memory access. V8 threads remain
+available to workerd.
+
+The native probe runs immediately before `exec` of workerd, under the same
+UID, session, descriptors, capabilities, and seccomp policy. It then becomes
+the real workerd process. This exercises the OS boundary independently of
+the JavaScript API restrictions. The key test attacks both the actual
+entrypoint-staged `0400` copy and a mounted public test key behind the image's
+`0700` directory. Neither contains an installation credential.
+
+The suite requires these results:
+
+| Attack | Required result |
+| --- | --- |
+| Read key, supervisor or sibling `/proc/environ`, `/proc/mem`, descriptors, or proc-root path | `EACCES` or `EPERM`; no bytes read |
+| Signal, SIGCONT, ptrace, or read sibling memory | `EPERM`; sibling finishes its real bundle |
+| Connect to either sibling IPC socket; replace a trusted path | `EACCES` or `EPERM`; supervisor paths remain intact |
+| Public, metadata, live loopback/Core, or named-host requests through `fetch`, `connect`, `node:net`, or `node:dns` | Refused; zero canary requests |
+| Native IPv4/IPv6 TCP, DNS/UDP, alternate network families or IP socketpair | `EAFNOSUPPORT` before any connection or DNS query |
+| Access filesystem, environment, subprocess, or loader APIs from Code | `node:fs` absent; `node:fs/promises` reaches only workerd's virtual filesystem, so reads of the key, `/run/runner-key`, `/proc`, and image files and image writes fail; environment empty; every `node:child_process` call, loader, and credential RPC attempt fails |
+| Write image files or traverse out of `/tmp` into the image | `EACCES` or `EROFS` |
+| Fork bomb, vfork, or clone3 bypass | Fork/vfork get `EPERM`; clone3 gets `ENOSYS` |
+| io_uring, namespace, mount, BPF, or pidfd bypass | `EPERM` |
+| Memory bomb; CPU loop | `memory_limit`; `stalled`; another organization continues |
+| Giant bridge input or result | `runner_bridge_unavailable`; oversized input never reaches the callback |
+| Giant return value or console output | Return and diagnostics discarded; none reach the job log, a growing pipe, or a file |
+| Concurrent bridge flood | `runner_bridge_busy`; only the configured number admitted |
+| Sustained calls through real Core and Valkey | `code_rate_limited`, with bounded failed call observations |
+| Calls beyond the saved per-run budget | `code_call_limit`; observation count stops at the budget |
+| Old generation, completed run or replay against another run; forged run token | HTTP 409 `runner_lease_lost`; HTTP 403 `code_invalid_token`; no observation or provider call |
+| `code.access.*`, streams, or `code: false` | `code_access_forbidden`, `code_stream_forbidden`, or `code_disabled`; no provider call |
+| SIGTERM while a bundle waits forever | Acquisition stops; `wall_clock_limit` within two seconds of the original deadline; runner exits successfully after reporting |
+
+Bridge attacks run hostile bundles in the compiled runner image against the
+actual signed Core call route, Postgres fence, and Valkey limiter. Acquisition
+and completion use a deterministic fixture; queue distribution is covered by
+the scheduling integration suite. The attack container deliberately uses host
+networking with a reachable Core fixture: workerd must refuse network access
+without relying on a disconnected container. Production adds the internal
+`runner-core` network described above.
+
+The native/bundle step has a 90-second limit; the bridge step has a 180-second
+limit, both with forced termination after a further five seconds. Skipped
+attacks fail the job. Individual attempts retain their transport and run deadlines.
+The job removes its containers on failure or cancellation. Its test output is
+the result for that exact commit and pinned engine version; expected outcomes
+in this table are not a claim that an untested commit passed.
+
+These checks establish the tested boundaries, not resistance to unknown
+kernel or engine vulnerabilities. Runs in the same organization and trust tier
+share a workerd process and its memory/stall fate. The memory watchdog samples
+RSS every 100 ms; the container cgroup bounds aggregate memory, and killing a
+whole container interrupts every group in it. Code gets no persistent
+filesystem; native processes still use the bounded temporary filesystem.
+Resource contention and timing side channels are not eliminated by UID
+separation. Keep the pinned engine and host kernel current and budget replicas
+for the combined workerd and supervisor memory.
+
 ## Integrate the bridge
 
 Core and runner consumers import protocol types and strict schemas from
 `@k2b/cloud/code/runner`. `RUNNER_PATHS` names the private POST routes for
 configuration, run acquisition, bundle download, heartbeat, completion, and
-bridge calls. `RunnerBridge` is the mockable transport seam. C13 implements
-the Core side; the runner shell uses `CoreBridge` with real Ed25519 signatures.
+bridge calls. `RunnerBridge` is the mockable transport seam. Core implements
+the receiving side; the runner shell uses `CoreBridge` with real Ed25519 signatures.
 
 Each HTTP transmission, including retry, signs its exact method, path, and
 UTF-8 body through `signAppProof` from `@k2b/cloud/app-proof`. Core must verify
@@ -239,3 +372,118 @@ its return value, and gives `cloud` only the `call` method. The SDK bundler
 must produce this module boundary. `RunnerEngine` (`load`, `run`, `kill`,
 `close`) and `SandboxCall` are exported from `packages/runner/src/engine.ts`
 for the attack tests and simulation kit; no application imports that package.
+
+When a running attempt ends, Core commits a dispatch wakeup for waiting work
+of the same owner. A backlog held by the per-Code or per-owner concurrency
+limit can continue as soon as capacity frees up; lease recovery is not needed
+for ordinary progress. Schedule registration scans bounded database pages on
+each Core reconciliation pass, using stable Code/entrypoint identities.
+
+Core starts serving without waiting for every schedule to register. Each
+reconciliation pass isolates definition failures by Code and logs the Code ID
+and error; healthy Codes continue to register. Accepted ticks are retained for
+seven days. Schedule receipts have the same retention and older ticks are
+rejected. Manual-start receipts remain permanent.
+
+New runner identities have a shared registration limit derived from the
+installation ingress setting and the telemetry cleanup budget (at most 20 per
+second). Existing identities continue polling and heartbeating independently
+of this registration budget. A burst of new replicas retries registration;
+inactive telemetry is removed after its poll-plus-lease freshness window.
+## Run tests without effects
+
+The same runner image includes a separate `code-test.js` stdin/stdout role.
+It uses the production workerd engine with a fake-only bridge and no app key
+or Core connection. Core checks the source first and sends the immutable
+bundle with declarative fixtures and host budgets. See [Test Code](/en/docs/platform/test-code)
+for the request, result schema, and isolation requirements.
+
+## Check and test on the runner pool
+
+The same signed long-poll now carries `check`, `test` and `simulate` jobs.
+Core alternates authoring jobs with eligible production runs and counts both
+against each replica's advertised slots. Scaling needs no additional service
+or per-replica configuration. Queue admission defaults to 100 pending jobs
+installation-wide, bounded also by the owner's concurrency setting. The
+queue allowance defaults to 30 seconds, followed by the role's work budget.
+Change these under Administration > Code. `code_job_busy` asks the caller to
+retry later; cancellation and time limits leave a visible failure.
+
+The runner image contains both isolated roles and the compiler. Core needs
+none of these binaries. Each role receives only its input over stdin and
+returns bounded JSON over stdout. It runs as PID 1 with private user, PID,
+mount, network and IPC namespaces, an empty environment, private `/proc` and
+bounded `/tmp`. Private `/dev/shm` and `/dev/mqueue` mounts are read-only and
+limited to one page each; only `/tmp` receives the 16 MiB workspace budget.
+The job's separate lease key stays in the supervisor; no
+bridge token reaches the job or is issued for it.
+
+Before starting runners, obtain `packages/runner/apparmor.profile` and
+`packages/runner/seccomp.json` from the Cloud release tag matching the runner
+image. Install the AppArmor policy once on each Linux Docker host:
+
+```sh
+sudo apparmor_parser -r packages/runner/apparmor.profile
+```
+
+Both Compose templates require that named policy and the checked-in seccomp
+profile. When copying a Compose template into a deployment directory, also copy
+`packages/runner/seccomp.json` to that same relative path, or update its
+`security_opt` path to the installed file. The templates remove Docker's locked
+system-path submounts so a job can mount
+its private procfs; the named policy preserves read-only kernel controls and
+blocks access to sensitive proc/sysfs paths. It permits only the proc/tmpfs
+mount targets, private shared-memory/queue directories and private-mount propagation needed by job setup. No host
+`SYS_ADMIN` is granted. After setup, both roles inherit a mandatory seccomp
+filter that refuses further namespace creation and mount operations. Workerd
+retains its own independent mandatory filter.
+
+Hosts need AppArmor with user-namespace mediation, user namespaces and
+namespace-local proc/tmpfs mounts. Docker user-namespace remapping needs an
+outer UID/GID range large enough for the supervisor's distinct production
+identities and 65,536-ID job ranges; the usual 65,536-ID remap is insufficient.
+Jobs reuse their range only after the launcher has reaped the namespace,
+including on cancellation or role failure. A helper that dies abnormally
+does not release its range. Exhausting identities stops
+acquisition and exits the supervisor so its container can restart.
+
+Docker refuses to start the container when the named profile is missing.
+The runner probes isolation before polling. Unsupported namespace/mount
+setup or a failed mandatory filter logs
+`runner_job_isolation_unavailable` and refuses startup. CI uses the same
+profile and container envelope. The local profile syntax check cannot replace
+this image verification.
+
+Keep Compose's `init: true`, or Docker's `--init` for custom deployments.
+The supervisor refuses PID 1 with `runner_init_required`. Custom deployments,
+including Kubernetes, must put an init/reaper ahead of the image entrypoint.
+The container init reaps orphaned namespace processes after an abrupt launcher
+death. A dead namespace process must disappear from `/proc`, including its
+zombie entry, so repeated cancellations do not exhaust the container PID budget.
+Routine cancellation first asks the launcher to kill and reap its namespace;
+after one second the supervisor can force termination. Abrupt launcher deaths
+retain their UID range because teardown has no launcher receipt.
+
+Administration defaults to one simultaneous authoring role per runner,
+within its four shared slots. Increase the authoring-slot setting only with
+a corresponding container memory/process allocation. Each role has a
+32-thread/process limit per Linux identity; compiler children use two Go
+execution threads. Checker memory also respects the runner process-memory
+setting. Retain headroom for the supervisor, cache and production workerd
+groups when budgeting a replica. These controls bound authoring load;
+container-wide exhaustion can still interrupt active work.
+
+`RunnerFetchResponse.jobs` contains `RunnerJobLease` values. The signed
+`RUNNER_PATHS.jobInput` route returns bounded input; the existing heartbeat
+and complete routes accept `RunnerJobProof` and `RunnerJobComplete`.
+`RunnerJobResultSchema` validates check/test/simulate results in both runner
+and Core. Job generations and random lease keys are fenced in Postgres, so
+any Core replica can serve them. Retries retain the original deadline.
+
+## Gustav authoring
+
+Gustav's `code_check`, `code_test`, `code_simulate` and `code_submit` use the
+same authoring services and runner jobs as `cld code`. They need the runner
+pool; adding chat tools does not move user-code execution into Core. A busy
+or unavailable runner produces the shared versioned failure result. Chat
+submission saves a version; activation remains a human action.

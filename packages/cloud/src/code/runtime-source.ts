@@ -35,7 +35,7 @@ function handle(appId, type, id) {
       if (!bridge) throw new Error("code_sdk_bridge_unbound");
       if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("code_sdk_invalid_input");
       const input = { ...args };
-      const refs = node();
+      const refs = {};
       for (const [field, refType] of Object.entries(op.refs)) {
         refs[field] = coordinate(input[field], refType);
         delete input[field];
@@ -90,8 +90,22 @@ app.schedule = (cron, fn, options) => {
 };
 for (const method of Object.keys(manifest.appMethods).filter(name => name !== "schedule")) app[method] = () => unavailable(method);
 Object.freeze(app);
+const secrets = new Proxy(node(), {
+  get(_target, name) {
+    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) throw new Error("code_sdk_invalid_secret_name");
+    return "[secret:" + name + "]";
+  },
+  set() { throw new Error("code_sdk_readonly_secrets"); },
+});
+const http = Object.freeze({
+  async fetch(url, options = {}) {
+    if (!bridge) throw new Error("code_sdk_bridge_unbound");
+    if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new Error("code_sdk_invalid_input");
+    return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
+  },
+});
 const __codeSdk = Object.freeze({
-  namespaces, owner, app,
+  namespaces, owner, app, secrets, http,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;

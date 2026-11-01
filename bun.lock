@@ -284,6 +284,7 @@
         "zod": "catalog:",
       },
       "devDependencies": {
+        "@k2b/nessi": "catalog:",
         "@types/bun": "catalog:",
         "bun-plugin-tailwind": "catalog:",
         "playwright": "catalog:",
@@ -702,6 +703,7 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "jose": "catalog:",
         "typescript": "catalog:",
         "yaml": "catalog:",
       },

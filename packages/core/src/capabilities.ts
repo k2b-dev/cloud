@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   AI_SHORT_ID_PATTERN,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
@@ -56,11 +57,17 @@ import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { CodeDataError, codePerson } from "./code/access";
+import { codeAttentionContracts, listCodeAttention, readCodeAttention } from "./code/attention";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
-import { listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { startCodeRun } from "./code/scheduling";
+import { codeSchedulingContracts } from "./code/scheduling-contracts";
+import { codeSecretContracts } from "./code/secret-contracts";
+import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
+import { countOwnCodeRuns, listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -75,6 +82,47 @@ import {
 } from "./code/versions";
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
+
+// Manual starts review the current Code and named entrypoint through the same editor permission check.
+const reviewCodeOperation = async (
+  input: { codeId: string; entrypoint?: string },
+  context: CapabilityExecutionContext,
+  operation: "run" | "submit" | "pause" | "resume",
+) => {
+  const result = await runCodeQuery(context, async (ctx) => {
+    codePerson(ctx, true);
+    const code = await sql.begin((db) => lockCodeForEdit(input.codeId, ctx, db));
+    const { t, locale } = coreCapabilityMessages(context.locale);
+    return {
+      locale,
+      slots: { code: { kind: "text" as const, value: code.title } },
+      scope: code.id,
+      sentence: {
+        action: t.codeOperationAction({ operation }),
+        running: t.codeOperationRunning({ operation }),
+        done: t.codeOperationDone({ operation }),
+        confirm: t.codeOperationConfirm({ operation }),
+        decline: t.codeOperationDecline,
+      },
+      ...(operation === "run"
+        ? { ask: "app_asks" as const }
+        : operation === "resume"
+          ? { ask: "keeps_working" as const }
+          : { reach: "you" as const }),
+      ...(input.entrypoint
+        ? {
+            content: {
+              kind: "page" as const,
+              title: t.codeOperationConfirm({ operation }),
+              format: "plain" as const,
+              body: input.entrypoint,
+            },
+          }
+        : {}),
+    };
+  });
+  return result.ok ? ok(result.data.data) : result;
+};
 
 const chatTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.chat" ? context.target.id : "");
 
@@ -732,6 +780,13 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "code.secret.list": {
+      title: "List Code secret bindings",
+      description: "Editors list metadata and immutable binding revisions only. Values and ciphertext are never returned.",
+      ...codeSecretContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeSecrets(input, ctx)),
+    },
     "code.version.diff.read": {
       title: "Read complete Code comparison",
       description: "Read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
@@ -775,6 +830,14 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
     },
+    "code.attention": {
+      title: "Check Code attention",
+      description:
+        "For one exact owner, list the readable Code that needs someone: a failed latest run, access removed at a target, or a version waiting for approval.",
+      ...codeAttentionContracts.attention,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeAttention(input, ctx)),
+    },
     "code.list": {
       title: "List Code",
       description:
@@ -812,6 +875,21 @@ export const aiCapabilities = defineCapabilities({
       ...codeQueryContracts.runRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
+    "code.attention.list": {
+      title: "List Code that needs you",
+      description:
+        "Across owners, list Code of a resource or app that the caller administers and that needs them: paused, a latest run failed, access missing at a target, or a version awaiting approval. Follow nextCursor even on empty pages.",
+      ...codeAttentionContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeAttention(input, ctx)),
+    },
+    "code.run.count": {
+      title: "Count own Code runs",
+      description: "Count runs and failed runs of the caller's own personal Code since a moment within the last 7 days.",
+      ...codeQueryContracts.runCount,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => countOwnCodeRuns(input, ctx)),
     },
     "map.style": {
       title: "Show a map",
@@ -1255,6 +1333,76 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "code.run": {
+      title: "Run Code",
+      description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
+      ...codeSchedulingContracts.start,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "app_asks" },
+      review: (input, context) => reviewCodeOperation(input, context, "run"),
+      run: (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
+        const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(JSON.stringify(["core.code.run", context.accessSubject, context.idempotencyKey])).digest("hex")}`;
+        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, idempotencyKey }, ctx));
+      },
+    },
+    "code.secret.set": {
+      title: "Set Code secret",
+      description:
+        "Editors write a private credential without reading it back. Destination changes apply only to newly submitted versions. Supply the value privately through the CLI or editor, never through chat.",
+      ...codeSecretContracts.set,
+      code: false,
+      unattended: false,
+      destructive: false,
+      openWorld: false,
+      // Do not retain a guessable input digest of credential values in idempotency claims.
+      idempotency: "none",
+      approval: "none",
+      run: (input, context) =>
+        runCodeQuery(context, (ctx) => {
+          if (context.origin !== "http") throw new CodeDataError("FORBIDDEN", "Use private interactive input to set a Code secret.");
+          return setCodeSecret(input, ctx);
+        }),
+    },
+    "code.secret.delete": {
+      title: "Delete Code secret value",
+      description:
+        "Editors clear the current value for every version. Immutable destination evidence remains available for version review.",
+      ...codeSecretContracts.delete,
+      code: false,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "deletes" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeSecretDeletion(input, ctx));
+        if (!result.ok) return result;
+        const { t, locale } = coreCapabilityMessages(context.locale);
+        const secret = result.data.data;
+        return ok({
+          locale,
+          ask: "deletes" as const,
+          slots: {},
+          sentence: {
+            action: t.codeSecretDeleteReview({ name: secret.name }),
+            running: t.codeSecretDeleteRunning,
+            done: t.codeSecretDeleteDone,
+            confirm: t.codeSecretDeleteConfirm,
+            decline: t.codePolicyDecline,
+          },
+          content: {
+            kind: "page" as const,
+            title: t.codeSecretDeleteConfirm,
+            format: "plain" as const,
+            body: JSON.stringify({ codeId: input.codeId, ...secret }, null, 2),
+          },
+        });
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => deleteCodeSecret(input, ctx)),
+    },
     "code.version.submit": {
       title: "Submit Code version",
       description:

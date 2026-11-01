@@ -11,6 +11,12 @@ export const app = defineApp({
     publicRoutes: [
       "/_internal/apps/bootstrap",
       "/_internal/code/runner/call",
+      "/_internal/code/runner/config",
+      "/_internal/code/runner/fetch",
+      "/_internal/code/runner/bundle",
+      "/_internal/code/runner/heartbeat",
+      "/_internal/code/runner/complete",
+      "/_internal/code/runner/job-input",
       "/auth/continue",
       "/auth/login",
       "/auth/new-password",
@@ -99,6 +105,7 @@ export const app = defineApp({
   }),
   platformPermissions: ["mail:send"],
   cli: {
+    code: { module: "src/cli/code.ts", references: "src/cli-references/code" },
     account: { module: "src/cli/account.ts", references: "src/cli-references/account" },
     admin: { module: "src/cli/admin.ts", references: "src/cli-references/admin" },
     apps: { module: "src/cli/apps.ts", references: "src/cli-references/apps" },

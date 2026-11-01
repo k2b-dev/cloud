@@ -5,7 +5,7 @@ section: Platform services
 order: 588
 description: Offer an authorized application page beside the current Cloud app.
 tags: [panels, applications, layout, ssr]
-updated: 2026-10-21
+updated: 2026-10-31
 ---
 
 # Offer a panel
@@ -96,10 +96,17 @@ export const app = defineApp({
 URLs, protocol-relative URLs, and paths that escape the route are rejected at
 startup. `defineApp()` also rejects `panel.href` at or below the app's Help path
 `<basePath>/help`, because the framework answers those paths with Help redirects.
+`code: true` says the panel works on the Code of the page's resource with the
+person. The shared [Code page](/en/docs/platform/code-page) then offers
+"Edit with <label>" and opens this panel; it must be a boolean.
 `label` and `icon` must be nonempty strings. Translate the label with
 `presentation.translations[locale].panelLabel`; the label defaults to the
-application's base locale. Cloud sorts visible providers by localized label,
-then application ID. No provider gets priority.
+application's base locale. Cloud sorts visible providers by `order` first,
+lowest first, then by localized label, then application ID. Providers without
+`order` follow those with one. `order` is an optional safe integer; any
+application may declare it, so built-in applications get no extra priority
+mechanism. The first visible provider is the default tab until the person picks
+another one.
 
 Serve a GET page at the declared path with the normal identity, runtime, and
 permission middleware. Inside the application's SSR handler, render:

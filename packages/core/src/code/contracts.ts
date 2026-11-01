@@ -53,6 +53,8 @@ export const CodeVersionManifestSchema = z.record(z.string(), z.json());
 export type CodeVersionManifest = z.infer<typeof CodeVersionManifestSchema>;
 /** Core-owned tables; other applications consume capabilities, never these tables. */
 export const CODE_TABLES = {
+  secrets: "code.secrets",
+  secretBindings: "code.secret_bindings",
   codes: "code.codes",
   shares: "code.shares",
   versions: "code.versions",
@@ -138,7 +140,7 @@ export const CodeCallSchema = z
     callChunked: z.boolean(),
     resultChunked: z.boolean(),
     result: z.json().nullable(),
-    state: z.enum(["running", "succeeded", "failed"]),
+    state: z.enum(["running", "succeeded", "failed", "uncertain"]),
     startedAt: timestamp,
     endedAt: timestamp.nullable(),
   })
@@ -264,5 +266,14 @@ export const codeQueryContracts = {
           .nullable(),
       })
       .strict(),
+  },
+  /** Runs of the caller's own personal Code created since a moment in the last 7 days. */
+  runCount: {
+    input: z
+      .object({
+        since: z.iso.datetime().describe("Start of the counted window, at most 7 days ago, such as the start of the person's day."),
+      })
+      .strict(),
+    data: z.object({ runs: z.number().int().nonnegative(), failed: z.number().int().nonnegative() }).strict(),
   },
 } as const;

@@ -23,12 +23,15 @@ import { aiChatTaskRoutes } from "./ai-chat-task-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
 import { createCodeActivationRoutes } from "./api/code-activation";
+import { createCodeAdminRoutes } from "./api/code-admin";
+import { createCodeAuthoringRoutes } from "./api/code-authoring";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
 import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
 import { createIdentityOAuthIssuanceRoutes } from "./api/identity-oauth-issuance";
 import { aiCapabilities } from "./capabilities";
 import { createCodeBridgeRoutes } from "./code/bridge";
+import { createCodeRunnerRoutes } from "./code/runner-routes";
 import { app } from "./config";
 import { coreHelp } from "./help";
 import { buildSearchIndexes as buildOutgoingMailSearchIndexes } from "./migrate/core/outgoing-mail";
@@ -50,7 +53,9 @@ const identityPublicRoutes = createIdentityPublicRoutes();
 // Dedicated brokers must precede Task auth on /api/ai/*: models-only OpenAI keys
 // and non-user Skills readers cannot pass the Task router's user requirement.
 const coreApi = new Hono()
+  .route("/code/admin", createCodeAdminRoutes())
   .route("/code", createCodeActivationRoutes())
+  .route("/code/authoring", createCodeAuthoringRoutes())
   .route("/admin/apps", createAdminAppListingRoutes())
   .route("/admin/apps", createAdminAppStatusRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())
@@ -61,6 +66,7 @@ const coreApi = new Hono()
 const router = new Hono<AuthContext>()
   .route("/", createAppBootstrapRoutes())
   .route("/", createCodeBridgeRoutes())
+  .route("/", createCodeRunnerRoutes())
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
   .route("/_cloud/app-access", createAppAccessRoutes())

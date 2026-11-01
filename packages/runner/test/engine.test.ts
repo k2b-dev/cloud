@@ -1,3 +1,6 @@
+// Include C17 acceptance in the existing production-container engine gate.
+import "./test-kit.engine.test";
+import "./jobs.engine.test";
 import { test as bunTest, expect } from "bun:test";
 import { WorkerdEngine } from "../src/engine";
 import { config, lease, source } from "./fixtures";

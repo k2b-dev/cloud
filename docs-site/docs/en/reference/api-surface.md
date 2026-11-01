@@ -33,7 +33,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
 | `@k2b/cloud/app-proof` | Advanced, server-only | Sign each private Core transmission with `signAppProof`; [runner bridge contract](/en/docs/operations/code-runner#integrate-the-bridge) |
 | `@k2b/cloud/code/run-token` | Preview, platform-owned | Core-signed attempt tokens; [Code bridge](/en/docs/platform/code-bridge) |
-| `@k2b/cloud/code/runner` | Preview, portable | Strict runner protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
+| `@k2b/cloud/code/runner` | Preview, portable | Strict run/job protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
 | `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
@@ -47,7 +47,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
-| `@k2b/cloud/code` | Preview, platform-owned | [Generate the SDK](/en/docs/platform/code-sdk), [check and bundle versions](/en/docs/platform/code-checker) |
+| `@k2b/cloud/code` | Preview, platform-owned | [Generate the SDK](/en/docs/platform/code-sdk), [check and bundle versions](/en/docs/platform/code-checker), [test and simulate](/en/docs/platform/test-code) |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
 | `@k2b/cloud/config` | Supported, server-only | Typed environment registries |
 
@@ -247,11 +247,29 @@ exports `AccountCategory`, `AccountCategoryPolicySchema`, `accountCategory`
 and `accountCategoryLabel`. See
 [Account types](/en/docs/operations/account-categories) for their use.
 
+The platform-owned `@k2b/cloud/code` entry exports `CodeCheckResultSchema`
+and the remote form of `CodeCheckHost`. Core consumers use
+`createCodeCheckRequest`, `createRunnerCodeCheckHost`, and
+`createRunnerCodeTestingHost` from `packages/core/src/code/index.ts`; see
+[Code checker](/en/docs/platform/code-checker#use-the-core-runner-host) and
+[Test Code](/en/docs/platform/test-code#connect-cli-and-gustav-adapters).
+`@k2b/cloud/code/runner` exports `RunnerJobProofSchema`,
+`RunnerJobLeaseSchema`, `RunnerJobResultSchema`, `RunnerJobCompleteSchema`
+and their job proof/lease/result types. These are private runner transport
+contracts, not author-callable capabilities.
+
 The contracts barrel exports `CodeCheckedVersionManifestSchema`,
 `CodeCheckedVersionManifest`, `CodeVersionPermissionSchema`, `CODE_POLICY_ROWS`,
 `CodePolicyRowSchema` and `CodePolicyManifestSchema` for the checker and Core's
 version lifecycle. See [Code versions and approval](/en/docs/platform/code-versions).
 These schemas describe evidence; they grant no execution or resource access.
+`CodeSecretBindingSchema`, `CodeSecretVersionBindingSchema`, `CodeSecretNameSchema`,
+`CodeHttpRequestSchema`, `CodeHttpResultSchema` and their types describe
+[Code secrets](/en/docs/platform/code-secrets) and the HTTP bridge.
+`codeSecretPlaceholder`, `codeSecretHeaderAllowed` and `codeSecretPathAllowed`
+supply the shared header-marker and destination grammar. The services barrel
+exports `PurposeSecretRoots` and `purposeSecretCipher` for purpose-separated
+encryption and root migration.
 
 The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator
@@ -457,7 +475,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@k2b/cloud/services/approvals` | Platform-owned, server-only | `ApprovalKind`, `CodeVersionApprovalRequestInput`, `request`, `decide`, `registerApprovalDecisionHandler`, `ApprovalDecisionConflictError`, and recipient-aware lists for independent Code reviews | [Code-version approvals](/en/docs/identity/approvals#code-version-approvals) |
 | `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
-| `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager) |
+| `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists; `codeSharing` for a Code's editors and readers | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager), [Code with access](/en/docs/identity/authorization#code-with-access) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `appEvents`: publish declared app events in a transaction; `defineLive`: transactional live updates; `routes(channels)` serves them over one socket per application with access checked at delivery | [App events](/en/docs/platform/app-events), [Live updates](/en/docs/automation/live-updates) |
 | `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; real live engine, memory topic controls and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
@@ -490,6 +508,8 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
 | `@k2b/cloud/services/pdf` | Supported, server-only | Prepare bounded map images for PDF and print exports | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
+| `@k2b/cloud/ssr/code-nav-status` | Supported, browser | `CodeNavStatus` and `codeNavAttentionLabel`: the warning dot of an owner's "Code" navigation entry | [Code page](/en/docs/platform/code-page) |
+| `@k2b/cloud/ssr/code-page` | Supported, browser | `CodePage`: the shared Code page of a resource, rendered in an island | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
 | `@k2b/cloud/ssr/layout-runtime` | Supported, browser | `layout.update()` and `layout.handleUp()` for islands that navigate in place | [Layout and navigation](/en/docs/frontend/layout-and-navigation) |

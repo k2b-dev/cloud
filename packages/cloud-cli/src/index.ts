@@ -19,7 +19,7 @@ import { CLOUD_CLI_MODULE_NAME, localizeCloudCliText, resolveCloudCliLocale } fr
 import { i18n } from "@k2b/stdlib";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
-import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
+import { configPath, envIsCi, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
 import { loginPageResponse } from "./login-page";
 import {
   collectAbandonedPluginDownloads,
@@ -1037,7 +1037,7 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
   return {
     args,
     flags,
-    options,
+    options: { ...options, ci: envIsCi() },
     getDefault: async (key) => {
       const config = await loadConfig();
       return config.profiles?.[options.profile]?.defaults?.[key];

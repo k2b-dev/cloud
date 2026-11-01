@@ -20,9 +20,11 @@ import type { CodeContext } from "./access";
 import { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 import { cleanupCodeActivation, codeActivationCleanupOutbox, reconcileCodeAccess } from "./activation-maintenance";
 import { type CodeActivationTransport, CodeActivationTransportError } from "./activation-transport";
+import * as authoringChecks from "./authoring-check";
 import type { Code } from "./contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode } from "./store";
+import { readCodeGrantDetails } from "./target-access";
 import { submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -97,6 +99,7 @@ const catalog = compileCapabilityManifest("example", {
 
 let database: Awaited<ReturnType<typeof useFreshDatabase>>;
 databaseSuite()("durable Code activation", () => {
+  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
     readersSpy: ReturnType<typeof spyOn<typeof provider, "readResourcePrincipals">>,
     catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
@@ -198,6 +201,8 @@ databaseSuite()("durable Code activation", () => {
   }
   const status = (code: Code, id: string) => readCodeActivation({ codeId: code.id, activationId: id }, owner);
   beforeAll(async () => {
+    // These checked fixtures exercise activation; scheduling integration covers the binding runner check.
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();
@@ -251,6 +256,7 @@ databaseSuite()("durable Code activation", () => {
     crashAfter = revoked = listDown = false;
   });
   afterAll(async () => {
+    serverCheck?.mockRestore();
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
@@ -475,7 +481,14 @@ databaseSuite()("durable Code activation", () => {
     tombstones.add(active);
     sets.length = 0;
     expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      expect.objectContaining({ grantId: active, state: "removed" }),
+      // The Code page names who confirmed the grant and when, also after the target removed it.
+      expect.objectContaining({
+        grantId: active,
+        state: "removed",
+        activatedBy: expect.any(String),
+        activatedAt: expect.any(String),
+        activatedVersionId: expect.any(String),
+      }),
     );
     expect(sets).toHaveLength(0);
     expect(live.has(active)).toBe(false);
@@ -776,11 +789,15 @@ databaseSuite()("durable Code activation", () => {
       if (readable) {
         expect(result.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
         expect(saved!.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
+        // The page needs names; they exist only in the answer to someone who just passed the reader check.
+        expect(result.failure?.managerNames).toHaveLength(1);
+        expect(saved!.failure).not.toHaveProperty("managerNames");
         // Losing read access also removes presentation on an existing status response.
         readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
         const hidden = await status(code, activation.id);
         expect(hidden.failure).not.toHaveProperty("title");
         expect(hidden.failure).not.toHaveProperty("managerUserIds");
+        expect(hidden.failure).not.toHaveProperty("managerNames");
       } else {
         expect(result.failure).toMatchObject({ reason: "Einschalten kann nur, wer dieses Ziel verwaltet" });
         for (const value of [result, saved]) {
@@ -835,7 +852,14 @@ databaseSuite()("durable Code activation", () => {
     });
     expect(JSON.stringify(hidden)).not.toContain("Fixture target");
     expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
-    expect((await status(code, activation.id)).failure).toEqual(failure);
+    expect((await status(code, activation.id)).failure).toEqual({ ...failure, managerNames: [nextOwnerId] });
+    // A guest who may read the target learns no other person's name, as in directory search.
+    const guest = {
+      ...owner,
+      authority: { ...owner.authority, actor: { kind: "user" as const, user: { ...person(ownerId), roles: ["guest" as const] } } },
+    };
+    const asGuest = await readCodeActivation({ codeId: code.id, activationId: activation.id }, guest);
+    expect(asGuest.failure).not.toHaveProperty("managerNames");
   });
   test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
     targetReadable = false;
@@ -921,6 +945,78 @@ databaseSuite()("durable Code activation", () => {
       (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
     ).toBeNull();
     expect((await status(code, activation.id)).state).toBe("cancelled");
+  });
+  test("share-dialog details show only grants the target lists for the viewer, with directory-visible names", async () => {
+    const code = await newCode(),
+      submitted = await version(code),
+      activation = await start(code, submitted.version.id);
+    await run(activation.id);
+    await sql`UPDATE auth.users SET display_name='Ben Schulz' WHERE id=${ownerId}::uuid`;
+    const grants = [...live.values()];
+    const atA = grants.find((grant) => grant.target.id === "A")!,
+      atB = grants.find((grant) => grant.target.id === "B")!;
+    const principal = atA.principal;
+    const listed: Array<{ appId: string; operation: string; input: unknown }> = [];
+    // The viewer manages only A: the target's own code.access.list returns just that grant.
+    const invoke: typeof provider.invokeCodeAccess = async (params) => {
+      listed.push({ appId: params.appId, operation: params.operation, input: params.input });
+      return Response.json({ data: [atA] });
+    };
+    const [{ updated_at: activatedAt }] = await sql<
+      [{ updated_at: Date }]
+    >`SELECT updated_at FROM code.activations WHERE id=${activation.id}::uuid`;
+    const request = new Request("http://core.invalid/api/code/access/target");
+    const input = { appId: "example", grants: [atA, atB].map((grant) => ({ grantId: grant.grantId, principal })) };
+    expect(await readCodeGrantDetails(input, owner, request, { invoke })).toEqual([
+      {
+        grantId: atA.grantId,
+        operations: ["example.item.change"],
+        activatedBy: { id: ownerId, name: "Ben Schulz" },
+        activatedAt: activatedAt.toISOString(),
+      },
+    ]);
+    expect(listed).toEqual([{ appId: "example", operation: "list", input: { principal } }]);
+    // A guest sees when, but not another person's name.
+    const guest: CodeContext = {
+      ...owner,
+      authority: {
+        ...owner.authority,
+        actor: { kind: "user", user: { ...person(nextOwnerId), roles: ["guest"] } },
+        accessSubject: { type: "user", userId: nextOwnerId },
+      },
+    };
+    expect(await readCodeGrantDetails(input, guest, request, { invoke })).toEqual([
+      expect.objectContaining({ grantId: atA.grantId, activatedBy: null, activatedAt: expect.any(String) }),
+    ]);
+    // A grant named with another Code account, or one the target does not list, stays hidden.
+    const other = crypto.randomUUID();
+    expect(
+      await readCodeGrantDetails({ appId: "example", grants: [{ grantId: atA.grantId, principal: other }] }, owner, request, {
+        invoke: async () => Response.json({ data: [{ ...atA, principal: other }] }),
+      }),
+    ).toEqual([]);
+    expect(await readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: [] }) })).toEqual([]);
+    expect(
+      await readCodeGrantDetails(input, owner, request, {
+        invoke: async () => Response.json({ code: "FORBIDDEN", message: "x" }, { status: 403 }),
+      }),
+    ).toEqual([]);
+    // Another application cannot vouch for this grant, and a listed target must be the recorded one.
+    expect(await readCodeGrantDetails({ ...input, appId: "other" }, owner, request, { invoke })).toEqual([]);
+    expect(
+      await readCodeGrantDetails(input, owner, request, {
+        invoke: async () => Response.json({ data: [{ ...atA, target: { type: "example.item", id: "B" } }] }),
+      }),
+    ).toEqual([]);
+    // An unavailable or malformed list is a failure the dialog can retry, not "nothing to show".
+    await expect(
+      readCodeGrantDetails(input, owner, request, {
+        invoke: async () => Response.json({ code: "UNAVAILABLE", message: "x" }, { status: 503 }),
+      }),
+    ).rejects.toThrow("unavailable");
+    await expect(readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: "x" }) })).rejects.toThrow(
+      "invalid answer",
+    );
   });
 });
 

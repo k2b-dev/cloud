@@ -97,6 +97,17 @@ export class CoreBridge implements RunnerBridge {
       JSON.parse(await this.#post(RUNNER_PATHS.fetch, request, signal, 64 * 1024 * request.freeSlots, config.pollMs + config.transportMs)),
     );
   }
+  async jobHeartbeat(request: import("@k2b/cloud/code/runner").RunnerJobProof, signal: AbortSignal) {
+    return RunnerHeartbeatResponseSchema.parse(
+      JSON.parse(await this.#post(RUNNER_PATHS.heartbeat, request, signal, 64 * 1024, this.#settings().transportMs)),
+    );
+  }
+  async jobComplete(request: import("zod").z.infer<typeof import("@k2b/cloud/code/runner").RunnerJobCompleteSchema>, signal: AbortSignal) {
+    await this.#post(RUNNER_PATHS.complete, request, signal, 64 * 1024, this.#settings().transportMs);
+  }
+  async jobInput(request: import("@k2b/cloud/code/runner").RunnerJobProof, signal: AbortSignal, maxBytes: number) {
+    return this.#post(RUNNER_PATHS.jobInput, request, signal, maxBytes, this.#settings().transportMs);
+  }
   async bundle(request: Parameters<RunnerBridge["bundle"]>[0], signal: AbortSignal) {
     const config = this.#settings();
     return this.#post(RUNNER_PATHS.bundle, request, signal, config.bundleBytes, config.transportMs);

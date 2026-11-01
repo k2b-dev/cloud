@@ -14,6 +14,8 @@ export const CodeActivationStateSchema = z.enum([
   "cancelled",
 ]);
 export type CodeActivationState = z.infer<typeof CodeActivationStateSchema>;
+/** The refusal names a few managers, enough for someone to know whom to ask. */
+export const CODE_ACTIVATION_MANAGER_NAMES = 5;
 /** Exactly one failed target, with its stable refusal and provider-authored explanation. No permission request is created. */
 export const CodeActivationFailureSchema = z
   .object({
@@ -23,6 +25,8 @@ export const CodeActivationFailureSchema = z
     readable: z.boolean().optional(),
     title: z.string().max(500).optional(),
     managerUserIds: z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS).optional(),
+    /** Display names of the first managers, added to a status answer only after the current reader check. Never stored. */
+    managerNames: z.array(z.string()).max(CODE_ACTIVATION_MANAGER_NAMES).optional(),
   })
   .strict();
 export type CodeActivationFailure = z.infer<typeof CodeActivationFailureSchema>;
@@ -46,6 +50,12 @@ export const CodeTargetAccessSchema = z
     grantId: z.uuid(),
     target: CodeAccessTargetSchema,
     operations: z.array(z.string()),
+    /** Person whose activation created this grant; null after that account was deleted. */
+    activatedBy: z.uuid().nullable(),
+    /** When that activation became active; null while it has not finished. */
+    activatedAt: z.iso.datetime().nullable(),
+    /** The version whose activation created this grant; later versions with the same permission reuse it. */
+    activatedVersionId: z.uuid(),
     state: z.enum(["present", "removed", "unavailable"]),
   })
   .strict();

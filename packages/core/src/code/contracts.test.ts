@@ -54,19 +54,24 @@ const context: CapabilityExecutionContext = {
 describe("Core Code data contracts", () => {
   test("exports permission-aware data and policy capabilities", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
+    expect(manifest.actions.find((action) => action.localId === "code.secret.set")?.idempotency).toBe("none");
     expect(
       manifest.queries
         .filter((query) => query.localId.startsWith("code."))
         .map((query) => query.localId)
         .sort(),
     ).toEqual([
+      "code.attention",
+      "code.attention.list",
       "code.list",
       "code.policy.effective",
       "code.policy.preview",
       "code.policy.read",
       "code.read",
+      "code.run.count",
       "code.run.list",
       "code.run.read",
+      "code.secret.list",
       "code.version.diff",
       "code.version.diff.read",
       "code.version.list",
@@ -75,9 +80,17 @@ describe("Core Code data contracts", () => {
     expect(
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
-      ["code.pause", "code.policy.update", "code.resume", "code.version.approve", "code.version.reject", "code.version.submit"].map(
-        (id) => ({ id, code: false }),
-      ),
+      [
+        "code.pause",
+        "code.policy.update",
+        "code.resume",
+        "code.run",
+        "code.secret.delete",
+        "code.secret.set",
+        "code.version.approve",
+        "code.version.reject",
+        "code.version.submit",
+      ].map((id) => ({ id, code: false })),
     );
   });
   test("owner union has exactly one opaque identity; source paths cannot escape the source tree", () => {
@@ -103,6 +116,22 @@ describe("Core Code data contracts", () => {
     expect(codeQueryContracts.versionRead.input.safeParse({ ...input, length: 16_385 }).success).toBe(false);
     expect(codeQueryContracts.list.input.safeParse({ limit: 51 }).success).toBe(false);
   });
+  test("manual run requires request authority and a write credential at the capability boundary", async () => {
+    const input = { codeId: "c_8hw2", entrypoint: "weekly", input: null };
+    const action = aiCapabilities.actions["code.run"];
+    expect(await action.run(input, { ...context, idempotencyKey: "one", authority: undefined })).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN" },
+    });
+    expect(
+      await action.run(input, {
+        ...context,
+        idempotencyKey: "one",
+        authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(await action.run(input, context)).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+  });
   test("missing authority and scope-limited credentials cannot fall back to the context's user", async () => {
     const result = await aiCapabilities.queries["code.read"].run({ codeId: "c_8hw2" }, { ...context, authority: undefined });
     expect(result.ok).toBe(false);
@@ -110,6 +139,34 @@ describe("Core Code data contracts", () => {
     expect(() => codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }, true)).toThrow("Credential");
     expect(codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }).id).toBe(user.id);
   });
+});
+
+test("secret values cannot enter through Assistant, MCP or app capability tools", async () => {
+  for (const origin of ["assistant", "mcp", "app"] as const) {
+    const result = await aiCapabilities.actions["code.secret.set"].run(
+      { codeId: "c_c11test", name: "API", binding_revision: null, value: "test-only-private-credential" },
+      { ...context, origin },
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(JSON.stringify(result)).not.toContain("test-only-private-credential");
+  }
+});
+
+test("secret capability declarations compile with private writes and exact delete reviews", () => {
+  const manifest = compileCapabilityManifest("core", {
+    protocolVersion: 2,
+    queries: { "code.secret.list": aiCapabilities.queries["code.secret.list"] },
+    actions: {
+      "code.secret.set": aiCapabilities.actions["code.secret.set"],
+      "code.secret.delete": aiCapabilities.actions["code.secret.delete"],
+    },
+  });
+  expect(manifest.actions.find((action) => action.localId === "code.secret.set")).toMatchObject({
+    idempotency: "none",
+    approval: "none",
+    unattended: false,
+  });
+  expect(manifest.policies?.["code.secret.delete"]).toEqual({ ask: "deletes" });
 });
 
 test("owner presentation and default editorship use the live authorized canonical reader", async () => {

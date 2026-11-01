@@ -44,7 +44,13 @@ test("runner has an application image and both Compose templates isolate its net
     expect(runner.secrets).toEqual([{ source: "runner-app-key", target: "/run/runner-key/source" }]);
     expect(runner.cap_drop).toEqual(["ALL"]);
     expect(runner.cap_add).toEqual(["SETUID", "SETGID", "KILL", "CHOWN", "DAC_OVERRIDE"]);
-    expect(runner.security_opt).toEqual(["no-new-privileges:true"]);
+    expect(runner.security_opt).toEqual([
+      "no-new-privileges:true",
+      "seccomp=./packages/runner/seccomp.json",
+      "apparmor=cloud-code-runner",
+      "systempaths=unconfined",
+    ]);
+    expect(runner.init).toBe(true);
     expect(runner.pid).toBeUndefined();
     expect(runner.read_only).toBe(true);
     expect(runner.tmpfs).toEqual(["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]);
@@ -62,4 +68,57 @@ test("runner has an application image and both Compose templates isolate its net
         .sort(),
     ).toEqual(["app-core", "runner"]);
   }
+});
+
+test("hostile runner CI is path-filtered and required by the gate", async () => {
+  const workflow = z
+    .object({
+      jobs: z.record(
+        z.string(),
+        z.object({
+          needs: z.union([z.array(z.string()), z.string().transform((value) => [value])]).optional(),
+          if: z.string().optional(),
+          steps: z.array(z.object({ run: z.string().optional(), env: z.record(z.string(), z.string()).optional() })).optional(),
+        }),
+      ),
+    })
+    .parse(parse(await Bun.file(`${import.meta.dir}/../../../.github/workflows/ci.yml`).text()));
+  const job = workflow.jobs["runner-attacks"]!;
+  expect(job.if).toBe("needs.changes.outputs.runner == 'true'");
+  const commands = job.steps!.map((step) => step.run ?? "").join("\n");
+  for (const file of ["hostile.test.js", "isolation.test.js", "engine.test.js", "shutdown.test.js", "attacks/bridge.ts"])
+    expect(commands).toContain(file);
+  expect(commands).toContain("--network host");
+  expect(commands).toContain("--read-only --cap-drop ALL");
+  expect(commands).toContain("--security-opt no-new-privileges");
+  expect(commands).toContain("--init");
+  expect(commands).toContain("sudo apparmor_parser -r packages/runner/apparmor.profile");
+  expect(commands).toContain("--security-opt seccomp=packages/runner/seccomp.json");
+  expect(commands).toContain("--security-opt apparmor=cloud-code-runner --security-opt systempaths=unconfined");
+  expect(commands.match(/! grep -qE/g)).toHaveLength(2);
+  expect(commands).toContain('! grep -qF C14_OUTPUT_CANARY "$RUNNER_TEMP/runner-native.log"');
+  expect(commands).toContain("--kill-after=5s");
+  const changes = workflow.jobs.changes!.steps!.map((step) => step.run ?? "").join("\n");
+  expect(changes).toContain('echo "runner=$(match "$shared|^packages/runner/|^compose');
+  const pattern = /shared='([^']+)'/.exec(changes)?.[1];
+  expect(pattern).toBeDefined();
+  const affected = new RegExp(`${pattern!}|^packages/runner/|^compose[^/]*\\.yml$`);
+  for (const file of [
+    "packages/runner/native/isolate.c",
+    "packages/cloud/src/api/capabilities.ts",
+    "packages/cloud/src/api/authenticate-app-request.ts",
+    "packages/cloud/src/runtime/bootstrap-protocol.ts",
+    "packages/cloud/src/capabilities/claims.ts",
+    "packages/cloud/src/contracts/capabilities.ts",
+    "packages/cloud/src/services/mandates/index.ts",
+    "packages/cloud/package.json",
+    "patches/workerd.patch",
+    "bunfig.toml",
+    "packages/cloud/src/code/run-token.ts",
+    "packages/core/src/code/bridge.ts",
+    "packages/core/src/migrate/core/code-scheduling.ts",
+    "compose.prod.yml",
+    ".github/workflows/ci.yml",
+  ])
+    expect(affected.test(file)).toBe(true);
 });

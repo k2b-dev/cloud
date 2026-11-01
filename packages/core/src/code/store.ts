@@ -24,7 +24,7 @@ import { CODE_SETTINGS, codeSettings } from "./settings";
 
 /** C8/C13 pass their transaction for domain-row operations; admission settings use the registered settings API. */
 export type CodeDb = SQL;
-type CodeRow = {
+export type CodeRow = {
   id: string;
   owner_kind: CodeOwner["kind"];
   owner_user_id: string | null;
@@ -41,7 +41,7 @@ type CodeRow = {
   created_by: string | null;
   created_at: Date;
 };
-const mapCode = (row: CodeRow): Code => ({
+export const mapCode = (row: CodeRow): Code => ({
   id: row.id,
   owner: CodeOwnerSchema.parse(
     row.owner_kind === "person"
@@ -109,6 +109,20 @@ export const listCodes = async (input: { owner?: CodeOwner; limit: number; curso
     items: items.map(({ code, permission }) => ({ ...code, permission })),
     nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.id : null,
   };
+};
+/** Longest counted window: the person's day in any time zone, with room for a late start. */
+const RUN_COUNT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** Runs of the caller's own personal Code since a recent moment. */
+export const countOwnCodeRuns = async (input: { since: string }, context: CodeContext) => {
+  const user = codePerson(context);
+  const since = new Date(input.since);
+  if (Number.isNaN(since.getTime()) || Date.now() - since.getTime() > RUN_COUNT_WINDOW_MS)
+    throw new CodeDataError("BAD_INPUT", "Count runs of at most the last 7 days.");
+  const [row] = await sql<{ runs: number; failed: number }[]>`SELECT count(*)::int AS runs,
+      count(*) FILTER (WHERE r.state = 'failed')::int AS failed
+    FROM code.codes c JOIN code.runs r ON r.code_id = c.id
+    WHERE c.owner_kind = 'person' AND c.owner_user_id = ${user.id}::uuid AND r.created_at >= ${since}`;
+  return { runs: row?.runs ?? 0, failed: row?.failed ?? 0 };
 };
 const setting = async (key: keyof typeof CODE_SETTINGS) => {
   const value = await codeSettings.get(key);
@@ -482,6 +496,8 @@ export const finishCodeCall = async (
   input: { runId: string; ordinal: number; state: "succeeded" | "failed"; result: CodeCall["result"]; endedAt: Date },
   db: TransactionSQL,
 ): Promise<void> => {
+  // Match settlement's run-before-call lock order, including late authoritative results.
+  await db`SELECT id FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE`;
   let encoded: string;
   try {
     encoded = jsonText(input.result);
@@ -493,7 +509,7 @@ export const finishCodeCall = async (
   const size = bytes(encoded);
   const stored = size > CODE_RESULT_STORAGE_BYTES ? jsonText({ code: "code_result_exceeds_capability_contract", bytes: size }) : encoded;
   const result =
-    await db`UPDATE code.calls SET state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state = 'running'`;
+    await db`UPDATE code.calls SET state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state IN ('running','uncertain')`;
   if (result.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");
 };
 /** Retention is 30 days after termination; active/queued runs and immutable versions are never swept. */

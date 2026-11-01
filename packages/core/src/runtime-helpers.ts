@@ -6,15 +6,20 @@ import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
+import { createCodeAuthoringChatTools } from "./code/chat-tools";
 import { codeAccessCleanupOutbox, codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
 import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
+import { startCodeScheduling } from "./code/scheduling-runtime";
 import { startCodeVersionApprovals } from "./code/versions";
 import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 import { migrate as migrateCode } from "./migrate/core/code";
 import { migrate as migrateCodeActivation } from "./migrate/core/code-activation";
+import { migrate as migrateCodeJobs } from "./migrate/core/code-jobs";
 import { migrate as migrateCodeLifecycle } from "./migrate/core/code-lifecycle";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
+import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
+import { migrate as migrateCodeSecrets } from "./migrate/core/code-secrets";
 import { migrate as migrateCodeVersions } from "./migrate/core/code-versions";
 /**
  * Core-specific lifecycle helpers.
@@ -76,6 +81,7 @@ let stopIdentityMaintenance: (() => void) | null = null;
 let stopMandateMaintenance: (() => void) | null = null;
 let stopCapabilityExecutionMaintenance: (() => void) | null = null;
 let stopCodeVersionApprovals: (() => void) | undefined;
+let stopCodeScheduling: (() => Promise<void>) | undefined;
 let stopCodeRunRetention: (() => Promise<void>) | undefined;
 let stopWorkflowEventRetention: (() => void) | null = null;
 
@@ -133,7 +139,10 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "code", run: migrateCode },
     { name: "code-policy", run: migrateCodePolicy },
     { name: "code-versions", run: migrateCodeVersions },
+    { name: "code-scheduling", run: migrateCodeScheduling },
+    { name: "code-jobs", run: migrateCodeJobs },
     { name: "code-activation", run: migrateCodeActivation },
+    { name: "code-secrets", run: migrateCodeSecrets },
     { name: "known-apps", run: migrateKnownApps },
     { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },
@@ -187,6 +196,7 @@ export const startCoreServices = async (
     stopWorkflowEventRetention = startWorkflowEventRetention();
     stopCodeRunRetention = startCodeRunRetention();
     codePolicyPauseOutbox.start();
+    stopCodeScheduling = await startCodeScheduling();
     codeActivationOutbox.start();
     codeActivationCleanupOutbox.start();
     codeOwnerDeletedOutbox.start();
@@ -195,6 +205,7 @@ export const startCoreServices = async (
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
+      tools: createCodeAuthoringChatTools(),
       onApprovalRequested: async ({ approvalId }) => {
         const [notice] = await Promise.allSettled([
           aiNotifications.notifyApprovalWaiting(approvalId),
@@ -245,6 +256,8 @@ export const startCoreServices = async (
     stopCapabilityExecutionMaintenance = null;
     stopCodeVersionApprovals?.();
     stopCodeVersionApprovals = undefined;
+    await stopCodeScheduling?.();
+    stopCodeScheduling = undefined;
     await codePolicyPauseOutbox.stop();
     await codeActivationOutbox.stop();
     await codeActivationCleanupOutbox.stop();
@@ -294,6 +307,8 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     stopCapabilityExecutionMaintenance = null;
     stopCodeVersionApprovals?.();
     stopCodeVersionApprovals = undefined;
+    await stopCodeScheduling?.();
+    stopCodeScheduling = undefined;
     await codePolicyPauseOutbox.stop();
     await codeActivationOutbox.stop();
     await codeActivationCleanupOutbox.stop();
