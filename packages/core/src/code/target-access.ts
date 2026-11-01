@@ -27,8 +27,8 @@ const managedGrantIds = async (
   context: CodeContext,
   request: Request,
   invoke: typeof invokeCodeAccess,
-): Promise<Set<string>> => {
-  const visible = new Set<string>();
+): Promise<Map<string, { principal: string; target: { type: string; id: string } }>> => {
+  const visible = new Map<string, { principal: string; target: { type: string; id: string } }>();
   for (let start = 0; start < principals.length; start += LIST_CONCURRENCY) {
     context.signal?.throwIfAborted();
     await Promise.all(
@@ -41,12 +41,15 @@ const managedGrantIds = async (
           authority: context.authority,
           locale: context.locale,
         });
-        if (!response.ok) return;
+        // A refusal means "nothing you manage"; an outage or a malformed answer is a failure the dialog can retry.
+        if (response.status === 403 || response.status === 404) return;
+        if (!response.ok) throw new Error(`Code access list at ${appId} unavailable (${response.status})`);
         const result = capabilityResultSchema(CodeAccessListDataSchema, { consumer: true }).safeParse(
           await response.json().catch(() => null),
         );
-        if (!result.success) return;
-        for (const grant of result.data.data) if (grant.principal === principal) visible.add(grant.grantId);
+        if (!result.success) throw new Error(`Code access list at ${appId} returned an invalid answer`);
+        for (const grant of result.data.data)
+          if (grant.principal === principal) visible.set(grant.grantId, { principal, target: grant.target });
       }),
     );
   }
@@ -76,14 +79,34 @@ export const readCodeGrantDetails = async (
   );
   const ids = [...requested.keys()].filter((id) => visible.has(id));
   if (ids.length === 0) return [];
-  // The grant must belong to the same Code account the target listed it for.
   const rows = await db<
-    { grant_id: string; principal: string; operations: string[]; activating_person: string | null; activated_at: Date | null }[]
-  >`SELECT g.grant_id, c.service_account_id AS principal, g.operations, a.activating_person,
+    {
+      grant_id: string;
+      principal: string;
+      target: { type: string; id: string };
+      operations: string[];
+      activating_person: string | null;
+      activated_at: Date | null;
+    }[]
+  >`SELECT g.grant_id, c.service_account_id AS principal, g.target, g.operations, a.activating_person,
       CASE WHEN a.state='active' THEN a.updated_at END AS activated_at
     FROM code.target_grants g JOIN code.activations a ON a.id=g.activation_id JOIN code.codes c ON c.id=g.code_id
     WHERE g.grant_id = ANY(${ids}::uuid[]) AND g.state='granted'`;
-  const matching = rows.filter((row) => requested.get(row.grant_id) === row.principal);
+  // An application vouches only for its own targets: Core's record must name the same Code account and the same
+  // target, and that target must belong to the answering application, or another app could reveal foreign grants.
+  const ownTarget = (target: { type: string; id: string }) =>
+    target.type === "app" ? target.id === input.appId : target.type.startsWith(`${input.appId}.`);
+  const matching = rows.filter((row) => {
+    const listed = visible.get(row.grant_id);
+    return (
+      listed !== undefined &&
+      requested.get(row.grant_id) === row.principal &&
+      listed.principal === row.principal &&
+      listed.target.type === row.target.type &&
+      listed.target.id === row.target.id &&
+      ownTarget(row.target)
+    );
+  });
   const directory = viewer.roles.includes("user");
   const people = [
     ...new Set(

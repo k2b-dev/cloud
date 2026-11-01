@@ -790,5 +790,21 @@ databaseSuite()("durable Code activation", () => {
         invoke: async () => Response.json({ code: "FORBIDDEN", message: "x" }, { status: 403 }),
       }),
     ).toEqual([]);
+    // Another application cannot vouch for this grant, and a listed target must be the recorded one.
+    expect(await readCodeGrantDetails({ ...input, appId: "other" }, owner, request, { invoke })).toEqual([]);
+    expect(
+      await readCodeGrantDetails(input, owner, request, {
+        invoke: async () => Response.json({ data: [{ ...atA, target: { type: "example.item", id: "B" } }] }),
+      }),
+    ).toEqual([]);
+    // An unavailable or malformed list is a failure the dialog can retry, not "nothing to show".
+    await expect(
+      readCodeGrantDetails(input, owner, request, {
+        invoke: async () => Response.json({ code: "UNAVAILABLE", message: "x" }, { status: 503 }),
+      }),
+    ).rejects.toThrow("unavailable");
+    await expect(readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: "x" }) })).rejects.toThrow(
+      "invalid answer",
+    );
   });
 });

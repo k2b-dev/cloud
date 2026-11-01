@@ -1797,7 +1797,7 @@ describe("spaces capabilities", () => {
     const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
     spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
-    const input = TaskCreateInputSchema.parse({ spaceId, title: task.title });
+    const input = TaskCreateInputSchema.parse({ title: task.title });
     const review = await spacesCapabilities.actions["task.create"].review!(input, userContext);
     expect(review).toMatchObject({
       ok: true,
@@ -1823,7 +1823,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.column, "firstOpen").mockResolvedValue(null);
     const create = spyOn(spacesService.item, "create");
     spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
-    const input = TaskCreateInputSchema.parse({ spaceId, title: task.title });
+    const input = TaskCreateInputSchema.parse({ title: task.title });
 
     for (const result of [
       await spacesCapabilities.actions["task.create"].review!(input, userContext),

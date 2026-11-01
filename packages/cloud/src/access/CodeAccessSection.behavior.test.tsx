@@ -543,6 +543,45 @@ describe("Code with access in the shared rights editor", () => {
     }
   });
 
+  test("grant details leave with editing, also when their answer arrives afterwards", async () => {
+    const [editable, setEditable] = createSignal(true);
+    const detail = {
+      grantId: ids.grantInfo,
+      operations: ["spaces.task.create"],
+      activatedBy: { id: "66666666-6666-4666-8666-666666666666", name: "Ben Schulz" },
+      activatedAt: "2026-10-28T09:00:00.000Z",
+    };
+    let answer: (() => void) | undefined;
+    let late = false;
+    const view = await setup({
+      canEdit: editable,
+      respond: accountsResponse,
+      details: () =>
+        late
+          ? new Promise<Response>((resolve) => {
+              answer = () => resolve(Response.json({ data: [detail] }));
+            })
+          : Response.json({ data: [detail] }),
+    });
+    try {
+      await waitFor(() => view.codeRows()[0]?.textContent?.includes("spaces.task.create") === true, "the details");
+      setEditable(false);
+      await waitFor(() => view.codeRows()[0]?.textContent === "Code von info@moebel-beispiel.deBearbeiten", "the level line");
+      expect(view.dom.root.textContent).not.toContain("Ben Schulz am");
+      // Editing returns: details load again; stopping before the answer arrives keeps them away.
+      late = true;
+      setEditable(true);
+      await waitFor(() => answer !== undefined, "the new details request");
+      setEditable(false);
+      answer!();
+      await Bun.sleep(20);
+      expect(view.codeRows()[0]?.textContent).toBe("Code von info@moebel-beispiel.deBearbeiten");
+      expect(view.section()!.querySelector("[role=alert]")).toBeNull();
+    } finally {
+      view.cleanup();
+    }
+  });
+
   test("Code accounts never appear in the principal picker, even when the directory returns one", async () => {
     const view = await setup({
       respond: ({ url }) =>

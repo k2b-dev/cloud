@@ -55,7 +55,10 @@ shows them.
 needs no rights on the Code itself. For each Code account, Core calls the target
 application's `code.access.list` with the person's own authority. A grant
 appears only when that list returns it, which happens only at targets the person
-manages. Each detail has `grantId`, sorted `operations`, `activatedBy`
+manages, and only when Core's record names the same Code account and the same
+target of that application. A refused list shows nothing; an unavailable or
+malformed list fails the request so the dialog can retry. Each detail has
+`grantId`, sorted `operations`, `activatedBy`
 (`{ id, name }` or `null`) and `activatedAt` (`null` until the activation
 finishes). Names follow directory visibility: members see other people's names;
 guests see only their own.

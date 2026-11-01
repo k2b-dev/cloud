@@ -1,6 +1,6 @@
 import { announce, Button, NoticeCard, prompts, Skeleton, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 import { navigationApps } from "../browser/navigation-apps";
 import {
@@ -68,6 +68,8 @@ export default function CodeAccessSection(props: {
         if (editable) return;
         editingSession += 1;
         for (const id of Object.keys(failures)) setFailures(id, undefined);
+        // Grant details are for people who manage this resource; they leave with editing.
+        setDetails(reconcile({}));
       },
     ),
   );
@@ -112,6 +114,7 @@ export default function CodeAccessSection(props: {
     controller = current;
     setLoading(true);
     setLoadError(false);
+    const session = editingSession;
     try {
       const found = new Map<string, CodeAccessAccount>();
       // Within the route's public bound per request; a long share list takes several.
@@ -137,10 +140,11 @@ export default function CodeAccessSection(props: {
       const appId = targetAppId();
       if (!grants.length || !appId) return;
       const grantDetails = await loadDetails(grants, appId, current.signal);
-      if (disposed || current.signal.aborted) return;
+      // An answer for an editing session that has ended is not shown.
+      if (disposed || current.signal.aborted || session !== editingSession) return;
       setDetails(Object.fromEntries(grants.map(({ grantId }) => [grantId, grantDetails.get(grantId) ?? null] as const)));
     } catch {
-      if (!disposed && !current.signal.aborted) setLoadError(true);
+      if (!disposed && !current.signal.aborted && session === editingSession) setLoadError(true);
     } finally {
       if (controller === current) setLoading(false);
     }
@@ -285,7 +289,7 @@ export default function CodeAccessSection(props: {
                     <span class="min-w-0 flex-1">
                       <span class={`block truncate font-medium ${props.expanded ? "text-[15px]" : "text-sm"}`}>{nameOf(entry)}</span>
                       <Show
-                        when={detailOf(entry)}
+                        when={wantsDetails() && detailOf(entry)}
                         fallback={
                           <span class={`block truncate text-dimmed ${props.expanded ? "text-[13px]" : "text-xs"}`}>
                             {props.levelLabel(entry)}
