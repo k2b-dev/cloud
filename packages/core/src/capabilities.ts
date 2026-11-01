@@ -1317,6 +1317,7 @@ export const aiCapabilities = defineCapabilities({
         const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(JSON.stringify(["core.code.run", context.accessSubject, context.idempotencyKey])).digest("hex")}`;
         return runCodeQuery(context, (ctx) => startCodeRun({ ...input, idempotencyKey }, ctx));
       },
+    },
     "code.secret.set": {
       title: "Set Code secret",
       description:

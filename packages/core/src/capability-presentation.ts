@@ -342,6 +342,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             codeId: "Code-ID aus code.list oder code.read.",
             entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
             input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
+          },
+        },
         "code.secret.set": {
           title: "Code-Secret speichern",
           description:
