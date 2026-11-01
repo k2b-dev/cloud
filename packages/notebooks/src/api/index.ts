@@ -17,6 +17,7 @@ import { GEO_SNAPSHOT_MAX_BYTES, GEO_SNAPSHOT_MAX_METADATA_BYTES } from "@k2b/cl
 import {
   type AuthContext,
   auth,
+  expectUserBackedActor,
   getDateConfig,
   getLocale,
   hasPermission,
@@ -3912,8 +3913,18 @@ const appWithAdmin = appWithLimits
       const { value, replaceUnreadable } = c.req.valid("json");
       const result =
         key === "notebooks.snapshot_cron" && typeof value === "string"
-          ? await notebooksService.backup.updateCron(value, { replaceUnreadable })
-          : await settingsService.entry.update({ key, value, replaceUnreadable });
+          ? await notebooksService.backup.updateCron(value, { replaceUnreadable, actorId: expectUserBackedActor(c).id })
+          : await settingsService.entry.update({
+              key,
+              value,
+              replaceUnreadable,
+              audit: {
+                action: "settings.update",
+                outcome: "allowed",
+                actor: { userId: expectUserBackedActor(c).id },
+                target: { type: "setting", id: key },
+              },
+            });
       if (!result.ok) {
         // A refused value names its reason, which the settings dialog shows at the field.
         const message =

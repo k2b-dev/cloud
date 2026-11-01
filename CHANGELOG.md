@@ -3,6 +3,30 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.58.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.57.0...cloud-v0.58.0) (2026-11-01)
+
+
+### Features
+
+* **assistant:** skills load their core tools and simple requests finish in fewer rounds ([#2275](https://github.com/k2b-dev/cloud/issues/2275)) ([f290d51](https://github.com/k2b-dev/cloud/commit/f290d519ab7cc8c1ce605bb8ca41b299bd8ce6f7))
+* **cli:** administer Cloud with a normal admin login ([#2251](https://github.com/k2b-dev/cloud/issues/2251)) ([c79a019](https://github.com/k2b-dev/cloud/commit/c79a0197c606dabfdab4d12143a34b7d5a2d836b))
+* **cloud:** apps use only the platform database and cache clients ([#2260](https://github.com/k2b-dev/cloud/issues/2260)) ([ff7901d](https://github.com/k2b-dev/cloud/commit/ff7901d741ded39c87c413f5b4d63898baa031b8))
+* **notebooks:** drop the head above notes; navigation and Details move to the note toolbar ([#2261](https://github.com/k2b-dev/cloud/issues/2261)) ([328ffb8](https://github.com/k2b-dev/cloud/commit/328ffb88daef3bc53ab8cd1595ab37aad53d68c3))
+* **notebooks:** show readers in a note's presence ([#2258](https://github.com/k2b-dev/cloud/issues/2258)) ([7c083b6](https://github.com/k2b-dev/cloud/commit/7c083b6918842cd86870013422c0ead0c93c889a))
+* **spaces:** tasks without a column go to the first open column ([#2276](https://github.com/k2b-dev/cloud/issues/2276)) ([87439c8](https://github.com/k2b-dev/cloud/commit/87439c87d74400910031785c94b190708e85ebc6))
+
+
+### Bug Fixes
+
+* **editor:** show other people's carets where they are ([#2234](https://github.com/k2b-dev/cloud/issues/2234)) ([06aeab4](https://github.com/k2b-dev/cloud/commit/06aeab4efe052f49d1d2a4437e297734413dcfc0))
+* **mail:** pages answer 404 when a mailbox or draft is not readable ([#2263](https://github.com/k2b-dev/cloud/issues/2263)) ([763d1a0](https://github.com/k2b-dev/cloud/commit/763d1a06df92c7af2c0510e92c78b914f8cb3088))
+* **mail:** the automation log page is routed, so its links from the reader and the workspace open it ([#2265](https://github.com/k2b-dev/cloud/issues/2265)) ([3504bec](https://github.com/k2b-dev/cloud/commit/3504bec895b149a1d46bf8406df37f1977f59b71))
+* **mail:** the draft review's way back names its mailbox ([#2257](https://github.com/k2b-dev/cloud/issues/2257)) ([ed2c71e](https://github.com/k2b-dev/cloud/commit/ed2c71e5ca981ff45edf3345424ed9a84243194c))
+* **notebooks:** keep unsent typing on the device until the server stored it ([#2264](https://github.com/k2b-dev/cloud/issues/2264)) ([434622b](https://github.com/k2b-dev/cloud/commit/434622b254146563daea634bb676f806adb0dc8b))
+* **notebooks:** never lose workspace updates when the broker fails ([#2262](https://github.com/k2b-dev/cloud/issues/2262)) ([a0b4211](https://github.com/k2b-dev/cloud/commit/a0b42117216db00124ffd0d457edf5e5f05e591a))
+* **notebooks:** reader presence test waits for the last note switch ([#2298](https://github.com/k2b-dev/cloud/issues/2298)) ([ca0bea5](https://github.com/k2b-dev/cloud/commit/ca0bea5d2cd9f7cc3f8da09c3343a8ae25dcd911))
+* **notebooks:** the CLI move test waits for the outbox to publish ([#2333](https://github.com/k2b-dev/cloud/issues/2333)) ([35498c6](https://github.com/k2b-dev/cloud/commit/35498c6f17218deff661b099223fa127b0053721))
+
 ## [0.57.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.56.0...cloud-v0.57.0) (2026-10-31)
 
 

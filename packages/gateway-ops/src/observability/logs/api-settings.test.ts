@@ -23,7 +23,7 @@ test("log retention saves do not implicitly replace unreadable values", async ()
     user,
     data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: "2026-01-03T03:04:05.000Z" },
   });
-  const write = spyOn(services, "set").mockResolvedValue(undefined);
+  const write = spyOn(services.settingsService.entry, "update").mockResolvedValue({ ok: true, data: undefined });
   try {
     const { default: routes } = await import("./api");
     const response = await routes.request("/settings/retention", {
@@ -33,7 +33,12 @@ test("log retention saves do not implicitly replace unreadable values", async ()
     });
     expect(response.status).toBe(200);
     expect(write).toHaveBeenCalledTimes(1);
-    expect(write).toHaveBeenCalledWith("logs.retention_days", 14, undefined, { replaceUnreadable: false });
+    expect(write).toHaveBeenCalledWith({
+      key: "logs.retention_days",
+      value: 14,
+      replaceUnreadable: false,
+      audit: expect.objectContaining({ action: "settings.update", actor: { userId: user.id } }),
+    });
   } finally {
     for (const spy of [write, authenticate, clock, limit, ...infrastructure]) spy.mockRestore();
   }
