@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   AI_SHORT_ID_PATTERN,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
@@ -56,11 +57,14 @@ import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { codePerson } from "./code/access";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
-import { listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { startCodeRun } from "./code/scheduling";
+import { codeSchedulingContracts } from "./code/scheduling-contracts";
+import { listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -75,6 +79,47 @@ import {
 } from "./code/versions";
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
+
+// Manual starts review the current Code and named entrypoint through the same editor permission check.
+const reviewCodeOperation = async (
+  input: { codeId: string; entrypoint?: string },
+  context: CapabilityExecutionContext,
+  operation: "run" | "submit" | "pause" | "resume",
+) => {
+  const result = await runCodeQuery(context, async (ctx) => {
+    codePerson(ctx, true);
+    const code = await sql.begin((db) => lockCodeForEdit(input.codeId, ctx, db));
+    const { t, locale } = coreCapabilityMessages(context.locale);
+    return {
+      locale,
+      slots: { code: { kind: "text" as const, value: code.title } },
+      scope: code.id,
+      sentence: {
+        action: t.codeOperationAction({ operation }),
+        running: t.codeOperationRunning({ operation }),
+        done: t.codeOperationDone({ operation }),
+        confirm: t.codeOperationConfirm({ operation }),
+        decline: t.codeOperationDecline,
+      },
+      ...(operation === "run"
+        ? { ask: "app_asks" as const }
+        : operation === "resume"
+          ? { ask: "keeps_working" as const }
+          : { reach: "you" as const }),
+      ...(input.entrypoint
+        ? {
+            content: {
+              kind: "page" as const,
+              title: t.codeOperationConfirm({ operation }),
+              format: "plain" as const,
+              body: input.entrypoint,
+            },
+          }
+        : {}),
+    };
+  });
+  return result.ok ? ok(result.data.data) : result;
+};
 
 const chatTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.chat" ? context.target.id : "");
 
@@ -1248,6 +1293,22 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "code.run": {
+      title: "Run Code",
+      description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
+      ...codeSchedulingContracts.start,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "app_asks" },
+      review: (input, context) => reviewCodeOperation(input, context, "run"),
+      run: (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
+        const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(JSON.stringify(["core.code.run", context.accessSubject, context.idempotencyKey])).digest("hex")}`;
+        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, idempotencyKey }, ctx));
+      },
+    },
     "code.version.submit": {
       title: "Submit Code version",
       description:
