@@ -117,7 +117,7 @@ describe("Core Code data contracts", () => {
     expect(codeQueryContracts.list.input.safeParse({ limit: 51 }).success).toBe(false);
   });
   test("manual run requires request authority and a write credential at the capability boundary", async () => {
-    const input = { codeId: "c_8hw2", entrypoint: "weekly", input: null };
+    const input = { entrypoint: "weekly", input: null };
     const action = aiCapabilities.actions["code.run"];
     expect(await action.run(input, { ...context, idempotencyKey: "one", authority: undefined })).toMatchObject({
       ok: false,

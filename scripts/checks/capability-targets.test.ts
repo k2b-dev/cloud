@@ -179,3 +179,26 @@ test("platform-generated Code access Actions keep their reserved dynamic input c
   expect(manifest.actions.map((action) => action.localId)).toEqual(["code.access.rm", "code.access.set"]);
   expect(capabilityTargetGaps(manifest)).toEqual([]);
 });
+
+test("foreign calendar response correlation is a field-specific code:false exception", () => {
+  const action = {
+    title: "Record response",
+    description: "Correlate a foreign Mail draft.",
+    input: z.object({ mailboxId: z.string(), messageId: z.string(), draftId: z.string() }).strict(),
+    data: z.object({}).strict(),
+    destructive: false,
+    openWorld: false,
+    idempotency: "none" as const,
+    run: () => ({ ok: true as const, data: { data: {} } }),
+  };
+  const manifest = (code?: false) =>
+    compileCapabilities(
+      "spaces",
+      defineCapabilities({
+        protocolVersion: 2,
+        actions: { "calendar-invitation.response.commit": { ...action, ...(code === false ? { code } : {}) } },
+      }),
+    ).manifest;
+  expect(capabilityTargetGaps(manifest(false))).toEqual([]);
+  expect(capabilityTargetGaps(manifest())).toEqual(["spaces.calendar-invitation.response.commit: mailboxId, messageId, draftId"]);
+});

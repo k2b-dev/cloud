@@ -1218,11 +1218,15 @@ workspace; this list does not replace shared provider role contracts:
 - `chat.discussion.post` keeps `ref.id`, whose Type is chosen by the foreign
   discussion provider. Chat cannot declare that Type locally. See
   [item discussions](/en/docs/platform/chat-discussions#action-targets).
+- `spaces.calendar-invitation.response.commit` keeps `mailboxId`, `messageId`
+  and `draftId` to correlate a foreign Mail response. Spaces resolves the linked
+  event and rechecks its access before recording the draft; `code: false` keeps
+  this cross-application workflow out of resource Code.
 - `core.code.policy.update` keeps `definition.rules[].groupId`: these select
   rules in the installation-wide policy document, not groups to mutate.
   Code version and execution Actions instead target `core.code`.
 
-All three declare `code: false`. The check exempts only those named fields on
+All four declare `code: false`. The check exempts only those named fields on
 those operations; another ID field or removal of `code: false` fails it.
 Platform-generated `code.access.set` and `code.access.rm` keep their dynamic
 `target` and grant identity in input. The check excludes their reserved

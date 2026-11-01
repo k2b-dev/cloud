@@ -12,6 +12,7 @@ import type { Rule } from "./rule";
 const reviewedInputIds: Record<string, readonly string[]> = {
   "core.code.policy.update": ["definition.rules[].groupId"], // Installation policy content, not a group mutation.
   "gateway-ops.app-status.forget": ["appId"], // Shared app-status role addresses another application.
+  "spaces.calendar-invitation.response.commit": ["mailboxId", "messageId", "draftId"], // Foreign Mail correlation; linked event is resolved and authorized.
   "chat.discussion.post": ["ref.id"], // The discussion item Type belongs to its foreign provider.
 };
 

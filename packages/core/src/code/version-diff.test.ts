@@ -115,9 +115,18 @@ describe("C8 complete CodeDiff and submission contracts", () => {
   test("submission and decisions are excluded from resource-owned Code; policy reasons stay explicit", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     const actions = manifest.actions.filter((action) =>
-      ["code.version.submit", "code.version.approve", "code.version.reject", "code.pause", "code.resume"].includes(action.localId),
+      [
+        "code.run",
+        "code.secret.set",
+        "code.secret.delete",
+        "code.version.submit",
+        "code.version.approve",
+        "code.version.reject",
+        "code.pause",
+        "code.resume",
+      ].includes(action.localId),
     );
-    expect(actions).toHaveLength(5);
+    expect(actions).toHaveLength(8);
     expect(actions.every((action) => action.code === false)).toBe(true);
     expect(actions.every((action) => action.target === "code")).toBe(true);
     for (const action of actions) expect(action.inputSchema).not.toHaveProperty("properties.codeId");

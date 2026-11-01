@@ -138,8 +138,8 @@ and send flows keep their behavior; no stored Mail data needs conversion.
 
 ## Core Code Actions name the Code resource
 
-For `code.version.submit`, `code.version.approve`, `code.version.reject`,
-`code.pause` and `code.resume`, move `input.codeId` to
+For `code.run`, `code.secret.set`, `code.secret.delete`, `code.version.submit`,
+`code.version.approve`, `code.version.reject`, `code.pause` and `code.resume`, move `input.codeId` to
 `target: { type: "core.code", id: codeId }`. Chat and MCP use the flat field
 `code`. Version binding results and exported domain service schemas still
 contain `codeId`; omit it from capability decision input. Installation-wide

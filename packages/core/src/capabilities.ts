@@ -1337,16 +1337,18 @@ export const aiCapabilities = defineCapabilities({
       title: "Run Code",
       description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
       ...codeSchedulingContracts.start,
+      target: "code",
+      input: codeSchedulingContracts.start.input.omit({ codeId: true }),
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "app_asks" },
-      review: (input, context) => reviewCodeOperation(input, context, "run"),
+      review: (input, context) => reviewCodeOperation({ ...input, codeId: codeTargetId(context) }, context, "run"),
       run: (input, context) => {
         if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
         const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(JSON.stringify(["core.code.run", context.accessSubject, context.idempotencyKey])).digest("hex")}`;
-        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, idempotencyKey }, ctx));
+        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, codeId: codeTargetId(context), idempotencyKey }, ctx));
       },
     },
     "code.secret.set": {
@@ -1354,6 +1356,8 @@ export const aiCapabilities = defineCapabilities({
       description:
         "Editors write a private credential without reading it back. Destination changes apply only to newly submitted versions. Supply the value privately through the CLI or editor, never through chat.",
       ...codeSecretContracts.set,
+      target: "code",
+      input: codeSecretContracts.set.input.omit({ codeId: true }),
       code: false,
       unattended: false,
       destructive: false,
@@ -1364,7 +1368,7 @@ export const aiCapabilities = defineCapabilities({
       run: (input, context) =>
         runCodeQuery(context, (ctx) => {
           if (context.origin !== "http") throw new CodeDataError("FORBIDDEN", "Use private interactive input to set a Code secret.");
-          return setCodeSecret(input, ctx);
+          return setCodeSecret({ ...input, codeId: codeTargetId(context) }, ctx);
         }),
     },
     "code.secret.delete": {
@@ -1372,13 +1376,15 @@ export const aiCapabilities = defineCapabilities({
       description:
         "Editors clear the current value for every version. Immutable destination evidence remains available for version review.",
       ...codeSecretContracts.delete,
+      target: "code",
+      input: codeSecretContracts.delete.input.omit({ codeId: true }),
       code: false,
       destructive: true,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "deletes" },
       async review(input, context) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeSecretDeletion(input, ctx));
+        const result = await runCodeQuery(context, (ctx) => reviewCodeSecretDeletion({ ...input, codeId: codeTargetId(context) }, ctx));
         if (!result.ok) return result;
         const { t, locale } = coreCapabilityMessages(context.locale);
         const secret = result.data.data;
@@ -1397,11 +1403,11 @@ export const aiCapabilities = defineCapabilities({
             kind: "page" as const,
             title: t.codeSecretDeleteConfirm,
             format: "plain" as const,
-            body: JSON.stringify({ codeId: input.codeId, ...secret }, null, 2),
+            body: JSON.stringify({ codeId: codeTargetId(context), ...secret }, null, 2),
           },
         });
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => deleteCodeSecret(input, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => deleteCodeSecret({ ...input, codeId: codeTargetId(context) }, ctx)),
     },
     "code.version.submit": {
       title: "Submit Code version",
