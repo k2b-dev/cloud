@@ -2,7 +2,7 @@ export { buildMetadata } from "../_internal/build-metadata";
 export { loadPendingApprovals } from "../api/approvals-loader";
 export { geoClient } from "../capabilities/geo-client";
 export { appCaller } from "../capabilities/server-invoke";
-export { expectUserBackedActor, getUserBackedActor, isAppSessionActor, userFromActor } from "./actor";
+export { actorWorkload, expectUserBackedActor, getUserBackedActor, isAppSessionActor, userFromActor } from "./actor";
 export type { ApiErrorBody, ApiErrorResponse, ApiErrorStatus } from "./api";
 export { api, respond, respondMessage } from "./api";
 export type { CreateApiClientConfig } from "./api-client";

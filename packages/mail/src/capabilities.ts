@@ -4776,7 +4776,7 @@ const actionDefinitions = {
 export const mailCapabilities = localizeCapabilityErrors(
   defineCapabilities({
     protocolVersion: 2,
-    code: { owners: ["mailbox"] },
+    code: { owners: ["mailbox"], pages: { mailbox: "/app/mail/{id}/code" } },
     presentation: mailCapabilityPresentation,
     commands: {
       "draft.calendar": {

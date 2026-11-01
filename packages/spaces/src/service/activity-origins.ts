@@ -1,0 +1,98 @@
+import { type CapabilityCaller, getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
+import {
+  CloudResourceReaderViewSchema,
+  CloudResourceRefSchema,
+  cloudResourceRefAppId,
+  resolveCapabilityResourceReader,
+} from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
+import { z } from "zod";
+import type { SpaceActivityEvent, SpaceActivityOrigin } from "./activity";
+
+/** What the viewer sees of the work behind a change. Spaces knows only the public reader contract, never its owner. */
+export type SpaceActivityOriginView = {
+  /** The reader's live title; null for those it refuses, who learn only the kind of work. */
+  name: string | null;
+  typeTitle: string | null;
+  /** The named part of that work, such as one automation. */
+  detail: string | null;
+  href: string | null;
+  runHref: string | null;
+  /** The account that acted no longer exists. */
+  deleted: boolean;
+};
+
+const ReaderSchema = z.object({ view: CloudResourceReaderViewSchema });
+const ORIGIN_READERS = 10;
+const ORIGIN_READ_MS = 1_500;
+
+export const activityOrigin = (event: Pick<SpaceActivityEvent, "metadata">): SpaceActivityOrigin | null => {
+  const parsed = CloudResourceRefSchema.safeParse(event.metadata.origin);
+  return parsed.success ? parsed.data : null;
+};
+
+/**
+ * Ask each origin's owning app about it, with the viewer's own credentials. One page names few origins, so the reads are
+ * bounded and share one short budget; a slow or refusing reader only leaves the name and links out.
+ */
+export const presentActivityOrigins = async (
+  events: readonly SpaceActivityEvent[],
+  authority: RequestAuthority | null,
+  caller: CapabilityCaller,
+  locale: string,
+): Promise<Map<string, SpaceActivityOriginView>> => {
+  const refs = new Map<string, SpaceActivityOrigin>();
+  for (const event of events) {
+    const origin = activityOrigin(event);
+    if (origin) refs.set(`${origin.type}|${origin.id}`, origin);
+  }
+  const timeout = AbortSignal.timeout(ORIGIN_READ_MS);
+  const signal = caller.signal ? AbortSignal.any([caller.signal, timeout]) : timeout;
+  const views = new Map<string, Omit<SpaceActivityOriginView, "deleted">>();
+  const reads = [...refs].slice(0, ORIGIN_READERS).map(async ([key, origin]) => {
+    const view: Omit<SpaceActivityOriginView, "deleted"> = { name: null, typeTitle: null, detail: null, href: null, runHref: null };
+    views.set(key, view);
+    try {
+      const ref = { type: origin.type, id: origin.id };
+      const appId = cloudResourceRefAppId(ref);
+      const catalog = await getCapabilityCatalogApp(appId, locale, authority);
+      const manifest = catalog.ok ? catalog.data?.manifest : null;
+      if (!manifest) return;
+      view.typeTitle = manifest.types.find((type) => `${appId}.${type.localId}` === origin.type)?.title ?? null;
+      const reader = resolveCapabilityResourceReader(manifest, ref);
+      if (!reader) return;
+      const read = await invokeCapabilityWithDataSchema(
+        { appId, capabilityId: reader.localId, kind: "query", input: { id: origin.id } },
+        ReaderSchema,
+        { ...caller, locale, signal },
+      );
+      if (!read.ok) return;
+      view.name = read.data.data.view.title;
+      view.detail = read.data.data.view.context ?? null;
+      view.href = read.data.links?.find((link) => link.rel === "open")?.href ?? null;
+      view.runHref = read.data.links?.find((link) => link.rel === "status")?.href ?? null;
+    } catch {
+      // The row says who acted without naming the work.
+    }
+  });
+  const expired = new Promise<void>((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+  await Promise.race([Promise.all(reads), expired]);
+  const result = new Map<string, SpaceActivityOriginView>();
+  for (const event of events) {
+    const origin = activityOrigin(event);
+    if (!origin) continue;
+    const view = views.get(`${origin.type}|${origin.id}`);
+    result.set(event.id, {
+      name: view?.name ?? null,
+      typeTitle: view?.typeTitle ?? null,
+      detail: view?.detail ?? null,
+      href: view?.href ?? null,
+      runHref: view?.runHref ?? null,
+      deleted: event.actor.gone === true,
+    });
+  }
+  return result;
+};

@@ -199,11 +199,13 @@ describe("Core AI capabilities", () => {
     };
     expect(Object.keys(cases).sort()).toEqual(
       Object.entries(aiCapabilities.types)
-        .filter(([, type]) => "reader" in type)
+        // The Code behind a change links only for those who may read its owner; its integration test covers that.
+        .filter(([id, type]) => "reader" in type && id !== "code.version")
         .map(([id]) => id)
         .sort(),
     );
     for (const [typeId, type] of Object.entries(aiCapabilities.types)) {
+      if (typeId === "code.version") continue;
       if (!("reader" in type)) {
         // Code is embedded in its owner's editor and has no standalone resource page.
         if (typeId === "code") continue;
@@ -321,6 +323,7 @@ describe("Core AI capabilities", () => {
       "code.version.diff",
       "code.version.diff.read",
       "code.version.list",
+      "code.version.origin",
       "code.version.read",
       "entities.search",
       "geo.availability",
@@ -360,6 +363,7 @@ describe("Core AI capabilities", () => {
       "core.ai.skill",
       "core.ai.task",
       "core.code",
+      "core.code.version",
       "core.user",
     ]);
     expect(Object.keys(aiCapabilities.queries).sort()).toEqual(queries);

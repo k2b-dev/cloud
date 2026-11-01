@@ -80,6 +80,7 @@ import {
   setCodePaused,
   submitCodeVersion,
 } from "./code/versions";
+import { codeWorkloadReaderContract, readCodeWorkload } from "./code/workload-reader";
 import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
 
@@ -760,6 +761,12 @@ export const aiCapabilities = defineCapabilities({
       description: "One independently versioned Code resource.",
       icon: "ti ti-code",
     },
+    "code.version": {
+      title: "Code",
+      description: "The Code behind a change in another app, named by its version and run.",
+      icon: "ti ti-code",
+      reader: "code.version.origin",
+    },
     "ai.chat": {
       title: "AI conversation",
       description: "A private AI conversation owned by the current user.",
@@ -786,6 +793,19 @@ export const aiCapabilities = defineCapabilities({
       ...codeSecretContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeSecrets(input, ctx)),
+    },
+    "code.version.origin": {
+      title: "Read the Code behind a change",
+      description:
+        "Read the title, automation and links of the Code that made a change, from a core.code.version ref in another app's history. Nothing for those who may not read that Code.",
+      ...codeWorkloadReaderContract,
+      openWorld: false,
+      async run(input, context) {
+        const result = await runCodeQuery(context, (ctx) => readCodeWorkload(input.id, ctx));
+        if (!result.ok) return result;
+        const { view, links } = result.data.data;
+        return ok({ data: { view }, links });
+      },
     },
     "code.version.diff.read": {
       title: "Read complete Code comparison",

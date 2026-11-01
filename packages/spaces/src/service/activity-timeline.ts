@@ -1,6 +1,7 @@
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import { formatDeadline } from "../presentation/deadline";
 import type { SpaceActivityEvent, SpaceActivityIdentity } from "./activity";
+import { activityOrigin, type SpaceActivityOriginView } from "./activity-origins";
 
 type Words = { actor: string; self: boolean; kind: "task" | "event"; value: string };
 export const activityTimelineMessages = i18n.define({
@@ -8,6 +9,10 @@ export const activityTimelineMessages = i18n.define({
   messages: {
     en: {
       you: "You",
+      automation: "Automation",
+      workOf: ({ type, owner }: { type: string; owner: string }) => `${type} of ${owner}`,
+      deleted: ({ name }: { name: string }) => `${name} (deleted)`,
+      createdBy: ({ actor, value }: Words) => (value ? `Created by ${actor} (${value})` : `Created by ${actor}`),
       system: "System",
       formerUser: "Former user",
       formerService: "Former service account",
@@ -33,6 +38,10 @@ export const activityTimelineMessages = i18n.define({
     },
     de: {
       you: "Du",
+      automation: "Automation",
+      workOf: ({ type, owner }: { type: string; owner: string }) => `${type} von ${owner}`,
+      deleted: ({ name }: { name: string }) => `${name} (gelöscht)`,
+      createdBy: ({ actor, value }: Words) => (value ? `Angelegt von ${actor} (${value})` : `Angelegt von ${actor}`),
       system: "System",
       formerUser: "Ehemaliger Benutzer",
       formerService: "Ehemaliges Dienstkonto",
@@ -68,12 +77,22 @@ export const activityTimelineMessages = i18n.define({
 
 export const spaceActivityRow = (
   event: SpaceActivityEvent,
-  options: { viewer: SpaceActivityIdentity; assigneeId: string; locale: string; timeZone: string },
+  options: { viewer: SpaceActivityIdentity; assigneeId: string; locale: string; timeZone: string; origin?: SpaceActivityOriginView },
 ) => {
   const { t } = activityTimelineMessages.resolve([options.locale]);
   const self = event.actor.kind === options.viewer.kind && event.actor.id !== null && event.actor.id === options.viewer.id;
-  const actor =
-    event.actor.kind === "system"
+  const origin = activityOrigin(event);
+  // Work behind a person speaks as itself too; "you" stays for what the viewer did by hand. Without the reader's answer the
+  // row names only what the viewer can already see here: the kind of work and a person's name, never the work's owner.
+  const workKind = options.origin?.typeTitle ?? t.automation;
+  const workName = origin
+    ? (options.origin?.name ??
+      (event.actor.kind === "user" ? t.workOf({ type: workKind, owner: event.actor.displayName.slice(0, 200) }) : workKind))
+    : null;
+  const workLabel = workName && (options.origin?.deleted ? t.deleted({ name: workName }) : workName);
+  const actor = workLabel
+    ? workLabel
+    : event.actor.kind === "system"
       ? t.system
       : event.actor.displayName === "Former user"
         ? t.formerUser
@@ -81,8 +100,8 @@ export const spaceActivityRow = (
           ? t.formerService
           : event.actor.displayName.slice(0, 1000);
   const words: Words = {
-    actor: self ? t.you : actor,
-    self,
+    actor: self && !workLabel ? t.you : actor,
+    self: self && !workLabel,
     kind: event.item?.kind ?? (event.action.startsWith("event.") ? "event" : "task"),
     value: "",
   };
@@ -112,6 +131,9 @@ export const spaceActivityRow = (
   ]);
   if ((event.action === "task.updated" || event.action === "event.updated" || event.action === "item.moved") && kinds.size > 1) {
     // The generic sentence and pencil already stand.
+  } else if ((event.action === "task.created" || event.action === "event.created") && workLabel) {
+    sentence = t.createdBy({ ...words, value: options.origin?.detail ?? "" });
+    icon = "ti ti-code";
   } else if (event.action === "task.created" || event.action === "event.created") {
     sentence = t.created(words);
     icon = "ti ti-plus";
@@ -169,6 +191,7 @@ export const spaceActivityRow = (
     ref: event.item ? { type: "spaces.item" as const, id: event.item.shortId } : null,
     title: event.item ? event.item.title.slice(0, 500) : null,
     actor: { type: event.actor.kind, id: event.actor.id, name: actor },
+    ...(workLabel ? { origin: { name: workLabel, href: options.origin?.href ?? null, runHref: options.origin?.runHref ?? null } } : {}),
     icon,
     sentence,
     count: event.occurrenceCount,
