@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { codeAccessBindings, listCodeAccess, readCodeAccessManagers, removeCodeAccess } from "../code/access";
 import { verifyCodeAccessCleanup, verifyCodeAccessList, verifyCodeAccessNotifications } from "../code/access-proof";
 import type { CapabilityDefinitions } from "../contracts/capabilities";
-import { CAPABILITY_MAX_REQUEST_BYTES } from "../contracts/capabilities";
+import { CAPABILITY_MAX_REQUEST_BYTES, CAPABILITY_MAX_RESULT_BYTES } from "../contracts/capabilities";
 import { CodeAccessListInputSchema, CodeAccessRemoveInputSchema } from "../contracts/code-access";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { readBoundedJson } from "./bounded-json";
@@ -58,7 +58,10 @@ export const createCodeAccessAuthorityRoutes = (appId: string, definitions: Capa
       try {
         const managerUserIds = await readCodeAccessManagers(appId, bindings, claims);
         if (managerUserIds === null) return c.json({ code: "APP_UNAVAILABLE", message: "Notification audience unavailable" }, 503);
-        return c.json({ data: { managerUserIds } });
+        const data = { data: { managerUserIds } };
+        if (new TextEncoder().encode(JSON.stringify(data)).byteLength > CAPABILITY_MAX_RESULT_BYTES)
+          return c.json({ code: "CAPACITY_EXCEEDED", message: "Notification audience exceeds the response budget" }, 422);
+        return c.json(data);
       } catch {
         return c.json({ code: "APP_UNAVAILABLE", message: "Notification audience unavailable" }, 503);
       }

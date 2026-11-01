@@ -121,7 +121,7 @@ class RollbackDecision extends Error {
 }
 
 /** Check the exact generated set envelope before committing any target writes. */
-export const boundSetResult = (data: CodeAccessSetData, context: CapabilityExecutionContext, dryRun: boolean): CodeAccessSetData => {
+const boundSetResult = (data: CodeAccessSetData, context: CapabilityExecutionContext, dryRun: boolean): CodeAccessSetData => {
   if (!data.granted) return data;
   const copy = codeAccessMessages(context.locale);
   const body = { data, receipt: { text: dryRun ? copy.setAvailable : copy.setDone } };
