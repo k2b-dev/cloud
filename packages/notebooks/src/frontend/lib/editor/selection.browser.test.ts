@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, devices, type Page } from "playwright";
 import { browserName, launchBrowser } from "../../../../../ui/test/browser";
-import type {} from "./selection.browser-harness";
 import { solidTestPlugin } from "../../../../../ui/test/solid-test-plugin";
+import type {} from "./selection.browser-harness";
 
 // Painted selections, pointer drags and remote carets depend on real layout, so two editors run in a real browser.
 
