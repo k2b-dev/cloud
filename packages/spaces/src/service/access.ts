@@ -2,7 +2,6 @@ import { sql } from "@k2b/cloud";
 import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
-  type AccessEntry,
   type AccessSubject,
   buildAccessPrincipalCondition,
   createAccess,
@@ -27,6 +26,7 @@ import {
 import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
+import type { AccessEntry } from "../contracts";
 import { publishSpaceChange, spacesLive } from "./live";
 
 // ==========================
@@ -93,6 +93,7 @@ const authorizeAccessMutation = async (
   caller: SpaceAccessCaller | undefined,
   db: SQL,
 ): Promise<boolean> => {
+  if (caller?.actor.kind === "service_account" && caller.actor.serviceAccount.kind === "code") return false;
   if (!caller) return true;
   const user = caller.actor.kind === "user" ? caller.actor.user : caller.actor.delegatedUser;
   if (caller.authority === "administration") return Boolean(user && hasRole(user, "admin"));
@@ -183,6 +184,7 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<A
     permission: row.permission,
     createdAt: row.created_at.toISOString(),
     serviceAccountKind: row.service_account_kind ?? undefined,
+    ...(row.service_account_kind === "code" ? { grantId: row.access_id } : {}),
     displayName: row.user_id
       ? row.user_display_name || row.user_uid || undefined
       : row.group_id
@@ -199,15 +201,19 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<A
  */
 export const addSpaceAccess = async (spaceId: string, accessId: string): Promise<Result<void>> => {
   try {
-    await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx): Promise<Result<void>> => {
+      // Code manager checks hold a shared target lock until their write completes.
+      const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${spaceId}::uuid FOR UPDATE`;
+      if (!resource) return fail(err.notFound("Space"));
       await tx`
         INSERT INTO spaces.space_access (space_id, access_id)
         VALUES (${spaceId}::uuid, ${accessId}::uuid)
       `;
       await publishSpaceChange(tx, { type: "access.changed", spaceId });
+      return ok();
     });
-    spacesLive.wake();
-    return ok();
+    if (result.ok) spacesLive.wake();
+    return result;
   } catch (e: unknown) {
     const error = e as { code?: string };
     if (error.code === "23505") {
@@ -252,7 +258,9 @@ const mutateSpaceAccess = async (params: {
     if (!resource) return fail(err.notFound("Space"));
     const before = await listSpaceAccess(params.spaceId, tx);
     if (!(await authorizeAccessMutation(params.spaceId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
-    if (!before.some((entry) => entry.id === params.accessId)) return fail(err.notFound("Access entry for this space"));
+    const current = before.find((entry) => entry.id === params.accessId);
+    if (!current) return fail(err.notFound("Access entry for this space"));
+    if (current.serviceAccountKind === "code") return fail(err.badInput("Manage Code access through Core using its grantId"));
     const permission = params.permission;
     const after =
       permission === undefined
