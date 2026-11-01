@@ -20,7 +20,7 @@ your saved choice to show or pin it there stays in place.
 Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a
 separate interface for these same operations. Dashboards save SQL results as
-numbers, charts, tables, and funnels.
+numbers, charts, tables, funnels, and world maps.
 
 Cloud administrators open **Administration → App administration → Pulse** to
 manage the data store, bases, and internal targets. **Data store** opens first.
@@ -419,9 +419,11 @@ Read `cld pulse reference dashboards.md` for a complete website example.
 The Assistant asks before saving. Updates use the revision from
 `dashboard.read` or `dashboards get` so a stale edit cannot overwrite a newer one.
 
-A dashboard groups number, line, bar, table, and funnel panels into sections.
+A dashboard groups number, line, bar, table, funnel, and map panels into sections.
 A named section can include an icon, color, and caption describing its sources
 or cadence; these come from the saved definition.
+A map panel shades countries by one value and lists the same numbers. Its `x`
+column holds ISO 3166-1 alpha-2 codes; rows without a country stay off the map.
 A number panel shows one numeric value. With a DateTime `x`, it uses the last
 returned row and shows up to 480 trend points. Optional String columns
 `unit`, `detail`, and `detailTone` add a unit and change label.
