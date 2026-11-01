@@ -225,18 +225,15 @@ export const attributeMissingAccess = async (
   const checked = permission === "editor" ? failed.slice(0, MISSING_ACCESS_CHECKS) : [];
   for (const automation of checked) {
     const calls = await readCalls(automation.lastRun!.id).catch(() => null);
-    const hits = [
-      ...new Set(
-        (calls?.calls ?? [])
-          .filter((call) => call.state === "failed")
-          .flatMap(callKeys)
-          .filter((key) => removedKeys.has(key)),
-      ),
-    ];
-    if (hits.length > 0) {
-      automation.missingTargets = hits;
+    const named = (list: CodePageCall[]) => [...new Set(list.flatMap(callKeys).filter((key) => removedKeys.has(key)))];
+    // Only a refusal for access proves the cause; a call that failed otherwise still shows the automation needs it.
+    const refused = named((calls?.calls ?? []).filter((call) => call.state === "failed" && call.accessRefused));
+    const used = named(calls?.calls ?? []);
+    if (refused.length > 0) {
+      automation.missingTargets = refused;
       automation.missingProven = true;
-    } else if (!calls || calls.next !== null) automation.accessUnknown = true;
+    } else if (used.length > 0) automation.missingTargets = used;
+    else if (!calls || calls.next !== null) automation.accessUnknown = true;
   }
   for (const automation of failed.filter((automation) => !checked.includes(automation))) automation.accessUnknown = true;
   for (const automation of running.filter((automation) => !automation.lastRun)) automation.accessUnknown = true;

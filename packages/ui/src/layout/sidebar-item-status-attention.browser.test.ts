@@ -86,6 +86,9 @@ const measure = (page: Page) =>
           return { left, right, width, height };
         };
         const dot = row.querySelector(".k2b-app-workspace__sidebar-status-attention");
+        // The surface the dot sits on: the nearest ancestor with an opaque background.
+        let surface: Element | null = row;
+        while (surface && getComputedStyle(surface).backgroundColor.match(/rgba\(.*, 0\)$|transparent/)) surface = surface.parentElement;
         return [
           row.dataset.state!,
           {
@@ -93,11 +96,24 @@ const measure = (page: Page) =>
             dot: box(".k2b-app-workspace__sidebar-status-attention"),
             count: box(".k2b-app-workspace__sidebar-status-count"),
             color: dot ? getComputedStyle(dot).backgroundColor : null,
+            surface: surface ? getComputedStyle(surface).backgroundColor : "rgb(255, 255, 255)",
           },
         ];
       }),
     ),
   );
+
+const luminance = (color: string) => {
+  const [r, g, b] = (color.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map((value) => {
+    const channel = Number(value) / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+};
+const contrast = (a: string, b: string) => {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (light! + 0.05) / (dark! + 0.05);
+};
 
 for (const theme of ["light", "dark"] as const)
   test(`${theme}: the attention dot is a fixed 14 px mark in warning colour that moves neither the row nor a count`, async () => {
@@ -107,7 +123,8 @@ for (const theme of ["light", "dark"] as const)
       for (const name of ["attention", "count", "countAttention"]) expect(rows[name]!.height).toBe(rows.plain!.height);
       // 0.5rem dot plus 0.1875rem on each side: the width of the bell and "@" marks.
       expect(rows.attention!.dot).toMatchObject({ width: 8, height: 8 });
-      expect(rows.attention!.color).toBe("rgb(245, 158, 11)");
+      // A state mark needs 3:1 against its surface (WCAG 1.4.11).
+      expect(contrast(rows.attention!.color!, rows.attention!.surface)).toBeGreaterThanOrEqual(3);
       expect(rows.attention!.count).toBeNull();
       // The count keeps its place at the row's end; the dot sits before it.
       expect(rows.countAttention!.count!.right).toBe(rows.count!.count!.right);

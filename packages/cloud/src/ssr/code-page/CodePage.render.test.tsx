@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Context } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
+import { isAccessRefusal, loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
 import { describeCodeSchedule } from "./schedule";
@@ -238,12 +238,13 @@ describe("Code page helpers", () => {
       missingProven: false,
       accessUnknown: false,
     });
-    const call = (target: { type: string; id: string } | null, capability = "spaces.task.create") => ({
+    const call = (target: { type: string; id: string } | null, capability = "spaces.task.create", accessRefused = true) => ({
       ordinal: 1,
       kind: "action" as const,
       capability,
       target,
       refs: [],
+      accessRefused,
       state: "failed" as const,
       summary: null,
     });
@@ -260,6 +261,14 @@ describe("Code page helpers", () => {
     // Its calls were not all read: it may fail there too, so the page makes no claim.
     expect(other).toMatchObject({ missingTargets: [], accessUnknown: true });
     expect(reads).toEqual(["deliver", "other"]);
+
+    // A call that failed at the target for another reason shows the need, not the cause.
+    const timedOut = automation("timedOut", run("timedOut", "failed"));
+    await attributeMissingAccess([timedOut, automation("y", run("y", "succeeded"))], removed, "editor", async () => ({
+      calls: [call(space, "spaces.task.create", false)],
+      next: null,
+    }));
+    expect(timedOut).toMatchObject({ missingTargets: [targetKey(space)], missingProven: false, accessUnknown: false });
 
     // A reader gets no calls: failed automations stay unknown; the only automation needs the access without proof.
     const lone = automation("lone", run("lone", "succeeded"));
@@ -333,6 +342,14 @@ describe("Code page helpers", () => {
     expect(describeCodeSchedule("0 7 1 * *", "de")).toBe("am 1. jedes Monats 07:00");
     expect(describeCodeSchedule("5 * * * *", "de")).toBe("stündlich zur Minute 5");
     expect(describeCodeSchedule("0 7 * 1 *", "de")).toBe("0 7 * 1 *");
+  });
+
+  test("only an access refusal counts as missing access, not invalid input or an outage", () => {
+    expect(isAccessRefusal({ ok: false, error: { code: "FORBIDDEN", message: "Access denied", status: 403 } })).toBe(true);
+    expect(isAccessRefusal({ ok: false, error: { code: "NOT_FOUND", status: 404 } })).toBe(true);
+    expect(isAccessRefusal({ ok: false, error: { code: "BAD_INPUT", message: "Invalid title", status: 400 } })).toBe(false);
+    expect(isAccessRefusal({ ok: false, error: { code: "APP_UNAVAILABLE", status: 503 } })).toBe(false);
+    expect(isAccessRefusal(null)).toBe(false);
   });
 
   test("call results become one short line, preferring an error message", () => {

@@ -171,6 +171,8 @@ export type CodePageCall = {
   target: { type: string; id: string } | null;
   /** Additional resources the call named. */
   refs: { type: string; id: string }[];
+  /** It failed because the target refused access, not for another reason. */
+  accessRefused: boolean;
   state: "running" | "succeeded" | "failed" | "uncertain";
   /** A short readable summary of the result or error, never the full payload. */
   summary: string | null;

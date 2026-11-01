@@ -49,16 +49,26 @@ const pendingApproval = async (code: Code) => {
   return row?.pending === true;
 };
 
+/** At most one reconciliation per Code is in flight, also after the attention answer stopped waiting for it. */
+const scans = new Map<string, ReturnType<typeof reconcileCodeAccess>>();
+export const scanCodeAccess = (code: Code, context: CodeContext, reconcile = reconcileCodeAccess) => {
+  let scan = scans.get(code.id);
+  if (!scan) {
+    scan = reconcile({ codeId: code.id }, context)
+      .catch(() => [])
+      .finally(() => scans.delete(code.id));
+    scans.set(code.id, scan);
+  }
+  return scan;
+};
+
 const computeReasons = async (code: Code, context: CodeContext): Promise<CodeAttentionReason[]> => {
   // Each signal is a convenience for the owner's navigation; one that cannot be read is simply absent.
   const [failed, pending, access] = await Promise.all([
     failedRun(code).catch(() => false),
     pendingApproval(code).catch(() => false),
     // A target that cannot answer in time says nothing about access; only a confirmed removal counts.
-    Promise.race([
-      reconcileCodeAccess({ codeId: code.id }, context).catch(() => []),
-      Bun.sleep(CODE_ATTENTION_ACCESS_BUDGET_MS).then(() => []),
-    ]),
+    Promise.race([scanCodeAccess(code, context), Bun.sleep(CODE_ATTENTION_ACCESS_BUDGET_MS).then(() => [])]),
   ]);
   return [
     ...(failed ? (["run_failed"] as const) : []),
