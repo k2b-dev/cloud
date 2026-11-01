@@ -36,6 +36,12 @@
       "browser": "./dist/browser/charts.js",
       "default": "./dist/ssr/charts.js"
     },
+    "./country-map": {
+      "types": "./dist/types/country-map.d.ts",
+      "browser": "./dist/browser/country-map.js",
+      "import": "./dist/ssr/country-map.js",
+      "default": "./dist/ssr/country-map.js"
+    },
     "./package.json": "./package.json",
     "./map-glyphs/*": "./map-glyphs/*",
     "./text-editor": {
