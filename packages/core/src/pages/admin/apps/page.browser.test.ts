@@ -123,9 +123,8 @@ test("keys: the private key shows once, and closing it unsaved asks first", asyn
   await keys.getByRole("button", { name: /Tokens für Host-Betrieb \(1\)/ }).click();
   expect(await keys.locator('[data-token="host-override"]').isVisible()).toBe(true);
 
-  const create = page.getByRole("button", { name: "Schlüssel erzeugen" });
-  if (await create.isDisabled()) return; // A browser without Ed25519 shows the cld way instead; covered below.
-  await create.click();
+  // The button turns on once the browser check finds Ed25519, which both test engines have; click waits for that.
+  await page.getByRole("button", { name: "Schlüssel erzeugen" }).click();
   await page.locator("[data-key-create]").getByRole("button", { name: "Erzeugen" }).click();
   const once = page.locator("[data-key-once]");
   await once.waitFor();
@@ -138,6 +137,25 @@ test("keys: the private key shows once, and closing it unsaved asks first", asyn
   await unsaved.waitFor();
   await unsaved.getByRole("button", { name: "Zurück zum Schlüssel" }).click();
   expect(await once.isVisible()).toBe(true);
+}, 20_000);
+
+test("keys: a key generation the engine refuses once still creates the key", async () => {
+  // Playwright's WebKit on Linux refuses about one Ed25519 generateKey in a hundred with an OperationError (#2286).
+  // Refuse the browser check and the first generation that way; a new pair must follow, not "no Ed25519" or a failure.
+  await page.addInitScript(() => {
+    const generateKey = crypto.subtle.generateKey.bind(crypto.subtle);
+    let refusals = 2;
+    crypto.subtle.generateKey = ((...args: Parameters<SubtleCrypto["generateKey"]>) =>
+      refusals-- > 0
+        ? Promise.reject(new DOMException("The operation failed for an operation-specific reason", "OperationError"))
+        : generateKey(...args)) as SubtleCrypto["generateKey"];
+  });
+  await open("?app=mail&view=keys");
+  await page.getByRole("button", { name: "Schlüssel erzeugen" }).click();
+  await page.locator("[data-key-create]").getByRole("button", { name: "Erzeugen" }).click();
+  const once = page.locator("[data-key-once]");
+  await once.waitFor();
+  expect(await once.innerText()).toContain("Nur jetzt sichtbar.");
 }, 20_000);
 
 test("keys: revoking the only active key warns about the next start", async () => {

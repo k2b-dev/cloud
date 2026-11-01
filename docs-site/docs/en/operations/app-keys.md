@@ -348,7 +348,7 @@ Follow the affected service's credential-rotation procedure; changing
 `@k2b/cloud/app-key` has no server imports and works in Bun and browsers with
 WebCrypto Ed25519. Browser generation requires a secure context.
 
-- `generateAppKeyPair()` returns `{ seed, publicKey }` through WebCrypto JWK export.
+- `generateAppKeyPair()` returns `{ seed, publicKey }` through WebCrypto JWK export. When the engine refuses a generation with an `OperationError`, as WebKit on Linux does about once in a hundred, it draws a new pair, up to three attempts.
 - `deriveAppPublicKey(seed)` derives the public key from a 32-byte seed.
 - `importAppKeySeed(seed)` and `importAppPublicKey(publicKey)` return WebCrypto keys for signing or verification.
 - `formatAppKey({ installationId, appId, keyId, seed })` and `parseAppKey(value)` validate the private string; IDs are canonical lowercase UUIDs.

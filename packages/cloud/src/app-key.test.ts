@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { APP_KEY_FIXTURES, INSTALLATION_ID, KEY_ID } from "../../../scripts/fixtures/app-key-fixtures";
 import {
   appKeyFingerprint,
   deriveAppPublicKey,
   formatAppKey,
+  generateAppKeyPair,
   importAppKeySeed,
   importAppPublicKey,
   parseAppKey,
@@ -56,6 +57,31 @@ describe("portable app key format", () => {
     for (const id of ["a", "third-party", "oauth", "a".repeat(80)]) expect(validateAppKeyAppId(id)).toBe(id);
     for (const id of ["", "Core", "core", "gateway", "1app", "a_b", "a.b", "inventory\n", "a".repeat(81)])
       expect(() => validateAppKeyAppId(id)).toThrow();
+  });
+
+  test("a generation the engine refuses draws a new pair, up to three times; other errors stay", async () => {
+    // WebKit on Linux refuses about one Ed25519 generateKey in a hundred this way (#2286).
+    const refused = () => Promise.reject(new DOMException("The operation failed for an operation-specific reason", "OperationError"));
+    const unsupported = () => Promise.reject(new DOMException("Unrecognized name", "NotSupportedError"));
+    const generate = spyOn(crypto.subtle, "generateKey");
+    try {
+      generate.mockImplementationOnce(refused).mockImplementationOnce(refused);
+      const pair = await generateAppKeyPair();
+      expect(generate).toHaveBeenCalledTimes(3);
+      expect(await deriveAppPublicKey(pair.seed)).toBe(pair.publicKey);
+
+      generate.mockClear();
+      generate.mockImplementationOnce(refused).mockImplementationOnce(refused).mockImplementationOnce(refused);
+      await expect(generateAppKeyPair()).rejects.toThrow("operation-specific");
+      expect(generate).toHaveBeenCalledTimes(3);
+
+      generate.mockClear();
+      generate.mockImplementationOnce(unsupported);
+      await expect(generateAppKeyPair()).rejects.toThrow("Unrecognized name");
+      expect(generate).toHaveBeenCalledTimes(1);
+    } finally {
+      generate.mockRestore();
+    }
   });
 });
 
