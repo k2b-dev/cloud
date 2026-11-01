@@ -28,7 +28,7 @@ export const codeSchedulingContracts = {
 } as const;
 /** Snapshot of administrator admission budgets; retries retain the original deadline and call budget. */
 export type CodeRunLimits = { perCode: number; perOwner: number; wallMs: number; attempts: number };
-/** Durable tick identity comes from the checked version and named app.schedule export, never a runner. */
+/** Durable tick identity is Code + named app.schedule export + slot, never a runner. versionId checks admission. */
 export type CodeScheduleTick = { codeId: string; versionId: string; entrypoint: string; slot: Date };
 /** Payload-free, installation-wide read model for Administration › Code (C22).
  * instances/freeSlots include only fresh signed polls. instance pages use UUID cursors, at most 50 rows.
@@ -59,3 +59,6 @@ export const CODE_RUN_OUTCOMES = {
 /** Transport leases last three heartbeat periods; independent of replica count. */
 export const CODE_RUN_HEARTBEAT_MS = 5_000;
 export const CODE_RUN_LEASE_MS = 3 * CODE_RUN_HEARTBEAT_MS;
+
+/** Matches the broker tick retention; older ticks are never admitted after their receipt expires. */
+export const CODE_SCHEDULE_TICK_RETENTION_MS = 7 * 86_400_000;

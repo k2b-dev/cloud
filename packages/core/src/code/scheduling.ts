@@ -2,7 +2,8 @@ import { sql } from "@k2b/cloud";
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
-import { audit } from "@k2b/cloud/services";
+import { ratelimit } from "@k2b/cloud/server";
+import { audit, coreSettings } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import type { SQL } from "bun";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
@@ -10,6 +11,7 @@ import { requireCodeRunFence } from "./bridge";
 import {
   CODE_RUN_HEARTBEAT_MS,
   CODE_RUN_LEASE_MS,
+  CODE_SCHEDULE_TICK_RETENTION_MS,
   type CodeRunLimits,
   type CodeRunnerMetrics,
   type CodeScheduleTick,
@@ -23,7 +25,8 @@ import { CodeVersionError, requireCodeVersionApproval } from "./versions";
 
 /** All Core replicas take this short database admission lock; no network work runs while holding it. */
 const admissionLock = async (db: SQL) => {
-  await db`SELECT set_config('statement_timeout','5000',true), pg_advisory_xact_lock(hashtextextended('core.code.dispatch',0))`;
+  await db`SELECT set_config('statement_timeout','5000',true)`;
+  await db`SELECT pg_advisory_xact_lock(hashtextextended('core.code.dispatch',0))`;
 };
 export async function readCodeRunLimits(): Promise<CodeRunLimits> {
   return {
@@ -94,8 +97,8 @@ async function enqueue(
     await db`UPDATE code.runs SET state='failed',outcome='code_admission_refused',ended_at=clock_timestamp() WHERE id=${runId}::uuid`;
     await db`DELETE FROM code.run_outbox WHERE run_id=${runId}::uuid`;
   }
-  await db`INSERT INTO code.run_requests(code_id,request_key,run_id,request_digest)
-    VALUES(${code.id},${input.requestKey},${runId}::uuid,${requestDigest})`;
+  await db`INSERT INTO code.run_requests(code_id,request_key,run_id,request_digest,tick_at)
+    VALUES(${code.id},${input.requestKey},${runId}::uuid,${requestDigest},${input.tick?.slot ?? null})`;
   if (context)
     await audit.record(
       {
@@ -118,7 +121,7 @@ export async function startCodeRun(request: CodeStartRequest, context: CodeConte
   if (!result) throw new Error("Manual admission returned no run");
   return result;
 }
-/** Permanent database tick receipt supplements Sync's at-least-once delivery and finite dedupe window. */
+/** Retained database tick receipts supplement Sync's at-least-once delivery and finite dedupe window. */
 export async function processCodeScheduleTick(tick: CodeScheduleTick): Promise<CodeStartResult | null> {
   return admitScheduleTick(tick);
 }
@@ -130,8 +133,12 @@ export async function processCurrentCodeScheduleTick(
 }
 async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult | null> {
   if (!Number.isFinite(tick.slot.getTime())) throw new RangeError("Invalid schedule slot");
-  return sql.begin((db) =>
-    enqueue(
+  return sql.begin(async (db) => {
+    const [retained] = await db<
+      { retained: boolean }[]
+    >`SELECT ${tick.slot}>clock_timestamp()-${CODE_SCHEDULE_TICK_RETENTION_MS}*interval '1 millisecond' AS retained`;
+    if (!retained?.retained) return null;
+    return enqueue(
       {
         codeId: tick.codeId,
         entrypoint: tick.entrypoint,
@@ -140,8 +147,8 @@ async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult |
         requestKey: `schedule:${new Bun.CryptoHasher("sha256").update(tick.entrypoint).digest("hex")}:${tick.slot.toISOString()}`,
       },
       db,
-    ),
-  );
+    );
+  });
 }
 
 type ClaimedRun = {
@@ -177,7 +184,7 @@ export async function claimCodeRuns(freeSlots: number, limits: CodeRunLimits, in
         AND (SELECT count(*) FROM code.runs r JOIN code.codes o ON o.id=r.code_id WHERE r.state='running'
           AND ROW(o.owner_kind,o.owner_user_id,o.owner_type,o.owner_id,o.owner_app_id)
             IS NOT DISTINCT FROM ROW(c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id))<${limits.perOwner}
-        ORDER BY c.last_dispatched_at NULLS FIRST,c.id LIMIT 1 FOR UPDATE OF c`;
+        ORDER BY c.last_dispatched_at NULLS FIRST,c.id LIMIT 1 FOR NO KEY UPDATE OF c SKIP LOCKED`;
       if (!candidate) break;
       const code = await findCode(candidate.id, db);
       if (!code?.activeVersionId) continue;
@@ -204,7 +211,7 @@ export async function claimCodeRuns(freeSlots: number, limits: CodeRunLimits, in
       }
       const [run] = await db<ClaimedRun[]>`WITH next AS (
         SELECT id FROM code.runs WHERE code_id=${code.id} AND version_id=${code.activeVersionId}::uuid AND state='queued'
-        AND (deadline_at IS NULL OR deadline_at>clock_timestamp()) ORDER BY created_at,id LIMIT 1 FOR UPDATE
+        AND (deadline_at IS NULL OR deadline_at>clock_timestamp()) ORDER BY created_at,id LIMIT 1 FOR NO KEY UPDATE
       ), leased AS (
         UPDATE code.runs r SET state='running',generation=generation+1,runner_instance_id=${instanceId ?? null}::uuid,
           started_at=COALESCE(started_at,clock_timestamp()),
@@ -306,12 +313,22 @@ export async function reconcileCodeRuns(): Promise<void> {
     await db`INSERT INTO code.run_outbox(run_id) SELECT id FROM code.runs WHERE state='queued'
       AND (wake_at IS NULL OR wake_at<clock_timestamp()-interval '30 seconds') ORDER BY wake_at NULLS FIRST,id LIMIT 100
       ON CONFLICT DO NOTHING`;
+    await db`DELETE FROM code.run_requests WHERE (code_id,request_key) IN (
+      SELECT code_id,request_key FROM code.run_requests WHERE tick_at<=clock_timestamp()-${CODE_SCHEDULE_TICK_RETENTION_MS}*interval '1 millisecond'
+      ORDER BY tick_at LIMIT 1000 FOR UPDATE SKIP LOCKED)`;
     await db`DELETE FROM code.runner_instances WHERE instance_id IN(SELECT instance_id FROM code.runner_instances
-      WHERE last_seen_at<clock_timestamp()-interval '1 day' LIMIT 100)`;
+      WHERE last_seen_at<clock_timestamp()-${(await codeSettings.get("core.code.runner_poll_ms")) + CODE_RUN_LEASE_MS}*interval '1 millisecond' LIMIT 100)`;
   });
 }
 /** Signed free-slot telemetry is shared in Postgres. Reported slots are decremented in the fetch response path. */
 export async function recordCodeRunner(instanceId: string, freeSlots: number): Promise<void> {
+  const [known] = await sql`SELECT instance_id FROM code.runner_instances WHERE instance_id=${instanceId}::uuid`;
+  if (!known) {
+    // At most the recovery batch's 100 rows / 5 seconds can be introduced per second.
+    const limit = Math.min(20, Math.max(1, Math.floor(await coreSettings.get<number>("security.rate_limit_per_second"))));
+    if ((await ratelimit({ id: "code-runner-registration", limit }).check("fleet")).limited)
+      throw new CodeDataError("CONFLICT", "Runner registration is busy. Retry the poll.");
+  }
   await sql`INSERT INTO code.runner_instances(instance_id,free_slots) VALUES(${instanceId}::uuid,${freeSlots})
     ON CONFLICT(instance_id) DO UPDATE SET free_slots=EXCLUDED.free_slots,last_seen_at=clock_timestamp()`;
 }

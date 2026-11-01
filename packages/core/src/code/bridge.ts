@@ -152,6 +152,7 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
             { runId: call.claims.runId, kind: call.kind === "action" ? "action" : "query", call: call.call },
             tx,
           );
+          // Future db/kv/files writes must use an effectful kind too; query is reserved for reads.
           if (call.kind !== "query") await tx`UPDATE code.runs SET effect_started=TRUE WHERE id=${call.claims.runId}::uuid`;
           const payloadLimit = await codeSettings.get("core.code.payload_bytes");
           const [payload] = await tx<

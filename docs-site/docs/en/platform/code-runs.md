@@ -11,7 +11,9 @@ updated: 2026-11-01
 # Code runs
 
 A run executes one named entrypoint of an active, checked Code version. Core
-pins that version when it accepts the run. The run list shows its state and
+pins that version when it accepts the run. Activating another version before
+a queued run obtains a lease terminates that queued run with `code_not_active`;
+already running attempts may drain under their original authority. The run list shows its state and
 its capability calls in order. A run does not resume at a saved step.
 
 ## Start or run again
@@ -19,18 +21,21 @@ its capability calls in order. A run does not resume at a saved step.
 Use the `core.code.run` Action with `codeId`, `entrypoint`, optional JSON
 `input`, and the normal capability idempotency key. It returns `runId` and
 `duplicate`. Code itself cannot invoke this Action. CLI, chat, and resource
-pages share the same permission-aware service.
+pages share the same permission-aware service. The Action presents a localized
+review of the Code and entrypoint before execution; it always asks for this start.
 
-Core's service `startCodeRun(request, context)` accepts
+Core's internal service `startCodeRun(request, context)` uses keys per Code;
+its callers supply their own namespace. It accepts
 `codeId`, `entrypoint`, `idempotencyKey`, and optional JSON `input`. The caller
 needs Code editor permission and a credential that permits writes. The
 entrypoint must occur in the active version's checked manifest. The active
 version still needs its current policy, approval, and version mandate.
 
-The same key and request for the same Code return the original `runId` and
-`duplicate: true`; concurrent requests cannot create a second run. Receipts
+The capability key is scoped to the calling principal and Code. The same key
+and request return the original `runId` and
+`duplicate: true`; concurrent requests cannot create a second run. Manual receipts
 remain after the 30-day run-detail retention, so a repeated old key can refer
-to a run whose details are no longer available. Receipts contain only the key
+to a run whose details are no longer available. Receipts contain only the key,
 run ID, and request digest and are deleted with the Code. Reusing a key with a
 different entrypoint or input returns a conflict.
 
@@ -65,7 +70,9 @@ Core registers each checked `app.schedule` entrypoint with the Sync scheduler,
 using the installation's `app.timezone`. Runner count does not affect ticks.
 The scheduler retains the latest missed tick after Core downtime. A durable
 receipt for Code, entrypoint, and scheduled time prevents duplicate runs even
-if several Core instances receive the same tick.
+if several Core instances receive the same tick. Tick receipts expire after
+seven days, matching broker retention. Core rejects older ticks, so deleting a
+receipt cannot start an expired tick again. Manual receipts remain permanent.
 
 If the previous tick of that entrypoint is queued or running, Core records the
 new tick as `skipped` with outcome `previous_schedule_running`: “Skipped,
@@ -93,7 +100,8 @@ result arriving later replaces that marker; it does not restart the run.
 
 Core maintainers consume the scheduling contracts from
 `packages/core/src/code/index.ts`: `CodeStartRequestSchema`, `CodeStartRequest`,
-`CodeStartResult`, `codeSchedulingContracts`, `CodeRunLimits`, `CodeScheduleTick`, `CodeRunnerMetrics`,
+`CodeStartResult`, `codeSchedulingContracts`, `CodeRunLimits`,
+`CodeScheduleTick`, `CodeRunnerMetrics`,
 `startCodeRun`, `processCodeScheduleTick`, and `readCodeRunnerMetrics`.
 `codeRunMessages` supplies English and German UI labels; stable outcomes remain
 untranslated on the transport. `CODE_RUN_OUTCOMES` covers runner results,

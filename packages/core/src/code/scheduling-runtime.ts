@@ -13,12 +13,15 @@ import {
   reconcileCodeRuns,
   recordCodeRunner,
 } from "./scheduling";
+import { CODE_SCHEDULE_TICK_RETENTION_MS } from "./scheduling-contracts";
 import { codeSettings } from "./settings";
 
 /** One installation-wide queue. A delivery is a dispatch wakeup, not an execution instruction or replay step. */
 export type CodeRunWakeup = { runId: string };
 export const codeRunQueue = lazySync((sync) => sync.queue<CodeRunWakeup>({ id: "core-code-runs" }));
-export const codeRunScheduler = lazySync((sync) => sync.scheduler({ id: "core-code-schedules" }));
+export const codeRunScheduler = lazySync((sync) =>
+  sync.scheduler({ id: "core-code-schedules", retention: { maxAgeMs: CODE_SCHEDULE_TICK_RETENTION_MS } }),
+);
 /** Postgres commit precedes publication; a crashed publisher can repeat delivery safely. */
 export const createCodeRunOutbox = (queue: () => Queue<CodeRunWakeup>) =>
   createPgOutbox<OutboxRow & { run_id: string }>({
@@ -97,39 +100,46 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
     while (true) {
       const codes = await sql<{ id: string }[]>`SELECT id FROM code.codes WHERE id>${cursor} ORDER BY id LIMIT 50`;
       for (const code of codes) {
-        await sql.begin(async (db) => {
-          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
-          const [current] = await db<{ state: string; manifest: unknown }[]>`SELECT c.state,v.manifest FROM code.codes c
+        try {
+          await sql.begin(async (db) => {
+            await db`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
+            const [current] = await db<{ state: string; manifest: unknown }[]>`SELECT c.state,v.manifest FROM code.codes c
             LEFT JOIN code.versions v ON v.id=c.active_version_id WHERE c.id=${code.id}`;
-          const manifest = CodeCheckedVersionManifestSchema.safeParse(current?.manifest);
-          const desired = new Set<string>();
-          if (current?.state === "active" && manifest.success)
-            for (const entry of manifest.data.entrypoints) {
-              if (entry.kind !== "schedule" || !entry.cron) continue;
-              const cron = entry.cron;
-              const id = scheduleId(code.id, entry.entrypoint);
-              desired.add(id);
-              await scheduler.create({
-                id,
-                cron,
-                timezone,
-                misfire: "latest",
-                meta: { family: "code", codeId: code.id },
-                process: async (ctx) => {
-                  await processCurrentCodeScheduleTick({
-                    codeId: code.id,
-                    entrypoint: entry.entrypoint,
-                    cron,
-                    slot: ctx.slot,
-                  });
-                },
-              });
+            const manifest = CodeCheckedVersionManifestSchema.safeParse(current?.manifest);
+            const desired = new Set<string>();
+            if (current?.state === "active" && manifest.success)
+              for (const entry of manifest.data.entrypoints) {
+                if (entry.kind !== "schedule" || !entry.cron) continue;
+                const cron = entry.cron;
+                const id = scheduleId(code.id, entry.entrypoint);
+                desired.add(id);
+                await scheduler.create({
+                  id,
+                  cron,
+                  timezone,
+                  misfire: "latest",
+                  meta: { family: "code", codeId: code.id },
+                  process: async (ctx) => {
+                    await processCurrentCodeScheduleTick({
+                      codeId: code.id,
+                      entrypoint: entry.entrypoint,
+                      cron,
+                      slot: ctx.slot,
+                    });
+                  },
+                });
+              }
+            for (const schedule of registered) {
+              if (schedule.id.startsWith("code:") && schedule.meta?.codeId === code.id && !desired.has(schedule.id))
+                await scheduler.delete({ id: schedule.id });
             }
-          for (const schedule of registered) {
-            if (schedule.id.startsWith("code:") && schedule.meta?.codeId === code.id && !desired.has(schedule.id))
-              await scheduler.delete({ id: schedule.id });
-          }
-        });
+          });
+        } catch (error) {
+          logger("core:code-scheduling").error("code_schedule_sync_failed", {
+            codeId: code.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
       if (codes.length < 50) break;
       cursor = codes.at(-1)!.id;
@@ -138,7 +148,15 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
     for (const schedule of registered) {
       if (!schedule.id.startsWith("code:") || typeof schedule.meta?.codeId !== "string") continue;
       const [exists] = await sql`SELECT id FROM code.codes WHERE id=${schedule.meta.codeId}`;
-      if (!exists) await scheduler.delete({ id: schedule.id });
+      if (!exists)
+        try {
+          await scheduler.delete({ id: schedule.id });
+        } catch (error) {
+          logger("core:code-scheduling").error("code_schedule_delete_failed", {
+            scheduleId: schedule.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
     }
   };
 }
@@ -154,7 +172,6 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
     await codeRunOutbox.notify();
   };
   try {
-    await recover();
     worker = await codeRunScheduler().process();
     codeRunOutbox.start();
   } catch (error) {
@@ -163,16 +180,20 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
     await codeRunOutbox.stop();
     throw error;
   }
-  const timer = setInterval(() => {
+  const startRecovery = () => {
     if (pending) return;
     pending = recover()
-      .catch(() => {
-        logger("core:code-scheduling").error("code_scheduling_recovery_failed");
+      .catch((error) => {
+        logger("core:code-scheduling").error("code_scheduling_recovery_failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       })
       .finally(() => {
         pending = undefined;
       });
-  }, 5_000);
+  };
+  startRecovery();
+  const timer = setInterval(startRecovery, 5_000);
   timer.unref?.();
   return async () => {
     clearInterval(timer);

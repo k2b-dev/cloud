@@ -187,7 +187,7 @@ owner. All Core instances enforce the same limits. Each replica defaults to
 four slots. Queue selection rotates between eligible Codes, so a Code with a
 large backlog cannot occupy the front of every runner's poll.
 
-Core renews a lease every five seconds, for at most fifteen seconds ahead and
+The runner requests lease renewal every five seconds, for at most fifteen seconds ahead and
 never beyond the original run deadline. Its five-second recovery pass detects
 lost leases. Work committed before a publisher or Core restart remains in the
 Postgres outbox. The repair pass republishes waiting work after lost or expired
@@ -273,3 +273,15 @@ of the same owner. A backlog held by the per-Code or per-owner concurrency
 limit can continue as soon as capacity frees up; lease recovery is not needed
 for ordinary progress. Schedule registration scans bounded database pages on
 each Core reconciliation pass, using stable Code/entrypoint identities.
+
+Core starts serving without waiting for every schedule to register. Each
+reconciliation pass isolates definition failures by Code and logs the Code ID
+and error; healthy Codes continue to register. Accepted ticks are retained for
+seven days. Schedule receipts have the same retention and older ticks are
+rejected. Manual-start receipts remain permanent.
+
+New runner identities have a shared registration limit derived from the
+installation ingress setting and the telemetry cleanup budget (at most 20 per
+second). Existing identities continue polling and heartbeating independently
+of this registration budget. A burst of new replicas retries registration;
+inactive telemetry is removed after its poll-plus-lease freshness window.

@@ -16,13 +16,16 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`CREATE INDEX IF NOT EXISTS runs_running_code ON code.runs(code_id) WHERE state='running'`;
     await tx`CREATE INDEX IF NOT EXISTS runs_leases ON code.runs(lease_expires_at,id) WHERE state='running'`;
     await tx`CREATE INDEX IF NOT EXISTS runs_schedule ON code.runs(schedule_key) WHERE state IN ('queued','running')`;
-    // Receipts deliberately outlive the 30-day run detail retention; they contain no input or result.
+    // Manual receipts outlive run details; schedule receipts expire with broker ticks. Neither stores input or results.
     await tx`CREATE TABLE IF NOT EXISTS code.run_requests (
       code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
       request_key TEXT NOT NULL CHECK(octet_length(request_key)<=256), run_id UUID NOT NULL,
       PRIMARY KEY(code_id,request_key)
     )`;
-    await tx`ALTER TABLE code.run_requests ADD COLUMN IF NOT EXISTS request_digest TEXT`;
+    await tx`ALTER TABLE code.run_requests ADD COLUMN IF NOT EXISTS request_digest TEXT, ADD COLUMN IF NOT EXISTS tick_at TIMESTAMPTZ`;
+    await tx`CREATE INDEX IF NOT EXISTS run_requests_tick_retention ON code.run_requests(tick_at) WHERE tick_at IS NOT NULL`;
+    await tx`CREATE INDEX IF NOT EXISTS runs_wake ON code.runs(wake_at,id) WHERE state='queued'`;
+    await tx`CREATE INDEX IF NOT EXISTS codes_dispatch_owner ON code.codes(owner_kind,owner_user_id,owner_type,owner_id,owner_app_id)`;
     await tx`CREATE TABLE IF NOT EXISTS code.run_outbox (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(), sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
       run_id UUID NOT NULL UNIQUE REFERENCES code.runs(id) ON DELETE CASCADE,

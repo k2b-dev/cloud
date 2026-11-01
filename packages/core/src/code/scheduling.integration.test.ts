@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { assertCapabilityReview, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CodeRunTokenClaims, signCodeRunToken, verifyCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerFetchResponse, RunnerLease } from "@k2b/cloud/code/runner";
 import type { CapabilityExecutionContext, CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
@@ -36,7 +37,7 @@ import { appendCodeCall, codeBundleHash, codeSourceHash, finishCodeCall, insertC
 
 const owner = "11111111-1111-4111-8111-111111111111";
 const other = "22222222-2222-4222-8222-222222222222";
-const slot = new Date("2026-11-01T12:00:00Z");
+let slot = new Date("2026-11-01T12:00:00Z");
 const person = (id: string): User => ({
   id,
   uid: id,
@@ -65,7 +66,11 @@ const context = (id = owner): CodeContext => ({
   },
 });
 
-suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres and NATS", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("C13 stateless Core dispatch through real Postgres and NATS", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let connection: Awaited<ReturnType<typeof connectTestNats>>;
   let syncs: Sync[] = [];
@@ -73,7 +78,6 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
   let signer: { kid: string; key: CryptoKey; signUntil: Date };
   let key: JWTVerifyGetKey;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
-  let timezone: ReturnType<typeof spyOn<typeof coreSettings, "get">>;
   let ordinal = 0;
   let distantCron = "";
   const overrides = new Map<string, number>();
@@ -161,6 +165,7 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',true)`;
     const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
     setSystemTime(clock!.now);
+    slot = clock!.now;
     const distant = new Date(clock!.now.getTime() + 7 * 86_400_000);
     distantCron = `0 0 ${distant.getUTCDate()} ${distant.getUTCMonth() + 1} *`;
     const pair = await generateKeyPair("RS256", { extractable: true });
@@ -168,7 +173,8 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     signer = { kid, key: pair.privateKey, signUntil: new Date(clock!.now.getTime() + 3_600_000) };
     key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), alg: "RS256", kid, use: "sig" }] });
     settings = spyOn(codeSettings, "get").mockImplementation(async (name) => overrides.get(name) ?? CODE_SETTINGS[name].default);
-    timezone = spyOn(coreSettings, "get").mockResolvedValue("UTC");
+    await coreSettings.set("app.timezone", "UTC");
+    await coreSettings.set("security.rate_limit_per_second", 60);
     connection = await connectTestNats();
   });
   beforeEach(async () => {
@@ -182,7 +188,6 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
   });
   afterAll(async () => {
     settings?.mockRestore();
-    timezone?.mockRestore();
     for (const sync of syncs) await sync.drain({ timeoutMs: 1000 });
     await connection?.drain();
     await database?.drop();
@@ -222,14 +227,41 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       requestId: "c13-manual",
     };
     const input = { codeId: code.codeId, entrypoint: "weekly", input: null };
+    const manifest = compileCapabilityManifest("core", { protocolVersion: 2, actions: { "code.run": aiCapabilities.actions["code.run"] } });
+    expect(manifest.actions[0]?.localId).toBe("code.run");
+    const review = await aiCapabilities.actions["code.run"].review(input, request);
+    expect(review.ok).toBe(true);
+    if (review.ok) assertCapabilityReview(review.data);
     const results = await Promise.all([0, 1, 2].map(() => aiCapabilities.actions["code.run"].run(input, request)));
     for (const result of results) expect(result.ok).toBe(true);
+    const receipts = results.flatMap((result) => (result.ok ? [result.data.data] : []));
+    expect(new Set(receipts.map((r) => r.runId)).size).toBe(1);
+    expect(receipts.filter((r) => !r.duplicate)).toHaveLength(1);
+    expect(await sql`SELECT id FROM audit.events WHERE action='core.code.run.started' AND target_id=${code.codeId}`).toHaveLength(1);
     const runs = await sql`SELECT id FROM code.runs WHERE code_id=${code.codeId}`;
     expect(runs).toHaveLength(1);
     expect(await aiCapabilities.actions["code.run"].run({ ...input, input: { changed: true } }, request)).toMatchObject({
       ok: false,
       error: { code: "CONFLICT" },
     });
+    const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${other}::uuid,'write') RETURNING id`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.codeId},${grant!.id}::uuid)`;
+    const secondEditor: CapabilityExecutionContext = {
+      ...request,
+      authority: context(other).authority,
+      actor: context(other).authority.actor,
+      accessSubject: context(other).authority.accessSubject,
+      user: person(other),
+      requestId: "c13-manual-other",
+    };
+    const separate = await aiCapabilities.actions["code.run"].run(input, secondEditor);
+    expect(separate.ok).toBe(true);
+    if (separate.ok) {
+      expect(separate.data.data.duplicate).toBe(false);
+      expect(separate.data.data.runId).not.toBe(receipts[0]!.runId);
+    }
+    expect(await sql`SELECT id FROM code.runs WHERE code_id=${code.codeId}`).toHaveLength(2);
+    expect(await sql`SELECT id FROM audit.events WHERE action='core.code.run.started' AND target_id=${code.codeId}`).toHaveLength(2);
   });
   test("committed starts and retries reach the real queue through the durable outbox", async () => {
     const code = await fixture();
@@ -249,7 +281,7 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
   });
   for (const ownerLimit of [false, true])
     test(`real outbox drains default-limit backlog without recovery (owner limit: ${ownerLimit})`, async () => {
-      overrides.set("core.code.runner_poll_ms", 100);
+      overrides.set("core.code.runner_poll_ms", 1000);
       if (ownerLimit) overrides.set("core.code.concurrency_per_owner", 1);
       const code = await fixture();
       const neighbor = ownerLimit ? await fixture() : code;
@@ -272,7 +304,15 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       const fetch = () => fetchCodeRuns({ instanceId, freeSlots: 1 }, new AbortController().signal, { queue, sign });
       try {
         await publisher.reconcile();
-        let response = await fetch();
+        const takeResponse = async () => {
+          const deadline = AbortSignal.timeout(5000);
+          while (!deadline.aborted) {
+            const response = await fetchCodeRuns({ instanceId, freeSlots: 1 }, deadline, { queue, sign });
+            if (response.runs.length) return response;
+          }
+          throw new Error("No runnable backlog lease within the test budget");
+        };
+        let response = await takeResponse();
         // Exhaust the real published tickets while capacity is occupied, just as concurrent idle runners do.
         expect((await fetch()).runs).toHaveLength(0);
         const seen = new Set<string>();
@@ -284,7 +324,7 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
           await completeCodeRun(await claims(lease), "succeeded");
           if (index < ids.length - 1) {
             expect(await publisher.reconcile()).toBeGreaterThan(0);
-            response = await fetch();
+            response = await takeResponse();
           }
         }
         expect(seen).toEqual(new Set(ids));
@@ -307,6 +347,11 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
     const result = await processCodeScheduleTick(tick);
     expect(await state(result!.runId)).toMatchObject({ state: "failed", outcome: "code_admission_refused" });
     expect(await processCodeScheduleTick(tick)).toEqual({ runId: result!.runId, duplicate: true });
+    const expired = new Date(slot.getTime() - 8 * 86_400_000);
+    await sql`UPDATE code.run_requests SET tick_at=${expired} WHERE run_id=${result!.runId}::uuid`;
+    await reconcileCodeRuns();
+    expect(await sql`SELECT run_id FROM code.run_requests WHERE run_id=${result!.runId}::uuid`).toHaveLength(0);
+    expect(await processCodeScheduleTick({ ...tick, slot: expired })).toBeNull();
     expect(await claimCodeRuns(1, await readCodeRunLimits())).toHaveLength(0);
   });
   test("three runners complete 200 runs exactly once, never exceeding their free slots", async () => {
@@ -493,6 +538,29 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       await Promise.all(workers.map((w) => w.drain({ timeoutMs: 1000 })));
     }
   }, 10_000);
+  test("a rejected schedule definition does not prevent another Code from registering", async () => {
+    const broken = await fixture(),
+      healthy = await fixture();
+    const sync = createSync({
+      connection,
+      namespace: testSyncNamespace("c13-sync-isolation"),
+      application: "core",
+      defaults: { replicas: 1 },
+    });
+    syncs.push(sync);
+    const scheduler = sync.scheduler({ id: "code" });
+    const create = scheduler.create.bind(scheduler);
+    const fail = spyOn(scheduler, "create").mockImplementation((definition) => {
+      if (definition.meta?.codeId === broken.codeId) return Promise.reject(new Error("Fixture definition rejected"));
+      return create(definition);
+    });
+    try {
+      await createCodeScheduleReconciler(scheduler)();
+      expect((await scheduler.list()).map((s) => s.meta?.codeId)).toEqual([healthy.codeId]);
+    } finally {
+      fail.mockRestore();
+    }
+  });
   test("retained schedule callbacks bind a newly active version without waiting for reconciliation", async () => {
     const code = await fixture();
     const sync = createSync({ connection, namespace: testSyncNamespace("c13-activation"), application: "core", defaults: { replicas: 1 } });
