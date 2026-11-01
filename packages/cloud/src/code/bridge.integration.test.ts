@@ -46,7 +46,8 @@ import { mandates } from "../services/mandates";
 import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest } from "./runner-protocol";
 
-const now = new Date("2026-11-01T12:00:00Z");
+// real clock: Postgres fences use its own clock, so the frozen JS clock starts from the real time of this run.
+const now = new Date(Math.floor(Date.now() / 1000) * 1000);
 const issuer = "https://cloud.example";
 const userId = "11111111-1111-4111-8111-111111111111";
 const kid = "22222222-2222-4222-8222-222222222222";
