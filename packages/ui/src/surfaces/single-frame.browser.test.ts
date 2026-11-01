@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // Borders, rules and wrapping are layout, which happy-dom does not model, so a
 // real engine renders the shipped stylesheet.
@@ -169,6 +169,18 @@ const measure = () => {
 const transparent = "rgba(0, 0, 0, 0)";
 
 describe("@k2b/ui one frame per surface", () => {
+  test("forced colours keep a line under the StatGrid header, where both surfaces become Canvas", async () => {
+    const page = await browser.newPage({ viewport: viewports.desktop });
+    try {
+      await page.emulateMedia({ forcedColors: "active" });
+      await page.setContent(`<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui">${markup()}</body></html>`);
+      await settled(page);
+      expect(await page.locator(".k2b-stat-grid__header").evaluate((header) => getComputedStyle(header).borderBottomStyle)).toBe("solid");
+    } finally {
+      await page.close();
+    }
+  });
+
   for (const [name, viewport] of Object.entries(viewports)) {
     for (const theme of ["light", "dark"] as const) {
       test(`settings sections, notices, placeholders and detail groups draw no second frame on a ${name} in ${theme} mode`, async () => {
