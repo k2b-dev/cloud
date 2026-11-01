@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { hasRole } from "@k2b/cloud/contracts";
+import { audit } from "@k2b/cloud/services";
 import { invalidateSettingsCache, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
 import { z } from "zod";
 import { app } from "../config";
@@ -45,6 +46,15 @@ export const storageSettings = {
       for (const [key, value] of updates) {
         if (value !== undefined) await set(key, value, tx, { replaceUnreadable: input.replaceUnreadable?.includes(key) === true });
       }
+      await audit.record(
+        {
+          action: "assistant.storage.configure",
+          outcome: "allowed",
+          actor: { userId: user(identity)?.id },
+          metadata: { keys: updates.filter(([, value]) => value !== undefined).map(([key]) => key) },
+        },
+        tx,
+      );
     });
     await invalidateSettingsCache(updates.filter(([, value]) => value !== undefined).map(([key]) => key));
     return this.read(identity);

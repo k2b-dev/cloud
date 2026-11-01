@@ -140,13 +140,20 @@ test("internal Sync operations require a bound invocation and current admin auth
     expect((await request(headers)).status).toBe(403);
     expect(resourceReads).toBe(0);
     currentUser = { ...user, roles: ["admin"] };
-    for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
+    for (const scopes of [[], ["read"], ["write"], ["read", "write"], ["admin"]]) {
       activeClaims = { ...claims, credential_kind: "oauth", scopes };
       const previousReads = resourceReads;
       const response = await request(headers);
-      expect(response.status).toBe(scopes.includes("admin") ? 200 : 403);
-      expect(resourceReads - previousReads).toBe(scopes.includes("admin") ? 1 : 0);
+      const allowed = scopes.includes("read") || scopes.includes("admin");
+      expect(response.status).toBe(allowed ? 200 : 403);
+      expect(resourceReads - previousReads).toBe(allowed ? 1 : 0);
     }
+    currentUser = user;
+    activeClaims = { ...claims, credential_kind: "oauth", scopes: ["read", "write"] };
+    const previousReads = resourceReads;
+    expect((await request(headers)).status).toBe(403);
+    expect(resourceReads).toBe(previousReads);
+    currentUser = { ...user, roles: ["admin"] };
     activeClaims = { ...claims, op: syncInvocationOperation("DELETE", "/resources") };
     expect((await request(headers)).status).toBe(401);
     activeClaims = claims;

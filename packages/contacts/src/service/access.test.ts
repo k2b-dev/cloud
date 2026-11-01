@@ -3,7 +3,11 @@ import type { User } from "@k2b/cloud/contracts";
 import type { PermissionLevel, RequestActor } from "@k2b/cloud/server";
 import type { ServiceAccount } from "@k2b/cloud/services";
 import type { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { getActorBookPermission, isContactsAdministrator, readableBookScope } from "./access";
+
+// Grant queries use the injected db; shared helpers also construct lazy SQL fragments.
+useUnitClients();
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const bookId = "22222222-2222-4222-8222-222222222222";

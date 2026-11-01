@@ -4,6 +4,7 @@ import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import routes from "../../api/admin-core-settings";
 import { sql } from "../../runtime/clients";
 import { stubConnections } from "../../runtime/connections.test-fixture";
+import { audit } from "../audit";
 import { session } from "../session";
 import { buildProjectedUser } from "../session/user";
 import { decryptValue, encryptValue } from "./crypto";
@@ -24,6 +25,7 @@ afterAll(() => {
   secretStub?.mockRestore();
 });
 beforeEach(() => {
+  spyOn(audit, "record").mockResolvedValue();
   secretStub = stubConnections({ appSecret: { current: "test-only-geo-budget" } });
   spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-02T03:04:05Z"));
   const user = buildProjectedUser({
