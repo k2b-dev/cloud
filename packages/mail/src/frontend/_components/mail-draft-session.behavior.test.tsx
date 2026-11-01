@@ -1381,6 +1381,7 @@ describe("Mail draft session", () => {
       journal.setItem(mailDraftJournalKey(MAILBOX_ID, DRAFT_ID), JSON.stringify({ revision: 1, content: pending }));
       for (let reload = 0; reload < 2; reload++) {
         const state = await mountSession();
+        await state.session.ensureDraft();
         expect(state.current()).toEqual(pending);
         expect(state.session.revisionConflict()).toBe(true);
         expect(state.session.status()).toBe("error");
@@ -1512,12 +1513,16 @@ describe("Mail draft session", () => {
     test("BUSY exhaustion shows the localized save error and a 503 PUT is never retried", async () => {
       const state = await mountSession();
       let attempts = 0;
+      const firstAttempt = Promise.withResolvers<void>();
       saveAnswer = () => {
         attempts++;
+        firstAttempt.resolve();
         return Response.json({ code: "DRAFT_LEASE_BUSY", message: "Raw server detail" }, { status: 409 });
       };
       state.setCurrent({ ...state.current(), body: "Unsaved text" });
       const saving = state.session.persist();
+      // Native hashing must finish before advancing the retry clock.
+      await firstAttempt.promise;
       await flush();
       state.session.stopScheduledSave();
       for (const ms of [500, 1_000]) await advance(ms);
@@ -1539,12 +1544,16 @@ describe("Mail draft session", () => {
     test("a draft PUT retries only BUSY, preserving content and expectedRevision", async () => {
       const state = await mountSession();
       let attempts = 0;
-      saveAnswer = (input) =>
-        ++attempts === 1
+      const firstAttempt = Promise.withResolvers<void>();
+      saveAnswer = (input) => {
+        firstAttempt.resolve();
+        return ++attempts === 1
           ? Response.json({ code: "DRAFT_LEASE_BUSY" }, { status: 409 })
           : Response.json({ ...stored, ...input.draft, revision: 4 });
+      };
       state.setCurrent({ ...state.current(), body: "Retry this write" });
       const saving = state.session.persist();
+      await firstAttempt.promise;
       await flush();
       state.session.stopScheduledSave();
       await advance(2_000);
