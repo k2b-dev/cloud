@@ -99,7 +99,8 @@ Dry-run answers reveal only what the person may read. A target's existing
 stable reason code, with “Only someone who manages this target can activate it”
 (“Einschalten kann nur, wer dieses Ziel verwaltet” in German). The Code link
 remains available to copy. Status reads check the current reader again before
-returning a saved title or manager list.
+returning a saved title or manager list; only then they add `managerNames`, the
+display names of the first five managers, which are never stored.
 
 Cloud-admin notification audiences use a separate Core-only, target-bound
 `signCodeAccessNotifications` proof. Each successful adapter dry run identifies

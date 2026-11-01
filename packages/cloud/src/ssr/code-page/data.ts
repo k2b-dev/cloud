@@ -107,8 +107,10 @@ export const ActivationSchema = z.object({
       target: z.object({ type: z.string(), id: z.string() }).nullable(),
       code: z.string(),
       reason: z.string(),
-      /** Who manages the refusing target, for a person who may read it. The page shows them only then. */
-      managers: z.array(z.object({ name: z.string() }).passthrough()).optional(),
+      /** False when Core's reader check denied presentation. */
+      readable: z.boolean().optional(),
+      /** Who manages the refusing target, only for a person who may read it. */
+      managerNames: z.array(z.string()).optional(),
     })
     .nullable(),
 });

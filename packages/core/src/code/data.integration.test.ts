@@ -420,6 +420,13 @@ databaseSuite()("Core Code data and Query authorization", () => {
       ),
     ).rejects.toBeInstanceOf(access.CodeOwnerUnavailableError);
   });
+  test("the Code page names people through a real array query, and guests only themselves", async () => {
+    const { loadPeople } = await import("@k2b/cloud/ssr/code-page/load");
+    const member = await loadPeople([ids.owner, ids.reader], { id: ids.owner, directory: true });
+    expect([...member.keys()].sort()).toEqual([ids.owner, ids.reader].sort());
+    const guest = await loadPeople([ids.owner, ids.reader], { id: ids.reader, directory: false });
+    expect([...guest.keys()]).toEqual([ids.reader]);
+  });
   test("owner attention lists only readable Code and flags a failed newest run per entrypoint", async () => {
     clearCodeAttentionCache();
     const owner = { kind: "resource" as const, ref: { type: "example.mailbox", id: "attention" } };

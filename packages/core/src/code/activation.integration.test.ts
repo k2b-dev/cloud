@@ -783,11 +783,15 @@ databaseSuite()("durable Code activation", () => {
       if (readable) {
         expect(result.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
         expect(saved!.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
+        // The page needs names; they exist only in the answer to someone who just passed the reader check.
+        expect(result.failure?.managerNames).toHaveLength(1);
+        expect(saved!.failure).not.toHaveProperty("managerNames");
         // Losing read access also removes presentation on an existing status response.
         readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
         const hidden = await status(code, activation.id);
         expect(hidden.failure).not.toHaveProperty("title");
         expect(hidden.failure).not.toHaveProperty("managerUserIds");
+        expect(hidden.failure).not.toHaveProperty("managerNames");
       } else {
         expect(result.failure).toMatchObject({ reason: "Einschalten kann nur, wer dieses Ziel verwaltet" });
         for (const value of [result, saved]) {
@@ -842,7 +846,7 @@ databaseSuite()("durable Code activation", () => {
     });
     expect(JSON.stringify(hidden)).not.toContain("Fixture target");
     expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
-    expect((await status(code, activation.id)).failure).toEqual(failure);
+    expect((await status(code, activation.id)).failure).toEqual({ ...failure, managerNames: [nextOwnerId] });
   });
   test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
     targetReadable = false;

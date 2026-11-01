@@ -2,7 +2,7 @@
 title: Show a resource's Code page
 navTitle: Code page
 section: Platform services
-order: 966
+order: 967
 description: Mount the shared Code page at a resource so its administrators see automations, access, runs, versions and switch Code on.
 tags: [code, ssr, ui, permissions]
 updated: 2026-11-01
