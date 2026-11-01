@@ -72,7 +72,7 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
         target: { type: "core.code", id: data.state.code.id },
         input: expectedInput,
       });
-      expect(invoke.mock.calls[0]?.[0].input).not.toHaveProperty("codeId");
+      expect(invoke.mock.calls[0]?.[0].input).toEqual(expectedInput);
       expect(invoke.mock.calls[0]?.[0].idempotencyKey).toEqual(
         control === "rerun" ? `rerun:${data.state.run!.run.id}` : expect.any(String),
       );
