@@ -190,7 +190,8 @@ export type CodePageVersion = {
 };
 export type CodePageDiff = {
   version: CodePageVersion;
-  comparison: number | null;
+  /** The previous version's number; null for a first version, "unknown" when it could not be read. */
+  comparison: number | "unknown" | null;
   staleComparison: boolean;
   files: z.infer<typeof VersionDiffSchema>["files"];
   permissions: { operation: string; target: CodePageTarget | null; file: string; line: number }[];

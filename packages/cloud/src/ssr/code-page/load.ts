@@ -406,6 +406,12 @@ const loadReady = async (
   let diff: CodePageDiff | null = null;
   if (diffResult?.ok && selectedVersionId) {
     const value = diffResult.data.data.data;
+    // The comparison can also be older than the loaded history; its number comes from its own metadata then.
+    const comparisonId = value.binding.comparisonVersionId;
+    if (comparisonId && !numbers.has(comparisonId)) {
+      const older = await versionMeta(comparisonId);
+      if (older) numbers.set(older.id, older.number);
+    }
     const selected =
       versions.find((version) => version.id === selectedVersionId) ??
       (selectedVersionId === activeVersion?.id ? activeVersion : null) ??
@@ -413,7 +419,7 @@ const loadReady = async (
     if (selected)
       diff = {
         version: selected,
-        comparison: value.binding.comparisonVersionId ? (numbers.get(value.binding.comparisonVersionId) ?? null) : null,
+        comparison: comparisonId ? (numbers.get(comparisonId) ?? "unknown") : null,
         staleComparison: value.staleComparison,
         files: value.files,
         permissions: value.permissions.map((permission) => ({

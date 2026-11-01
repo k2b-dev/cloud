@@ -182,6 +182,7 @@ export const codePageMessages = i18n.define({
       comparedWith: ({ version, previous }: { version: number; previous: number }) =>
         `Version ${version} compared with version ${previous}`,
       firstVersion: ({ version }: Version) => `Version ${version} · first version, every line is new`,
+      comparedWithEarlier: ({ version }: Version) => `Version ${version} compared with an earlier version`,
       staleComparison: "A newer version was approved since. The difference still shows the version it was submitted against.",
       permissionsTitle: "What it may do",
       noPermissions: "No calls to other apps.",
@@ -361,6 +362,7 @@ export const codePageMessages = i18n.define({
       comparedWith: ({ version, previous }: { version: number; previous: number }) =>
         `Version ${version} verglichen mit Version ${previous}`,
       firstVersion: ({ version }: Version) => `Version ${version} · erste Version, jede Zeile ist neu`,
+      comparedWithEarlier: ({ version }: Version) => `Version ${version} verglichen mit einer früheren Version`,
       staleComparison:
         "Seitdem wurde eine neuere Version freigegeben. Der Unterschied zeigt weiter die Version, gegen die sie eingereicht wurde.",
       permissionsTitle: "Was sie darf",

@@ -81,6 +81,31 @@ const activationRequest = async (
   }
 };
 
+/**
+ * An activation whose outcome is unknown survives closing the dialog and reloading the page in this tab, so asking
+ * again resumes it instead of starting a second one. It is cleared only by a confirmed result or a refusal.
+ */
+const pendingActivation = (codeId: string, versionId: string) => {
+  const key = `cloud.code.activation:${codeId}:${versionId}`;
+  return {
+    read: (): string | null => {
+      try {
+        return sessionStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    write: (id: string | null) => {
+      try {
+        if (id) sessionStorage.setItem(key, id);
+        else sessionStorage.removeItem(key);
+      } catch {
+        // Without storage the identity lives as long as the dialog.
+      }
+    },
+  };
+};
+
 const withQuery = (href: string, params: Record<string, string | undefined>): string => {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value) query.set(key, value);
@@ -99,14 +124,14 @@ function usePageText(data: () => CodePageData) {
   const when = (iso: string) => dates.formatDateTimeRelative(iso, { ...context(), base: data().dates.now });
   const targetName = (target: CodePageTarget): string => {
     if (target.own) return data().owner.title;
-    if (target.ref.type === "app") return target.ref.id;
+    if (target.ref.type === "app") return target.title ?? target.ref.id;
     if (target.title) return [target.typeTitle, target.title].filter(Boolean).join(" ");
     return target.ref.id;
   };
   const targetLabel = (target: CodePageTarget): string => {
     const current = t();
     if (target.own) return current.atOwn({ name: data().owner.title });
-    if (target.ref.type === "app") return current.atApp({ name: target.ref.id });
+    if (target.ref.type === "app") return current.atApp({ name: target.title ?? target.ref.id });
     if (target.title) return `${current.atTarget({ name: targetName(target) })} (${target.ref.id})`;
     return current.unknownTarget({ id: target.ref.id });
   };
@@ -1073,9 +1098,12 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
             <div class="cloud-code__run-head">
               <div class="min-w-0">
                 <h2 id="cloud-code-version-title" class="cloud-code__h2">
-                  {diff().comparison !== null
-                    ? t().comparedWith({ version: diff().version.number, previous: diff().comparison! })
-                    : t().firstVersion({ version: diff().version.number })}
+                  {(() => {
+                    const comparison = diff().comparison;
+                    if (comparison === null) return t().firstVersion({ version: diff().version.number });
+                    if (comparison === "unknown") return t().comparedWithEarlier({ version: diff().version.number });
+                    return t().comparedWith({ version: diff().version.number, previous: comparison });
+                  })()}
                 </h2>
                 <Show when={diff().version.decisionLabel}>
                   <p class="cloud-code__sub">{diff().version.decisionLabel}</p>
@@ -1174,17 +1202,24 @@ function ActivationDialog(props: {
     return current.kind === "failed" && current.failure?.code === "not_manager";
   };
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
-  // Only a confirmed terminal result starts a new identity.
-  let activationId = crypto.randomUUID();
+  // Only a confirmed terminal result or a refusal starts a new identity.
+  const pending = pendingActivation(props.state.code.id, props.version.id);
+  const resumed = pending.read();
+  let activationId = resumed ?? crypto.randomUUID();
+  const finish = () => {
+    pending.write(null);
+    activationId = crypto.randomUUID();
+  };
   /** Applies one status; true when it ended the wait. */
   const settle = (status: CodeActivationStatus): boolean => {
     if (status.state === "active") {
+      pending.write(null);
       props.close();
       documentNavigate(withQuery(props.data.href, { activated: String(props.version.number) }));
       return true;
     }
     if (status.state === "failed" || status.state === "cancelled") {
-      activationId = crypto.randomUUID();
+      finish();
       setView({ kind: "failed", failure: status.failure, message: null });
       return true;
     }
@@ -1200,8 +1235,24 @@ function ActivationDialog(props: {
     }
     if (!disposed) setView({ kind: "unknown" });
   };
+  /** Reads the status only; it never starts an activation. */
+  const check = async () => {
+    setView({ kind: "progress", state: "pending" });
+    const read = await activationRequest("activation/read", { codeId: props.state.code.id, activationId });
+    if (read.ok) {
+      if (!settle(read.data)) await follow();
+      return;
+    }
+    // Core has no such activation: nothing changed, and switching on again may reuse this identity.
+    if (read.notFound) {
+      pending.write(null);
+      return setView({ kind: "failed", failure: null, message: null });
+    }
+    setView({ kind: "unknown" });
+  };
   const start = async () => {
     setView({ kind: "progress", state: "pending" });
+    pending.write(activationId);
     const started = await activationRequest("activate", { codeId: props.state.code.id, versionId: props.version.id, activationId });
     if (started.ok) {
       if (!settle(started.data)) await follow();
@@ -1209,18 +1260,14 @@ function ActivationDialog(props: {
     }
     if (started.definite) {
       // Core refused before acting; a later attempt is a new activation.
-      activationId = crypto.randomUUID();
+      finish();
       return setView({ kind: "failed", failure: null, message: started.message });
     }
     // The answer was lost: Core may have accepted. Its status says what happened.
-    const read = await activationRequest("activation/read", { codeId: props.state.code.id, activationId });
-    if (read.ok) {
-      if (!settle(read.data)) await follow();
-      return;
-    }
-    if (read.notFound) return setView({ kind: "failed", failure: null, message: null });
-    setView({ kind: "unknown" });
+    await check();
   };
+  // A dialog opened while an earlier attempt is unresolved continues with that attempt.
+  if (resumed) void check();
   const targetByRef = (ref: { type: string; id: string } | null | undefined) =>
     ref ? (rows().find((row) => row.target.ref.type === ref.type && row.target.ref.id === ref.id)?.target ?? null) : null;
   const rowRight = (row: CodePageActivationRow): JSX.Element => {
@@ -1341,7 +1388,7 @@ function ActivationDialog(props: {
           variant="primary"
           disabled={!props.data.activation.allowed || blocked() || busy()}
           loading={busy() && view().kind === "progress" && (view() as { state: string }).state !== "waiting"}
-          onClick={() => void start()}
+          onClick={() => void (view().kind === "unknown" ? check() : start())}
         >
           <i class="ti ti-power" aria-hidden="true" />
           {blocked()

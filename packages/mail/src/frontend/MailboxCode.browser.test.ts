@@ -54,7 +54,7 @@ const iconFont = iconSource.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
 if (!iconFont) throw new Error("Missing Tabler WOFF2 file");
 const icons = { css: iconSource.replace(iconFont, "/tabler.woff2"), font: resolve(dirname(iconCss), iconFont) };
 /** What Core answers while the person switches on: the activation's final state. */
-let activationEnd: "active" | "not_manager" | "unavailable" | "lost-active" = "not_manager";
+let activationEnd: "active" | "not_manager" | "unavailable" | "lost-active" | "silent" = "not_manager";
 const activations: unknown[] = [];
 const server = Bun.serve({
   port: 0,
@@ -68,13 +68,14 @@ const server = Bun.serve({
       const body = (await request.json()) as { activationId: string; versionId: string };
       activations.push(body);
       // Core's answer gets lost on the way back: it may or may not have accepted.
-      if (activationEnd === "unavailable" || activationEnd === "lost-active")
+      if (activationEnd === "unavailable" || activationEnd === "lost-active" || activationEnd === "silent")
         return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
       return Response.json({ data: { id: body.activationId, versionId: body.versionId, state: "preflight", failure: null } });
     }
     if (url.pathname === "/api/code/activation/read") {
       const body = (await request.json()) as { activationId: string };
       if (activationEnd === "unavailable") return Response.json({ code: "NOT_FOUND", message: "Activation not found." }, { status: 404 });
+      if (activationEnd === "silent") return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
       return Response.json({
         data: {
           id: body.activationId,
@@ -150,7 +151,7 @@ describe("Mailbox Code page in a browser", () => {
     const page = await load("overview", 1440);
     try {
       const code = page.locator('.mail-sidebar a[href="/app/mail/Mb4kd2/code"]').first();
-      await expect(code.getAttribute("aria-current")).resolves.toBe("page");
+      expect(await code.getAttribute("aria-current")).toBe("page");
       const sent = await page.locator(".mail-sidebar").getByText("Gesendet", { exact: true }).first().boundingBox();
       const entry = await code.boundingBox();
       expect(entry!.y).toBeGreaterThan(sent!.y);
@@ -166,8 +167,8 @@ describe("Mailbox Code page in a browser", () => {
     try {
       await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
       const dialog = page.getByRole("dialog");
-      await expect(dialog.getByText("Operation an Ziel").isVisible()).resolves.toBe(true);
-      await expect(dialog.getByText("du verwaltest info@moebel-beispiel.de").isVisible()).resolves.toBe(true);
+      expect(await dialog.getByText("Operation an Ziel").isVisible()).toBe(true);
+      expect(await dialog.getByText("du verwaltest info@moebel-beispiel.de").isVisible()).toBe(true);
       await shoot(page, "einschalten-1440");
       await settled(page);
       const confirm = dialog.getByRole("button", { name: "Version 5 einschalten" });
@@ -175,11 +176,9 @@ describe("Mailbox Code page in a browser", () => {
       await confirm.click();
       await dialog.getByText("Du bist nicht Admin von Space Logistik.", { exact: false }).waitFor();
       expect(activations).toHaveLength(1);
-      await expect(dialog.getByText("Es wurde nichts eingeschaltet, Version 4 läuft weiter.", { exact: false }).isVisible()).resolves.toBe(
-        true,
-      );
-      await expect(dialog.getByText("du bist nicht Admin", { exact: true }).isVisible()).resolves.toBe(true);
-      await expect(dialog.getByRole("button", { name: "Link kopieren" }).isVisible()).resolves.toBe(true);
+      expect(await dialog.getByText("Es wurde nichts eingeschaltet, Version 4 läuft weiter.", { exact: false }).isVisible()).toBe(true);
+      expect(await dialog.getByText("du bist nicht Admin", { exact: true }).isVisible()).toBe(true);
+      expect(await dialog.getByRole("button", { name: "Link kopieren" }).isVisible()).toBe(true);
       // Blocked, the confirm button says only what it would do and stays disabled.
       expect(await dialog.getByRole("button", { name: "Einschalten", exact: true }).isDisabled()).toBe(true);
       // The confirm button keeps its place while the result appears above it only by growing the dialog downwards.
@@ -187,7 +186,7 @@ describe("Mailbox Code page in a browser", () => {
       expect(after!.x + after!.width).toBeCloseTo(before!.x + before!.width, 0);
       await shoot(page, "blockiert-1440");
       await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
-      await expect(page.getByRole("dialog").count()).resolves.toBe(0);
+      expect(await page.getByRole("dialog").count()).toBe(0);
     } finally {
       await page.context().close();
     }
@@ -202,7 +201,7 @@ describe("Mailbox Code page in a browser", () => {
       await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
       // The answer was lost, and Core knows no such activation: nothing changed, and trying again is safe.
       await dialog.getByText("Cloud konnte das Einschalten nicht starten. Es hat sich nichts geändert.").waitFor();
-      await expect(dialog.getByRole("button", { name: "Erneut versuchen" }).isEnabled()).resolves.toBe(true);
+      expect(await dialog.getByRole("button", { name: "Erneut versuchen" }).isEnabled()).toBe(true);
     } finally {
       await page.context().close();
     }
@@ -222,12 +221,33 @@ describe("Mailbox Code page in a browser", () => {
     }
   }, 30_000);
 
+  test("an unconfirmed attempt survives closing the dialog and is resumed by reading its status, never by starting another", async () => {
+    activationEnd = "silent";
+    activations.length = 0;
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
+      await dialog.getByText("Cloud hat noch nicht bestätigt.", { exact: false }).waitFor();
+      expect(await dialog.getByRole("button", { name: "Stand prüfen" }).isEnabled()).toBe(true);
+      await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
+      // Core finished in the meantime; reopening asks for that attempt's status.
+      activationEnd = "lost-active";
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      await page.waitForURL(/activated=5/);
+      expect(activations).toHaveLength(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("a phone session explains why it cannot switch on", async () => {
     const page = await load("waiting", 390, { phone: true });
     try {
       await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
       const dialog = page.getByRole("dialog");
-      await expect(dialog.getByText("Am Telefon lässt sich Code nicht einschalten.", { exact: false }).isVisible()).resolves.toBe(true);
+      expect(await dialog.getByText("Am Telefon lässt sich Code nicht einschalten.", { exact: false }).isVisible()).toBe(true);
       expect(await dialog.getByRole("button", { name: "Version 5 einschalten" }).isDisabled()).toBe(true);
       expect(await overflow(page)).toBe(0);
       await shoot(page, "telefon-gesperrt-390");
