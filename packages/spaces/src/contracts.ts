@@ -404,11 +404,19 @@ export const TemplateDateRuleSchema = z.discriminatedUnion("type", [
 ]);
 export type TemplateDateRule = z.infer<typeof TemplateDateRuleSchema>;
 
+const ItemTemplateIconSchema = z
+  .string()
+  .max(80)
+  .regex(/^ti ti-[a-z0-9]+(-[a-z0-9]+)*$/)
+  .nullable()
+  .describe("Tabler icon class shown next to the name, for example `ti ti-report`; null uses the kind's default");
+
 export const SpaceItemTemplateSchema = z.object({
   id: ResourceShortIdSchema.describe("Template ID"),
   spaceId: ResourceShortIdSchema.describe("Parent space ID"),
   kind: ItemTemplateKindSchema.describe("Whether the template creates tasks or events"),
   name: z.string().describe("Template name, unique per Space and kind"),
+  icon: ItemTemplateIconSchema,
   title: z.string().describe("Default title; may contain {{date}}, {{weekday}}, and {{week}}"),
   description: z.string().nullable().describe("Default description (markdown); may contain the same placeholders"),
   priority: PrioritySchema.nullable().describe("Default priority"),
@@ -567,6 +575,7 @@ export const MAX_ITEM_TITLE_LENGTH = 200;
 export const MAX_ITEM_DESCRIPTION_LENGTH = 5000;
 
 const ItemTemplateFieldsShape = {
+  icon: ItemTemplateIconSchema.optional(),
   name: z.string().trim().min(1).max(100).describe("Template name, unique per Space and kind"),
   title: z.string().max(MAX_ITEM_TITLE_LENGTH).describe("Default title; may contain {{date}}, {{weekday}}, and {{week}}"),
   description: z.string().max(MAX_ITEM_DESCRIPTION_LENGTH).nullable().describe("Default description (markdown)"),
@@ -639,6 +648,7 @@ export type CreateItemTemplate = z.infer<typeof CreateItemTemplateSchema>;
 export const UpdateItemTemplateSchema = z
   .object({
     name: ItemTemplateFieldsShape.name.optional(),
+    icon: ItemTemplateFieldsShape.icon,
     title: ItemTemplateFieldsShape.title.optional(),
     description: ItemTemplateFieldsShape.description.optional(),
     priority: ItemTemplateFieldsShape.priority.optional(),

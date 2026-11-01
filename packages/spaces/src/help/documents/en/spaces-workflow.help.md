@@ -37,7 +37,7 @@ A template can propose dates:
 - Proposals use your time zone. With a weekday rule, an all-day task keeps today available for its whole day. A template with a time offers today only while that time still lies ahead.
 - The placeholders `{{date}}`, `{{weekday}}`, and `{{week}}` in the title and description follow the chosen date until you edit the text. This also applies to **No date** and to a date from the picker.
 
-With **Manage** access, you set up templates in the Space settings under **Templates**: a name, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items that were already created from it. Everyone who can create items can use the templates.
+With **Edit** access, you create, change, and delete templates in the Space settings under **Templates**: a name, an optional icon, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items that were already created from it. Everyone who can create items can use the templates. Without an icon, the template uses the default for tasks or events.
 
 ## Structure an item {icon="point"}
 

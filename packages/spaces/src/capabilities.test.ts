@@ -226,6 +226,7 @@ const weeklyTemplate: SpaceItemTemplate = {
   spaceId: spaceUuid,
   kind: "task",
   name: "Weekly report",
+  icon: "ti ti-report",
   title: "Weekly report {{week}}",
   description: null,
   priority: "medium",
@@ -1860,7 +1861,13 @@ describe("spaces capabilities", () => {
     if (!result.ok) return;
     expect(capabilityResultSchema(TemplateListDataSchema).safeParse(result.data).success).toBeTrue();
     const [summary] = result.data.data;
-    expect(summary).toMatchObject({ id: templateId, name: "Weekly report", rule: "Mi oder Do · ganztägig", timeZone: "Europe/Berlin" });
+    expect(summary).toMatchObject({
+      id: templateId,
+      name: "Weekly report",
+      icon: "ti ti-report",
+      rule: "Mi oder Do · ganztägig",
+      timeZone: "Europe/Berlin",
+    });
     expect(summary?.proposals).toHaveLength(3);
     for (const date of summary?.proposals ?? []) expect([3, 4]).toContain(new Date(`${date}T12:00:00Z`).getUTCDay());
     expect(
@@ -2027,7 +2034,20 @@ describe("spaces capabilities", () => {
     );
   });
 
-  test("only Space admins change templates, never a write-scoped key", async () => {
+  test("template inputs accept omitted or cleared icons and reject invalid icon classes", () => {
+    const create = { spaceId, kind: "task", name: "Report" };
+    expect(TemplateCreateInputSchema.safeParse(create).success).toBeTrue();
+    for (const icon of [null, "ti ti-report", "ti ti-calendar-event", `ti ti-${"a".repeat(74)}`]) {
+      expect(TemplateCreateInputSchema.safeParse({ ...create, icon }).success).toBeTrue();
+      expect(TemplateUpdateInputSchema.safeParse({ templateId, icon }).success).toBeTrue();
+    }
+    for (const icon of ["", "ti-report", "ti ti-Report", "ti ti-report extra", `ti ti-${"a".repeat(75)}`]) {
+      expect(TemplateCreateInputSchema.safeParse({ ...create, icon }).success).toBeFalse();
+      expect(TemplateUpdateInputSchema.safeParse({ templateId, icon }).success).toBeFalse();
+    }
+  });
+
+  test("writers and write-scoped agents change templates; read-only actors cannot", async () => {
     spyOn(settings, "get").mockResolvedValue("Europe/Berlin");
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
@@ -2054,29 +2074,45 @@ describe("spaces capabilities", () => {
       },
       accessSubject: { type: "service_account" as const, serviceAccountId: agentId },
     };
-    const createInput = TemplateCreateInputSchema.parse({ spaceId, kind: "task", name: "Weekly", tagIds: [tagId] });
-    const updateInput = TemplateUpdateInputSchema.parse({ templateId, name: "Status report" });
+    const createInput = TemplateCreateInputSchema.parse({ spaceId, kind: "task", name: "Weekly", icon: "ti ti-report", tagIds: [tagId] });
+    const updateInput = TemplateUpdateInputSchema.parse({ templateId, name: "Status report", icon: null });
     const attempt = async (context: CapabilityExecutionContext) => [
       (await spacesCapabilities.actions["template.create"].run(createInput, context)).ok,
       (await spacesCapabilities.actions["template.update"].run(updateInput, context)).ok,
       (await spacesCapabilities.actions["template.delete"].run({ templateId }, context)).ok,
     ];
 
-    for (const level of ["read", "write"] as const) {
-      permission.mockResolvedValue(level);
-      expect(await attempt(userContext)).toEqual([false, false, false]);
+    permission.mockResolvedValue("read");
+    for (const context of [userContext, writeKey]) {
+      expect(await attempt(context)).toEqual([false, false, false]);
+      expect((await spacesCapabilities.actions["template.create"].review!(createInput, context)).ok).toBeFalse();
+      expect((await spacesCapabilities.actions["template.update"].review!(updateInput, context)).ok).toBeFalse();
+      expect((await spacesCapabilities.actions["template.delete"].review!({ templateId }, context)).ok).toBeFalse();
     }
+    // A read-scoped credential cannot mutate even when its account has admin access.
     permission.mockResolvedValue("admin");
-    expect(await attempt(writeKey)).toEqual([false, false, false]);
+    const readKey = { ...writeKey, actor: { ...writeKey.actor, scopes: ["read"] } };
+    expect(await attempt(readKey)).toEqual([false, false, false]);
+    expect((await spacesCapabilities.actions["template.create"].review!(createInput, readKey)).ok).toBeFalse();
+    expect((await spacesCapabilities.actions["template.update"].review!(updateInput, readKey)).ok).toBeFalse();
+    expect((await spacesCapabilities.actions["template.delete"].review!({ templateId }, readKey)).ok).toBeFalse();
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
 
+    permission.mockResolvedValue("write");
+    for (const context of [userContext, writeKey]) {
+      expect(await attempt(context)).toEqual([true, true, true]);
+      expect((await spacesCapabilities.actions["template.create"].review!(createInput, context)).ok).toBeTrue();
+      expect((await spacesCapabilities.actions["template.update"].review!(updateInput, context)).ok).toBeTrue();
+      expect((await spacesCapabilities.actions["template.delete"].review!({ templateId }, context)).ok).toBeTrue();
+    }
+    permission.mockResolvedValue("admin");
     expect(await attempt(userContext)).toEqual([true, true, true]);
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ spaceId: spaceUuid, data: expect.objectContaining({ tagIds: [tagUuid] }) }),
+      expect.objectContaining({ spaceId: spaceUuid, data: expect.objectContaining({ tagIds: [tagUuid], icon: "ti ti-report" }) }),
     );
-    expect(update).toHaveBeenCalledWith({ id: templateUuid, data: expect.objectContaining({ name: "Status report" }) });
+    expect(update).toHaveBeenCalledWith({ id: templateUuid, data: expect.objectContaining({ name: "Status report", icon: null }) });
     expect(remove).toHaveBeenCalledWith({ id: templateUuid });
     const review = await spacesCapabilities.actions["template.delete"].review!({ templateId }, userContext);
     expect(review).toMatchObject({ ok: true, data: { message: "Delete template “Weekly report”. Items created from it stay." } });
