@@ -55,6 +55,7 @@ import inputColor from "./input/color.md" with { type: "text" };
 import inputColorChoices from "./input/color-choices.md" with { type: "text" };
 import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
+import inputDictation from "./input/dictation.md" with { type: "text" };
 import inputEmojiPicker from "./input/emoji-picker.md" with { type: "text" };
 import inputFileDropTarget from "./input/file-drop-target.md" with { type: "text" };
 import inputFileDropzone from "./input/file-dropzone.md" with { type: "text" };
@@ -130,6 +131,7 @@ const catalogContextSources = {
   "input/tag-editor": { file: "input/tag-editor.md", content: inputTagEditor },
   "input/pin": { file: "input/pin.md", content: inputPin },
   "input/emoji-picker": { file: "input/emoji-picker.md", content: inputEmojiPicker },
+  "input/dictation": { file: "input/dictation.md", content: inputDictation },
   "input/qr-scanner": { file: "input/qr-scanner.md", content: inputQrScanner },
   "input/signature": { file: "input/signature.md", content: inputSignature },
   "input/image": { file: "input/image.md", content: inputImage },
