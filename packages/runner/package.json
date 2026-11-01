@@ -14,7 +14,8 @@
   "devDependencies": {
     "@types/bun": "catalog:",
     "typescript": "catalog:",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "jose": "catalog:"
   },
   "license": "AGPL-3.0-or-later"
 }

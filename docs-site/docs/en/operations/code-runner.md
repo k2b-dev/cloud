@@ -134,10 +134,10 @@ actual workerd process's UID, session and filter, tries to read the key and
 `/proc/<pid>/{environ,mem,fd}`, signal/ptrace the supervisor and a sibling,
 connect to a sibling socket, replace IPC paths, open IP sockets and regain
 privileges, then
-executes workerd in the same PID. C14 extends this attack coverage with hostile
-bundles and the real bridge. It must retain these OS-context checks and the
-CPU-loop watchdog test; sandbox JavaScript API checks alone do not cover a
-native escape. Unprivileged unit runs skip the native files; the image check
+executes workerd in the same PID. [Verify the isolation
+boundary](#verify-the-isolation-boundary) adds hostile bundles and the real
+bridge. Sandbox JavaScript API checks alone do not cover a native escape, so
+these OS-context checks and the CPU-loop watchdog test stay required. Unprivileged unit runs skip the native files; the image check
 runs them with isolation enabled.
 
 ## Add replicas
@@ -243,6 +243,79 @@ The pinned OSS workerd build accepts Loader `limits.cpuMs` but does not
 enforce it: a bounded 100-million-iteration CPU probe completed despite a
 1 ms limit on both the worker and entrypoint. The supervisor watchdog remains
 the stall control; a native per-attempt CPU budget is not claimed.
+
+## Verify the isolation boundary
+
+The required `runner-attacks` CI job builds the real runner Dockerfile's test
+target. That target adds probes to the production runtime without replacing
+the supervisor, workerd, entrypoint, or native launcher. The job runs when the
+runner, bridge, fencing, identity transport, dependencies, or its workflow
+changes. The PR gate fails if this job fails, times out, or is cancelled.
+
+Every organization and trust tier has a unique Unix UID/GID and session.
+Workerd inherits an empty environment and one listening Unix descriptor; it
+does not inherit the key, a key descriptor, or the supervisor's sockets.
+Root owns the group directory and IPC paths. A group can traverse its own
+directory but cannot replace its configuration, listener, or bridge socket.
+Different UIDs and sessions protect the supervisor and sibling groups,
+including Linux's same-session SIGCONT exception. Seccomp denies IP sockets,
+process creation, ptrace, and cross-process memory access. V8 threads remain
+available to workerd.
+
+The native probe runs immediately before `exec` of workerd, under the same
+UID, session, descriptors, capabilities, and seccomp policy. It then becomes
+the real workerd process. This exercises the OS boundary independently of
+the JavaScript API restrictions. The key test attacks both the actual
+entrypoint-staged `0400` copy and a mounted public test key behind the image's
+`0700` directory. Neither contains an installation credential.
+
+The suite requires these results:
+
+| Attack | Required result |
+| --- | --- |
+| Read key, supervisor or sibling `/proc/environ`, `/proc/mem`, descriptors, or proc-root path | `EACCES` or `EPERM`; no bytes read |
+| Signal, SIGCONT, ptrace, or read sibling memory | `EPERM`; sibling finishes its real bundle |
+| Connect to either sibling IPC socket; replace a trusted path | `EACCES` or `EPERM`; supervisor paths remain intact |
+| Public, metadata, live loopback/Core, or named-host requests through `fetch`, `connect`, `node:net`, or `node:dns` | Refused; zero canary requests |
+| Native IPv4/IPv6 TCP, DNS/UDP, alternate network families or IP socketpair | `EAFNOSUPPORT` before any connection or DNS query |
+| Access filesystem, environment, subprocess, or loader APIs from Code | `node:fs` absent; `node:fs/promises` reaches only workerd's virtual filesystem, so reads of the key, `/run/runner-key`, `/proc`, and image files and image writes fail; environment empty; every `node:child_process` call, loader, and credential RPC attempt fails |
+| Write image files or traverse out of `/tmp` into the image | `EACCES` or `EROFS` |
+| Fork bomb, vfork, or clone3 bypass | Fork/vfork get `EPERM`; clone3 gets `ENOSYS` |
+| io_uring, namespace, mount, BPF, or pidfd bypass | `EPERM` |
+| Memory bomb; CPU loop | `memory_limit`; `stalled`; another organization continues |
+| Giant bridge input or result | `runner_bridge_unavailable`; oversized input never reaches the callback |
+| Giant return value or console output | Return and diagnostics discarded; none reach the job log, a growing pipe, or a file |
+| Concurrent bridge flood | `runner_bridge_busy`; only the configured number admitted |
+| Sustained calls through real Core and Valkey | `code_rate_limited`, with bounded failed call observations |
+| Calls beyond the saved per-run budget | `code_call_limit`; observation count stops at the budget |
+| Old generation, completed run or replay against another run; forged run token | HTTP 409 `runner_lease_lost`; HTTP 403 `code_invalid_token`; no observation or provider call |
+| `code.access.*`, streams, or `code: false` | `code_access_forbidden`, `code_stream_forbidden`, or `code_disabled`; no provider call |
+| SIGTERM while a bundle waits forever | Acquisition stops; `wall_clock_limit` within two seconds of the original deadline; runner exits successfully after reporting |
+
+Bridge attacks run hostile bundles in the compiled runner image against the
+actual signed Core call route, Postgres fence, and Valkey limiter. Acquisition
+and completion use a deterministic fixture; queue distribution is covered by
+the scheduling integration suite. The attack container deliberately uses host
+networking with a reachable Core fixture: workerd must refuse network access
+without relying on a disconnected container. Production adds the internal
+`runner-core` network described above.
+
+The native/bundle step has a 90-second limit; the bridge step has a 180-second
+limit, both with forced termination after a further five seconds. Skipped
+attacks fail the job. Individual attempts retain their transport and run deadlines.
+The job removes its containers on failure or cancellation. Its test output is
+the result for that exact commit and pinned engine version; expected outcomes
+in this table are not a claim that an untested commit passed.
+
+These checks establish the tested boundaries, not resistance to unknown
+kernel or engine vulnerabilities. Runs in the same organization and trust tier
+share a workerd process and its memory/stall fate. The memory watchdog samples
+RSS every 100 ms; the container cgroup bounds aggregate memory, and killing a
+whole container interrupts every group in it. Code gets no persistent
+filesystem; native processes still use the bounded temporary filesystem.
+Resource contention and timing side channels are not eliminated by UID
+separation. Keep the pinned engine and host kernel current and budget replicas
+for the combined workerd and supervisor memory.
 
 ## Integrate the bridge
 
