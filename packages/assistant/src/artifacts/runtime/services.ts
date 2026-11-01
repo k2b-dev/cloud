@@ -1,13 +1,15 @@
 import { CapabilityIdempotencyKeySchema, CapabilityInvocationBodySchema } from "@k2b/cloud/contracts";
-import type { z } from "zod";
+import { z } from "zod";
 import { LIMITS } from "../contracts";
 import { CloudError } from "./errors";
 import { RuntimeStorage } from "./shared-storage";
 import { RuntimeStream, runStream } from "./streams";
 
 /** Normalized coordinates and retry metadata; validated again at the authenticated capability endpoint. */
-export const RuntimeSdkCallOptions = CapabilityInvocationBodySchema.pick({ target: true, refs: true })
-  .extend({
+export const RuntimeSdkCallOptions = z
+  .object({
+    target: CapabilityInvocationBodySchema.shape.target,
+    refs: CapabilityInvocationBodySchema.shape.refs,
     idempotencyKey: CapabilityIdempotencyKeySchema.optional(),
   })
   .strict();

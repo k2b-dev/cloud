@@ -361,9 +361,15 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       expect((await codeAuthoringServices.pull({ codeId: other.config.codeId }, context)).config.codeId).toBe(other.config.codeId);
       for (const name of ["code_read", "code_pull", "code_sdk"])
         expect(CodeAuthoringErrorSchema.parse(await invoke(name, { codeId: other.config.codeId })).error.code).toBe("NOT_FOUND");
-      await sql`UPDATE code.codes SET owner_kind='resource',owner_user_id=NULL,owner_type='spaces.space',owner_id='sp_other' WHERE id=${other.config.codeId}`;
+      // Resource ownership and its Code account are immutable from creation.
+      const resourceCodeId = "c_resourcefixture";
+      const accountId = "44444444-4444-4444-8444-444444444444";
+      await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by)
+        VALUES(${accountId}::uuid,'code:spaces.space:sp_other','code',${otherId}::uuid)`;
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,created_by)
+        VALUES(${resourceCodeId},'resource','spaces.space','sp_other','Other resource Code',${accountId}::uuid,${otherId}::uuid)`;
       for (const name of ["code_read", "code_pull", "code_sdk"])
-        expect(CodeAuthoringErrorSchema.parse(await invoke(name, { codeId: other.config.codeId })).error.code).toBe("NOT_FOUND");
+        expect(CodeAuthoringErrorSchema.parse(await invoke(name, { codeId: resourceCodeId })).error.code).toBe("NOT_FOUND");
     } finally {
       chat.mockRestore();
       turn.mockRestore();

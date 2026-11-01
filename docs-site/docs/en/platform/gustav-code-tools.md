@@ -2,7 +2,7 @@
 title: Build Code in Gustav
 navTitle: Gustav Code tools
 section: Platform services
-order: 968
+order: 970
 description: Build, check, test and submit lasting Code in a Gustav conversation.
 tags: [code, ai, sdk, versions]
 updated: 2026-11-01
