@@ -5,7 +5,7 @@ section: Platform services
 order: 567
 description: Publish administrator-only traffic summaries, failed requests, and offline listing removal through a shared capability role.
 tags: [capabilities, app-status, monitoring]
-updated: 2026-10-30
+updated: 2026-11-01
 ---
 
 # App status providers
