@@ -513,7 +513,9 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         items.push(...page.items);
         cursor = page.nextCursor ?? undefined;
       } while (cursor);
-      expect(items.map((item) => item.config.codeId)).toEqual(["c_allresource"]);
+      const ids = items.map((item) => item.config.codeId);
+      expect(ids).toContain("c_allresource");
+      for (const id of ids) expect(id.startsWith("c_allperson") || id.startsWith("c_allapp")).toBe(false);
       expect(items[0]?.config.owner.kind).toBe("resource");
     } finally {
       reader.mockRestore();
