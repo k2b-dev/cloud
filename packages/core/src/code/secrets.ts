@@ -7,7 +7,7 @@ import type { SQL } from "bun";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import { readCodeOwnOrigins } from "./origins";
-import { CodeSecretBindingSchema, type CodeSecretMetadata, codeSecretContracts } from "./secret-contracts";
+import { CodeSecretBindingSchema, type CodeSecretListItem, type CodeSecretMetadata, codeSecretContracts } from "./secret-contracts";
 import { codeSettings } from "./settings";
 import { findCode, lockCodeForEdit } from "./store";
 
@@ -26,7 +26,7 @@ const badInput = (): never => {
 };
 /** Write-only editor operation. A value replacement keeps its binding; changed destinations create new evidence. */
 export async function setCodeSecret(raw: z.input<typeof codeSecretContracts.set.input>, context: CodeContext) {
-  codePerson(context, true);
+  const person = codePerson(context, true);
   if (context.authority.actor.delegation?.credentialKind === "mandate")
     throw new CodeDataError("FORBIDDEN", "Use private interactive input to set a Code secret.");
   const parsed = codeSecretContracts.set.input.safeParse(raw);
@@ -59,8 +59,10 @@ export async function setCodeSecret(raw: z.input<typeof codeSecretContracts.set.
     } catch {
       return badInput();
     }
-    await tx`INSERT INTO code.secrets(code_id,name,binding_revision,encrypted) VALUES(${input.codeId},${input.name},${revision}::uuid,${encrypted})
-      ON CONFLICT(code_id,name) DO UPDATE SET binding_revision=excluded.binding_revision,encrypted=excluded.encrypted`;
+    await tx`INSERT INTO code.secrets(code_id,name,binding_revision,encrypted,value_set_by,value_set_at)
+      VALUES(${input.codeId},${input.name},${revision}::uuid,${encrypted},${person.id}::uuid,now())
+      ON CONFLICT(code_id,name) DO UPDATE SET binding_revision=excluded.binding_revision,encrypted=excluded.encrypted,
+        value_set_by=excluded.value_set_by,value_set_at=excluded.value_set_at`;
     return { secret: { ...destination, name: input.name, binding_revision: revision, configured: true } };
   });
 }
@@ -74,20 +76,45 @@ export async function listCodeSecrets(raw: z.input<typeof codeSecretContracts.li
     if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
     if ((await requireCodePermission(code, context, false, tx)) !== "editor")
       throw new CodeDataError("FORBIDDEN", "Code editor access required.");
-    const rows = await tx<MetadataRow[]>`SELECT s.name,s.binding_revision,b.binding,s.encrypted IS NOT NULL AS configured
+    const rows = await tx<
+      (MetadataRow & { value_set_by: string | null; value_set_at: Date | null })[]
+    >`SELECT s.name,s.binding_revision,b.binding,
+        s.encrypted IS NOT NULL AS configured,s.value_set_by,s.value_set_at
       FROM code.secrets s JOIN code.secret_bindings b USING(code_id,name,binding_revision)
       WHERE s.code_id=${input.codeId} AND (${input.cursor ?? null}::text IS NULL OR s.name>${input.cursor ?? null}) ORDER BY s.name LIMIT ${input.limit + 1}`;
-    const items: CodeSecretMetadata[] = [];
+    const items: CodeSecretListItem[] = [];
     let used = 0;
     const byteLimit = await codeSettings.get("core.code.payload_bytes");
     for (const row of rows.slice(0, input.limit)) {
-      const item = metadata(row);
+      const item = { ...metadata(row), valueSetBy: row.value_set_by, valueSetAt: row.value_set_at?.toISOString() ?? null };
       const size = Buffer.byteLength(JSON.stringify(item));
       if (used + size > byteLimit && items.length) break;
       items.push(item);
       used += size;
     }
     return { items, nextCursor: rows.length > items.length ? items.at(-1)!.name : null };
+  });
+}
+/** Editors only, like the list. Whether a destination may receive a credential at all; it carries no value. */
+export async function checkCodeSecretBinding(input: z.input<typeof codeSecretContracts.checkBinding.input>, context: CodeContext) {
+  codePerson(context);
+  const code = await findCode(input.codeId);
+  if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
+  if ((await requireCodePermission(code, context, false)) !== "editor")
+    throw new CodeDataError("FORBIDDEN", "Code editor access required.");
+  return { allowed: codeHttpOriginAllowed(input.binding.origin, await readCodeOwnOrigins()) };
+}
+/**
+ * What a newly submitted version may use: each secret's current destination. A deleted value stays out, so a
+ * version never claims a credential that no longer exists; older versions keep the bindings they were approved with.
+ */
+export async function currentCodeSecretBindings(codeId: string, db: SQL = sql): Promise<CodeSecretVersionBinding[]> {
+  const rows = await db<MetadataRow[]>`SELECT s.name,s.binding_revision,b.binding,TRUE AS configured
+    FROM code.secrets s JOIN code.secret_bindings b USING(code_id,name,binding_revision)
+    WHERE s.code_id=${codeId} AND s.encrypted IS NOT NULL ORDER BY s.name`;
+  return rows.map((row) => {
+    const { configured: _configured, ...binding } = metadata(row);
+    return binding;
   });
 }
 /** Permission-aware metadata-only snapshot for the platform's exact delete approval. */

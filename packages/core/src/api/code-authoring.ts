@@ -133,6 +133,7 @@ export function createCodeAuthoringRoutes() {
   register("simulate", codeAuthoringContracts.simulate, codeAuthoringServices.simulate, true);
   register("push", codeAuthoringContracts.push, codeAuthoringServices.push, true);
   register("submit", codeAuthoringContracts.submit, codeAuthoringServices.submit, true);
+  register("resubmit", codeAuthoringContracts.resubmit, codeAuthoringServices.resubmit, true);
   register("diff", codeAuthoringContracts.diff, codeAuthoringServices.diff);
   register("activate", codeAuthoringContracts.activate, codeAuthoringServices.activate, true);
   register("run", codeAuthoringContracts.run, codeAuthoringServices.run, true);
@@ -149,5 +150,6 @@ export function createCodeAuthoringRoutes() {
   register("secretSet", codeAuthoringContracts.secretSet, codeAuthoringServices.secretSet, true);
   register("secretList", codeAuthoringContracts.secretList, codeAuthoringServices.secretList);
   register("secretDelete", codeAuthoringContracts.secretDelete, codeAuthoringServices.secretDelete, true);
+  register("secretCheck", codeAuthoringContracts.secretCheck, codeAuthoringServices.secretCheck);
   return router;
 }
