@@ -5,9 +5,11 @@ import {
   type CodeAccessProofInput,
   signCodeAccessCleanup,
   signCodeAccessList,
+  signCodeAccessNotifications,
   signCodeAccessProof,
   verifyCodeAccessCleanup,
   verifyCodeAccessList,
+  verifyCodeAccessNotifications,
   verifyCodeAccessProof,
 } from "./access-proof";
 
@@ -104,4 +106,20 @@ test("Core list authority cannot be used for cleanup or activation", async () =>
   expect(
     await verifyCodeAccessList(await signCodeAccessCleanup("inventory", input.principal, { issuer, signer, now }), "inventory", options()),
   ).toBeNull();
+});
+
+test("notification audience proof is target-bound and cannot become a person grant, list, or cleanup", async () => {
+  const token = await signCodeAccessNotifications("inventory", input, { issuer, signer, now });
+  expect(await verifyCodeAccessNotifications(token, "inventory", options())).toMatchObject(input);
+  expect(await verifyCodeAccessNotifications(token, "other", options())).toBeNull();
+  expect(await verifyCodeAccessNotifications(token, "inventory", { ...options(), now: new Date(now.getTime() + 32_000) })).toBeNull();
+  expect(await verifyCodeAccessProof(token, expected, options())).toBeNull();
+  expect(await verifyCodeAccessCleanup(token, "inventory", options())).toBeNull();
+  expect(await verifyCodeAccessList(token, "inventory", options())).toBeNull();
+  for (const other of [
+    await signCodeAccessProof("inventory", input, { issuer, signer, now }),
+    await signCodeAccessList("inventory", input.principal, { issuer, signer, now }),
+    await signCodeAccessCleanup("inventory", input.principal, { issuer, signer, now }),
+  ])
+    expect(await verifyCodeAccessNotifications(other, "inventory", options())).toBeNull();
 });
