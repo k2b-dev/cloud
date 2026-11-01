@@ -22,7 +22,7 @@ export {
 } from "./geoip";
 export { type BrowserCode, describeBrowser, type OsCode } from "./user-agent";
 
-export const describeRequest = (c: Context, options?: { locale?: string; geoIp?: GeoIp }) => {
+export const describeRequest = (c: Context, options?: { locale?: string; geoIp?: Omit<GeoIp, "country"> }) => {
   let browser: { browser: BrowserCode; os: OsCode } = { browser: "other", os: "other" };
   try {
     browser = describeBrowser(c.req.raw.headers);

@@ -517,3 +517,22 @@ test("an unreadable stored upload is read once per version, and the other type s
   await geo.refresh();
   expect(reads).toBe(3);
 });
+
+test("country results admit only ISO country codes and never read private or invalid addresses", () => {
+  const geo = createGeoIp(paths());
+  const city = openGeoIpDatabase("city", mmdbFixture("city"))!;
+  const get = spyOn(city, "get");
+  geo.install("city", city);
+  for (const code of ["ZZ", "AA", "EU", "XK", "AUT", ""]) {
+    get.mockReturnValue({ country: { iso_code: code } });
+    expect(geo.country("8.8.8.8").country).toBeNull();
+  }
+  get.mockReturnValue({ country: { iso_code: "at" } });
+  expect(geo.country("8.8.8.8").country).toBe("AT");
+  get.mockClear();
+  for (const input of ["10.0.0.1", "::ffff:127.0.0.1", "invalid", "8".repeat(46), "8.8.8.8 "]) {
+    expect(geo.country(input).country).toBeNull();
+  }
+  expect(get).not.toHaveBeenCalled();
+  get.mockRestore();
+});
