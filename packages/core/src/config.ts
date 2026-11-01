@@ -105,6 +105,7 @@ export const app = defineApp({
   }),
   platformPermissions: ["mail:send"],
   cli: {
+    code: { module: "src/cli/code.ts", references: "src/cli-references/code" },
     account: { module: "src/cli/account.ts", references: "src/cli-references/account" },
     admin: { module: "src/cli/admin.ts", references: "src/cli-references/admin" },
     apps: { module: "src/cli/apps.ts", references: "src/cli-references/apps" },

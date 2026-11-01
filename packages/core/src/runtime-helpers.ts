@@ -15,7 +15,6 @@ import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 import { migrate as migrateCode } from "./migrate/core/code";
 import { migrate as migrateCodeActivation } from "./migrate/core/code-activation";
 import { migrate as migrateCodeJobs } from "./migrate/core/code-jobs";
-import { migrate as migrateCodeLifecycle } from "./migrate/core/code-lifecycle";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
 import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
 import { migrate as migrateCodeVersions } from "./migrate/core/code-versions";
@@ -196,9 +195,6 @@ export const startCoreServices = async (
     stopCodeScheduling = await startCodeScheduling();
     codeActivationOutbox.start();
     codeActivationCleanupOutbox.start();
-    codeOwnerDeletedOutbox.start();
-    codeAccessCleanupOutbox.start();
-    codeDeletionOutbox.start();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
