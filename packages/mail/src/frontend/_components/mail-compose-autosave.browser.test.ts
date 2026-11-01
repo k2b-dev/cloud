@@ -92,6 +92,7 @@ let firstWrite: Promise<void> | null = null;
 let writes: Array<{ expectedRevision: number; draft: DraftEditableContent }> = [];
 let copies: MailDraft[] = [];
 let recoveryCopies: DraftRecoveryCopy[] = [];
+let restoreOverlapsSave = false;
 const leaseAnswer = () => ({
   token: lease?.token,
   holder: { kind: "user", id: "Usr001", displayName: "Ada", avatarHash: null },
@@ -136,6 +137,7 @@ const server = Bun.serve({
     }
     if (path.endsWith("/recovery-copies")) return Response.json(recoveryCopies);
     if (path.includes("/recovery-copies/") && path.endsWith("/restore")) {
+      restoreOverlapsSave ||= active > 0;
       const input = (await request.json()) as { expectedRevision: number; leaseToken: string };
       if (input.expectedRevision !== stored.revision || input.leaseToken !== lease?.token)
         return Response.json({ code: "CONFLICT" }, { status: 409 });
@@ -245,6 +247,7 @@ const reset = () => {
   writes = [];
   copies = [];
   recoveryCopies = [];
+  restoreOverlapsSave = false;
   firstWrite = null;
 };
 const mount = async (page: Page, seed = false) => {
@@ -384,6 +387,45 @@ test("two tabs retain both versions through conflict, reload and save as new", a
     expect(dialogs).toHaveLength(dialogsBeforeCopy);
     expect(stored.body).toBe("Tab B saved version");
     expect(copies[0]?.body).toBe("Tab A input must survive");
+  } finally {
+    gate.resolve();
+    await context.close();
+  }
+}, 20_000);
+
+test("server recovery waits for an in-flight autosave and accepts its confirmed revision", async () => {
+  reset();
+  stored = { ...stored, recoveryCopyCount: 1 };
+  recoveryCopies.push({
+    id: "Recovery1",
+    draftId: stored.id,
+    baseRevision: 1,
+    content: { ...draftEditableContentInputSchema.strip().parse(stored), body: "Selected recovery text" },
+    createdBy: { kind: "user", userId: "Usr001" },
+    createdAt: now,
+    restoredAt: null,
+    resultingRevision: null,
+  });
+  const gate = Promise.withResolvers<void>();
+  firstWrite = gate.promise;
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await mount(page);
+    await bodyInput(page).fill("Autosave in flight before recovery");
+    await until(() => writes.length === 1);
+    await page.getByRole("button", { name: "Recover changes", exact: true }).click();
+    await page.getByRole("button", { name: "Restore copy", exact: true }).click();
+    gate.resolve();
+    await until(() => Boolean(recoveryCopies[0]?.restoredAt) && active === 0);
+    await page.waitForFunction(() => window.composerEditorState().source === "Selected recovery text");
+    expect(restoreOverlapsSave).toBe(false);
+    expect(conflicts).toBe(0);
+    expect(stored.revision).toBe(3);
+    expect(recoveryCopies.some((copy) => copy.content.body === "Autosave in flight before recovery")).toBe(true);
+    await bodyInput(page).fill("Typing after serialized recovery");
+    await waitSaved(page, "Typing after serialized recovery");
+    expect(conflicts).toBe(0);
   } finally {
     gate.resolve();
     await context.close();

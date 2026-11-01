@@ -1285,7 +1285,7 @@ describe("Mail draft session", () => {
       window.sessionStorage.setItem(`cloud:user:Usr001:mail:journal:${MAILBOX_ID}:${DRAFT_ID}`, key);
       stored = { ...stored, state: "sent", revision: 4, body: "Peer sent version" };
       const state = await mountSession(stored);
-      await flush();
+      await state.session.ensureDraft();
       expect(state.current().body).toBe("Late offline typing");
       expect(state.session.lifecycleTransition()?.hasUnsavedChanges).toBe(true);
       expect(state.session.status()).toBe("readonly");

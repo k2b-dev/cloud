@@ -612,47 +612,53 @@ export default function MailComposer(props: {
       }
       const selected = unresolved.find((copy) => copy.id === values.recoveryCopyId);
       if (!selected) return void (await prompts.error(t().recoveryCopyUnavailable));
-      const currentLease = lease();
-      if (!canEditDraft() || (!isShared() && !currentLease)) return void (await prompts.error(t().draftNotEditable));
-      if (isShared()) {
+      if (isShared() || !draftSession.revisionConflict()) {
         const saved = await persist();
-        if (!saved) throw new Error(statusMessage());
-      } else draftSession.keepCurrentRecoveryCopy();
-      const restore = (leaseToken?: string) =>
-        apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][":recoveryCopyId"].restore.$post(
-          {
-            param: {
-              mailboxId: props.mailboxId,
-              draftId: currentDraft.id,
-              recoveryCopyId: selected.id,
-            },
-            json: { expectedRevision: draft()?.revision ?? currentDraft.revision, leaseToken },
-          },
-          { init: { signal: controller.signal } },
-        );
-      let restoreResponse = await restore(currentLease?.token);
-      if (restoreResponse.status === 409) {
-        const body: unknown = await restoreResponse
-          .clone()
-          .json()
-          .catch(() => null);
-        if (typeof body === "object" && body !== null && "code" in body && body.code === DRAFT_LEASE_ERROR_CODES.NOT_OWNED) {
-          const acquired = await acquireLease(currentDraft);
-          if (!acquired) return;
-          restoreResponse = await restore(acquired.token);
-        }
+        if (!saved && !draftSession.revisionConflict()) throw new Error(statusMessage() || t().draftSaveFailed);
       }
-      if (!restoreResponse.ok) throw new Error(await readApiError(restoreResponse, t().restoreFailed));
-      const restored = await restoreResponse.json();
-      if (disposed || recoveryController !== controller) return;
-      setDraft(restored);
-      if (isShared()) await shared()?.refresh();
-      else applyDraftContent(restored);
-      draftSession.acceptRestoredContent();
-      draftSession.forgetJournal(restored.id);
-      setStatus("saved");
-      setStatusMessage("");
-      toast.success(t().changesRestored);
+      // A restore and an autosave must accept their returned revisions in the
+      // same queue; the recovery transition already prevents new input.
+      await serializeDraftMutation(async () => {
+        if (disposed || recoveryController !== controller || controller.signal.aborted) return;
+        const currentLease = lease();
+        if (!canEditDraft() || (!isShared() && !currentLease)) throw new Error(t().draftNotEditable);
+        if (!isShared()) draftSession.keepCurrentRecoveryCopy();
+        const restore = (leaseToken?: string) =>
+          apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][":recoveryCopyId"].restore.$post(
+            {
+              param: {
+                mailboxId: props.mailboxId,
+                draftId: currentDraft.id,
+                recoveryCopyId: selected.id,
+              },
+              json: { expectedRevision: draft()?.revision ?? currentDraft.revision, leaseToken },
+            },
+            { init: { signal: controller.signal } },
+          );
+        let restoreResponse = await restore(currentLease?.token);
+        if (restoreResponse.status === 409) {
+          const body: unknown = await restoreResponse
+            .clone()
+            .json()
+            .catch(() => null);
+          if (typeof body === "object" && body !== null && "code" in body && body.code === DRAFT_LEASE_ERROR_CODES.NOT_OWNED) {
+            const acquired = await acquireLease(currentDraft);
+            if (!acquired) return;
+            restoreResponse = await restore(acquired.token);
+          }
+        }
+        if (!restoreResponse.ok) throw new Error(await readApiError(restoreResponse, t().restoreFailed));
+        const restored = await restoreResponse.json();
+        if (disposed || recoveryController !== controller) return;
+        setDraft(restored);
+        if (isShared()) await shared()?.refresh();
+        else applyDraftContent(restored);
+        draftSession.acceptRestoredContent();
+        draftSession.forgetJournal(restored.id);
+        setStatus("saved");
+        setStatusMessage("");
+        toast.success(t().changesRestored);
+      });
     } catch (error) {
       if (!disposed && recoveryController === controller && !(error instanceof DOMException && error.name === "AbortError")) {
         await prompts.error(error instanceof Error ? error.message : t().restoreFailed);
