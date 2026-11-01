@@ -106,7 +106,7 @@ describe("Mail sidebar", () => {
       "Support",
       "Inbox",
       "Drafts",
-      "Scheduled",
+      "Outbox",
       "Send problems",
       "Sent",
       "More",

@@ -126,7 +126,9 @@ const scheduledCount = async (mailboxId: string, access: MailboxAccess, db: SqlC
       AND outbox.mailbox_id = ${mailboxId}::uuid
       AND outbox.state IN ('scheduled', 'undo_window')
       AND command.kind = 'send'
-      AND command.payload ->> 'scheduledAt' IS NOT NULL
+      AND (command.payload ->> 'scheduledAt' IS NOT NULL
+        OR (outbox.state = 'scheduled' AND (outbox.undo_until IS NULL OR outbox.undo_until <= now()))
+        OR (outbox.state = 'undo_window' AND GREATEST(outbox.scheduled_at, COALESCE(outbox.undo_until, outbox.scheduled_at)) <= now()))
   `;
   return Number(row?.total ?? 0);
 };
@@ -146,7 +148,7 @@ export const listScheduledSends = async (params: {
     return await sql.begin(async (tx) => {
       const currentPermission = await requireMailboxAccess(params.context, params.mailboxId, "read", tx);
       if (!currentPermission.ok) return currentPermission;
-      const rows = await tx<ScheduledRow[]>`
+      const rows = await tx<(ScheduledRow & { cursor_requested_at: string })[]>`
         SELECT
           outbox.id,
           outbox.command_id,
@@ -155,6 +157,7 @@ export const listScheduledSends = async (params: {
           draft.intent,
           outbox.draft_snapshot,
           outbox.requested_at,
+          to_char(outbox.requested_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_requested_at,
           outbox.scheduled_at,
           outbox.state,
           outbox.attempt,
@@ -183,7 +186,9 @@ export const listScheduledSends = async (params: {
           AND outbox.mailbox_id = ${params.mailboxId}::uuid
           AND outbox.state IN ('scheduled', 'undo_window')
           AND command.kind = 'send'
-          AND command.payload ->> 'scheduledAt' IS NOT NULL
+          AND (command.payload ->> 'scheduledAt' IS NOT NULL
+            OR (outbox.state = 'scheduled' AND (outbox.undo_until IS NULL OR outbox.undo_until <= now()))
+            OR (outbox.state = 'undo_window' AND GREATEST(outbox.scheduled_at, COALESCE(outbox.undo_until, outbox.scheduled_at)) <= now()))
           AND (
             ${cursor.data?.scheduledAt ?? null}::timestamptz IS NULL
             OR (outbox.requested_at, outbox.id) > (${cursor.data?.scheduledAt ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)
@@ -198,7 +203,7 @@ export const listScheduledSends = async (params: {
       const last = pageRows.at(-1);
       return ok({
         items,
-        nextCursor: hasMore && last ? encodeCursor({ version: 1, scheduledAt: toIso(last.requested_at), id: last.id }) : null,
+        nextCursor: hasMore && last ? encodeCursor({ version: 1, scheduledAt: last.cursor_requested_at, id: last.id }) : null,
         total,
       });
     });
@@ -256,7 +261,9 @@ export const getScheduledSend = async (params: {
           AND outbox.id = ${params.scheduledSendId}::uuid
           AND outbox.state IN ('scheduled', 'undo_window')
           AND command.kind = 'send'
-          AND command.payload ->> 'scheduledAt' IS NOT NULL
+          AND (command.payload ->> 'scheduledAt' IS NOT NULL
+            OR (outbox.state = 'scheduled' AND (outbox.undo_until IS NULL OR outbox.undo_until <= now()))
+            OR (outbox.state = 'undo_window' AND GREATEST(outbox.scheduled_at, COALESCE(outbox.undo_until, outbox.scheduled_at)) <= now()))
       `;
       return row ? ok(mapRows([row])[0]!) : fail(err.notFound("Scheduled message not found"));
     });

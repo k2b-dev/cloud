@@ -279,7 +279,7 @@ export const mailRemainingMessages = i18n.define({
       search: "Search",
       chooseDeliveryTime: "Choose a delivery date and time.",
       deliveryTimeInFuture: "Choose a time at least one minute in the future.",
-      scheduledMessageDescription: "The message remains visible under Scheduled and can be cancelled until delivery starts.",
+      scheduledMessageDescription: "The message remains visible in Outbox and can be cancelled until delivery starts.",
       deliveryTime: "Delivery time",
       chooseDateAndTime: "Choose date and time",
       timeZone: ({ timeZone }: { timeZone: string }) => `Time zone: ${timeZone}`,
@@ -1106,7 +1106,7 @@ export const mailRemainingMessages = i18n.define({
       chooseDeliveryTime: "Wähle ein Datum und eine Uhrzeit für die Zustellung.",
       deliveryTimeInFuture: "Wähle eine Uhrzeit, die mindestens eine Minute in der Zukunft liegt.",
       scheduledMessageDescription:
-        "Die Nachricht bleibt unter „Geplant“ sichtbar und kann bis zum Beginn der Zustellung abgebrochen werden.",
+        "Die Nachricht bleibt im Postausgang sichtbar und kann bis zum Beginn der Zustellung abgebrochen werden.",
       deliveryTime: "Zustellungszeit",
       chooseDateAndTime: "Datum und Uhrzeit auswählen",
       timeZone: ({ timeZone }) => `Zeitzone: ${timeZone}`,

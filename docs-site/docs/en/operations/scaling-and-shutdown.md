@@ -349,3 +349,15 @@ for address normalization and custom budgets.
 When upgrading, existing full-address IPv6 counters are replaced by network
 counters. Expect one fresh window at cutover; after all replicas are updated,
 changing host addresses cannot obtain a new budget.
+
+## Inspect Mail send progress
+
+Mail's **Outbox** view counts sends waiting for a worker alongside sends scheduled
+for later. Sends stay out while Undo or its dispatch grace is still running.
+Open mailboxes refresh the count through live updates as sends finish. Readers with
+assigned access see only the sends their current conversation access allows.
+
+`cld mail scheduled list` prints the visible total, such as `290 waiting`, with a
+paginated list. Under `--json`, use `total` and `nextCursor`. Mailbox administrators
+can use `cld mail operator status` for an `Outbox:` line of state counts, including
+in-flight and completed states; structured output keeps these in `queues.outbox`.

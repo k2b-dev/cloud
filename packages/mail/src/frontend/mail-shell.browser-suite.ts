@@ -1432,7 +1432,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const scheduled = await open(`${boxPath}?scheduled=1&theme=${theme}`, width);
             try {
               expect(await scheduled.locator(".k2b-app-workspace__head [data-mail-queue-count]").count()).toBe(1);
-              expect(await scheduled.locator(".k2b-app-workspace__main h1.sr-only").textContent()).toBe("Scheduled");
+              expect(await scheduled.locator(".k2b-app-workspace__main h1.sr-only").textContent()).toBe("Outbox");
             } finally {
               await close(scheduled);
             }
