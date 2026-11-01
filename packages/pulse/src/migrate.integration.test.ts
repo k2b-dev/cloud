@@ -78,6 +78,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { version: 5, name: "overview_alerts" },
         { version: 6, name: "agent_source_ownership" },
         { version: 7, name: "sql_dashboards" },
+        { version: 8, name: "receipt_checkpoints" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
       const ddl = await readFile(`${import.meta.dir}/schema.ts`, "utf8");
@@ -191,6 +192,18 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
     await migrate();
     expect((await sql`SELECT created_by_subject FROM pulse.sources WHERE id=${source}::uuid`)[0]?.created_by_subject).toBe(
       "service_account:fixture",
+    );
+  });
+  databaseTest("migration 8 preserves receipt identities and invalidates old completions once", async () => {
+    await sql`DELETE FROM pulse.schema_migrations WHERE version=8`;
+    await sql`ALTER TABLE pulse.ingest_idempotency DROP COLUMN reset_generation,DROP COLUMN checkpoint_id,DROP COLUMN pending_checkpoint_id`.simple();
+    await sql`INSERT INTO pulse.ingest_idempotency(source_id,idempotency_key,request_hash,state,accepted_at,planned_states,response,expires_at)
+      VALUES(${source}::uuid,'upgrade','preserved','done','2026-10-17T12:00:00Z','[]','{"metrics":0,"events":1,"states":0}','2026-10-18T12:00:00Z')`;
+    const before = await sql<Record<string, unknown>[]>`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`;
+    await Promise.all([migrate(), migrate()]);
+    expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=8`).toHaveLength(1);
+    expect(await sql<Record<string, unknown>[]>`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`).toEqual(
+      before.map((receipt) => ({ ...receipt, reset_generation: null, checkpoint_id: null, pending_checkpoint_id: null })),
     );
   });
   databaseTest("refuses unknown newer versions before touching old data", async () => {

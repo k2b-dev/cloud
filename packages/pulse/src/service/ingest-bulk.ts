@@ -319,6 +319,7 @@ export const writePreparedIngestBatchInTransaction = async (params: {
   database: string;
   batch: PreparedIngestBatch;
   plannedStates: PlannedStates;
+  replay?: boolean;
   db: PulseSqlClient;
   store: IngestStore;
   now: Date;
@@ -331,7 +332,7 @@ export const writePreparedIngestBatchInTransaction = async (params: {
     database,
     "_series",
     series
-      .filter((s) => !s.mirrored)
+      .filter((s) => params.replay || !s.mirrored)
       .map((s) => ({
         series_id: s.id,
         metric: s.name,

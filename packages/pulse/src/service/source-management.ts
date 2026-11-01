@@ -586,18 +586,23 @@ export const resolveIngestSourceForServiceAccount = async (
   ) {
     return fail(err.forbidden("API key is not bound to a Pulse ingest source"));
   }
-  const [source] = await sql<{ id: string; base_id: string }[]>`
-    SELECT s.id, s.base_id
+  const [source] = await sql<{ id: string; base_id: string; enabled: boolean; writable: boolean }[]>`
+    SELECT s.id, s.base_id, s.enabled,
+      (EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active')
+        AND (b.data_clear_started_at IS NULL OR b.data_clear_completed_at IS NOT NULL)) AS writable
     FROM pulse.sources s
     JOIN pulse.bases b ON b.id = s.base_id
     WHERE s.short_id = ${serviceAccount.resourceId}
       AND s.kind = 'http_ingest'::pulse.source_kind
-      AND s.enabled = TRUE AND NOT s.deleted
-      AND EXISTS(SELECT 1 FROM pulse.base_stores store WHERE store.base_id=b.id AND store.state='active') AND b.deletion_started_at IS NULL
-      AND (
-        b.data_clear_started_at IS NULL
-        OR b.data_clear_completed_at IS NOT NULL
-      )
+      AND NOT s.deleted AND b.deletion_started_at IS NULL
   `;
-  return source ? ok({ id: source.id, baseId: source.base_id }) : fail(err.notFound("Ingest source"));
+  if (!source) return fail(err.notFound("Ingest source"));
+  if (!source.enabled) return fail({ code: "PULSE_SOURCE_DISABLED", status: 409, message: "Pulse source is disabled" });
+  if (!source.writable)
+    return fail({
+      code: "PULSE_BASE_NOT_WRITABLE",
+      status: 409,
+      message: "Pulse base is not writable. Wait for its operation or retry the failed operation.",
+    });
+  return ok({ id: source.id, baseId: source.base_id });
 };

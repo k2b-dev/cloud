@@ -584,6 +584,21 @@ unknown source `404`, and a disabled source, busy or blocked base, or conflictin
 key `409`. Successful ingest returns `200` with the three counts. Temporary
 refusals and their retry delays are described below.
 
+### Collector error codes
+
+A valid source token keeps identifying its source while collection is paused.
+A disabled source returns `409 PULSE_SOURCE_DISABLED`. A provisioning, clearing,
+or failed base returns `409 PULSE_BASE_NOT_WRITABLE`; keep the delivery pending
+until the operation completes or an administrator repairs the base.
+An authenticated lookup of a deleted source or base returns `404 NOT_FOUND`. Normal deletion also revokes its source
+tokens, so later requests using those tokens return `401`. Recovery blocks retain
+`409 PULSE_BASE_WRITE_BLOCKED` and their recovery guidance.
+
+Malformed JSON, schema validation failures and service input errors return
+`400 BAD_INPUT`.
+Fix the batch before retrying. Reusing an idempotency key for a different batch
+returns `409 CONFLICT`; retry only the original batch with that key.
+
 ## Timestamps, corrections, and states
 
 Omitting `ts` uses the batch's acceptance time. A supplied timestamp must be an
@@ -660,9 +675,15 @@ Values and bytes share a token bucket per base across replicas, HTTP ingest,
 CLI ingest, and scrapes. Buckets hold one minute's allowance and refill
 continuously. HTTP ingest counts original body bytes; other paths count their
 serialized batch. Completed keyed retries return their stored counts without
-using quota again. A batch larger than one minute's allowance can use a full
-bucket. Its full cost is charged, so later batches wait until enough quota has
-refilled.
+using quota again while their reset generation and committed/pending checkpoint
+identity still match the validated base. A checkpoint identity change invalidates
+that completion: retrying replays the original acceptance time and row identities
+under the ordinary quotas, and can return `429`. Successful replay renews the
+receipt's validity. Checkpoints detect hourly restore mismatches; a matching
+checkpoint does not detect every lost batch between checkpoints.
+
+A batch larger than one minute's allowance can use a full bucket. Its full cost
+is charged, so later batches wait until enough quota has refilled.
 
 | Condition | Response and recovery |
 | --- | --- |
@@ -672,12 +693,10 @@ refilled.
 | Instance disk below 10% free | `503 PULSE_STORE_DISK_LOW`, `Retry-After: 300`; reads continue. Cloud administrators receive a notification. |
 | Data store unreachable | `503 PULSE_STORE_UNAVAILABLE`, `Retry-After: 30`; retry with the same key. Scrapes fail and record the error. |
 
-Storage notifications go once per threshold crossing to direct user base
-administrators; group access is not expanded. Disk notifications go once per
-crossing to Cloud administrators. Store outages notify Cloud administrators
-once per outage; a successful disk measurement closes the outage. Delivery
-follows notification preferences. A failed or throttled scrape waits for its
-next scheduled attempt.
+Storage and disk notifications go once per threshold crossing; store outages
+notify once per outage. A successful disk measurement closes the outage.
+Delivery follows notification preferences and the recipient rules below.
+A failed or throttled scrape waits for its next scheduled attempt.
 
 ### Maintenance admission and health delivery in this release
 
