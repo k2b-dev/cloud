@@ -12,6 +12,7 @@ const binding: CodeSecretVersionBinding = {
 const request = (url = "https://api.example:8443/v1/items", headers = { authorization: "Bearer [secret:API]" }) =>
   CodeHttpRequestSchema.parse({ url, headers });
 test("binding checks the exact origin, effective port, segment boundary and allowed header", () => {
+  expect(CodeSecretBindingSchema.safeParse({ origin: "invalid", pathPrefix: "/", headers: ["authorization"] }).success).toBe(false);
   expect(codeSecretHeaderPlan(request(), [binding], [])).toMatchObject({ names: ["API"] });
   expect(codeSecretHeaderPlan(request("https://api.example:8443/v1"), [binding], []).names).toEqual(["API"]);
   for (const url of [
@@ -45,8 +46,15 @@ test("raw traversal, backslashes, encoded/double-encoded separators and fragment
   ]) {
     expect(() => codeSecretRequestUrl(binding.origin + path, [])).toThrow();
   }
+  for (const url of [
+    "https:////api.example:8443/v1/../v1",
+    "https:/api.example:8443/v1/%2f..",
+    "https:api.example:8443/v1/..%2fadmin",
+    "HTTPS:////api.example:8443/v1/..%2fadmin",
+  ])
+    expect(() => codeSecretRequestUrl(url, [])).toThrow();
   for (const pathPrefix of ["/v1/../other", "/v1/%2f", "/v1/%252f", "/v1/a\\b"])
-    expect(CodeSecretBindingSchema.safeParse({ ...binding, name: undefined, binding_revision: undefined, pathPrefix }).success).toBe(false);
+    expect(CodeSecretBindingSchema.safeParse({ origin: binding.origin, headers: binding.headers, pathPrefix }).success).toBe(false);
 });
 test("header smuggling, placeholders in body/URL and Cloud session headers are refused", () => {
   for (const headers of [

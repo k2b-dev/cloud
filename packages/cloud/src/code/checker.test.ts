@@ -449,3 +449,11 @@ test("HTTP and secret placeholders compile and mark internet use without grantin
     expect(result.manifest.permissions).toEqual([]);
   }
 });
+
+test("HTTP methods cannot be detached to hide their internet use from checking", async () => {
+  const result = await check(
+    'import { app, http } from "@sdk"; const send = http.fetch; app.schedule("0 8 * * 1", async () => { await send("https://api.example/v1"); }); export default app;',
+  );
+  expect(result.ok).toBe(false);
+  expect(result.diagnostics.some((diagnostic) => diagnostic.code === "code_detached_sdk_method")).toBe(true);
+});

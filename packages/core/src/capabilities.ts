@@ -56,12 +56,13 @@ import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { CodeDataError } from "./code/access";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
 import { codeSecretContracts } from "./code/secret-contracts";
-import { deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./code/secrets";
+import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
 import { listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
@@ -1261,11 +1262,17 @@ export const aiCapabilities = defineCapabilities({
         "Editors write a private credential without reading it back. Destination changes apply only to newly submitted versions. Supply the value privately through the CLI or editor, never through chat.",
       ...codeSecretContracts.set,
       code: false,
+      unattended: false,
       destructive: false,
       openWorld: false,
-      idempotency: "required",
-      policy: { silent: "you" },
-      run: (input, context) => runCodeQuery(context, (ctx) => setCodeSecret(input, ctx)),
+      // Do not retain a guessable input digest of credential values in idempotency claims.
+      idempotency: "none",
+      approval: "none",
+      run: (input, context) =>
+        runCodeQuery(context, (ctx) => {
+          if (context.origin !== "http") throw new CodeDataError("FORBIDDEN", "Use private interactive input to set a Code secret.");
+          return setCodeSecret(input, ctx);
+        }),
     },
     "code.secret.delete": {
       title: "Delete Code secret value",
@@ -1276,7 +1283,31 @@ export const aiCapabilities = defineCapabilities({
       destructive: true,
       openWorld: false,
       idempotency: "required",
-      policy: { silent: "you" },
+      policy: { ask: "deletes" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeSecretDeletion(input, ctx));
+        if (!result.ok) return result;
+        const { t, locale } = coreCapabilityMessages(context.locale);
+        const secret = result.data.data;
+        return ok({
+          locale,
+          ask: "deletes" as const,
+          slots: {},
+          sentence: {
+            action: t.codeSecretDeleteReview({ name: secret.name }),
+            running: t.codeSecretDeleteRunning,
+            done: t.codeSecretDeleteDone,
+            confirm: t.codeSecretDeleteConfirm,
+            decline: t.codePolicyDecline,
+          },
+          content: {
+            kind: "page" as const,
+            title: t.codeSecretDeleteConfirm,
+            format: "plain" as const,
+            body: JSON.stringify({ codeId: input.codeId, ...secret }, null, 2),
+          },
+        });
+      },
       run: (input, context) => runCodeQuery(context, (ctx) => deleteCodeSecret(input, ctx)),
     },
     "code.version.submit": {

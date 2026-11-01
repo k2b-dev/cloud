@@ -24,6 +24,7 @@ import {
   deleteCodeSecret,
   listCodeSecrets,
   reencryptCodeSecretBatch,
+  reviewCodeSecretDeletion,
   setCodeSecret,
 } from "./secrets";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -214,8 +215,11 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
       const failed = await invoke(claims, async () => {
         throw new Error(value);
       });
-      expect(await failed.text()).not.toContain(value);
+      expect(await failed.json()).toEqual({ ok: false, error: { code: "code_http_failed" } });
       expect(JSON.stringify(await listCodeSecrets({ codeId }, context()))).not.toContain(value);
+      expect(
+        JSON.stringify(await reviewCodeSecretDeletion({ codeId, name: "API", binding_revision: binding.binding_revision }, context())),
+      ).not.toContain(value);
       const run = await readCodeRun({ codeId, runId: claims.runId, cursor: 0, offset: 0, length: 16384 }, context());
       expect(JSON.stringify(run)).not.toContain(value);
       const rawCalls = await sql`SELECT * FROM code.calls WHERE run_id=${claims.runId}::uuid`;
@@ -248,7 +252,10 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
       return { status: 204, headers: {}, body: new Uint8Array() };
     };
     expect(await (await invoke(claims, send)).json()).toMatchObject({ ok: true });
-    expect(await (await invoke(claims, send, "https://new.example/v1/items")).json()).toMatchObject({ ok: false });
+    expect(await (await invoke(claims, send, "https://new.example/v1/items")).json()).toEqual({
+      ok: false,
+      error: { code: "code_http_secret_forbidden" },
+    });
     expect(count).toBe(1);
     const { configured: _configured, ...newBinding } = changed.secret;
     const pending = await submit(codeId, newBinding, submission.version.id);
@@ -256,8 +263,24 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     expect((await diffCodeVersion({ codeId, versionId: pending.version.id }, context())).secrets).toEqual([newBinding]);
     const cleared = await deleteCodeSecret({ codeId, name: "API", binding_revision: changed.secret.binding_revision }, context());
     expect(cleared.deleted).toBe(true);
-    expect(await (await invoke(claims, send)).json()).toMatchObject({ ok: false });
+    expect(await (await invoke(claims, send)).json()).toEqual({ ok: false, error: { code: "code_http_secret_unavailable" } });
     expect(count).toBe(1);
+  });
+  test("slow network effects hold no issuance locks on runs, Code edits or values", async () => {
+    const { codeId, secret, binding } = await fixture();
+    const { claims } = await running(codeId, binding);
+    const response = await invoke(claims, async () => {
+      // These would time out if the network callback still owned C4's issuance transaction.
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout='1s'`.simple();
+        await tx`UPDATE code.runs SET lease_expires_at=clock_timestamp()+interval '10 minutes' WHERE id=${claims.runId}::uuid`;
+        await tx`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
+        await tx`SELECT name FROM code.secrets WHERE code_id=${codeId} FOR UPDATE`;
+      });
+      await setCodeSecret({ codeId, name: "API", binding_revision: secret.binding_revision, value: "replacement" }, context());
+      return { status: 204, headers: {}, body: new Uint8Array() };
+    });
+    expect(await response.json()).toMatchObject({ ok: true });
   });
   test("metadata and all mutations require an editor, including for Cloud administrators", async () => {
     const { codeId, secret } = await fixture();
@@ -270,6 +293,32 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     await expect(setCodeSecret({ codeId, name: "API", binding_revision: null, value: "replacement" }, context())).rejects.toMatchObject({
       code: "CONFLICT",
     });
+    await expect(
+      setCodeSecret(
+        {
+          codeId,
+          name: "OWN",
+          binding_revision: null,
+          value: "replacement",
+          binding: {
+            ...destination,
+            origin: "https://cloud.example",
+          },
+        },
+        context(),
+      ),
+    ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    const delegated = context();
+    delegated.authority.credentialKind = "invocation";
+    delegated.authority.actor.delegation = {
+      kind: "invocation",
+      callingAppId: "example",
+      credentialKind: "mandate",
+      invocationId: authorId,
+    };
+    await expect(
+      setCodeSecret({ codeId, name: "API", binding_revision: secret.binding_revision, value: "replacement" }, delegated),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
   test("historical binding evidence is immutable, submission refuses foreign evidence and root re-encryption preserves current decryptability", async () => {
     const { codeId, binding } = await fixture();
@@ -278,29 +327,25 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     const other = await fixture();
     await expect(submit(other.codeId, binding)).rejects.toBeInstanceOf(CodeDataError);
     const before = await sql<{ encrypted: string }[]>`SELECT encrypted FROM code.secrets WHERE code_id=${codeId}`;
-    const roots = connections().appSecret;
-    const oldRoots = { ...roots };
-    try {
-      roots.previous = roots.current;
-      roots.current = "c11-new-test-only-root";
-      let cursor: { codeId: string; name: string } | undefined;
-      do {
-        const page = await reencryptCodeSecretBatch({ cursor, limit: 2 });
-        cursor = page.nextCursor ?? undefined;
-      } while (cursor);
-      delete roots.previous;
-      const after = await sql<{ encrypted: string }[]>`SELECT encrypted FROM code.secrets WHERE code_id=${codeId}`;
-      expect(after[0]!.encrypted).not.toBe(before[0]!.encrypted);
-      expect(purposeSecretCipher(CODE_SECRET_PURPOSE).decrypt(after[0]!.encrypted, codeSecretContext(codeId, "API"))).toBe(
-        "test-only-private-credential",
-      );
-      expect(() => purposeSecretCipher(CODE_SECRET_PURPOSE).decrypt(before[0]!.encrypted, codeSecretContext(codeId, "API"))).toThrow(
-        "secret_unreadable",
-      );
-    } finally {
-      roots.current = oldRoots.current;
-      if (oldRoots.previous === undefined) delete roots.previous;
-      else roots.previous = oldRoots.previous;
-    }
+    const roots = { previous: connections().appSecret.current, current: "c11-new-test-only-root" };
+    const snapshot = await sql<{ code_id: string; name: string; encrypted: string }[]>`
+      SELECT code_id,name,encrypted FROM code.secrets WHERE encrypted IS NOT NULL ORDER BY code_id,name`;
+    const damaged = snapshot.find((row) => row.code_id === other.codeId)!;
+    await sql`UPDATE code.secrets SET encrypted='unreadable-fixture' WHERE code_id=${other.codeId}`;
+    await expect(reencryptCodeSecretBatch({ limit: 50 }, sql, roots)).rejects.toMatchObject({ code: "CONFLICT" });
+    const unchanged = await sql`SELECT code_id,name,encrypted FROM code.secrets
+      WHERE encrypted IS NOT NULL AND code_id<>${other.codeId} ORDER BY code_id,name`;
+    expect([...unchanged]).toEqual(snapshot.filter((row) => row.code_id !== other.codeId));
+    await sql`UPDATE code.secrets SET encrypted=${damaged.encrypted} WHERE code_id=${other.codeId}`;
+    let cursor: { codeId: string; name: string } | undefined;
+    do {
+      const page = await reencryptCodeSecretBatch({ cursor, limit: 2 }, sql, roots);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    const after = await sql<{ encrypted: string }[]>`SELECT encrypted FROM code.secrets WHERE code_id=${codeId}`;
+    expect(after[0]!.encrypted).not.toBe(before[0]!.encrypted);
+    const current = purposeSecretCipher(CODE_SECRET_PURPOSE, { current: roots.current });
+    expect(current.decrypt(after[0]!.encrypted, codeSecretContext(codeId, "API"))).toBe("test-only-private-credential");
+    expect(() => current.decrypt(before[0]!.encrypted, codeSecretContext(codeId, "API"))).toThrow("secret_unreadable");
   });
 });

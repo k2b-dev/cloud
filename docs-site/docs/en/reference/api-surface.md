@@ -257,7 +257,8 @@ These schemas describe evidence; they grant no execution or resource access.
 [Code secrets](/en/docs/platform/code-secrets) and the HTTP bridge.
 `codeSecretPlaceholder`, `codeSecretHeaderAllowed` and `codeSecretPathAllowed`
 supply the shared placeholder and destination grammar. The services barrel
-exports `purposeSecretCipher` for purpose-separated encryption and root migration.
+exports `PurposeSecretRoots` and `purposeSecretCipher` for purpose-separated
+encryption and root migration.
 
 The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator

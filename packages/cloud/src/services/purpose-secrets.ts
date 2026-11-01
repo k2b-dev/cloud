@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
 import { connections } from "../runtime/connections";
 
-type Roots = { current: string; previous?: string };
+export type PurposeSecretRoots = { current: string; previous?: string };
 const key = (root: string, purpose: string) => {
   const raw = root.trim();
   if (!raw || !purpose) throw new Error("secret_cipher_unavailable");
@@ -12,7 +12,7 @@ const key = (root: string, purpose: string) => {
  * Reads try current and previous roots. Writes always use current; operators re-encrypt before retiring previous.
  * Explicit roots are for offline root migration; never accept them from request input.
  */
-export function purposeSecretCipher(purpose: string, roots: Roots = connections().appSecret) {
+export function purposeSecretCipher(purpose: string, roots: PurposeSecretRoots = connections().appSecret) {
   return {
     encrypt(value: string, context: string): string {
       const nonce = randomBytes(12);

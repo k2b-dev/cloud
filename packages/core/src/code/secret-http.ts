@@ -23,7 +23,9 @@ const deny = (code = "code_http_secret_forbidden"): never => {
 export function codeSecretRequestUrl(raw: string, ownOrigins: readonly string[]): URL {
   if (/[\\\s\u0000-\u001f\u007f]/.test(raw) || raw.includes("[secret:") || !codeHttpOriginAllowed(raw, ownOrigins))
     return deny("code_http_origin_forbidden");
-  const path = /^https:\/\/[^/?#]+(\/[^?#]*)?/i.exec(raw)?.[1] ?? "/";
+  const spelling = /^https:\/\/[^/?#]+(\/[^?#]*)?(?:\?[^#]*)?$/i.exec(raw);
+  if (!spelling) return deny("code_http_path_forbidden");
+  const path = spelling[1] ?? "/";
   const url = new URL(raw);
   if (url.hash || !codeSecretPathAllowed(path)) return deny("code_http_path_forbidden");
   return url;
@@ -111,7 +113,7 @@ export function redactCodeHttpResponse(
 }
 const VersionSecretsSchema = z.object({ secrets: z.array(CodeSecretVersionBindingSchema).optional() });
 /** Core dispatcher only. The runner sends markers, Core reads the exact version binding and the current value at issuance.
- * All network effects remain inside C4's current policy/fence/mandate transaction. No redirects or retries.
+ * C4 checks policy/fence/mandate and prepares the request in a short transaction. Network I/O starts only after commit.
  */
 export async function dispatchCodeSecretHttp(
   input: {
@@ -124,13 +126,15 @@ export async function dispatchCodeSecretHttp(
   send: typeof requestPublicHttps = requestPublicHttps,
 ): Promise<Response> {
   try {
-    const request = CodeHttpRequestSchema.parse(input.request);
+    const parsedRequest = CodeHttpRequestSchema.safeParse(input.request);
+    if (!parsedRequest.success) return deny("code_http_invalid_call");
+    const request = parsedRequest.data;
     const payloadLimit = await codeSettings.get("core.code.payload_bytes");
     if (Buffer.byteLength(JSON.stringify(request)) > payloadLimit) return deny("code_http_input_limit");
     const remaining = input.claims.exp * 1000 - Date.now();
     if (remaining <= 0) return deny("runner_lease_lost");
-    return await withNetworkDeadline(remaining, input.signal, new CodeBridgeRefusal("code_http_timeout"), async (signal) =>
-      sql.begin(async (tx) => {
+    return await withNetworkDeadline(remaining, input.signal, new CodeBridgeRefusal("code_http_timeout"), async (signal) => {
+      const prepared = await sql.begin(async (tx) => {
         const issued = await input.authority.withMandateIssueAuthority(
           {
             mandateId: input.authority.mandateId,
@@ -141,52 +145,68 @@ export async function dispatchCodeSecretHttp(
             input: { url: request.url, origin: codeSecretRequestUrl(request.url, input.ownOrigins).origin, method: request.method },
           },
           async () => {
-            const [version] = await tx<
-              { manifest: unknown }[]
-            >`SELECT jsonb_build_object('secrets',COALESCE(manifest->'secrets','[]'::jsonb)) AS manifest
+            try {
+              const [version] = await tx<
+                { manifest: unknown }[]
+              >`SELECT jsonb_build_object('secrets',COALESCE(manifest->'secrets','[]'::jsonb)) AS manifest
           FROM code.versions WHERE code_id=${input.claims.codeId} AND id=${input.claims.versionId}::uuid`;
-            const parsed = VersionSecretsSchema.safeParse(version?.manifest);
-            if (!parsed.success) return deny();
-            const bindings = parsed.data.secrets ?? [];
-            await validateCodeSecretBindings(input.claims.codeId, bindings, tx);
-            const plan = codeSecretHeaderPlan(request, bindings, input.ownOrigins);
-            const values = new Map<string, string>();
-            for (const name of plan.names) {
-              // Do not read the mutable binding_revision: only the manifest chooses the destination.
-              const [row] = await tx<{ encrypted: string | null }[]>`SELECT encrypted FROM code.secrets
+              const parsed = VersionSecretsSchema.safeParse(version?.manifest);
+              if (!parsed.success) return deny();
+              const bindings = parsed.data.secrets ?? [];
+              await validateCodeSecretBindings(input.claims.codeId, bindings, tx);
+              const plan = codeSecretHeaderPlan(request, bindings, input.ownOrigins);
+              const values = new Map<string, string>();
+              for (const name of plan.names) {
+                // Do not read the mutable binding_revision: only the manifest chooses the destination.
+                const [row] = await tx<{ encrypted: string | null }[]>`SELECT encrypted FROM code.secrets
             WHERE code_id=${input.claims.codeId} AND name=${name} FOR SHARE`;
-              if (!row?.encrypted) return deny("code_http_secret_unavailable");
-              const value = purposeSecretCipher(CODE_SECRET_PURPOSE).decrypt(row.encrypted, codeSecretContext(input.claims.codeId, name));
-              if (!value || /[^\x20-\x7e]/.test(value)) return deny("code_http_secret_unavailable");
-              values.set(name, value);
+                if (!row?.encrypted) return deny("code_http_secret_unavailable");
+                let value: string;
+                try {
+                  value = purposeSecretCipher(CODE_SECRET_PURPOSE).decrypt(row.encrypted, codeSecretContext(input.claims.codeId, name));
+                } catch {
+                  return deny("code_http_secret_unavailable");
+                }
+                if (!value || /[^\x20-\x7e]/.test(value)) return deny("code_http_secret_unavailable");
+                values.set(name, value);
+              }
+              const inserted: { name: string; value: string; sent: string }[] = [];
+              const headers = Object.fromEntries(
+                Object.entries(request.headers).map(([key, template]) => {
+                  const sent = template.replace(
+                    /\[secret:([A-Za-z_][A-Za-z0-9_]{0,63})\]/g,
+                    (_, name: string) => values.get(name) ?? deny(),
+                  );
+                  for (const name of plan.names)
+                    if (template.includes(`[secret:${name}]`)) inserted.push({ name, value: values.get(name)!, sent });
+                  return [key.toLowerCase(), sent];
+                }),
+              );
+              if (Buffer.byteLength(JSON.stringify(headers)) > payloadLimit) return deny("code_http_input_limit");
+              return { ok: true as const, headers, inserted };
+            } catch (error) {
+              // Expected preparation refusals remain data, so the mandate wrapper cannot erase their codes.
+              if (error instanceof CodeBridgeRefusal) return { ok: false as const, code: error.code };
+              throw error;
             }
-            const inserted: { name: string; value: string; sent: string }[] = [];
-            const headers = Object.fromEntries(
-              Object.entries(request.headers).map(([key, template]) => {
-                const sent = template.replace(/\[secret:([A-Za-z_][A-Za-z0-9_]{0,63})\]/g, (_, name: string) => values.get(name) ?? deny());
-                for (const name of plan.names)
-                  if (template.includes(`[secret:${name}]`)) inserted.push({ name, value: values.get(name)!, sent });
-                return [key.toLowerCase(), sent];
-              }),
-            );
-            if (Buffer.byteLength(JSON.stringify(headers)) > payloadLimit) return deny("code_http_input_limit");
-            signal.throwIfAborted();
-            const response = await send({
-              url: request.url,
-              method: request.method,
-              headers,
-              body: request.body === undefined ? undefined : Buffer.from(request.body),
-              maxBytes: Math.floor((CAPABILITY_MAX_RESULT_BYTES * 3) / 4),
-              signal,
-            });
-            return redactCodeHttpResponse(response, inserted);
           },
           { db: tx },
         );
-        if (!issued.ok) return Response.json({ ok: false, error: { code: "code_http_forbidden" } });
-        return Response.json({ ok: true, data: issued.data });
-      }),
-    );
+        return issued.ok ? issued.data : { ok: false as const, code: "code_http_forbidden" };
+      });
+      if (!prepared.ok) return deny(prepared.code);
+      // Locks protect issuance, not the remote effect. A slow endpoint must not block pause, revoke or heartbeats.
+      signal.throwIfAborted();
+      const response = await send({
+        url: request.url,
+        method: request.method,
+        headers: prepared.headers,
+        body: request.body === undefined ? undefined : Buffer.from(request.body),
+        maxBytes: Math.floor((CAPABILITY_MAX_RESULT_BYTES * 3) / 4),
+        signal,
+      });
+      return Response.json({ ok: true, data: redactCodeHttpResponse(response, prepared.inserted) });
+    });
   } catch (error) {
     // Never forward raw request, response, crypto, cancellation or transport exception text.
     return Response.json({ ok: false, error: { code: error instanceof CodeBridgeRefusal ? error.code : "code_http_failed" } });

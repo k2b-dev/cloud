@@ -20,7 +20,11 @@ export const codeSecretContracts = {
           .regex(/^[\x20-\x7e]+$/)
           .describe("Write-only credential; supply through stdin or a private secret field."),
         binding: CodeSecretBindingSchema.optional().describe("Required for a new name; changes create a new immutable binding revision."),
-        binding_revision: z.uuid().nullable().describe("Current binding revision for optimistic concurrency, or null for a new name."),
+        binding_revision: z
+          .uuid()
+          .describe("Current binding revision returned by secret.list or secret.set.")
+          .nullable()
+          .describe("Current binding revision for optimistic concurrency, or null for a new name."),
       })
       .strict(),
     data: z.object({ secret: CodeSecretMetadataSchema }).strict(),
@@ -29,14 +33,20 @@ export const codeSecretContracts = {
     input: z
       .object({
         codeId: CodeIdSchema,
-        cursor: CodeSecretNameSchema.optional(),
-        limit: z.number().int().min(1).max(20).default(20),
+        cursor: CodeSecretNameSchema.optional().describe("Last name returned as nextCursor; omit for the first page."),
+        limit: z.number().int().min(1).max(20).default(20).describe("Maximum metadata items, up to 20 per byte-bounded page."),
       })
       .strict(),
     data: z.object({ items: z.array(CodeSecretMetadataSchema), nextCursor: CodeSecretNameSchema.nullable() }).strict(),
   },
   delete: {
-    input: z.object({ codeId: CodeIdSchema, name: CodeSecretNameSchema, binding_revision: z.uuid() }).strict(),
+    input: z
+      .object({
+        codeId: CodeIdSchema,
+        name: CodeSecretNameSchema,
+        binding_revision: z.uuid().describe("Current binding revision returned by secret.list or secret.set."),
+      })
+      .strict(),
     data: z.object({ deleted: z.boolean() }).strict(),
   },
 } as const;

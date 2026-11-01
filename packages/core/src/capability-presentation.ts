@@ -23,6 +23,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.secret.list": {
+          title: "Code-Secret-Bindungen auflisten",
+          description:
+            "Bearbeiter sehen Metadaten und unveränderliche Bindungsrevisionen. Werte und verschlüsselte Daten werden nie ausgegeben.",
+        },
         "code.version.diff.read": {
           title: "Vollständigen Code-Vergleich lesen",
           description:
@@ -198,6 +203,16 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.secret.set": {
+          title: "Code-Secret speichern",
+          description:
+            "Bearbeiter speichern einen privaten Zugangswert, ohne ihn zurückzulesen. Geänderte Ziele gelten erst mit einer neuen Version. Werte nur über CLI oder private Eingabefelder übergeben.",
+        },
+        "code.secret.delete": {
+          title: "Code-Secret-Wert löschen",
+          description:
+            "Bearbeiter entfernen den aktuellen Wert für alle Versionen. Unveränderliche Zielbindungen bleiben als Freigabe-Belege erhalten.",
+        },
         "code.version.submit": {
           title: "Code-Version einreichen",
           description:

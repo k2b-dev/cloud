@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { codeHttpOriginAllowed } from "@k2b/cloud/api";
 import type { CodeSecretVersionBinding } from "@k2b/cloud/contracts";
-import { purposeSecretCipher } from "@k2b/cloud/services";
+import { type PurposeSecretRoots, purposeSecretCipher } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import type { SQL } from "bun";
 import type { z } from "zod";
@@ -27,6 +27,8 @@ const badInput = (): never => {
 /** Write-only editor operation. A value replacement keeps its binding; changed destinations create new evidence. */
 export async function setCodeSecret(raw: z.input<typeof codeSecretContracts.set.input>, context: CodeContext) {
   codePerson(context, true);
+  if (context.authority.actor.delegation?.credentialKind === "mandate")
+    throw new CodeDataError("FORBIDDEN", "Use private interactive input to set a Code secret.");
   const parsed = codeSecretContracts.set.input.safeParse(raw);
   if (!parsed.success) return badInput();
   const input = parsed.data;
@@ -88,6 +90,19 @@ export async function listCodeSecrets(raw: z.input<typeof codeSecretContracts.li
     return { items, nextCursor: rows.length > items.length ? items.at(-1)!.name : null };
   });
 }
+/** Permission-aware metadata-only snapshot for the platform's exact delete approval. */
+export async function reviewCodeSecretDeletion(raw: z.input<typeof codeSecretContracts.delete.input>, context: CodeContext) {
+  const input = codeSecretContracts.delete.input.parse(raw);
+  codePerson(context, true);
+  return sql.begin(async (tx) => {
+    await lockCodeForEdit(input.codeId, context, tx);
+    const [row] = await tx<MetadataRow[]>`SELECT s.name,s.binding_revision,b.binding,s.encrypted IS NOT NULL AS configured
+      FROM code.secrets s JOIN code.secret_bindings b USING(code_id,name,binding_revision)
+      WHERE s.code_id=${input.codeId} AND s.name=${input.name} AND s.binding_revision=${input.binding_revision}::uuid`;
+    if (!row) throw new CodeDataError("CONFLICT", "Code secret binding changed or is unavailable.");
+    return metadata(row);
+  });
+}
 /** Clear the value immediately for every version, retaining immutable binding evidence. */
 export async function deleteCodeSecret(raw: z.input<typeof codeSecretContracts.delete.input>, context: CodeContext) {
   const input = codeSecretContracts.delete.input.parse(raw);
@@ -112,13 +127,17 @@ export async function validateCodeSecretBindings(codeId: string, bindings: reado
 /** Operator-only bounded re-encryption while current+previous APP_SECRET roots are available. No values returned.
  * Repeat until nextCursor=null, then retire previous. Each row is locked; editor replacements cannot be overwritten.
  */
-export async function reencryptCodeSecretBatch(input: { cursor?: { codeId: string; name: string }; limit: number }, db: SQL = sql) {
+export async function reencryptCodeSecretBatch(
+  input: { cursor?: { codeId: string; name: string }; limit: number },
+  db: SQL = sql,
+  roots?: PurposeSecretRoots,
+) {
   if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 50) return badInput();
   return db.begin(async (tx) => {
     const rows = await tx<{ code_id: string; name: string; encrypted: string }[]>`SELECT code_id,name,encrypted FROM code.secrets
       WHERE encrypted IS NOT NULL AND (${input.cursor?.codeId ?? null}::text IS NULL OR (code_id,name)>(${input.cursor?.codeId ?? null},${input.cursor?.name ?? null}))
       ORDER BY code_id,name LIMIT ${input.limit} FOR UPDATE`;
-    const cipher = purposeSecretCipher(CODE_SECRET_PURPOSE);
+    const cipher = purposeSecretCipher(CODE_SECRET_PURPOSE, roots);
     for (const row of rows) {
       const context = codeSecretContext(row.code_id, row.name);
       let encrypted: string;

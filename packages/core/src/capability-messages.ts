@@ -6,6 +6,10 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      codeSecretDeleteReview: ({ name }: { name: string }) => `Delete the value of Code secret ${name} for every version.`,
+      codeSecretDeleteRunning: "Deleting Code secret value.",
+      codeSecretDeleteDone: "Code secret value deleted.",
+      codeSecretDeleteConfirm: "Delete secret value",
       codePolicyReview: ({ revision, count }: { revision: number; count: number }) =>
         `Update Code policy at revision ${revision}. ${count} ${count === 1 ? "Code will" : "Codes will"} be paused.`,
       codePolicyTitle: "Code policy",
@@ -114,6 +118,10 @@ const messages = i18n.define({
       chatMessageQueued: ({ title }: { title: string }) => `Queued a message for “${title}”.`,
     },
     de: {
+      codeSecretDeleteReview: ({ name }) => `Wert des Code-Secrets ${name} für alle Versionen löschen.`,
+      codeSecretDeleteRunning: "Code-Secret-Wert wird gelöscht.",
+      codeSecretDeleteDone: "Code-Secret-Wert gelöscht.",
+      codeSecretDeleteConfirm: "Secret-Wert löschen",
       codePolicyReview: ({ revision, count }) =>
         `Code-Richtlinie am Stand ${revision} ändern. ${count} ${count === 1 ? "Code wird" : "Codes werden"} pausiert.`,
       codePolicyTitle: "Code-Richtlinie",

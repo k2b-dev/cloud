@@ -114,6 +114,7 @@ describe("Code SDK generation", () => {
       "ai",
       "db",
       "secrets",
+      "http",
       "sheet",
     ];
     const sdk = generateCodeSdk(

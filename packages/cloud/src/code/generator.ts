@@ -22,6 +22,7 @@ const reservedExports = new Set([
   "ai",
   "db",
   "secrets",
+  "http",
   "sheet",
   "app",
   "owner",

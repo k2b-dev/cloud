@@ -20,7 +20,13 @@ The Core capabilities are `core.code.secret.set`, `core.code.secret.list`
 and `core.code.secret.delete`. All three require an editor of that Code.
 Cloud administration alone gives no access. Set and delete also require a
 write-capable credential, and have `code: false`: Code cannot manage its own
-credentials.
+credentials. Set accepts only private HTTP input from the editor or CLI;
+Assistant, MCP, app tools and background mandates cannot set values. It uses
+`idempotency: "none"`, so clients must omit idempotency keys. Reconcile a lost
+response by reading metadata before replacing the value again.
+
+Cloud administrators can inspect approved bindings in version-review content;
+the editor-only list does not grant them access to current secret metadata.
 
 Set receives this JSON input through a private editor or CLI input field.
 Read the value from stdin; never put it in command arguments or a chat tool:
@@ -51,13 +57,15 @@ Follow the cursor to read all metadata. Neither operation returns a value or
 ciphertext. There is no value-reading operation.
 
 Delete receives `codeId`, `name` and `binding_revision`, and returns
-`{ deleted: true }`. It clears the value for every version immediately.
+`{ deleted: true }`. Its capability uses the shared delete approval, with a
+metadata-only review and a required idempotency key. It clears the value for every version immediately.
 Metadata remains with `configured: false`, so old approval evidence remains
 readable. Set a replacement value to recover. Deleting the Code removes its
 values and binding history through the Code's database foreign keys.
 
 Core exports `codeSecretContracts`, `CodeSecretMetadataSchema`,
-`CodeSecretMetadata`, `setCodeSecret`, `listCodeSecrets` and `deleteCodeSecret`
+`CodeSecretMetadata`, `setCodeSecret`, `listCodeSecrets`, `reviewCodeSecretDeletion`
+and `deleteCodeSecret`
 from `packages/core/src/code/index.ts` for its CLI and editor hosts. These
 services take `CodeContext` and enforce the same authority on every surface.
 
@@ -131,7 +139,10 @@ domains, are forbidden even if the application is offline.
 ## Dispatch without exposing the value
 
 The [Code bridge](/en/docs/platform/code-bridge) checks the current lease,
-policy, version approval and mandate before Core decrypts anything. A Core
+policy, version approval and mandate before Core decrypts anything. Admission,
+value selection and the issuance audit commit before the external request, so
+a slow service cannot hold database locks needed by pause, revoke or heartbeats.
+A request already issued may finish after a value replacement, delete or pause. A Core
 `code.version` mandate needs `apps: ["core"]`, `runtime.http` and a `kind:
 "http"` grant; fixed origin, URL and method restrictions still apply.
 The version's secret binding narrows this grant further.
@@ -160,23 +171,48 @@ moving it to another row cannot decrypt it. Code has no independent root key.
 
 `purposeSecretCipher` from `@k2b/cloud/services` writes with
 `connections().appSecret.current` and can read with `current` or `previous`.
-An operator rotating the platform root must retain the previous root until
-all encrypted state has been migrated. For Code:
+`PurposeSecretRoots` describes explicit roots for a trusted maintenance caller.
 
-1. Make the new root current and retain the old root as previous in the
-   trusted platform connection snapshot. For offline migration, the cipher
-   also accepts explicit `{ current, previous }` roots; never pass these
-   through an HTTP request or print them.
-2. Run Core's `reencryptCodeSecretBatch({ limit: 50, cursor })`, starting
-   without a cursor. Pass each returned `nextCursor` to the next batch until
-   it is null. The service locks each row, re-encrypts with current and returns
-   only a count and cursor. It does not change binding revisions or manifests.
-3. Retire previous only after Code and every other encrypted platform store
-   have completed their migration. Keep a recoverable database and root-key
-   backup according to the installation's recovery policy.
+Automatic platform root rotation is a later App-identity feature. Core currently
+starts from one `APP_SECRET`; it has no previous-root environment setting.
+Changing that value alone makes existing encrypted state unreadable. Keep both
+roots and coordinate **all** encrypted platform stores before changing it.
 
-An unreadable row rolls back its batch with a visible conflict. Retain both
-roots, restore access and repeat that batch. Losing both roots makes the
-values unrecoverable. This is a migration building block, not an automatic
-platform rotation command; see
-[Secrets and persistent state](/en/docs/data/secrets-and-persistent-state).
+For a Code maintenance migration, stop writers and runs through the
+installation's maintenance procedure. A trusted Core process can call
+`reencryptCodeSecretBatch(input, sql, { current: newRoot, previous: oldRoot })`
+without changing its connection snapshot. The root arguments are never request
+input. This example is a Bun file at the repository root, run in the operator's
+checkout of the deployed release, with dependencies installed and Core's
+infrastructure environment prepared; the two root files are private mounts:
+
+```ts
+import { initializePlatform } from "@k2b/cloud/start";
+
+await initializePlatform({ appId: "core", source: "env" });
+const { sql, redis } = await import("@k2b/cloud");
+const { reencryptCodeSecretBatch } = await import("./packages/core/src/code/secrets");
+try {
+  const roots = {
+    current: await Bun.file("/run/secrets/app-secret-new").text(),
+    previous: await Bun.file("/run/secrets/app-secret-old").text(),
+  };
+  let cursor: { codeId: string; name: string } | undefined;
+  do {
+    const page = await reencryptCodeSecretBatch({ limit: 50, cursor }, sql, roots);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+} finally {
+  await sql.close();
+  redis.close();
+}
+```
+
+Each batch locks its rows, re-encrypts with the new root, and returns only a
+count and cursor. It does not change binding revisions or manifests. An
+unreadable row rolls back the entire batch; retain both roots, restore access
+and repeat that batch. Do not resume writers or retire the old root until every
+platform store has completed its migration and Core has restarted with the new
+root. Keep a recoverable database and root-key backup according to the
+installation's recovery policy. Losing both roots makes values unrecoverable.
+See [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state).
