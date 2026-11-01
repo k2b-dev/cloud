@@ -41,6 +41,7 @@ const taskTemplate = (id: string, name: string, patch: Partial<SpaceItemTemplate
   id,
   kind: "task",
   name,
+  icon: null,
   title: name,
   description: null,
   priority: null,

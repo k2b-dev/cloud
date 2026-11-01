@@ -40,7 +40,7 @@ import type {
   SpaceTaskDependency,
   SpaceTaskDependent,
 } from "./contracts";
-import { DeadlineInputSchema } from "./contracts";
+import { CreateItemTemplateSchema, DeadlineInputSchema, TemplateWeekdaySchema } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
 import { hasEscapedLineBreak } from "./lib/escaped-line-break";
 import { describeTemplateDateRule, formatTemplateDate, localNow, proposeTemplateDates } from "./presentation/item-templates";
@@ -801,6 +801,98 @@ function spacesCommands(locale?: string) {
           const others = draft.proposals.filter((date) => date !== draft.date);
           if (ctx.options.output === "text" && others.length && !flags.date && !explicit.deadline && !explicit.startsAt)
             ctx.error(`${t({ en: "Other proposed dates", de: "Weitere vorgeschlagene Daten" })}: ${proposalText(others)}`);
+        },
+      }),
+      command("templates add", {
+        summary: t({
+          en: "Create a task or event template (write access required)",
+          de: "Eine Aufgaben- oder Terminvorlage anlegen (Schreibzugriff erforderlich)",
+        }),
+        args: { space: arg.required({ valueLabel: "space", description: spaceArgDescription }) },
+        flags: {
+          kind: flag.enum(["task", "event"], { required: true, description: t({ en: "Template kind", de: "Art der Vorlage" }) }),
+          name: flag.string({
+            required: true,
+            description: t({ en: "Template name, unique per Space and kind", de: "Vorlagenname, eindeutig je Space und Art" }),
+          }),
+          title: flag.string({
+            description: t({
+              en: "Default title; supports {{date}}, {{weekday}}, {{week}}",
+              de: "Titelvorgabe; unterstützt {{date}}, {{weekday}}, {{week}}",
+            }),
+          }),
+          description: itemFieldFlags.description,
+          icon: flag.string({
+            description: t({ en: "Tabler icon class, for example ti ti-report", de: "Tabler-Icon-Klasse, zum Beispiel ti ti-report" }),
+          }),
+          priority: itemFieldFlags.priority,
+          tag: itemFieldFlags.tag,
+          checklist: flag.stringList({
+            description: t({ en: "Task checklist entry; repeatable", de: "Checklistenpunkt für Aufgaben; wiederholbar" }),
+          }),
+          time: flag.string({
+            description: t({ en: "Local due time or event start as HH:MM", de: "Lokale Fälligkeits- oder Startzeit als HH:MM" }),
+          }),
+          weekdays: flag.string({
+            description: t({
+              en: "Proposed weekdays, comma-separated: mo,tu,we,th,fr,sa,su",
+              de: "Vorgeschlagene Wochentage, kommagetrennt: mo,tu,we,th,fr,sa,su",
+            }),
+          }),
+          offsetDays: flag.int({
+            name: "offset-days",
+            min: 0,
+            description: t({
+              en: "Propose today plus this many days; excludes --weekdays",
+              de: "Heute plus diese Anzahl Tage vorschlagen; schließt --weekdays aus",
+            }),
+          }),
+          duration: flag.int({ min: 1, description: t({ en: "Event duration in minutes", de: "Termindauer in Minuten" }) }),
+          allDay: flag.boolean({ name: "all-day", description: t({ en: "All-day event", de: "Ganztägiger Termin" }) }),
+          location: flag.string({ description: t({ en: "Event location", de: "Terminort" }) }),
+          url: flag.string({ description: t({ en: "Event URL", de: "Termin-URL" }) }),
+          estimate: flag.int({ min: 1, description: t({ en: "Task estimate in minutes", de: "Aufgabenschätzung in Minuten" }) }),
+        },
+        examples: [
+          'cld spaces templates add "Roadmap" --kind task --name "Weekly report" --title "Report {{week}}" --icon "ti ti-report" --weekdays we,th --time 16:00 --checklist "Collect numbers" --tag Backend',
+          'cld spaces templates add "Roadmap" --kind event --name "Review" --offset-days 2 --time 10:00 --duration 45 --location "Room 2"',
+        ],
+        async run({ ctx, args, flags }) {
+          if (flags.weekdays !== undefined && flags.offsetDays !== undefined)
+            throw new Error(t({ en: "Pass only one of --weekdays or --offset-days.", de: "Übergib nur --weekdays oder --offset-days." }));
+          const weekdays = flags.weekdays?.split(",").map((day) => TemplateWeekdaySchema.safeParse(day.trim().toUpperCase()));
+          if (weekdays?.some((day) => !day.success))
+            throw new Error(t({ en: "--weekdays accepts mo,tu,we,th,fr,sa,su.", de: "--weekdays akzeptiert mo,tu,we,th,fr,sa,su." }));
+          const data = CreateItemTemplateSchema.safeParse({
+            kind: flags.kind,
+            name: flags.name,
+            title: flags.title,
+            description: await readText(flags.description, undefined, "description"),
+            icon: flags.icon,
+            priority: flags.priority,
+            checklist: flags.checklist.length ? flags.checklist : undefined,
+            timeOfDay: flags.time,
+            dateRule: weekdays
+              ? { type: "weekdays", weekdays: weekdays.flatMap((day) => (day.success ? [day.data] : [])) }
+              : flags.offsetDays !== undefined
+                ? { type: "offset", days: flags.offsetDays }
+                : { type: "none" },
+            durationMinutes: flags.duration,
+            allDay: flags.allDay,
+            location: flags.location,
+            url: flags.url,
+            estimatedDurationMinutes: flags.estimate,
+          });
+          if (!data.success)
+            throw new Error(
+              `${t({ en: "Invalid template", de: "Ungültige Vorlage" })}: ${data.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`,
+            );
+          const space = await loadSpace(ctx, (await resolveSpace(ctx, args.space)).id);
+          const template = await send<SpaceItemTemplate>(ctx, "POST", api(`/${space.id}/templates`), {
+            ...data.data,
+            tagIds: flags.tag.length ? resolveTagIds(space, flags.tag) : undefined,
+          });
+          if (!printStructured(ctx, template)) ctx.print(`${t({ en: "Created", de: "Angelegt" })} ${template.name} (${template.id})`);
         },
       }),
       command("templates ls", {
