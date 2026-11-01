@@ -188,6 +188,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   let lastWheel = 0;
   let fingers = 0;
   let restTimer = 0;
+  let restFrame = 0;
   let ready = false;
   /** Whether a wheel or a finger moved the strip since it last settled, and the way it last moved. */
   let gesture = false;
@@ -212,6 +213,15 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     window.setTimeout(() => {
       settling = false;
     }, 450);
+  };
+  /**
+   * A busy page runs the rest timer before the scroll event of a reveal still on its way, and a settle then would stop
+   * that reveal short of what it brings into view. Two frames tell: a scroll still moving reports before them and starts over.
+   */
+  const settleOnceStill = () => {
+    restFrame = requestAnimationFrame(() => {
+      restFrame = requestAnimationFrame(settle);
+    });
   };
   const onWheel = (event: WheelEvent) => {
     if (!scroller || event.ctrlKey || view.dragging()) return;
@@ -278,7 +288,8 @@ export const CalendarWeekView = (props: TimeViewProps) => {
         rememberAnchor();
       });
     window.clearTimeout(restTimer);
-    restTimer = window.setTimeout(settle, fingers > 0 ? 160 : 140);
+    cancelAnimationFrame(restFrame);
+    restTimer = window.setTimeout(settleOnceStill, fingers > 0 ? 160 : 140);
   };
 
   // Days loaded before the strip's first day shift it; the view keeps its days in place.
@@ -363,6 +374,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     onCleanup(() => {
       observer?.disconnect();
       window.clearTimeout(restTimer);
+      cancelAnimationFrame(restFrame);
       window.clearTimeout(reportTimer);
       window.clearTimeout(glideTimer);
       if (frame) cancelAnimationFrame(frame);
