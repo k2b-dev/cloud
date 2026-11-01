@@ -358,9 +358,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(bundle.status).toBe(200);
     expect(await bundle.text()).toBe("fixture");
     expect((await runnerProtocolRequest(RUNNER_PATHS.heartbeat, proof)).status).toBe(200);
+    const [heartbeat] = await sql<{ live: boolean; bounded: boolean }[]>`SELECT lease_expires_at>clock_timestamp() AS live,
+      lease_expires_at<=to_timestamp(${Math.floor(now.getTime() / 1000) + 300}) AS bounded FROM code.runs WHERE id=${claims.runId}::uuid`;
+    expect(heartbeat).toEqual({ live: true, bounded: true });
     const bad = await runnerProtocolRequest(RUNNER_PATHS.bundle, { ...proof, bundleHash: "f".repeat(64) });
     expect(bad.status).toBe(403);
     expect((await runnerProtocolRequest(RUNNER_PATHS.complete, { ...proof, outcome: "succeeded" })).status).toBe(204);
+    const [completed] = await sql`SELECT state,lease_expires_at FROM code.runs WHERE id=${claims.runId}::uuid`;
+    expect(completed).toEqual({ state: "succeeded", lease_expires_at: null });
     expect((await runnerProtocolRequest(RUNNER_PATHS.heartbeat, proof)).status).toBe(409);
     expect((await runnerProtocolRequest(RUNNER_PATHS.bundle, { ...proof, bundleHash: claims.bundleHash })).status).toBe(409);
     expect((await runnerProtocolRequest(RUNNER_PATHS.complete, { ...proof, outcome: "succeeded" })).status).toBe(409);

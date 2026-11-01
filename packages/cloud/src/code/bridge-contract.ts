@@ -31,7 +31,7 @@ export type CodeBridgeAuthority = {
  * refusals and results. Reject stale generations before reserving. No in-memory run state.
  * The host checks admin budgets. Every effect MUST use the returned mandate authority wrapper,
  * which checks current policy/approval, exact version mandate/subject and actual C2 grant.
- * Internet calls use kind="internet" for policy and retain query observations in C6 storage.
+ * Internet calls use kind="internet" for policy and retain Action observations to prevent automatic effect retries.
  */
 export interface CodeBridgeHost {
   withCall(call: CodeBridgeCall, execute: (authority: CodeBridgeAuthority) => Promise<Response>): Promise<Response>;

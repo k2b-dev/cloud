@@ -33,6 +33,22 @@ export type CodeNavigationItem = { title: string; path: string };
 /** A synchronous or asynchronous schedule callback, also used for a manual start. */
 export type CodeScheduleHandler = () => void | Promise<void>;
 
+/** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
+declare const __codeSecret: unique symbol;
+export type CodeSecret = string & { readonly [__codeSecret]: true };
+/** Bounded public HTTPS result. Body is base64, preserving binary bytes; echoed credentials are redacted by Core. */
+export type CodeHttpResult = { status: number; headers: Record<string, string>; body: string };
+export type CodeHttp = {
+  fetch(
+    url: string,
+    options?: {
+      method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
+      headers?: Record<string, string>;
+      body?: string;
+    },
+  ): Promise<CodeHttpResult>;
+};
+
 type Input0 = (Record<string, never>);
 
 type Data0 = (Array<(string)>);
@@ -87,6 +103,10 @@ export type CodeApp = {
 };
 
 export declare const app: CodeApp;
+
+export declare const secrets: Readonly<Record<string, CodeSecret>>;
+
+export declare const http: CodeHttp;
 "
 `;
 
@@ -186,8 +206,22 @@ app.schedule = (cron, fn, options) => {
 };
 for (const method of Object.keys(manifest.appMethods).filter(name => name !== "schedule")) app[method] = () => unavailable(method);
 Object.freeze(app);
+const secrets = new Proxy(node(), {
+  get(_target, name) {
+    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) throw new Error("code_sdk_invalid_secret_name");
+    return "[secret:" + name + "]";
+  },
+  set() { throw new Error("code_sdk_readonly_secrets"); },
+});
+const http = Object.freeze({
+  async fetch(url, options = {}) {
+    if (!bridge) throw new Error("code_sdk_bridge_unbound");
+    if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new Error("code_sdk_invalid_input");
+    return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
+  },
+});
 const __codeSdk = Object.freeze({
-  namespaces, owner, app,
+  namespaces, owner, app, secrets, http,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
@@ -203,6 +237,8 @@ const __codeSdk = Object.freeze({
 
 return __codeSdk;
 })();
+export const secrets = __codeSdk.secrets;
+export const http = __codeSdk.http;
 export { __codeSdk };
 export const work_shop = __codeSdk.namespaces["work_shop"];
 export const owner = __codeSdk.owner;

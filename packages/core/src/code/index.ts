@@ -28,6 +28,8 @@ export { codeRunMessages } from "./run-messages";
 export { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 export { processCodeScheduleTick, readCodeRunnerMetrics, startCodeRun } from "./scheduling";
 export * from "./scheduling-contracts";
+export * from "./secret-contracts";
+export * from "./secrets";
 export { CODE_SETTINGS, codeSettings } from "./settings";
 export * from "./store";
 export * from "./target-access";

@@ -173,6 +173,7 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
       entrypoints: analysis.entrypoints,
       permissions: analysis.permissions,
       ai: analysis.ai,
+      ...(analysis.internet ? { internet: true } : {}),
       hashes: {
         source: sha256(JSON.stringify({ entry: request.entry, files: names.map((name) => [name, request.files[name]]) })),
         sdk: codeSdkHash(request.sdk),
