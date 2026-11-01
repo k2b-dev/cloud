@@ -109,8 +109,19 @@ describe("Mail workflow manifest", () => {
   });
 
   test("preserves the published manifest hash", async () => {
-    // The breaking model field now accepts a class request or an explicit variant ID.
-    expect(await hashWorkflowJson(mailWorkflowManifest)).toBe("f8ea7e3e1b0e8bc7c41382de324b31aaedc448182a340712a294aeefeb7a8ff7");
+    // Item links may carry their confirmed Space; older workflow definitions keep the field optional.
+    expect(await hashWorkflowJson(mailWorkflowManifest)).toBe("afb70caf507ad1cb79b2d1cd2e6f15387668bfa08cabf758f48a89cb87cd87ad");
+  });
+
+  test("declares the confirmed Space without rejecting older item-link workflows", () => {
+    const action = mailWorkflowManifest.actions.find(({ kind }) => kind === "linkSpaceItem");
+    expect(action?.config.properties.space).toEqual({
+      kind: "string",
+      minLength: 1,
+      maxLength: 120,
+      optional: true,
+      description: "Confirmed destination Space ID.",
+    });
   });
 
   test("classifies provider, collaboration, and terminal effects", () => {
