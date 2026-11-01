@@ -10,11 +10,14 @@ import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
 import { downloadSelectedSources } from "./connectors/imap-smtp";
+import * as hydrationWork from "./hydration-work";
 import { createMailbox } from "./mailboxes";
+import { getMailboxOperations } from "./operations";
 import { getOperatorActionEligibility } from "./operator-actions";
 import { createProviderConnection } from "./provider-connections";
 import { mailProviderOperationMutex } from "./provider-operation-lock";
 import {
+  enqueueMailboxHydration,
   enqueueMessageHydration,
   recoverInterruptedHydrations,
   startHydrationRuntime,
@@ -67,7 +70,7 @@ const sourceFor = (messageId: string): string =>
     "From: sender@example.test",
     "To: owner@example.test",
     "Subject: Hydration scheduling",
-    `Date: ${new Date().toUTCString()}`,
+    "Date: Thu, 01 Jan 2026 00:00:00 GMT",
     "",
     `Body of ${messageId}`,
   ].join("\r\n");
@@ -176,7 +179,7 @@ suite("mail body hydration scheduling", () => {
         inReplyTo: null,
         references: [],
         subject: `${fixture.label} ${uid}`,
-        sentAt: new Date(),
+        sentAt: new Date("2026-01-01T00:00:00Z"),
         internalDate: new Date(Date.UTC(2026, 0, 1) + uid * 60_000),
         sizeBytes: 256,
         flags: [],
@@ -344,6 +347,131 @@ suite("mail body hydration scheduling", () => {
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
+  test.each([false, true])("new mail arriving after a claimed job's last body check gets its own turn (failed batch: %s)", async (fail) => {
+    const fixture = await createSyncedMailbox(`trailing-${fail}`);
+    const finish = hydrationWork.finishMailboxHydration;
+    let reached = false;
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const finishing = spyOn(hydrationWork, "finishMailboxHydration").mockImplementation(async (work, more, deliveryId) => {
+      if (work.mailbox_id === fixture.mailboxId && !reached) {
+        reached = true;
+        // The provider lease is free and the pending-body query has already returned. The old
+        // NATS key is still claimed, exactly where a plain coalesced submission loses the wake.
+        await gate;
+      }
+      await finish(work, more, deliveryId);
+    });
+    try {
+      await withDownloadsHeld(async () => {
+        await deliver(fixture, 1);
+        if (fail) broken.add(await newestMessageId(fixture));
+      });
+      await waitFor(async () => reached);
+      await deliver(fixture, 1);
+      const fresh = await newestMessageId(fixture);
+      const [pending] = await sql<{ requested: boolean }[]>`
+        SELECT requested_again_at IS NOT NULL AS requested FROM mail.hydration_work WHERE mailbox_id = ${fixture.mailboxId}::uuid
+      `;
+      expect(pending?.requested).toBe(true);
+      expect((await hydrationState(fresh))?.hydration_status).toBe("envelope");
+      release();
+      // There is no sync-due scheduler in this runtime. The request must survive without a tick.
+      await waitFor(async () => (await hydrationState(fresh))?.hydration_status === "complete", BEFORE_FIRST_RETRY_MS);
+      expect((await hydrationState(fresh))?.hydration_attempt).toBe(1);
+    } finally {
+      release();
+      finishing.mockRestore();
+    }
+  });
+
+  test("four occupied provider workers leave the next mailbox queued, then serve it when one place is free", async () => {
+    const occupied: SyncFixture[] = [];
+    const releases: Array<() => void> = [];
+    for (let index = 0; index < 4; index += 1) {
+      const fixture = await createSyncedMailbox(`occupied-${index}`);
+      occupied.push(fixture);
+      hanging.set(
+        fixture.account,
+        new Promise<void>((resolve) => {
+          releases.push(resolve);
+        }),
+      );
+    }
+    const next = await createSyncedMailbox("after-four");
+    try {
+      for (const fixture of occupied) await deliver(fixture, 1);
+      await waitFor(async () => occupied.every((fixture) => downloads.includes(fixture.label)));
+      await deliver(next, 1);
+      const [queued] = await sql<{ started_at: Date | null }[]>`
+        SELECT started_at FROM mail.hydration_work WHERE mailbox_id = ${next.mailboxId}::uuid
+      `;
+      expect(queued?.started_at).toBeNull();
+      // Give just this queued fixture a known queue age, without a wall-clock sleep.
+      await sql`UPDATE mail.hydration_work SET queued_at = clock_timestamp() - interval '3 seconds' WHERE mailbox_id = ${next.mailboxId}::uuid`;
+      // Many requests while queued merge into the same durable generation.
+      const [before] = await sql<{ job_id: string }[]>`SELECT job_id FROM mail.hydration_work WHERE mailbox_id = ${next.mailboxId}::uuid`;
+      for (let index = 0; index < 8; index += 1) await enqueueMailboxHydration(next.mailboxId);
+      const pending = await sql<{ job_id: string }[]>`SELECT job_id FROM mail.hydration_work WHERE mailbox_id = ${next.mailboxId}::uuid`;
+      expect(pending).toEqual([before!]);
+      releases[0]!();
+      await waitFor(async () => (await unhydrated([next])) === 0, BEFORE_FIRST_RETRY_MS);
+      expect(await unhydrated(occupied.slice(1))).toBe(3);
+      await waitFor(async () => {
+        const [timing] = await sql<{ batch_finished_at: Date | null }[]>`
+          SELECT batch_finished_at FROM mail.hydration_work WHERE mailbox_id = ${next.mailboxId}::uuid
+        `;
+        return timing?.batch_finished_at != null;
+      });
+      const operations = await getMailboxOperations(ownerContext, next.mailboxId);
+      expect(operations).toMatchObject({
+        ok: true,
+        data: {
+          coverage: {
+            hydration: {
+              timing: {
+                queueWaitMs: expect.any(Number),
+                leaseWaitMs: expect.any(Number),
+                batchMs: expect.any(Number),
+                batchFinishedAt: expect.any(String),
+              },
+            },
+          },
+        },
+      });
+      if (operations.ok) {
+        expect(operations.data.coverage.hydration.timing?.queueWaitMs).toBeGreaterThanOrEqual(3_000);
+        expect(operations.data.coverage.hydration.timing?.batchMs).toBeGreaterThan(0);
+      }
+    } finally {
+      for (const release of releases) release();
+      for (const fixture of occupied) hanging.delete(fixture.account);
+    }
+    await waitFor(async () => (await unhydrated(occupied)) === 0);
+  });
+
+  test("an envelope commit persists a hydration wake even when the publishing process stops", async () => {
+    const fixture = await createSyncedMailbox("durable-wake");
+    // The domain writer can commit while the hydration process is stopped. Its durable wake
+    // must be enough to resume after restart, without another sync or minute scheduler.
+    await stopHydrationRuntime();
+    try {
+      await deliver(fixture, 1);
+      const [pending] = await sql<{ published_at: Date | null; job_id: string | null }[]>`
+        SELECT published_at, job_id FROM mail.hydration_work WHERE mailbox_id = ${fixture.mailboxId}::uuid
+      `;
+      expect(pending?.job_id).toBeString();
+      expect(pending?.published_at).toBeNull();
+      expect(await unhydrated([fixture])).toBe(1);
+    } finally {
+      await startHydrationRuntime();
+    }
+    // The publisher recovers the persisted wake; sync-due is absent.
+    await waitFor(async () => (await unhydrated([fixture])) === 0, BEFORE_FIRST_RETRY_MS);
+  });
+
   test("new mail in a small mailbox waits for one batch of another mailbox's backlog, not for the whole backlog", async () => {
     const blocker = await createSyncedMailbox("blocker");
     const big = await createSyncedMailbox("big");
@@ -392,8 +520,10 @@ suite("mail body hydration scheduling", () => {
     } finally {
       acquisitions.mockRestore();
     }
-    // The folder sync, then one hydration batch; a hydration that found the sync still holding the lease would have to wait and try again.
-    expect(outcomes).toEqual(["acquired", "acquired"]);
+    // The sync's lease is acquired first, then hydration's. The recovery publisher may
+    // try before sync releases the lease; that attempt must stay busy and retry.
+    expect(outcomes[0]).toBe("acquired");
+    expect(outcomes.filter((outcome) => outcome === "acquired")).toEqual(["acquired", "acquired"]);
   });
 
   test("a message the provider no longer has neither fails nor holds back the rest of its mailbox", async () => {

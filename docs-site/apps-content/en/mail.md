@@ -826,6 +826,9 @@ send-safety review and approval.
 
 ## Check failed synchronization
 
+For delayed message content, see [Diagnose delayed Mail content](/en/docs/operations/mail-body-hydration)
+to distinguish hydration queue wait, provider contention, and delayed discovery.
+
 When the provider limits requests, Mail retries unconfirmed flag changes and
 incomplete message downloads. Read state, flags, and labels are not skipped,
 and a partial body is not marked complete. A provider that reports a larger

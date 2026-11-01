@@ -25,7 +25,7 @@ export const mailProviderOperationMutex = lazySync((sync) =>
 
 /**
  * User commands such as moves and sends take turns with other provider work. Within that other
- * work, folder syncs that bring in new mail get a head start over background body hydration.
+ * work, folder syncs and first-attempt body hydration get a head start over background retries.
  */
 export type ProviderLeasePriority = "sync" | "command" | "background";
 
@@ -284,28 +284,43 @@ export const acquireProviderLease = async (params: {
   return lock ? { lock, place: Number(reply[3]), retryAfterMs: null } : busy;
 };
 
-// KEYS: the waiters' places and until when each counts as present. ARGV: the holder's place.
-// Reports whether a present waiter goes ahead of the holder, without changing the line.
+// KEYS: places, presence, priorities. ARGV: holder's place, yield to foreground work.
+// Reports whether a present waiter should end the body batch, without changing the line.
 const providerLeaseWaitedForScript = `
   local time = redis.call("TIME")
   local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
-  for _, waiter in ipairs(redis.call("ZRANGEBYSCORE", KEYS[1], "-inf", "(" .. ARGV[1])) do
+  for _, waiter in ipairs(redis.call("ZRANGE", KEYS[1], 0, -1)) do
+    local place = tonumber(redis.call("ZSCORE", KEYS[1], waiter))
+    local priority = redis.call("HGET", KEYS[3], waiter)
+    local foregroundWaiting = ARGV[2] == "1" and (priority == "sync" or priority == "command")
     local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
-    if presentUntil and tonumber(presentUntil) >= now then return 1 end
+    if (place < tonumber(ARGV[1]) or foregroundWaiting) and presentUntil and tonumber(presentUntil) >= now then return 1 end
   end
   return 0
 `;
 
 /**
  * Answers whether a present waiter goes ahead of this lease's place in line. Work that holds
- * the lease in units, such as body downloads, ends its turn after the current unit, so the
+ * the lease in units, such as body downloads, ends its turn after the current unit. With
+ * `yieldToForeground`, a first-attempt body also yields to a later sync or command, so the
  * waiter waits for one unit instead of a whole batch. Valkey errors let the turn run on:
  * losing the line only loses the order.
  */
-export const providerLeaseWaitedFor = async (turn: { lock: Lock; place: number }): Promise<boolean> => {
-  const [places, present] = leaseLineKeys(turn.lock.resource);
+export const providerLeaseWaitedFor = async (
+  turn: { lock: Lock; place: number },
+  options: { yieldToForeground?: boolean } = {},
+): Promise<boolean> => {
+  const [places, present, , priorities] = leaseLineKeys(turn.lock.resource);
   return redis
-    .send("EVAL", [providerLeaseWaitedForScript, "2", places, present, String(turn.place)])
+    .send("EVAL", [
+      providerLeaseWaitedForScript,
+      "3",
+      places,
+      present,
+      priorities,
+      String(turn.place),
+      options.yieldToForeground ? "1" : "0",
+    ])
     .then((reply) => Number(reply) === 1)
     .catch(() => false);
 };

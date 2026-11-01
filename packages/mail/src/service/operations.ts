@@ -338,6 +338,18 @@ const loadMailboxOperations = async (
   const bm25Ready = search?.bm25_ready ?? false;
   const effectiveBackend = mailbox.search_backend !== "postgres" && bm25Ready ? "pg_textsearch" : "postgres";
 
+  const [hydrationTiming] = await sql<
+    {
+      queue_wait_ms: number | string | null;
+      lease_wait_ms: number | string | null;
+      batch_ms: number | string | null;
+      batch_finished_at: Date | string | null;
+    }[]
+  >`
+    SELECT queue_wait_ms, lease_wait_ms, batch_ms, batch_finished_at
+    FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid
+  `;
+
   return mailboxOperatorOperationsSchema.parse({
     mailboxId: mailbox.short_id,
     mailboxName: mailbox.name,
@@ -352,6 +364,12 @@ const loadMailboxOperations = async (
       hydration: {
         total: Number(coverage?.messages ?? 0),
         covered: Number(coverage?.hydrated ?? 0),
+        timing: {
+          queueWaitMs: hydrationTiming?.queue_wait_ms == null ? null : Number(hydrationTiming.queue_wait_ms),
+          leaseWaitMs: hydrationTiming?.lease_wait_ms == null ? null : Number(hydrationTiming.lease_wait_ms),
+          batchMs: hydrationTiming?.batch_ms == null ? null : Number(hydrationTiming.batch_ms),
+          batchFinishedAt: toIso(hydrationTiming?.batch_finished_at ?? null),
+        },
       },
       search: {
         total: Number(coverage?.search_total ?? 0),

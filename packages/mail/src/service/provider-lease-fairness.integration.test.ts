@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { redis, sql } from "@k2b/cloud";
 import type { JobContext } from "@k2b/sync";
@@ -303,6 +304,9 @@ suite("mail provider lease fairness", () => {
   const ensureHydrationRuntime = async (): Promise<void> => {
     if (hydrationStarted) return;
     hydrationStarted = true;
+    // Earlier tests drive syncs directly without a hydration worker. Their durable wakes are
+    // outside this test's workload; each runtime test explicitly queues its own mailbox below.
+    for (const mailboxId of mailboxIds) await sql`DELETE FROM mail.hydration_work WHERE mailbox_id = ${mailboxId}::uuid`;
     await startHydrationRuntime();
   };
   let userId = "";
@@ -1697,6 +1701,142 @@ suite("mail provider lease fairness", () => {
       if (waiting.lock) await releaseProviderLease(waiting.lock);
     }
   }, 30_000);
+
+  test("a first-attempt body keeps the lease ahead of a sync arriving one second later, and yields after one body", async () => {
+    const mailbox = await connect("body-not-background");
+    await deliverAndSync(mailbox, 21, "fresh-bodies");
+    const resource = mailbox.remoteResourceId;
+    const holder = await mailProviderOperationMutex().acquire({ resource, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    if (!holder) throw new Error("Could not hold the fixture provider lease");
+    const sync = { resource, waiter: "later-sync", priority: "sync" as const, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS };
+    const places = `mail:provider-lease-line:{${resource}}:places`;
+    const heartbeat = async (): Promise<void> => undefined;
+    try {
+      await expect(
+        hydrateMessageBatch({ input: { mailboxId: mailbox.mailboxId }, heartbeat, resubmit: () => undefined }),
+      ).rejects.toMatchObject({ code: "SYNC_BUSY" });
+      // Redis owns lease time. Move just this fixture's place back exactly one second rather
+      // than sleeping: a later sync previously overtook it for the full 60-second head start.
+      await redis.send("ZINCRBY", [places, "-1000", `hydrate:mailbox:${mailbox.mailboxId}`]);
+      const waiting = await acquireProviderLease(sync);
+      expect(waiting.lock).toBeNull();
+      if (waiting.lock) await releaseProviderLease(waiting.lock);
+      await releaseProviderLease(holder);
+      const overtaking = await acquireProviderLease(sync);
+      try {
+        expect(overtaking.lock).toBeNull();
+      } finally {
+        if (overtaking.lock) await releaseProviderLease(overtaking.lock);
+      }
+      const before = consumedPerBatch.length;
+      let continued = false;
+      await hydrateMessageBatch({
+        input: { mailboxId: mailbox.mailboxId },
+        heartbeat,
+        resubmit: () => {
+          continued = true;
+        },
+      });
+      expect(consumedPerBatch.slice(before)).toEqual([{ label: "body-not-background", count: 1 }]);
+      expect(continued).toBe(true);
+      // Equal-ranked envelope work still gets a turn after one body, preserving arrival sync.
+      const next = await acquireProviderLease(sync);
+      expect(next.lock).not.toBeNull();
+      if (next.lock) await releaseProviderLease(next.lock);
+    } finally {
+      await releaseProviderLease(holder);
+      const waiting = await acquireProviderLease(sync);
+      if (waiting.lock) await releaseProviderLease(waiting.lock);
+    }
+  });
+
+  test("a later command ends a first-attempt batch and takes the lease before its next generation", async () => {
+    const mailbox = await connect("body-before-command");
+    await deliverAndSync(mailbox, 21, "command-during-bodies");
+    const command = {
+      resource: mailbox.remoteResourceId,
+      waiter: "command-during-bodies",
+      priority: "command" as const,
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    };
+    let consumed = 0;
+    let more = false;
+    spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementationOnce(async (config, path, requests, consume) => {
+      const waiting = await acquireProviderLease(command);
+      try {
+        expect(waiting.lock).toBeNull();
+      } finally {
+        if (waiting.lock) await releaseProviderLease(waiting.lock);
+      }
+      for (const request of requests) {
+        const source = sourceOf(folderOf(config.username, path).entries.get(request.uid)!);
+        consumed += 1;
+        if ((await consume({ ...request, expectedSize: Buffer.byteLength(source), stream: Readable.from([source]) })) === "stop") break;
+      }
+    });
+    const nextInput = { mailboxId: mailbox.mailboxId, generation: randomUUID() };
+    const heartbeat = async (): Promise<void> => undefined;
+    try {
+      await hydrateMessageBatch({
+        input: { mailboxId: mailbox.mailboxId, generation: randomUUID() },
+        heartbeat,
+        resubmit: () => {
+          more = true;
+        },
+      });
+      expect(consumed).toBe(1);
+      expect(more).toBe(true);
+      // A new generation is a new turn, while a busy retry retains that generation's place.
+      // Reusing the first generation's waiter would bypass command/other alternation.
+      await expect(hydrateMessageBatch({ input: nextInput, heartbeat, resubmit: () => undefined })).rejects.toMatchObject({
+        code: "SYNC_BUSY",
+      });
+      const next = await acquireProviderLease(command);
+      expect(next.lock).not.toBeNull();
+      if (next.lock) await releaseProviderLease(next.lock);
+      await hydrateMessageBatch({ input: nextInput, heartbeat, resubmit: () => undefined });
+    } finally {
+      const waiting = await acquireProviderLease(command);
+      if (waiting.lock) await releaseProviderLease(waiting.lock);
+    }
+  });
+
+  test("a lost hydration job heartbeat cancels its source transfer before claiming another body", async () => {
+    const mailbox = await connect("lost-body-job");
+    await deliverAndSync(mailbox, 1, "lost-job-body");
+    let cancelled = false;
+    let heartbeats = 0;
+    spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementationOnce(async (config, path, requests, consume, signal) => {
+      const observeAbort = (): void => {
+        cancelled = true;
+      };
+      signal?.addEventListener("abort", observeAbort, { once: true });
+      const first = requests[0]!;
+      const source = sourceOf(folderOf(config.username, path).entries.get(first.uid)!);
+      const stream = Readable.from([source]);
+      try {
+        await consume({ ...first, expectedSize: Buffer.byteLength(source), stream });
+      } finally {
+        signal?.removeEventListener("abort", observeAbort);
+        stream.destroy();
+      }
+    });
+    await expect(
+      hydrateMessageBatch({
+        input: { mailboxId: mailbox.mailboxId },
+        heartbeat: async () => {
+          heartbeats += 1;
+          if (heartbeats > 1) throw Object.assign(new Error("Fixture job lease lost"), { code: "SYNC_JOB_LEASE_LOST" });
+        },
+        resubmit: () => undefined,
+      }),
+    ).rejects.toMatchObject({ code: "SYNC_JOB_LEASE_LOST" });
+    expect(cancelled).toBe(true);
+    const [message] = await sql<{ hydration_status: string; hydration_attempt: number }[]>`
+      SELECT hydration_status, hydration_attempt FROM mail.message_contents WHERE mailbox_id = ${mailbox.mailboxId}::uuid
+    `;
+    expect(message).toEqual({ hydration_status: "envelope", hydration_attempt: 0 });
+  });
 
   test("a mailbox's body hydration cannot keep its folder sync from bringing in new mail", async () => {
     bodyDownloadMs = 300;

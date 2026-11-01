@@ -3963,6 +3963,12 @@ const specialistCommands = {
           ctx.print(
             `Coverage: hydration ${value.coverage.hydration.covered}/${value.coverage.hydration.total}, search ${value.coverage.search.covered}/${value.coverage.search.total}, threads ${value.coverage.threads.covered}/${value.coverage.threads.total}`,
           );
+          if (value.coverage.hydration.timing) {
+            const { queueWaitMs, leaseWaitMs, batchMs, batchFinishedAt } = value.coverage.hydration.timing;
+            ctx.print(
+              `Hydration timing: queue ${queueWaitMs == null ? "not measured" : `${queueWaitMs} ms`}, lease ${leaseWaitMs == null ? "not measured" : `${leaseWaitMs} ms`}, batch ${batchMs == null ? "not measured" : `${batchMs} ms`}${batchFinishedAt ? `, finished ${batchFinishedAt}` : ""}`,
+            );
+          }
           ctx.print(`Attention: ${value.attentionCommands.length} commands; workflows ${value.queues.workflows.needs_attention ?? 0}`);
         }
       },
