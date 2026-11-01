@@ -11,6 +11,7 @@ import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
+import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateSecrets } from "../migrate/core/code-secrets";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateRailPreferences } from "../migrate/core/rail-preferences";
@@ -84,6 +85,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     await migrateSettings();
     await migrateAudit();
     await migrateCode();
+    await migrateScheduling();
     await migratePolicy();
     await migrateApprovals();
     await migrateVersions();

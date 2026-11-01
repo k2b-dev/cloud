@@ -9,7 +9,8 @@ const test = bunTest.skipIf(process.getuid?.() !== 0);
 
 test("native probes inside actual workerd groups cannot reach the key, supervisor or sibling", async () => {
   const base = `/tmp/runner-isolation-${process.pid}`;
-  const key = `${base}.key`;
+  const key = process.env.CLOUD_APP_KEY_FILE ?? `${base}.key`;
+  const staged = key !== `${base}.key`;
   const engine = new WorkerdEngine(join(import.meta.dir, "isolation-probe"));
   const entered = Promise.withResolvers<void>();
   const finish = Promise.withResolvers<null>();
@@ -17,10 +18,15 @@ test("native probes inside actual workerd groups cannot reach the key, superviso
   let victim: Promise<unknown> | undefined;
   try {
     // Public test bytes, not an installation credential. Same ownership/mode as production.
-    await Bun.write(key, "public-isolation-test-key");
-    await chmod(key, 0o400);
+    if (!staged) {
+      await Bun.write(key, "public-isolation-test-key");
+      await chmod(key, 0o400);
+    }
     expect((await stat(key)).uid).toBe(process.getuid!());
     await Bun.write(`${base}.targets`, "0");
+    // The real entrypoint intentionally leaves umask 0077 after staging a key.
+    // Only these public probe coordinates may cross into a workerd UID.
+    await chmod(`${base}.targets`, 0o644);
     const first = lease({ runId: "isolation-victim" });
     await engine.load(
       first,
@@ -55,6 +61,8 @@ test("native probes inside actual workerd groups cannot reach the key, superviso
     finish.resolve(null);
     await engine.close();
     await victim;
-    await Promise.all([key, `${base}.targets`, `${base}.victim`, `${base}.passed`].map((path) => unlink(path).catch(() => undefined)));
+    await Promise.all(
+      [...(staged ? [] : [key]), `${base}.targets`, `${base}.victim`, `${base}.passed`].map((path) => unlink(path).catch(() => undefined)),
+    );
   }
 }, 10_000);
