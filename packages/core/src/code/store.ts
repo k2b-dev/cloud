@@ -4,7 +4,15 @@ import { type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
 import type { SQL, TransactionSQL } from "bun";
 import type { z } from "zod";
-import { type CodeContext, CodeDataError, codePermission, codePerson, readCodeOwner, requireCodePermission } from "./access";
+import {
+  type CodeContext,
+  CodeDataError,
+  CodeOwnerUnavailableError,
+  codePermission,
+  codePerson,
+  readCodeOwner,
+  requireCodePermission,
+} from "./access";
 import {
   CODE_INLINE_JSON_BYTES,
   CODE_RESULT_STORAGE_BYTES,
@@ -109,6 +117,56 @@ export const listCodes = async (input: { owner?: CodeOwner; limit: number; curso
     items: items.map(({ code, permission }) => ({ ...code, permission })),
     nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.id : null,
   };
+};
+/** Candidates checked per attention read; each needs a live owner check, so the window stays small. */
+export const CODE_ATTENTION_CANDIDATES = 50;
+type AttentionRow = CodeRow & { paused_flag: boolean; run_failed: boolean; access_removed: boolean; last_run_at: Date | null };
+/**
+ * Owner Code that needs its administrators. Candidates are found by state alone; each is shown only when the caller
+ * may edit it (live owner administration or an explicit share). An owner that cannot answer skips its Code.
+ */
+export const listCodeAttention = async (context: CodeContext) => {
+  codePerson(context);
+  const rows = await sql<AttentionRow[]>`SELECT c.*, c.state = 'paused' AS paused_flag,
+      COALESCE(last.state = 'failed', false) AS run_failed, last.ended_at AS last_run_at,
+      EXISTS (SELECT 1 FROM code.target_grants g WHERE g.code_id = c.id AND g.state = 'removed') AS access_removed
+    FROM code.codes c
+    LEFT JOIN LATERAL (SELECT r.state, r.ended_at FROM code.runs r WHERE r.code_id = c.id AND r.ended_at IS NOT NULL
+      ORDER BY r.created_at DESC, r.id DESC LIMIT 1) last ON true
+    WHERE c.owner_kind <> 'person' AND c.state <> 'deleting'
+      AND (c.state = 'paused' OR last.state = 'failed'
+        OR EXISTS (SELECT 1 FROM code.target_grants g WHERE g.code_id = c.id AND g.state = 'removed'))
+    ORDER BY last.ended_at DESC NULLS LAST, c.id LIMIT ${CODE_ATTENTION_CANDIDATES + 1}`;
+  const items = [];
+  for (const row of rows.slice(0, CODE_ATTENTION_CANDIDATES)) {
+    const code = mapCode(row);
+    const permission = await codePermission(code, context, sql, "read").catch((error: unknown) => {
+      if (error instanceof CodeOwnerUnavailableError) return null;
+      throw error;
+    });
+    if (permission !== "editor") continue;
+    const reasons = [
+      ...(row.paused_flag ? (["paused"] as const) : []),
+      ...(row.run_failed ? (["run_failed"] as const) : []),
+      ...(row.access_removed ? (["access_removed"] as const) : []),
+    ];
+    items.push({ code, reasons, lastRunAt: row.last_run_at?.toISOString() ?? null });
+  }
+  return { items, truncated: rows.length > CODE_ATTENTION_CANDIDATES };
+};
+/** Longest counted window: the person's day in any time zone, with room for a late start. */
+const RUN_COUNT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** Runs of the caller's own personal Code since a recent moment. */
+export const countOwnCodeRuns = async (input: { since: string }, context: CodeContext) => {
+  const user = codePerson(context);
+  const since = new Date(input.since);
+  if (Number.isNaN(since.getTime()) || Date.now() - since.getTime() > RUN_COUNT_WINDOW_MS)
+    throw new CodeDataError("BAD_INPUT", "Count runs of at most the last 7 days.");
+  const [row] = await sql<{ runs: number; failed: number }[]>`SELECT count(*)::int AS runs,
+      count(*) FILTER (WHERE r.state = 'failed')::int AS failed
+    FROM code.codes c JOIN code.runs r ON r.code_id = c.id
+    WHERE c.owner_kind = 'person' AND c.owner_user_id = ${user.id}::uuid AND r.created_at >= ${since}`;
+  return { runs: row?.runs ?? 0, failed: row?.failed ?? 0 };
 };
 const setting = async (key: keyof typeof CODE_SETTINGS) => {
   const value = await codeSettings.get(key);

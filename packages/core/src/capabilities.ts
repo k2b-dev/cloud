@@ -64,7 +64,16 @@ import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
 import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
-import { listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import {
+  countOwnCodeRuns,
+  listCodeAttention,
+  listCodeRuns,
+  listCodes,
+  lockCodeForEdit,
+  readCode,
+  readCodeRun,
+  readCodeVersion,
+} from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -850,6 +859,21 @@ export const aiCapabilities = defineCapabilities({
       ...codeQueryContracts.runRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
+    "code.attention.list": {
+      title: "List Code that needs you",
+      description:
+        "List Code of a resource or app that the caller administers and that is paused, whose newest run failed, or that lost access at a target.",
+      ...codeQueryContracts.attentionList,
+      openWorld: false,
+      run: (_input, context) => runCodeQuery(context, (ctx) => listCodeAttention(ctx)),
+    },
+    "code.run.count": {
+      title: "Count own Code runs",
+      description: "Count runs and failed runs of the caller's own personal Code since a moment within the last 7 days.",
+      ...codeQueryContracts.runCount,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => countOwnCodeRuns(input, ctx)),
     },
     "map.style": {
       title: "Show a map",

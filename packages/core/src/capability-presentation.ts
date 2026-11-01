@@ -172,6 +172,16 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der Lauf-Metadaten auf dieser Seite; höchstens 50.",
           },
         },
+        "code.attention.list": {
+          title: "Code auflisten, der dich braucht",
+          description:
+            "Listet Code einer Ressource oder App, die du verwaltest, wenn er pausiert ist, sein letzter Lauf fehlgeschlagen ist oder ihm an einem Ziel der Zugriff entzogen wurde.",
+        },
+        "code.run.count": {
+          title: "Eigene Code-Läufe zählen",
+          description: "Zählt Läufe und fehlgeschlagene Läufe deines persönlichen Codes seit einem Zeitpunkt der letzten 7 Tage.",
+          input: { since: "Beginn des gezählten Zeitraums, höchstens 7 Tage zurück, etwa der Beginn deines Tages." },
+        },
         "code.run.read": {
           title: "Code-Lauf lesen",
           description: "Liest einen Versuch. Bearbeiter sehen Eingaben, Ausgaben und Aufrufe in Reihenfolge, Leser nur Metadaten.",
