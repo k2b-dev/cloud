@@ -71,7 +71,7 @@ async function active(n: number, rows: CodePolicyRow[] | null, covered: CodePoli
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at) VALUES(${codeId(n)},'person',${ownerId}::uuid,${`Code ${n}`},${ownerId}::uuid,${now})`;
   }
   await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by,created_at)
-    VALUES(${versionId(n)}::uuid,${codeId(n)},1,'{}','',${"a".repeat(64)},${"b".repeat(64)},${rows === null ? null : JSON.stringify({ policyRows: rows })}::jsonb,0,0,${ownerId}::uuid,${now})`;
+    VALUES(${versionId(n)}::uuid,${codeId(n)},1,'{}','',${"a".repeat(64)},${"b".repeat(64)},${rows === null ? null : JSON.stringify({ policyRows: rows })}::text::jsonb,0,0,${ownerId}::uuid,${now})`;
   await sql`UPDATE code.codes SET state='active',active_version_id=${versionId(n)}::uuid WHERE id=${codeId(n)}`;
   await sql.begin((tx) => replaceCodePolicyCoverage(versionId(n), covered, tx));
 }
@@ -224,6 +224,8 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     await updateCodePolicy({ revision: current.revision, definition: change("ai", "never") }, admin);
     const [job] = await codePolicyPauseOutbox.claim();
     expect(job).toBeDefined();
+    expect(job!.previous).toEqual(current.definition);
+    expect((await sql`SELECT jsonb_typeof(manifest) AS kind FROM code.versions LIMIT 1`)[0].kind).toBe("object");
     await codePolicyPauseOutbox.dispatch(job!, async () => {
       throw new Error("retry fixture");
     });
@@ -231,6 +233,11 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
       { attempts: 1, last_error: "retry fixture" },
     ]);
     await sql`UPDATE code.policy_pause_outbox SET next_attempt_at='2026-01-01'`;
+    const [retry] = await codePolicyPauseOutbox.claim();
+    expect(retry).toMatchObject({ id: job!.id, attempts: 1 });
+    await codePolicyPauseOutbox.dispatch(retry!);
+    expect(await sql`SELECT previous,cursor FROM code.policy_pause_outbox`).toEqual([{ previous: current.definition, cursor: codeId(50) }]);
+    expect(await sql`SELECT id FROM code.codes WHERE state='paused'`).toHaveLength(50);
     await codePolicyPauseOutbox.reconcile();
     expect(await sql`SELECT id FROM code.codes WHERE state='paused'`).toHaveLength(52);
     expect(await sql`SELECT id FROM code.policy_pause_outbox`).toHaveLength(0);
