@@ -2,7 +2,7 @@
 title: Build a website usage dashboard
 navTitle: Website usage dashboard
 section: Operations
-order: 1147
+order: 1148
 description: Send page views from a website backend to Pulse and show totals, a time series, a country map, and top pages on one dashboard.
 tags: [operations, pulse, analytics, privacy]
 updated: 2026-11-01
