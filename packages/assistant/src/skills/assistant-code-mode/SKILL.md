@@ -1,6 +1,7 @@
 ---
 name: assistant-code-mode
 description: Build apps and work with data in code. Use whenever the person asks for an app, calculator, converter, timer, form, tracker or any other tool they will interact with (always a saved Studio App), and for data analysis, file transformation and generation, resource SQL queries, quick code experiments and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate. A few values that did not come from code use the chart tool; computed charts, tables and one-off dashboards use cloud.view.*; a dashboard to keep, reload or share is a Studio App.
+load-tools: [code_run]
 ---
 # Assistant code mode
 
@@ -13,10 +14,12 @@ chat and cannot be shared. Reuse an existing Cloud feature when it fits. For a
 quick reading of an uploaded PDF or Office document, `read_file` can return
 Markdown; use code for exact cells, calculations, original PDF text or positions.
 
-There are two kinds of code:
+For lasting Code and schedules, load `code-authoring`. It uses editor-only tools
+to check, test and submit a version for human activation.
 
-- **Scripts** have no interface: analysis, reports, PDFs, app actions and
-  scheduled runs. One JavaScript module, run with `code_run`.
+There are two kinds of Studio code:
+
+- **Scripts** have no interface: analysis, reports, PDFs, and app actions. One JavaScript module, run with `code_run`.
 - **HTML apps** are interfaces: `index.html` plus optional `style.css` and
   `app.js`, shown with `code_open` or `code_present`. For a small app follow
   the fast path below; otherwise read [HTML apps](references/apps.md) before
@@ -104,8 +107,9 @@ code. Discover other Cloud operations before using `cloud.capabilities.run`.
 Read [cloud contract](references/cloud.md) first: it is the complete runtime contract.
 One frozen global `cloud` supplies storage, data, AI, HTTP, files, document
 helpers, money, and charts, the same in scripts and apps; only `cloud.view`
-works in script runs alone. Only relative source imports are supported, and
-there is no native networking. Discover external capability and HTTP contracts
+works in script runs alone. One-off `code_run` modules also support `@sdk`, generated from the live
+capability catalog; other imports are relative source files. There is no native
+networking. Discover external capability and HTTP contracts
 separately.
 
 Inspect supplied data before joining, filtering or calculating: column names,

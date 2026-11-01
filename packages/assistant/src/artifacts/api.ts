@@ -45,6 +45,7 @@ import { studioPdf } from "./pdf-service";
 import { renameSource } from "./rename-source";
 import { ChunkName, chunkSource } from "./runtime/chunks";
 import { cliHostBundle } from "./runtime/cli-bundle";
+import { codeRunSdk, usesCodeRunSdk } from "./runtime/code-run-sdk";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
 import { viewerContext } from "./runtime/context";
 import { CloudError } from "./runtime/errors";
@@ -504,7 +505,15 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     .post("/", v("json", ArtifactCreate), async (c) => respond(c, ok(await artifacts.create(c.req.valid("json"), identity(c))), 201))
     .post("/runtime/compile", v("json", ArtifactSource), async (c) => {
       try {
-        return respond(c, ok({ ...(await compileArtifact(c.req.valid("json"))), context: viewerContext(c) }));
+        const source = c.req.valid("json");
+        const sdk = usesCodeRunSdk(source.files) ? await codeRunSdk(appAccessAuthority(c), getLocale(c), c.req.raw.signal) : undefined;
+        return respond(
+          c,
+          ok({
+            ...(await compileArtifact(source, undefined, sdk)),
+            context: viewerContext(c),
+          }),
+        );
       } catch (error) {
         return respond(c, { ok: false, status: 400, code: "COMPILE_FAILED", error: compilationDiagnostic(error) });
       }

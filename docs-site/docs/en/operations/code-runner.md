@@ -479,3 +479,11 @@ and complete routes accept `RunnerJobProof` and `RunnerJobComplete`.
 `RunnerJobResultSchema` validates check/test/simulate results in both runner
 and Core. Job generations and random lease keys are fenced in Postgres, so
 any Core replica can serve them. Retries retain the original deadline.
+
+## Gustav authoring
+
+Gustav's `code_check`, `code_test`, `code_simulate` and `code_submit` use the
+same authoring services and runner jobs as `cld code`. They need the runner
+pool; adding chat tools does not move user-code execution into Core. A busy
+or unavailable runner produces the shared versioned failure result. Chat
+submission saves a version; activation remains a human action.

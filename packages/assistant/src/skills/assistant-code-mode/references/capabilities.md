@@ -11,6 +11,22 @@ Use a fresh short script for another question; no saved app is required. A
 sample is not evidence that all records were fetched. Shared writes and actions
 remain real even when the script is exploratory.
 
+One-off `code_run` modules can use the same generated SDK as lasting Code:
+
+```ts
+import { grids, sheet } from "@sdk";
+export default async () => {
+  const rows = await grids.table("t_fictional").record.list({});
+  return sheet.toCsv(rows);
+};
+```
+
+Use the discovered operation's actual result shape and pagination. This example
+assumes an array of row objects. SDK methods return domain data directly;
+`sheet` is the existing runtime helper. Dynamic IDs work in one-off runs.
+There is no `app`, version or owner, and writes still ask as usual. Do the
+read and transformation in one run; no saved resource or preflight run is needed.
+
 Inside a script or app, call:
 
 ```ts
@@ -23,6 +39,15 @@ capability result envelope, including `data` and any supplied references or
 files. Inspect its documented shape before chaining it into another call.
 Await dependent calls in order. Catch failures when the task has a useful
 recovery; do not swallow them and report success.
+
+For normalized calls, the optional third argument to `cloud.capabilities.run`
+contains `target: {type,id}`, `refs: {field: {type,id}}` and an optional
+`idempotencyKey`. Use the exact discovered target and ref types. Explicit keys
+are accepted only for Actions declaring required idempotency; retain the key
+for the same effect on a retry. Omitting it keeps the existing per-call key.
+This transport option applies to script runs and Studio apps; it grants no
+additional permission and does not answer approval dialogs. The generated SDK
+sets these coordinates from its handles.
 
 The current user's Cloud permissions still apply. Read queries and actions
 configured without approval run directly. Other actions request real user
