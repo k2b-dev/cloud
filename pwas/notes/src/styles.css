@@ -580,8 +580,7 @@ body.k2b-ui {
   width: 20px;
   height: 20px;
 }
-.n-cloud u,
-.n-more u {
+.n-cloud u {
   text-decoration-color: var(--ink);
   text-underline-offset: 3px;
 }
@@ -864,54 +863,59 @@ body.k2b-ui {
   font-size: 0.8125rem;
   line-height: 1.45;
 }
-.n-more {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-top: 1.25rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  text-decoration: none;
-}
-.n-more img {
-  width: 22px;
-  height: 22px;
-  flex: none;
-}
-.n-more u {
+/* What the site is: one sentence, then three facts in one rhythm. Cloud is the third fact, not a footnote. */
+.n-about-lead {
+  margin: 0.5rem 0 0;
   color: var(--k2b-text-secondary);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.n-about {
+  display: grid;
+  gap: 1.25rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.n-about li {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  column-gap: 0.875rem;
+}
+.n-about .ti,
+.n-about img {
+  grid-row: span 2;
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--ink);
+  font-size: 1.375rem;
+  line-height: 1.5rem;
+  text-align: center;
+}
+.n-about strong {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+}
+.n-about p {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.n-about a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--ink);
+  text-underline-offset: 3px;
+}
+.n-about a:hover {
+  color: var(--ink);
 }
 .n-field {
   margin-top: 1rem;
   display: grid;
   gap: 0.35rem;
-}
-.n-field > .n-l {
-  font-weight: 500;
-  font-size: 0.875rem;
-}
-.n-field input[type="text"],
-.n-field input[type="email"],
-.n-field textarea {
-  width: 100%;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-field-surface, var(--k2b-surface));
-  color: var(--k2b-text);
-  font: inherit;
-  font-size: 0.9375rem;
-}
-.n-field textarea {
-  min-height: 84px;
-  resize: vertical;
-  line-height: 1.45;
-}
-.n-field input:focus-visible,
-.n-field textarea:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 0;
 }
 .n-help {
   color: var(--k2b-text-muted);
@@ -966,17 +970,15 @@ body.k2b-ui {
   gap: 0.5rem;
   margin-top: 1.25rem;
 }
-.n-textlink {
-  border: 0;
-  background: none;
-  padding: 0;
+/* The one quiet way to delete everything: small red text in line with the content, underlined when pointed at. */
+.n-dialog-acts .k2b-button.n-clear {
   color: var(--danger);
-  font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 500;
-  cursor: pointer;
-  justify-self: start;
-  border-radius: 4px;
+  font-weight: 400;
+}
+.n-dialog-acts .k2b-button.n-clear[data-variant="text"]:not(:disabled):hover {
+  color: var(--danger);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .n-drop {
   display: grid;
@@ -1526,6 +1528,12 @@ body.k2b-ui {
   }
   .n-sheet .n-dialog-acts .n-left {
     margin-right: 0;
+  }
+  /* A quiet side action stays beside the main one: both fit on one line, and stacking would make it loud again. */
+  .n-sheet .n-dialog-acts:has(.n-clear) {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
   }
   .n-sheet .n-qr,
   .n-sheet .n-linkbox .n-host {

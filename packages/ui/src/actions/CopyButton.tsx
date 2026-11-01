@@ -81,7 +81,7 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       loading={local.loading}
       loadingLabel={local.loadingLabel}
       type={local.type ?? "button"}
-      class={`k2b-copy-button ${local.class ?? ""}`}
+      class={`k2b-copy-button ${iconOnly() ? "k2b-icon-button " : ""}${local.class ?? ""}`}
       size={local.size ?? "sm"}
       variant={local.variant ?? "ghost"}
       aria-label={iconOnly() ? visibleLabel() : undefined}

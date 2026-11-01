@@ -188,7 +188,7 @@ Book also links to headings in lists, quotes, and notices. The editor preview ca
 
 ## Preview and refresh blocks {icon="refresh"}
 
-Rich mode shows query, contents, and chart previews that the server renders. To edit a block, move the cursor into it or choose **Show source**. Notebooks marks invalid settings on their source lines.
+Rich mode shows query, contents, and chart previews that the server renders. To edit a block, move the cursor into it or choose the code icon (**Show source**) in its corner. The same icon brings the preview back. Notebooks marks invalid settings on their source lines.
 
 A draft preview uses the query settings and headings of your draft. Queries still read saved data, even for the current note. The preview does not save the draft and does not change matching notes.
 

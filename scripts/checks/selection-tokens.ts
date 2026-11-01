@@ -102,6 +102,11 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Control: hover feedback of a pressed formatting toolbar button.",
   },
   {
+    file: "packages/editor/src/styles.css",
+    subject: '.cm-block-source-toggle .k2b-button[aria-pressed="true"] { background }',
+    reason: "Control: pressed switch between a block's preview and its source.",
+  },
+  {
     file: "packages/cloud/src/styles/global.css",
     subject: ".dark .cloud-app-canvas { --cloud-shell-selected }",
     reason: "Shell frame: owned by shell-soft-white-canvas.",

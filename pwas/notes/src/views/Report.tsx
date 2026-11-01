@@ -1,4 +1,4 @@
-import { Button, Checkbox } from "@k2b/ui";
+import { Button, Checkbox, TextInput } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { api, type ReportReason } from "../lib/api";
 import { t } from "../state";
@@ -69,23 +69,22 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
             <p class="n-lead">{t().reportLead}</p>
             <Show when={!props.linkId}>
               <div class="n-field">
-                <label class="n-l" for="n-report-link">
-                  {t().linkRead} / {t().linkEdit}
-                </label>
-                <input
-                  id="n-report-link"
-                  type="text"
-                  value={link()}
-                  onInput={(event) => setLink(event.currentTarget.value)}
+                <TextInput
+                  label={`${t().linkRead} / ${t().linkEdit}`}
+                  value={link}
+                  icon={false}
                   placeholder="…/p/…"
+                  onValueChange={setLink}
+                  error={() => (submitted() ? errors().link : undefined)}
+                  externalErrorId="n-report-link-error"
                 />
-                <span class="n-error-text">{submitted() ? (errors().link ?? "") : ""}</span>
+                <span class="n-error-text" id="n-report-link-error">
+                  {submitted() ? (errors().link ?? "") : ""}
+                </span>
               </div>
             </Show>
             <fieldset class="n-field" style={{ border: 0, padding: 0, margin: "1rem 0 0" }}>
-              <legend class="n-l" style={{ "font-weight": 500, "font-size": ".875rem", padding: 0 }}>
-                {t().reportReason}
-              </legend>
+              <legend style={{ "font-weight": 500, "font-size": ".875rem", padding: 0 }}>{t().reportReason}</legend>
               <div class="n-radios" style={{ "margin-top": ".35rem" }}>
                 <For each={REASONS}>
                   {(entry) => (
@@ -103,35 +102,37 @@ function ReportBody(props: { linkId?: string; close: () => void }) {
               </div>
             </fieldset>
             <div class="n-field">
-              <label class="n-l" for="n-report-text">
-                {t().reportText}
-              </label>
-              <textarea
-                id="n-report-text"
+              <TextInput
+                label={t().reportText}
+                value={text}
+                multiline
+                lines={3}
+                icon={false}
                 maxLength={10_000}
                 placeholder={t().reportTextPlaceholder}
-                value={text()}
-                onInput={(event) => setText(event.currentTarget.value)}
-                aria-invalid={submitted() && Boolean(errors().text)}
-                aria-describedby="n-report-text-error"
+                onValueChange={setText}
+                error={() => (submitted() ? errors().text : undefined)}
+                externalErrorId="n-report-text-error"
               />
               <span class="n-error-text" id="n-report-text-error">
                 {submitted() ? (errors().text ?? "") : ""}
               </span>
             </div>
             <div class="n-field">
-              <label class="n-l" for="n-report-email">
-                {t().reportEmail}
-              </label>
-              <input
-                id="n-report-email"
+              <TextInput
+                label={t().reportEmail}
+                description={t().reportEmailHelp}
+                value={email}
                 type="email"
+                icon={false}
                 placeholder="name@example.org"
-                value={email()}
-                onInput={(event) => setEmail(event.currentTarget.value)}
+                onValueChange={setEmail}
+                error={() => (submitted() ? errors().email : undefined)}
+                externalErrorId="n-report-email-error"
               />
-              <span class="n-help">{t().reportEmailHelp}</span>
-              <span class="n-error-text">{submitted() ? (errors().email ?? "") : ""}</span>
+              <span class="n-error-text" id="n-report-email-error">
+                {submitted() ? (errors().email ?? "") : ""}
+              </span>
             </div>
             <Checkbox
               class="n-field"
