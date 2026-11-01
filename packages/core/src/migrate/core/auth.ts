@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { migrateAppBootstrap } from "./app-bootstrap";
 import { migrateAppKeys } from "./app-keys";
+import { migrateAppMigration } from "./app-migration";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 import { migratePosix } from "./posix";
 import { migrate as migrateServiceAccountGroupManagers } from "./service-account-group-managers";
@@ -820,6 +821,7 @@ export const migrate = async (): Promise<void> => {
     WHERE status = 'active'
   `.simple();
   await migrateAppKeys();
+  await migrateAppMigration();
   await migrateAppBootstrap();
   console.log("  ✓ auth.service_account_credentials table");
   await sql`

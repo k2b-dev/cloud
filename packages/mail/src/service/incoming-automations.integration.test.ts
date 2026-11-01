@@ -872,6 +872,26 @@ suite("incoming automations", () => {
     });
     expect(enabledResult.ok && enabledResult.data.enabled).toBe(true);
     if (!enabledResult.ok) return;
+    const repeatedToggle = await setIncomingAutomationEnabled({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: created.data.revision, enabled: true },
+    });
+    expect(repeatedToggle).toEqual(enabledResult);
+    const repeatedUpdate = await updateIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: {
+        expectedRevision: created.data.revision,
+        name: enabledResult.data.name,
+        enabled: true,
+        scope: enabledResult.data.scope,
+        steps: enabledResult.data.steps,
+      },
+    });
+    expect(repeatedUpdate).toEqual(enabledResult);
 
     const classifierId = crypto.randomUUID();
     const updated = await updateIncomingAutomation({

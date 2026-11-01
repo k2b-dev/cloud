@@ -31,6 +31,8 @@ export type MailComposerHarnessOptions = {
   seed?: boolean;
   /** Write and preview side by side, as a person arranges the panes. */
   split?: boolean;
+  serverTransport?: boolean;
+  serverDraft?: MailDraft;
 };
 
 declare global {
@@ -211,7 +213,7 @@ window.mountComposer = (options) => {
     view.dispatch({ selection: { anchor: position } });
     view.focus();
   };
-  const draft = { ...initialDraft, intent: options.intent, signatureTemplateId: options.signatureTemplateId };
+  const draft = { ...initialDraft, ...options.serverDraft, intent: options.intent, signatureTemplateId: options.signatureTemplateId };
   Object.defineProperty(window, "WebSocket", { configurable: true, value: OfflineWebSocket });
   let expired = false;
   window.expireComposerSession = () => {
@@ -222,6 +224,7 @@ window.mountComposer = (options) => {
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(new URL(String(input), location.href), init);
       const path = new URL(request.url).pathname;
+      if (options.serverTransport) return originalFetch.call(window, request);
       if (expired) return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
       if (path.endsWith("/draft-seeds/materialize")) {
         const json = materializeDraftSeedInputSchema.parse(await request.json());
@@ -304,7 +307,7 @@ window.mountComposer = (options) => {
                     second: { type: "group", items: ["preview"], active: "preview" },
                   },
                 }
-              : options.seed
+              : options.seed || options.serverTransport
                 ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } }
                 : layout
           }
