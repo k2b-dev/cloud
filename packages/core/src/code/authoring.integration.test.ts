@@ -17,7 +17,8 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
 import { codeAuthoringServices } from "./authoring";
-import { CodeAuthoringConflictSchema, codeAuthoringContracts } from "./authoring-contracts";
+import { CodeAuthoringConflictSchema, type CodeAuthoringData, codeAuthoringContracts } from "./authoring-contracts";
+import { codePolicyPreset } from "./policy-contracts";
 import * as hosts from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash } from "./store";
@@ -206,5 +207,68 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     await expect(activation).rejects.toBeInstanceOf(CodeDataError);
     await expect(activation).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(await sql`SELECT id FROM code.activations WHERE code_id=${initialized.config.codeId}`).toHaveLength(0);
+  });
+  test("workspace status compares local edits with its immutable base and latest approval", async () => {
+    const initialized = await codeAuthoringServices.init({ title: "Status fixture" }, context);
+    const files = { "code.ts": "status source" };
+    const saved = await codeAuthoringServices.push(
+      { codeId: initialized.config.codeId, entry: "code.ts", files, baseVersionId: null },
+      context,
+    );
+    const config = { ...initialized.config, baseVersionId: saved.submission.version.id };
+    const first = codeAuthoringContracts.status.data.parse(await codeAuthoringServices.status({ config, files }, context));
+    expect(first.items[0]).toMatchObject({ baseCurrent: true, modified: false, latest: { status: saved.submission.status } });
+    expect((await codeAuthoringServices.status({ config, files: { "code.ts": "local edit" } }, context)).items[0]?.modified).toBe(true);
+    await codeAuthoringServices.push(
+      { codeId: config.codeId, entry: "code.ts", files: { "code.ts": "new server version" }, baseVersionId: config.baseVersionId },
+      context,
+    );
+    const stale = await codeAuthoringServices.status({ config, files }, context);
+    expect(stale.items[0]).toMatchObject({ baseCurrent: false, modified: false });
+  });
+  test("pullAll is Cloud-admin-only and contains resource Code, never personal or app Code", async () => {
+    const nonAdmin = { ...context, authority: { ...context.authority, actor: { kind: "user" as const, user: { ...user, roles: [] } } } };
+    await expect(codeAuthoringServices.pullAll({}, nonAdmin)).rejects.toThrow("Cloud administration");
+    const [account] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.service_accounts(name,kind,created_by) VALUES('authoring-resource','code',${id}::uuid) RETURNING id`;
+    const [appAccount] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.service_accounts(name,kind,created_by) VALUES('authoring-app','code',${id}::uuid) RETURNING id`;
+    if (!account || !appAccount) throw new Error("Missing test accounts");
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,created_by)
+      VALUES('c_allresource','resource','example.box','box_1234','Resource',${account.id}::uuid,${id}::uuid)`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_app_id,title,service_account_id,created_by)
+      VALUES('c_allapp','app','example','App',${appAccount.id}::uuid,${id}::uuid)`;
+    const reader = spyOn(catalog, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: false,
+      error: { code: "NOT_FOUND", message: "not installed", status: 404 },
+    });
+    try {
+      const items: CodeAuthoringData<"pullAll">["items"] = [];
+      let cursor: string | undefined;
+      do {
+        const page = codeAuthoringContracts.pullAll.data.parse(await codeAuthoringServices.pullAll({ cursor }, context));
+        items.push(...page.items);
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+      expect(items.map((item) => item.config.codeId)).toEqual(["c_allresource"]);
+      expect(items[0]?.config.owner.kind).toBe("resource");
+    } finally {
+      reader.mockRestore();
+    }
+  });
+  test("policy preview and update reject stale revisions through the shared authoring service", async () => {
+    const { policy } = await codeAuthoringServices.policyRead({}, context);
+    const definition = codePolicyPreset("admin");
+    const preview = await codeAuthoringServices.policyPreview({ revision: policy.revision, definition, limit: 20 }, context);
+    expect(preview.revision).toBe(policy.revision);
+    const updated = await codeAuthoringServices.policyUpdate({ revision: policy.revision, definition }, context);
+    expect(updated.policy.revision).toBe(policy.revision + 1);
+    await expect(codeAuthoringServices.policyUpdate({ revision: policy.revision, definition }, context)).rejects.toThrow("changed");
+    await expect(codeAuthoringServices.policyPreview({ revision: policy.revision, definition, limit: 20 }, context)).rejects.toThrow(
+      "changed",
+    );
+    expect((await codeAuthoringServices.policyRead({}, context)).policy.revision).toBe(updated.policy.revision);
   });
 });

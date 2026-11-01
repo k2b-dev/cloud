@@ -1,10 +1,13 @@
 export type {
   CodeContext,
   CodeHandle,
+  CodeHttp,
+  CodeHttpResult,
   CodeLiteralId,
   CodeNavigationItem,
   CodeRequest,
   CodeScheduleHandler,
+  CodeSecret,
   CodeUser,
   CodeWebhookContext,
 } from "./authoring-types";

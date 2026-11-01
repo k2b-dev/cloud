@@ -33,6 +33,22 @@ export type CodeNavigationItem = { title: string; path: string };
 /** A synchronous or asynchronous schedule callback, also used for a manual start. */
 export type CodeScheduleHandler = () => void | Promise<void>;
 
+/** Opaque header placeholder. It never contains a value; only Core can substitute it at an approved destination. */
+declare const __codeSecret: unique symbol;
+export type CodeSecret = string & { readonly [__codeSecret]: true };
+/** Bounded public HTTPS result. Body is base64, preserving binary bytes; echoed credentials are redacted by Core. */
+export type CodeHttpResult = { status: number; headers: Record<string, string>; body: string };
+export type CodeHttp = {
+  fetch(
+    url: string,
+    options?: {
+      method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
+      headers?: Record<string, string>;
+      body?: string;
+    },
+  ): Promise<CodeHttpResult>;
+};
+
 type Input0 = (Record<string, never>);
 
 type Data0 = (Array<(string)>);
@@ -41,23 +57,27 @@ type Input1 = ({ "cursor"?: (string) });
 
 type Data1 = ({ "next": ((string | null)); "rows": (Array<({ "id": (string); "state": (("ready" | "empty")) & (string) })>) });
 
-type Input2 = ({ "details"?: ((({ "kind": ("note") & (string); "text": (string); [key: string]: unknown }) | ({ "count": (number); "kind": ("count") & (string); [key: string]: unknown }))); "title": (string); "idempotencyKey": string });
+type Input2 = ({ "id": (string) });
 
-type Data2 = ({ "id": (string) });
+type Data2 = ({ "view": ({ "permission": (("read" | "write" | "admin")) & (string); "title": (string) }) });
 
-type Input3 = ({ "idempotencyKey"?: never });
+type Input3 = ({ "details"?: ((({ "kind": ("note") & (string); "text": (string); [key: string]: unknown }) | ({ "count": (number); "kind": ("count") & (string); [key: string]: unknown }))); "title": (string); "idempotencyKey": string });
 
-type Data3 = ({ "ok": (boolean) });
+type Data3 = ({ "id": (string) });
 
-type Input4 = ({ "itemId": (string); "destination": CodeHandle<"work-shop.workshop">; "idempotencyKey"?: never });
+type Input4 = ({ "idempotencyKey"?: never });
 
-type Data4 = ({ "moved": (boolean) });
+type Data4 = ({ "ok": (boolean) });
 
-type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((input: Input0) => Promise<Data0>) } };
+type Input5 = ({ "itemId": (string); "destination": CodeHandle<"work-shop.workshop">; "idempotencyKey"?: never });
 
-type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "item": { readonly "inspect": ((input: Input3) => Promise<Data3>) } };
+type Data5 = ({ "moved": (boolean) });
 
-type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((input: Input2) => Promise<Data2>); readonly "move": ((input: Input4) => Promise<Data4>) }; readonly "stock": { readonly "list": ((input: Input1) => Promise<Data1>) } };
+type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((input: Input0) => Promise<Data0>) }; readonly "workshop": { readonly "read": ((input: Input2) => Promise<Data2>) } };
+
+type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "item": { readonly "inspect": ((input: Input4) => Promise<Data4>) } };
+
+type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((input: Input3) => Promise<Data3>); readonly "move": ((input: Input5) => Promise<Data5>) }; readonly "stock": { readonly "list": ((input: Input1) => Promise<Data1>) } };
 
 export declare const work_shop: { readonly "app": (() => Handle0<"work-shop">); readonly "item": (<const Id extends string>(id: CodeLiteralId<Id>) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: CodeLiteralId<Id>) => Handle2<Id>) };
 
@@ -83,13 +103,17 @@ export type CodeApp = {
 };
 
 export declare const app: CodeApp;
+
+export declare const secrets: Readonly<Record<string, CodeSecret>>;
+
+export declare const http: CodeHttp;
 "
 `;
 
 exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: runtime 1`] = `
 "// Generated from Cloud capability manifests. Do not edit.
 const __codeSdk = (() => {
-const manifest = {"appMethods":{"all":2,"delete":2,"fetch":2,"get":2,"nav":2,"on":3,"post":2,"put":2,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":["app"],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}}};
+const manifest = {"appMethods":{"all":2,"delete":2,"fetch":2,"get":2,"nav":2,"on":3,"post":2,"put":2,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":["app"],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}}};
 const RESOURCE_ID_MAX = 512;
 
 const handles = new WeakMap();
@@ -182,8 +206,22 @@ app.schedule = (cron, fn, options) => {
 };
 for (const method of Object.keys(manifest.appMethods).filter(name => name !== "schedule")) app[method] = () => unavailable(method);
 Object.freeze(app);
+const secrets = new Proxy(node(), {
+  get(_target, name) {
+    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) throw new Error("code_sdk_invalid_secret_name");
+    return "[secret:" + name + "]";
+  },
+  set() { throw new Error("code_sdk_readonly_secrets"); },
+});
+const http = Object.freeze({
+  async fetch(url, options = {}) {
+    if (!bridge) throw new Error("code_sdk_bridge_unbound");
+    if (typeof url !== "string" || !options || typeof options !== "object" || Array.isArray(options)) throw new Error("code_sdk_invalid_input");
+    return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
+  },
+});
 const __codeSdk = Object.freeze({
-  namespaces, owner, app,
+  namespaces, owner, app, secrets, http,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
@@ -199,6 +237,8 @@ const __codeSdk = Object.freeze({
 
 return __codeSdk;
 })();
+export const secrets = __codeSdk.secrets;
+export const http = __codeSdk.http;
 export { __codeSdk };
 export const work_shop = __codeSdk.namespaces["work_shop"];
 export const owner = __codeSdk.owner;
@@ -224,7 +264,7 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
     {
       "appId": "work-shop",
       "exportName": "work_shop",
-      "manifestHash": "e392278c196be1536b837aa0d7a4fa6b1bd44b6639732b50eb364c66a648b22f",
+      "manifestHash": "4510bf0e2c83810f8cccbe2a3ed845c18ede4c1ecb2f636f89f9edeb8539e005",
     },
   ],
   "events": [
@@ -381,6 +421,67 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
       "refs": {},
       "schemaHash": "d6f4776e22ecfbe694ea5f31e59bed02c1548085ce97dd34c7ae711faa7b7c56",
       "target": "work-shop.workshop",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.workshop.read",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "view": {
+            "additionalProperties": false,
+            "properties": {
+              "permission": {
+                "enum": [
+                  "read",
+                  "write",
+                  "admin",
+                ],
+                "type": "string",
+              },
+              "title": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "title",
+              "permission",
+            ],
+            "type": "object",
+          },
+        },
+        "required": [
+          "view",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Workshop ID.",
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "workshop.read",
+      "methodPath": [
+        "workshop",
+        "read",
+      ],
+      "refs": {},
+      "schemaHash": "8dec5022589421f2f1ce24ee68cbf0e7fff1cf9f71ee4b5c5968d45b3f5589e6",
+      "target": null,
     },
     {
       "appId": "work-shop",

@@ -47,6 +47,7 @@ export async function assertCodeDestination(root: string, owner?: CodeOwner) {
   }
   throw new Error("The resource's local Code folder already exists. Choose a new --out directory.");
 }
+export class CodeProjectNotFoundError extends Error {}
 export async function loadCodeProject(path = ".") {
   let directory = resolve(path);
   await assertCodePath(directory);
@@ -62,7 +63,7 @@ export async function loadCodeProject(path = ".") {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
     }
     const parent = dirname(directory);
-    if (parent === directory) throw new Error("No code.json found. Run cld code init or pull first.");
+    if (parent === directory) throw new CodeProjectNotFoundError("No code.json found. Run cld code init or pull first.");
     directory = parent;
   }
 }
@@ -150,4 +151,45 @@ export async function writeCodeSdk(directory: string, files: Record<string, stri
       await file.close();
     }
   }
+}
+/** Discover local projects without traversing links, dependencies or generated output. A project is a traversal boundary. */
+export async function listCodeProjects(root?: string) {
+  if (root === undefined) {
+    try {
+      return [await loadCodeProject(".")];
+    } catch (error) {
+      if (!(error instanceof CodeProjectNotFoundError)) throw error;
+    }
+    root = "code";
+  }
+  await assertCodePath(root);
+  if ((await lstat(root)).isFile()) return [await loadCodeProject(root)];
+  const projects: Awaited<ReturnType<typeof loadCodeProject>>[] = [];
+  async function visit(directory: string) {
+    await assertCodePath(directory);
+    const entries = await readdir(directory, { withFileTypes: true });
+    const config = entries.find((entry) => entry.name === "code.json");
+    if (config) {
+      if (!config.isFile()) throw new Error("code.json must be a regular file.");
+      projects.push(await loadCodeProject(directory));
+      return;
+    }
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      if (entry.name.startsWith(".") || ignored.has(entry.name)) continue;
+      if (entry.isSymbolicLink()) throw new Error("Symbolic links are not allowed in Code workspaces.");
+      if (entry.isDirectory()) await visit(join(directory, entry.name));
+    }
+  }
+  await visit(resolve(root));
+  if (!projects.length) {
+    try {
+      return [await loadCodeProject(root)];
+    } catch (error) {
+      if (!(error instanceof CodeProjectNotFoundError)) throw error;
+    }
+  }
+  projects.sort((a, b) => (a.config.codeId < b.config.codeId ? -1 : a.config.codeId > b.config.codeId ? 1 : 0));
+  if (new Set(projects.map((project) => project.config.codeId)).size !== projects.length)
+    throw new Error("Duplicate local Code IDs. Select one checkout root.");
+  return projects;
 }

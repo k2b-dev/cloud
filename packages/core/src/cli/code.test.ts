@@ -5,8 +5,9 @@ import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
 import { codeTestFailure } from "@k2b/cloud/code";
 import type { CodeAuthoringData, CodeProject } from "../code/authoring-contracts";
+import { codePolicyPreset } from "../code/policy-contracts";
 import code from "./code";
-import { codeProjectFolder, loadCodeProject, readCodeFiles, writeCodeProject } from "./code-files";
+import { codeProjectFolder, listCodeProjects, loadCodeProject, readCodeFiles, writeCodeProject } from "./code-files";
 
 const uuid = "11111111-1111-4111-8111-111111111111";
 const config: CodeProject = {
@@ -321,6 +322,7 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
           binding,
           staleComparison: false,
           files: [{ path: "code.ts", lines: [{ kind: "add", text: "new" }] }],
+          secrets: [],
           permissions: [],
           policyRows: [],
         },
@@ -439,4 +441,340 @@ test.each(["diff", "activate"])("%s explains a missing base without sending an i
   expect(run.printed).toEqual([
     { version: 1, error: { code: "code_cli_input", message: "Keine gespeicherte Version. Führe zuerst push aus.", details: null } },
   ]);
+});
+
+const serverCode = {
+  id: config.codeId,
+  owner: config.owner,
+  title: config.title,
+  serviceAccountId: uuid,
+  state: "paused",
+  activeVersionId: uuid,
+  pauseReason: "manual",
+  pauseRows: [],
+  pausePolicyRevision: null,
+  createdBy: uuid,
+  createdAt: "2026-10-31T12:00:00.000Z",
+};
+const runMetadata = {
+  id: uuid,
+  codeId: config.codeId,
+  versionId: uuid,
+  trigger: "manual",
+  entrypoint: "monday",
+  state: "failed",
+  outcome: "lease_lost",
+  createdAt: serverCode.createdAt,
+  startedAt: serverCode.createdAt,
+  endedAt: serverCode.createdAt,
+};
+const secretMetadata = {
+  name: "BANK_TOKEN",
+  origin: "https://bank.example",
+  pathPrefix: "/api",
+  headers: ["authorization"],
+  binding_revision: uuid,
+  configured: true,
+};
+test.each(["json", "jsonl"] as const)("C18b %s success contracts remain unchanged across locales", async (output) => {
+  const { root, directory } = await project();
+  const policy = { revision: 3, definition: codePolicyPreset("admin"), updatedBy: uuid, updatedAt: serverCode.createdAt };
+  const records: Array<{ args: string[]; flags: CloudCliFlags; data: unknown; key: string }> = [
+    {
+      args: ["status", root],
+      flags: {},
+      data: {
+        version: 1,
+        items: [{ code: serverCode, permission: "editor", baseVersionId: uuid, baseCurrent: true, modified: false, latest: null }],
+      },
+      key: "status",
+    },
+    { args: ["runs", directory], flags: {}, data: { version: 1, items: [runMetadata], nextCursor: "next" }, key: "runs" },
+    { args: ["runs", directory], flags: { run: uuid }, data: { version: 1, run: runMetadata, contents: null }, key: "runRead" },
+    { args: ["pause", directory], flags: { yes: true }, data: { version: 1, state: "paused" }, key: "pause" },
+    { args: ["resume", directory], flags: { yes: true }, data: { version: 1, state: "active" }, key: "resume" },
+    { args: ["policy", "read"], flags: {}, data: { version: 1, policy }, key: "policyRead" },
+    {
+      args: ["policy", "effective"],
+      flags: {},
+      data: { version: 1, revision: 3, rows: [{ row: "read", value: "automatic", source: "default", groupIds: [] }] },
+      key: "policyEffective",
+    },
+    {
+      args: ["policy", "preview"],
+      flags: { revision: "3", preset: "admin" },
+      data: { version: 1, revision: 3, total: 0, items: [], nextCursor: null },
+      key: "policyPreview",
+    },
+    {
+      args: ["policy", "update"],
+      flags: { revision: "3", preset: "admin", yes: true },
+      data: { version: 1, policy, pauseJobId: uuid },
+      key: "policyUpdate",
+    },
+    {
+      args: ["secret", "list", directory],
+      flags: {},
+      data: { version: 1, items: [secretMetadata], nextCursor: "NEXT" },
+      key: "secretList",
+    },
+    {
+      args: ["secret", "delete", "BANK_TOKEN", directory],
+      flags: { "binding-revision": uuid, yes: true },
+      data: { version: 1, deleted: true },
+      key: "secretDelete",
+    },
+  ];
+  for (const record of records) {
+    for (const locale of ["de", "en"]) {
+      const invocation = context(record.args, record.flags, output, () => Response.json(record.data));
+      invocation.ctx.options.locale = locale;
+      expect(await code.run(invocation.ctx)).toBe(0);
+      expect(invocation.printed).toEqual([record.data]);
+      expect(invocation.requests[0]?.path).toBe(`/api/code/authoring/${record.key}`);
+    }
+  }
+});
+test("status scans all project folders, excludes generated files and rejects duplicate IDs", async () => {
+  const { root, directory } = await project();
+  await writeCodeProject(root, { ...config, codeId: "c_5678", owner: { kind: "person", userId: uuid } }, { "code.ts": "second" });
+  expect((await listCodeProjects(root)).map((project) => project.config.codeId)).toEqual(["c_1234", "c_5678"]);
+  await mkdir(join(directory, "sdk"));
+  await writeFile(join(directory, "sdk", "ignore.ts"), "generated");
+  expect(await readCodeFiles(directory)).toEqual({ "code.ts": source });
+  await writeCodeProject(join(root, "duplicate"), config, {});
+  await expect(listCodeProjects(root)).rejects.toThrow("Duplicate");
+});
+test("pull --all walks empty cursor pages, writes short-ID layouts and prints one aggregate", async () => {
+  const { root } = await project();
+  const out = join(root, "all");
+  let calls = 0;
+  const pulled = { version: 1, config, files: { "code.ts": source } };
+  const invocation = context(["pull"], { all: true, out }, "json", (_path, input) => {
+    calls++;
+    if (calls === 1) return Response.json({ version: 1, items: [], nextCursor: "c_1111" });
+    expect(input.cursor).toBe("c_1111");
+    return Response.json({ version: 1, items: [pulled], nextCursor: null });
+  });
+  expect(await code.run(invocation.ctx)).toBe(0);
+  expect(invocation.printed.join("")).toBe(JSON.stringify({ version: 1, items: [pulled], nextCursor: null }, null, 2) + "\n");
+  expect(await readFile(join(out, "example", "box_1234", "code.ts"), "utf8")).toBe(source);
+  expect(await code.run(invocation.ctx)).toBe(1); // Existing source is never overwritten.
+});
+test("stale policy revision fails once with no automatic reread or replacement", async () => {
+  const failure = { version: 1, error: { code: "CONFLICT", message: "Code policy changed; read and preview it again.", details: null } };
+  for (const verb of ["preview", "update"]) {
+    const invocation = context(
+      ["policy", verb],
+      { revision: "3", preset: "open", ...(verb === "update" ? { yes: true } : {}) },
+      "json",
+      () => Response.json(failure, { status: 409 }),
+    );
+    expect(await code.run(invocation.ctx)).toBe(1);
+    expect(invocation.printed).toEqual([failure]);
+    expect(invocation.requests).toHaveLength(1);
+    expect(invocation.requests[0]?.input).toMatchObject({ revision: 3, definition: codePolicyPreset("open") });
+  }
+});
+test("runs retain reader redaction and paginate ordered call metadata", async () => {
+  const { directory } = await project();
+  const reader = context(["runs", directory], { run: uuid }, "text", () => Response.json({ version: 1, run: runMetadata, contents: null }));
+  expect(await code.run(reader.ctx)).toBe(0);
+  expect(reader.printed.join("\n")).toMatchInlineSnapshot(`
+"11111111-1111-4111-8111-111111111111 · failed · Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung.
+Laufinhalte erfordern Bearbeitungsrechte."
+`);
+  const contents = {
+    input: null,
+    output: null,
+    inputChunked: false,
+    outputChunked: false,
+    content: null,
+    calls: [
+      {
+        ordinal: 2,
+        kind: "action",
+        capability: "example.task.create",
+        call: null,
+        result: null,
+        callChunked: true,
+        resultChunked: true,
+        state: "uncertain",
+        startedAt: serverCode.createdAt,
+        endedAt: null,
+      },
+    ],
+    nextCursor: 2,
+  };
+  const editor = context(["runs", directory], { run: uuid, "call-cursor": "1" }, "json", () =>
+    Response.json({ version: 1, run: runMetadata, contents }),
+  );
+  expect(await code.run(editor.ctx)).toBe(0);
+  expect(editor.requests[0]?.input.cursor).toBe(1);
+  expect(editor.printed).toEqual([{ version: 1, run: runMetadata, contents }]);
+});
+test("secret file values never enter argv, output or error details, even when remote errors echo them", async () => {
+  const { root, directory } = await project();
+  const privateValue = "fixture-private-bank-credential";
+  const privateFile = join(root, "secret-input");
+  await writeFile(privateFile, privateValue + "\n", { mode: 0o600 });
+  const flags = { from: privateFile, "binding-revision": uuid };
+  for (const output of ["text", "json", "jsonl"] as const) {
+    const invocation = context(["secret", "set", "BANK_TOKEN", directory], flags, output, () =>
+      Response.json({ version: 1, secret: secretMetadata }),
+    );
+    expect(await code.run(invocation.ctx)).toBe(0);
+    expect(invocation.requests[0]?.input.value).toBe(privateValue);
+    expect(JSON.stringify([invocation.ctx.args, invocation.ctx.flags, invocation.printed, invocation.errors])).not.toContain(privateValue);
+    const denied = context(["secret", "set", "BANK_TOKEN", directory], flags, output, () =>
+      Response.json(
+        { version: 1, error: { code: privateValue, message: privateValue, details: { value: privateValue } } },
+        { status: 409 },
+      ),
+    );
+    expect(await code.run(denied.ctx)).toBe(1);
+    expect(JSON.stringify([denied.printed, denied.errors])).not.toContain(privateValue);
+  }
+  const invalid = context(["secret", "set", "BANK_TOKEN", directory, privateValue], flags);
+  expect(await code.run(invalid.ctx)).toBe(1);
+  expect(invalid.requests).toEqual([]);
+  expect(JSON.stringify([invalid.printed, invalid.errors])).not.toContain(privateValue);
+  const inline = context(["secret", "set", "BANK_TOKEN", directory], { ...flags, value: privateValue });
+  expect(await code.run(inline.ctx)).toBe(1);
+  expect(inline.requests).toEqual([]);
+});
+test("secret stdin is consumed privately by a child process, with no value in its argv", async () => {
+  const { root, directory } = await project();
+  const script = join(root, "stdin-driver.ts");
+  await writeFile(
+    script,
+    `import code from ${JSON.stringify(import.meta.dir + "/code.ts")};
+const printed = [];
+const ctx = { args: ["secret", "set", "BANK_TOKEN", ${JSON.stringify(directory)}], flags: { from: "-", "binding-revision": ${JSON.stringify(uuid)} }, options: {output:"json",locale:"en"},
+fetch: async (_path, init) => { const input = JSON.parse(init.body); if (!input.value || input.value.includes("\\n")) throw new Error("bad private input"); return Response.json({ version:1, secret:${JSON.stringify(secretMetadata)} }); },
+json: value => printed.push(value), error: value => printed.push(value), print: value => printed.push(value) };
+const exit = await code.run(ctx); console.log(JSON.stringify({exit,printed}));`,
+  );
+  const child = Bun.spawn([process.execPath, script], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  child.stdin.write("fixture-stdin-credential\n");
+  child.stdin.end();
+  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect(exit).toBe(0);
+  expect(stderr).toBe("");
+  expect(stdout).not.toContain("fixture-stdin-credential");
+  expect(JSON.parse(stdout)).toEqual({ exit: 0, printed: [{ version: 1, secret: secretMetadata }] });
+});
+test.each(["pause", "resume", "secret-delete", "policy-update"])("%s refuses an unconfirmed mutation", async (name) => {
+  const { directory } = await project();
+  const args =
+    name === "secret-delete"
+      ? ["secret", "delete", "BANK_TOKEN", directory]
+      : name === "policy-update"
+        ? ["policy", "update"]
+        : [name, directory];
+  const invocation = context(
+    args,
+    name === "secret-delete" ? { "binding-revision": uuid } : name === "policy-update" ? { revision: "3", preset: "open" } : {},
+  );
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.requests).toEqual([]);
+});
+test("C18b command help has every operation and never reads private input", async () => {
+  for (const args of [["help"], ["secret", "set", "help"], ["policy", "help"], ["runs", "help"]]) {
+    const invocation = context(args, {}, "text");
+    expect(await code.run(invocation.ctx)).toBe(0);
+    expect(invocation.requests).toEqual([]);
+  }
+  const invocation = context(["help"], {}, "text");
+  await code.run(invocation.ctx);
+  for (const name of ["status", "runs", "pause", "resume", "policy", "secret"]) expect(invocation.printed.join("\n")).toContain(name);
+});
+
+test("CI may pause but cannot resume execution", async () => {
+  const { directory } = await project();
+  const invocation = context(["resume", directory], { yes: true });
+  invocation.ctx.options.ci = true;
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.requests).toEqual([]);
+  expect(invocation.printed).toEqual([
+    { version: 1, error: { code: "code_cli_input", message: "CI darf Code pushen, aber nie fortsetzen.", details: null } },
+  ]);
+});
+test("status finds the surrounding project from nested source paths", async () => {
+  const { directory } = await project();
+  await mkdir(join(directory, "lib"));
+  await writeFile(join(directory, "lib", "module.ts"), "export {};");
+  for (const path of [directory, join(directory, "lib"), join(directory, "lib", "module.ts")]) {
+    expect((await listCodeProjects(path)).map((project) => project.config.codeId)).toEqual([config.codeId]);
+  }
+});
+test("missing pull ID gets an actionable input error instead of a schema dump", async () => {
+  const invocation = context(["pull"]);
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.requests).toEqual([]);
+  expect(invocation.printed).toEqual([
+    { version: 1, error: { code: "code_cli_input", message: "Gib eine Code-ID oder --all an.", details: null } },
+  ]);
+});
+test("private input files can be selected through symlinks without weakening workspace checks", async () => {
+  const { root, directory } = await project();
+  const privateFile = join(root, "private-value");
+  const linked = join(root, "mounted-value");
+  await writeFile(privateFile, "private-mounted-credential", { mode: 0o600 });
+  await symlink(privateFile, linked);
+  const invocation = context(["secret", "set", "BANK_TOKEN", directory], { from: linked, "binding-revision": uuid }, "json", () =>
+    Response.json({ version: 1, secret: secretMetadata }),
+  );
+  expect(await code.run(invocation.ctx)).toBe(0);
+  expect(invocation.requests[0]?.input.value).toBe("private-mounted-credential");
+  expect(JSON.stringify(invocation.printed)).not.toContain("private-mounted-credential");
+});
+test("pull --all stages one valid JSON value and discards it on a later failure", async () => {
+  const { root } = await project();
+  let calls = 0;
+  const failure = { version: 1, error: { code: "NOT_FOUND", message: "Code not found.", details: null } };
+  const invocation = context(["pull"], { all: true, out: join(root, "partial") }, "json", () =>
+    ++calls === 1
+      ? Response.json({ version: 1, items: [{ version: 1, config, files: { "code.ts": "saved source" } }], nextCursor: config.codeId })
+      : Response.json(failure, { status: 404 }),
+  );
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.printed).toEqual([failure]);
+  expect(await readFile(join(root, "partial", "example", "box_1234", "code.ts"), "utf8")).toBe("saved source");
+});
+
+test("explicit status checkout roots take precedence over an enclosing project", async () => {
+  const { directory } = await project();
+  const nestedRoot = join(directory, "instance-code");
+  const nestedConfig = { ...config, codeId: "c_5678", owner: { kind: "person" as const, userId: uuid } };
+  await writeCodeProject(nestedRoot, nestedConfig, { "code.ts": "nested source" });
+  expect((await listCodeProjects(nestedRoot)).map((project) => project.config.codeId)).toEqual(["c_5678"]);
+});
+test.each(["json", "jsonl"] as const)("empty pull --all preserves host %s formatting", async (output) => {
+  const { root } = await project();
+  const invocation = context(["pull"], { all: true, out: join(root, "empty") }, output, () =>
+    Response.json({ version: 1, items: [], nextCursor: null }),
+  );
+  expect(await code.run(invocation.ctx)).toBe(0);
+  expect(invocation.printed.join("")).toBe(
+    output === "json" ? '{\n  "version": 1,\n  "items": [],\n  "nextCursor": null\n}\n' : '{"version":1,"items":[],"nextCursor":null}\n',
+  );
+});
+
+test("status defaults to the current project or ./code without scanning unrelated folders", async () => {
+  const { root } = await project();
+  const directory = await writeCodeProject(join(root, "code"), config, { "code.ts": source });
+  await symlink(join(root, "example"), join(root, "unrelated-link"));
+  const script = join(root, "status-default.ts");
+  await writeFile(
+    script,
+    `import { listCodeProjects } from ${JSON.stringify(import.meta.dir + "/code-files.ts")}; console.log(JSON.stringify((await listCodeProjects()).map(project => project.config.codeId)));`,
+  );
+  for (const cwd of [root, directory]) {
+    const child = Bun.spawn([process.execPath, script], { cwd, stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    expect(exit).toBe(0);
+    expect(stderr).toBe("");
+    expect(JSON.parse(stdout)).toEqual([config.codeId]);
+  }
 });

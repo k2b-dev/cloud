@@ -263,6 +263,13 @@ The contracts barrel exports `CodeCheckedVersionManifestSchema`,
 `CodePolicyRowSchema` and `CodePolicyManifestSchema` for the checker and Core's
 version lifecycle. See [Code versions and approval](/en/docs/platform/code-versions).
 These schemas describe evidence; they grant no execution or resource access.
+`CodeSecretBindingSchema`, `CodeSecretVersionBindingSchema`, `CodeSecretNameSchema`,
+`CodeHttpRequestSchema`, `CodeHttpResultSchema` and their types describe
+[Code secrets](/en/docs/platform/code-secrets) and the HTTP bridge.
+`codeSecretPlaceholder`, `codeSecretHeaderAllowed` and `codeSecretPathAllowed`
+supply the shared placeholder and destination grammar. The services barrel
+exports `PurposeSecretRoots` and `purposeSecretCipher` for purpose-separated
+encryption and root migration.
 
 The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator

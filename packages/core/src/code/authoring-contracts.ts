@@ -2,8 +2,10 @@ import { CODE_CHECK_LIMITS, CodeCheckResultSchema, CodeTestCaseSchema, CodeTestR
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { codeActivationContracts } from "./activation-contracts";
-import { CodeIdSchema, CodeOwnerSchema, CodeSourceFilesSchema } from "./contracts";
+import { CodeIdSchema, CodeOwnerSchema, CodeSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
+import { codePolicyContracts } from "./policy-contracts";
 import { codeSchedulingContracts } from "./scheduling-contracts";
+import { codeSecretContracts } from "./secret-contracts";
 import { CodeVersionDiffFileSchema, codeVersionContracts } from "./version-contracts";
 
 /** Versioned local code.json. IDs determine folders; title and owner remain metadata. Never stores credentials. */
@@ -54,6 +56,19 @@ const check = z
   .strict();
 const pulled = z.object({ version: z.literal(1), config: CodeProjectSchema, files: CodeSourceFilesSchema }).strict();
 const submitted = z.object({ version: z.literal(1), submission: codeVersionContracts.submit.data }).strict();
+/** Local source compared with its saved base and the current server version. No filesystem paths. */
+export const CodeLocalStatusSchema = z
+  .object({
+    code: CodeSchema,
+    permission: z.enum(["reader", "editor"]),
+    baseVersionId: z.uuid().nullable(),
+    baseCurrent: z.boolean(),
+    modified: z.boolean(),
+    latest: codeVersionContracts.submit.data.nullable(),
+  })
+  .strict();
+/** Stable aggregate for every discovered local code.json, ordered by Code ID. */
+export const CodeWorkspaceStatusSchema = z.object({ version: z.literal(1), items: z.array(CodeLocalStatusSchema) }).strict();
 /** Single source of truth for C18 CLI and C19 chat tools. Success values are printed unchanged by --json.
  * v1 has no elapsed times or machine paths. Test/simulate reuse C17's deterministic fake-only result verbatim.
  * HTTP authoring endpoints use POST /api/code/authoring/<key>; failures use CodeAuthoringErrorSchema.
@@ -64,6 +79,28 @@ export const codeAuthoringContracts = {
     data: pulled,
   },
   pull: { input: z.object({ codeId: CodeIdSchema }).strict(), data: pulled },
+  pullAll: {
+    input: z.object({ cursor: CodeIdSchema.optional() }).strict(),
+    data: z.object({ version: z.literal(1), items: z.array(pulled), nextCursor: CodeIdSchema.nullable() }).strict(),
+  },
+  status: {
+    input: z.object({ config: CodeProjectSchema, files: CodeSourceFilesSchema }).strict(),
+    data: CodeWorkspaceStatusSchema,
+  },
+  runs: { input: codeQueryContracts.runList.input, data: codeQueryContracts.runList.data.extend({ version: z.literal(1) }) },
+  runRead: { input: codeQueryContracts.runRead.input, data: codeQueryContracts.runRead.data.extend({ version: z.literal(1) }) },
+  pause: { input: codeVersionContracts.pause.input, data: codeVersionContracts.pause.data.extend({ version: z.literal(1) }) },
+  resume: { input: codeVersionContracts.resume.input, data: codeVersionContracts.resume.data.extend({ version: z.literal(1) }) },
+  policyRead: { input: codePolicyContracts.read.input, data: codePolicyContracts.read.data.extend({ version: z.literal(1) }) },
+  policyEffective: {
+    input: codePolicyContracts.effective.input,
+    data: codePolicyContracts.effective.data.extend({ version: z.literal(1) }),
+  },
+  policyPreview: { input: codePolicyContracts.preview.input, data: codePolicyContracts.preview.data.extend({ version: z.literal(1) }) },
+  policyUpdate: { input: codePolicyContracts.update.input, data: codePolicyContracts.update.data.extend({ version: z.literal(1) }) },
+  secretSet: { input: codeSecretContracts.set.input, data: codeSecretContracts.set.data.extend({ version: z.literal(1) }) },
+  secretList: { input: codeSecretContracts.list.input, data: codeSecretContracts.list.data.extend({ version: z.literal(1) }) },
+  secretDelete: { input: codeSecretContracts.delete.input, data: codeSecretContracts.delete.data.extend({ version: z.literal(1) }) },
   sdk: {
     input: z.object({ codeId: CodeIdSchema }).strict(),
     data: z.object({ version: z.literal(1), files: CodeSourceFilesSchema }).strict(),
