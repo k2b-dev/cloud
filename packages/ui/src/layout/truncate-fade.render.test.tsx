@@ -80,7 +80,7 @@ describe("navigation label markup", () => {
         [".k2b-app-workspace__level-title p", "k2b-truncate-fade", 1],
         [".k2b-sidebar-switcher__copy > span", "k2b-truncate-fade-lines", 1],
         [".k2b-sidebar-switcher__copy > small", "k2b-truncate-fade", 1],
-        [".k2b-settings__tabs button > span", "k2b-truncate-fade", 1],
+        [".k2b-settings__tabs button > span", "k2b-truncate-fade-lines", 1],
         [".k2b-settings__tab-group-label", "k2b-truncate-fade", 1],
         [".k2b-tab-bar a > span", "k2b-truncate-fade", 1],
         ['.k2b-spotlight-button[data-variant="sidebar"] > span', "k2b-truncate-fade", 1],

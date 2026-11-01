@@ -633,14 +633,19 @@
   flex-direction: column;
 }
 .k2b-ui .k2b-stat-grid[data-surface="muted"] { background: var(--k2b-surface-muted); }
+/* The muted header sets itself apart from the cells, which tile on the
+   surface; a rule under it would draw the same edge twice. */
 .k2b-ui .k2b-stat-grid__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--k2b-border);
   background: var(--k2b-surface-muted);
+}
+/* Forced colours paint both surfaces as Canvas, so only a line can keep the edge. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-stat-grid__header { border-bottom: 1px solid CanvasText; }
 }
 .k2b-ui .k2b-stat-grid__title { overflow: hidden; color: var(--k2b-text); font-size: 0.75rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-stat-grid__action {

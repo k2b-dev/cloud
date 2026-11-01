@@ -1,8 +1,10 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { appKeyFingerprint, validateAppKeyAppId } from "../app-key";
+import { env } from "../config/env";
 import type { User } from "../contracts/shared";
 import { sql } from "../runtime/clients";
+import { DEVELOPMENT_APP_KEYS, isDevelopmentPublicKey } from "../runtime/development-keys";
 import { audit } from "./audit";
 import { serviceAccounts } from "./service-accounts";
 
@@ -18,6 +20,7 @@ export type AppKeyMetadata = {
   fingerprint: string;
   status: "active" | "expired" | "revoked";
   accountStatus: "active" | "disabled";
+  usable: boolean;
   createdAt: string;
   createdBy: string | null;
   expiresAt: string | null;
@@ -58,6 +61,10 @@ const map = (row: Row): AppKeyMetadata => ({
   fingerprint: row.fingerprint,
   status: row.key_status,
   accountStatus: row.account_status,
+  usable:
+    row.key_status === "active" &&
+    row.account_status === "active" &&
+    (env.NODE_ENV === "development" || !isDevelopmentPublicKey(row.public_key)),
   createdAt: row.created_at.toISOString(),
   createdBy: row.created_by,
   expiresAt: row.expires_at?.toISOString() ?? null,
@@ -109,6 +116,8 @@ export const registerAppKey = async (params: {
 > => {
   const valid = validateAdmin(params.actor, params.appId);
   if (!valid.ok) return valid;
+  if (env.NODE_ENV !== "development" && isDevelopmentPublicKey(params.publicKey))
+    return fail(err.badInput("Development app keys are forbidden outside development"));
   if (params.grants?.some((grant) => grant !== "oauth:issue")) return fail(err.badInput("Unknown app key grant"));
   const name = params.name?.trim() ?? "App key";
   if (!name || name.length > 120) return fail(err.badInput("Key name must contain 1 to 120 characters"));
@@ -167,6 +176,10 @@ export const registerAppKey = async (params: {
       WHERE sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app'
         AND sa.resource_id = ${params.appId} AND c.kind = 'app_key' AND c.status = 'active'
         AND (c.expires_at IS NULL OR c.expires_at > now())
+        AND (${env.NODE_ENV === "development"} OR c.public_key != ALL(${db.array(
+          DEVELOPMENT_APP_KEYS.map((key) => key.publicKey),
+          "text",
+        )}))
     `;
     if ((count?.active ?? 0) >= 2)
       return fail({ ...err.conflict("App key"), message: "An app can have at most two active keys; revoke an old key first" });
@@ -238,7 +251,11 @@ export const listAppsWithKeys = async (params: { actor: AdminActor; page?: numbe
     { appId: string; accountStatus: AppKeyMetadata["accountStatus"]; totalKeys: number; activeKeys: number; total: number }[]
   >`
     SELECT sa.app_id AS "appId", sa.status AS "accountStatus", count(*)::int AS "totalKeys",
-      count(*) FILTER (WHERE c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now()))::int AS "activeKeys",
+      count(*) FILTER (WHERE c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now())
+        AND (${env.NODE_ENV === "development"} OR c.public_key != ALL(${sql.array(
+          DEVELOPMENT_APP_KEYS.map((key) => key.publicKey),
+          "text",
+        )})))::int AS "activeKeys",
       count(*) OVER()::int AS total
     FROM auth.service_account_credentials c JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     WHERE c.kind = 'app_key' AND sa.kind = 'resource_bound' AND sa.resource_type = 'cloud.app' AND sa.resource_id = sa.app_id
@@ -312,6 +329,7 @@ export const getStoredAppKey = async (
     WHERE c.kind = 'app_key' AND c.id = ${params.keyId}::uuid
       AND sa.kind = 'resource_bound' AND sa.app_id = ${params.appId} AND sa.resource_type = 'cloud.app' AND sa.resource_id = ${params.appId}
   `;
+  if (row && env.NODE_ENV !== "development" && isDevelopmentPublicKey(row.public_key)) return null;
   return row ? { ...map(row), connectionsAllowed: row.connections_allowed, oauthIssueAllowed: row.oauth_issue_allowed } : null;
 };
 
@@ -330,3 +348,6 @@ export const touchAppKey = async (params: { appId: string; keyId: string }, db: 
 };
 
 export const appKeys = { register: registerAppKey, list: listAppKeys, listApps: listAppsWithKeys, revoke: revokeAppKey };
+
+/** Platform-owned isolated development enrollment fixtures; never use in an operator deployment. */
+export { DEVELOPMENT_APP_KEYS, DEVELOPMENT_INSTALLATION_ID } from "../runtime/development-keys";

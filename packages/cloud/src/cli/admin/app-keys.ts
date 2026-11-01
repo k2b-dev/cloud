@@ -19,16 +19,22 @@ const enrollmentSchema = z
   .strict();
 export type AppKeyArtifactFormat = "file" | "env" | "compose" | "k8s-secret";
 
-export const renderAppKeyArtifact = (appId: string, privateKey: string, format: AppKeyArtifactFormat): string => {
+export const renderAppKeyArtifact = (
+  appId: string,
+  privateKey: string,
+  format: AppKeyArtifactFormat,
+  keyFile = `./secrets/${appId}.key`,
+): string => {
   validateAppKeyAppId(appId);
   if (format === "file") return `${privateKey}\n`;
   if (format === "env") return `CLOUD_APP_KEY=${privateKey}\n`;
-  if (format === "compose") return `services:\n  ${appId}:\n    environment:\n      CLOUD_APP_KEY: ${JSON.stringify(privateKey)}\n`;
+  if (format === "compose")
+    return `services:\n  app-${appId}:\n    environment:\n      CLOUD_APP_KEY_FILE: /run/secrets/${appId}.key\n      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000\n    secrets:\n      - source: ${appId}-app-key\n        target: ${appId}.key\nsecrets:\n  ${appId}-app-key:\n    file: ${JSON.stringify(keyFile)}\n`;
   const secretName =
     appId.length <= 50
       ? `${appId}-app-key`
       : `${appId.slice(0, 40)}-${createHash("sha256").update(appId).digest("hex").slice(0, 8)}-app-key`;
-  return `apiVersion: v1\nkind: Secret\nmetadata:\n  name: ${secretName}\ntype: Opaque\nstringData:\n  CLOUD_APP_KEY: ${JSON.stringify(privateKey)}\n`;
+  return `apiVersion: v1\nkind: Secret\nmetadata:\n  name: ${secretName}\ntype: Opaque\nstringData:\n  app.key: ${JSON.stringify(privateKey)}\n`;
 };
 
 const isCode = (error: unknown, code: string): boolean => error instanceof Error && "code" in error && error.code === code;
@@ -96,11 +102,13 @@ export const enrollAppKey = async (input: {
   } catch (error) {
     if (!isCode(error, "ENOENT"))
       throw new Error(`Cannot read enrollment state for ${input.appId}; preserve it and repair the file before retrying`);
-    try {
-      await lstat(file);
-      throw new Error("Output already exists without an enrollment record; preserve it and use a new output directory");
-    } catch (error) {
-      if (!isCode(error, "ENOENT")) throw error;
+    for (const path of input.format === "compose" ? [file, join(outDir, `${input.appId}.key`)] : [file]) {
+      try {
+        await lstat(path);
+        throw new Error("Output already exists without an enrollment record; preserve it and use a new output directory");
+      } catch (error) {
+        if (!isCode(error, "ENOENT")) throw error;
+      }
     }
     const pair = await generateAppKeyPair();
     await atomicWrite(provisional, JSON.stringify({ version: 1, server, appId: input.appId, ...pair }), {
@@ -131,10 +139,18 @@ export const enrollAppKey = async (input: {
     keyId: registered.keyId,
     seed: state.seed,
   });
-  await atomicWrite(file, renderAppKeyArtifact(input.appId, privateKey, input.format), { uid: input.uid });
+  const keyFile = input.format === "compose" ? join(outDir, `${input.appId}.key`) : undefined;
+  if (keyFile) await atomicWrite(keyFile, `${privateKey}\n`, { uid: input.uid });
+  await atomicWrite(file, renderAppKeyArtifact(input.appId, privateKey, input.format, keyFile), { uid: input.uid });
   // Retain the provisional seed for safe repeats after any lost API/file response.
   // A rotation uses a new directory; repeating create never silently rotates.
-  return { appId: input.appId, ...registered, file, ...(input.format === "file" ? { environment: { CLOUD_APP_KEY_FILE: file } } : {}) };
+  return {
+    appId: input.appId,
+    ...registered,
+    file,
+    ...(keyFile ? { keyFile } : {}),
+    ...(input.format === "file" ? { environment: { CLOUD_APP_KEY_FILE: file } } : {}),
+  };
 };
 
 export const resolveAppKeyApps = async (positional: string[], all: boolean, apps?: string): Promise<string[]> => {
@@ -213,7 +229,14 @@ export const appKeyCommands = [
             .optional(),
           items: z.array(
             z
-              .object({ keyId: z.string(), name: z.string(), fingerprint: z.string(), status: z.string(), accountStatus: z.string() })
+              .object({
+                keyId: z.string(),
+                name: z.string(),
+                fingerprint: z.string(),
+                status: z.string(),
+                accountStatus: z.string(),
+                usable: z.boolean().optional(),
+              })
               .passthrough(),
           ),
         })
@@ -224,13 +247,17 @@ export const appKeyCommands = [
           const rejection = result.lastRejectedStart;
           ctx.print(`Last rejected start: ${rejection.at} · ${rejection.reason} · key ${rejection.keyId ?? "unknown"}`);
         }
-        ctx.table(result.items, [
-          { key: "keyId", label: "Key ID" },
-          { key: "name", label: "Name" },
-          { key: "fingerprint", label: "Fingerprint" },
-          { key: "status", label: "Status" },
-          { key: "accountStatus", label: "Account" },
-        ]);
+        ctx.table(
+          result.items.map((item) => ({ ...item, usable: item.usable ?? "unknown" })),
+          [
+            { key: "keyId", label: "Key ID" },
+            { key: "name", label: "Name" },
+            { key: "fingerprint", label: "Fingerprint" },
+            { key: "status", label: "Status" },
+            { key: "accountStatus", label: "Account" },
+            { key: "usable", label: "Usable" },
+          ],
+        );
       }
     },
   }),

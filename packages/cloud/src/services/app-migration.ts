@@ -3,9 +3,11 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { APP_INSTANCE_PREFIX, appInstanceRegistry, readAppRegistrySnapshot } from "../_internal/registry";
 import { startBounded, waitWithin } from "../api/fanout";
+import { env } from "../config/env";
 import { APP_MIGRATION_TRIGGER_PATH, AppBootstrapMetadataSchema, type AppMigrationStatus } from "../contracts/app-migration";
 import type { User } from "../contracts/shared";
 import { sql } from "../runtime/clients";
+import { isDevelopmentPublicKey } from "../runtime/development-keys";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import type { LastRejectedStart } from "./app-keys";
 import { coreEvidenceIssues, readAppMigrationObservation } from "./app-migration-evidence";
@@ -125,7 +127,7 @@ export const listActiveMigrationKeys = async (db: SQL = sql) => {
       JOIN auth.service_accounts sa ON sa.id = c.service_account_id
       WHERE c.kind = 'app_key' AND c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now())
         AND sa.status = 'active' AND sa.kind = 'resource_bound' AND sa.resource_type = 'cloud.app' AND sa.resource_id = sa.app_id`;
-  return keys;
+  return keys.filter((key) => env.NODE_ENV === "development" || !isDevelopmentPublicKey(key.publicKey));
 };
 
 export const readAppMigrationStatus = async (input: {
