@@ -620,9 +620,96 @@ test("notification audience endpoint requires its own target-bound Core authorit
     expect((await request()).status).toBe(403); // Operations must exist in this application.
     managers.mockResolvedValue(null);
     verify.mockResolvedValue({ ...claims, operations: [], token_use: "code_access_notifications" });
-    expect((await request()).status).toBe(503);
+    expect((await request()).status).toBe(422);
   } finally {
     verify.mockRestore();
     managers.mockRestore();
+  }
+});
+
+test("presentation failures fall back without failing grants, and actual successful sets skip presentation", async () => {
+  const set = spyOn(accessService, "setCodeAccess").mockResolvedValue({
+    granted: true,
+    grantId,
+    level: "write",
+    managerUserIds: [person.id],
+  });
+  const active = spyOn(resourcePrincipals, "activeResourcePrincipals").mockRejectedValue(new Error("Reader unavailable"));
+  try {
+    const generated = generatedCodeAccess("inventory", {
+      protocolVersion: 2,
+      types: {
+        item: {
+          title: "Item",
+          description: "Item.",
+          reader: "item.read",
+          access: {
+            ...adapter,
+            readable: () => {
+              throw new Error("Unavailable");
+            },
+          },
+        },
+      },
+    });
+    for (const dryRun of [false, true]) {
+      const result = await generated.actions["code.access.set"]!.run({ ...input, dryRun }, context);
+      expect(result).toMatchObject({ ok: true, data: { data: { granted: true, readable: false } } });
+      expect(JSON.stringify(result)).not.toContain("managerUserIds");
+    }
+    expect(active).toHaveBeenCalledTimes(1); // Actual successful set never starts a reader check.
+    active.mockImplementation(async (values) => values);
+    const result = await generated.actions["code.access.set"]!.run({ ...input, dryRun: true }, context);
+    expect(result).toMatchObject({ ok: true, data: { data: { granted: true, readable: false } } });
+  } finally {
+    set.mockRestore();
+    active.mockRestore();
+  }
+});
+test("a readable canonical reader may return the target title on its structured reference", async () => {
+  const set = spyOn(accessService, "setCodeAccess").mockResolvedValue({
+    granted: true,
+    grantId,
+    level: "write",
+    managerUserIds: [person.id],
+  });
+  const active = spyOn(resourcePrincipals, "activeResourcePrincipals").mockImplementation(async (values) => values);
+  try {
+    const generated = generatedCodeAccess("inventory", {
+      protocolVersion: 2,
+      types: {
+        item: {
+          title: "Item",
+          description: "Item.",
+          reader: "item.read",
+          access: { ...adapter, readable: ({ principals }) => principals },
+        },
+      },
+      queries: {
+        "item.read": {
+          title: "Read item",
+          description: "Item.",
+          openWorld: false,
+          input: z.object({ id: z.string() }),
+          data: z.object({ name: z.string() }),
+          run: () => ({
+            ok: true,
+            data: {
+              data: { name: "Readable item" },
+              refs: [
+                { type: "inventory.other", id: target.id, title: "Other ref" },
+                { ...target, title: "Readable item" },
+              ],
+            },
+          }),
+        },
+      },
+    });
+    const result = await generated.actions["code.access.set"]!.run({ ...input, dryRun: true }, context);
+    expect(result).toMatchObject({ ok: true, data: { data: { readable: true, title: "Readable item", managerUserIds: [person.id] } } });
+    expect(JSON.stringify(result)).not.toContain("Other ref");
+  } finally {
+    set.mockRestore();
+    active.mockRestore();
   }
 });
