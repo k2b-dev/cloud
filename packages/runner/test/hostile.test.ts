@@ -138,13 +138,19 @@ test("call flood receives the exact concurrency refusal without an unbounded que
     await engine.load(
       run,
       `export async function main(input, cloud) {
-        const first = cloud.call('hold', null);
-        // RPC submissions preserve order; leave the first one pending.
-        const errors = await Promise.all(Array.from({length: 32}, async () => {
-          try { await cloud.call('hold', null); return 'ESCAPE'; } catch (error) { return error.message; }
-        }));
-        if (errors.some(error => error !== 'runner_bridge_busy')) throw new Error('unexpected flood result');
-        void first.catch(() => {});
+        await new Promise((resolve, reject) => {
+          let refused = 0;
+          for (let i = 0; i < 33; i++) {
+            // Any one request may win the slot. It remains held until test cleanup.
+            void cloud.call('hold', null).then(
+              () => reject(new Error('unexpected admission')),
+              error => {
+                if (error.message !== 'runner_bridge_busy') reject(error);
+                else if (++refused === 32) resolve();
+              }
+            );
+          }
+        });
       }`,
       config,
       async () => {
