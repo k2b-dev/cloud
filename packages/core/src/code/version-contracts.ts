@@ -11,18 +11,21 @@ import { z } from "zod";
 import { CodeIdSchema, CodeSourceFilesSchema, CodeVersionSchema } from "./contracts";
 import { CodePolicyRowSchema } from "./policy-contracts";
 
-const hash = z.string().regex(/^[a-f0-9]{64}$/);
+const hash = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/)
+  .describe("Lowercase SHA-256 digest from the unchanged version binding.");
 /** Exact comparison evidence. Decisions must send this unchanged from version.diff or submit. */
 export const CodeVersionBindingSchema = z
   .object({
     codeId: CodeIdSchema,
-    versionId: z.uuid(),
+    versionId: z.uuid().describe("Immutable version UUID returned by submission or version history."),
     sourceHash: hash,
     bundleHash: hash,
     manifestHash: hash,
-    comparisonVersionId: z.uuid().nullable(),
-    comparisonSourceHash: hash.nullable(),
-    comparisonBundleHash: hash.nullable(),
+    comparisonVersionId: z.uuid().nullable().describe("Exact previous version UUID, or null for an empty comparison."),
+    comparisonSourceHash: hash.nullable().describe("Previous source digest, or null for an empty comparison."),
+    comparisonBundleHash: hash.nullable().describe("Previous bundle digest, or null for an empty comparison."),
   })
   .strict();
 /** Hash and baseline binding, also persisted independently of expiring platform requests. */
@@ -64,16 +67,18 @@ export const codeVersionContracts = {
     input: z
       .object({
         codeId: CodeIdSchema,
-        sourceFiles: CodeSourceFilesSchema,
-        bundle: z.string(),
-        manifest: CodeCheckedVersionManifestSchema,
+        sourceFiles: CodeSourceFilesSchema.describe("Complete relative-path to exact source text map from the checker request."),
+        bundle: z.string().describe("Exact checked UTF-8 ESM bundle; do not reformat it."),
+        manifest: CodeCheckedVersionManifestSchema.describe(
+          "Complete immutable checker evidence with the original entry and current policy classifications.",
+        ),
         baseVersionId: z.uuid().nullable().describe("Latest saved version UUID, or null for the first push."),
       })
       .strict(),
     data: submission,
   },
   diff: {
-    input: z.object({ codeId: CodeIdSchema, versionId: z.uuid() }).strict(),
+    input: z.object({ codeId: CodeIdSchema, versionId: z.uuid().describe("Immutable version UUID to compare.") }).strict(),
     data: z
       .object({
         binding: CodeVersionBindingSchema,
@@ -88,10 +93,10 @@ export const codeVersionContracts = {
     input: z
       .object({
         codeId: CodeIdSchema,
-        versionId: z.uuid(),
-        comparisonVersionId: z.uuid().nullable(),
-        offset: z.number().int().nonnegative().default(0),
-        length: z.number().int().min(1).max(16_384).default(16_384),
+        versionId: z.uuid().describe("Immutable version UUID returned by submission or version history."),
+        comparisonVersionId: z.uuid().nullable().describe("Exact previous version UUID, or null for an empty comparison."),
+        offset: z.number().int().nonnegative().default(0).describe("UTF-16 offset returned by the previous content chunk; start at zero."),
+        length: z.number().int().min(1).max(16_384).default(16_384).describe("Maximum UTF-16 characters in this chunk, up to 16384."),
       })
       .strict(),
     data: z.object({ content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).strict() }).strict(),
@@ -101,7 +106,7 @@ export const codeVersionContracts = {
       .object({
         codeId: CodeIdSchema,
         before: z.number().int().positive().optional().describe("Version number from nextBefore, exclusive."),
-        limit: z.number().int().min(1).max(50).default(20),
+        limit: z.number().int().min(1).max(50).default(20).describe("Maximum receipts in this byte-bounded page, up to 50."),
       })
       .strict(),
     data: z.object({ items: z.array(submission), nextBefore: z.number().int().positive().nullable() }).strict(),
