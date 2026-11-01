@@ -5,16 +5,17 @@ import { packageIds } from "../workspace";
 import { declarationOf } from "./capability-presentation";
 import type { Rule } from "./rule";
 
-/** Reviewed provider contracts whose coordinates cannot name a fixed, provider-owned Type.
+/** Reviewed input fields that do not select a provider-owned resource to mutate.
  * Keep the exception field-specific and unavailable to resource Code; new ID fields still fail.
  * See /en/docs/platform/capabilities#name-the-resource-an-operation-acts-on.
  */
-const foreignInputIds: Record<string, readonly string[]> = {
+const reviewedInputIds: Record<string, readonly string[]> = {
+  "core.code.policy.update": ["definition.rules[].groupId"], // Installation policy content, not a group mutation.
   "gateway-ops.app-status.forget": ["appId"], // Shared app-status role addresses another application.
   "chat.discussion.post": ["ref.id"], // The discussion item Type belongs to its foreign provider.
 };
 
-/** ID-like inputs require a target unless a reviewed foreign-provider field is explicitly exempt. */
+/** ID-like inputs require a target unless a reviewed domain field is explicitly exempt. */
 export const capabilityTargetGaps = (manifest: CapabilityManifest): string[] => {
   const idPaths = (schema: unknown, prefix = ""): string[] => {
     if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
@@ -29,9 +30,9 @@ export const capabilityTargetGaps = (manifest: CapabilityManifest): string[] => 
     });
   };
   return manifest.actions
-    .filter((action) => action.target === undefined)
+    .filter((action) => action.target === undefined && !action.localId.startsWith("code.access."))
     .flatMap((action) => {
-      const exempt = action.code === false ? (foreignInputIds[`${manifest.appId}.${action.localId}`] ?? []) : [];
+      const exempt = action.code === false ? (reviewedInputIds[`${manifest.appId}.${action.localId}`] ?? []) : [];
       const fields = [...new Set(idPaths(action.inputSchema))].filter((field) => !exempt.includes(field));
       return fields.length ? [`${manifest.appId}.${action.localId}: ${fields.join(", ")}`] : [];
     });

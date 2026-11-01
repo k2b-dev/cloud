@@ -156,7 +156,8 @@ especially its machine-composition and design-review guidance. Every Action name
 `target`; move its main resource ID out of `input`, use `refs` for additional targets, and check containment of
 child IDs in the owning service. Declare `code: false` when the effect reaches another application. Truly
 application-wide Actions and shared foreign-provider contracts follow the exceptions in that guide.
-Trace real task paths and consumers before choosing result fields or changing contracts; keep detailed API rules in that guide. Cloud records one execution row for every
+Trace real task paths and consumers before choosing result fields or changing contracts;
+keep detailed API rules in that guide. Cloud records one execution row for every
 capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
 join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.

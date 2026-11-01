@@ -57,6 +57,7 @@ export const monitoringCapabilities = defineCapabilities({
   },
   actions: {
     "status.forget": {
+      code: false,
       title: "Forget app status", description: "Forget status records for an offline app.",
       input: AppStatusForgetInputSchema, data: AppStatusForgetDataSchema,
       destructive: false, openWorld: false, idempotency: "required",
@@ -85,6 +86,7 @@ Action keeps its `appId` input and declares `code: false`: it addresses a foreig
 application, not a resource Type owned by the status provider. This reviewed
 exception to [Action targets](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 retains the shared provider contract for built-in and third-party providers.
+Providers declare `code: false` on their forget Action.
 Startup rejects incompatible declarations; registry readers omit incompatible
 roles, and consumers check compatibility before calling. Both Queries must be
 closed-world and person-readable. The forget Action requires idempotency.

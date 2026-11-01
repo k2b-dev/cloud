@@ -17,7 +17,8 @@ the platform converts them into the same call.
 
 This is a coordinated contract change for the major Code release. Every Action
 with resource ID input must declare its resource target, including third-party
-applications. The `capability-targets` check fails on missing declarations;
+applications. Application authors must update their declarations themselves.
+In this repository, the `capability-targets` check fails on missing declarations;
 report-only mode has ended. Targetless application-wide Actions and shared
 foreign-provider contracts retain their published shapes, as described in
 [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on).
@@ -72,10 +73,13 @@ Use the provider's guide for its exact input changes:
 Notebooks binds note, comment and annotation Actions to the notebook. Pulse
 binds existing-resource Actions to the Base. Venue binds assignments to the
 venue, Weather binds deletion to the saved location, and Core binds Skill
-changes to the Skill and routine changes to the AI chat. Their primary resource
+changes to the Skill and routine changes to the AI chat.
+[Code version and execution Actions](/en/docs/platform/code-versions#submit-a-version)
+use `core.code`; installation-wide policy changes keep their group-rule input. Their primary resource
 selectors move from `input` to `target`; contained object IDs remain in `input`.
 
-All Chat Actions, Spaces invitation preparation and commit, and Gateway Ops'
+Examples of `code: false` include Chat Actions, Spaces invitation preparation
+and commit, and Gateway Ops'
 app-status forget Action declare `code: false`. Resource-owned Code must leave
 them out; person calls retain their existing service permission checks.
 

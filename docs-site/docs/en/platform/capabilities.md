@@ -1015,8 +1015,10 @@ this application. The caller supplies a resource ID for that fixed type;
 it cannot choose another type or containment level. A Query may also declare a
 target when it reads exactly one container. An operation without a target acts
 at application level. Every Action with resource ID input must declare a target,
-except the reviewed foreign-provider contracts below. This requirement also
-applies to third-party applications; `code: false` alone does not exempt an Action.
+except Actions implementing a shared provider role, which keep that role's input
+contract, and the platform-generated access Actions described below. Third-party
+application authors follow the same contract; `code: false` alone does not
+exempt a resource Action.
 Canonical resource readers, Universal Search, Action outcome checks and shared
 file, calendar, app-status and discussion provider contracts supply only their existing
 domain input. They cannot declare `target` or `refs`; publish a separate Query
@@ -1142,7 +1144,8 @@ input-only approval and idempotency hashes. The repository's
 `capability-targets` rule now fails on ID-like input fields without a target;
 there is no report-only mode. It checks declarations, not resource permissions.
 
-Two reviewed foreign-provider contracts keep their existing input coordinates:
+The repository check reviews the following domain-input exceptions in this
+workspace; this list does not replace shared provider role contracts:
 
 - `gateway-ops.app-status.forget` keeps `appId`, as required by the shared
   [app-status contract](/en/docs/platform/app-status). The app being forgotten
@@ -1150,9 +1153,15 @@ Two reviewed foreign-provider contracts keep their existing input coordinates:
 - `chat.discussion.post` keeps `ref.id`, whose Type is chosen by the foreign
   discussion provider. Chat cannot declare that Type locally. See
   [item discussions](/en/docs/platform/chat-discussions#action-targets).
+- `core.code.policy.update` keeps `definition.rules[].groupId`: these select
+  rules in the installation-wide policy document, not groups to mutate.
+  Code version and execution Actions instead target `core.code`.
 
-Both declare `code: false`. The check exempts only those named fields on
+All three declare `code: false`. The check exempts only those named fields on
 those operations; another ID field or removal of `code: false` fails it.
+Platform-generated `code.access.set` and `code.access.rm` keep their dynamic
+`target` and grant identity in input. The check excludes their reserved
+`code.access.` namespace, which applications cannot declare themselves.
 Shared provider contracts continue to use their published shapes. Do not
 invent a local resource Type to re-label a foreign resource as the provider's.
 See [Roll out capability targets](/en/docs/operations/capability-targets) for

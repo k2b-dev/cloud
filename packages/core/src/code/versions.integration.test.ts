@@ -4,7 +4,7 @@ import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { User } from "@k2b/cloud/contracts";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
-import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
+import { approvalArgsDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -220,6 +220,15 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       assurance: "confirm",
       details: { ask: "changes_access", content: { kind: "page" } },
     });
+    const { codeId, ...decisionInput } = next.binding;
+    expect(request?.argsDigest).toBe(
+      approvalArgsDigest({
+        capability: "core.code.version.approve",
+        target: { type: "core.code", id: codeId },
+        refs: {},
+        input: decisionInput,
+      }),
+    );
     const full = request?.details && "content" in request.details ? request.details.content : undefined;
     expect(full && full.kind === "page" ? JSON.parse(full.body).files : null).toEqual(diff.files);
     await expect(sql.begin((tx) => requireCodeVersionApproval(code, next.version.id, tx))).rejects.toMatchObject({

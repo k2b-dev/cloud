@@ -52,7 +52,7 @@ test("reports an intentionally wrong Action and allows declared targets and app-
   ]);
 });
 
-test("foreign provider exceptions require code:false and exempt only the reviewed field", () => {
+test("reviewed input exceptions require code:false and exempt only the named field", () => {
   const action = {
     title: "Forget",
     description: "Forget one offline application.",
@@ -76,6 +76,34 @@ test("foreign provider exceptions require code:false and exempt only the reviewe
       }),
     ),
   ).toEqual(["gateway-ops.app-status.forget: itemId"]);
+  const policy = compileCapabilities(
+    "core",
+    defineCapabilities({
+      protocolVersion: 2,
+      actions: {
+        "code.policy.update": {
+          ...action,
+          code: false,
+          input: z
+            .object({
+              definition: z
+                .object({
+                  rules: z
+                    .array(
+                      z.object({
+                        groupId: z.string().nullable().describe("Rule group selector."),
+                      }),
+                    )
+                    .describe("Policy rows."),
+                })
+                .describe("Installation policy."),
+            })
+            .strict(),
+        },
+      },
+    }),
+  ).manifest;
+  expect(capabilityTargetGaps(policy)).toEqual([]);
   const foreign = compileCapabilities(
     "chat",
     defineCapabilities({
@@ -84,7 +112,13 @@ test("foreign provider exceptions require code:false and exempt only the reviewe
         "discussion.post": {
           ...action,
           code: false,
-          input: z.object({ ref: z.object({ type: z.string(), id: z.string() }).describe("Foreign item.") }).strict(),
+          input: z
+            .object({
+              ref: z
+                .object({ type: z.string().describe("Foreign resource Type."), id: z.string().describe("Foreign resource ID.") })
+                .describe("Foreign item."),
+            })
+            .strict(),
         },
       },
     }),
@@ -123,4 +157,25 @@ test("the rule fails an intentionally wrong repository without an enforcement fl
   } finally {
     await rm(root, { recursive: true });
   }
+});
+
+test("platform-generated Code access Actions keep their reserved dynamic input contract", () => {
+  const manifest = compileCapabilities(
+    "third-party",
+    defineCapabilities({
+      protocolVersion: 2,
+      code: {
+        access: {
+          app: {
+            manages: () => true,
+            grant: () => ({ granted: true as const, level: "write" }),
+            revoke: () => true,
+            list: () => [],
+          },
+        },
+      },
+    }),
+  ).manifest;
+  expect(manifest.actions.map((action) => action.localId)).toEqual(["code.access.rm", "code.access.set"]);
+  expect(capabilityTargetGaps(manifest)).toEqual([]);
 });
