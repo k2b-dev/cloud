@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
 import type { CodeDiffFile } from "@k2b/ui";
@@ -115,10 +116,27 @@ describe("C8 complete CodeDiff and submission contracts", () => {
   test("submission and decisions are excluded from resource-owned Code; policy reasons stay explicit", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     const actions = manifest.actions.filter((action) =>
-      ["code.version.submit", "code.version.approve", "code.version.reject", "code.pause", "code.resume"].includes(action.localId),
+      [
+        "code.run",
+        "code.secret.set",
+        "code.secret.delete",
+        "code.version.submit",
+        "code.version.approve",
+        "code.version.reject",
+        "code.pause",
+        "code.resume",
+      ].includes(action.localId),
     );
-    expect(actions).toHaveLength(5);
+    expect(actions).toHaveLength(8);
     expect(actions.every((action) => action.code === false)).toBe(true);
+    expect(actions.every((action) => action.target === "code")).toBe(true);
+    for (const action of actions) {
+      expect(action.inputSchema).not.toHaveProperty("properties.codeId");
+      const toolInput = capabilityToolInputSchema(action);
+      expect(toolInput).toHaveProperty("properties.code");
+      expect(toolInput.required).toContain("code");
+      expect(toolInput).not.toHaveProperty("properties.codeId");
+    }
     expect(aiCapabilities.actions["code.version.approve"].policy).toEqual({ ask: "changes_access" });
     expect(aiCapabilities.actions["code.version.reject"].policy).toEqual({ ask: "changes_access" });
     expect(codeVersionMessages.check()).toEqual([]);

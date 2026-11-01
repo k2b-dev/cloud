@@ -18,7 +18,7 @@ const codeComparisonInput = {
   comparisonVersionId: "UUID der genauen Vergleichsversion oder null für einen leeren Ausgangsstand.",
 };
 const codeVersionDecisionInput = {
-  ...codeVersionInput,
+  versionId: codeVersionInput.versionId,
   sourceHash: "Unveränderter SHA-256-Hash des geprüften Quelltexts aus dem Vergleich.",
   bundleHash: "Unveränderter SHA-256-Hash des geprüften Bundles aus dem Vergleich.",
   manifestHash: "Unveränderter SHA-256-Hash des gespeicherten Prüfmanifests.",
@@ -27,7 +27,6 @@ const codeVersionDecisionInput = {
   comparisonBundleHash: "Bundle-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
 };
 const codeVersionSubmissionInput = {
-  ...codeIdInput,
   sourceFiles: "Vollständige Zuordnung relativer Dateipfade zum genauen Quelltext aus der Prüfanfrage.",
   bundle: "Genaues geprüftes UTF-8-ESM-Bundle; nicht umformatieren.",
   manifest: "Vollständiger unveränderter Prüfbeleg mit ursprünglichem Einstieg und Richtlinien-Einstufungen.",
@@ -68,6 +67,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
     de: {
       events: { "user.created": { title: "Benutzer erstellt", description: "Eine Benutzeridentität wurde erstmals in Cloud angelegt." } },
       types: {
+        code: { title: "Code", description: "Eine unabhängig versionierte Code-Ressource." },
         user: { title: "Benutzer", description: "Eine Benutzeridentität in Cloud." },
         "ai.chat": {
           title: "KI-Chat",
@@ -364,7 +364,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Startet den aktiven geprüften Code. Derselbe Anfrageschlüssel liefert den bestehenden Lauf; ein neuer Schlüssel startet erneut.",
           input: {
-            codeId: "Code-ID aus code.list oder code.read.",
             entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
             input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
           },
@@ -374,7 +373,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Bearbeiter speichern einen privaten Zugangswert, ohne ihn zurückzulesen. Geänderte Ziele gelten erst mit einer neuen Version. Werte nur über CLI oder private Eingabefelder übergeben.",
           input: {
-            codeId: "Öffentliche ID des Codes.",
             name: "Name des Secrets.",
             value: "Privater Wert; wird nie zurückgelesen.",
             binding: "Ziel, an das der Wert gebunden ist.",
@@ -389,7 +387,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Bearbeiter entfernen den aktuellen Wert für alle Versionen. Unveränderliche Zielbindungen bleiben als Freigabe-Belege erhalten.",
           input: {
-            codeId: "Öffentliche ID des Codes.",
             name: "Name des Secrets.",
             binding_revision: "Erwartete Bindungsrevision.",
           },
@@ -413,12 +410,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "code.pause": {
           title: "Code pausieren",
           description: "Pausiert weitere Ausführung. Die aktive Version bleibt erhalten; verpasste Ereignisse werden nicht nachgeholt.",
-          input: codeIdInput,
+          input: {},
         },
         "code.resume": {
           title: "Code fortsetzen",
           description: "Setzt die aktive Version nach Prüfung der aktuellen Richtlinie und Freigabe-Belege fort.",
-          input: codeIdInput,
+          input: {},
         },
         "code.policy.update": {
           title: "Code-Richtlinie ändern",

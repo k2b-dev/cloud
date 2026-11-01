@@ -139,19 +139,20 @@ export const inventoryCapabilities = defineCapabilities({
   },
   actions: {
     "item.rename": {
+      target: "item",
       title: "Rename inventory item",
       description: "Rename one inventory item the caller may edit.",
       input: z
         .object({
-          itemId: z.string().uuid().describe("Stable inventory item UUID."),
           name: z.string().trim().min(1).max(120).describe("New item name."),
         })
         .strict(),
       data: z.object({ id: z.string().uuid(), name: z.string() }).strict(),
-      destructive: true,
+      destructive: false,
       openWorld: false,
       idempotency: "none",
-      review: async ({ itemId, name }, context) => {
+      review: async ({ name }, context) => {
+        const itemId = context.target?.type === "inventory.item" ? context.target.id : "";
         const item = visibleItem(itemId, context.accessSubject);
         if (!item) {
           return {
@@ -172,7 +173,8 @@ export const inventoryCapabilities = defineCapabilities({
           links: [{ rel: "open", href: `/app/inventory/items/${item.id}` }],
         });
       },
-      run: async ({ itemId, name }, context) => {
+      run: async ({ name }, context) => {
+        const itemId = context.target?.type === "inventory.item" ? context.target.id : "";
         const item = visibleItem(itemId, context.accessSubject);
         if (!item) {
           return {

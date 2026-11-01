@@ -205,6 +205,8 @@ describe("Core AI capabilities", () => {
     );
     for (const [typeId, type] of Object.entries(aiCapabilities.types)) {
       if (!("reader" in type)) {
+        // Code is embedded in its owner's editor and has no standalone resource page.
+        if (typeId === "code") continue;
         expect(typeId).toBe("user");
         expect(String(aiCapabilities.events["user.created"].subject)).toBe(typeId);
         continue;
@@ -356,6 +358,7 @@ describe("Core AI capabilities", () => {
       "core.ai.chat",
       "core.ai.skill",
       "core.ai.task",
+      "core.code",
       "core.user",
     ]);
     expect(Object.keys(aiCapabilities.queries).sort()).toEqual(queries);

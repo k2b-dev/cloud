@@ -18,7 +18,8 @@ its capability calls in order. A run does not resume at a saved step.
 
 ## Start or run again
 
-Use the `core.code.run` Action with `codeId`, `entrypoint`, optional JSON
+Use the `core.code.run` Action at `target: { type: "core.code", id: codeId }`,
+with `entrypoint`, optional JSON
 `input`, and the normal capability idempotency key. It returns `runId` and
 `duplicate`. Code itself cannot invoke this Action. CLI, chat, and resource
 pages share the same permission-aware service. The Action presents a localized

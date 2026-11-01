@@ -679,9 +679,14 @@ suiteFor(
       signal: new AbortController().signal,
       idempotencyKey: "public-run",
       requestId: "c13-manual",
+      target: { type: "core.code", id: code.codeId },
     };
-    const input = { codeId: code.codeId, entrypoint: "weekly", input: null };
-    const manifest = compileCapabilityManifest("core", { protocolVersion: 2, actions: { "code.run": aiCapabilities.actions["code.run"] } });
+    const input = { entrypoint: "weekly", input: null };
+    const manifest = compileCapabilityManifest("core", {
+      protocolVersion: 2,
+      types: { code: aiCapabilities.types.code },
+      actions: { "code.run": aiCapabilities.actions["code.run"] },
+    });
     expect(manifest.actions[0]?.localId).toBe("code.run");
     const review = await aiCapabilities.actions["code.run"].review(input, request);
     expect(review.ok).toBe(true);

@@ -133,6 +133,8 @@ const taskInTargetChat = async (taskId: string, context: CapabilityExecutionCont
 };
 
 const skillTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.skill" ? context.target.id : "");
+const codeTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.code" ? context.target.id : "");
+const CodeVersionDecisionActionInput = codeVersionContracts.decide.input.omit({ codeId: true });
 
 const CORE_APP_ID = "core";
 
@@ -753,6 +755,11 @@ export const aiCapabilities = defineCapabilities({
   events: coreUserEvents,
   types: {
     ...coreUserEventTypes,
+    code: {
+      title: "Code",
+      description: "One independently versioned Code resource.",
+      icon: "ti ti-code",
+    },
     "ai.chat": {
       title: "AI conversation",
       description: "A private AI conversation owned by the current user.",
@@ -1330,16 +1337,18 @@ export const aiCapabilities = defineCapabilities({
       title: "Run Code",
       description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
       ...codeSchedulingContracts.start,
+      target: "code",
+      input: codeSchedulingContracts.start.input.omit({ codeId: true }),
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "app_asks" },
-      review: (input, context) => reviewCodeOperation(input, context, "run"),
+      review: (input, context) => reviewCodeOperation({ ...input, codeId: codeTargetId(context) }, context, "run"),
       run: (input, context) => {
         if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
         const idempotencyKey = `capability:${new Bun.CryptoHasher("sha256").update(JSON.stringify(["core.code.run", context.accessSubject, context.idempotencyKey])).digest("hex")}`;
-        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, idempotencyKey }, ctx));
+        return runCodeQuery(context, (ctx) => startCodeRun({ ...input, codeId: codeTargetId(context), idempotencyKey }, ctx));
       },
     },
     "code.secret.set": {
@@ -1347,6 +1356,8 @@ export const aiCapabilities = defineCapabilities({
       description:
         "Editors write a private credential without reading it back. Destination changes apply only to newly submitted versions. Supply the value privately through the CLI or editor, never through chat.",
       ...codeSecretContracts.set,
+      target: "code",
+      input: codeSecretContracts.set.input.omit({ codeId: true }),
       code: false,
       unattended: false,
       destructive: false,
@@ -1357,7 +1368,7 @@ export const aiCapabilities = defineCapabilities({
       run: (input, context) =>
         runCodeQuery(context, (ctx) => {
           if (context.origin !== "http") throw new CodeDataError("FORBIDDEN", "Use private interactive input to set a Code secret.");
-          return setCodeSecret(input, ctx);
+          return setCodeSecret({ ...input, codeId: codeTargetId(context) }, ctx);
         }),
     },
     "code.secret.delete": {
@@ -1365,13 +1376,15 @@ export const aiCapabilities = defineCapabilities({
       description:
         "Editors clear the current value for every version. Immutable destination evidence remains available for version review.",
       ...codeSecretContracts.delete,
+      target: "code",
+      input: codeSecretContracts.delete.input.omit({ codeId: true }),
       code: false,
       destructive: true,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "deletes" },
       async review(input, context) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeSecretDeletion(input, ctx));
+        const result = await runCodeQuery(context, (ctx) => reviewCodeSecretDeletion({ ...input, codeId: codeTargetId(context) }, ctx));
         if (!result.ok) return result;
         const { t, locale } = coreCapabilityMessages(context.locale);
         const secret = result.data.data;
@@ -1390,87 +1403,101 @@ export const aiCapabilities = defineCapabilities({
             kind: "page" as const,
             title: t.codeSecretDeleteConfirm,
             format: "plain" as const,
-            body: JSON.stringify({ codeId: input.codeId, ...secret }, null, 2),
+            body: JSON.stringify({ codeId: codeTargetId(context), ...secret }, null, 2),
           },
         });
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => deleteCodeSecret(input, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => deleteCodeSecret({ ...input, codeId: codeTargetId(context) }, ctx)),
     },
     "code.version.submit": {
       title: "Submit Code version",
       description:
         "Save checked source and bundle against baseVersionId. Request version approval when policy requires it; leave the running version unchanged.",
       ...codeVersionContracts.submit,
+      target: "code",
+      input: codeVersionContracts.submit.input.omit({ codeId: true }),
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
       async review(input, context) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionSubmission(input, ctx));
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionSubmission({ ...input, codeId: codeTargetId(context) }, ctx));
         return result.ok ? ok(result.data.data) : result;
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion(input, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion({ ...input, codeId: codeTargetId(context) }, ctx)),
     },
     "code.version.approve": {
       title: "Approve Code version",
       description: "Approve the exact source, bundle and comparison through the platform's Cloud-admin rule.",
       ...codeVersionContracts.decide,
+      target: "code",
+      input: CodeVersionDecisionActionInput,
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "changes_access" },
-      async review(input: z.infer<typeof codeVersionContracts.decide.input>, context: CapabilityExecutionContext) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionDecision(input, true, ctx));
+      async review(input: z.infer<typeof CodeVersionDecisionActionInput>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) =>
+          reviewCodeVersionDecision({ ...input, codeId: codeTargetId(context) }, true, ctx),
+        );
         return result.ok ? ok(result.data.data) : result;
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion(input, true, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion({ ...input, codeId: codeTargetId(context) }, true, ctx)),
     },
     "code.version.reject": {
       title: "Reject Code version",
       description: "Reject the exact version and comparison through the same platform request.",
       ...codeVersionContracts.decide,
+      target: "code",
+      input: CodeVersionDecisionActionInput,
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "changes_access" },
-      async review(input: z.infer<typeof codeVersionContracts.decide.input>, context: CapabilityExecutionContext) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionDecision(input, false, ctx));
+      async review(input: z.infer<typeof CodeVersionDecisionActionInput>, context: CapabilityExecutionContext) {
+        const result = await runCodeQuery(context, (ctx) =>
+          reviewCodeVersionDecision({ ...input, codeId: codeTargetId(context) }, false, ctx),
+        );
         return result.ok ? ok(result.data.data) : result;
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion(input, false, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => decideCodeVersion({ ...input, codeId: codeTargetId(context) }, false, ctx)),
     },
     "code.pause": {
       title: "Pause Code",
       description: "Pause future Code execution without replacing the running version or replaying missed events.",
       ...codeVersionContracts.pause,
+      target: "code",
+      input: codeVersionContracts.pause.input.omit({ codeId: true }),
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
       async review(input, context) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, true, ctx));
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(codeTargetId(context), true, ctx));
         return result.ok ? ok(result.data.data) : result;
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, true, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(codeTargetId(context), true, ctx)),
     },
     "code.resume": {
       title: "Resume Code",
       description: "Resume the active version only after checking current policy and live approval evidence.",
       ...codeVersionContracts.resume,
+      target: "code",
+      input: codeVersionContracts.resume.input.omit({ codeId: true }),
       code: false,
       destructive: false,
       openWorld: false,
       idempotency: "required",
       policy: { ask: "keeps_working" },
       async review(input, context) {
-        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(input.codeId, false, ctx));
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(codeTargetId(context), false, ctx));
         return result.ok ? ok(result.data.data) : result;
       },
-      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(input.codeId, false, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => setCodePaused(codeTargetId(context), false, ctx)),
     },
     "code.policy.update": {
       title: "Update Code policy",
