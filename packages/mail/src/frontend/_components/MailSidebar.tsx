@@ -282,7 +282,12 @@ export default function MailSidebar(
   const [dropFolderId, setDropFolderId] = createSignal<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = createSignal<Set<string>>(new Set());
   const [moreExpanded, setMoreExpanded] = createSignal(false);
-  const folderTree = createMemo(() => buildVisibleMailFolderTree(openMailbox()?.folders ?? []));
+  // Every change of the open mailbox's data arrives as a new object. The rows are rebuilt only when a folder really
+  // changed: rebuilding them on a conversation click costs a mailbox with 350 folders hundreds of milliseconds.
+  const openFolders = createMemo(() => openMailbox()?.folders ?? [], undefined, {
+    equals: (previous, next) => previous === next || JSON.stringify(previous) === JSON.stringify(next),
+  });
+  const folderTree = createMemo(() => buildVisibleMailFolderTree(openFolders()));
   const flatFolders = createMemo(() => flattenMailFolderTree(folderTree()).map(({ folder }) => folder));
   const primaryFolders = createMemo(() => flatFolders().filter((folder) => PRIMARY_FOLDER_ROLES.has(folder.role)));
   const secondaryFolders = createMemo(() => flatFolders().filter((folder) => SECONDARY_FOLDER_ROLES.has(folder.role)));
