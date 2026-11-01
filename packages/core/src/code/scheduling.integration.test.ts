@@ -219,6 +219,7 @@ suiteFor("database", "nats")("C13 stateless Core dispatch through real Postgres 
       origin: "http",
       signal: new AbortController().signal,
       idempotencyKey: "public-run",
+      requestId: "c13-manual",
     };
     const input = { codeId: code.codeId, entrypoint: "weekly", input: null };
     const results = await Promise.all([0, 1, 2].map(() => aiCapabilities.actions["code.run"].run(input, request)));
