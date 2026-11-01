@@ -42,6 +42,12 @@ test("browser delivery carries localized previews, namespaces groups, and preser
         read: async key => ({ value: key === "app.url" ? "https://cloud.example.org" : "configured", stored: "readable" }),
       },
     }));
+    // VAPID initialization reads its keys on the lock-owning transaction, not through coreSettings.
+    const settingsStore = await import(${JSON.stringify(new URL("../settings/store.ts", import.meta.url).pathname)});
+    mock.module(${JSON.stringify(new URL("../settings/store.ts", import.meta.url).pathname)}, () => ({
+      ...settingsStore,
+      readKeyState: async () => ({ value: "configured", stored: "readable" }),
+    }));
     mock.module(${JSON.stringify(new URL("./web-push-transport.ts", import.meta.url).pathname)}, () => ({
       sendPinnedWebPush: async (subscription, payload, options) => { sent.push({ subscription, payload, options }); },
     }));
