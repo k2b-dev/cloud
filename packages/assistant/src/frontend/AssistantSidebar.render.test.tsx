@@ -194,7 +194,7 @@ describe("Assistant sidebar", () => {
     const icons = await selectHtml(html, '.k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon > i');
 
     // Both footers (expanded and collapsed sidebar) carry the Studio and Project menus.
-    const studio = "No apps yet. Ask Assistant to build one.";
+    const studio = "No apps yet. Ask Gustav to build one.";
     expect(inline.map((placeholder) => placeholder.text)).toEqual([
       "No chats yet",
       "No done chats.",

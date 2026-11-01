@@ -163,12 +163,12 @@ describe("Assistant frontend contracts", () => {
     ]);
 
     expect(preferences).toContain('title={text("Personalization")}');
-    expect(preferences).toContain("Facts, preferences, and workflow defaults Assistant may carry into future conversations.");
+    expect(preferences).toContain("Facts, preferences, and workflow defaults Gustav may carry into future conversations.");
     expect(preferences).toContain("Search personalization");
     expect(preferences).toContain("Add personalization");
     expect(preferences).toContain('variant="input"');
     expect(preferences).not.toContain("suffix={");
-    expect(preferences).toContain("Use personalization in Assistant chats");
+    expect(preferences).toContain("Use personalization in Gustav chats");
     expect(preferences).toContain("Learn personalization from private chats");
     expect(preferences).toContain('title={text("Saved personalization")}');
     expect(preferences).toContain("hasSavedPersonalization");
@@ -224,7 +224,7 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).toContain("skillEditor()");
     expect(preferences).toContain("<AssistantSkillEditor");
     expect(skills).toContain("<NoticeCard");
-    expect(skills).toContain("Skills teach Assistant how to handle specific tasks");
+    expect(skills).toContain("Skills teach Gustav how to handle specific tasks");
     expect(skills).not.toContain('label="Enabled for me"');
     // Enabling stays a row action; the editor's only switch is the portable manual-only field.
     expect(skills.match(/<Switch/g)).toHaveLength(1);
