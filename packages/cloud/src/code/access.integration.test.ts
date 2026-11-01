@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, expect } from "bun:test";
+import type { SQL } from "bun";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
 import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "../contracts/capabilities";
@@ -80,7 +81,14 @@ const claims: CodeAccessProofClaims = {
 const dependencies = { db: sql, verifyProof: async () => claims };
 const input = { proof: "verified-proof-fixture", target, operations: claims.operations };
 const adapter: CodeAccessAdapter = {
-  manages: () => true,
+  manages: async (tx, _context, id) =>
+    Boolean(
+      (
+        await tx<{ can_manage: boolean }[]>`
+    SELECT can_manage FROM capabilities.code_access_target_fixture WHERE resource_id = ${id} FOR SHARE
+  `
+      )[0]?.can_manage,
+    ),
   grant: async (tx, value) => {
     // Deliberately writes on dryRun: the platform must roll this back as well.
     await tx`INSERT INTO capabilities.code_access_fixture (grant_id, principal, resource_id, level) VALUES (${value.grantId}::uuid, ${value.principal}::uuid, ${value.id}, 'write')`;
@@ -102,12 +110,15 @@ beforeAll(async () => {
   if (!testInfra.database) return;
   await migrateCloudCapabilities();
   await sql`CREATE TABLE IF NOT EXISTS capabilities.code_access_fixture (grant_id uuid PRIMARY KEY, principal uuid NOT NULL, resource_id text NOT NULL, level text NOT NULL)`;
+  await sql`CREATE TABLE IF NOT EXISTS capabilities.code_access_target_fixture (resource_id text PRIMARY KEY, can_manage boolean NOT NULL)`;
   await sql`INSERT INTO auth.service_accounts (id, name, kind) VALUES (${principal}::uuid, 'Code access fixture', 'code') ON CONFLICT (id) DO NOTHING`;
 });
 beforeEach(async () => {
   if (!testInfra.database) return;
   await sql`DELETE FROM capabilities.code_access_fixture`;
   await sql`DELETE FROM capabilities.code_access_grants WHERE app_id = 'inventory'`;
+  for (const id of [target.id, "x".repeat(512)])
+    await sql`INSERT INTO capabilities.code_access_target_fixture (resource_id, can_manage) VALUES (${id}, true) ON CONFLICT (resource_id) DO UPDATE SET can_manage = true`;
   await sql`INSERT INTO auth.service_accounts (id, name, kind) VALUES (${principal}::uuid, 'Code access fixture', 'code') ON CONFLICT (id) DO UPDATE SET status = 'active'`;
   await sql`DELETE FROM audit.events WHERE request_id = ${context.requestId}`;
 });
@@ -128,6 +139,106 @@ suite("parallel retries create one grant, list is live, and target removal canno
   expect(await listCodeAccess("inventory", bindings, principal, listContext)).toEqual([]);
   expect(await setCodeAccess("inventory", bindings, input, context, dependencies)).toMatchObject({ granted: false });
   expect(await sql`SELECT * FROM capabilities.code_access_fixture`).toHaveLength(0);
+});
+
+suite("set and rm refuse using committed authority after a concurrent manager change", async () => {
+  for (const operation of ["set", "rm"] as const) {
+    await sql`UPDATE capabilities.code_access_target_fixture SET can_manage = true WHERE resource_id = ${target.id}`;
+    if (operation === "rm") await setCodeAccess("inventory", bindings, input, context, dependencies);
+    const changed = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const checking = Promise.withResolvers<void>();
+    const change = sql.begin(async (tx) => {
+      await tx`UPDATE capabilities.code_access_target_fixture SET can_manage = false WHERE resource_id = ${target.id}`;
+      changed.resolve();
+      await release.promise;
+    });
+    const checkedBindings = new Map([
+      [
+        target.type,
+        {
+          ...adapter,
+          manages: async (tx: SQL, current: CapabilityExecutionContext, id: string) => {
+            checking.resolve();
+            return adapter.manages(tx, current, id);
+          },
+        },
+      ],
+    ]);
+    let pending: Promise<unknown> | undefined;
+    try {
+      await Promise.race([
+        changed.promise,
+        change.then(() => {
+          throw new Error("Manager change ended before the checkpoint");
+        }),
+      ]);
+      pending =
+        operation === "set"
+          ? setCodeAccess("inventory", checkedBindings, input, context, dependencies)
+          : removeCodeAccess("inventory", checkedBindings, grantId, { context: removeContext });
+      await Promise.race([
+        checking.promise,
+        pending.then(() => {
+          throw new Error("Operation skipped the manager check");
+        }),
+      ]);
+      release.resolve();
+      await change;
+      if (operation === "set") expect(await pending).toMatchObject({ granted: false, reasonCode: "not_manager" });
+      else expect(await pending).toBe(false);
+      expect(await sql`SELECT * FROM capabilities.code_access_fixture`).toHaveLength(operation === "set" ? 0 : 1);
+      expect(await sql`SELECT * FROM capabilities.code_access_grants WHERE app_id = 'inventory' AND NOT revoked`).toHaveLength(
+        operation === "set" ? 0 : 1,
+      );
+    } finally {
+      release.resolve();
+      await Promise.allSettled([change, ...(pending ? [pending] : [])]);
+    }
+  }
+});
+
+suite("manager locks remain held through both grant and revoke writes", async () => {
+  for (const operation of ["set", "rm"] as const) {
+    const writing = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const lockedAdapter: CodeAccessAdapter = {
+      ...adapter,
+      grant: async (tx, value) => {
+        const result = await adapter.grant(tx, value);
+        writing.resolve();
+        await release.promise;
+        return result;
+      },
+      revoke: async (tx, value) => {
+        const result = await adapter.revoke(tx, value);
+        writing.resolve();
+        await release.promise;
+        return result;
+      },
+    };
+    const lockedBindings = new Map([[target.type, lockedAdapter]]);
+    const pending =
+      operation === "set"
+        ? setCodeAccess("inventory", lockedBindings, input, context, dependencies)
+        : removeCodeAccess("inventory", lockedBindings, grantId, { context: removeContext });
+    try {
+      await Promise.race([
+        writing.promise,
+        pending.then(() => {
+          throw new Error("Operation skipped the adapter write");
+        }),
+      ]);
+      await expect(
+        sql.begin(async (tx) => {
+          await tx`SELECT resource_id FROM capabilities.code_access_target_fixture WHERE resource_id = ${target.id} FOR UPDATE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+  }
 });
 suite("cleanup cannot remove another account, and adapter failure rolls back every layer", async () => {
   const broken = {
