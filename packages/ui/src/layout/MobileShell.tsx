@@ -230,6 +230,14 @@ function MobileShellRoot(props: MobileShellProps): JSX.Element {
   let root!: HTMLDivElement;
 
   onMount(() => onCleanup(observeMobileShell(root)));
+  // Marks the document for the pinch-zoom rule, which also covers portalled dialogs and menus.
+  onMount(() => {
+    const html = document.documentElement;
+    html.toggleAttribute("data-k2b-mobile-shell", true);
+    onCleanup(() => {
+      if (!document.querySelector(".k2b-mobile-shell")) html.removeAttribute("data-k2b-mobile-shell");
+    });
+  });
 
   return (
     <div

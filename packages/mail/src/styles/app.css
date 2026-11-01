@@ -2045,7 +2045,7 @@
   .mail-head-search-input > .k2b-field { min-width: 0; flex: 1 1 0; }
   .k2b-ui .mail-workspace .mail-head-search-close-phone { display: inline-flex; flex: 0 0 auto; }
   .k2b-ui .mail-workspace .mail-head-search-close-desktop { display: none; }
-  .k2b-ui .mail-workspace > .k2b-app-workspace__head:has([data-mail-head-search], [data-mail-head-selection]) .k2b-app-workspace__head-actions > :not([data-workspace-primary]) { display: none; }
+  .k2b-ui .mail-workspace > .k2b-app-workspace__head:has([data-mail-head-search], [data-mail-head-selection]) .k2b-app-workspace__head-actions > :is(.mail-search-trigger, .k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper):not([data-workspace-primary]) { display: none; }
 }
 .k2b-ui .mail-workspace[data-sidebar-collapsed="true"] [data-mail-head-title] {
   position: static; width: auto; height: auto; margin: 0; overflow: hidden; clip-path: none;
