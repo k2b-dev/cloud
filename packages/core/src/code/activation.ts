@@ -84,10 +84,10 @@ const receipt = (row: ActivationRow): CodeActivation => ({
 });
 async function visibleReceipt(result: CodeActivation, context: CodeContext): Promise<CodeActivation> {
   const failure = result.failure;
-  if (!failure?.target || failure.readable === undefined) return result;
+  if (!failure?.target) return result;
   const person = codePerson(context);
   let readable = false;
-  if (failure.readable && failure.target.type !== "app") {
+  if (failure.readable !== false && failure.target.type !== "app") {
     try {
       const readers = await readResourcePrincipals({
         ref: failure.target,

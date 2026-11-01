@@ -750,6 +750,32 @@ databaseSuite()("durable Code activation", () => {
       }
     }
   });
+  test("saved answers without a reader decision use the current viewer's read access", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["B"]),
+      activation = await start(code, submitted.version.id);
+    denyDry = "B";
+    await run(activation.id);
+    const failure = {
+      target: { type: "example.item", id: "B" },
+      code: "not_manager",
+      reason: "Fixture target requires management",
+      title: "Fixture target",
+      managerUserIds: [nextOwnerId],
+    };
+    await sql`UPDATE code.activations SET failure=${JSON.stringify(failure)}::text::jsonb WHERE id=${activation.id}::uuid`;
+    readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
+    const hidden = await status(code, activation.id);
+    expect(hidden.failure).toEqual({
+      target: failure.target,
+      code: failure.code,
+      reason: "Einschalten kann nur, wer dieses Ziel verwaltet",
+      readable: false,
+    });
+    expect(JSON.stringify(hidden)).not.toContain("Fixture target");
+    expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
+    expect((await status(code, activation.id)).failure).toEqual(failure);
+  });
   test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
     targetReadable = false;
     const code = await newCode(),
