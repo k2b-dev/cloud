@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { anchor, planLargeMailbox, seedLargeMailbox } from "../../test/fixtures/large-mailbox";
 import type { ConversationView } from "../contracts";
@@ -12,29 +11,26 @@ const suite = suiteFor("database", "nats", "valkey");
 const CONVERSATIONS = 2_000;
 const PAGE = 51;
 
-const planNode: z.ZodType<PlanNode> = z.lazy(() =>
-  z.object({
-    "Node Type": z.string(),
-    "Relation Name": z.string().optional(),
-    "Actual Rows": z.number(),
-    "Actual Loops": z.number(),
-    Plans: z.array(planNode).optional(),
-  }),
-);
-type PlanNode = { "Node Type": string; "Relation Name"?: string; "Actual Rows": number; "Actual Loops": number; Plans?: PlanNode[] };
-const explainResult = z.array(z.object({ "QUERY PLAN": z.array(z.object({ Plan: planNode })) }));
-
-const nodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(nodes)];
-
 let userId: string;
 let mailboxId: string;
 let context: MailRequestContext;
 
-// Production reuses prepared statements behind PgBouncer, so the plan that counts is the generic one.
-const genericPlan = (view: ConversationView | null, cursor: { date: string; id: string } | null = null) =>
+// Production reuses prepared statements behind PgBouncer, so the plan that counts is the generic one. An ordinary
+// EXPLAIN would plan with the bound values, so this executes the statement and reads what the transaction examined.
+const conversationsExamined = (view: ConversationView | null, cursor: { date: string; id: string } | null = null) =>
   sql.begin(async (tx) => {
     await tx`SET LOCAL plan_cache_mode = force_generic_plan`;
-    const query = conversationCandidatesQuery({
+    // The view also holds counts this connection has not flushed yet, so only the difference belongs to the query.
+    const examined = async () => {
+      const [stats] = await tx<{ examined: number }[]>`
+        SELECT (seq_tup_read + idx_tup_fetch)::int AS examined
+        FROM pg_stat_xact_user_tables
+        WHERE schemaname = 'mail' AND relname = 'conversations'
+      `;
+      return stats?.examined ?? 0;
+    };
+    const before = await examined();
+    const page = await tx`${conversationCandidatesQuery({
       mailboxId,
       visibility: { scope: "mailbox", permission: "admin" },
       currentUserId: userId,
@@ -47,11 +43,9 @@ const genericPlan = (view: ConversationView | null, cursor: { date: string; id: 
       aggregatedScope: null,
       cursor,
       limit: PAGE,
-    });
-    const rows = await tx`EXPLAIN (ANALYZE, FORMAT JSON) ${query}`;
-    const [row] = explainResult.parse(rows);
-    if (!row?.["QUERY PLAN"][0]) throw new Error("EXPLAIN returned no plan");
-    return nodes(row["QUERY PLAN"][0].Plan);
+    })}`;
+    expect(page).toHaveLength(PAGE);
+    return (await examined()) - before;
   });
 
 suite("conversation list plan", () => {
@@ -108,28 +102,30 @@ suite("conversation list plan", () => {
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   }, 30_000);
 
-  const expectPageRead = (plan: PlanNode[]) => {
-    expect(plan.filter((node) => node["Node Type"] === "Sort")).toEqual([]);
-    const read = plan.filter((node) => node["Relation Name"] === "conversations");
-    expect(read.length).toBeGreaterThan(0);
-    // A page reads about a page of a 2,000-conversation mailbox, not all of it.
-    for (const node of read) expect(node["Actual Rows"] * node["Actual Loops"]).toBeLessThan(PAGE * 4);
-  };
+  // A page examines about a page of a 2,000-conversation mailbox, not all of it.
+  const ABOUT_ONE_PAGE = PAGE * 4;
 
-  test("the unfiltered list reads one page in index order, whatever the mailbox size", async () => {
-    expectPageRead(await genericPlan(null));
+  test("the unfiltered list examines one page, whatever the mailbox size", async () => {
+    expect(await conversationsExamined(null)).toBeLessThan(ABOUT_ONE_PAGE);
   });
 
-  test("recently active reads one page of its own index", async () => {
-    expectPageRead(await genericPlan("recently_active"));
+  test("recently active examines one page of its own index", async () => {
+    expect(await conversationsExamined("recently_active")).toBeLessThan(ABOUT_ONE_PAGE);
   });
 
-  test("a later page starts at its cursor instead of reading the pages before it", async () => {
-    const first = await listConversations({ context, mailboxId, limit: 50 });
-    if (!first.ok) throw new Error(first.error.message);
-    const last = first.data.items.at(-1);
-    if (!last) throw new Error("The fixture has no conversations");
-    expectPageRead(await genericPlan(null, { date: last.latestMessageAt, id: last.id }));
+  test("a later page starts at its cursor instead of examining the pages before it", async () => {
+    let cursor: { date: string; id: string } | null = null;
+    let token: string | undefined;
+    // Far enough in that walking the earlier pages would exceed the bound.
+    for (let page = 0; page < 6; page++) {
+      const result = await listConversations({ context, mailboxId, limit: 50, cursor: token });
+      if (!result.ok) throw new Error(result.error.message);
+      const last = result.data.items.at(-1);
+      if (!last || !result.data.nextCursor) throw new Error("The fixture has too few conversations");
+      cursor = { date: last.latestMessageAt, id: last.id };
+      token = result.data.nextCursor;
+    }
+    expect(await conversationsExamined(null, cursor)).toBeLessThan(ABOUT_ONE_PAGE);
   });
 
   test("consecutive pages list every conversation once and enrich each row", async () => {

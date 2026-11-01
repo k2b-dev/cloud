@@ -324,6 +324,8 @@ const conversationViewCondition = (
  * One page of a mailbox's conversations, before enrichment. Filters that do not apply stay out of the
  * statement instead of being switched off by a parameter: a condition like `$1 IS NULL OR ...` or a sort
  * on a CASE makes a reused plan read and sort the whole mailbox, seconds in one with 46,000 conversations.
+ * So does a parameter as `LIMIT`: a generic plan assumes it keeps a tenth of the rows, so the limit is written
+ * into the statement. It is a whole number the caller computed, never request text.
  */
 export const conversationCandidatesQuery = (params: {
   mailboxId: string;
@@ -403,7 +405,7 @@ export const conversationCandidatesQuery = (params: {
       }
       AND ${cursor ? sql`(${conversationSortColumn(view)}, c.id) < (${cursor.date}::timestamptz, ${cursor.id}::uuid)` : sql`true`}
     ORDER BY ${conversationSortColumn(view)} DESC, c.id DESC
-    LIMIT ${params.limit}
+    LIMIT ${sql.unsafe(String(Math.trunc(params.limit)))}
   `;
 };
 
