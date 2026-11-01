@@ -90,3 +90,32 @@ export type CodeCheckResult =
       manifest: CodeVersionManifest;
       permissions: Array<CodePermission & { status: "new" | "existing" }>;
     };
+
+/** Strict JSON result returned by the isolated checker and validated again by Core. */
+export const CodeCheckResultSchema = z.discriminatedUnion("ok", [
+  z
+    .object({
+      ok: z.literal(false),
+      diagnostics: z.array(
+        z
+          .object({
+            code: z.string(),
+            message: z.string(),
+            file: z.string(),
+            line: z.number().int().positive(),
+            column: z.number().int().positive(),
+          })
+          .strict(),
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ok: z.literal(true),
+      diagnostics: z.tuple([]),
+      bundle: z.string(),
+      manifest: CodeVersionManifestSchema,
+      permissions: z.array(CodePermissionSchema.extend({ status: z.enum(["new", "existing"]) }).strict()),
+    })
+    .strict(),
+]);

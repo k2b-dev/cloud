@@ -20,6 +20,7 @@ import type { CodeContext } from "./access";
 import { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 import { cleanupCodeActivation, codeActivationCleanupOutbox, reconcileCodeAccess } from "./activation-maintenance";
 import { type CodeActivationTransport, CodeActivationTransportError } from "./activation-transport";
+import * as authoringChecks from "./authoring-check";
 import type { Code } from "./contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode } from "./store";
@@ -98,6 +99,7 @@ const catalog = compileCapabilityManifest("example", {
 
 let database: Awaited<ReturnType<typeof useFreshDatabase>>;
 databaseSuite()("durable Code activation", () => {
+  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
     readersSpy: ReturnType<typeof spyOn<typeof provider, "readResourcePrincipals">>,
     catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
@@ -199,6 +201,8 @@ databaseSuite()("durable Code activation", () => {
   }
   const status = (code: Code, id: string) => readCodeActivation({ codeId: code.id, activationId: id }, owner);
   beforeAll(async () => {
+    // These checked fixtures exercise activation; scheduling integration covers the binding runner check.
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();
@@ -252,6 +256,7 @@ databaseSuite()("durable Code activation", () => {
     crashAfter = revoked = listDown = false;
   });
   afterAll(async () => {
+    serverCheck?.mockRestore();
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();

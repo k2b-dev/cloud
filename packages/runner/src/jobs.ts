@@ -1,0 +1,97 @@
+import { CODE_CHECK_LIMITS } from "@k2b/cloud/code";
+import { type RunnerConfig, type RunnerJobLease, type RunnerJobResult, RunnerJobResultSchema } from "@k2b/cloud/code/runner";
+import { readBytes } from "./bridge";
+import { reserveJobIdentities } from "./identities";
+
+const launchJob = (command: string[]) => Bun.spawn(command, { env: {}, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+
+/** Launcher owns process-tree teardown. No key, Core URL, run token, or inherited descriptors reach either role. */
+export async function executeRunnerJob(
+  lease: RunnerJobLease,
+  input: string,
+  config: RunnerConfig,
+  signal: AbortSignal,
+  launch = launchJob,
+): Promise<RunnerJobResult> {
+  signal.throwIfAborted();
+  if (Buffer.byteLength(input) > lease.inputBytes || lease.inputBytes > CODE_CHECK_LIMITS.requestBytes)
+    throw new Error("code_job_request_limit");
+  const parsed: unknown = JSON.parse(input);
+  if (!parsed || typeof parsed !== "object" || !("kind" in parsed) || parsed.kind !== lease.kind) throw new Error("code_job_invalid_input");
+  let request: unknown;
+  if (lease.kind === "check") {
+    if (!("request" in parsed)) throw new Error("code_job_invalid_input");
+    request = parsed.request;
+  } else {
+    if (!("execution" in parsed) || !("limits" in parsed)) throw new Error("code_job_invalid_input");
+    request = { execution: parsed.execution, limits: parsed.limits, config };
+  }
+  const identities = reserveJobIdentities();
+  const child = (() => {
+    try {
+      return launch([
+        "/app/job-isolate",
+        String(identities.first),
+        String(2 * CODE_CHECK_LIMITS.requestBytes),
+        process.execPath,
+        "--no-env-file",
+        lease.kind === "check" ? "/app/checker.js" : "/app/code-test.js",
+      ]);
+    } catch (error) {
+      identities.release();
+      throw error;
+    }
+  })();
+  let force: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => {
+    if (child.exitCode !== null || force) return;
+    child.kill("SIGTERM");
+    force = setTimeout(() => child.kill("SIGKILL"), 1000);
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  if (signal.aborted) stop();
+  try {
+    // Drain stdout concurrently: a child may reject before consuming its entire stdin.
+    const output = readBytes(new Response(child.stdout), lease.outputBytes, signal);
+    const write = (async () => {
+      await child.stdin.write(JSON.stringify(request));
+      await child.stdin.end();
+    })();
+    const [bytes, exit] = await Promise.all([output, child.exited, write]);
+    signal.throwIfAborted();
+    if (exit !== 0) throw new Error("code_job_role_failed");
+    const result = RunnerJobResultSchema.parse({ kind: lease.kind, result: JSON.parse(new TextDecoder().decode(bytes)) });
+    if (Buffer.byteLength(JSON.stringify(result)) > lease.outputBytes) return { kind: "error", code: "code_job_output_limit" };
+    return result;
+  } finally {
+    signal.removeEventListener("abort", stop);
+    if (child.exitCode === null) stop();
+    await child.exited;
+    clearTimeout(force);
+    // Reserved helper exits prove namespace teardown even for cancellation or role failure.
+    // An externally killed helper has no such proof; its range stays reserved.
+    if (child.exitCode === 0 || child.exitCode === 124 || child.exitCode === 125) identities.release();
+  }
+}
+
+/** Startup prerequisite check in the exact production namespace/profile envelope, before accepting any work. */
+export async function probeJobIsolation() {
+  const identities = reserveJobIdentities();
+  let child: ReturnType<typeof Bun.spawn> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    child = Bun.spawn(["/app/job-isolate", String(identities.first), String(1024 * 1024), "/app/job-isolate", "--verify-role"], {
+      env: {},
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    timer = setTimeout(() => child?.kill("SIGKILL"), 5000);
+    if ((await child.exited) !== 0) throw new Error("runner_job_isolation_unavailable");
+  } finally {
+    clearTimeout(timer);
+    if (child?.exitCode === null) child.kill("SIGKILL");
+    if (child) await child.exited;
+    if (!child || child.exitCode === 0) identities.release();
+  }
+}

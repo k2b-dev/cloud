@@ -11,8 +11,10 @@ export {
   codeAttentionContracts,
   readCodeAttention,
 } from "./attention";
+export { createCodeCheckRequest } from "./authoring-check";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export * from "./contracts";
+export { CodeJobError } from "./job-errors";
 export { listCodeCleanupJobs } from "./lifecycle";
 export * from "./lifecycle-contracts";
 export { checkCodeOwnerBeforeRun, readCodeRunOwnerTitle } from "./owner-check";
@@ -20,6 +22,7 @@ export * from "./policy";
 export * from "./policy-contracts";
 export * from "./policy-effective";
 export { codeRunMessages } from "./run-messages";
+export { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 export { processCodeScheduleTick, readCodeRunnerMetrics, startCodeRun } from "./scheduling";
 export * from "./scheduling-contracts";
 export * from "./secret-contracts";

@@ -1,7 +1,15 @@
 import type { RunnerBridge, RunnerCallResponse, RunnerConfig, RunnerLease, RunnerLeaseProof, RunnerOutcome } from "@k2b/cloud/code/runner";
-import { RunnerCallError, RunnerLeaseLostError, RunnerLeaseSchema } from "@k2b/cloud/code/runner";
+import {
+  RunnerCallError,
+  type RunnerJobLease,
+  RunnerJobLeaseSchema,
+  type RunnerJobResult,
+  RunnerLeaseLostError,
+  RunnerLeaseSchema,
+} from "@k2b/cloud/code/runner";
 import { BundleCache } from "./cache";
 import type { RunnerEngine } from "./engine";
+import { executeRunnerJob } from "./jobs";
 
 const proof = ({ runId, generation, token }: RunnerLease): RunnerLeaseProof => ({ runId, generation, token });
 const pause = (ms: number, signal: AbortSignal) =>
@@ -27,7 +35,15 @@ export class Runner {
     readonly bridge: RunnerBridge,
     readonly engine: RunnerEngine,
     readonly log = (code: string) => console.warn(code),
+    readonly executeJob = executeRunnerJob,
   ) {}
+  #isolationFailure(error: unknown) {
+    if (error instanceof Error && error.message === "runner_isolation_uid_exhausted") {
+      this.log("runner_isolation_uid_exhausted");
+      process.exitCode = 1;
+      this.stop();
+    }
+  }
   stop() {
     this.#poll.abort();
   }
@@ -52,20 +68,31 @@ export class Runner {
           continue;
         }
         try {
-          const { runs } = await this.bridge.fetch({ instanceId: this.instanceId, freeSlots }, this.#poll.signal);
+          const { runs, jobs = [] } = await this.bridge.fetch({ instanceId: this.instanceId, freeSlots }, this.#poll.signal);
           // A response racing SIGTERM is not accepted. Core recovers its unacknowledged leases.
           if (this.#poll.signal.aborted) break;
-          if (runs.length > freeSlots) throw new Error("runner_over_capacity");
+          if (runs.length + jobs.length > freeSlots) throw new Error("runner_over_capacity");
           const leases = runs.map((run) => RunnerLeaseSchema.parse(run));
           const ids = new Set(leases.map((lease) => lease.runId));
           if (ids.size !== leases.length || leases.some((lease) => this.#active.has(lease.runId)))
             throw new Error("runner_duplicate_lease");
+          const authoring = jobs.map((job) => RunnerJobLeaseSchema.parse(job));
+          if (
+            new Set(authoring.map((job) => job.jobId)).size !== authoring.length ||
+            authoring.some((job) => this.#active.has(`job:${job.jobId}`))
+          )
+            throw new Error("runner_duplicate_lease");
+          for (const job of authoring) {
+            const id = `job:${job.jobId}`;
+            const task = this.#executeJob(job).finally(() => this.#active.delete(id));
+            this.#active.set(id, task);
+          }
           for (const lease of leases) {
             const task = this.#execute(lease).finally(() => this.#active.delete(lease.runId));
             this.#active.set(lease.runId, task);
           }
           // A valid empty response normally waited pollMs. This also bounds a broken server's hot loop.
-          if (leases.length === 0) await pause(this.#config.retryMs, this.#poll.signal);
+          if (leases.length + authoring.length === 0) await pause(this.#config.retryMs, this.#poll.signal);
         } catch {
           if (!this.#poll.signal.aborted) {
             this.log("runner_fetch_unavailable");
@@ -76,6 +103,74 @@ export class Runner {
     } finally {
       await Promise.allSettled(this.#active.values());
       await this.engine.close();
+    }
+  }
+  async #executeJob(lease: RunnerJobLease) {
+    const controller = new AbortController();
+    let expiresAt = lease.leaseExpiresAt;
+    const proof = { jobId: lease.jobId, generation: lease.generation, leaseKey: lease.leaseKey };
+    let beatTimer: ReturnType<typeof setTimeout> | undefined, expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    const expire = () => {
+      clearTimeout(expiryTimer);
+      expiryTimer = setTimeout(() => controller.abort(), Math.max(0, Math.min(expiresAt, lease.deadlineAt) - Date.now()));
+    };
+    const beat = async () => {
+      try {
+        const renewed = await this.bridge.jobHeartbeat!(proof, controller.signal);
+        if (renewed.leaseExpiresAt > lease.deadlineAt || renewed.leaseExpiresAt <= Date.now()) throw new RunnerLeaseLostError();
+        expiresAt = renewed.leaseExpiresAt;
+        expire();
+      } catch (error) {
+        if (error instanceof RunnerLeaseLostError) controller.abort();
+        else if (!controller.signal.aborted) this.log("runner_job_heartbeat_unavailable");
+      }
+      if (!controller.signal.aborted) beatTimer = setTimeout(beat, lease.heartbeatMs);
+    };
+    expire();
+    beatTimer = setTimeout(beat, lease.heartbeatMs);
+    try {
+      let result: RunnerJobResult;
+      try {
+        controller.signal.throwIfAborted();
+        if (!this.bridge.jobInput || !this.bridge.jobHeartbeat || !this.bridge.jobComplete) throw new Error("runner_job_transport_missing");
+        const input = await (async () => {
+          while (!controller.signal.aborted) {
+            try {
+              return await this.bridge.jobInput!(proof, controller.signal, lease.inputBytes);
+            } catch (error) {
+              if (error instanceof RunnerLeaseLostError) {
+                controller.abort();
+                throw error;
+              }
+              if (!controller.signal.aborted) this.log("runner_job_input_unavailable");
+              await pause(this.#config.retryMs, controller.signal);
+            }
+          }
+          throw controller.signal.reason;
+        })();
+        result = await this.executeJob(lease, input, this.#config, controller.signal);
+      } catch (error) {
+        this.#isolationFailure(error);
+        if (controller.signal.aborted) return;
+        result = {
+          kind: "error",
+          code: error instanceof Error && error.message === "runner_response_too_large" ? "code_job_output_limit" : "code_job_failed",
+        };
+      }
+      while (!controller.signal.aborted) {
+        try {
+          await this.bridge.jobComplete!({ ...proof, result }, controller.signal);
+          break;
+        } catch (error) {
+          if (error instanceof RunnerLeaseLostError) break;
+          this.log("runner_job_completion_unavailable");
+          await pause(this.#config.retryMs, controller.signal);
+        }
+      }
+    } finally {
+      clearTimeout(beatTimer);
+      clearTimeout(expiryTimer);
+      controller.abort();
     }
   }
   async #execute(lease: RunnerLease) {
@@ -162,6 +257,7 @@ export class Runner {
       const result = await this.engine.run(lease, controller.signal);
       if (!controller.signal.aborted) outcome = result;
     } catch (error) {
+      this.#isolationFailure(error);
       if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) outcome = "lease_lost";
       /* A failed attempt is recorded without bundle exceptions or payloads. */
     } finally {

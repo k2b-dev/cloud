@@ -25,6 +25,7 @@ export {
   CODE_CHECK_LIMITS,
   CODE_CHECK_TYPE_INSTANTIATION_DEPTH,
   CodeCheckLimitsSchema,
+  CodeCheckResultSchema,
   CodePermissionSchema,
   CodeVersionManifestSchema,
 } from "./checker-contract";

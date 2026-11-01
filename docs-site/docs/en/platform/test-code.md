@@ -121,14 +121,14 @@ role, and a `CodeTestExecutor` backed by Runner. Core needs neither compiler
 nor workerd binaries in its own image.
 `testCode` reads sorted `test/**/*.json` files as data and checks source with
 `checkCode` before calling the executor. `simulateCode` accepts one case with
-exactly one run. These services neither activate versions nor use scheduling.
+exactly one run. These services do not activate versions or create production runs.
 
 Runner exports `createCodeTestExecutor` from `packages/runner/src/test-kit.ts`.
 The runner image also includes `code-test.js`, a trusted stdin/stdout role for
 hosts that launch a process. Its input is `{ execution, config, limits }`;
 `execution` has the checked bundle, manifest, generated SDK and cases, each with `{ file, fixture }`. It uses
-no app key or Core URL. Run it as PID 1 through the image's normal entrypoint in its own container
-and PID namespace. The role refuses other process placement. The executor
+no app key or Core URL. The runner supervisor launches it as PID 1 in a fresh user, PID, mount and
+network namespace through the mandatory `job-isolate` launcher. The role refuses other process placement. The executor
 API likewise requires one supervisor per PID namespace; repeated invocations
 in that supervisor share the engine's UID allocator.
 
@@ -139,3 +139,27 @@ wall time. Runner configuration also bounds individual bridge messages,
 concurrency and process memory. The process role caps stdin at the checker's
 request-byte and time budgets. Cancellation closes and reaps the workerd
 engine; a time, call or output limit leaves a machine-readable failure.
+
+### Connect CLI and Gustav adapters
+
+Use `await createRunnerCodeTestingHost(context)` from Core's Code service as
+the production `CodeTestingHost`. Build `request.code` with
+`createCodeCheckRequest(codeId, files, entry, context)`, then call
+`testCode(request, host, signal)` or `simulateCode(request, host, signal)`.
+Both services first check the source remotely. The host sends the checked
+bundle, SDK and fixtures as a `test` or `simulate` job to the same runner pool.
+No test source runs inside Core. Result schemas and fake-call semantics are
+identical for the CLI and Gustav.
+
+Jobs and production runs share the advertised free-slot count. Core alternates
+between eligible runs and jobs across replicas, so a burst of checks cannot
+starve scheduled runs. Jobs have no production bridge token. A lost lease
+requeues fake-only work within its existing deadline and retry budget.
+
+Forward cancellation to both the service and its host context. Cancellation
+or timeout fences the lease; the runner stops the isolated role. Queue
+admission returns `code_job_busy` when full. The test/simulate services preserve
+that stable code in their failure result so adapters can offer a retry.
+
+Administration defaults to 64 cases and 200 total fixture invocations per test
+job. Calls and total wall time use the existing Code execution budgets.
