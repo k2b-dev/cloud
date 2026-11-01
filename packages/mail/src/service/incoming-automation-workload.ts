@@ -37,6 +37,7 @@ export const resolveIncomingAutomationMandateCaller = async (
     LEFT JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
     WHERE run.id = ${runId}::uuid
       AND automation.deleted_at IS NULL
+      AND automation.authorization_state = 'ready'
   `;
   if (!row?.mandate_id) throw Object.assign(new Error("This automation has no active Spaces authorization"), { code: "FORBIDDEN" });
   const subjectAllowed =

@@ -2506,7 +2506,7 @@ export type MailAutomationStep =
       maxChoices: number;
     }
   | { id: string; kind: "ai_extract_event"; instructions: string; timeZone: string }
-  | { id: string; kind: "link_space_item"; itemId: string }
+  | { id: string; kind: "link_space_item"; itemId: string; spaceId?: string }
   | { id: string; kind: "create_space_event"; spaceId: string; columnId: string; event: MailAutomationEventSource }
   | { id: string; kind: "create_reply_draft"; body: MailAutomationTextSource; senderIdentityId: string }
   | { id: string; kind: "add_comment"; body: MailAutomationTextSource }
@@ -2572,7 +2572,14 @@ export const mailAutomationStepSchema: z.ZodType<MailAutomationStep> = z.lazy(()
         timeZone: ianaTimeZoneSchema,
       })
       .strict(),
-    z.object({ id: automationStepIdSchema, kind: z.literal("link_space_item"), itemId: ResourceShortIdSchema }).strict(),
+    z
+      .object({
+        id: automationStepIdSchema,
+        kind: z.literal("link_space_item"),
+        itemId: ResourceShortIdSchema,
+        spaceId: ResourceShortIdSchema.optional(),
+      })
+      .strict(),
     z
       .object({
         id: automationStepIdSchema,

@@ -55,6 +55,15 @@ const load = async () => {
 };
 const modules = isServer ? undefined : await load();
 
+const waitFor = async (condition: () => boolean, description: string) => {
+  // Preserve the former 100 × 10 ms budget while waiting on the observed state.
+  const deadline = performance.now() + 1_000;
+  while (!condition()) {
+    if (performance.now() >= deadline) throw new Error(`Timed out waiting for ${description}`);
+    await Bun.sleep(10);
+  }
+};
+
 test.skipIf(isServer)("continues a limited retry backfill with another retry instead of a normal backfill", async () => {
   const { Settings, LocaleProvider, prompts } = modules!;
   const dom = createDomTestHarness();
@@ -87,7 +96,7 @@ test.skipIf(isServer)("continues a limited retry backfill with another retry ins
   );
   const text = () => dom.root.textContent ?? "";
   try {
-    for (let i = 0; i < 100 && !text().includes("Limit reached · 100 retried, 150 left"); i++) await Bun.sleep(10);
+    await waitFor(() => text().includes("Limit reached · 100 retried, 150 left"), "the backfill status");
     expect(text()).toContain("Limit reached · 100 retried, 150 left");
 
     dom.document.querySelector<HTMLButtonElement>(`[aria-label="Actions for ${automation.name}"]`)?.click();
@@ -97,7 +106,7 @@ test.skipIf(isServer)("continues a limited retry backfill with another retry ins
     expect(labels).not.toContain("Run backfill again");
     items.find((item) => item.textContent?.trim() === "Retry failed messages")!.click();
 
-    for (let i = 0; i < 100 && !requests.some((request) => request.method === "POST"); i++) await Bun.sleep(10);
+    await waitFor(() => requests.some((request) => request.method === "POST"), "the retry request");
     expect(confirmation).toHaveBeenCalledTimes(1);
     expect(confirmation.mock.calls[0]?.[1]).toMatchObject({ title: "Retry failed messages?", confirmText: "Start retry" });
     // A retry does not preview the scope: the scope count is not the number of messages it runs again.
@@ -108,12 +117,44 @@ test.skipIf(isServer)("continues a limited retry backfill with another retry ins
         body: { operationId: expect.any(String), expectedRevision: 4, retryFailed: true },
       },
     ]);
-    for (let i = 0; i < 100 && !text().includes("Retry · 0/250"); i++) await Bun.sleep(10);
+    await waitFor(() => text().includes("Retry · 0/250"), "the queued retry status");
     expect(text()).toContain("Retry · 0/250");
   } finally {
     dispose();
     confirmation.mockRestore();
     globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("shows a paused automation's target confirmation and its recovery action", async () => {
+  const { Settings, LocaleProvider } = modules!;
+  const dom = createDomTestHarness();
+  const dispose = render(
+    () => (
+      <LocaleProvider locale="en">
+        <Settings
+          mailboxId="Box001"
+          catalog={{ folders: [], assignableUsers: [] }}
+          initialAutomations={[{ ...automation, enabled: false, authorizationState: "needs_attention", latestBackfillOperationId: null }]}
+        />
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  try {
+    expect(dom.root.textContent).toContain("Needs attention");
+    expect(dom.root.textContent).toContain("choose its Spaces destinations again, and save");
+    expect(dom.root.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled).toBe(true);
+    const edit = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Edit automation",
+    );
+    expect(edit).toBeDefined();
+    edit!.click();
+    await waitFor(() => dom.document.body.textContent?.includes("Edit incoming automation") ?? false, "the recovery editor");
+    expect(dom.document.body.textContent).toContain("Edit incoming automation");
+  } finally {
+    dispose();
     dom.cleanup();
   }
 });
