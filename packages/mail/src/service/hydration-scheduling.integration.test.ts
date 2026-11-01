@@ -195,7 +195,8 @@ suite("mail body hydration scheduling", () => {
         mimeStructure: {},
       });
     }
-    await expect(syncFolderBatch(fixture.folderId, noHeartbeat)).resolves.toMatchObject({ imported: count, hasMore: false });
+    // Await directly so a rejection retains its error code and stack in CI output.
+    expect(await syncFolderBatch(fixture.folderId, noHeartbeat)).toMatchObject({ imported: count, hasMore: false });
   };
 
   // Holds every source download until `work` has finished, so the test can shape the provider first.
@@ -458,6 +459,14 @@ suite("mail body hydration scheduling", () => {
     try {
       await deliver(fixture, 41);
       await waitFor(async () => (await unhydrated([fixture])) === 0);
+      // The final body commits before invalidation and provider-lease release. This next
+      // arrival starts a separate idle turn, so wait for the generation to finish too.
+      await waitFor(async () => {
+        const [work] = await sql<{ job_id: string | null }[]>`
+          SELECT job_id FROM mail.hydration_work WHERE mailbox_id = ${fixture.mailboxId}::uuid
+        `;
+        return work?.job_id === null;
+      });
       expect(priorities).toEqual(["sync", "background", "background"]);
       await deliver(fixture, 1);
       await waitFor(async () => (await unhydrated([fixture])) === 0);
