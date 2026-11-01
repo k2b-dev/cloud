@@ -33,6 +33,7 @@
  */
 import { type Completion, type CompletionContext, type CompletionResult, snippetCompletion } from "@codemirror/autocomplete";
 import { cellTextBeforeCursor, isTableRow, withIcon } from "@k2b/editor/markdown";
+import { i18n } from "@k2b/stdlib";
 
 type Formula = {
   /** Function name as it appears in the formula source. */
@@ -46,8 +47,7 @@ type Formula = {
   icon: string;
 };
 
-/** Registry — keep in sync with `FUNCTIONS` in
- *  `packages/cloud/src/shared/markdown/formula.ts`. */
+/** Registry — keep in sync with `FUNCTIONS` in `../formula.ts`. */
 const FORMULAS: Formula[] = [
   // Math ─────────────────────────────────────────────────────────
   { name: "ROUND", detail: "(number, digits)", args: "${1:value}, ${2:2}", icon: "ti-math-function" },
@@ -104,6 +104,97 @@ const FORMULAS: Formula[] = [
   },
 ];
 
+/** Signatures of the functions in the note's language; the function names stay as the formula language spells them. */
+const formulaHelp = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      ROUND: "(number, digits)",
+      ABS: "(number)",
+      SQRT: "(number) — square root",
+      POW: "(base, exp) — power",
+      MOD: "(a, b) — remainder",
+      SUM: "(column) — sum of column",
+      AVG: "(column) — average of column",
+      MEAN: "(column) — alias for AVG",
+      MIN: "(column) — minimum of column",
+      MAX: "(column) — maximum of column",
+      COUNT: "(column) — non-empty count",
+      MEDIAN: "(column) — median of column",
+      UNIQUE: "(column) — distinct non-empty count",
+      STDEV: "(column) — sample standard deviation",
+      COUNTIF: "(column, value) — count matching cells",
+      SUMIF: "(sumCol, condCol, value) — conditional sum",
+      PERCENT: "(part, total) — rounded percent",
+      PROGRESS: "(ratio) or (done, total) — progress bar",
+      ROWSUM: "() — sum of other cells in row",
+      ROWAVG: "() — average of other cells in row",
+      ROWMEAN: "() — alias for ROWAVG",
+      IF: "(cond, then, else)",
+      IFEMPTY: "(value, fallback)",
+      IFERROR: "(value, fallback)",
+      AND: "(a, b, ...) — all truthy",
+      OR: "(a, b, ...) — any truthy",
+      NOT: "(a) — invert truthiness",
+      CONTAINS: "(haystack, needle) — substring match",
+      CONCAT: "(...parts) — join strings",
+      UPPER: "(text) — uppercase",
+      LOWER: "(text) — lowercase",
+      TRIM: "(text) — strip whitespace",
+      LEFT: "(text, n) — first n chars",
+      RIGHT: "(text, n) — last n chars",
+      LEN: "(text) — character count",
+      SUBSTRING: "(text, start, length)",
+      REPLACE: "(text, search, replacement)",
+      NOW: "() — current YYYY-MM-DD HH:MM:SS",
+      TODAY: "() — current YYYY-MM-DD",
+      DATEDIFF: "(d1, d2, unit?) — date diff (d/h/m/s/ms)",
+    },
+    de: {
+      ROUND: "(Zahl, Stellen)",
+      ABS: "(Zahl)",
+      SQRT: "(Zahl) — Quadratwurzel",
+      POW: "(Basis, Exponent) — Potenz",
+      MOD: "(a, b) — Rest",
+      SUM: "(Spalte) — Summe der Spalte",
+      AVG: "(Spalte) — Mittelwert der Spalte",
+      MEAN: "(Spalte) — wie AVG",
+      MIN: "(Spalte) — kleinster Wert der Spalte",
+      MAX: "(Spalte) — größter Wert der Spalte",
+      COUNT: "(Spalte) — nicht leere Zellen",
+      MEDIAN: "(Spalte) — Median der Spalte",
+      UNIQUE: "(Spalte) — verschiedene Werte",
+      STDEV: "(Spalte) — Standardabweichung",
+      COUNTIF: "(Spalte, Wert) — passende Zellen zählen",
+      SUMIF: "(Summenspalte, Bedingungsspalte, Wert) — bedingte Summe",
+      PERCENT: "(Teil, Gesamt) — gerundete Prozent",
+      PROGRESS: "(Anteil) oder (erledigt, gesamt) — Fortschrittsbalken",
+      ROWSUM: "() — Summe der übrigen Zellen der Zeile",
+      ROWAVG: "() — Mittelwert der übrigen Zellen der Zeile",
+      ROWMEAN: "() — wie ROWAVG",
+      IF: "(Bedingung, dann, sonst)",
+      IFEMPTY: "(Wert, Ersatz)",
+      IFERROR: "(Wert, Ersatz)",
+      AND: "(a, b, ...) — alle wahr",
+      OR: "(a, b, ...) — mindestens eins wahr",
+      NOT: "(a) — Wahrheitswert umkehren",
+      CONTAINS: "(Text, Suchtext) — enthält den Text",
+      CONCAT: "(...Teile) — Texte verbinden",
+      UPPER: "(Text) — Großbuchstaben",
+      LOWER: "(Text) — Kleinbuchstaben",
+      TRIM: "(Text) — Leerraum entfernen",
+      LEFT: "(Text, n) — erste n Zeichen",
+      RIGHT: "(Text, n) — letzte n Zeichen",
+      LEN: "(Text) — Anzahl der Zeichen",
+      SUBSTRING: "(Text, Start, Länge)",
+      REPLACE: "(Text, Suche, Ersatz)",
+      NOW: "() — aktuell JJJJ-MM-TT HH:MM:SS",
+      TODAY: "() — aktuell JJJJ-MM-TT",
+      DATEDIFF: "(d1, d2, Einheit?) — Datumsabstand (d/h/m/s/ms)",
+    },
+  },
+});
+
 /** Snippet template. Does NOT include the leading `=` because the
  *  `from` position in the CompletionResult is anchored AFTER the
  *  `=` the user already typed — CM's prefix-filter compares the
@@ -113,11 +204,15 @@ const FORMULAS: Formula[] = [
  *  `${0}` parks the final cursor outside the parens. */
 const buildSnippet = (f: Formula): string => (f.args.length === 0 ? `${f.name}()` : `${f.name}(${f.args})\${0}`);
 
+/** Ranked first among equal matches, so `=SU` offers SUM before SUBSTRING. */
+const COMMON = new Set(["SUM", "AVG", "MIN", "MAX", "COUNT"]);
+
 const COMPLETIONS: Completion[] = FORMULAS.map((f) => {
   const c = snippetCompletion(buildSnippet(f), {
     label: f.name,
     type: "function",
     detail: f.detail,
+    boost: COMMON.has(f.name) ? 1 : 0,
   });
   withIcon(c, f.icon);
   return c;
@@ -165,6 +260,8 @@ export const tableFormulaCompletionSource = (context: CompletionContext): Comple
   // picking a function).
   if (!/^\s*=\w*$/.test(cell.text)) return null;
 
+  const help = formulaHelp.resolve(typeof document === "undefined" ? ["en"] : [document.documentElement.lang || "en"]).t;
+
   // Anchor `from` AFTER the `=` so CM's prefix-filter sees just the
   // function-name fragment (e.g. "SU" → "SUM"). Anchoring at the `=`
   // would force the labels to start with `=`, which they don't, so
@@ -172,7 +269,10 @@ export const tableFormulaCompletionSource = (context: CompletionContext): Comple
   return {
     from: word.from + 1,
     to: context.pos,
-    options: COMPLETIONS,
+    options: COMPLETIONS.map((completion) => ({
+      ...completion,
+      detail: help[completion.label as keyof typeof help],
+    })),
     validFor: /^\w*$/,
   };
 };
