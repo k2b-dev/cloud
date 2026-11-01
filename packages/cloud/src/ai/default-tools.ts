@@ -224,7 +224,7 @@ export const createCloudAiCodeTools = () => [
     promptHint:
       "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run; its computed views come from cloud.view.* in the script and present. Load assistant-code-mode for its runtime APIs; no saved app is required.",
     description:
-      "Run one-off script code OR a saved script resource in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes cloud.capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs, captured files and view references for agent inspection only. Show computed views with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer in the script, then present({path}) each returned view; never retype run values into chart arguments, files or Markdown. Apps with an index.html interface do not run here: show them with code_open or code_present. Runs use real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
+      "Run one-off script code OR a saved script resource in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. One-off modules can import the generated capability SDK and sheet.toCsv from @sdk: default-export an async function. Dynamic IDs are allowed, no app/version/owner needed. SDK methods return domain data directly; actions retain normal approvals. Also includes cloud.capabilities.run(name,input) for capability envelopes; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs, captured files and view references for agent inspection only. Show computed views with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer in the script, then present({path}) each returned view; never retype run values into chart arguments, files or Markdown. Apps with an index.html interface do not run here: show them with code_open or code_present. Runs use real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
     inputSchema: CodeRunInput,
     outputSchema: z.json(),
     approval: "never",
@@ -294,6 +294,13 @@ export const createDefaultCloudAiTools = () => [
 
 /** Built-ins advertised through discovery and loaded only when needed. */
 export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
+  "code_init",
+  "code_pull",
+  "code_sdk",
+  "code_test",
+  "code_simulate",
+  "code_submit",
+  "code_diff",
   ...CODE_RUNTIME_TOOL_NAMES,
   ...Object.keys(CODE_SOURCE_TOOLS),
   "survey",

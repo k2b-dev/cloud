@@ -320,6 +320,8 @@ const resourceContextForActor = (actor: RequestActor | undefined): AiResourceCon
 };
 
 export type ExecutorConfig = {
+  /** Host-owned tools added to default Assistant turns; matching names replace the platform implementation. */
+  tools?: readonly AiRuntimeTool[];
   leaseOwner: string;
   heartbeatMs: number;
   /** Re-enqueue continuation work after a suspension so any worker can resume it. */
@@ -889,6 +891,9 @@ export class AiTurnExecutor {
         aiConversations.getConversation({ conversationId }),
       ]);
       material = nextMaterial;
+      if (config.toolSource?.kind === "default" && this.config.tools?.length) {
+        material.tools = [...new Map([...material.tools, ...this.config.tools].map((tool) => [tool.def.name, tool])).values()];
+      }
       if (!conversation) throw new Error("Conversation is no longer available.");
       allowedTools = conversation.allowedTools ?? null;
       const allowed = allowedTools === null ? null : new Set(allowedTools);

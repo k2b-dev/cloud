@@ -289,9 +289,9 @@ export function createArtifactAgentRuntime(
           inputFiles: invocation ? [] : inputFiles,
           readInput,
           changed: () => {},
-          capability: (name, input, signal) => {
+          capability: (name, input, signal, options) => {
             if (!approve) throw new Error("Capability approval UI unavailable");
-            return runCapability(name, input, { artifactId: current?.id, conversationId }, approve, signal);
+            return runCapability(name, input, { artifactId: current?.id, conversationId }, approve, signal, options);
           },
           database: async (request, signal) => {
             if (!dataId) throw new Error("Database access requires a saved resource or resourceId");

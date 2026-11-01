@@ -994,3 +994,22 @@ one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
 capability effects are unavailable, and background checks reject all
 capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for step matching, copy/output budgets, cancellation and the report contract.
+
+## Register host-owned tools
+
+The process that owns the AI worker can pass `tools: readonly AiRuntimeTool[]`
+to its first `startAiRuntime` call from `@k2b/cloud/ai/runtime`. These tools
+join default Assistant turns; a matching name replaces that default tool.
+The conversation's fixed `allowedTools` ceiling still applies, and deferred
+tools use the existing `load_tools` discovery. Later reference-counted starts
+do not replace the worker's configuration. Custom tool sources are unchanged.
+
+This advanced host seam lets Core register its permission-aware Code services
+without importing application contracts into the platform. Every tool must
+recheck its own authority. `resolveAiCapabilityActor` from `@k2b/cloud/ai`
+resolves the current conversation owner's user-backed session authority from
+a persisted actor and the conversation store, including account status and
+mobile-session limits. It is for the trusted runtime host, not an application
+credential exchange. `createCodeSourceTool` from `@k2b/cloud/ai/tools` exposes
+one existing Studio source tool so an overloaded host tool can preserve that
+tool's authenticated transport and revision behavior.

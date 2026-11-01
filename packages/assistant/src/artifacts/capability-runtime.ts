@@ -15,6 +15,7 @@ import {
 } from "@k2b/cloud/capabilities/server";
 import {
   CapabilityActionReviewDataSchema,
+  CapabilityIdempotencyKeySchema,
   CapabilityInvocationBodySchema,
   CapabilityStreamSchema,
   capabilityActionPolicy,
@@ -47,6 +48,7 @@ export const RuntimeCapabilityRequest = z
     input: z.json(),
     target: CapabilityInvocationBodySchema.shape.target,
     refs: CapabilityInvocationBodySchema.shape.refs,
+    idempotencyKey: CapabilityIdempotencyKeySchema.optional(),
     artifactId: CodeResourceId.optional(),
     conversationId: z.string().min(1).max(80).optional(),
   })
@@ -174,6 +176,7 @@ export const runtimeCapabilities = {
     const { resource, conversationId } = await authorizeWithChat(request, identity, request.name);
     const untrusted = resource && resource.permission !== "admin";
     const target = await operation(request.name, caller.locale, identity.authority ?? null);
+    if (request.idempotencyKey !== undefined && target.action?.idempotency !== "required") throw new ArtifactError("INVALID_INPUT");
     const boundCall = target.operation.target !== undefined || target.operation.refs !== undefined;
     const call =
       request.target !== undefined || request.refs !== undefined
@@ -357,7 +360,7 @@ async function resolveCapability(
       capabilityId: prepared.localId,
       kind: prepared.kind,
       ...body,
-      ...(target.action?.idempotency === "required" ? { idempotencyKey: `code-${id}` } : {}),
+      ...(target.action?.idempotency === "required" ? { idempotencyKey: request.idempotencyKey ?? `code-${id}` } : {}),
       signal: caller.signal,
     },
     { ...caller, requestId: id },
