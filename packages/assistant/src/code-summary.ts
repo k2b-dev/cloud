@@ -86,39 +86,56 @@ const AttentionSchema = z.object({
       code: z.object({
         id: z.string(),
         title: z.string(),
-        owner: z.object({ kind: z.string(), ref: z.object({ type: z.string(), id: z.string() }).optional() }),
+        owner: z.union([
+          z.object({ kind: z.literal("resource"), ref: z.object({ type: z.string(), id: z.string() }) }),
+          z.object({ kind: z.literal("app"), appId: z.string() }),
+          z.object({ kind: z.literal("person") }),
+        ]),
       }),
       reasons: z.array(z.enum(["paused", "run_failed", "access_removed"])),
       lastRunAt: z.string().nullable(),
     }),
   ),
-  truncated: z.boolean(),
+  nextCursor: z.string().nullable(),
 });
 export type CodeAttentionReason = "paused" | "run_failed" | "access_removed";
-/** Code of a place the person administers that needs them, with that place when it is a resource. */
+/** Who owns Code that waits: a resource, or a whole app. */
+export type CodeAttentionOwner = { kind: "resource"; ref: CloudResourceRef } | { kind: "app"; appId: string };
+/** Code of a place the person administers that needs them. */
 export type CodeAttentionItem = {
   codeId: string;
   title: string;
-  owner: CloudResourceRef | null;
+  owner: CodeAttentionOwner | null;
   reasons: CodeAttentionReason[];
   lastRunAt: string | null;
 };
-export type CodeAttentionPage = { items: CodeAttentionItem[]; truncated: boolean };
+/** `nextCursor` continues after the windows checked so far; null means every candidate was checked. */
+export type CodeAttentionPage = { items: CodeAttentionItem[]; nextCursor: string | null };
+/** Core checks 50 candidates per window; one view follows at most this many windows before offering to continue. */
+export const CODE_ATTENTION_WINDOWS = 4;
 
-/** Code that waits for the person as an administrator of its place: paused, failed, or without access at a target. */
-export const loadCodeAttention = async (invoke: CodeQueryInvoke): Promise<CodeAttentionPage> => {
-  const result = await invoke(query("code.attention.list", {}), AttentionSchema);
-  if (!result.ok) throw new CodeSummaryError(result.error.message);
-  return {
-    items: result.data.data.items.map((item) => ({
-      codeId: item.code.id,
-      title: item.code.title,
-      owner: item.code.owner.ref ?? null,
-      reasons: item.reasons,
-      lastRunAt: item.lastRunAt,
-    })),
-    truncated: result.data.data.truncated,
-  };
+/**
+ * Code that waits for the person as an administrator of its place: paused, or failed (also because a target removed
+ * its access). Core pages its candidate window; this follows up to `CODE_ATTENTION_WINDOWS` windows from `cursor`.
+ */
+export const loadCodeAttention = async (invoke: CodeQueryInvoke, cursor?: string): Promise<CodeAttentionPage> => {
+  const items: CodeAttentionItem[] = [];
+  let next: string | null = cursor ?? null;
+  for (let window = 0; window < CODE_ATTENTION_WINDOWS; window++) {
+    const result = await invoke(query("code.attention.list", next ? { cursor: next } : {}), AttentionSchema);
+    if (!result.ok) throw new CodeSummaryError(result.error.message);
+    for (const item of result.data.data.items)
+      items.push({
+        codeId: item.code.id,
+        title: item.code.title,
+        owner: item.code.owner.kind === "person" ? null : item.code.owner,
+        reasons: item.reasons,
+        lastRunAt: item.lastRunAt,
+      });
+    next = result.data.data.nextCursor;
+    if (!next) break;
+  }
+  return { items, nextCursor: next };
 };
 
 const RunCountSchema = z.object({ runs: z.number().int(), failed: z.number().int() });
@@ -151,12 +168,22 @@ const offsetAt = (timeZone: string, at: Date) => {
 };
 /**
  * The instant the person's current day began in their time zone, so "today" means their day on server and browser.
- * The offset is taken at that midnight, so days on which the clocks change start at the right hour too.
+ * Clock changes can repeat or skip local midnight, so it tries the zone's offsets around that day and takes the
+ * earliest instant that already falls on the local date.
  */
 export const startOfDayIn = (timeZone: string, now: Date): string => {
   const today = zoned(timeZone, now);
   const midnightAsUtc = Date.UTC(today.year, today.month - 1, today.day);
-  let start = midnightAsUtc - offsetAt(timeZone, now);
-  start = midnightAsUtc - offsetAt(timeZone, new Date(start));
+  const hour = 60 * 60 * 1000;
+  const offsets = new Set([-36, -24, -12, 0, 12].map((hours) => offsetAt(timeZone, new Date(midnightAsUtc + hours * hour))));
+  offsets.add(offsetAt(timeZone, now));
+  const sameDay = (instant: number) => {
+    const local = zoned(timeZone, new Date(instant));
+    return local.year === today.year && local.month === today.month && local.day === today.day;
+  };
+  const starts = [...offsets].map((offset) => midnightAsUtc - offset).filter(sameDay);
+  // No offset lands on local midnight when the day starts later (midnight skipped): its first hour on the date.
+  let start = starts.length > 0 ? Math.min(...starts) : midnightAsUtc - offsetAt(timeZone, now);
+  while (sameDay(start - hour)) start -= hour;
   return new Date(start).toISOString();
 };

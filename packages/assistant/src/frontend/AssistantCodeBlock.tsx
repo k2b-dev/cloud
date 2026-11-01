@@ -13,6 +13,8 @@ export type AssistantCodeBlockInitial = { ref: CloudResourceRef; page: CodeSumma
 
 type BlockState =
   | { kind: "none"; ref?: CloudResourceRef }
+  /** A new place whose Code Core has not listed yet: nothing shows, so a place is never called empty too early. */
+  | { kind: "pending"; ref: CloudResourceRef }
   | { kind: "loading"; ref: CloudResourceRef }
   | { kind: "ready"; ref: CloudResourceRef; page: CodeSummaryPage }
   | { kind: "error"; ref: CloudResourceRef };
@@ -90,7 +92,7 @@ export default function AssistantCodeBlock(props: {
       if (sameRef(ref, currentRef())) return;
       generation++;
       setPlace({});
-      setState({ kind: "none", ...(ref ? { ref: { ...ref } } : {}) });
+      setState(ref ? { kind: "pending", ref: { ...ref } } : { kind: "none" });
       if (ref) void load({ ...ref }, true);
     };
     const initialRef = getContext()?.scope;
@@ -154,7 +156,7 @@ export default function AssistantCodeBlock(props: {
   );
 
   return (
-    <Show when={state().kind !== "none" || empty()}>
+    <Show when={(state().kind !== "none" && state().kind !== "pending") || empty()}>
       <section class="assistant-code-block" data-state={state().kind} aria-label={`${t().codeBlock} ${heading()}`.trim()}>
         <button
           type="button"

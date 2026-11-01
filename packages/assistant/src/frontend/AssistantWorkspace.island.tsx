@@ -377,7 +377,13 @@ export default function AssistantWorkspace(props: Props) {
     setMainView("approvals");
     navigate(approvalsHref, { scroll: "manual", viewTransition: false });
   };
+  const codeDetailShown = () => codeOpen() && codeRendered() && Boolean(props.code?.detail);
   const openCode = () => {
+    // A personal Code page leads back to the list, which the server renders with its counts.
+    if (codeDetailShown()) {
+      navigateTo(codeHref);
+      return;
+    }
     if (codeOpen()) return;
     navigationRequest++;
     setProjectView(null);

@@ -592,7 +592,7 @@ test("Waiting for you lists Code of a place the person administers when it needs
                   lastRunAt: "2026-10-31T09:41:03.000Z",
                 },
               ],
-              truncated: false,
+              nextCursor: null,
             }
           : { items: [], nextCursor: null };
     return {

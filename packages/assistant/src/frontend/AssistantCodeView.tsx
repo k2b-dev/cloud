@@ -78,8 +78,17 @@ export default function AssistantCodeView(props: {
       setMore("failed");
     }
   };
+  const count = async () => {
+    setToday(undefined);
+    try {
+      setToday(await countOwnRunsSince(browserCodeInvoke, startOfDayIn(props.timeZone, new Date())));
+    } catch {
+      setToday(null);
+    }
+  };
   const load = async () => {
     setPage(undefined);
+    if (today() === null) void count();
     try {
       setPage(await loadCodeSummaries(browserCodeInvoke, { kind: "person", userId: props.userId }));
     } catch {
@@ -88,10 +97,7 @@ export default function AssistantCodeView(props: {
   };
   onMount(() => {
     if (props.initial === undefined) void load();
-    if (props.initialToday === undefined)
-      void countOwnRunsSince(browserCodeInvoke, startOfDayIn(props.timeZone, new Date()))
-        .then(setToday)
-        .catch(() => setToday(null));
+    if (props.initialToday === undefined) void count();
   });
   const createButton = () => (
     <Button type="button" variant="primary" onClick={() => props.onCreateInChat()}>
@@ -111,7 +117,15 @@ export default function AssistantCodeView(props: {
           <p class="assistant-code__lead min-w-0 flex-1 text-sm text-secondary">
             <i class="ti ti-moustache" aria-hidden="true" />
             {t().codeRunsAsYou}
-            <Show when={today()}>{(count) => <span>{t().codeToday(count())}</span>}</Show>
+            <Show when={today()}>{(current) => <span>{t().codeToday(current())}</span>}</Show>
+            <Show when={today() === null}>
+              <span class="assistant-code__today-failed">
+                {t().codeTodayFailed}
+                <Button type="button" size="xs" variant="text" onClick={() => void count()}>
+                  {t().codeBlockRetry}
+                </Button>
+              </span>
+            </Show>
           </p>
           {createButton()}
         </header>

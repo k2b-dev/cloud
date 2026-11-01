@@ -10,6 +10,7 @@ import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { catalogPerApp, loadCodePlace } from "../code-place";
 import {
+  type CodePlace,
   type CodeQueryInvoke,
   countOwnRunsSince,
   hasPersonalCode,
@@ -28,11 +29,18 @@ import { assistantMessages } from "./messages";
 /** Code that waits for the person, each with its place's name and link, read through the place's own reader. */
 const loadCodeAttentionView = async (invoke: CodeQueryInvoke, catalog: ReturnType<typeof catalogPerApp>): Promise<CodeAttentionView> => {
   const page = await loadCodeAttention(invoke);
+  const placeOf = async (owner: (typeof page.items)[number]["owner"]): Promise<CodePlace> => {
+    if (owner?.kind === "resource") return loadCodePlace(owner.ref, invoke, catalog);
+    // Code of an app as a whole: the app's name, without a page to open.
+    if (owner?.kind === "app") {
+      const app = await catalog(owner.appId).catch(() => null);
+      return app?.ok && app.data ? { name: app.data.appName } : {};
+    }
+    return {};
+  };
   return {
-    truncated: page.truncated,
-    items: await Promise.all(
-      page.items.map(async (item) => ({ ...item, place: item.owner ? await loadCodePlace(item.owner, invoke, catalog) : {} })),
-    ),
+    nextCursor: page.nextCursor,
+    items: await Promise.all(page.items.map(async (item) => ({ ...item, place: await placeOf(item.owner) }))),
   };
 };
 

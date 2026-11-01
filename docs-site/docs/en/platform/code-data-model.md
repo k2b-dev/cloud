@@ -95,7 +95,7 @@ check current permissions in Core's Code service.
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
 | `core.code.run.count` | `since`, at most 7 days ago | `runs` and `failed` of the caller's own personal Code since then |
-| `core.code.attention.list` | none | Resource or application Code the caller edits that is paused, whose newest finished run failed, or that lost access at a target, each with `reasons` and `lastRunAt`; `truncated` when more than 50 candidates exist |
+| `core.code.attention.list` | optional `cursor` | Resource or application Code the caller edits that is paused or whose newest finished run failed, each with `reasons` (`paused`, `run_failed`, and `access_removed` when a target no longer lists its grant) and `lastRunAt`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
 
 Without an owner filter, a normal caller lists their personal and explicitly
 shared Code. To discover Code through live owner administration, supply the
@@ -160,8 +160,10 @@ allow" answers are untouched.
   (`code.owners`) but has no Code says so and offers to start with Gustav; any
   other place shows nothing.
 - **Waiting for you** lists, below the questions from chats, Code of a place
-  the person administers when it needs them (`core.code.attention.list`).
-  Each row leads to that place, where the Code is managed.
+  the person administers when it needs them (`core.code.attention.list`,
+  following up to four candidate pages, then "Check more"). Each row leads to
+  that place, where the Code is managed. A removed target access shows once a
+  run fails because of it.
 
 All of these read only through the public `core.code.*` Queries with the
 person's own credentials, the same Queries any application can call.

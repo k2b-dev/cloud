@@ -37,7 +37,7 @@ const run = (state: string) => ({
 });
 
 /** Core's answers by capability, parsed through the caller's own schema like the real transport. */
-const fakeCore = (answers: Record<string, (input: { codeId?: string }) => unknown>) => {
+const fakeCore = (answers: Record<string, (input: { codeId?: string; cursor?: string }) => unknown>) => {
   const calls: Array<{ capabilityId: string; input: unknown }> = [];
   const invoke: CodeQueryInvoke = async <T extends z.ZodType>(
     invocation: { appId: string; capabilityId: string; input: unknown },
@@ -45,7 +45,7 @@ const fakeCore = (answers: Record<string, (input: { codeId?: string }) => unknow
   ) => {
     calls.push({ capabilityId: invocation.capabilityId, input: invocation.input });
     expect(invocation.appId).toBe("core");
-    const answer = answers[invocation.capabilityId]?.(invocation.input as { codeId?: string });
+    const answer = answers[invocation.capabilityId]?.(invocation.input as { codeId?: string; cursor?: string });
     if (answer === undefined) return { ok: false as const, error: { code: "NOT_FOUND", message: "missing", status: 404 } };
     return { ok: true as const, data: { data: schema.parse(answer) } };
   };
@@ -113,20 +113,28 @@ test("today starts at the person's local midnight, also across a time-zone chang
   expect(startOfDayIn("Europe/Berlin", new Date("2026-10-25T10:00:00.000Z"))).toBe("2026-10-24T22:00:00.000Z");
   expect(startOfDayIn("UTC", new Date("2026-11-01T00:30:00.000Z"))).toBe("2026-11-01T00:00:00.000Z");
   expect(startOfDayIn("America/New_York", new Date("2026-11-01T03:00:00.000Z"))).toBe("2026-10-31T04:00:00.000Z");
+  // Havana turns its clocks back at 01:00 to 00:00 on 1 November, so midnight happens twice; the day starts at the first.
+  expect(startOfDayIn("America/Havana", new Date("2026-11-01T12:00:00.000Z"))).toBe("2026-11-01T04:00:00.000Z");
+  // Where 00:00 is skipped, the day starts at its first existing minute.
+  expect(startOfDayIn("America/Santiago", new Date("2026-09-06T12:00:00.000Z"))).toBe("2026-09-06T04:00:00.000Z");
 });
 
 test("attention and run counts come from Core's public queries", async () => {
   const core = fakeCore({
-    "code.attention.list": () => ({
-      items: [
-        {
-          code: { ...code("c_info02"), owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } } },
-          reasons: ["run_failed", "access_removed"],
-          lastRunAt: "2026-10-31T09:41:03.000Z",
-        },
-      ],
-      truncated: false,
-    }),
+    "code.attention.list": (input: { cursor?: string }) =>
+      input.cursor === "c_page01"
+        ? {
+            items: [
+              {
+                code: { ...code("c_info02"), owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } } },
+                reasons: ["run_failed", "access_removed"],
+                lastRunAt: "2026-10-31T09:41:03.000Z",
+              },
+            ],
+            nextCursor: null,
+          }
+        : // A first window without the person's Code still continues.
+          { items: [], nextCursor: "c_page01" },
     "code.run.count": () => ({ runs: 9, failed: 1 }),
   });
   expect(await loadCodeAttention(core.invoke)).toEqual({
@@ -134,14 +142,26 @@ test("attention and run counts come from Core's public queries", async () => {
       {
         codeId: "c_info02",
         title: "Code c_info02",
-        owner: { type: "mail.mailbox", id: "m_info" },
+        owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
         reasons: ["run_failed", "access_removed"],
         lastRunAt: "2026-10-31T09:41:03.000Z",
       },
     ],
-    truncated: false,
+    nextCursor: null,
   });
   expect(await countOwnRunsSince(core.invoke, "2026-10-30T23:00:00.000Z")).toEqual({ runs: 9, failed: 1 });
   expect(core.calls.at(-1)).toEqual({ capabilityId: "code.run.count", input: { since: "2026-10-30T23:00:00.000Z" } });
   await expect(loadCodeAttention(fakeCore({}).invoke)).rejects.toThrow("missing");
+});
+
+test("attention stops after its bounded windows and says where to continue", async () => {
+  let calls = 0;
+  const endless = fakeCore({
+    "code.attention.list": () => {
+      calls++;
+      return { items: [], nextCursor: `c_more0${calls}` };
+    },
+  });
+  expect(await loadCodeAttention(endless.invoke)).toEqual({ items: [], nextCursor: "c_more04" });
+  expect(calls).toBe(4);
 });

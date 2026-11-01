@@ -6,12 +6,13 @@ import { browserCodeInvoke } from "./code-client";
 import { assistantMessages } from "./messages";
 
 /** Code that waits for the person as an administrator of its place, each with that place as the person sees it. */
-export type CodeAttentionView = { items: (CodeAttentionItem & { place: CodePlace })[]; truncated: boolean };
+export type CodeAttentionView = { items: (CodeAttentionItem & { place: CodePlace })[]; nextCursor: string | null };
 
 const placeOf = async (item: CodeAttentionItem): Promise<CodePlace> => {
-  if (!item.owner) return {};
+  // An app as a whole has no page of its own here; its name comes with the server's first answer.
+  if (item.owner?.kind !== "resource") return {};
   try {
-    const resource = await resolveAssistantCloudResource(item.owner);
+    const resource = await resolveAssistantCloudResource(item.owner.ref);
     return { name: resource.name, type: resource.title, href: resource.href };
   } catch {
     return {};
@@ -27,14 +28,33 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const [view, setView] = createSignal<CodeAttentionView | null | undefined>(props.initial);
+  const [more, setMore] = createSignal<"idle" | "loading" | "failed">("idle");
+  const withPlaces = async (cursor?: string) => {
+    const page = await loadCodeAttention(browserCodeInvoke, cursor);
+    return {
+      items: await Promise.all(page.items.map(async (item) => ({ ...item, place: await placeOf(item) }))),
+      nextCursor: page.nextCursor,
+    };
+  };
   const load = async () => {
     setView(undefined);
     try {
-      const page = await loadCodeAttention(browserCodeInvoke);
-      const items = await Promise.all(page.items.map(async (item) => ({ ...item, place: await placeOf(item) })));
-      setView({ items, truncated: page.truncated });
+      setView(await withPlaces());
     } catch {
       setView(null);
+    }
+  };
+  // Core checks Code in bounded windows; the person continues where the last check stopped.
+  const loadMore = async () => {
+    const current = view();
+    if (!current?.nextCursor || more() === "loading") return;
+    setMore("loading");
+    try {
+      const next = await withPlaces(current.nextCursor);
+      setView({ items: [...current.items, ...next.items], nextCursor: next.nextCursor });
+      setMore("idle");
+    } catch {
+      setMore("failed");
     }
   };
   onMount(() => {
@@ -46,7 +66,7 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
   type CodeView = CodeAttentionView["items"][number];
 
   return (
-    <Show when={view() === null || (view()?.items.length ?? 0) > 0}>
+    <Show when={view() === null || (view()?.items.length ?? 0) > 0 || Boolean(view()?.nextCursor)}>
       <section class="assistant-code-attention" aria-labelledby="assistant-code-attention-title">
         <h2 id="assistant-code-attention-title" class="assistant-code-attention__heading">
           {t().codeAttentionHeading}
@@ -93,8 +113,18 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
                   )}
                 </For>
               </ul>
-              <Show when={current().truncated}>
-                <p class="text-sm text-secondary">{t().codeAttentionTruncated}</p>
+              <Show when={current().nextCursor}>
+                <div class="flex flex-wrap items-center gap-3">
+                  <span class="text-sm text-secondary">{t().codeAttentionTruncated}</span>
+                  <Button type="button" size="sm" variant="secondary" loading={more() === "loading"} onClick={() => void loadMore()}>
+                    {t().codeAttentionMore}
+                  </Button>
+                  <Show when={more() === "failed"}>
+                    <span role="alert" class="text-sm text-danger">
+                      {t().codeLoadMoreFailed}
+                    </span>
+                  </Show>
+                </div>
               </Show>
             </>
           )}

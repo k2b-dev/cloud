@@ -817,3 +817,8 @@
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(var(--k2b-focus-width) * -1);
 }
+.assistant-code__today-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}

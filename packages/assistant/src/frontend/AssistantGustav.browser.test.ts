@@ -144,12 +144,12 @@ const approval = {
   expiresAt: at(-1440),
 };
 const attention = {
-  truncated: false,
+  nextCursor: null,
   items: [
     {
       codeId: "c_info02",
       title: "Lieferungen eintragen",
-      owner: { type: "mail.mailbox", id: "m_info" },
+      owner: { kind: "resource" as const, ref: { type: "mail.mailbox", id: "m_info" } },
       reasons: ["run_failed", "access_removed"] as ("run_failed" | "access_removed")[],
       lastRunAt: at(20),
       place: { name: "info@moebel-beispiel.de", type: "Postfach", href: "/app/mail/m/info" },
@@ -509,6 +509,11 @@ describe("Gustav", () => {
           ).toBe("page");
         await shot(h.page, `c-code-detail-${view.name}-light`);
         expect(h.errors).toEqual([]);
+        if (view === desktop) {
+          // The marked sidebar entry leads back to the list.
+          await h.page.locator('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?code=1"]').click();
+          await h.page.waitForURL((url) => url.pathname === "/app/assistant" && url.searchParams.get("code") === "1");
+        }
       } finally {
         await h.close();
       }
