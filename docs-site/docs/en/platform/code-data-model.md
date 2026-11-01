@@ -94,6 +94,12 @@ check current permissions in Core's Code service.
 | `core.code.version.read` | `codeId`, `versionId`, optional `content`, `offset`, `length` | Version metadata and optional text chunk |
 | `core.code.run.list` | `codeId`, optional `cursor`, `limit` (1–50) | Run metadata and `nextCursor` |
 | `core.code.run.read` | `codeId`, `runId`, optional numeric `cursor`, `content`, `offset`, `length` | Run metadata; editor-only `contents` |
+| `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending` |
+
+`core.code.attention` serves an owner's navigation. The reasons per Code are
+the same for every reader, so Core keeps them for 30 seconds and computes one
+at a time; who sees which Code is checked on every request. A target app that
+does not answer within two seconds counts as no missing access.
 
 Without an owner filter, a normal caller lists their personal and explicitly
 shared Code. To discover Code through live owner administration, supply the

@@ -104,6 +104,7 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   active: v4,
   waiting: null,
   attentionReasons: null,
+  internet: null,
   automations: [
     {
       entrypoint: "anfragenSortieren",
@@ -149,6 +150,7 @@ export const codePageFixture = (
     | "versions"
     | "versions-failed"
     | "waiting-unreadable"
+    | "internet"
     | "reader"
     | "activated"
     | "empty"
@@ -331,6 +333,21 @@ export const codePageFixture = (
             nextCallCursor: 20,
             input: null,
             inputTooLarge: false,
+          },
+        }),
+      };
+    case "internet":
+      // The running version calls one API with a credential; version 5 adds a second origin.
+      return {
+        ...base,
+        tab: "overview",
+        state: ready({
+          waiting: v5,
+          waitingTargets,
+          internet: {
+            origins: ["https://api.spedition-probe.example", "https://tracking.example:8443"],
+            newOrigins: ["https://tracking.example:8443"],
+            unbound: false,
           },
         }),
       };

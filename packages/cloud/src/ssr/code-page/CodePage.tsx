@@ -677,10 +677,51 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
           )}
         </Show>
       </Section>
+      <Show when={props.state.internet}>
+        {(internet) => <InternetOrigins internet={internet()} state={props.state} text={props.text} />}
+      </Show>
       <Section id="cloud-code-pages" title={t().pagesAndRoutes} count={0}>
         <p class="cloud-code__quiet">{t().pagesNone}</p>
       </Section>
     </div>
+  );
+}
+
+/** Internet origins the Code may reach with its credentials, from the version's reviewed bindings. */
+function InternetOrigins(props: { internet: NonNullable<CodePageReady["internet"]>; state: CodePageReady; text: PageText }) {
+  const t = props.text.t;
+  return (
+    <Section
+      id="cloud-code-internet"
+      title={t().internet}
+      count={props.internet.origins.length || undefined}
+      description={t().internetDescription}
+    >
+      <Show when={props.internet.origins.length > 0} fallback={<p class="cloud-code__quiet">{t().internetUnbound}</p>}>
+        <ul class="cloud-code__list">
+          <For each={props.internet.origins}>
+            {(origin) => (
+              <li
+                class="cloud-code__row cloud-code__row--access"
+                data-state={props.internet.newOrigins.includes(origin) ? "new" : undefined}
+              >
+                <span class="cloud-code__kind" aria-hidden="true">
+                  <i class="ti ti-world" />
+                </span>
+                <span class="cloud-code__cell">
+                  <Op>{origin}</Op>
+                </span>
+                <span class="cloud-code__right">
+                  <Show when={props.internet.newOrigins.includes(origin)}>
+                    <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
+                  </Show>
+                </span>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+    </Section>
   );
 }
 
@@ -1409,6 +1450,24 @@ function ActivationDialog(props: {
           )}
         </For>
       </ul>
+      <Show when={props.mode === "waiting" && (props.state.internet?.newOrigins.length ?? 0) > 0}>
+        <p class="cloud-code__label">{t().internet}</p>
+        <ul class="cloud-code__list">
+          <For each={props.state.internet?.newOrigins ?? []}>
+            {(origin) => (
+              <li class="cloud-code__row cloud-code__row--access">
+                <span class="cloud-code__kind" aria-hidden="true">
+                  <i class="ti ti-world" />
+                </span>
+                <span class="cloud-code__cell">
+                  <Op>{origin}</Op>
+                </span>
+                <span class="cloud-code__right text-secondary">{t().newAccess}</span>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
       <Show when={newAutomations().length > 0}>
         <p class="text-secondary">
           {t().newAutomations({ version: props.version.number, names: newAutomations().join(", ") })}{" "}

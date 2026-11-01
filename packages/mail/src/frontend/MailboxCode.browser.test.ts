@@ -150,7 +150,7 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
 describe("Mailbox Code page in a browser", () => {
   for (const [name, width] of Object.entries(widths))
     test(`${name} ${width}px: every state fits without horizontal scrolling`, async () => {
-      for (const state of ["overview", "waiting", "removed", "runs", "run-failed", "versions", "empty", "error"]) {
+      for (const state of ["overview", "waiting", "removed", "internet", "runs", "run-failed", "versions", "empty", "error"]) {
         const page = await load(state, width);
         try {
           expect({ state, overflow: await overflow(page) }).toEqual({ state, overflow: 0 });

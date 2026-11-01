@@ -16,7 +16,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
-const { permissionRef, visiblePersonIds } = await import("./load");
+const { attributeMissingAccess, permissionRef, targetKey, visiblePersonIds } = await import("./load");
 const { loadCodeAttention } = await import("./attention");
 const { codePageNeedsAttention } = await import("./CodePage");
 const { LocaleProvider } = await import("@k2b/ui");
@@ -60,6 +60,14 @@ describe("Code page states", () => {
     expect(page).toContain("Version 5 einschalten");
     expect(page).toContain("neu beim Einschalten von Version 5");
     expect(page).toContain("Neu in Version 5 · aus");
+  });
+
+  test("internet origins from the reviewed bindings are listed, new ones marked", () => {
+    const page = text("internet");
+    expect(page).toContain("Internet 2");
+    expect(page).toContain("https://api.spedition-probe.example");
+    expect(page).toContain("https://tracking.example:8443 neu beim Einschalten von Version 5");
+    expect(text("overview")).not.toContain("Internet");
   });
 
   test("a version waiting for approval cannot be switched on", () => {
@@ -203,6 +211,71 @@ describe("Code page helpers", () => {
       id: "sp_2lg8",
     });
     expect(permissionRef({ operation: "spaces.task.create", target: { type: "spaces.space", id: null } })).toBeNull();
+  });
+
+  test("missing access is attributed only on evidence; unknown automations are never said to keep running", async () => {
+    const space = { type: "spaces.space", id: "sp_2lg8" };
+    const removed = new Set([targetKey(space)]);
+    const run = (id: string, state: "succeeded" | "failed") => ({
+      id,
+      versionId: "v",
+      versionNumber: 4,
+      trigger: "schedule" as const,
+      entrypoint: id,
+      state,
+      outcome: state,
+      createdAt: "2026-11-01T08:00:00.000Z",
+      startedAt: null,
+      endedAt: null,
+    });
+    const automation = (name: string, lastRun: ReturnType<typeof run> | null) => ({
+      entrypoint: name,
+      kind: "schedule" as const,
+      cron: null,
+      isNew: false,
+      lastRun,
+      missingTargets: [] as string[],
+      missingProven: false,
+      accessUnknown: false,
+    });
+    const call = (target: { type: string; id: string } | null, capability = "spaces.task.create") => ({
+      ordinal: 1,
+      kind: "action" as const,
+      capability,
+      target,
+      refs: [],
+      state: "failed" as const,
+      summary: null,
+    });
+    const deliver = automation("deliver", run("deliver", "failed"));
+    const sort = automation("sort", run("sort", "succeeded"));
+    const other = automation("other", run("other", "failed"));
+    const reads: string[] = [];
+    await attributeMissingAccess([deliver, sort, other], removed, "editor", async (id) => {
+      reads.push(id);
+      return id === "deliver" ? { calls: [call(space)], next: null } : { calls: [call(null, "mail.send")], next: 5 };
+    });
+    expect(deliver).toMatchObject({ missingTargets: [targetKey(space)], missingProven: true, accessUnknown: false });
+    expect(sort).toMatchObject({ missingTargets: [], accessUnknown: false });
+    // Its calls were not all read: it may fail there too, so the page makes no claim.
+    expect(other).toMatchObject({ missingTargets: [], accessUnknown: true });
+    expect(reads).toEqual(["deliver", "other"]);
+
+    // A reader gets no calls: failed automations stay unknown; the only automation needs the access without proof.
+    const lone = automation("lone", run("lone", "succeeded"));
+    await attributeMissingAccess([lone], removed, "reader", async () => {
+      throw new Error("not read");
+    });
+    expect(lone).toMatchObject({ missingTargets: [targetKey(space)], missingProven: false });
+
+    // App-wide calls match an app-wide grant.
+    const app = { type: "app", id: "weather" };
+    const forecast = automation("forecast", run("forecast", "failed"));
+    await attributeMissingAccess([forecast, automation("x", run("x", "succeeded"))], new Set([targetKey(app)]), "editor", async () => ({
+      calls: [call(null, "weather.forecast.read")],
+      next: null,
+    }));
+    expect(forecast.missingTargets).toEqual([targetKey(app)]);
   });
 
   test("guests see only their own name, like in directory search", () => {

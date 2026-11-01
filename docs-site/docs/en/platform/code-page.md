@@ -22,8 +22,12 @@ third-party application get the same page. It never names an application.
   and its access as operation at target. A newer version that is ready but off
   says which access it newly needs and offers **Switch on**. A version that
   waits for a Cloud administrator says so and cannot be switched on yet.
-  Removed access, a deleted target, all access removed, and paused Code each
-  show what fails and how to recover.
+  Removed access says which calls fail until someone switches the Code on
+  again. The automation that needs it shows **Access missing**; the others keep
+  running. Only the whole Code can be paused. A deleted target, all access
+  removed, and paused Code each show what fails and how to recover. Internet
+  origins the Code may call with its credentials come from the bindings
+  reviewed with the version; new ones are marked.
 - **Runs:** each run with its trigger, version and state, including skipped
   schedule ticks. A run lists its calls in order with their result. A run that
   failed after its first action offers **Run again**, once per failed run; a
@@ -33,8 +37,10 @@ third-party application get the same page. It never names an application.
   difference and permissions.
 - **Switch on:** a dialog lists every operation at every target the version
   needs, starts Core's durable activation and shows its result. When the person
-  does not administer a target, nothing changes; the dialog names the target
-  and offers **Copy link** to this page for someone who does. Phone sessions
+  does not administer a target, nothing changes and the dialog offers **Copy
+  link** to this page for someone who does. It names the target and who
+  manages it only when the person may read that target; otherwise it shows
+  only the ID. The page decides this itself, whatever the refusal carries. Phone sessions
   and non-interactive credentials see why they cannot switch on.
 
 Only administrators of the owner and editors or readers of the Code see the
@@ -75,8 +81,31 @@ export default function StoreCode(props: { code: CodePageData }) {
 Import the page from its own entry, `@k2b/cloud/ssr/code-page`, so other
 islands do not load its schemas. `loadCodePage` reads the tab and selection from the URL (`?tab=runs&run=<id>`,
 `?tab=versions&version=<id>`), so reload, back and shared links keep the view.
-Offer the page in your navigation to the resource's administrators. Others
-with access to its Code reach it by link or from the panel.
+## Show the entry in your navigation
+
+Offer the page as a "Code" entry under the resource. During SSR, call
+`loadCodeAttention(c, ref)` from `@k2b/cloud/ssr`: one `core.code.attention`
+query, which Core answers from a short cache. It resolves to
+`{ visible, attention }`, or `null` when Core does not answer within its
+timeout; it never throws. Start it before your own loads and do not wait for
+it much longer than for them, so a slow Core only leaves the dot out.
+
+- Show the entry to the resource's administrators, and to anyone for whom
+  `visible` is true.
+- Put `CodeNavStatus` from `@k2b/cloud/ssr/code-nav-status` in the entry's
+  `meta` with `attention`. It renders `AppWorkspace.SidebarItemStatus`
+  `attention`: a warning dot, never a number, when a latest run failed, access
+  is missing, or a version waits for approval.
+
+```tsx
+import { CodeNavStatus } from "@k2b/cloud/ssr/code-nav-status";
+
+<AppWorkspace.SidebarItem href={`/app/inventory/${store.id}/code`} icon="ti ti-code" meta={<CodeNavStatus attention={attention?.attention ?? false} />}>
+  Code
+</AppWorkspace.SidebarItem>;
+```
+
+The Code page itself always shows the real state.
 
 A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels))
 appears as **Edit with <panel>** on the page and on an empty page.
