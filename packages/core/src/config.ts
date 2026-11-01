@@ -9,6 +9,7 @@ export const app = defineApp({
   access: appAccess.signedIn({
     publicRoutes: [
       "/_internal/apps/bootstrap",
+      "/_internal/code/runner/call",
       "/auth/continue",
       "/auth/login",
       "/auth/new-password",

@@ -49,9 +49,16 @@ export const clearRejectedBootstrapStart = async (appId: string, db: SQL = sql):
   await db`DELETE FROM auth.app_start_rejections WHERE app_id = ${appId}`;
 };
 
-/** Shared Postgres uniqueness rejects a proof used concurrently on different Core replicas. */
+/** Shared Postgres uniqueness rejects replay across replicas; each admission also drains one expired proof for its key. */
 export const consumeBootstrapProof = async (keyId: string, jti: string, exp: number, db: SQL = sql): Promise<boolean> => {
   const rows = await db`
+    WITH expired AS MATERIALIZED (
+      SELECT key_id,jti FROM auth.app_proof_replays
+      WHERE key_id=${keyId}::uuid AND retain_until<=now() ORDER BY retain_until LIMIT 1 FOR UPDATE SKIP LOCKED
+    ), pruned AS (
+      DELETE FROM auth.app_proof_replays replay USING expired
+      WHERE replay.key_id=expired.key_id AND replay.jti=expired.jti AND replay.retain_until<=now()
+    )
     INSERT INTO auth.app_proof_replays (key_id, jti, retain_until)
     VALUES (${keyId}::uuid, ${jti}, ${new Date((exp + BOOTSTRAP_REPLAY_RETENTION_SECONDS) * 1000)})
     ON CONFLICT (key_id, jti) DO NOTHING RETURNING jti
@@ -59,7 +66,7 @@ export const consumeBootstrapProof = async (keyId: string, jti: string, exp: num
   return rows.length === 1;
 };
 
-/** The ingress, per-key admission and minute maintenance share this installation budget. */
+/** Default signed ingress/key admission and the minute maintenance catch-up budget. Domain bridges may apply their own budgets. */
 export const bootstrapRateLimit = async (): Promise<number> => Math.max(1, Math.floor(await get<number>("security.rate_limit_per_second")));
 
 /** Drain expired pages, with two minutes of per-key admission capacity to catch up after missed runs. */

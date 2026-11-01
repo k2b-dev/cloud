@@ -96,6 +96,25 @@ export const CODE_SETTINGS = {
       },
     },
   },
+  "core.code.calls_per_second": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 1000,
+    default: 60,
+    label: "Bridge calls per second per Code",
+    description:
+      "Shared Valkey call rate per Code across all runners and Core instances; at most the full per-run call ceiling per second.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Brückenaufrufe je Sekunde und Code",
+          description:
+            "Gemeinsame Valkey-Aufrufrate je Code über alle Runner und Core-Instanzen; höchstens das vollständige Aufruflimit eines Laufs je Sekunde.",
+        },
+      },
+    },
+  },
   "core.code.wall_clock_ms": {
     kind: "number",
     integer: true,

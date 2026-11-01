@@ -15,8 +15,9 @@ The `runner` service executes Code bundles in workerd. Add replicas with
 state, scheduling, generation fencing, and leases. Runners keep only active
 attempts and a bounded bundle cache in memory.
 
-The runner shell currently has a mock bridge for tests. The Core Code bridge
-and queue arrive with the execution slice; until then a runner reports
+Core supplies the [per-call Code bridge](/en/docs/platform/code-bridge).
+Run acquisition and queue coordination arrive with the execution slice; until
+then a runner reports
 `runner_configuration_unavailable` and retries without accepting work. App-key
 signing and Core's refusal to deliver installation connections are active.
 
