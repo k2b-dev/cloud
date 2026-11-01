@@ -31,6 +31,8 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
+| `@k2b/cloud/app-proof` | Advanced, server-only | Sign each private Core transmission with `signAppProof`; [runner bridge contract](/en/docs/operations/code-runner#integrate-the-bridge) |
+| `@k2b/cloud/code/runner` | Preview, portable | Strict runner protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
 | `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
@@ -155,7 +157,7 @@ The widget setting types `WidgetSettingField`, `WidgetSettingsDeclaration`,
 | `GET /api/approvals/counts` | Read total and per-app open counts | [Approval routes](/en/docs/identity/approvals#approval-routes) |
 | `GET /api/approvals/:id/content` | Read the complete pending snapshot | [Approval readers](/en/docs/identity/approvals#approval-routes) |
 | `GET /api/approvals/conversations/:conversationId/turns/:turnId/reviews/:callId` | Read an owned historical review snapshot | [Approval readers](/en/docs/identity/approvals#approval-routes) |
-| `POST /api/approvals/:id/decision` | Approve or reject a request and continue its chat | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+| `POST /api/approvals/:id/decision` | Approve or reject; continue a waiting chat or atomically record a Code-version decision | [Approval routes](/en/docs/identity/approvals#approval-routes) |
 
 These routes require a user-backed actor.
 
