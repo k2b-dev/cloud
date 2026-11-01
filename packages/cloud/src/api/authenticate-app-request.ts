@@ -18,7 +18,7 @@ import type { AuthenticatedWorkload } from "../services/identity/workload-auth";
 type Dependencies = {
   db?: SQL;
   ingress?: (peer: string) => Promise<RateLimitResult>;
-  admit?: (keyId: string) => Promise<RateLimitResult>;
+  admit?: (keyId: string, appId: string) => Promise<RateLimitResult>;
 };
 const admission = async (kind: "ingress" | "key", id: string) =>
   ratelimit({ id: `app-bootstrap-${kind}`, limit: await bootstrapRateLimit() }).check(id);
@@ -99,7 +99,7 @@ export const authenticateSignedAppRequest = async (
       return reject(403, "scope_not_permitted", "App is not permitted to issue OAuth credentials");
     const declaredApp = c.req.header("X-Cloud-App-Id");
     if (declaredApp && declaredApp !== verified.identity.appId) return reject(403, "wrong_app", "App identity does not match the proof");
-    const rate = await (dependencies.admit ?? ((id) => admission("key", id)))(verified.identity.keyId);
+    const rate = await (dependencies.admit ?? ((id) => admission("key", id)))(verified.identity.keyId, verified.identity.appId);
     if (rate.limited) return limited(rate);
     if (!(await consumeBootstrapProof(verified.identity.keyId, verified.jti, verified.exp, dependencies.db)))
       return reject(403, "replayed_proof", "App proof has already been used");

@@ -13,6 +13,7 @@ const structured: Readonly<Record<string, { file: string; command: string }>> = 
     "core.code.manifest_bytes",
     "core.code.payload_bytes",
     "core.code.calls_per_run",
+    "core.code.calls_per_second",
     "core.code.wall_clock_ms",
     "core.code.database_bytes",
     "core.code.ai_budget_usd",
