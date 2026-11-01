@@ -1012,6 +1012,34 @@ recovering an uncertain upload. For unmanaged files, the observation token is
 
 ## Analyze and organize files through capabilities
 
+`bases.list` returns each storage base's root as a `filesv2.entry` ref in
+`data.items[].ref`. The canonical `entry.read` reader and open link also
+resolve storage roots with current permissions. Use this ref as `target` for `entry.list`,
+`entry.search-in-base`, `trash.list`, `content.create`, folder creation,
+renaming, moving, copying, trashing, and restoring. The target must be the
+storage root; a nested folder cannot choose a different containment level.
+A folder target returns `root_target_required`; use the root ref and put the
+folder in `path`. Resolving the root does not require listing it: a caller
+with traversal access can still work in a readable descendant folder.
+HTTP and SDK calls send it beside `input`; chat and MCP tools use the flat
+field `entry`. Paths remain relative to that root, and `baseId` leaves the
+operation's input.
+
+`entry.copy` also requires `refs.targetRootId`, another `filesv2.entry` root
+ref, in place of `input.targetBaseId`. Chat and MCP tools use the flat field
+`targetRootId`. Both roots are resolved with current storage permissions
+during review and execution. Paths remain inside their selected root, and the
+storage service checks each operation's permissions. Use the same root for a
+copy within one storage base. Refresh cached schemas before
+calling these contracts.
+
+Canonical readers, search across storage, history queries, and the shared
+file-provider functions keep their input contracts. `provider.save` is marked
+`code: false`: the shared file chooser continues to save through its portable
+`parent` input, while resource-owned Code cannot use that targetless Action.
+Use `content.create` for an explicit root-bound upload. Streams remain
+unavailable to mandate-backed background work.
+
 Assistant code mode can discover accessible storage, list folders, search names,
 read file content and save analysis results back to a permitted folder. Binary
 streams support CSV, Excel and other formats without embedding the file in a

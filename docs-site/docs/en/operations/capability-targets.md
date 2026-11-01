@@ -49,3 +49,16 @@ operations remain available.
 
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the declaration, invocation and digest contract.
+
+## Converted application Actions
+
+Notebooks binds note, comment and annotation Actions to the notebook. Pulse
+binds existing-resource Actions to the Base. Venue binds assignments to the
+venue, Weather binds deletion to the saved location, and Core binds Skill
+changes to the Skill and routine changes to the AI chat. Chat binds message
+changes to the message and notification preferences and follows to the
+conversation. Their primary resource selectors move from `input` to `target`;
+refresh generated clients and the capability catalog together with these apps.
+
+All Chat Actions declare `code: false` for resource Code, including
+personal notification preferences. Calls acting as a person retain their existing permission checks.

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { assertResourceOpenLink } from "@k2b/cloud/capabilities/testing";
+import { capabilityCallFromTool, capabilityToolInputSchema, normalizeCapabilityCall } from "@k2b/cloud/capabilities/server";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityActionReviewSchema,
@@ -38,6 +39,8 @@ let items: FileEntry[] = [];
 let calls = 0;
 let basesCalls = 0;
 let trashOriginal: string | null = "Berichte/report.csv";
+const trashBases = new Map<string, string>();
+const trashLocations: Array<{ baseId: string; id: string; path?: string }> = [];
 const uploadKeys: string[] = [];
 const uploadInputs: unknown[] = [];
 const folderCalls: unknown[] = [];
@@ -103,7 +106,9 @@ mock.module("./service", () => ({
     baseNames: async () => baseItems ?? [base],
     publiclyShared: async (_actor: unknown, baseId: string, path: string) =>
       publicPaths.some((shared) => shared.baseId === baseId && (path === shared.path || path.startsWith(`${shared.path}/`))),
-    trashEntry: async (_actor: unknown, input: { id: string }) => {
+    trashEntry: async (_actor: unknown, input: { baseId: string; id: string }) => {
+      trashLocations.push(input);
+      if (trashBases.has(input.id) && trashBases.get(input.id) !== input.baseId) throw new MockFilesError("not_found", 404);
       if (serviceFailure) throw serviceFailure;
       return { id: input.id, original: trashOriginal, name: "report.csv", directory: false, deletedAt: null, state: "trashed" };
     },
@@ -134,6 +139,12 @@ mock.module("./service", () => ({
       if (!ref) throw new MockFilesError("not_found", 404);
       return { base: { ...base, id: ref.baseId }, writable: folderWritable, items, next };
     },
+    rootLocation: async (_actor: unknown, id: string) => {
+      const ref = ids.get(id);
+      if (!ref) throw new MockFilesError("not_found", 404);
+      if (ref.path !== "") throw new MockFilesError("root_target_required", 400);
+      return { baseId: ref.baseId };
+    },
     folderLocation: async (_actor: unknown, id: string) => {
       const ref = ids.get(id);
       if (!ref) throw new MockFilesError("not_found", 404);
@@ -152,7 +163,14 @@ mock.module("./service", () => ({
       const ref = ids.get(id);
       if (!ref) throw new MockFilesError("not_found", 404);
       if (removed.has(ref.path)) throw new MockFilesError("not_found", 404);
-      return { base: { ...base, id: ref.baseId }, entry: { ...currentEntry(ref.path), ...(readName ? { name: readName } : {}) } };
+      return {
+        base: { ...base, id: ref.baseId },
+        entry: {
+          ...currentEntry(ref.path),
+          ...(ref.path === "" ? { name: base.name, directory: true } : {}),
+          ...(readName ? { name: readName } : {}),
+        },
+      };
     },
     entry: async (_actor: unknown, input: { baseId: string; path: string }) => {
       if (serviceFailure) throw serviceFailure;
@@ -160,7 +178,11 @@ mock.module("./service", () => ({
     },
     mkdir: changed,
     rename: changed,
-    restoreTrash: changed,
+    restoreTrash: async (_actor: unknown, input: { baseId: string; id: string }) => {
+      trashLocations.push(input);
+      if (trashBases.has(input.id) && trashBases.get(input.id) !== input.baseId) throw new MockFilesError("not_found", 404);
+      return changed();
+    },
     move: async () => ({ results: [{ ok: true, entry: (await changed()).entry }] }),
     copy: async () => ({ results: [{ ok: true, entry: (await changed()).entry }] }),
     list: page,
@@ -238,6 +260,17 @@ afterEach(() => {
   removed.clear();
 });
 const entry = (path: string): FileEntry => ({ name: "report", path, directory: false, size: 4, modified: "2026-09-19" });
+/** Build the explicit root coordinates used by capability calls; fixture IDs remain opaque. */
+const rootContext = (baseId: string, caller: CapabilityExecutionContext, targetBaseId?: string): CapabilityExecutionContext => {
+  const root = (base: string) => {
+    const id = entryRefId(base, "");
+    if (!id) throw new Error("Expected root ref");
+    ids.set(id, { baseId: base, path: "" });
+    return { type: "filesv2.entry", id };
+  };
+  return { ...caller, target: root(baseId), ...(targetBaseId ? { refs: { targetRootId: root(targetBaseId) } } : {}) };
+};
+
 const assertEntryRef = async (result: CapabilityResult<unknown>, baseId: string, file: FileEntry) => {
   const ref = result.refs?.[0];
   if (!ref) throw new Error("expected entry ref");
@@ -323,11 +356,11 @@ test("Filesv2 registers all binary and organization capabilities with documented
 test("upload idempotency is stable per user and isolated between users", async () => {
   uploadKeys.length = 0;
   const action = filesCapabilities.actions["content.create"];
-  const input = { baseId: "base", path: "test.csv", size: 4, mediaType: "text/csv", onConflict: "error" as const };
+  const input = { path: "test.csv", size: 4, mediaType: "text/csv", onConflict: "error" as const };
   const caller = { ...context, idempotencyKey: "same-key" };
-  await action.run(input, caller);
-  await action.run(input, caller);
-  await action.run(input, { ...caller, actor: { kind: "user", user: { ...user, id: "another-user" } } });
+  await action.run(input, rootContext("base", caller));
+  await action.run(input, rootContext("base", caller));
+  await action.run(input, rootContext("base", { ...caller, actor: { kind: "user", user: { ...user, id: "another-user" } } }));
   expect(uploadKeys[0]).toBe(uploadKeys[1]);
   expect(uploadKeys[2]).not.toBe(uploadKeys[0]);
 });
@@ -343,36 +376,36 @@ for (const form of ["path", "stable", "persisted"] as const) {
       id: "folder.create",
       baseId: sourceBase,
       directory: true,
-      run: () => filesCapabilities.actions["folder.create"].run({ baseId: sourceBase, path }, caller),
+      run: () => filesCapabilities.actions["folder.create"].run({ path }, rootContext(sourceBase, caller)),
     },
     {
       id: "trash.restore",
       baseId: sourceBase,
       directory: false,
-      run: () => filesCapabilities.actions["trash.restore"].run({ baseId: sourceBase, id: "trash-row", path }, caller),
+      run: () => filesCapabilities.actions["trash.restore"].run({ id: "trash-row", path }, rootContext(sourceBase, caller)),
     },
     {
       id: "entry.rename",
       baseId: sourceBase,
       directory: false,
       run: () =>
-        filesCapabilities.actions["entry.rename"].run({ baseId: sourceBase, path: `${folder}/old.csv`, name: "Neuer Name.csv" }, caller),
+        filesCapabilities.actions["entry.rename"].run(
+          { path: `${folder}/old.csv`, name: "Neuer Name.csv" },
+          rootContext(sourceBase, caller),
+        ),
     },
     {
       id: "entry.move",
       baseId: sourceBase,
       directory: true,
-      run: () => filesCapabilities.actions["entry.move"].run({ baseId: sourceBase, path: "Neuer Name.csv", folder }, caller),
+      run: () => filesCapabilities.actions["entry.move"].run({ path: "Neuer Name.csv", folder }, rootContext(sourceBase, caller)),
     },
     {
       id: "entry.copy",
       baseId: targetBase,
       directory: false,
       run: () =>
-        filesCapabilities.actions["entry.copy"].run(
-          { baseId: sourceBase, path: "Neuer Name.csv", targetBaseId: targetBase, folder },
-          caller,
-        ),
+        filesCapabilities.actions["entry.copy"].run({ path: "Neuer Name.csv", folder }, rootContext(sourceBase, caller, targetBase)),
     },
   ];
   for (const change of changes) {
@@ -401,7 +434,7 @@ for (const form of ["path", "stable", "persisted"] as const) {
       name: "Neuer Name.csv",
       ...(form === "stable" ? { resourceId: `n:${sourceBase}:019b72cf-5200-7000-8000-000000000001` } : {}),
     };
-    const result = await filesCapabilities.actions["entry.trash"].run({ baseId: sourceBase, path }, caller);
+    const result = await filesCapabilities.actions["entry.trash"].run({ path }, rootContext(sourceBase, caller));
     if (!result.ok) throw new Error("expected trashed entry");
     expect(result.data.data).toEqual({ baseId: sourceBase });
     expect(result.data).not.toHaveProperty("refs");
@@ -436,8 +469,8 @@ for (const form of ["path", "stable", "persisted"] as const) {
       const offer =
         actionId === "content.create"
           ? await filesCapabilities.actions["content.create"].run(
-              { baseId: sourceBase, path, size: 4, mediaType: "text/csv", onConflict: "error" },
-              caller,
+              { path, size: 4, mediaType: "text/csv", onConflict: "error" },
+              rootContext(sourceBase, caller),
             )
           : await filesCapabilities.actions["provider.save"].run(
               { parent: "folder-id", name: uploaded.name, size: 4, mediaType: "text/csv" },
@@ -460,7 +493,7 @@ for (const form of ["path", "stable", "persisted"] as const) {
 
 test("entry.trash does not return a success ref when the storage mutation fails", async () => {
   removeError = "forbidden";
-  await expect(filesCapabilities.actions["entry.trash"].run({ baseId: "base", path: "report.csv" }, context)).rejects.toMatchObject({
+  await expect(filesCapabilities.actions["entry.trash"].run({ path: "report.csv" }, rootContext("base", context))).rejects.toMatchObject({
     status: 409,
   });
   expect(removed.size).toBe(0);
@@ -478,7 +511,6 @@ test("canonical entry reader exposes an authorized stable open link", async () =
 test("entry.search-in-base reaches every search option of the API and rejects a search without q or filter", async () => {
   const search = filesCapabilities.queries["entry.search-in-base"];
   const input = {
-    baseId: base.id,
     q: "",
     ext: "PDF, docx",
     minSize: 1,
@@ -490,12 +522,12 @@ test("entry.search-in-base reaches every search option of the API and rejects a 
     sort: "modified",
   };
   searches.length = 0;
-  const found = await search.run(search.input.parse(input), context);
+  const found = await search.run(search.input.parse(input), rootContext(base.id, context));
   expect(found.ok).toBe(true);
-  expect(searches[0]).toMatchObject({ ...input, ext: "pdf,docx", scope: "tree" });
-  expect(search.input.safeParse({ baseId: base.id, q: "" }).success).toBe(false);
-  expect(search.input.safeParse({ baseId: base.id, ext: "pdf", sort: "relevance" }).success).toBe(false);
-  expect(search.input.safeParse({ baseId: base.id, q: "report", sort: "relevance" }).success).toBe(true);
+  expect(searches[0]).toMatchObject({ ...input, baseId: base.id, ext: "pdf,docx", scope: "tree" });
+  expect(search.input.safeParse({ q: "" }).success).toBe(false);
+  expect(search.input.safeParse({ ext: "pdf", sort: "relevance" }).success).toBe(false);
+  expect(search.input.safeParse({ q: "report", sort: "relevance" }).success).toBe(true);
 });
 
 test("universal search ranks each base's best hits first and keeps Filegate's word limit", async () => {
@@ -510,7 +542,7 @@ test("stable refs pass through listing, universal search and the reader unchange
   const stable = `n:cloud:users:${"1".repeat(8)}-1111-4111-8111-${"1".repeat(12)}:019b72cf-5200-7000-8000-000000000001`;
   items = [{ ...entry("Docs/report.pdf"), resourceId: stable }];
   const list = filesCapabilities.queries["entry.list"];
-  const listed = await list.run(list.input.parse({ baseId: base.id }), context);
+  const listed = await list.run(list.input.parse({}), rootContext(base.id, context));
   if (!listed.ok) throw new Error("expected list success");
   expect(listed.data.data.items[0]!.ref).toEqual({ type: "filesv2.entry", id: stable });
   expect(listed.data.data.items[0]).not.toHaveProperty("resourceId");
@@ -531,10 +563,10 @@ for (const query of ["entry.list", "entry.search-in-base"] as const) {
     const run = () => {
       if (query === "entry.list") {
         const list = filesCapabilities.queries[query];
-        return list.run(list.input.parse({ baseId: base.id }), context);
+        return list.run(list.input.parse({}), rootContext(base.id, context));
       }
       const search = filesCapabilities.queries[query];
-      return search.run(search.input.parse({ baseId: base.id, q: "report" }), context);
+      return search.run(search.input.parse({ q: "report" }), rootContext(base.id, context));
     };
     const first = await run();
     const again = await run();
@@ -612,7 +644,7 @@ for (const [code, status] of [
   test(`download preserves ${code} and checks access again after listing`, async () => {
     items = [entry("report.pdf")];
     const query = filesCapabilities.queries["entry.list"];
-    const listed = await query.run(query.input.parse({ baseId: base.id }), context);
+    const listed = await query.run(query.input.parse({}), rootContext(base.id, context));
     if (!listed.ok) throw new Error("expected list success");
     downloadFailure = new MockFilesError(code, status);
     await expect(
@@ -651,12 +683,12 @@ for (const [status, upstreamCode, code, expectedStatus] of [
     const expected = { code, message: errorMessage(code, "en"), status: expectedStatus };
     const list = filesCapabilities.queries["entry.list"];
     const search = filesCapabilities.queries["entry.search-in-base"];
-    await expect(list.run(list.input.parse({ baseId: base.id }), context)).rejects.toEqual(expected);
-    await expect(search.run(search.input.parse({ baseId: base.id, q: "report" }), context)).rejects.toEqual(expected);
+    await expect(list.run(list.input.parse({}), rootContext(base.id, context))).rejects.toEqual(expected);
+    await expect(search.run(search.input.parse({ q: "report" }), rootContext(base.id, context))).rejects.toEqual(expected);
     await expect(filesCapabilities.queries["content.read"].run({ id: "ref" }, context)).rejects.toEqual(expected);
     const create = filesCapabilities.actions["content.create"];
     await expect(
-      create.run(create.input.parse({ baseId: base.id, path: "report.pdf", size: 4 }), { ...context, idempotencyKey: "create" }),
+      create.run(create.input.parse({ path: "report.pdf", size: 4 }), rootContext(base.id, { ...context, idempotencyKey: "create" })),
     ).rejects.toEqual(expected);
   });
 }
@@ -805,8 +837,8 @@ describe("Files as a file provider", () => {
     expect(uploadKeys[2]).not.toBe(uploadKeys[0]);
     // The same caller key never collides with an upload through content.create.
     await filesCapabilities.actions["content.create"].run(
-      { baseId: "base", path: "Docs/Report (2).pdf", size: 4, mediaType: "application/pdf", onConflict: "error" },
-      caller,
+      { path: "Docs/Report (2).pdf", size: 4, mediaType: "application/pdf", onConflict: "error" },
+      rootContext("base", caller),
     );
     expect(uploadKeys[3]).not.toBe(uploadKeys[0]);
 
@@ -897,7 +929,7 @@ describe("Files as a file provider", () => {
 test("approval reviews name the file, its storage, and the change in the reader's language", async () => {
   baseItems = [{ ...base, id: "home" }];
   const rename = filesCapabilities.actions["entry.rename"].review!;
-  const german = await rename({ baseId: "home", path: "Berichte/report.csv", name: "q3.csv" }, { ...context, locale: "de-DE" });
+  const german = await rename({ path: "Berichte/report.csv", name: "q3.csv" }, rootContext("home", { ...context, locale: "de-DE" }));
   expect(german).toEqual({
     ok: true,
     data: {
@@ -911,8 +943,8 @@ test("approval reviews name the file, its storage, and the change in the reader'
     },
   });
   const created = await filesCapabilities.actions["content.create"].review!(
-    { baseId: "home", path: "test.csv", size: 2048, mediaType: "text/csv", onConflict: "error" },
-    context,
+    { path: "test.csv", size: 2048, mediaType: "text/csv", onConflict: "error" },
+    rootContext("home", context),
   );
   expect(created).toEqual({
     ok: true,
@@ -928,8 +960,8 @@ test("approval reviews name the file, its storage, and the change in the reader'
   });
   // Replacing content, a copy into another base, and trashing ask every time.
   const replaced = await filesCapabilities.actions["content.create"].review!(
-    { baseId: "home", path: "test.csv", size: 2048, mediaType: "text/csv", onConflict: "overwrite", expectedRevision: "r1" },
-    context,
+    { path: "test.csv", size: 2048, mediaType: "text/csv", onConflict: "overwrite", expectedRevision: "r1" },
+    rootContext("home", context),
   );
   expect(replaced.ok && "approvalScope" in replaced.data).toBe(false);
   baseItems = [
@@ -937,9 +969,9 @@ test("approval reviews name the file, its storage, and the change in the reader'
     { ...base, id: "team" },
   ];
   const copy = filesCapabilities.actions["entry.copy"].review!;
-  const across = await copy({ baseId: "home", path: "test.csv", targetBaseId: "team", folder: "" }, context);
+  const across = await copy({ path: "test.csv", folder: "" }, rootContext("home", context, "team"));
   expect(across.ok && "approvalScope" in across.data).toBe(false);
-  expect(await copy({ baseId: "home", path: "test.csv", targetBaseId: "home", folder: "Archiv" }, context)).toMatchObject({
+  expect(await copy({ path: "test.csv", folder: "Archiv" }, rootContext("home", context, "home"))).toMatchObject({
     ok: true,
     data: { approvalScope: "base:home" },
   });
@@ -950,7 +982,10 @@ test("approval reviews name the file, its storage, and the change in the reader'
       .map(([id]) => id)
       .sort(),
   ).toEqual(["content.create", "entry.copy", "entry.move", "entry.rename", "folder.create", "provider.save", "trash.restore"]);
-  const trashed = await filesCapabilities.actions["entry.trash"].run({ baseId: "home", path: "test.csv" }, { ...context, locale: "de" });
+  const trashed = await filesCapabilities.actions["entry.trash"].run(
+    { path: "test.csv" },
+    rootContext("home", { ...context, locale: "de" }),
+  );
   expect(trashed.ok && trashed.data.summary).toBe("In den Papierkorb verschoben");
 });
 
@@ -958,7 +993,7 @@ test("reviews stay within the review bounds and never scan storage bases", async
   baseItems = [{ ...base, id: "home" }];
   const rename = filesCapabilities.actions["entry.rename"].review!;
   const long = "a".repeat(4000);
-  const reviewed = await rename({ baseId: "home", path: long, name: "b".repeat(255) }, context);
+  const reviewed = await rename({ path: long, name: "b".repeat(255) }, rootContext("home", context));
   if (!reviewed.ok) throw new Error("expected a review");
   const review = CapabilityActionReviewSchema.parse(reviewed.data);
   expect(review.message.length).toBeLessThanOrEqual(1000);
@@ -974,21 +1009,21 @@ test("a change that would land under a public download share asks every time", a
   try {
     const reviews = [
       await filesCapabilities.actions["content.create"].review!(
-        { baseId: "home", path: "Public/summary.md", size: 20, mediaType: "text/markdown", onConflict: "error" },
-        context,
+        { path: "Public/summary.md", size: 20, mediaType: "text/markdown", onConflict: "error" },
+        rootContext("home", context),
       ),
       await filesCapabilities.actions["provider.save"].review!(
         { parent: "public-folder", name: "summary.md", size: 20, mediaType: "text/markdown" },
         context,
       ),
-      await filesCapabilities.actions["folder.create"].review!({ baseId: "home", path: "Public/Drafts" }, context),
-      await filesCapabilities.actions["entry.rename"].review!({ baseId: "home", path: "Public/a.pdf", name: "b.pdf" }, context),
-      await filesCapabilities.actions["entry.move"].review!({ baseId: "home", path: "passport.pdf", folder: "Public" }, context),
+      await filesCapabilities.actions["folder.create"].review!({ path: "Public/Drafts" }, rootContext("home", context)),
+      await filesCapabilities.actions["entry.rename"].review!({ path: "Public/a.pdf", name: "b.pdf" }, rootContext("home", context)),
+      await filesCapabilities.actions["entry.move"].review!({ path: "passport.pdf", folder: "Public" }, rootContext("home", context)),
       await filesCapabilities.actions["entry.copy"].review!(
-        { baseId: "home", path: "passport.pdf", targetBaseId: "home", folder: "Public" },
-        context,
+        { path: "passport.pdf", folder: "Public" },
+        rootContext("home", context, "home"),
       ),
-      await filesCapabilities.actions["trash.restore"].review!({ baseId: "home", id: "trash-1", path: "Public/report.csv" }, context),
+      await filesCapabilities.actions["trash.restore"].review!({ id: "trash-1", path: "Public/report.csv" }, rootContext("home", context)),
     ];
     for (const review of reviews) {
       expect(review.ok).toBe(true);
@@ -996,7 +1031,7 @@ test("a change that would land under a public download share asks every time", a
     }
     // The same move into a private folder can still be remembered for the base.
     expect(
-      await filesCapabilities.actions["entry.move"].review!({ baseId: "home", path: "passport.pdf", folder: "Private" }, context),
+      await filesCapabilities.actions["entry.move"].review!({ path: "passport.pdf", folder: "Private" }, rootContext("home", context)),
     ).toMatchObject({ ok: true, data: { approvalScope: "base:home" } });
   } finally {
     publicPaths = [];
@@ -1006,7 +1041,7 @@ test("a change that would land under a public download share asks every time", a
 test("a restore review names the entry and where it returns to", async () => {
   baseItems = [{ ...base, id: "home" }];
   const restore = filesCapabilities.actions["trash.restore"].review!;
-  expect(await restore({ baseId: "home", id: "row" }, { ...context, locale: "de" })).toEqual({
+  expect(await restore({ id: "row" }, rootContext("home", { ...context, locale: "de" }))).toEqual({
     ok: true,
     data: {
       message: "„report.csv“ aus dem Papierkorb wiederherstellen.",
@@ -1019,7 +1054,7 @@ test("a restore review names the entry and where it returns to", async () => {
   });
   // An entry without a known origin cannot be restored without a target; the review says so instead of guessing.
   trashOriginal = null;
-  await expect(restore({ baseId: "home", id: "fs:x" }, { ...context, locale: "de" })).rejects.toEqual({
+  await expect(restore({ id: "fs:x" }, rootContext("home", { ...context, locale: "de" }))).rejects.toEqual({
     code: "restore_destination_required",
     message: errorMessage("restore_destination_required", "de"),
     status: 400,
@@ -1039,7 +1074,7 @@ test("storage failures keep their code and carry the Files message in the caller
   });
   const list = filesCapabilities.queries["entry.list"];
   serviceFailure = new FilegateError(403, "permission_denied", "private upstream message");
-  await expect(list.run(list.input.parse({ baseId: base.id }), german)).rejects.toEqual({
+  await expect(list.run(list.input.parse({}), rootContext(base.id, german))).rejects.toEqual({
     code: "forbidden",
     message: "Du hast keine Leseberechtigung für diesen Pfad.",
     status: 403,
@@ -1084,3 +1119,79 @@ for (const [locale, file, folder] of [
     });
   }
 }
+
+test("Files exposes fixed root targets and a separate copy destination without changing provider input", () => {
+  const manifest = compileCapabilityManifest("filesv2", filesCapabilities);
+  for (const action of manifest.actions.filter((action) => action.localId !== "provider.save")) {
+    expect(action.target).toBe("entry");
+    expect(action.inputSchema.properties).not.toHaveProperty("baseId");
+    expect(action.inputSchema.properties).not.toHaveProperty("targetBaseId");
+    expect(capabilityToolInputSchema(action).properties).toHaveProperty("entry");
+  }
+  const copy = manifest.actions.find((action) => action.localId === "entry.copy")!;
+  expect(copy.refs).toEqual({ targetRootId: "entry" });
+  const call = capabilityCallFromTool("filesv2", copy, { entry: "root-a", targetRootId: "root-b", path: "a.txt", folder: "Docs" });
+  expect(call).toEqual({
+    capability: "filesv2.entry.copy",
+    target: { type: "filesv2.entry", id: "root-a" },
+    refs: { targetRootId: { type: "filesv2.entry", id: "root-b" } },
+    input: { path: "a.txt", folder: "Docs" },
+  });
+  expect(() => normalizeCapabilityCall("filesv2", copy, { target: call.target, input: call.input })).toThrow();
+  const provider = manifest.actions.find((action) => action.localId === "provider.save")!;
+  expect(provider.target).toBeUndefined();
+  expect(provider.code).toBe(false);
+  expect(fileProviderIssues(manifest)).toEqual([]);
+});
+
+test("entries cannot redirect an action to another root through its input or use a folder as the root", async () => {
+  const targetA = rootContext("base-a", context);
+  ids.set("entry-from-b", { baseId: "base-b", path: "Private/file.txt" });
+  const action = filesCapabilities.actions["entry.rename"];
+  // Base-relative paths cannot select another base. An old or injected base ID fails at the input boundary.
+  expect(action.input.safeParse({ baseId: "base-b", path: "Private/file.txt", name: "new.txt" }).success).toBe(false);
+  expect(action.input.safeParse({ id: "entry-from-b", path: "Private/file.txt", name: "new.txt" }).success).toBe(false);
+  for (const invoke of [action.review!, action.run]) {
+    await expect(
+      invoke({ path: "file.txt", name: "new.txt" }, { ...targetA, target: { type: "filesv2.entry", id: "entry-from-b" } }),
+    ).rejects.toMatchObject({ code: "root_target_required", status: 400 });
+    await expect(invoke({ path: "../base-b/file.txt", name: "new.txt" }, targetA)).rejects.toMatchObject({ code: "invalid_path" });
+  }
+  const copy = filesCapabilities.actions["entry.copy"];
+  for (const invoke of [copy.review!, copy.run]) {
+    await expect(
+      invoke({ path: "file.txt", folder: "" }, { ...targetA, refs: { targetRootId: { type: "filesv2.entry", id: "entry-from-b" } } }),
+    ).rejects.toMatchObject({ code: "root_target_required", status: 400 });
+  }
+});
+
+test("root discovery supplies opaque entry refs rather than requiring base ID encoding", async () => {
+  const roots = await filesCapabilities.queries["bases.list"].run({}, context);
+  if (!roots.ok) throw new Error("Expected root discovery");
+  const root = roots.data.data.items[0]!;
+  expect(root.ref.type).toBe("filesv2.entry");
+  expect(ids.get(root.ref.id)).toEqual({ baseId: root.id, path: "" });
+  const read = await filesCapabilities.queries["entry.read"].run({ id: root.ref.id }, context);
+  if (!read.ok) throw new Error("Expected canonical root reader");
+  expect(read.data.data).toMatchObject({ path: "", directory: true });
+  assertResourceOpenLink(read.data);
+});
+
+test("review and execution cannot restore an entry from another target root", async () => {
+  const caller = rootContext("base-a", context);
+  trashBases.set("entry-from-b", "base-b");
+  trashLocations.length = 0;
+  const restore = filesCapabilities.actions["trash.restore"];
+  try {
+    for (const invoke of [restore.review!, restore.run]) {
+      await expect(invoke({ id: "entry-from-b", path: "recovered.txt" }, caller)).rejects.toMatchObject({ code: "not_found", status: 404 });
+    }
+    // The owning trash service keys each row by the authorized base, not by ID alone.
+    expect(trashLocations).toEqual([
+      { baseId: "base-a", id: "entry-from-b", path: "recovered.txt" },
+      { baseId: "base-a", id: "entry-from-b", path: "recovered.txt" },
+    ]);
+  } finally {
+    trashBases.clear();
+  }
+});

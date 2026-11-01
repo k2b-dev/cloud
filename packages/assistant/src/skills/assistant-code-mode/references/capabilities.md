@@ -85,7 +85,9 @@ Action and must follow the normal approval process.
 
 Filesv2 publishes discovery/listing and cursor-based search, `content.read`,
 `content.create`, folder creation, rename, move, copy, trash, and restore. Use
-exact returned base IDs and entry references. Overwriting requires current
+the root entry ref's `id` from `bases.list` as the flat `entry` target field.
+Keep paths relative to that root and use exact returned entry references.
+Overwriting requires current
 `expectedRevision`; default to creating a new output name. Follow `next` until
 null when an analysis needs every entry. Trash remains recoverable; no permanent
 delete capability is exposed.

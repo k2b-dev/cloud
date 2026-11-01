@@ -84,6 +84,8 @@ const files: Record<string, Classification> = {
   folder: base(),
   publiclyShared: base(),
   folderLocation: base(),
+  // Root resolution can provision a missing auto-created Cloud home.
+  rootLocation: base(),
   mkdir: { kind: "mutation", coverage: "converted" },
   mkdirs: { kind: "mutation", coverage: "converted" },
   upload: mutation(),
