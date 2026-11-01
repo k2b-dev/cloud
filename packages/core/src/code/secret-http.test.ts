@@ -105,4 +105,6 @@ test("declared origins are exact for every HTTP call, including without secrets"
   }
   expect(() => requireCodeHttpOrigin(binding.origin, [binding.origin], [binding.origin])).toThrow("code_http_origin_forbidden");
   expect(() => requireCodeHttpOrigin(binding.origin, [], [])).toThrow("code_http_origin_undeclared");
+  for (const origin of ["https://evil.example.", "https://a*b.example"])
+    expect(() => requireCodeHttpOrigin(origin, [], [])).toThrow("code_http_origin_forbidden");
 });

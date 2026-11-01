@@ -172,17 +172,22 @@ Core sends requests through `requestPublicHttps`, with public-address
 validation and pinned DNS on every hop, bounded response bytes, the run's
 remaining deadline, and cancellation. Every request and redirect must match
 `manifest.internet`; an undeclared origin returns `code_http_origin_undeclared`
-with that canonical `origin`. The runner includes the origin in the error.
+with that canonical `origin`. The runner includes the origin in the error,
+unless it contains an inserted credential echo.
 Declared origins never permit private/internal hosts or private DNS answers.
 
 Redirects recheck the origin list and secret origin/path/header bindings
 before sending another request. A cross-origin redirect cannot carry a secret
-bound to the previous origin. The administrator's `core.code.calls_per_run`
-budget also bounds the number of network hops within one `http.fetch`;
-exhaustion returns `code_http_redirect_limit`. Use the final URL to avoid a
+bound to the previous origin. One `http.fetch` follows at most 20 redirects,
+matching the Fetch redirect limit; exhaustion returns `code_http_redirect_limit`. Use the final URL to avoid a
 redirect chain. Core performs no retries. HTTP is
 recorded as a possible Action so attempt recovery cannot automatically repeat
 an external write.
+
+Internet origins share the existing mandate budget of 50 grants with capability
+operations. The checker rejects origin lists beyond that budget and counts
+personal operation grants when internet access is declared. Activation also
+checks the complete grant plan.
 
 Call observations retain placeholders. Core redacts raw, prefixed,
 JSON-escaped, percent-encoded and base64 credential echoes from response bytes

@@ -173,7 +173,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
         apps: ["core"],
         operations: ["runtime.http"],
         actions: "preapproved",
-        grants: [{ kind: "http", fixedInput: {} }],
+        grants: internet.map((origin) => ({ kind: "http", fixedInput: { origin } })),
       },
     });
     if (!mandate.ok) throw new Error(mandate.error.code);
@@ -280,6 +280,56 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     expect(await (await invoke(claims, send)).json()).toEqual({ ok: false, error: { code: "code_http_secret_forbidden" } });
     expect(sent).toEqual([destination.origin + "/v1/items"]);
   });
+  test("noncanonical redirect origins finish as a structured refusal", async () => {
+    const { codeId, binding } = await fixture();
+    const { claims } = await running(codeId, binding);
+    for (const origin of ["https://evil.example.", "https://a*b.example"]) {
+      const response = await publicCall(claims, CodeHttpRequestSchema.parse({ url: destination.origin }), async () => ({
+        status: 307,
+        headers: {},
+        body: new Uint8Array(),
+        redirectLocation: origin + "/final",
+      }));
+      expect(await response.json()).toEqual({ ok: false, error: { code: "code_http_origin_forbidden" } });
+    }
+    const calls = await sql<{ state: string }[]>`SELECT state FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`;
+    expect(calls.map((call) => call.state)).toEqual(["failed", "failed"]);
+  });
+  test("redirect responses redact credentials used at every hop, including values rotated between requests", async () => {
+    const oldValue = "old-hop-credential";
+    const newValue = "new-hop-credential";
+    const { codeId, secret, binding } = await fixture(oldValue);
+    const { claims } = await running(codeId, binding);
+    let sent = 0;
+    const response = await invoke(claims, async (input) => {
+      if (++sent === 1) {
+        expect(input.headers.authorization).toBe("Bearer " + oldValue);
+        await setCodeSecret({ codeId, name: "API", binding_revision: secret.binding_revision, value: newValue }, context());
+        return { status: 307, headers: {}, body: new Uint8Array(), redirectLocation: "/v1/next" };
+      }
+      expect(input.headers.authorization).toBe("Bearer " + newValue);
+      return { status: 200, headers: {}, body: Buffer.from(oldValue + " " + newValue) };
+    });
+    const result = await response.json();
+    expect(result.ok).toBe(true);
+    expect(Buffer.from(result.data.body, "base64").toString()).toBe("[secret:API] [secret:API]");
+    expect(sent).toBe(2);
+  });
+  test("redirect refusal metadata never echoes an inserted credential in the origin", async () => {
+    const value = "MixedCaseCredential";
+    const { codeId, binding } = await fixture(value);
+    const { claims } = await running(codeId, binding);
+    const response = await invoke(claims, async () => ({
+      status: 307,
+      headers: {},
+      body: new Uint8Array(),
+      redirectLocation: `https://${value}.example/final`,
+    }));
+    expect(await response.json()).toEqual({ ok: false, error: { code: "code_http_origin_undeclared" } });
+    expect(
+      JSON.stringify(await readCodeRun({ codeId, runId: claims.runId, cursor: 0, offset: 0, length: 16384 }, context())).toLowerCase(),
+    ).not.toContain(value.toLowerCase());
+  });
   test("declared private/internal addresses and private DNS answers still never reach the transport", async () => {
     const { codeId, binding } = await fixture();
     const urls = ["https://127.0.0.1", "https://[::1]", "https://metadata.google.internal", "https://public.example"];
@@ -332,7 +382,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     expect(hops).toBe(2);
     expect(transported).toBe(0);
   });
-  test("a redirect loop stops at the administrator call budget", async () => {
+  test("a redirect loop stops at the Fetch limit of twenty redirects", async () => {
     const { codeId, binding } = await fixture();
     const { claims } = await running(codeId, binding);
     let calls = 0;
@@ -341,7 +391,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
       return { status: 307, headers: {}, body: new Uint8Array(), redirectLocation: "/loop" };
     });
     expect(await response.json()).toEqual({ ok: false, error: { code: "code_http_redirect_limit" } });
-    expect(calls).toBe(CODE_SETTINGS["core.code.calls_per_run"].default);
+    expect(calls).toBe(21);
   });
   test("metadata, runner response, ordered calls, audit, logs and errors never contain inserted values", async () => {
     const { codeId, binding } = await fixture();
@@ -403,7 +453,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     expect(await (await invoke(claims, send)).json()).toMatchObject({ ok: true });
     expect(await (await invoke(claims, send, "https://new.example/v1/items")).json()).toEqual({
       ok: false,
-      error: { code: "code_http_secret_forbidden" },
+      error: { code: "code_http_origin_undeclared", origin: "https://new.example" },
     });
     expect(count).toBe(1);
     const { configured: _configured, ...newBinding } = changed.secret;

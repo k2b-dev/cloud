@@ -742,6 +742,8 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     secondInput.manifest.internet = ["https://first.example", "https://second.example:8443"];
     const second = await submitCodeVersion(secondInput, author);
     expect(second.status).toBe("pending");
+    expect(second.binding.sourceHash).toBe(first.binding.sourceHash);
+    expect(second.binding.bundleHash).toBe(first.binding.bundleHash);
     expect(second.binding.manifestHash).not.toBe(first.binding.manifestHash);
     await expect(activate(code, second)).rejects.toMatchObject({ code: "code_approval_required" });
     await expect(decideCodeVersion({ ...first.binding, versionId: second.version.id }, true, reviewer)).rejects.toThrow();

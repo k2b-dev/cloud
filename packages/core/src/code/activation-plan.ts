@@ -98,6 +98,8 @@ export function buildCodeActivationPlan(
       }
   }
   const httpGrants: TaskGrant[] = (manifest.internet ?? []).map((origin) => ({ kind: "http", fixedInput: { origin } }));
+  if ((code.owner.kind !== "person" || httpGrants.length) && grants.length + httpGrants.length > MANDATE_POLICY_MAX_IDENTIFIERS / 2)
+    throw new CodeDataError("BAD_INPUT", "Version exceeds the mandate grant budget, including internet origins.");
   if (httpGrants.length) {
     apps.add("core");
     operations.add("runtime.http");

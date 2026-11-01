@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 import ts from "@typescript/typescript6";
 import { CodeInternetOriginSchema } from "../contracts/code-internet";
+import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeWorkflowSchedule } from "../workflows/runtime/schedule";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
 import { codeSdkPhaseDiagnostic } from "./types";
@@ -388,6 +389,17 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     for (const node of dynamicHttp)
       report(node, "code_http_origin_dynamic", 'Der Ursprung ist dynamisch. Deklariere ihn mit http.allow(["https://api.example.com"]).');
   result.internet = [...new Set([...origins, ...allowedOrigins])].sort();
+  if (request.sdk.manifest.mode !== "code_run" && result.internet.length) {
+    const grants =
+      result.internet.length +
+      (request.sdk.manifest.mode === "personal" ? new Set(result.permissions.map((item) => item.operation)).size : 0);
+    if (grants > MANDATE_POLICY_MAX_IDENTIFIERS / 2)
+      report(
+        program.getSourceFile(root + request.entry)!,
+        "code_http_grant_limit",
+        `Die Internet-Ursprünge und Operationsfreigaben überschreiten das Mandatsbudget von ${MANDATE_POLICY_MAX_IDENTIFIERS / 2} Freigaben. Teile den Code auf.`,
+      );
+  }
   if (request.sdk.manifest.mode === "code_run") {
     const entry = program.getSourceFile(root + request.entry)!;
     const module = checker.getSymbolAtLocation(entry);
