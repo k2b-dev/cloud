@@ -1802,7 +1802,8 @@ html {
     --k2b-workspace-shade-edge: var(--k2b-shadow-column-edge);
     --k2b-workspace-shade-mid: var(--k2b-shadow-column-mid);
     position: absolute;
-    z-index: 20;
+    /* Above Main's content, below a floating Detail and the resize handles (20). */
+    z-index: 19;
     top: 0;
     right: 0;
     left: 0;

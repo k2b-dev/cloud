@@ -269,14 +269,18 @@ async function exercise(page: Page, spec: Edge) {
       const style = getComputedStyle(region);
       const main = getComputedStyle(region.closest(".k2b-app-workspace")!);
       const handleBox = handle.getBoundingClientRect();
+      const detail = region.closest(".k2b-app-workspace")!.querySelector(".k2b-app-workspace__detail");
       return {
+        // A floating Detail and the handles paint over the shade, whatever their order in the DOM.
+        belowDetail: !detail || Number(getComputedStyle(region, "::before").zIndex) < Number(getComputedStyle(detail).zIndex),
+        belowHandle: Number(getComputedStyle(region, "::before").zIndex) < Number(getComputedStyle(handle).zIndex),
         border: style.borderTopStyle,
         surfaceStep: style.backgroundColor !== main.backgroundColor,
         // The handle stays centred on the edge it resizes.
         centred: Math.abs(handleBox.top + handleBox.height / 2 - region.getBoundingClientRect().top) <= 0.5,
       };
     });
-    expect(drawer).toEqual({ border: "none", surfaceStep: true, centred: true });
+    expect(drawer).toEqual({ belowDetail: true, belowHandle: true, border: "none", surfaceStep: true, centred: true });
   }
   const restingShade = spec.drawer ? await drawerShade(page) : null;
   if (restingShade) expect(restingShade.position).toBe("absolute");
