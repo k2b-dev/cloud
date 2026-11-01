@@ -284,6 +284,8 @@ suiteFor(
         });
       },
       list: (id, principal) => providers.get(id)!.list({ principal, authority: { listPrincipal: principal } }),
+      // Only Cloud-admin activation notifies target managers; the story's activations are by managers.
+      notificationManagers: async () => [],
       remove: async (id, principal, grantId) => {
         expect(await providers.get(id)!.remove({ grantId, authority: { cleanupPrincipal: principal, requestId: "c25-cleanup" } })).toBe(
           true,
