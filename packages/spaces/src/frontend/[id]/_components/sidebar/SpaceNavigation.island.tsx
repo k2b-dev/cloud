@@ -7,8 +7,7 @@ import { spaceCommandMessages } from "../../../../commands";
 import { overviewMessages } from "../../../overview-messages";
 import { createSpaceCommands } from "../../../space-commands";
 import { useSpaceMessages } from "../../messages";
-import { createItemController } from "./CreateItemButton";
-import { interceptSpacePrimaryClick, syncSpacePrimaryHref } from "./space-primary";
+import { syncSpacePrimaryHref } from "./space-primary";
 import {
   createNewSpace,
   createPinnedSpaces,
@@ -22,26 +21,6 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: Spa
   const t = useSpaceMessages();
   const locale = useLocale();
   createSpaceCommands({ current: () => (props.ctx.canWrite ? props.ctx.space : undefined), dateConfig: props.dateConfig });
-  const create = createItemController({
-    get spaceId() {
-      return props.ctx.space.id;
-    },
-    get columns() {
-      return props.ctx.columns;
-    },
-    get tags() {
-      return props.ctx.tags;
-    },
-    get templates() {
-      return props.ctx.space.templates;
-    },
-    get dateConfig() {
-      return props.dateConfig;
-    },
-    get defaultType() {
-      return props.ctx.currentView === "calendar" ? "event" : "task";
-    },
-  });
   createEffect(() => {
     if (!props.ctx.canWrite) return;
     for (const type of ["task", "event"] as const)
@@ -60,7 +39,6 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; sidebar: Spa
     onCleanup(listenSpacesNavigationHints(document, props.sidebar.spaces));
     if (!props.ctx.canWrite) return;
     onCleanup(syncSpacePrimaryHref(document, props.ctx));
-    onCleanup(interceptSpacePrimaryClick(document, () => void create.createItem()));
   });
   const { t: overview } = overviewMessages.resolve([locale()]);
   const createSpace = createNewSpace(overview);

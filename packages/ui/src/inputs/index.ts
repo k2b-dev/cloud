@@ -69,6 +69,8 @@ export { FileDropTarget, fileDropTarget } from "./FileDropTarget";
 export type { FileDropzoneProps, ImageCropperProps, ImageInputProps } from "./FileInputs";
 export { FileDropzone, ImageCropper, ImageInput } from "./FileInputs";
 export type { DateContext, FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
+export type { IconChoiceOption, IconChoicesProps } from "./IconChoices";
+export { IconChoices } from "./IconChoices";
 export { DEFAULT_ICON_GROUPS, DEFAULT_ICON_OPTIONS } from "./icon-options";
 export type {
   ImageCropAspect,

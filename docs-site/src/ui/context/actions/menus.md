@@ -162,6 +162,10 @@ Set `variant: "danger"` only on destructive items. `variant: "accent"` gives
 the icon of the entry most people want the action color, such as a blank item
 above a list of templates.
 
+`note` adds one quiet sentence below the entries that explains them all, such
+as what choosing one keeps. It is the menu's description for screen readers
+and also shows in the phone sheet.
+
 Set `icons="tile"` on `Dropdown.Root` when the icons tell entries apart, such
 as templates: each icon then sits on a quiet square, and an `accent` entry's
 square takes the selection tint.
@@ -171,7 +175,7 @@ for a form or richer workflow. Use `Select`, `MultiSelectInput`, `SelectChip`,
 or `FilterChip` when the interaction edits a value or filter.
 
 `Dropdown.Root` accepts `items`, `open`, `onOpenChange`, `position`, `align`,
-`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, `sheetTop`, `lazy`, `openAt`, `closeWith`, `search`, `attach`, `icons`, and `onClose`.
+`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, `sheetTop`, `lazy`, `openAt`, `closeWith`, `search`, `attach`, `icons`, `note`, and `onClose`.
 `openAt` hands over `open(anchor, returnFocus?)`, which opens the menu without
 its trigger beside `anchor`: an element, or any object with
 `getBoundingClientRect()`, such as a point inside a cell. Use it when the menu
@@ -279,6 +283,7 @@ type DropdownProps = {
   search?: DropdownSearch;
   attach?: () => HTMLElement | null | undefined;
   icons?: "plain" | "tile";
+  note?: string;
 };
 
 type DropdownSearch = {

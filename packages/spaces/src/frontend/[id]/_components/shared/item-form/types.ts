@@ -30,7 +30,8 @@ export type ItemFormProps = {
   spaceId: string;
   item?: SpaceItem;
   quickCreate?: boolean;
-  defaults?: Partial<ItemFormData> & { type?: ItemType };
+  /** `templateId` opens a new item with that template chosen. */
+  defaults?: Partial<ItemFormData> & { type?: ItemType; templateId?: string };
   columns: SpaceColumn[];
   tags?: SpaceTag[];
   /** Create only: templates of the Space; the dialog offers those of the chosen kind. */

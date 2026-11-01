@@ -329,7 +329,19 @@ Its date rule decides which dates the new item dialog proposes:
 
 Proposals are local calendar dates in the person's time zone, so week, month,
 and daylight-saving changes never move a proposed day. A weekday rule offers
-today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. When someone presses **+**, a Space with templates of that kind
+today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. Every **+** (the head, the phone button,
+a column's **+ Task**, an empty list, the calendar toolbar, and a calendar
+day's menu) opens one menu: the blank item first, then the templates with
+their icon and what they propose, then **Create template…**. From eight
+templates on, the menu has a search field, and a query no template matches
+becomes the blank item's title. The head's **+** stays a link to the
+`spaces.task.compose` or `spaces.event.compose` command, which also takes a
+`templateId`, so a reload, a new tab, or a page before hydration opens the
+form directly. N creates a blank item without the menu. The calendar's quick
+create offers **Template**; the selected time wins and the template fills the
+rest. **Save as template** in an item's **…** menu fills the template form
+from the item and only suggests placeholders for a week or date in its title.
+In the dialog, a Space with templates of that kind
 shows a **Template** chip row (a searchable list with more than six), and
 choosing one fills the form and shows the proposals as date chips with the
 first selected, next to **Other date…** and, for tasks, **No date**.

@@ -53,7 +53,7 @@ const space: SpaceDetail = {
   templates: [],
 };
 
-const renderSettings = (permission: "read" | "admin", locale = "en") =>
+const renderSettings = (permission: "read" | "write" | "admin", locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -66,7 +66,7 @@ const renderSettings = (permission: "read" | "admin", locale = "en") =>
           apiKeys: [],
           wormholes: [],
           isAdmin: permission === "admin",
-          canWrite: permission === "admin",
+          canWrite: permission !== "read",
           onClose: () => undefined,
         });
       },
@@ -133,7 +133,7 @@ describe("Spaces settings", () => {
     expect(html).not.toContain("Danger zone");
   });
 
-  test("lists task and event templates with their date rule; only admins see the tab", () => {
+  test("lists task and event templates with their date rule; everyone who writes sees the tab", () => {
     const template = {
       id: "Tpl001",
       spaceId,
@@ -172,6 +172,7 @@ describe("Spaces settings", () => {
     expect(html).toContain("Noch keine Terminvorlagen.");
     expect(html).toContain('aria-label="Vorlage bearbeiten: Weekly report"');
     expect(renderSettings("read")).not.toContain("Templates");
+    expect(renderSettings("write")).toContain("Templates");
   });
 
   test("renders statuses as a semantic settings collection", () => {

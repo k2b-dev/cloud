@@ -45,6 +45,8 @@ import { shouldHandleDetailClick } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
+import { openTemplateDialog } from "../edit/TemplateDialog";
+import { templateFromItem } from "../edit/template-from-item";
 import ClaimButton from "../shared/claim/ClaimButton";
 import {
   type ClaimFields,
@@ -706,6 +708,43 @@ export default function ItemDetailPanel(props: Props) {
       dateConfig: props.dateConfig,
     });
   const cloudId = useCloudIdCopy();
+  /** Which assignees can still reach the Space; a template keeps only those. Unknown when the check fails. */
+  const assigneesWithAccess = async (): Promise<Set<string> | undefined> => {
+    const assignees = props.item.assignees ?? [];
+    try {
+      const found = await Promise.all(
+        assignees.map(async (assignee) => {
+          const response = await apiClient[":id"]["assignable-users"].$get({
+            param: { id: props.spaceId },
+            query: { search: assignee.displayName },
+          });
+          if (!response.ok) throw new Error(t.loadAssigneesFailed);
+          return (await response.json()).some((user) => user.id === assignee.id) ? [assignee.id] : [];
+        }),
+      );
+      return new Set(found.flat());
+    } catch {
+      return undefined;
+    }
+  };
+  const saveAsTemplate = async () => {
+    const { draft, suggestions } = templateFromItem(props.item, {
+      checklist: props.checklist,
+      assigneesWithAccess: await assigneesWithAccess(),
+      dateConfig: props.dateConfig,
+    });
+    const saved = await openTemplateDialog({
+      spaceId: props.spaceId,
+      kind: draft.kind,
+      tags: props.tags,
+      templates: [],
+      dateConfig: props.dateConfig,
+      locale: locale(),
+      draft,
+      suggestions,
+    });
+    if (saved) reconcileAfterWrite();
+  };
   const itemActions = (): DropdownItem[] => {
     const actions: DropdownItem[] = [
       {
@@ -718,6 +757,7 @@ export default function ItemDetailPanel(props: Props) {
         icon: "ti ti-copy",
         action: handleDuplicate,
       },
+      ...(props.canWrite ? [{ label: t.saveAsTemplate, icon: "ti ti-template", action: () => void saveAsTemplate() }] : []),
     ];
 
     if (canTransferThroughWormhole(props.item) && props.wormholes.length > 0) {
