@@ -221,7 +221,9 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       } else if (signatureInSdk(node)) {
         const method = path.at(-1);
         const appType = checker.getTypeAtLocation(base);
-        if ((appType.aliasSymbol?.name === "CodeHttp" || appType.getSymbol()?.name === "CodeHttp") && method === "fetch" && collecting)
+        const declarationOwner = checker.getResolvedSignature(node)?.declaration?.parent.parent;
+        // Follow the SDK signature, including destructured HTTP methods.
+        if (declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeHttp" && collecting)
           result.internet = true;
         const app = appType.aliasSymbol?.name === "CodeApp" || appType.getSymbol()?.name === "CodeApp";
         if (app && method) {

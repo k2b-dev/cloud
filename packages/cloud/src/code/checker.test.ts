@@ -457,3 +457,11 @@ test("HTTP methods cannot be detached to hide their internet use from checking",
   expect(result.ok).toBe(false);
   expect(result.diagnostics.some((diagnostic) => diagnostic.code === "code_detached_sdk_method")).toBe(true);
 });
+
+test("destructured HTTP methods retain internet evidence through their SDK signature", async () => {
+  const result = await check(
+    'import { app, http } from "@sdk"; const { fetch: send } = http; app.schedule("0 8 * * 1", async () => { await send("https://api.example/v1"); }); export default app;',
+  );
+  expect(result).toMatchObject({ ok: true });
+  if (result.ok) expect(result.manifest.internet).toBe(true);
+});

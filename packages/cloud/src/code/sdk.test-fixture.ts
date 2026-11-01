@@ -18,7 +18,7 @@ export function sdkFixture(appId = "work-shop") {
           description: "Read the canonical workshop view.",
           openWorld: false,
           input: z.object({ id: z.string().describe("Workshop ID.") }).strict(),
-          data: z.object({ view: CloudResourceReaderViewSchema }).strict(),
+          data: z.object({ view: CloudResourceReaderViewSchema.pick({ title: true, permission: true }) }).strict(),
           run: () => ({ ok: true, data: { data: { view: { title: "Workshop", permission: "admin" } } } }),
         },
         "stock.list": {
