@@ -27,6 +27,7 @@ environment fallback. They complement the
 | --- | --- | --- |
 | `core.code.wall_clock_ms` | 300,000 ms (5 minutes) | 1–300,000 |
 | `core.code.calls_per_run` | 200 bridge calls | 1–1,000 |
+| `core.code.calls_per_second` | 60 per Code | 1–1,000 |
 | `core.code.database_bytes` | 100 MiB per Code | 1 byte–1 GiB |
 | `core.code.ai_budget_usd` | USD 1 reference cost per run | 0–100; zero disables AI |
 | `core.code.concurrency_per_code` | 1 active attempt | 1–100 |

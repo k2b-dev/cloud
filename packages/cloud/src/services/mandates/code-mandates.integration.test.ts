@@ -131,6 +131,8 @@ suite("Code version and person routine target mandates", () => {
       appId: "demo",
       capabilityId: "write",
       origin: "app",
+      // Trusted Core admission; the runner bridge transport is covered by C4.
+      codeRun: mandate.id === codeMandate.id ? true : undefined,
       input: { title: "Example" },
       target: { type: "demo.folder", id: targetId },
       mandate: { mandateId: mandate.id, mandateRevision: mandate.revision, ownerAppId: "core" },

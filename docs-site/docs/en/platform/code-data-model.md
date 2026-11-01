@@ -142,12 +142,14 @@ service.
 | `core.code.bundle_bytes` | 4 MiB | 16 MiB |
 | `core.code.manifest_bytes` | 1 MiB of JSON | 4 MiB |
 | `core.code.payload_bytes` | 32 KiB per run input or normalized call input | 32 KiB |
-| `core.code.calls_per_run` | 1,000 | 1,000 |
+| `core.code.calls_per_run` | 200 | 1,000 |
+| `core.code.calls_per_second` | 60 per Code | 1,000 |
 
 All settings require positive integers. New versions use current limits; a
 run pins its call and payload limits at creation. Smaller settings do not
-rewrite existing versions or active runs. Transport budgets bound the file
-count and input maximums. Run/call input admission uses Postgres's `jsonb::text`
+rewrite existing versions or active runs. The bridge enforces the smaller of
+the saved attempt limits and current payload/call settings on each new call.
+Transport budgets bound the file count and input maximums. Run/call input admission uses Postgres's `jsonb::text`
 byte count, including its separator whitespace, before invocation. Capability results use the public 256 KiB
 result budget independently of the run input setting. Results and run output
 use Postgres `json`, preserving exact JSON text without expanding numeric
