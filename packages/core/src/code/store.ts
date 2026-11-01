@@ -482,6 +482,8 @@ export const finishCodeCall = async (
   input: { runId: string; ordinal: number; state: "succeeded" | "failed"; result: CodeCall["result"]; endedAt: Date },
   db: TransactionSQL,
 ): Promise<void> => {
+  // Match settlement's run-before-call lock order, including late authoritative results.
+  await db`SELECT id FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE`;
   let encoded: string;
   try {
     encoded = jsonText(input.result);
@@ -493,7 +495,7 @@ export const finishCodeCall = async (
   const size = bytes(encoded);
   const stored = size > CODE_RESULT_STORAGE_BYTES ? jsonText({ code: "code_result_exceeds_capability_contract", bytes: size }) : encoded;
   const result =
-    await db`UPDATE code.calls SET state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state = 'running'`;
+    await db`UPDATE code.calls SET state = ${input.state},result = ${stored}::text::json,ended_at = ${input.endedAt} WHERE run_id = ${input.runId}::uuid AND ordinal = ${input.ordinal} AND state IN ('running','uncertain')`;
   if (result.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");
 };
 /** Retention is 30 days after termination; active/queued runs and immutable versions are never swept. */

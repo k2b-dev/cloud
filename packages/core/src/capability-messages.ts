@@ -12,6 +12,17 @@ const messages = i18n.define({
       codeSecretDeleteConfirm: "Delete secret value",
       codePolicyReview: ({ revision, count }: { revision: number; count: number }) =>
         `Update Code policy at revision ${revision}. ${count} ${count === 1 ? "Code will" : "Codes will"} be paused.`,
+      codeOperationAction: ({ operation }: { operation: "run" | "submit" | "pause" | "resume" }) =>
+        ({ run: "Run {code}", submit: "Submit a version for {code}", pause: "Pause {code}", resume: "Resume {code}" })[operation],
+      codeOperationRunning: ({ operation }: { operation: "run" | "submit" | "pause" | "resume" }) =>
+        ({ run: "Starting {code}", submit: "Submitting a version for {code}", pause: "Pausing {code}", resume: "Resuming {code}" })[
+          operation
+        ],
+      codeOperationDone: ({ operation }: { operation: "run" | "submit" | "pause" | "resume" }) =>
+        ({ run: "Started {code}", submit: "Submitted a version for {code}", pause: "Paused {code}", resume: "Resumed {code}" })[operation],
+      codeOperationConfirm: ({ operation }: { operation: "run" | "submit" | "pause" | "resume" }) =>
+        ({ run: "Run Code", submit: "Submit version", pause: "Pause Code", resume: "Resume Code" })[operation],
+      codeOperationDecline: "Cancel",
       codePolicyTitle: "Code policy",
       codePolicyRunning: "Saving Code policy.",
       codePolicyDone: "Code policy saved.",
@@ -124,6 +135,27 @@ const messages = i18n.define({
       codeSecretDeleteConfirm: "Secret-Wert löschen",
       codePolicyReview: ({ revision, count }) =>
         `Code-Richtlinie am Stand ${revision} ändern. ${count} ${count === 1 ? "Code wird" : "Codes werden"} pausiert.`,
+      codeOperationAction: ({ operation }) =>
+        ({ run: "{code} ausführen", submit: "Eine Version für {code} einreichen", pause: "{code} pausieren", resume: "{code} fortsetzen" })[
+          operation
+        ],
+      codeOperationRunning: ({ operation }) =>
+        ({
+          run: "{code} wird gestartet",
+          submit: "Eine Version für {code} wird eingereicht",
+          pause: "{code} wird pausiert",
+          resume: "{code} wird fortgesetzt",
+        })[operation],
+      codeOperationDone: ({ operation }) =>
+        ({
+          run: "{code} gestartet",
+          submit: "Eine Version für {code} eingereicht",
+          pause: "{code} pausiert",
+          resume: "{code} fortgesetzt",
+        })[operation],
+      codeOperationConfirm: ({ operation }) =>
+        ({ run: "Code ausführen", submit: "Version einreichen", pause: "Code pausieren", resume: "Code fortsetzen" })[operation],
+      codeOperationDecline: "Abbrechen",
       codePolicyTitle: "Code-Richtlinie",
       codePolicyRunning: "Code-Richtlinie wird gespeichert.",
       codePolicyDone: "Code-Richtlinie gespeichert.",
