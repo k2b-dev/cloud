@@ -317,6 +317,9 @@ describe("live dictation in the composer", () => {
         expect(rect.x).toBeGreaterThanOrEqual(0);
         expect(rect.x + rect.width).toBeLessThanOrEqual(width);
         expect(rect.y + rect.height).toBeLessThanOrEqual(composer.y);
+        // The card keeps the focus; the microphone does not take it back.
+        await settled(page);
+        expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
         await card.getByRole("button", { name: "Record instead" }).click();
         expect(await page.evaluate(() => log)).toContain("record");
         await page.getByRole("button", { name: "Dictate" }).click();
