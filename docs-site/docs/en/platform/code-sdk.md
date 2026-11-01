@@ -16,6 +16,8 @@ results come from [application capability manifests](/en/docs/platform/capabilit
 Third-party applications use the same path as built-in applications.
 
 `secrets.NAME` supplies a secret marker and `http.fetch` dispatches a bounded public HTTPS request.
+The checker collects exact origins into `manifest.internet`; declare dynamic destinations
+and redirect origins with a literal `http.allow(["https://api.example.com"])` list.
 Read [Code secrets](/en/docs/platform/code-secrets) for approved destinations and result encoding.
 
 This is the Phase 1 SDK contract on the Code integration branch. The SDK

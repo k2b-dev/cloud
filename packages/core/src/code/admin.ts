@@ -79,6 +79,8 @@ export type CodeAdminApprovalDetail = {
   own: boolean;
   soleAdminNotice: string | null;
   decision: (CodeVersionDecision & { decidedByName: string | null }) | null;
+  /** Full immutable version origin list, with or without secret bindings. */
+  internet: string[];
   /** Localized catalog titles for operations and target types; ids stay the fallback. */
   titles: { operations: Record<string, string>; types: Record<string, string> };
 };
@@ -311,6 +313,11 @@ export function codeAdminPermissionChanges(
   return changes.sort((a, b) => order[a.change] - order[b.change]);
 }
 
+/** Internet destinations reviewed with this exact version. Secret bindings never widen this list. */
+export function codeAdminInternet(manifest: CodeCheckedVersionManifest | null): string[] {
+  return [...(manifest?.internet ?? [])].sort();
+}
+
 /** Catalog titles of the operations and target types a version names, in the request locale. */
 async function operationTitles(
   permissions: readonly { operation: string; target: { type: string } | null }[],
@@ -447,6 +454,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
           decidedByName,
         }
       : null,
+    internet: codeAdminInternet(manifest),
     titles: await operationTitles(permissions, context),
   };
 }

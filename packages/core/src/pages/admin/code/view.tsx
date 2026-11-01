@@ -176,6 +176,7 @@ export function approvalReviewProps(
           when: when(detail.decision.decidedAt),
         }
       : null,
+    internet: detail.internet,
     nextHref: next ? codeAreaHref({ sec: "approvals", id: next.versionId }) : null,
     listHref: codeAreaHref({ sec: "approvals" }),
   };

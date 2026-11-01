@@ -416,11 +416,18 @@ const loadReady = async (
       versions.find((version) => version.id === selectedVersionId) ??
       (selectedVersionId === activeVersion?.id ? activeVersion : null) ??
       (olderSelected ? versionView({ version: olderSelected }, people, code.activeVersionId) : null);
+    const selectedManifest =
+      selectedVersionId === code.activeVersionId
+        ? activeManifest
+        : selectedVersionId === waitingReceipt?.version.id
+          ? waitingManifest
+          : await loadManifest(invoke, code.id, selectedVersionId);
     if (selected)
       diff = {
         version: selected,
         comparison: comparisonId ? (numbers.get(comparisonId) ?? "unknown") : null,
         staleComparison: value.staleComparison,
+        internet: selectedManifest ? (selectedManifest.internet ?? []) : null,
         files: value.files,
         permissions: value.permissions.map((permission) => ({
           operation: permission.operation,
@@ -440,6 +447,10 @@ const loadReady = async (
     active: activeVersion,
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
     automations,
+    internet: {
+      active: activeManifest ? (activeManifest.internet ?? []) : code.activeVersionId ? null : [],
+      waiting: waitingManifest ? (waitingManifest.internet ?? []) : waitingReceipt ? null : [],
+    },
     access: accessRows,
     waitingTargets,
     runs: runs && runsResult.ok ? { items: runs, nextCursor: runsResult.data.data.data.nextCursor } : null,

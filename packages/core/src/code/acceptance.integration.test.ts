@@ -30,6 +30,7 @@ import { activateCodeVersion, processCodeActivation, readCodeActivation } from "
 import { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
 import type { CodeActivationTransport } from "./activation-transport";
 import * as activationTransport from "./activation-transport";
+import { readCodeAdminApproval } from "./admin";
 import { codeAuthoringServices as code } from "./authoring";
 import { codeAccessCleanupOutbox, codeDeletionOutbox, codeOwnerDeletedOutbox, processCodeCleanupJob } from "./lifecycle";
 import * as runnerHosts from "./runner-jobs";
@@ -326,6 +327,11 @@ suiteFor(
       issuer,
       key,
       httpSend: async (input) => {
+        if (String(input.url).endsWith("/public")) {
+          expect(input.headers.authorization).toBeUndefined();
+          sentHttp.push(String(input.url));
+          return { status: 200, headers: {}, body: Buffer.from("public result") };
+        }
         expect(input.headers.authorization).toBe("Bearer " + secretValue);
         sentHttp.push(String(input.url));
         if (String(input.url).endsWith("/error")) throw new Error(secretValue);
@@ -594,7 +600,7 @@ suiteFor(
 try { await http.fetch("https://bank.example/v1/error", { headers: { authorization: "Bearer " + secrets.BANK } }); } catch { /* The run handles the visible HTTP refusal. */ }`);
     const checked = await code.check({ codeId, files, entry: "code.ts" }, author);
     if (!checked.result.ok || !checked.manifest) throw new Error("Secret acceptance source did not check");
-    expect(checked.manifest.internet).toBe(true);
+    expect(checked.manifest.internet).toEqual(["https://bank.example"]);
     expect(checked.manifest.policyRows).toContain("internet");
     const { configured: _configured, ...binding } = stored.secret;
     // C11's documented selected-binding seam; C8 still reruns the real checker before accepting it.
@@ -644,5 +650,40 @@ try { await http.fetch("https://bank.example/v1/error", { headers: { authorizati
       for (const spelling of [secretValue, Buffer.from(secretValue).toString("base64"), encodeURIComponent(secretValue)])
         expect(JSON.stringify(observed)).not.toContain(spelling);
     }
+  }, 60_000);
+  test("declared HTTP without a secret checks, submits, approves and activates for personal and resource Code", async () => {
+    const mailbox = await createMailbox(manager, { name: "Internet fixture" });
+    if (!mailbox.ok) throw new Error(mailbox.error.message);
+    const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id=${mailbox.data.id}::uuid`;
+    const resource = { kind: "resource" as const, ref: { type: "mail.mailbox", id: row!.short_id } };
+    for (const owner of [undefined, resource]) {
+      const caller = owner ? manager : author;
+      const initialized = await code.init({ title: "Origin fixture", ...(owner ? { owner } : {}) }, caller);
+      const codeId = initialized.config.codeId;
+      const files = source(`const url: string = ["https:", "", "bank.example", "public"].join("/");
+await http.fetch(url);
+try { await http.fetch(url.replace("bank.example", "undeclared.example")); } catch (error) {
+  if (!(error instanceof Error) || !error.message.includes("https://undeclared.example")) throw error;
+}`);
+      files["code.ts"] = files["code.ts"]!.replace("app.schedule", 'http.allow(["https://bank.example"]);\napp.schedule');
+      const checked = await code.check({ codeId, files, entry: "code.ts" }, caller);
+      expect(checked.manifest?.internet).toEqual(["https://bank.example"]);
+      expect(checked.manifest?.policyRows).toEqual(["internet"]);
+      const submitted = (await code.submit({ codeId, files, entry: "code.ts", baseVersionId: null }, caller)).submission;
+      expect(submitted.status).toBe("pending");
+      expect((await readCodeAdminApproval(submitted.version.id, context(reviewer))).internet).toEqual(["https://bank.example"]);
+      await approve(submitted);
+      await activate(codeId, submitted.version.id, proof(caller));
+      const requested = await code.run({ codeId, entrypoint: "monday", input: null, idempotencyKey: "c11b-public" }, caller);
+      const result = await completed(codeId, requested.run.runId, caller);
+      expect(result.run.state).toBe("succeeded");
+      expect(result.calls.map((call) => call.state)).toEqual(["succeeded", "failed"]);
+      expect(result.calls[1]?.result).toEqual({
+        ok: false,
+        error: { code: "code_http_origin_undeclared", origin: "https://undeclared.example" },
+      });
+    }
+    expect(sentHttp.filter((url) => url === "https://bank.example/public")).toHaveLength(2);
+    expect(sentHttp.some((url) => url.startsWith("https://undeclared.example"))).toBe(false);
   }, 60_000);
 });

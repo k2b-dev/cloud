@@ -25,6 +25,7 @@ export type CodeApprovalReviewProps = {
   newer: { number: number; author: string; href: string } | null;
   why: string[];
   rights: CodeApprovalRight[];
+  internet: string[];
   diffHeader: string;
   files: CodeVersionDiffFile[] | null;
   decision: { approved: boolean; soleAdmin: boolean; by: string; when: string } | null;
@@ -133,6 +134,14 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     <div class="flex min-h-full flex-col">
       <div class="grid flex-1 content-start gap-6 px-2 pt-1 pb-6">
         <Show when={decidedNotice()}>{(notice) => notice()}</Show>
+        <Show when={props.internet.length}>
+          <section class="grid gap-2" aria-label={t().internetOrigins}>
+            <h3 class="text-base font-semibold">{t().internetOrigins}</h3>
+            <ul class="grid gap-1 text-sm">
+              <For each={props.internet}>{(origin) => <li class="break-all font-mono">{origin}</li>}</For>
+            </ul>
+          </section>
+        </Show>
         <Show when={!done() && (props.status === "expired" || props.status === "cancelled")}>
           <NoticeCard tone="neutral" title={t().closedTitle} detail={t().closedSub} />
         </Show>

@@ -38,6 +38,13 @@ const render = (query: Record<string, string>, state: State = "normal", locale =
       },
     }),
   );
+test("approval lists every declared origin, including requests without secrets", () => {
+  const html = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 });
+  expect(html).toContain("Ursprünge im Internet");
+  expect(html).toContain("https://bank.example");
+  expect(html).toContain("https://status.example:8443");
+});
+
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
 
 test("the area column names every section with waiting counts", () => {

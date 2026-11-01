@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CapabilityClientResult, CapabilityInvocation } from "../../capabilities/types";
 import type { CloudResourceRef } from "../../contracts/capabilities";
+import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
 
 /**
  * The shared Code page reads Core's public `core.code.*` queries and the Core activation routes, like any
@@ -43,6 +44,7 @@ const PermissionSchema = z.object({
 });
 /** The parts of the checked version manifest the page shows. */
 export const ManifestSchema = z.object({
+  internet: CodeInternetOriginsSchema.optional(),
   entrypoints: z.array(z.object({ kind: z.enum(["schedule", "manual"]), entrypoint: z.string(), cron: z.string().nullable() })),
   permissions: z.array(PermissionSchema),
 });
@@ -193,6 +195,7 @@ export type CodePageDiff = {
   /** The previous version's number; null for a first version, "unknown" when it could not be read. */
   comparison: number | "unknown" | null;
   staleComparison: boolean;
+  internet: string[] | null;
   files: z.infer<typeof VersionDiffSchema>["files"];
   permissions: { operation: string; target: CodePageTarget | null; file: string; line: number }[];
 };
@@ -209,6 +212,8 @@ export type CodePageReady = {
   /** The newest version when it is newer than the running one and not rejected, expired, or cancelled. */
   waiting: CodePageVersion | null;
   automations: CodePageAutomation[] | null;
+  /** Full declared lists for the running and waiting versions; null means the manifest could not be read. */
+  internet: { active: string[] | null; waiting: string[] | null };
   /** Null when Core could not reconcile target access. */
   access: CodePageAccessRow[] | null;
   /** What switching on the waiting version asks for; null without a waiting version or when unreadable. */

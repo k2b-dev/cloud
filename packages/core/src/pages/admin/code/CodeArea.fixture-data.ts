@@ -249,6 +249,7 @@ export const fixtureApprovalDetail = (
             decidedByName: "Ben Schulz",
           }
         : null,
+    internet: ["https://bank.example", "https://status.example:8443"],
     titles: {
       operations: {
         "spaces.task.create": "Aufgabe anlegen",

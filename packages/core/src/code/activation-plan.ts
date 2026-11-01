@@ -10,6 +10,7 @@ import {
   MANDATE_POLICY_MAX_IDENTIFIERS,
   type MandatePolicyV1,
   parseMandatePolicy,
+  type TaskGrant,
 } from "@k2b/cloud/services/mandates";
 import { z } from "zod";
 import { CodeDataError } from "./access";
@@ -95,12 +96,17 @@ export function buildCodeActivationPlan(
           throw new CodeDataError("BAD_INPUT", "Version exceeds the mandate grant budget.");
       }
   }
+  const httpGrants: TaskGrant[] = (manifest.internet ?? []).map((origin) => ({ kind: "http", fixedInput: { origin } }));
+  if (httpGrants.length) {
+    apps.add("core");
+    operations.add("runtime.http");
+  }
   const policy = parseMandatePolicy({
     version: 1,
     apps: [...apps].sort(),
     operations: [...operations].sort(),
     actions: grants.some((g) => g.kind === "action") ? "preapproved" : "deny",
-    ...(code.owner.kind === "person" ? {} : { grants }),
+    ...(code.owner.kind !== "person" || httpGrants.length ? { grants: [...grants, ...httpGrants] } : {}),
   });
   return {
     targets: [...grouped.values()].map((g) => ({

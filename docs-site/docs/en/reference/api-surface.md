@@ -264,7 +264,8 @@ The contracts barrel exports `CodeCheckedVersionManifestSchema`,
 version lifecycle. See [Code versions and approval](/en/docs/platform/code-versions).
 These schemas describe evidence; they grant no execution or resource access.
 `CodeSecretBindingSchema`, `CodeSecretVersionBindingSchema`, `CodeSecretNameSchema`,
-`CodeHttpRequestSchema`, `CodeHttpResultSchema` and their types describe
+`CodeHttpRequestSchema`, `CodeHttpResultSchema`, `CodeInternetOriginSchema`,
+`CodeInternetOriginsSchema` and their types describe
 [Code secrets](/en/docs/platform/code-secrets) and the HTTP bridge.
 `codeSecretPlaceholder`, `codeSecretHeaderAllowed` and `codeSecretPathAllowed`
 supply the shared secret marker and destination grammar. The services barrel

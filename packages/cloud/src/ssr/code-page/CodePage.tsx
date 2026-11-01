@@ -630,6 +630,38 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
           )}
         </Show>
       </Section>
+      <Show
+        when={
+          props.state.internet.active === null ||
+          props.state.internet.waiting === null ||
+          props.state.internet.active.length ||
+          props.state.internet.waiting.length
+        }
+      >
+        <Section id="cloud-code-internet" title={t().internetOrigins}>
+          <Show
+            when={props.state.internet.active !== null && props.state.internet.waiting !== null}
+            fallback={<InlineError text={t().internetFailed} retry={t().tryAgain} />}
+          >
+            <Show when={props.state.active && props.state.internet.active?.length}>
+              <p class="cloud-code__label">{t().internetVersion({ version: props.state.active!.number })}</p>
+              <ul class="cloud-code__list">
+                <For each={props.state.internet.active ?? []}>
+                  {(origin) => <li class="cloud-code__row break-all font-mono text-sm">{origin}</li>}
+                </For>
+              </ul>
+            </Show>
+            <Show when={props.state.waiting && props.state.internet.waiting?.length}>
+              <p class="cloud-code__label">{t().internetVersion({ version: props.state.waiting!.number })}</p>
+              <ul class="cloud-code__list">
+                <For each={props.state.internet.waiting ?? []}>
+                  {(origin) => <li class="cloud-code__row break-all font-mono text-sm">{origin}</li>}
+                </For>
+              </ul>
+            </Show>
+          </Show>
+        </Section>
+      </Show>
       <Section id="cloud-code-pages" title={t().pagesAndRoutes} count={0}>
         <p class="cloud-code__quiet">{t().pagesNone}</p>
       </Section>
@@ -1139,6 +1171,16 @@ function Versions(props: { data: CodePageData; state: CodePageReady; text: PageT
                   )}
                 </For>
               </ul>
+            </Show>
+            <Show when={diff().internet === null || diff().internet?.length}>
+              <p class="cloud-code__label">{t().internetOrigins}</p>
+              <Show when={diff().internet} fallback={<InlineError text={t().internetFailed} retry={t().tryAgain} />}>
+                {(origins) => (
+                  <ul class="cloud-code__list">
+                    <For each={origins()}>{(origin) => <li class="cloud-code__row break-all font-mono text-sm">{origin}</li>}</For>
+                  </ul>
+                )}
+              </Show>
             </Show>
             <p class="cloud-code__label">{t().codeDiff}</p>
             <CodeDiff files={diff().files} label={t().codeDiff} />

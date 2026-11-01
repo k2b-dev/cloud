@@ -92,7 +92,10 @@ export class WorkerdEngine implements RunnerEngine {
           } catch (error) {
             return Response.json({
               ok: false,
-              error: { code: error instanceof RunnerCallError ? error.code : "runner_bridge_unavailable" },
+              error: {
+                code: error instanceof RunnerCallError ? error.code : "runner_bridge_unavailable",
+                ...(error instanceof RunnerCallError && error.origin ? { origin: error.origin } : {}),
+              },
             });
           }
         },
