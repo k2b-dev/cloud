@@ -46,6 +46,9 @@ capability invocation.
 | `POST /api/code/access` | `{ codeId }` | Active version's target access observations |
 | `POST /api/code/access/target` | `{ appId, grants: [{ grantId, principal }] }` | Details for grants at targets the person manages |
 
+The version card in chat and `cld code activate` read the preview. The Code page's
+dialog reads `/activation/check`, described below.
+
 The preview requires the same rights as activating, but also answers phones and
 non-interactive credentials, with `allowed: { allowed: false, reason }`. For the
 newest waiting version it returns one row per target with `check`: `manages`,
