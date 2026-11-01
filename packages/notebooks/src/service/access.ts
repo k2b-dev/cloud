@@ -26,7 +26,7 @@ import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { resolveNotebookApiKeyPermission } from "./api-key-permissions";
-import { invalidated } from "./workspace-events";
+import { invalidated, workspaceTransaction } from "./workspace-events";
 
 // ==========================
 // Notebook Access Adapter
@@ -283,11 +283,13 @@ export const listNotebookAccessPage = async (
  */
 export const addNotebookAccess = async (notebookId: string, accessId: string): Promise<Result<void>> => {
   try {
-    await sql`
+    await workspaceTransaction(async (tx) => {
+      await tx`
       INSERT INTO notebooks.notebook_access (notebook_id, access_id)
       VALUES (${notebookId}::uuid, ${accessId}::uuid)
     `;
-    await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] });
+      await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
+    });
     return ok();
   } catch (e: unknown) {
     const error = e as { code?: string };
@@ -327,7 +329,7 @@ const mutateNotebookAccess = async (params: {
   permission?: PermissionLevel;
   caller?: NotebookAccessCaller;
 }): Promise<Result<void>> => {
-  const result = await sql.begin(async (tx): Promise<Result<void>> => {
+  const result = await workspaceTransaction(async (tx): Promise<Result<void>> => {
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${params.notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
     const before = await listNotebookAccess(params.notebookId, tx);
@@ -345,9 +347,9 @@ const mutateNotebookAccess = async (params: {
       params.permission === undefined
         ? await deleteAccess({ id: params.accessId }, tx)
         : await updateAccess({ id: params.accessId, permission: params.permission }, tx);
+    if (changed.ok) await invalidated({ notebookId: params.notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
     return changed;
   });
-  if (result.ok) await invalidated({ notebookId: params.notebookId, reason: "permissions", scopes: ["permissions"] });
   return result;
 };
 
@@ -401,7 +403,7 @@ export const grantNotebookAccess = async (params: {
   caller?: NotebookAccessCaller;
 }): Promise<Result<AccessEntry>> => {
   const { notebookId, principal, permission } = params;
-  const result = await sql.begin(async (tx): Promise<Result<string>> => {
+  const result = await workspaceTransaction(async (tx): Promise<Result<string>> => {
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
     const before = await listNotebookAccess(notebookId, tx);
@@ -427,10 +429,10 @@ export const grantNotebookAccess = async (params: {
     const created = await createAccess({ principal, permission }, tx);
     if (!created.ok) return created;
     await tx`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebookId}::uuid, ${created.data.id}::uuid)`;
+    await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
     return ok(created.data.id);
   });
   if (!result.ok) return result;
-  await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] });
   const created = (await listNotebookAccess(notebookId)).find((entry) => entry.id === result.data);
   return created ? ok(created) : fail(err.internal("Failed to retrieve created access entry"));
 };
