@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { sql } from "bun";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import { resolveInvocationAuthority } from "./invocation-actor";
 import type { CloudInvocationClaims } from "./invocation-token";
+
+useUnitClients();
 
 const claims = (principal: "user" | "service_account"): CloudInvocationClaims => ({
   iss: "https://cloud.example.test",
