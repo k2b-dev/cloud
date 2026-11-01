@@ -89,6 +89,19 @@ API keys are minted once; the raw token appears only in the creation response.
 Their metadata is listed and revoked like every other service-account key in the
 Accounts app and through `cld accounts service-accounts`.
 
+A key created with **Full access** carries `read`, `write`, and `admin`. The API
+never chooses for you: a general key must name its `scopes`, and a request with
+missing or empty `scopes` is refused with `400`. On existing resources the lower
+of the account's grant and the key's scope applies. Scopes also allow actions
+that need no grant. A key enters applications open to every signed-in account.
+With `write` or `admin`, it can create Pulse bases unless an administrator
+restricts that, and Assistant projects and Skills, and it becomes admin of what
+it creates.
+
+A key created earlier through **Full access** has no scopes, and every
+application denies it with `app_access_denied`. Cloud does not widen issued keys:
+revoke such a key and create a new one.
+
 For an external model client, choose **AI models only** when creating a key
 in **Accounts → Service accounts → Create API key**. Grant model access to the
 machine in AI settings. See the [OpenAI-compatible API](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
@@ -151,7 +164,9 @@ Two limits apply to every request, and the lower one wins:
 - the scopes of the credential it presents. A token with only `read` cannot
   write, even with a `write` grant; a token without `read` reaches nothing.
 
-Scopes never add access, and there is no resource binding to widen or narrow.
+Scopes never add access to an existing resource, and there is no resource
+binding to widen or narrow. [Choose the credential](#choose-the-credential) lists
+the actions that need no grant.
 In Spaces an agent lists the Spaces it was granted, reads and changes items,
 claims tasks, reports progress, and comments under its own name. In Notebooks
 it lists its notebooks, reads notes, and writes notes with a `write` grant. In

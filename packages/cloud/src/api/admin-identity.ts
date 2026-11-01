@@ -79,7 +79,12 @@ const ServiceAccountApiKeyInputSchema = z
   .refine(
     (input) => input.access !== "models" || input.scopes.length === 0,
     "Models-only access cannot be combined with general credential scopes",
-  );
+  )
+  // A key is never widened on the caller's behalf, and an empty list could never enter an application.
+  .refine((input) => input.access === "models" || input.scopes.length > 0, {
+    path: ["scopes"],
+    message: "Name the scopes for this key, such as read, write or admin, or use access: models",
+  });
 
 type IdentityAdminDependencies = {
   apps: () => Promise<Array<{ id: string; name: string }>>;
