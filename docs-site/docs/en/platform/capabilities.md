@@ -533,7 +533,7 @@ supports reader checks; it remains independent of the four Code functions.
 
 ```ts
 const itemCodeAccess: CodeAccessAdapter = {
-  manages: (context, id) => itemService.manages(context, id),
+  manages: (tx, context, id) => itemService.managesInTransaction(tx, context, id),
   grant: (tx, input) => itemService.grantCodeAccess(tx, input),
   revoke: (tx, input) => itemService.revokeCodeAccess(tx, input),
   list: (tx, input) => itemService.listCodeAccess(tx, input),
@@ -559,34 +559,85 @@ are incomplete. The manifest advertises the supported targets and owners in
 
 | Function | Responsibility |
 | --- | --- |
-| `manages(context, id)` | Check the person's current manager authority at the target. Code never counts as a manager. |
-| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`. |
+| `manages(tx, context, id)` | Lock and check the person's current manager authority at the target using the supplied transaction. Code never counts as a manager. |
+| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`; successful dry runs also return `managerUserIds`. |
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
 
-Use only the supplied transaction for adapter reads and writes. Do not publish
-events, send notifications, or perform other external effects there. A dry run
-must produce the same decision without effects; Cloud also rolls back its
+Successful adapter dry runs identify current human managers in `managerUserIds`,
+including members of manager groups. Return an empty array when no person
+manages the target; service accounts are never notification recipients.
+Generated `code.access.set` answers preserve this field only when the activating
+person may read the target. Core notifications use the separate server-only
+lookup described below, including for Cloud admins who cannot read the target.
+
+`CODE_ACCESS_MAX_MANAGER_USER_IDS` from `@k2b/cloud/contracts` bounds the array
+using the capability result byte budget. The complete set result and its receipt
+must fit that budget too. Refuse with a reason when all managers cannot fit;
+never truncate the notification recipients. Spaces and Mail return manager IDs
+only during dry runs. A Code manager check during a directory update can fail
+transiently; retry after the update finishes.
+
+Cloud calls `manages` inside the same transaction as `grant` or `revoke`, including
+dry runs and retries. Lock the target's authority before reading its current
+ownership, grants and membership, and retain the lock until commit or rollback.
+Every path that changes those managers must take a conflicting lock on the same
+rows or tables. For example, lock the target row `FOR UPDATE` if all manager
+changes lock that row too. Locking existing share rows alone does not protect
+missing or newly inserted shares. Include inherited authority and group membership
+in the locking strategy; cached roles or groups from `context` are not a current
+manager check. The platform revalidates and locks Cloud-admin authority separately
+and skips `manages` for a live Cloud admin. Consequently, `grant` and `revoke` must
+lock and check the target themselves, including its existence, rather than assume
+that `manages` ran.
+
+Person listings call `manages` for multiple targets in one transaction, retaining
+each lock until that list finishes. Prefer `FOR SHARE` where every manager-change
+path takes a conflicting lock. When exclusive locks are necessary, order targets
+consistently across adapter lists and all domain paths that lock multiple targets.
+Platform grant/account locks precede adapter target locks. Do not call platform
+grant cleanup while already holding a target lock in a domain transaction; finish
+that transaction first or acquire the platform locks first. Core account inspection
+uses its separate account-scoped authority.
+
+Use only the supplied transaction for adapter reads and writes. Never open a
+separate database connection from `manages`, `grant`, `revoke` or `list`. Transactional
+outbox writes, such as access invalidations, are allowed and roll back with the
+grant. Do not deliver events, send notifications, or perform other external
+effects there. A dry run must produce the same decision without effects;
+Cloud also rolls back its
 transaction. A refusal or exception rolls back the adapter's writes. Code
 receives neither `admin` nor a manager role. Keep different grant IDs
 independent, even for the same account and target: rolling back a new
 activation must leave older grants intact. Its permission resolver must use
 only its own explicit grants, ignoring public, group and signed-in access.
 
+Dry-run answers reveal only what the person may read. Cloud calls the target
+Type's existing `access.readable` for the activating person, independently of
+manager or Cloud-admin authority. Only a readable target can return `title`
+(from its canonical reader) and `managerUserIds`. A missing reader check means
+no presentation metadata. Refusals for an unreadable target use a generic manager
+message; keep the target ID and the option to copy the Code link.
+
+Successful adapter dry runs return current human managers in `managerUserIds`,
+including administrator-group members. This array shares the existing capability
+result budget (`CODE_ACCESS_MAX_MANAGER_USER_IDS`); refuse an oversized audience
+rather than truncate it. Core obtains Cloud-admin notification recipients through
+its separate target-bound `signCodeAccessNotifications` server authority. That
+lookup always rolls back, grants nothing, and never becomes person-visible
+presentation. The four adapter functions stay the same.
+
 Cloud generates these capabilities once per app:
 
 | Capability | Input | Data |
 | --- | --- | --- |
-| `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level }` or `{ granted: false, reasonCode, reason }` |
+| `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level, readable }` or `{ granted: false, reasonCode, reason, readable }`; readable dry runs may include `title` and `managerUserIds` |
 | `<app>.code.access.list` | `{ principal }` | `{ grantId, target, principal, level }[]` for targets the person manages |
 | `<app>.code.access.rm` | `{ grantId }` | `{ removed: boolean }` |
 
-Successful adapter `grant` decisions can include `managerUserIds`, the current
-human administrators of the target, including administrator group members.
-Return this field on dry runs; Core saves it before applying grants. Core requires it for Cloud-admin activation
-and sends one durable notification per affected target and manager after the
-version becomes active. See [Code activation](/en/docs/platform/code-activation).
-The four adapter functions and signed proof v1 remain unchanged.
+Generated titles, descriptions and all input-field descriptions include English
+and German presentation. Apps do not need to repeat these translations; any
+field overrides retain the platform's remaining input descriptions.
 
 Resource targets use qualified Types, for example
 `{ type: "inventory.item", id: "item-1" }`; an app target uses
@@ -616,8 +667,10 @@ rows. Stable `reasonCode` values are `origin_forbidden`, `proof_invalid`,
 `capacity_exceeded`. Keep the
 application's human-facing refusal reason separate from these recovery codes.
 
-Normal target share lists expose `grantId` for each Code share so the rights
-editor can remove it directly. Cloud lists only live, ledger-backed grants and
+Normal target share lists expose `grantId` and `serviceAccountKind: "code"` for
+each Code share. The shared rights editor then lists it under
+[Code with access](/en/docs/identity/authorization#code-with-access) and removes
+it through Core and `code.access.rm`. Cloud lists only live, ledger-backed grants and
 enforces the existing 256 KiB capability result budget; adapters must keep their
 account lists within that budget. Operation IDs must belong to the receiving
 app. Actions and Queries with an explicit target must name the target Type in
@@ -1620,11 +1673,11 @@ Cloud validates the declaration at startup:
   `idempotency: "required"`;
 - every provider-owned Type used by `refs` or Universal Search is declared;
 - an app may declare at most 200 Types, 200 Queries, and 200 Actions;
-- the deterministic live manifest may not exceed 256 KiB.
+- the deterministic live manifest may not exceed 384 KiB.
 
 Every invocation transport caps the complete JSON request and result at 256
 KiB. The paginated discovery catalog has a separate 2 MiB page limit because
-one valid manifest may itself approach 256 KiB. Provider endpoints validate and
+one valid manifest may itself approach 384 KiB. Provider endpoints validate and
 serialize invocation results within the 256 KiB bound before returning them.
 Keep individual field limits comfortably below that envelope; large files,
 exports, and document bodies belong in app-owned upload or download APIs

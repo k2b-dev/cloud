@@ -48,7 +48,6 @@ packages/mail/src/frontend/_components/MailConversationContext.behavior.test.tsx
 packages/mail/src/frontend/_components/MailConversationList.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/MailDetailsPanel.behavior.test.tsx | 2
 packages/mail/src/frontend/_components/MailFolderSettings.browser.test.ts | 1
-packages/mail/src/frontend/_components/MailIncomingAutomationSettings.behavior.test.tsx | 3
 packages/mail/src/frontend/_components/MailRecipientInput.behavior.test.tsx | 4
 packages/mail/src/frontend/_components/MailSenderMessageActions.behavior.test.tsx | 1
 packages/mail/src/frontend/_components/MailboxLogoSettings.behavior.test.tsx | 1

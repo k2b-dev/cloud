@@ -43,6 +43,25 @@ capability invocation.
 | `POST /api/code/activation/read` | `{ codeId, activationId }` | Current activation status |
 | `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after scheduling cancellation |
 | `POST /api/code/access` | `{ codeId }` | Active version's target access observations |
+| `POST /api/code/access/target` | `{ appId, grants: [{ grantId, principal }] }` | Details for grants at targets the person manages |
+
+Each access observation names its grant, target, operations and state
+(`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and
+`activatedVersionId` of the activation that created it; the [Code page](/en/docs/platform/code-page)
+shows them.
+
+`/api/code/access/target` serves the share dialog's
+[Code with access](/en/docs/identity/authorization#code-with-access) section and
+needs no rights on the Code itself. For each Code account, Core calls the target
+application's `code.access.list` with the person's own authority. A grant
+appears only when that list returns it, which happens only at targets the person
+manages, and only when Core's record names the same Code account and the same
+target of that application. A refused list shows nothing; an unavailable or
+malformed list fails the request so the dialog can retry. Each detail has
+`grantId`, sorted `operations`, `activatedBy`
+(`{ id, name }` or `null`) and `activatedAt` (`null` until the activation
+finishes). Names follow directory visibility: members see other people's names;
+guests see only their own.
 
 Generate `activationId` as a UUID once. Reuse it after a lost HTTP response;
 Core returns the existing process. Reusing it for another Code, version or
@@ -88,18 +107,32 @@ If a later target refuses, Core removes only grant IDs belonging to that
 activation, including attempts whose responses were lost. Reused grants remain.
 Each target adapter must keep grants with different IDs independent.
 
-For Cloud-admin notifications, a successful adapter `grant` decision includes
-`managerUserIds`, the current concrete human administrators, including members
-of administrator groups. Return these IDs on dry runs; Core persists that
-audience before applying grants, so retries and real sets may omit it. Core refuses a
-Cloud-admin activation when the audience is unavailable; an empty list means the
-target has no human managers. This additive field belongs to `CodeAccessDecision`
-and `CodeAccessSetData`; the four adapter functions and proof v1 stay unchanged.
-Every target adapter, including third-party adapters, must supply this audience
-for Cloud-admin activation. Mail's mailbox adapter supplies bounded UUID pages
-through the shared access resolver, without scanning the whole user directory.
-If that audience exceeds the capability result budget, Mail refuses the dry run;
-this limit also applies to activation by an ordinary owner administrator.
+Dry-run answers reveal only what the person may read. A target's existing
+`access.readable` check controls whether an activation refusal includes its
+`title` and `managerUserIds`. Otherwise the answer keeps the target ID and the
+stable reason code, with “Only someone who manages this target can activate it”
+(“Einschalten kann nur, wer dieses Ziel verwaltet” in German). The Code link
+remains available to copy. Status reads check the current reader again before
+returning a saved title or manager list; only then they add `managerNames`, the
+display names of the first five managers, which are never stored.
+
+Cloud-admin notification audiences use a separate Core-only, target-bound
+`signCodeAccessNotifications` proof. Each successful adapter dry run identifies
+current human managers in `managerUserIds`, including administrator-group
+members. Core obtains this audience through the server-only notification lookup,
+then records one durable notice per manager and target when activation commits.
+Recipients do not enter the target plan or the person's set answer when the
+target is unreadable. A retry repeats preflight and obtains the current audience;
+real sets need not return it. A target that omits the audience refuses activation with
+`managers_unavailable`; a network outage retries. An empty array means there are
+no human managers. Every adapter, including a
+third-party adapter, supplies this audience for Cloud-admin activation. The
+shared capability result budget bounds it; refuse an oversized audience rather
+than truncate it.
+
+Activation stores target references, plans and failures as JSON objects or
+arrays. Rollback routes every persisted grant to its target provider before
+marking it released, including a write whose response was lost.
 
 ## Version mandates and old runs
 
@@ -152,3 +185,7 @@ access and must not be exposed through a generic caller transport.
 Core starts both outbox workers with
 its normal lifecycle. Their failed jobs retain attempts and the last error;
 cleanup runs separately so a draining version does not block new activations.
+
+Owner deletion stops activation and durably removes its grants. See
+[Code lifecycle](/en/docs/platform/code-lifecycle) for the deletion helper,
+owner checks and the cleanup read model.

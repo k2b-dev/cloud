@@ -9,6 +9,7 @@ import type { SQL } from "bun";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { codeAdmissionLock } from "./admission";
 import { requireCodeRunFence } from "./bridge";
+import { checkCodeOwnerBeforeRun } from "./owner-check";
 import {
   CODE_RUN_HEARTBEAT_MS,
   CODE_RUN_LEASE_MS,
@@ -231,8 +232,34 @@ export async function claimCodeRuns(
   };
   return transaction ? claim(transaction) : sql.begin(claim);
 }
-/** Signing happens after commit. Failed/lost HTTP responses recover through the same lease expiry path. */
-export async function codeRunnerLease(run: ClaimedRun, sign: typeof signCodeRunToken = signCodeRunToken): Promise<RunnerLease> {
+/** Owner reads and signing happen after claim commit, outside dispatch locks. Missing owners never receive a token. */
+export async function codeRunnerLease(
+  run: ClaimedRun,
+  sign: typeof signCodeRunToken = signCodeRunToken,
+  options: { signal?: AbortSignal; ownerChecks?: Map<string, Promise<boolean>> } = {},
+): Promise<RunnerLease | null> {
+  const code = await findCode(run.code_id);
+  const budget = AbortSignal.timeout(CODE_RUN_HEARTBEAT_MS);
+  const signal = options.signal ? AbortSignal.any([options.signal, budget]) : budget;
+  let check = code ? options.ownerChecks?.get(code.id) : undefined;
+  if (code && !check) {
+    check = checkCodeOwnerBeforeRun(code, signal);
+    options.ownerChecks?.set(code.id, check);
+  }
+  if (!code || !(await check)) {
+    const current = await findCode(run.code_id);
+    await sql`UPDATE code.runs SET state=${current?.pauseReason === "owner_not_found" ? "skipped" : "failed"},outcome=${current?.pauseReason === "owner_not_found" ? "owner_not_found" : "code_not_active"},ended_at=clock_timestamp(),lease_expires_at=NULL
+      WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'`;
+    return null;
+  }
+  signal.throwIfAborted();
+  // Refresh the delivery lease after the bounded owner read. Never revive an expired or superseded generation.
+  const [renewed] = await sql<{ lease_expires_at: Date }[]>`UPDATE code.runs
+    SET lease_expires_at=LEAST(deadline_at,clock_timestamp()+${CODE_RUN_LEASE_MS}*interval '1 millisecond')
+    WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'
+      AND lease_expires_at>clock_timestamp() AND deadline_at>clock_timestamp()
+    RETURNING lease_expires_at`;
+  if (!renewed) return null;
   const deadlineAt = run.deadline_at.getTime();
   const token = await sign(
     {
@@ -259,7 +286,7 @@ export async function codeRunnerLease(run: ClaimedRun, sign: typeof signCodeRunT
     organizationId: "installation",
     trustTier: "code",
     deadlineAt,
-    leaseExpiresAt: run.lease_expires_at.getTime(),
+    leaseExpiresAt: renewed.lease_expires_at.getTime(),
     heartbeatMs: CODE_RUN_HEARTBEAT_MS,
     input: run.input,
   };

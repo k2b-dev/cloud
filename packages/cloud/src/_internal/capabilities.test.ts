@@ -708,7 +708,7 @@ describe("capability v1 compilation", () => {
     );
 
     expect(() => compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries }))).toThrow(
-      "manifest exceeds the 262144-byte",
+      "manifest exceeds the 393216-byte",
     );
   });
 

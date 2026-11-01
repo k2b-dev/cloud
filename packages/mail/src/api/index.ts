@@ -183,6 +183,7 @@ import {
   triage,
 } from "../service";
 import { resolveByteRange } from "../service/byte-range";
+import { startMailboxCodeAttention } from "../service/code-attention";
 import { requestContactDirectory } from "../service/contact-directory";
 import { conversationSummaryStateSchema } from "../service/conversation-summary-contract";
 import { generateConversationSummary, generateConversationSummarySchema } from "../service/conversation-summary-jobs";
@@ -961,6 +962,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
     const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
     const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
     if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+    // A mailbox switched in place gets its Code entry like a page load, within the same short grace.
+    const codeAttention = startMailboxCodeAttention(c, c.req.valid("param").mailboxId);
     const data = await loadMailboxPageData({
       context: requestContext(c),
       mailboxId,
@@ -968,7 +971,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
       listMode: query.listMode,
       locale: getLocale(c),
     });
-    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    return respondAggregate(
+      c,
+      data.ok ? { ...data, data: { ...data.data, codeAttention: await codeAttention.settle() } } : fail(err.notFound("Mailbox")),
+    );
   })
   .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
     const mailboxId = internalMailboxId(c);

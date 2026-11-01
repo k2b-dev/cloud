@@ -835,7 +835,7 @@ test("an unmatched query offers Cloud search and /app narrows to the Assistant's
   expect(picker).toHaveBeenLastCalledWith(expect.objectContaining({ scope: undefined, query: "xylo", requireReader: true }));
   h.type("/app q");
   await settled();
-  expect(h.root.textContent).toContain("Studio-Apps aus Assistent");
+  expect(h.root.textContent).toContain("Studio-Apps aus Gustav");
 });
 
 test("a Studio app chosen through /app becomes the artifact reference the Assistant reads", async () => {
@@ -947,7 +947,7 @@ test("one successful catalog fetch serves two composers, keystrokes and later op
 test("a failed catalog retries at the next opening and Studio narrowing works before success", async () => {
   let failed = true;
   const h = await mount({ locale: "de-CH", value: "/app q", catalogFail: () => failed });
-  expect(h.root.textContent).toContain("Studio-Apps aus Assistent");
+  expect(h.root.textContent).toContain("Studio-Apps aus Gustav");
   h.type("/app qt");
   await settled();
   expect(h.requests.filter(({ url }) => url.pathname === "/api/capabilities/v1/catalog")).toHaveLength(1);

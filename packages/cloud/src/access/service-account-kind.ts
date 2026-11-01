@@ -22,6 +22,8 @@ export const serviceAccountKindDisplay = (
       return { icon: "ti-box", label: t.resourceBoundServiceAccount };
     case "standalone":
       return { icon: "ti-key", label: t.standaloneServiceAccount };
+    case "code":
+      return { icon: "ti-code", label: t.codeServiceAccount };
     default:
       return { icon: "ti-key" };
   }

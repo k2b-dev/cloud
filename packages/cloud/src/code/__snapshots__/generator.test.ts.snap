@@ -41,23 +41,27 @@ type Input1 = ({ "cursor"?: (string) });
 
 type Data1 = ({ "next": ((string | null)); "rows": (Array<({ "id": (string); "state": (("ready" | "empty")) & (string) })>) });
 
-type Input2 = ({ "details"?: ((({ "kind": ("note") & (string); "text": (string); [key: string]: unknown }) | ({ "count": (number); "kind": ("count") & (string); [key: string]: unknown }))); "title": (string); "idempotencyKey": string });
+type Input2 = ({ "id": (string) });
 
-type Data2 = ({ "id": (string) });
+type Data2 = ({ "view": ({ "container"?: ({ "ref": ({ "id": (string); "type": (string) }); "title": (string) }); "context"?: (string); "done"?: (boolean); "permission": (("read" | "write" | "admin")) & (string); "status"?: (string); "title": (string) }) });
 
-type Input3 = ({ "idempotencyKey"?: never });
+type Input3 = ({ "details"?: ((({ "kind": ("note") & (string); "text": (string); [key: string]: unknown }) | ({ "count": (number); "kind": ("count") & (string); [key: string]: unknown }))); "title": (string); "idempotencyKey": string });
 
-type Data3 = ({ "ok": (boolean) });
+type Data3 = ({ "id": (string) });
 
-type Input4 = ({ "itemId": (string); "destination": CodeHandle<"work-shop.workshop">; "idempotencyKey"?: never });
+type Input4 = ({ "idempotencyKey"?: never });
 
-type Data4 = ({ "moved": (boolean) });
+type Data4 = ({ "ok": (boolean) });
 
-type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((input: Input0) => Promise<Data0>) } };
+type Input5 = ({ "itemId": (string); "destination": CodeHandle<"work-shop.workshop">; "idempotencyKey"?: never });
 
-type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "item": { readonly "inspect": ((input: Input3) => Promise<Data3>) } };
+type Data5 = ({ "moved": (boolean) });
 
-type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((input: Input2) => Promise<Data2>); readonly "move": ((input: Input4) => Promise<Data4>) }; readonly "stock": { readonly "list": ((input: Input1) => Promise<Data1>) } };
+type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((input: Input0) => Promise<Data0>) }; readonly "workshop": { readonly "read": ((input: Input2) => Promise<Data2>) } };
+
+type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "item": { readonly "inspect": ((input: Input4) => Promise<Data4>) } };
+
+type Handle2<Id extends string = string> = CodeHandle<"work-shop.workshop", Id> & { readonly "item": { readonly "create": ((input: Input3) => Promise<Data3>); readonly "move": ((input: Input5) => Promise<Data5>) }; readonly "stock": { readonly "list": ((input: Input1) => Promise<Data1>) } };
 
 export declare const work_shop: { readonly "app": (() => Handle0<"work-shop">); readonly "item": (<const Id extends string>(id: CodeLiteralId<Id>) => Handle1<Id>); readonly "workshop": (<const Id extends string>(id: CodeLiteralId<Id>) => Handle2<Id>) };
 
@@ -89,7 +93,7 @@ export declare const app: CodeApp;
 exports[`Code SDK generation snapshots a complete SDK generated from a third-party capability contract: runtime 1`] = `
 "// Generated from Cloud capability manifests. Do not edit.
 const __codeSdk = (() => {
-const manifest = {"appMethods":{"all":2,"delete":2,"fetch":2,"get":2,"nav":2,"on":3,"post":2,"put":2,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":["app"],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}}};
+const manifest = {"appMethods":{"all":2,"delete":2,"fetch":2,"get":2,"nav":2,"on":3,"post":2,"put":2,"schedule":1,"webhook":3},"apps":[{"exportName":"work_shop"}],"handles":[{"appId":"work-shop","exportName":"work_shop","factoryPath":["app"],"type":null},{"appId":"work-shop","exportName":"work_shop","factoryPath":["item"],"type":"work-shop.item"},{"appId":"work-shop","exportName":"work_shop","factoryPath":["workshop"],"type":"work-shop.workshop"}],"operations":[{"appId":"work-shop","capability":"work-shop.catalog.list","idempotency":"none","kind":"query","methodPath":["catalog","list"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.stock.list","idempotency":"none","kind":"query","methodPath":["stock","list"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.workshop.read","idempotency":"none","kind":"query","methodPath":["workshop","read"],"refs":{},"target":null},{"appId":"work-shop","capability":"work-shop.item.create","idempotency":"required","kind":"action","methodPath":["item","create"],"refs":{},"target":"work-shop.workshop"},{"appId":"work-shop","capability":"work-shop.item.inspect","idempotency":"none","kind":"action","methodPath":["item","inspect"],"refs":{},"target":"work-shop.item"},{"appId":"work-shop","capability":"work-shop.item.move","idempotency":"none","kind":"action","methodPath":["item","move"],"refs":{"destination":"work-shop.workshop"},"target":"work-shop.workshop"}],"owner":{"kind":"resource","ref":{"id":"owner-shop","type":"work-shop.workshop"}}};
 const RESOURCE_ID_MAX = 512;
 
 const handles = new WeakMap();
@@ -127,7 +131,7 @@ function handle(appId, type, id) {
       if (!bridge) throw new Error("code_sdk_bridge_unbound");
       if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("code_sdk_invalid_input");
       const input = { ...args };
-      const refs = node();
+      const refs = {};
       for (const [field, refType] of Object.entries(op.refs)) {
         refs[field] = coordinate(input[field], refType);
         delete input[field];
@@ -224,7 +228,7 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
     {
       "appId": "work-shop",
       "exportName": "work_shop",
-      "manifestHash": "e392278c196be1536b837aa0d7a4fa6b1bd44b6639732b50eb364c66a648b22f",
+      "manifestHash": "97cf292ad856c6e86625040fb6cfd242bcf032c004242fca1482e7dd3c9c2402",
     },
   ],
   "events": [
@@ -381,6 +385,120 @@ exports[`Code SDK generation snapshots a complete SDK generated from a third-par
       "refs": {},
       "schemaHash": "d6f4776e22ecfbe694ea5f31e59bed02c1548085ce97dd34c7ae711faa7b7c56",
       "target": "work-shop.workshop",
+    },
+    {
+      "appId": "work-shop",
+      "capability": "work-shop.workshop.read",
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "view": {
+            "additionalProperties": false,
+            "properties": {
+              "container": {
+                "additionalProperties": false,
+                "properties": {
+                  "ref": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "description": "Stable app-owned resource identifier.",
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string",
+                      },
+                      "type": {
+                        "description": "Namespaced resource type declared by the owning app.",
+                        "maxLength": 180,
+                        "minLength": 3,
+                        "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "type",
+                      "id",
+                    ],
+                    "type": "object",
+                  },
+                  "title": {
+                    "maxLength": 500,
+                    "minLength": 1,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "ref",
+                  "title",
+                ],
+                "type": "object",
+              },
+              "context": {
+                "description": "One line in the caller's locale that says what and where the resource is and its most useful fact, for example 'Task in IT planning · due 30 Oct'.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string",
+              },
+              "done": {
+                "type": "boolean",
+              },
+              "permission": {
+                "enum": [
+                  "read",
+                  "write",
+                  "admin",
+                ],
+                "type": "string",
+              },
+              "status": {
+                "description": "The resource's current state as a short label in the caller's locale, for example 'Open' or 'Done'.",
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string",
+              },
+              "title": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "title",
+              "permission",
+            ],
+            "type": "object",
+          },
+        },
+        "required": [
+          "view",
+        ],
+        "type": "object",
+      },
+      "idempotency": "none",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Workshop ID.",
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "kind": "query",
+      "localId": "workshop.read",
+      "methodPath": [
+        "workshop",
+        "read",
+      ],
+      "refs": {},
+      "schemaHash": "1d03d78ea64e14fc900bef9e296a9d36917625d1fb428db438acd6c3c8bff729",
+      "target": null,
     },
     {
       "appId": "work-shop",

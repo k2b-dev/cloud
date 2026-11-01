@@ -40,7 +40,7 @@ databaseSuite()("aiSkills (integration)", () => {
       name: `auto-${crypto.randomUUID()}`,
       description: "Automatic workflow.",
       instructions: "Do work.",
-      extraFrontmatter: { "disable-model-invocation": "true" },
+      extraFrontmatter: { "disable-model-invocation": "true", "load-tools": ["spaces.task.create", "calculate"] },
     });
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status)
@@ -76,6 +76,10 @@ databaseSuite()("aiSkills (integration)", () => {
         "starts only when the user selects it",
       );
       expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, userResourceContext(subject))).toEqual(loaded);
+      expect(loaded?.loadTools).toEqual([]);
+      // The tools a Skill loads come from its pinned SKILL.md, like its instructions.
+      const withTools = await aiSkills.loadForTurn(turn!.id, automatic.name, userResourceContext(subject));
+      expect(withTools?.loadTools).toEqual(["spaces.task.create", "calculate"]);
     } finally {
       await aiSkills.admin.delete(skill.id);
       await aiSkills.admin.delete(automatic.id);

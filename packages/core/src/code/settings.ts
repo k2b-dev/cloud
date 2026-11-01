@@ -1,6 +1,6 @@
 import { createSettingsAPI } from "@k2b/cloud/services";
 
-/** Storage and execution budgets, adjustable in Administration › Code; all sizes are UTF-8 bytes. */
+/** Storage and execution budgets, adjustable in Administration › Code and with `cld admin settings apply`; all sizes are UTF-8 bytes. */
 export const CODE_SETTINGS = {
   "core.code.job_pending": {
     kind: "number",

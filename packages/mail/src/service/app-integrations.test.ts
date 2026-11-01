@@ -175,3 +175,25 @@ describe("Spaces invocation targets", () => {
     });
   });
 });
+
+test("background links use the confirmed target without adding reader authority", async () => {
+  const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockResolvedValue({ ok: true, data: { data: {} } });
+  try {
+    const input = {
+      itemId: "Item01",
+      spaceId: "Space1",
+      reference: { ref: { type: "mail.conversation", id: "Conv01" }, label: "Planning" },
+    };
+    await linkSpaceItemResource(input, { mandate: { id: "fictional", revision: 1, callingAppId: "mail" } }, "link-confirmed");
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0]?.[0]).toMatchObject({
+      kind: "action",
+      capabilityId: "item.reference.add",
+      target: { type: "spaces.space", id: "Space1" },
+      input: { itemId: "Item01", reference: input.reference },
+    });
+    expect(invoke.mock.calls[0]?.[0].input).not.toHaveProperty("spaceId");
+  } finally {
+    invoke.mockRestore();
+  }
+});

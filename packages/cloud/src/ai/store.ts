@@ -14,6 +14,7 @@ export { AI_TOOL_CHECK_STALE_MS };
 
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { projectSettledAiToolChecks } from "./capability-result";
+import { projectCapabilityMigrationErrors, projectMigratedCapabilityCalls } from "./capability-targets-history";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
@@ -2583,7 +2584,7 @@ export const aiConversations: AiConversationService = {
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
       ORDER BY seq ASC, (kind = 'summary')::int ASC
     `;
-    return projectAiMaps(rows.map(rowToMessage));
+    return projectCapabilityMigrationErrors(sql, input.conversationId, await projectAiMaps(rows.map(rowToMessage)));
   },
 
   listMessagesPage: async (input) => {
@@ -2612,7 +2613,7 @@ export const aiConversations: AiConversationService = {
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
       ORDER BY seq ASC, (kind = 'summary')::int ASC
     `;
-    const messages = await projectAiMaps(rows.map(rowToMessage));
+    const messages = await projectCapabilityMigrationErrors(sql, input.conversationId, await projectAiMaps(rows.map(rowToMessage)));
     const oldestSeq = messages[0]?.seq;
     if (oldestSeq === undefined) return { messages, hasMore: false };
     const older = await sql<{ exists: boolean }[]>`
@@ -3959,11 +3960,13 @@ export const aiConversations: AiConversationService = {
 
   createSessionStore: (input): SessionStore => ({
     load: async (): Promise<StoreEntry[]> => {
+      const projectCalls = (entries: StoreEntry[]) =>
+        input.turnId ? projectMigratedCapabilityCalls(sql, input.conversationId, input.turnId, entries) : Promise.resolve(entries);
       // The loop must only ever see the active model context, never archived history.
       if (input.background && input.turnId) {
         const own = await aiConversations.listTurnMessages({ conversationId: input.conversationId, loopId: input.turnId });
         const context = input.background.context;
-        return [...context, ...projectSettledAiToolChecks(own.map((row) => ({ ...row, seq: context.length + row.seq })))];
+        return projectCalls([...context, ...projectSettledAiToolChecks(own.map((row) => ({ ...row, seq: context.length + row.seq })))]);
       }
       // Results delivered after this turn started belong to the next turn's context.
       // Compare durable message sequences rather than wall-clock timestamps.
@@ -3981,22 +3984,24 @@ export const aiConversations: AiConversationService = {
           `
           ).map(rowToMessage)
         : await aiConversations.listContextMessages({ conversationId: input.conversationId });
-      return projectSettledAiToolChecks(
-        (await projectAiMaps(rows, true)).map((row) => ({
-          seq: row.seq,
-          kind: row.kind,
-          meta: row.meta,
-          message:
-            input.turnInput !== undefined && input.turnId === row.loopId && row.message.role === "user" && !row.meta?.steerId
-              ? {
-                  role: "user" as const,
-                  content:
-                    typeof input.turnInput === "string"
-                      ? [{ type: "text" as const, text: input.turnInput }]
-                      : input.turnInput.map((part) => (typeof part === "string" ? { type: "text" as const, text: part } : part)),
-                }
-              : row.message,
-        })),
+      return projectCalls(
+        projectSettledAiToolChecks(
+          (await projectAiMaps(rows, true)).map((row) => ({
+            seq: row.seq,
+            kind: row.kind,
+            meta: row.meta,
+            message:
+              input.turnInput !== undefined && input.turnId === row.loopId && row.message.role === "user" && !row.meta?.steerId
+                ? {
+                    role: "user" as const,
+                    content:
+                      typeof input.turnInput === "string"
+                        ? [{ type: "text" as const, text: input.turnInput }]
+                        : input.turnInput.map((part) => (typeof part === "string" ? { type: "text" as const, text: part } : part)),
+                  }
+                : row.message,
+          })),
+        ),
       );
     },
     append: async (message, opts) => {

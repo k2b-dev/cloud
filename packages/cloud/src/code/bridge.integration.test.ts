@@ -17,6 +17,8 @@ import { migrate as migrateCode } from "../../../core/src/migrate/core/code";
 import { migrate as migratePolicy } from "../../../core/src/migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../../../core/src/migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../../../core/src/migrate/core/code-versions";
+import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
+import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import * as registry from "../_internal/registry";
 import {
@@ -44,7 +46,8 @@ import { mandates } from "../services/mandates";
 import { type CodeRunTokenInput, signCodeRunToken, verifyCodeRunToken } from "./run-token";
 import { RUNNER_PATHS, type RunnerCallRequest } from "./runner-protocol";
 
-const now = new Date("2026-11-01T12:00:00Z");
+// real clock: Postgres fences use its own clock, so the frozen JS clock starts from the real time of this run.
+const now = new Date(Math.floor(Date.now() / 1000) * 1000);
 const issuer = "https://cloud.example";
 const userId = "11111111-1111-4111-8111-111111111111";
 const kid = "22222222-2222-4222-8222-222222222222";
@@ -57,15 +60,27 @@ const op = {
   openWorld: false,
   run: () => ({ ok: true as const, data: { data: { value: "done" } } }),
 };
+const actionOp = {
+  ...op,
+  review: () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      sentence: { action: "Write folder", running: "Writing folder", done: "Wrote folder", confirm: "Write", decline: "Cancel" },
+      slots: {},
+      scope: "folder:a",
+    },
+  }),
+};
 const manifest = compileCapabilityManifest("example", {
   protocolVersion: 2,
   types: { folder: { title: "Folder", description: "Fixture folder." } },
   queries: { read: { ...op, target: "folder" } },
   actions: {
-    write: { ...op, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" } },
-    other: { ...op, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" } },
-    person: { ...op, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" }, code: false },
-    asks: { ...op, target: "folder", destructive: false, idempotency: "none", policy: { ask: "app_asks" } },
+    write: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    other: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    person: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { silent: "shared" }, code: false },
+    asks: { ...actionOp, target: "folder", destructive: false, idempotency: "none", policy: { ask: "app_asks" } },
   },
 });
 const baseEntry: CapabilityRegistryEntry = {
@@ -183,6 +198,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     setSystemTime(now);
     database = await useFreshDatabase("code_bridge_c4");
     await migrateAuth();
+    await migrateRailPreferences();
+    await migrateRailShortcuts();
     await migrateAudit();
     await migrateSettings();
     await migrateAppDomains();
@@ -252,7 +269,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     };
     const [version] = await sql<
       { id: string }[]
-    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by) VALUES(${codeId},1,${JSON.stringify(files)}::jsonb,${bundle},${checked.hashes.source},${checked.hashes.bundle},${JSON.stringify(checked)}::jsonb,7,7,${userId}::uuid) RETURNING id`;
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by) VALUES(${codeId},1,${JSON.stringify(files)}::text::jsonb,${bundle},${checked.hashes.source},${checked.hashes.bundle},${JSON.stringify(checked)}::text::jsonb,7,7,${userId}::uuid) RETURNING id`;
     await sql`UPDATE code.codes SET active_version_id=${version!.id}::uuid WHERE id=${codeId}`;
     const binding = {
       codeId,
@@ -264,7 +281,11 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       comparisonSourceHash: null,
       comparisonBundleHash: null,
     };
-    await sql`INSERT INTO code.version_submissions(code_id,version_id,binding) VALUES(${codeId},${version!.id}::uuid,${JSON.stringify(binding)}::jsonb)`;
+    await sql`INSERT INTO code.version_submissions(code_id,version_id,binding) VALUES(${codeId},${version!.id}::uuid,${JSON.stringify(binding)}::text::jsonb)`;
+    const [stored] = await sql`SELECT jsonb_typeof(v.source_files) AS source_kind,jsonb_typeof(v.manifest) AS manifest_kind,
+      jsonb_typeof(s.binding) AS binding_kind FROM code.versions v JOIN code.version_submissions s ON s.version_id=v.id
+      WHERE v.id=${version!.id}::uuid`;
+    expect(stored).toMatchObject({ source_kind: "object", manifest_kind: "object", binding_kind: "object" });
     const [run] = await sql<
       { id: string }[]
     >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit) VALUES(${codeId},${version!.id}::uuid,'manual','weekly','running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;

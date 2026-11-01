@@ -39,8 +39,6 @@ type Group = {
 };
 const CallSchema = schema.object({ runId: schema.string(), operation: schema.string().min(1), input: schema.json() }).strict();
 
-// Never reuse identities within this supervisor, including across engine instances.
-
 /** One workerd process per organization and trust tier, independent of the number of replicas. */
 export class WorkerdEngine implements RunnerEngine {
   #loaded = new Map<string, Loaded>();

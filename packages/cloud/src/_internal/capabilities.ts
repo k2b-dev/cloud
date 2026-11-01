@@ -11,6 +11,7 @@ import {
   CapabilitySubscriptionManifestSchema,
 } from "../contracts/capabilities";
 import { RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "../contracts/resource-pages";
+import { sql } from "../runtime/clients";
 import { hasOAuthScope } from "../server/oauth-scope";
 import { capabilityMessages } from "../shared/capability-messages";
 import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
@@ -93,7 +94,8 @@ export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): 
 export const isPersonVisibleCapabilityAction = (action: CapabilityActionManifest): boolean => !action.localId.startsWith("code.access.");
 
 type JsonSchema = Record<string, unknown>;
-const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
+/** Stays below the 512 KiB registry value limit (`CAPABILITY_REGISTRY_CONFIG`), which also holds the record around the manifest. */
+const MAX_CAPABILITY_MANIFEST_BYTES = 384 * 1024;
 
 /**
  * The producer side of the shared manifest shape: an app registers exactly the fields and entries its
@@ -152,6 +154,7 @@ const QUERY_FIELDS = {
   openWorld: true,
   stream: true,
   universalSearch: true,
+  codeResourceTitle: true,
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
@@ -1917,6 +1920,39 @@ export const invokeCompiledCapability = async (params: {
   // cross into application code for the first time with an aborted invocation.
   if (context.signal.aborted) return cancelledInvocation(context.locale);
   try {
+    if (
+      context.actor.kind === "service_account" &&
+      context.actor.serviceAccount.kind === "code" &&
+      context.actor.delegation?.workloadType === "code.version"
+    ) {
+      for (const ref of [context.target, ...Object.values(context.refs ?? {})]) {
+        if (!ref) continue;
+        const localType = ref.type.slice(params.compiled.manifest.appId.length + 1);
+        if (!params.compiled.manifest.code?.access.types.includes(localType)) continue;
+        const type = params.compiled.manifest.types.find((type) => type.localId === localType);
+        const reader = type?.reader && params.compiled.queries.get(type.reader);
+        if (!reader || !reader.definition.codeResourceTitle)
+          return {
+            ok: false,
+            error: { code: "CODE_RESOURCE_UNAVAILABLE", message: capabilityMessages(context.locale).resourceCheckUnavailable, status: 503 },
+          };
+        const title = await sql.begin(async (tx) => {
+          await tx`SET TRANSACTION READ ONLY`;
+          return z
+            .string()
+            .min(1)
+            .max(500)
+            .nullable()
+            .parse(await reader.definition.codeResourceTitle!(tx, ref.id));
+        });
+        if (title === null)
+          return {
+            ok: false,
+            error: { code: "CODE_TARGET_DELETED", message: capabilityMessages(context.locale).codeTargetDeleted, status: 404 },
+          };
+      }
+    }
+    if (context.signal.aborted) return cancelledInvocation(context.locale);
     let invoked: CapabilityInvocationResult<unknown>;
     if (isAppCapabilityContext(context)) {
       const definition = operation.definition;
