@@ -322,6 +322,86 @@ combines failures.
 Background frameworks may also provide leases and retry. Follow their shutdown
 contract. See [Lifecycle background work](/en/docs/automation/lifecycle-background-work).
 
+## Upgrade or restart Mail with sends queued
+
+You do not need to empty Mail's send queue before a normal update. Waiting sends,
+their frozen content, undo deadlines, and delivery state remain in Postgres;
+restarting a Mail process does not discard them. Preserve Postgres, NATS and the
+configured message storage, and follow the release's schema compatibility rules.
+An update that forbids mixed Mail versions still needs a coordinated stop/start.
+
+Use graceful termination and allow both the HTTP drain and the subsequent worker
+drain described above. Mail stops taking new send jobs and lets accepted work
+finish within the worker drain budget. A forced kill, or a send that outlasts the worker drain, can leave delivery
+unclear even though the send record survives. If you need every current SMTP outcome to
+be known before stopping, stop submitting sends and wait for in-flight work to
+finish; an empty waiting list alone does not prove this.
+
+### What happens to each send
+
+The states below are outbox states. The associated command has its own state,
+which `cld mail command get <command-id>` reports.
+
+| Send at shutdown | What happens after restart | Delivery and duplicate risk |
+| --- | --- | --- |
+| Waiting, not yet claimed (`scheduled`) | It resumes when due. Startup and a once-per-minute recovery scan submit due sends, up to 500 per scan. Queue and provider contention can add delay. | The queued send is retained; recovery does not create a second send. |
+| Still inside Undo (`undo_window`) | The original deadline continues during downtime; it does not restart. Delivery waits for both the undo deadline and dispatch time. Immediate sends with Undo have an additional 10-second dispatch grace. | It remains unsent while Undo is open. If the deadline passes while Mail is stopped, it becomes eligible after restart. |
+| Claimed, before SMTP (`sending`) | A caught failure before the provider effect starts can restore the unstarted claim without using an attempt. A crash leaves it executing until its last heartbeat is more than 10 minutes old; recovery then queues a retry, or returns it to Drafts as `failed` if its five-attempt budget is exhausted. | Nothing was submitted by that attempt. Crash recovery uses an attempt and adds retry backoff, so repeated interrupted upgrades can exhaust the budget. |
+| SMTP in flight (`sending`) | It may finish during the drain. If the process disappears after recording that SMTP may start, stale recovery changes it to `unknown` and its command to `ambiguous`, then checks provider evidence. This also covers a crash just before SMTP actually starts. | It may have been accepted, or may never have left Mail. Mail does not automatically resend an unclear send. |
+| SMTP accepted, Sent copy pending (`sent_sync_pending`, or a stopped copy worker in `accepted`) | Mail retries the Sent copy, not SMTP. A stale `accepted` copy is recovered after 10 minutes; normally copy retries use backoff, and the minute scan also finds pending copies. Exhaustion becomes `needs_attention`. | Recipients were already accepted by SMTP. A missing Sent copy does not mean delivery failed; restarting does not send it again. |
+| Outcome already unclear (`unknown`) | Mail checks the saved SMTP answer and looks for the stable Message-ID in Sent. Evidence settles it as accepted; otherwise bounded checks end in `needs_attention`. | No automatic resend. Without evidence, delivery remains unproven and may require operator action. |
+
+These are recovery intervals, not a delivery deadline. A crashed job can retain
+its broker claim for the remainder of a four-minute lease, and its provider
+mailbox lock for the remainder of five minutes. The ten-minute stale threshold
+runs from the last worker heartbeat, not from startup; recovery runs at startup
+and once a minute. Pre-SMTP crash retries then wait 30, 60, 120 or 240 seconds
+according to the attempt already used. A backlog, unavailable provider or stopped
+worker can extend every delay. Sent-copy retries and unknown-outcome checks share
+the send's bounded attempt budget; they do not get five new attempts on restart.
+
+### Check delivery after the update
+
+Record the send command IDs from the submitting CLI or script. After Mail is
+ready, inspect the mailbox and any commands that were executing before shutdown:
+
+```bash
+cld --json mail operator status
+cld --json mail command get <command-id>
+```
+
+Mailbox administrators can read outbox counts under `queues.outbox` and the
+commands that need attention under `attentionCommands`. Waiting sends should
+resume; `sending` left over from a hard stop may remain until stale recovery.
+Check again after the ten-minute heartbeat threshold, the next recovery scan
+and any retry backoff, allowing for queue contention. Investigate persistent
+`failed`, `ambiguous` or `needs_attention` commands and their error messages.
+`WORKER_LEASE_EXPIRED` identifies an interrupted worker; `SENT_COPY_LEASE_EXPIRED`
+or `SENT_APPEND_FAILED` identifies copy work, not another SMTP delivery attempt.
+Partial SMTP acceptance also needs attention: some recipients may already have
+the message, regardless of whether its Sent copy is present.
+
+For an unclear send, check the provider's Sent folder and SMTP logs for its
+Message-ID before deciding to send again. An eligible command can request an
+operator check:
+
+```bash
+cld mail operator run reconcile --command <command-id> --wait
+```
+
+This checks evidence; it does not resend. The retry operator action does not
+retry failed sends. A send that failed before SMTP can be edited and sent
+again from Drafts after its error is resolved.
+
+There is no exactly-once SMTP guarantee: the server can accept a message just
+before Mail loses the connection or stops, before Mail records the answer. Mail
+preserves that uncertainty instead of automatically repeating delivery. Sending
+a new message manually while the original outcome is unknown can deliver it
+twice; a stable Message-ID is evidence for reconciliation, not a promise that
+SMTP deduplicates. Hold off on a manual resend until you have checked that
+outcome. This uncertainty is a reason to allow graceful draining and inspect
+interrupted sends, not to hold back an ordinary compatible update indefinitely.
+
 ## Set the termination window
 
 The process exits after lifecycle shutdown finishes. Give the container enough

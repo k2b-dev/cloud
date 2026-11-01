@@ -38,14 +38,16 @@ To update, add `expectedRevision` from `get` to the JSON and pass
 same operation; receipts last 24 hours. A revision conflict means reread
 before replacing the current dashboard.
 
-Panels can be `number`, `line`, `bar`, `table`, or `funnel`. Set `columns` to
+Panels can be `number`, `line`, `bar`, `table`, `funnel`, or `map`. Set `columns` to
 the output names the panel displays. Charts need `x`; `line` uses a DateTime
 column, while `bar` and `funnel` use categories. Optional `series` separates
 line or bar groups. A number needs one numeric value column. Without `x`, it
 accepts at most one aggregate row; with a DateTime `x`, it shows the last
 value and up to 480 trend points. Optional String columns `unit`, `detail`,
 and `detailTone` provide presentation. A funnel needs one category and one
-nonnegative value column. `unit`,
+nonnegative value column. A map needs `x` with an ISO 3166-1 alpha-2 country
+code and one nonnegative value column; rows with a null or empty country stay
+off the map. Use `"width": "full"` so that the map and its list have room. `unit`,
 `threshold`, `section`, and `width` (`third`, `half`, `full`) control display.
 Panels in a named section share optional `sectionIcon` (for example
 `ti ti-router`), `sectionDescription` (source and cadence), and `sectionColor`

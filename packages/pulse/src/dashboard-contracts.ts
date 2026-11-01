@@ -33,11 +33,11 @@ const DashboardPanelFields = z
       .regex(/^#[0-9a-fA-F]{6}$/)
       .optional()
       .describe("Section icon tint as a six-digit hex color."),
-    kind: z.enum(["number", "line", "bar", "table", "funnel"]).describe("How to display the selected SQL columns."),
+    kind: z.enum(["number", "line", "bar", "table", "funnel", "map"]).describe("How to display the selected SQL columns."),
     sql: z.string().describe("Read-only SQL; :from, :to and :bucket follow the dashboard range."),
     params: z.record(z.string(), z.string()).default({}).describe("Values for other named SQL parameters; base_tz is reserved."),
     columns: z.array(Column).min(1).max(32).describe("Exact output columns to display, in order."),
-    x: Column.optional().describe("Time or category column, included in columns."),
+    x: Column.optional().describe("Time, category or, for a map, ISO 3166-1 alpha-2 country column, included in columns."),
     series: Column.optional().describe("Column that splits line or bar values into series."),
     unit: z.string().max(32).default("").describe("Display unit for numeric values."),
     threshold: z.number().finite().optional().describe("Optional horizontal reference value."),
@@ -51,7 +51,7 @@ export const DashboardPanelSchema = DashboardPanelFields.superRefine((panel, con
   for (const key of ["x", "series"] as const)
     if (panel[key] && !panel.columns.includes(panel[key]))
       context.addIssue({ code: "custom", path: [key], message: "The column must be included in columns" });
-  if (["line", "bar", "funnel"].includes(panel.kind) && !panel.x)
+  if (["line", "bar", "funnel", "map"].includes(panel.kind) && !panel.x)
     context.addIssue({ code: "custom", path: ["x"], message: "Choose the time or category column" });
   const values = panel.columns.filter(
     (column) =>
@@ -65,6 +65,8 @@ export const DashboardPanelSchema = DashboardPanelFields.superRefine((panel, con
     context.addIssue({ code: "custom", path: ["columns"], message: "A number panel needs exactly one value column" });
   if (panel.kind === "funnel" && (values.length !== 1 || panel.series))
     context.addIssue({ code: "custom", path: ["columns"], message: "A funnel needs one category and one value column" });
+  if (panel.kind === "map" && (values.length !== 1 || panel.series))
+    context.addIssue({ code: "custom", path: ["columns"], message: "A map needs one country and one value column" });
   try {
     const params = { ...panel.params };
     for (const name of sqlParameterNames(panel.sql)) {
