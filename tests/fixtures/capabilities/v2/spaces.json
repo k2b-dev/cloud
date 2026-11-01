@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "spaces",
-  "manifestHash": "e6a482312ef24fa85261c1f6766726899311a9f7d75c0655823bd7422e263959",
+  "manifestHash": "3edcdf540261c0716ae9f2ff5902832be4cd0bcc591b68cb31dfb0b1d4817341",
   "types": [
     {
       "localId": "comment",
@@ -6480,15 +6480,15 @@
     {
       "localId": "task.create",
       "title": "Create task",
-      "description": "Create one task in an explicitly selected writable Space and column.",
+      "description": "Create one task in an explicitly selected writable Space. Without columnId it goes to the Space's first open column, the first one in board order that is not marked done; name a column only when the user asks for one. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "columnId": {
+            "description": "Optional target column ID returned by Read space. When omitted, the task goes to the Space's first open column, the first one in board order that is not marked done.",
             "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Target column ID returned by Read space for the selected Space."
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "title": {
             "type": "string",
@@ -6586,7 +6586,7 @@
             }
           }
         },
-        "required": ["columnId", "title"],
+        "required": ["title"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6856,7 +6856,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "5ca0e785e9ff76d0c5cfa004a9000970dc852bb2de3d0ab0e0650fb13b2d1f6b",
+      "schemaHash": "da73d03f976adb5fd49f10227e1c6f722ac4dba3e66a19a35f4e5823443287db",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",

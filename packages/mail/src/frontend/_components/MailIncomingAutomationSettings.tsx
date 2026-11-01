@@ -1998,7 +1998,7 @@ export default function MailIncomingAutomationSettings(props: {
         renderCell={({ row, col, render }) => {
           if (col.id === "name" && row.authorizationState === "needs_attention") {
             return (
-              <div class="space-y-1">
+              <div class="max-w-64 space-y-1 whitespace-normal">
                 <span>{row.name}</span>
                 <StatusBadge tone="warning" label={messages().automationNeedsAttention} />
                 <p class="text-dimmed">{messages().automationTargetConfirmation}</p>

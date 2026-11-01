@@ -30,6 +30,9 @@ import {
   releaseCapabilityClaim,
   resolveCapabilityClaim,
 } from "../capabilities/executions";
+import { type CodeBridgeHost, CodeBridgeRefusal } from "../code/bridge-contract";
+import { type CodeRunTokenVerifyOptions, verifyCodeRunToken } from "../code/run-token";
+import { RUNNER_PATHS, RunnerCallRequestSchema } from "../code/runner-protocol";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
@@ -48,6 +51,7 @@ import {
   type CapabilityOrigin,
   capabilityActionPolicy,
   capabilityResultJsonSchema,
+  NormalizedCapabilityCallSchema,
 } from "../contracts/capabilities";
 import { CapabilityStreamSchema } from "../contracts/capability-streams";
 import { CommandLinkSchema, CommandRequestSchema } from "../contracts/commands";
@@ -88,6 +92,7 @@ import { withMandateIssueAuthority } from "../services/mandates";
 import * as settings from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
+import { authenticateSignedAppRequest } from "./authenticate-app-request";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
 // Approved reader-check budget, shared across targets for each calling application.
@@ -289,6 +294,8 @@ const capabilityJsonResponse = (body: unknown, status: number): Response => {
 export type CapabilityDispatchParams = {
   /** Explicit Core activation/rights-editor admission. Never populated by generic API, AI, MCP or Code routes. */
   codeAccess?: "set" | "list" | "rm";
+  /** Set only by the verified runner bridge. Generic mandate brokers cannot invoke Code versions. */
+  codeRun?: true;
   /** Trusted Core continuation binding; never read from client headers. */
   continuation?: string;
   request: Request;
@@ -546,7 +553,7 @@ const runCapabilityDispatch = async (
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
   const mandate = params.mandate;
   const lease: NestedInvocationLease | undefined =
-    !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn)
+    !params.codeRun && !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn)
       ? {
           appId: params.appId,
           deadline: Math.min(
@@ -568,6 +575,7 @@ const runCapabilityDispatch = async (
     return signed;
   };
   let headers: Headers;
+  let codeBridgeRequired = false;
   try {
     headers = mandate
       ? await (async () => {
@@ -592,6 +600,10 @@ const runCapabilityDispatch = async (
                   },
                   async (mandateAuthority) => {
                     deadline.check();
+                    if (mandateAuthority.workloadType === "code.version" && !params.codeRun) {
+                      codeBridgeRequired = true;
+                      throw new Error("Code version invocations require the runner bridge");
+                    }
                     observed.subject = mandateAuthority.subject;
                     return (params.dependencies?.signInvocation ?? signInvocationToken)(
                       {
@@ -620,6 +632,7 @@ const runCapabilityDispatch = async (
             ),
           );
           if (!issued.ok) {
+            if (codeBridgeRequired) throw new MandateDispatchError(403);
             if (issued.error.code === "INTERNAL") throw new Error("Mandate invocation issuance failed");
             throw new MandateDispatchError(issued.error.code === "CONFLICT" ? 409 : 403);
           }
@@ -744,6 +757,8 @@ const runCapabilityDispatch = async (
       );
       return failure;
     }
+    if (error instanceof CodeBridgeRefusal)
+      return errorResponse(error.code, "Code call refused", error.status === 200 ? 403 : error.status);
     console.error("[capabilities] Invocation issuance failed", { appId: params.appId, operation: invocationOperation });
     const failure = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.issuanceFailed, 500, { retrySafe: true });
     return failure;
@@ -1374,3 +1389,138 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
 };
 
 export type CapabilityApiType = ReturnType<typeof createCapabilityRoutes>;
+
+/** Dependencies for the private runner bridge. Production uses the shared signed-app transport seam. */
+export type CodeRunnerDispatchDependencies = {
+  host: CodeBridgeHost;
+  dispatch?: CapabilityDispatchDependencies;
+  appProof?: Parameters<typeof authenticateSignedAppRequest>[2];
+  token?: CodeRunTokenVerifyOptions;
+  /** Installation-owned public and internal origins, including registered application origins. */
+  ownOrigins: () => Promise<readonly string[]>;
+};
+
+const codeBridgeError = (code: string, status = 200) =>
+  Response.json({ ok: false, error: { code } }, { status, headers: { "Cache-Control": "no-store" } });
+const CodeSdkInvocationSchema = z
+  .object({
+    call: NormalizedCapabilityCallSchema,
+    metadata: z.object({ idempotencyKey: CapabilityIdempotencyKeySchema.optional() }).strict(),
+  })
+  .strict();
+/** Exact origins include scheme and effective port. Invalid/non-HTTPS URLs are never eligible for Code HTTP. */
+export const codeHttpOriginAllowed = (url: string, ownOrigins: readonly string[]): boolean => {
+  try {
+    const canonical = (value: string) => {
+      const parsed = new URL(value);
+      parsed.hostname = parsed.hostname.replace(/\.+$/, "");
+      return parsed;
+    };
+    const target = canonical(url);
+    return (
+      target.protocol === "https:" &&
+      !target.username &&
+      !target.password &&
+      !ownOrigins.some((origin) => canonical(origin).origin === target.origin)
+    );
+  } catch {
+    return false;
+  }
+};
+/**
+ * Transport ingress for C4/C13. App proof authenticates the supervisor; the separate Core token
+ * identifies its attempt. Neither is accepted alone, and client headers never supply authority.
+ */
+export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDependencies) =>
+  new Hono().post(RUNNER_PATHS.call, async (c) => {
+    c.header("Cache-Control", "no-store");
+    // A runner key is shared by the fleet. Keep unsigned ingress protection, but
+    // authenticated call admission belongs to the durable per-run/per-Code budgets.
+    const signed = await authenticateSignedAppRequest(c, "identity:invoke", {
+      admit: async (keyId, appId) =>
+        appId === "runner"
+          ? { limited: false, remaining: 0, resetIn: 0 }
+          : ratelimit({ id: "app-bootstrap-key", limit: await bootstrapRateLimit() }).check(keyId),
+      ...dependencies.appProof,
+    });
+    if (signed instanceof Response) return signed;
+    if (signed.appId !== "runner") return codeBridgeError("code_runner_required", 403);
+    try {
+      const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES, c.req.raw.signal);
+      const parsed = RunnerCallRequestSchema.safeParse(body.ok ? body.data : null);
+      if (!parsed.success) return codeBridgeError("code_invalid_call", 400);
+      const request = parsed.data;
+      const claims = await verifyCodeRunToken(request.token, dependencies.token);
+      if (!claims) return codeBridgeError("code_invalid_token", 403);
+      if (claims.runId !== request.runId || claims.generation !== request.generation) return codeBridgeError("runner_lease_lost", 409);
+      // C11 supplies HTTP execution; even unsupported HTTP calls retain fencing and observations.
+      if (request.operation === "http.fetch") {
+        return await dependencies.host.withCall(
+          {
+            claims,
+            kind: "internet",
+            call: {
+              capability: "http.fetch",
+              target: null,
+              refs: {},
+              input: request.input,
+            },
+          },
+          async () => {
+            const http = z.object({ url: z.string() }).loose().safeParse(request.input);
+            if (!http.success || !codeHttpOriginAllowed(http.data.url, [new URL(c.req.url).origin, ...(await dependencies.ownOrigins())]))
+              return codeBridgeError("code_http_origin_forbidden");
+            return codeBridgeError("code_operation_not_found");
+          },
+        );
+      }
+      const sdk = CodeSdkInvocationSchema.safeParse(request.input);
+      if (!sdk.success || request.operation !== sdk.data.call.capability) return codeBridgeError("code_invalid_call");
+      const split = request.operation.indexOf(".");
+      const appId = request.operation.slice(0, split);
+      const capabilityId = request.operation.slice(split + 1);
+      const entry = await (dependencies.dispatch?.getCapability ?? getCapability)(appId);
+      const query = entry?.manifest.queries.find((op) => op.localId === capabilityId);
+      const action = entry?.manifest.actions.find((op) => op.localId === capabilityId);
+      const operation = query ?? action;
+      const kind = query ? "query" : "action";
+      const policy = entry && kind === "action" ? capabilityActionPolicy(entry.manifest, capabilityId) : undefined;
+      return await dependencies.host.withCall({ claims, call: sdk.data.call, kind, policy }, async (authority) => {
+        if (!entry || !operation) return codeBridgeError("code_operation_not_found");
+        if (capabilityId.startsWith("code.access.")) return codeBridgeError("code_access_forbidden");
+        if (operation.stream) return codeBridgeError("code_stream_forbidden");
+        if ("code" in operation && operation.code === false) return codeBridgeError("code_disabled");
+        if (("unattended" in operation && operation.unattended === false) || ("appOnly" in operation && operation.appOnly))
+          return codeBridgeError("code_unattended_forbidden");
+        const headers = new Headers({ "Content-Type": "application/json" });
+        if (sdk.data.metadata.idempotencyKey) headers.set("Idempotency-Key", sdk.data.metadata.idempotencyKey);
+        const response = await dispatchCapability({
+          request: new Request(c.req.url, { method: "POST", headers, signal: c.req.raw.signal }),
+          kind: kind === "query" ? "queries" : "actions",
+          appId,
+          capabilityId,
+          target: sdk.data.call.target ?? undefined,
+          refs: sdk.data.call.refs,
+          input: sdk.data.call.input,
+          origin: "app",
+          codeRun: true,
+          callingAppId: "core",
+          deadline: claims.exp * 1000,
+          mandate: { mandateId: authority.mandateId, mandateRevision: authority.mandateRevision, ownerAppId: "core" },
+          dependencies: {
+            ...dependencies.dispatch,
+            getCapability: async (id) => (id === appId ? entry : null),
+            withMandateIssueAuthority: authority.withMandateIssueAuthority,
+          },
+        });
+        const result = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES, c.req.raw.signal);
+        const payload = z.object({ data: z.json() }).safeParse(result.ok ? result.data : null);
+        if (response.ok && payload.success) return Response.json({ ok: true, data: payload.data.data });
+        const failure = z.object({ code: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,127}$/) }).safeParse(result.ok ? result.data : null);
+        return codeBridgeError(failure.success ? failure.data.code.toLowerCase() : "code_call_failed");
+      });
+    } catch (error) {
+      if (error instanceof CodeBridgeRefusal) return codeBridgeError(error.code, error.status);
+      return codeBridgeError("code_bridge_unavailable", 503);
+    }
+  });

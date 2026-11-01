@@ -3,7 +3,7 @@ import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
-import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema, CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
 import { approvalArgsDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
@@ -15,12 +15,13 @@ import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { addCodeShare, codeBundleHash, codeSourceHash, findCode, readCode, readCodeVersion } from "./store";
+import { addCodeShare, codeBundleHash, codeSourceHash, createCode, findCode, readCode, readCodeVersion } from "./store";
 import type { CodeCheckedVersionManifest, CodeVersionSubmission } from "./version-contracts";
 import { codeVersionDiff } from "./version-diff";
 import {
@@ -30,7 +31,9 @@ import {
   readCodeVersionDiff,
   recordCodeVersionBaseline,
   requireCodeVersionApproval,
+  reviewCodeExecutionChange,
   reviewCodeVersionDecision,
+  reviewCodeVersionSubmission,
   setCodePaused,
   startCodeVersionApprovals,
   submitCodeVersion,
@@ -44,14 +47,33 @@ const operation = {
   data: z.object({}).strict(),
   run: () => ({ ok: true as const, data: { data: {} } }),
 };
+const action = {
+  ...operation,
+  review: () => ({
+    ok: true as const,
+    data: {
+      locale: "en",
+      slots: {},
+      sentence: { action: "Change fixture", running: "Changing fixture", done: "Changed fixture", confirm: "Confirm", decline: "Cancel" },
+    },
+  }),
+};
 const catalog = compileCapabilityManifest("example", {
   protocolVersion: 2,
-  queries: { "item.read": operation },
+  types: { item: { title: "Fixture item", description: "Fixture owner.", reader: "item.read" } },
+  queries: {
+    "item.read": {
+      ...operation,
+      input: z.object({ id: z.string().describe("Fixture item ID.") }).strict(),
+      data: z.object({ view: CloudResourceReaderViewSchema }).strict(),
+      run: () => ({ ok: true as const, data: { data: { view: { title: "Fixture item", permission: "admin" as const } } } }),
+    },
+  },
   actions: {
-    "item.change": { ...operation, destructive: false, idempotency: "none", policy: { silent: "shared" } },
-    "item.person_only": { ...operation, destructive: false, idempotency: "none", code: false, policy: { silent: "shared" } },
-    "item.delete": { ...operation, destructive: true, idempotency: "none", policy: { ask: "deletes" } },
-    "item.send": { ...operation, destructive: false, idempotency: "none", policy: { ask: "sends" } },
+    "item.change": { ...action, destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    "item.person_only": { ...action, destructive: false, idempotency: "none", code: false, policy: { silent: "shared" } },
+    "item.delete": { ...action, destructive: true, idempotency: "required", policy: { ask: "deletes" } },
+    "item.send": { ...action, destructive: false, idempotency: "required", policy: { ask: "sends" } },
   },
 });
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -111,8 +133,8 @@ const input = (code: Code, source: string, baseVersionId: string | null = null, 
   return { codeId: code.id, sourceFiles, bundle, manifest, baseVersionId };
 };
 
+let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
 databaseSuite()("C8 immutable versions, comparisons and platform decisions", () => {
-  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let dispose: (() => void) | undefined;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   let catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
@@ -135,6 +157,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_versions");
     await migrateAuth();
+    await migratePwa();
     await migrateAppApproval();
     await migrateSettings();
     await migrateAudit();
@@ -144,7 +167,9 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await migrateVersions();
     for (const id of [authorId, reviewerId, strangerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',${id !== strangerId})`;
-    await sql`INSERT INTO auth.service_accounts(id,name,kind,scopes,created_by) VALUES(${machineId}::uuid,'admin-machine','standalone',ARRAY['admin'],${authorId}::uuid)`;
+    await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${machineId}::uuid,'admin-machine','standalone',${authorId}::uuid)`;
+    await sql`INSERT INTO auth.service_account_credentials(service_account_id,name,token_prefix,secret_hash,scopes)
+      VALUES(${machineId}::uuid,'admin-token','c8-admin-machine','unused',ARRAY['admin'])`;
     settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (key) => {
       const definition = Object.entries(CODE_SETTINGS).find(([name]) => name === key)?.[1];
       if (!definition) throw new Error(`Unexpected setting ${key}`);
@@ -170,7 +195,6 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     dispose?.();
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
-    await database?.drop();
     setSystemTime();
   });
 
@@ -207,6 +231,66 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await migrateVersions();
     expect(await sql`SELECT * FROM code.version_submissions WHERE version_id=${submission.version.id}::uuid`).toEqual(before);
     expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${machineId}::uuid`).toHaveLength(1);
+  });
+  test("submission, execution and decision reviews identify exact targets without mutating state", async () => {
+    const code = await newCode();
+    await sql`UPDATE code.codes SET title=${"🧑‍💻 Weekly\nreport\u00ad"} WHERE id=${code.id}`;
+    const reviewTitle = "🧑 💻 Weekly report";
+    const draft = input(code, "review source", null, ["read"]);
+    for (const locale of ["en", "de"]) {
+      const ctx = { ...author, locale };
+      const review = await reviewCodeVersionSubmission(draft, ctx);
+      expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
+      expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
+      expect(review).toEqual(await reviewCodeVersionSubmission(draft, ctx));
+      expect(review.content?.kind).toBe("page");
+      if (review.content?.kind === "page")
+        expect(JSON.parse(review.content.body)).toMatchObject({ codeId: code.id, manifest: draft.manifest, bundle: draft.bundle });
+    }
+    expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
+    const submitted = await submitCodeVersion(draft, author);
+    await activate(code, submitted);
+    const active = await findCode(code.id);
+    for (const locale of ["en", "de"]) {
+      for (const paused of [true, false]) {
+        const ctx = { ...author, locale };
+        const review = await reviewCodeExecutionChange(code.id, paused, ctx);
+        expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
+        expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
+        expect(review).toEqual(await reviewCodeExecutionChange(code.id, paused, ctx));
+        expect(review.content?.kind).toBe("page");
+        if (review.content?.kind === "page")
+          expect(JSON.parse(review.content.body)).toMatchObject({
+            activeVersionId: submitted.version.id,
+            after: paused ? "paused" : "active",
+          });
+      }
+    }
+    expect(await findCode(code.id)).toEqual(active);
+    const pending = await submitCodeVersion(input(code, "second", submitted.version.id), author);
+    for (const approved of [true, false]) {
+      const review = await reviewCodeVersionDecision(pending.binding, approved, reviewer);
+      expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
+      expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
+      expect(review.slots.version).toEqual({ kind: "text", value: pending.version.id });
+    }
+    expect(await approvals.get(pending.approvalId!)).toMatchObject({ status: "pending" });
+    const reader = { ...author, authority: { ...author.authority, credentialKind: "oauth" as const, scopes: ["core:read"] } };
+    await expect(reviewCodeVersionSubmission(input(code, "third", pending.version.id), reader)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(reviewCodeExecutionChange(code.id, true, reader)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+  test("submission and decision bindings remain JSON objects in durable storage", async () => {
+    const code = await newCode();
+    const pending = await submitCodeVersion(input(code, "binding"), author);
+    const [submission] =
+      await sql`SELECT jsonb_typeof(binding) AS kind,binding FROM code.version_submissions WHERE version_id=${pending.version.id}::uuid`;
+    expect(submission).toEqual({ kind: "object", binding: pending.binding });
+    await decideCodeVersion(pending.binding, true, reviewer);
+    const [decision] =
+      await sql`SELECT jsonb_typeof(binding) AS kind,binding FROM code.version_decisions WHERE version_id=${pending.version.id}::uuid`;
+    expect(decision).toEqual({ kind: "object", binding: pending.binding });
   });
   test("pending approval leaves the old approved version running and the diff retains unchanged rows/files", async () => {
     const code = await newCode(),
@@ -355,8 +439,18 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     const next = await submitCodeVersion(input(code, "rejected", submission.version.id), author);
     expect((await decideCodeVersion(next.binding, false, reviewer)).status).toBe("rejected");
     expect(await sql<{ row: string }[]>`SELECT row FROM code.policy_coverage WHERE version_id=${next.version.id}::uuid`).toHaveLength(0);
-    expect(await sql`SELECT metadata FROM audit.events WHERE action='core.code.version.rejected' AND target_id=${code.id}`).toMatchObject([
-      { metadata: { event: "version.rejected", sole_admin: false } },
+    const rejectedEvents = await sql`SELECT metadata FROM audit.events WHERE action='core.code.version.rejected' AND target_id=${code.id}`;
+    expect(Array.from(rejectedEvents)).toEqual([
+      {
+        metadata: {
+          ...next.binding,
+          event: "version.rejected",
+          approvalId: next.approvalId,
+          sole_admin: false,
+          soleAdmin: false,
+          decidedVia: "web_session",
+        },
+      },
     ]);
     await expect(sql.begin((tx) => requireCodeVersionApproval(code, next.version.id, tx))).rejects.toMatchObject({
       code: "code_approval_revoked",
@@ -497,12 +591,26 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     draft.manifest.permissions[0]!.operation = "example.item.person_only";
     const personal = await submitCodeVersion(draft, author);
     expect(personal.status).toBe("pending");
-    await addCodeShare(code.id, { type: "user", userId: authorId }, "editor", author);
-    await sql`UPDATE code.codes SET owner_kind='resource',owner_user_id=NULL,owner_type='example.item',owner_id='item' WHERE id=${code.id}`;
-    const resource = input(code, "resource", personal.version.id);
-    resource.manifest.permissions[0]!.operation = "example.item.person_only";
-    await expect(submitCodeVersion(resource, author)).rejects.toMatchObject({ code: "code_manifest_invalid" });
-    expect(await approvals.get(personal.approvalId!)).toMatchObject({ status: "pending" });
+    const ownerReader = spyOn(provider, "invokeCapabilityWithDataSchema").mockResolvedValue({
+      ok: true,
+      data: { data: { view: { title: "Fixture item", permission: "admin" } } },
+    });
+    try {
+      const resourceCode = await createCode(
+        { owner: { kind: "resource", ref: { type: "example.item", id: "item" } }, title: "Resource Code" },
+        author,
+      );
+      const resource = input(resourceCode, "resource");
+      resource.manifest.permissions[0]!.operation = "example.item.person_only";
+      await expect(submitCodeVersion(resource, author)).rejects.toMatchObject({
+        code: "code_manifest_invalid",
+        message: "Manifest operation is unavailable to Code.",
+      });
+      expect(await sql`SELECT id FROM code.versions WHERE code_id=${resourceCode.id}`).toHaveLength(0);
+      expect(await approvals.get(personal.approvalId!)).toMatchObject({ status: "pending" });
+    } finally {
+      ownerReader.mockRestore();
+    }
   });
   test("catalog classifications cannot be understated and sends remain refused when omitted from policyRows", async () => {
     const code = await newCode();
@@ -635,4 +743,10 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     const phone: CodeContext = { authority: { ...author.authority, actor: { kind: "user", user: person(authorId), sessionKind: "app" } } };
     await expect(submitCodeVersion(input(code, "denied"), phone)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+});
+
+// Imported session-fixture cleanup runs at file scope, after the suite's hooks.
+// Keep its database alive until those session/signing-key deletes have finished.
+afterAll(async () => {
+  await database?.drop();
 });

@@ -144,7 +144,13 @@ export default ssr<AuthContext>(async (c) => {
     >
       <link rel="stylesheet" href={katexStylesHref} />
       <RememberNotebook notebookId={notebook.id} />
-      <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
+      {/* Write and Links draw no workspace head: their toolbar holds the navigation and Details buttons, and the note's
+          title is in the navigation. Read and version history have no toolbar and keep the head's buttons. */}
+      <AppWorkspace
+        mobileSurface="flush"
+        class="notebooks-workspace flex-1 min-h-0"
+        head={showsEditorToolbar || isGraphMode ? false : undefined}
+      >
         <NotebookCommands
           notebookId={notebook.id}
           notebookName={notebook.name}
@@ -152,7 +158,12 @@ export default ssr<AuthContext>(async (c) => {
           ownsSearchNavigation={!selectedNote || isVersionsMode || isGraphMode}
         />
         {/* Live changes reach the page through one workspace socket; a note connects its own only while it is edited. */}
-        <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} />
+        <WorkspaceEventBridge
+          notebookId={notebook.id}
+          appUrl={appUrl}
+          initialCursor={ctx.workspaceCursor}
+          initialNoteId={!isVersionsMode && !isGraphMode ? selectedNote?.id : null}
+        />
 
         {/* The writable editor is the one with the toolbar and its navigation toggle. */}
         <NotebookSidebar
@@ -187,7 +198,6 @@ export default ssr<AuthContext>(async (c) => {
                 view={data.graphView}
                 now={data.now}
                 timeZone={data.dateConfig.timeZone ?? "UTC"}
-                navigationHidden={ctx.navigationHidden}
               />
             ) : selectedNote ? (
               <div

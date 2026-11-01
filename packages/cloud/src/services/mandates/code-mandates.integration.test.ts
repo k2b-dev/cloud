@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import { suiteFor, useMigratedDatabase } from "../../../../../scripts/fixtures/test-infra";
-import { compileCapabilities, invokeCompiledCapability } from "../../_internal/capabilities";
+import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../../_internal/capabilities";
 import * as registry from "../../_internal/registry";
 import { aiChatTasks } from "../../ai/chat-tasks";
 import { aiConversations } from "../../ai/store";
@@ -54,7 +54,14 @@ suite("Code version and person routine target mandates", () => {
         destructive: false,
         openWorld: false,
         idempotency: "none",
-        approval: "none",
+        policy: { silent: "shared" },
+        review: async (_, context) =>
+          ok({
+            locale: "en",
+            sentence: { action: "Write folder", running: "Writing folder", done: "Wrote folder", confirm: "Write", decline: "Cancel" },
+            slots: {},
+            scope: `folder:${context.target!.id}`,
+          }),
         run: async (_, context) => {
           const permission = await getEffectivePermission({
             accessIds: accessByTarget.get(context.target!.id) ?? [],
@@ -121,7 +128,11 @@ suite("Code version and person routine target mandates", () => {
           signal: c.req.raw.signal,
         },
       });
-      return result.ok ? Response.json(result.data) : Response.json(result.error, { status: result.error.status });
+      const serialized = serializeCapabilityProviderResult(result, { nonIdempotentAction: true });
+      return new Response(serialized.body, {
+        status: serialized.status,
+        headers: { "content-type": "application/json" },
+      });
     },
   );
   const invoke = (mandate: { id: string; revision: number }, targetId: string) =>
@@ -131,6 +142,8 @@ suite("Code version and person routine target mandates", () => {
       appId: "demo",
       capabilityId: "write",
       origin: "app",
+      // Trusted Core admission; the runner bridge transport is covered by C4.
+      codeRun: mandate.id === codeMandate.id ? true : undefined,
       input: { title: "Example" },
       target: { type: "demo.folder", id: targetId },
       mandate: { mandateId: mandate.id, mandateRevision: mandate.revision, ownerAppId: "core" },
@@ -232,7 +245,9 @@ suite("Code version and person routine target mandates", () => {
     accessByTarget.set("a", [authenticated!.id]);
     const before = ran;
     try {
-      expect((await invoke(codeMandate, "a")).status).toBe(403);
+      const denied = await invoke(codeMandate, "a");
+      expect(denied.status).toBe(403);
+      expect(await denied.json()).toEqual({ code: "FORBIDDEN", message: "No resource access" });
       expect(ran).toBe(before);
     } finally {
       accessByTarget.set("a", [writeAccessId]);
@@ -308,7 +323,7 @@ suite("Code version and person routine target mandates", () => {
       kind: "action",
       input: call.input,
       call,
-      approval: "none",
+      policy: compiled.manifest.policies?.write,
     });
     await expect(
       aiChatTasks.authorizeCapability({
@@ -318,7 +333,7 @@ suite("Code version and person routine target mandates", () => {
         kind: "action",
         input: call.input,
         call: { ...call, target: { ...call.target, id: "b" } },
-        approval: "none",
+        policy: compiled.manifest.policies?.write,
       }),
     ).rejects.toMatchObject({ code: "MANDATE_POLICY_DENIED" });
     expect((await invoke(mandate, "a")).status).toBe(200);
@@ -326,6 +341,10 @@ suite("Code version and person routine target mandates", () => {
     expect((await invoke(mandate, "b")).status).toBe(403);
     expect(fetched).toBe(before);
     accessByTarget.set("a", [writeAccessId]);
-    expect((await invoke(mandate, "a")).status).toBe(403);
+    const beforeDenied = ran;
+    const denied = await invoke(mandate, "a");
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ code: "FORBIDDEN", message: "No resource access" });
+    expect(ran).toBe(beforeDenied);
   });
 });

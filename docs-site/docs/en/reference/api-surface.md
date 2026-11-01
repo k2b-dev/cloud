@@ -32,6 +32,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
 | `@k2b/cloud/app-proof` | Advanced, server-only | Sign each private Core transmission with `signAppProof`; [runner bridge contract](/en/docs/operations/code-runner#integrate-the-bridge) |
+| `@k2b/cloud/code/run-token` | Preview, platform-owned | Core-signed attempt tokens; [Code bridge](/en/docs/platform/code-bridge) |
 | `@k2b/cloud/code/runner` | Preview, portable | Strict runner protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
 | `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
@@ -682,3 +683,8 @@ Core owns `invokeCodeAccess`, `signCodeAccessProof`, `verifyCodeAccessProof`, `C
 `CodeAccessCleanupClaims`, `signCodeAccessList`, `verifyCodeAccessList` and
 `CodeAccessListClaims` from `@k2b/cloud/capabilities/server`. Target adapters
 do not issue proofs. See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
+
+Core activation services and status schemas are documented in
+[Code activation](/en/docs/platform/code-activation). These Core-owned services
+are consumed by the Code CLI, lifecycle, runner and resource UI slices; they are
+not application imports from the public platform package.

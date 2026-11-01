@@ -2,7 +2,7 @@
 title: Code policy
 navTitle: Code policy
 section: Platform services
-order: 961
+order: 569
 description: Set classification rules for Code, preview affected versions and understand policy pauses.
 tags: [code, administration, policy, permissions]
 updated: 2026-10-31

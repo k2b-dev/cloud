@@ -1,6 +1,6 @@
 import { createSettingsAPI } from "@k2b/cloud/services";
 
-/** Storage and execution budgets, adjustable in Administration › Code; all sizes are UTF-8 bytes. */
+/** Storage and execution budgets, adjustable in Administration › Code and with `cld admin settings apply`; all sizes are UTF-8 bytes. */
 export const CODE_SETTINGS = {
   "core.code.source_bytes": {
     kind: "number",
@@ -92,6 +92,25 @@ export const CODE_SETTINGS = {
         de: {
           label: "Brückenaufrufe je Lauf",
           description: "Maximale Brückenaufrufe je Versuch, einschließlich gespeicherter Capability-Aufrufe.",
+        },
+      },
+    },
+  },
+  "core.code.calls_per_second": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 1000,
+    default: 60,
+    label: "Bridge calls per second per Code",
+    description:
+      "Shared Valkey call rate per Code across all runners and Core instances; at most the full per-run call ceiling per second.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Brückenaufrufe je Sekunde und Code",
+          description:
+            "Gemeinsame Valkey-Aufrufrate je Code über alle Runner und Core-Instanzen; höchstens das vollständige Aufruflimit eines Laufs je Sekunde.",
         },
       },
     },

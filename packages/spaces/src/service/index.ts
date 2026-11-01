@@ -117,6 +117,7 @@ export const spacesService = {
       return paginateItems(filtered, config.pagination);
     },
     get: columns.get,
+    firstOpen: columns.firstOpen,
     create: columns.create,
     update: columns.update,
     remove: columns.remove,

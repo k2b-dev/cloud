@@ -2,6 +2,59 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 import { geoCapabilityPresentation } from "./geo-capability-presentation";
 
+const codePolicyDefinitionInput = {
+  revision: "Stand aus code.policy.read; veraltete Entwürfe werden abgelehnt.",
+  definition: "Vollständige neue Richtlinie mit Standard- und Gruppenregeln.",
+  "definition.preset": "Voreinstellung: off, admin, open oder custom für bearbeitete Regeln.",
+  "definition.rules": "Vollständige Standard- und Gruppenregeln; ausgelassene Gruppenregeln erben den Standard.",
+  "definition.rules[].groupId": "UUID der Gruppe oder null für den installationsweiten Standard.",
+  "definition.rules[].row": "Einstufung des Aufrufs, unabhängig von der Anwendung.",
+  "definition.rules[].value": "automatic führt automatisch aus, admin verlangt Admin-Freigabe, never verbietet.",
+};
+
+const codeIdInput = { codeId: "Stabile Code-ID aus der Code-Liste oder dem Lesen eines Codes." };
+const codeVersionInput = { ...codeIdInput, versionId: "UUID der unveränderlichen Version aus Einreichung oder Versionsliste." };
+const codeComparisonInput = {
+  comparisonVersionId: "UUID der genauen Vergleichsversion oder null für einen leeren Ausgangsstand.",
+};
+const codeVersionDecisionInput = {
+  ...codeVersionInput,
+  sourceHash: "Unveränderter SHA-256-Hash des geprüften Quelltexts aus dem Vergleich.",
+  bundleHash: "Unveränderter SHA-256-Hash des geprüften Bundles aus dem Vergleich.",
+  manifestHash: "Unveränderter SHA-256-Hash des gespeicherten Prüfmanifests.",
+  ...codeComparisonInput,
+  comparisonSourceHash: "Quelltext-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
+  comparisonBundleHash: "Bundle-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
+};
+const codeVersionSubmissionInput = {
+  ...codeIdInput,
+  sourceFiles: "Vollständige Zuordnung relativer Dateipfade zum genauen Quelltext aus der Prüfanfrage.",
+  bundle: "Genaues geprüftes UTF-8-ESM-Bundle; nicht umformatieren.",
+  manifest: "Vollständiger unveränderter Prüfbeleg mit ursprünglichem Einstieg und Richtlinien-Einstufungen.",
+  "manifest.version": "Formatversion des Prüfmanifests, derzeit 1.",
+  "manifest.entry": "Ursprünglicher Einstiegspfad der Prüfanfrage; Bestandteil des Quelltext-Hashes.",
+  "manifest.policyRows": "Eindeutige Einstufungen aller deklarierten Aufrufe sowie der KI- und Internetnutzung.",
+  "manifest.entrypoints": "Alle von der Prüfung erkannten ausführbaren Einstiegspunkte.",
+  "manifest.entrypoints[].kind": "Zeitgesteuerter oder manuell gestarteter Einstiegspunkt.",
+  "manifest.entrypoints[].entrypoint": "Benannter ESM-Export für die Ausführung.",
+  "manifest.entrypoints[].cron": "Zeitplan mit fünf Feldern oder null bei manueller Ausführung.",
+  "manifest.entrypoints[].file": "Relative Quelldatei mit dieser Deklaration.",
+  "manifest.entrypoints[].line": "Quelltextzeile, beginnend bei 1.",
+  "manifest.permissions": "Alle erkannten Operationen und Ziele mit ihren Quelltextstellen.",
+  "manifest.permissions[].operation": "Vollständige Operations-ID aus dem Capability-Katalog.",
+  "manifest.permissions[].target": "Genaues Operationsziel oder null bei einer anwendungsweiten Operation.",
+  "manifest.permissions[].target.type": "Vollständiger Ressourcentyp des Ziels.",
+  "manifest.permissions[].target.id": "Wörtliche Ziel-ID oder null bei einem dynamischen persönlichen Ziel.",
+  "manifest.permissions[].file": "Relative Quelldatei mit dieser Operation.",
+  "manifest.permissions[].line": "Quelltextzeile, beginnend bei 1.",
+  "manifest.ai": "Ob erkannte Aufrufe KI nutzen.",
+  "manifest.hashes": "Prüfsummen für Quelltext, erzeugtes SDK und genaues Bundle.",
+  "manifest.hashes.source": "SHA-256-Hash des Quelltexts aus der Prüfung.",
+  "manifest.hashes.sdk": "SHA-256-Hash des erzeugten SDK aus der Prüfung.",
+  "manifest.hashes.bundle": "SHA-256-Hash des genauen Bundles aus der Prüfung.",
+  baseVersionId: "UUID der zuletzt gespeicherten Version oder null bei der ersten Einreichung.",
+};
+
 export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
@@ -28,15 +81,27 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Vollständigen Code-Vergleich lesen",
           description:
             "Liest begrenzte Abschnitte des vollständigen CodeDiff-JSON zweier unveränderlicher Versionen. Vor der Anzeige vollständig zusammensetzen.",
+          input: {
+            ...codeVersionInput,
+            ...codeComparisonInput,
+            offset: "UTF-16-Position aus dem vorherigen Abschnitt; bei 0 beginnen.",
+            length: "Maximale UTF-16-Zeichen pro Abschnitt; höchstens 65536.",
+          },
         },
         "code.version.diff": {
           title: "Code-Version vergleichen",
           description:
             "Liest vollständige Dateizeilen gegen die letzte freigegebene oder eingeschaltete Version mit genauem Entscheidungsstand.",
+          input: codeVersionInput,
         },
         "code.version.list": {
           title: "Code-Versionen auflisten",
           description: "Liest Einreichungen und Freigabe-Belege einschließlich der Allein-Admin-Entscheidung.",
+          input: {
+            ...codeIdInput,
+            before: "Versionsnummer aus nextBefore, ausschließlich dieser Version.",
+            limit: "Maximale Anzahl von Einträgen auf dieser Seite; höchstens 50.",
+          },
         },
         "code.policy.read": {
           title: "Code-Richtlinie lesen",
@@ -45,28 +110,82 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "code.policy.effective": {
           title: "Wirksame Code-Richtlinie",
           description: "Ermittelt aktuelle Regeln je Einstufung für Besitzer oder Autor. Fremde Sichten erfordern Cloud-Administration.",
+          input: {
+            owner: "Genauer Code-Besitzer; ohne Angabe die aktuelle Person. Fremde Sichten erfordern Cloud-Administration.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+            "owner.ref.id": "Stabile Ressourcen-ID innerhalb der besitzenden Anwendung.",
+            "owner.appId": "Registrierte ID der besitzenden Anwendung.",
+            authorId: "UUID des Versionsautors für Ressourcen- oder Anwendungs-Code; nur für Cloud-Admins.",
+          },
         },
         "code.policy.preview": {
           title: "Code-Richtlinie prüfen",
           description: "Zeigt Anzahl und Seite betroffener aktiver Codes ohne Änderung. Nur für Cloud-Admins.",
+          input: {
+            ...codePolicyDefinitionInput,
+            cursor: "Letzte betroffene Code-ID aus nextCursor der vorherigen Seite.",
+            limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
+          },
         },
         "code.list": {
           title: "Code auflisten",
           description:
             "Listet eigenen und explizit geteilten Code; Cloud-Admins sehen allen. Für Zugriff als Besitzer-Admin den genauen Besitzer angeben. Dem Cursor auch bei leeren Seiten folgen.",
+          input: {
+            owner: "Nach einem genauen Code-Besitzer filtern.",
+            "owner.kind": "Art des Besitzers: person, resource oder app.",
+            "owner.userId": "UUID der besitzenden Person.",
+            "owner.ref": "Genaue Cloud-Ressource, der der Code gehört.",
+            "owner.ref.type": "Vollständiger Ressourcentyp der besitzenden Anwendung.",
+            "owner.ref.id": "Stabile Ressourcen-ID innerhalb der besitzenden Anwendung.",
+            "owner.appId": "Registrierte ID der besitzenden Anwendung.",
+            cursor: "Letzte Code-ID aus nextCursor der vorherigen Seite.",
+            limit: "Maximale Anzahl der auf dieser Seite geprüften Code-Kandidaten; höchstens 20.",
+          },
         },
-        "code.read": { title: "Code lesen", description: "Liest Besitzer, feste Code-ID und aktuelle Berechtigung." },
+        "code.read": {
+          title: "Code lesen",
+          description: "Liest Besitzer, feste Code-ID und aktuelle Berechtigung.",
+          input: { codeId: "Stabile Code-ID aus core.code.list oder core.code.read." },
+        },
         "code.version.read": {
           title: "Code-Version lesen",
           description: "Liest unveränderliche Versionen und Quelltext, Bundle oder Manifest in Teilen.",
+          input: {
+            codeId: "Stabile Code-ID aus core.code.list oder core.code.read.",
+            versionId: "UUID der unveränderlichen Version dieses Codes.",
+            content: "Zu lesenden Versionstext auswählen; ohne Angabe werden nur Metadaten geliefert.",
+            "content.kind": "Art des Versionstexts: source, bundle oder manifest.",
+            "content.path": "Relativer Quelltextpfad aus den Versionsmetadaten.",
+            offset: "Position in UTF-16-Codeeinheiten: nullbasiert oder nextOffset des vorherigen Abschnitts.",
+            length: "Gewünschte Anzahl an UTF-16-Codeeinheiten, höchstens 16.384; ein einzelnes Surrogatpaar kann zwei Einheiten belegen.",
+          },
         },
         "code.run.list": {
           title: "Code-Läufe auflisten",
           description: "Listet Lauf-Metadaten ohne Eingaben, Ausgaben oder Inhalte von Capability-Aufrufen.",
+          input: {
+            codeId: "Stabile Code-ID aus core.code.list oder core.code.read.",
+            cursor: "Undurchsichtiger Laufverlauf-Cursor aus der vorherigen Seite.",
+            limit: "Maximale Anzahl der Lauf-Metadaten auf dieser Seite; höchstens 50.",
+          },
         },
         "code.run.read": {
           title: "Code-Lauf lesen",
           description: "Liest einen Versuch. Bearbeiter sehen Eingaben, Ausgaben und Aufrufe in Reihenfolge, Leser nur Metadaten.",
+          input: {
+            codeId: "Stabile Code-ID aus core.code.list oder core.code.read.",
+            runId: "UUID eines Laufs dieses Codes.",
+            cursor: "Letzte Aufrufnummer aus nextCursor oder 0 für den ersten Aufruf.",
+            content: "Optional vollständige JSON-Inhalte einer großen Eingabe, Ausgabe, eines Aufrufs oder Ergebnisses auswählen.",
+            "content.kind": "Art des JSON-Inhalts: input, output, call oder result.",
+            "content.ordinal": "Aufrufnummer aus der Aufrufseite.",
+            offset: "Position in UTF-16-Codeeinheiten: nullbasiert oder nextOffset des vorherigen Abschnitts.",
+            length: "Gewünschte Anzahl an UTF-16-Codeeinheiten, höchstens 16.384; ein einzelnes Surrogatpaar kann zwei Einheiten belegen.",
+          },
         },
         ...geoCapabilityPresentation,
         "ai.task.run.read": {
@@ -203,26 +322,32 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Code-Version einreichen",
           description:
             "Speichert geprüften Quelltext und Bundle gegen baseVersionId. Fragt nötige Freigaben an; die aktive Version läuft weiter.",
+          input: codeVersionSubmissionInput,
         },
         "code.version.approve": {
           title: "Code-Version freigeben",
           description: "Gibt genau diesen Quelltext, dieses Bundle und diesen Vergleich über die Cloud-Admin-Regel der Plattform frei.",
+          input: codeVersionDecisionInput,
         },
         "code.version.reject": {
           title: "Code-Version ablehnen",
           description: "Lehnt die genaue Version und ihren Vergleich über dieselbe Plattform-Anfrage ab.",
+          input: codeVersionDecisionInput,
         },
         "code.pause": {
           title: "Code pausieren",
           description: "Pausiert weitere Ausführung. Die aktive Version bleibt erhalten; verpasste Ereignisse werden nicht nachgeholt.",
+          input: codeIdInput,
         },
         "code.resume": {
           title: "Code fortsetzen",
           description: "Setzt die aktive Version nach Prüfung der aktuellen Richtlinie und Freigabe-Belege fort.",
+          input: codeIdInput,
         },
         "code.policy.update": {
           title: "Code-Richtlinie ändern",
           description: "Ersetzt die Richtlinie am erwarteten Stand und plant sichtbare Pausen. Veraltete Änderungen werden abgelehnt.",
+          input: codePolicyDefinitionInput,
         },
         "ai.skill.access.change": {
           title: "Skill-Zugriffsrechte ändern",
