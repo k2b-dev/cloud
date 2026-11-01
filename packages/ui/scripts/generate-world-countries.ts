@@ -68,6 +68,36 @@ const rings = (geometry: Topology["objects"]["countries"]["geometries"][number])
 const code = (geometry: Topology["objects"]["countries"]["geometries"][number]) =>
   (geometry.id && alpha2.get(geometry.id)) || namedCodes[geometry.properties.name];
 
+/** Keep the part of a ring on one side of a meridian (Sutherland-Hodgman). */
+const clip = (points: [number, number][], limit: number, keep: (longitude: number) => boolean) => {
+  const result: [number, number][] = [];
+  for (const [index, point] of points.entries()) {
+    const next = points[(index + 1) % points.length]!;
+    if (keep(point[0])) result.push(point);
+    if (keep(point[0]) !== keep(next[0]))
+      result.push([limit, point[1] + ((limit - point[0]) / (next[0] - point[0])) * (next[1] - point[1])]);
+  }
+  return result;
+};
+
+/** The atlas stitches shapes across the 180th meridian; a flat map draws them in two parts. */
+const splitAtAntimeridian = (points: [number, number][]): [number, number][][] => {
+  const unwrapped: [number, number][] = [];
+  for (const [longitude, latitude] of points) {
+    const previous = unwrapped.at(-1)?.[0] ?? longitude;
+    unwrapped.push([longitude + 360 * Math.round((previous - longitude) / 360), latitude]);
+  }
+  const longitudes = unwrapped.map(([longitude]) => longitude);
+  const limit = Math.max(...longitudes) > 180 ? 180 : Math.min(...longitudes) < -180 ? -180 : null;
+  if (limit === null) return [points];
+  const inside = clip(unwrapped, limit, (longitude) => Math.abs(longitude) <= 180);
+  const outside = clip(unwrapped, limit, (longitude) => Math.abs(longitude) > 180).map(([longitude, latitude]): [number, number] => [
+    longitude - Math.sign(limit) * 360,
+    latitude,
+  ]);
+  return [inside, outside].filter((part) => part.length > 2);
+};
+
 const round = (value: number) => Math.round(value * 10) / 10;
 const ringPath = (points: [number, number][]) => {
   let d = "";
@@ -91,7 +121,8 @@ for (const geometry of shapesTopology.objects.countries.geometries) {
     country,
     (shapes.get(country) ?? "") +
       rings(geometry)
-        .map((ring) => ringPath(ringPoints(shapeArcs, ring)))
+        .flatMap((ring) => splitAtAntimeridian(ringPoints(shapeArcs, ring)))
+        .map(ringPath)
         .join(""),
   );
 }
