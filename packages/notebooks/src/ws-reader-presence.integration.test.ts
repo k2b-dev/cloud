@@ -172,7 +172,17 @@ if (process.env.NOTEBOOKS_READER_PRESENCE_CHILD !== "1") {
       await sql`UPDATE notebooks.notes SET locked_at = '2026-10-31T12:00:00Z' WHERE id = ${second.id}::uuid`;
       watch(reader, second.shortId, alicePeer);
       await waitFor(() => !writer.people(first.shortId).some((p) => p.userId === alice.id) && reader.people(second.shortId).length === 1);
+      const switchesFrom = reader.messages.length;
       for (const noteId of [first.shortId, second.shortId, first.shortId]) watch(reader, noteId, alicePeer);
+      // Watches run in order; the first switch already shows Alice to Bob, so wait for the last one,
+      // whose own snapshot arrives only after the second note's lease was deleted.
+      await waitFor(() => {
+        const snapshots = reader.messages
+          .slice(switchesFrom)
+          .filter((m) => m.type === "notes.presence.snapshot")
+          .map((m) => m.payload.noteId);
+        return snapshots.join() === [first.shortId, second.shortId, first.shortId].join();
+      });
       await waitFor(() => writer.people(first.shortId).some((p) => p.userId === alice.id));
       expect((await notebooksService.presence.snapshot({ noteId: second.id })).participants).toEqual([]);
       reader.socket.close();
