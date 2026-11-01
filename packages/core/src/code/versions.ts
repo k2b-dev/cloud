@@ -27,6 +27,7 @@ import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersi
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
+import { validateCodeSecretBindings } from "./secrets";
 import { codeSettings } from "./settings";
 import {
   codeBundleHash,
@@ -208,6 +209,7 @@ export async function submitCodeVersion(
       superseded.map((row) => row.id),
       tx,
     );
+    await validateCodeSecretBindings(code.id, input.manifest.secrets ?? [], tx);
     const version = await createCodeVersion({ ...input, entry: input.manifest.entry }, context, tx);
     const snapshot = await versionSnapshot(code.id, version.id, tx);
     const comparison = await baseline(code, tx);
@@ -280,6 +282,7 @@ export async function diffCodeVersion(input: z.infer<typeof codeVersionContracts
       binding,
       staleComparison: !submission || !sameBinding(binding, submission.binding),
       files: codeVersionDiff(comparison?.source_files ?? {}, version.source_files),
+      secrets: manifest.secrets ?? [],
       permissions: manifest.permissions,
       policyRows: manifest.policyRows,
     };

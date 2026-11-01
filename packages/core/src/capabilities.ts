@@ -60,6 +60,8 @@ import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
+import { codeSecretContracts } from "./code/secret-contracts";
+import { deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./code/secrets";
 import { listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
@@ -723,6 +725,13 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "code.secret.list": {
+      title: "List Code secret bindings",
+      description: "Editors list metadata and immutable binding revisions only. Values and ciphertext are never returned.",
+      ...codeSecretContracts.list,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listCodeSecrets(input, ctx)),
+    },
     "code.version.diff.read": {
       title: "Read complete Code comparison",
       description: "Read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
@@ -1246,6 +1255,30 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "code.secret.set": {
+      title: "Set Code secret",
+      description:
+        "Editors write a private credential without reading it back. Destination changes apply only to newly submitted versions. Supply the value privately through the CLI or editor, never through chat.",
+      ...codeSecretContracts.set,
+      code: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      run: (input, context) => runCodeQuery(context, (ctx) => setCodeSecret(input, ctx)),
+    },
+    "code.secret.delete": {
+      title: "Delete Code secret value",
+      description:
+        "Editors clear the current value for every version. Immutable destination evidence remains available for version review.",
+      ...codeSecretContracts.delete,
+      code: false,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "you" },
+      run: (input, context) => runCodeQuery(context, (ctx) => deleteCodeSecret(input, ctx)),
+    },
     "code.version.submit": {
       title: "Submit Code version",
       description:

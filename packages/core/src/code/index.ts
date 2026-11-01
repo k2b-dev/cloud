@@ -6,6 +6,8 @@ export * from "./contracts";
 export * from "./policy";
 export * from "./policy-contracts";
 export * from "./policy-effective";
+export * from "./secret-contracts";
+export * from "./secrets";
 export { CODE_SETTINGS, codeSettings } from "./settings";
 export * from "./store";
 export * from "./version-contracts";

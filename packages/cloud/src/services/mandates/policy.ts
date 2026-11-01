@@ -277,7 +277,7 @@ export const mandatePolicyAllows = (
   if (input.operation === "runtime.http" || input.operation === "runtime.database") {
     const kind = input.operation === "runtime.http" ? "http" : "database";
     return (
-      input.appId === "assistant" &&
+      (input.appId === "assistant" || (input.codeVersion === true && input.appId === "core" && kind === "http")) &&
       !!policy.grants?.some(
         (grant) =>
           grant.kind === kind &&

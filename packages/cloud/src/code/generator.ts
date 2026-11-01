@@ -281,7 +281,10 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       "export declare const app: CodeApp;",
     );
   }
+  declarations.push("export declare const secrets: Readonly<Record<string, CodeSecret>>;", "export declare const http: CodeHttp;");
   const runtimeExports = [
+    "export const secrets = __codeSdk.secrets;",
+    "export const http = __codeSdk.http;",
     "export { __codeSdk };",
     ...manifest.apps.map((app) => `export const ${app.exportName} = __codeSdk.namespaces[${quote(app.exportName)}];`),
     ...(options.owner ? ["export const owner = __codeSdk.owner;"] : []),

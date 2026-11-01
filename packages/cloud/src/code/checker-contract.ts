@@ -62,6 +62,7 @@ export const CodeVersionManifestSchema = z
     ),
     permissions: z.array(CodePermissionSchema),
     ai: z.boolean(),
+    internet: z.boolean().optional(),
     hashes: z.object({ source: hash, sdk: hash, bundle: hash }).strict(),
   })
   .strict();

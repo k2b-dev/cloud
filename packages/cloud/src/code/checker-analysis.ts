@@ -9,6 +9,7 @@ export type CodeAnalysis = {
   permissions: CodePermission[];
   entrypoints: CodeVersionManifest["entrypoints"];
   ai: boolean;
+  internet?: boolean;
   modules: string[];
 };
 const root = "/code/";
@@ -220,6 +221,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       } else if (signatureInSdk(node)) {
         const method = path.at(-1);
         const appType = checker.getTypeAtLocation(base);
+        if ((appType.aliasSymbol?.name === "CodeHttp" || appType.getSymbol()?.name === "CodeHttp") && method === "fetch" && collecting)
+          result.internet = true;
         const app = appType.aliasSymbol?.name === "CodeApp" || appType.getSymbol()?.name === "CodeApp";
         if (app && method) {
           const phase = codeSdkPhaseDiagnostic(method);

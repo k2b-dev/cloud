@@ -3,6 +3,7 @@ import { mkdtemp, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { capabilityCallDigest, normalizeCapabilityCall } from "../capabilities/calls";
+import type { CodeHttp } from "./authoring-types";
 import { generateCodeSdk } from "./generator";
 import { schemaTypes } from "./schema-types";
 import { sdkFixture } from "./sdk.test-fixture";
@@ -31,6 +32,8 @@ type TestHandle = {
   item: { create(input: unknown): Promise<unknown>; move(input: unknown): Promise<unknown> };
 };
 type TestModule = {
+  secrets: Readonly<Record<string, string>>;
+  http: CodeHttp;
   work_shop: { workshop(id: string): TestHandle; item(id: string): object; app(): { catalog: { list(input: object): Promise<unknown> } } };
   owner: TestHandle;
   app: {
@@ -219,6 +222,7 @@ describe("generated runtime through the canonical call seam", () => {
     const calls: CodeSdkInvocation[] = [];
     sdk.__codeSdk.bind({
       async call(operation, invocation) {
+        if (!("call" in invocation)) throw new Error("Expected a capability call");
         expect(operation).toBe(invocation.call.capability);
         calls.push(invocation);
         return { id: "created" };
@@ -443,4 +447,22 @@ owner.item.create({ title: "Hi", idempotencyKey: "fixed", details: { kind: "coun
   });
   const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
+});
+
+test("SDK secrets contain only placeholders and HTTP dispatches those placeholders unchanged", async () => {
+  const sdk = await runtime();
+  const calls: unknown[] = [];
+  sdk.__codeSdk.bind({
+    async call(operation, input) {
+      calls.push({ operation, input });
+      return { status: 200, headers: {}, body: "" };
+    },
+  });
+  expect(sdk.secrets.API).toBe("[secret:API]");
+  expect(String(sdk.secrets.constructor)).toBe("[secret:constructor]");
+  await sdk.http.fetch("https://api.example/v1", { headers: { authorization: "Bearer " + sdk.secrets.API } });
+  expect(calls).toEqual([
+    { operation: "http.fetch", input: { method: "GET", url: "https://api.example/v1", headers: { authorization: "Bearer [secret:API]" } } },
+  ]);
+  expect(() => sdk.secrets["bad name"]).toThrow("code_sdk_invalid_secret_name");
 });
