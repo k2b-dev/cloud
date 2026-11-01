@@ -66,6 +66,7 @@ export const CODE_TABLES = {
   versionGrants: "code.version_grants",
   activationNotices: "code.activation_notices",
   activationOutbox: "code.activation_outbox",
+  cleanupJobs: "code.cleanup_jobs",
   policy: "code.policy",
   policyRules: "code.policy_rules",
   policyCoverage: "code.policy_coverage",
@@ -137,7 +138,7 @@ export const CodeCallSchema = z
     callChunked: z.boolean(),
     resultChunked: z.boolean(),
     result: z.json().nullable(),
-    state: z.enum(["running", "succeeded", "failed", "uncertain"]),
+    state: z.enum(["running", "succeeded", "failed"]),
     startedAt: timestamp,
     endedAt: timestamp.nullable(),
   })

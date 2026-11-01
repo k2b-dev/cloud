@@ -54,7 +54,9 @@ stops unfinished activations.
 ## Follow cleanup through an outage
 
 Core persists one `code.access.rm` job per recorded grant, including grants
-whose activation request may still be in flight. Removal uses the platform's
+whose activation request may still be in flight. Each job keeps the target as a
+JSON object so cleanup reaches the recorded provider before marking the grant
+released. Removal uses the platform's
 account-bound cleanup authority; it does not retain the activating person's
 session or require their continued access. Retrying a removal cannot restore a
 grant or remove an ordinary person's share.

@@ -132,7 +132,7 @@ test("generated app-only queries validate in the registry and older readers drop
   expect(CapabilityQueryManifestSchema.omit({ appOnly: true }).safeParse(query).success).toBe(false);
   expect(manifest.resourceTypes).toEqual([{ type: "item", readable: true, view: true }]);
   expect(CapabilityManifestSchema.parse({ ...compiled.manifest, queries: [query] }).resourceTypes).toEqual([
-    { type: "item", readable: true, view: true },
+    { type: "item", readable: true },
   ]);
 });
 
