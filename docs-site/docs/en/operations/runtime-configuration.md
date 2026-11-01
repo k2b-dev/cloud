@@ -604,3 +604,41 @@ reported problems, then remove the legacy environment entries. Follow the
 
 Remove `GATEWAY_INSTANCE_ID` to use a random per-process identity. An explicit
 legacy value is still honored for this release and logs a startup warning.
+
+## Live dictation
+
+In **Administration → AI → Models**, add a `vllm-realtime` provider with its
+HTTP(S) base URL including `/v1` and an optional API key. Add a model with
+`kind: "live-transcription"` and assign its standard variant to `liveAudio`.
+Only live transcription models can fill that slot. Grant the model to the
+people who may dictate and enable AI. Emptying the slot turns live dictation
+off without changing the existing audio recording path.
+
+In **Administration → AI → General**, set these registered admin values;
+there are no environment variables for them:
+
+| Value | Setting key | Default | Valid range |
+| --- | --- | --- | --- |
+| `liveDictationConcurrency` | `ai.live_dictation_concurrency` | 4 | Integer, 1–1024 |
+| `liveDictationMinutesPerDay` | `ai.live_dictation_minutes_per_day` | 60 | Integer, 1–1440 (24 hours) |
+
+Concurrency is shared across Core replicas. Each session opens one model
+connection and may queue at most 64,000 PCM bytes in Cloud. The concurrency
+ceiling bounds these application PCM queues to about 64 MiB; model capacity
+will usually require a much lower value. Run a short load test against the
+actual model endpoint before increasing concurrency. Observe latency and
+`overloaded`/`provider_failed` outcomes, including the two-second provider
+backpressure boundary. No automatic reconnect hides overload.
+
+Valkey holds a token-owned person lease (15 seconds, renewed every five
+seconds), a shared semaphore, and per-person daily seconds. Local midnight
+uses `app.timezone`, including daylight-saving changes. A lost lease aborts
+the model; a late release cannot remove a newer lease. The daily dictation
+allowance is independent of chat budgets. Usage reports show audio minutes
+per person and app, without audio or transcript content.
+
+Core serves `/api/ai/dictation/status` and `/api/ai/dictation/live` through its
+registered `/api/ai` prefix; the gateway's registry-based WebSocket proxy
+forwards the socket. See [Live dictation](/en/docs/ai/live-dictation) for the
+protocol, cancellation contract, privacy, and recovery behavior. Verify real
+microphones on Safari/iOS before enabling the feature broadly.

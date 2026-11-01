@@ -5,7 +5,7 @@
  * cross-app imports.
  */
 
-import { aiSkillsRoutes } from "@k2b/cloud/ai";
+import { aiDictationRoutes, aiSkillsRoutes, stopLiveDictationSessions } from "@k2b/cloud/ai";
 import { aiLive, aiLiveChannels } from "@k2b/cloud/ai/live";
 import {
   createAiOpenAiRoutes,
@@ -53,6 +53,7 @@ const coreApi = new Hono()
   .route("/admin/apps", createAdminAppStatusRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())
   .route("/ai/skills", aiSkillsRoutes)
+  .route("/ai/dictation", aiDictationRoutes)
   .route("/ai", aiChatTaskRoutes)
   .route("/", api);
 
@@ -89,6 +90,7 @@ const result = await app.start({
       await startCoreServices(notificationSender, aiNotifications);
     },
     stop: async () => {
+      await stopLiveDictationSessions();
       await stopCoreServices(aiNotifications);
     },
   },

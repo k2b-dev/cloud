@@ -55,7 +55,7 @@ const catalogFor = (state: AiAreaFixtureState): AiFixtureCatalog => {
       providers: [],
       models: [],
       variants: [],
-      assignments: { fast: null, balanced: null, thorough: null, maximum: null, vision: null, audio: null },
+      assignments: { fast: null, balanced: null, thorough: null, maximum: null, vision: null, audio: null, liveAudio: null },
     };
   const cortecs = catalog.providers.find((entry) => entry.id === "cortecs")!;
   if (state === "unreachable") Object.assign(cortecs, { status: "unreachable", statusMessage: "Keine Antwort nach 10 s." });
