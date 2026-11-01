@@ -199,15 +199,19 @@ export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<A
  */
 export const addSpaceAccess = async (spaceId: string, accessId: string): Promise<Result<void>> => {
   try {
-    await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx): Promise<Result<void>> => {
+      // Code manager checks hold a shared target lock until their write completes.
+      const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${spaceId}::uuid FOR UPDATE`;
+      if (!resource) return fail(err.notFound("Space"));
       await tx`
         INSERT INTO spaces.space_access (space_id, access_id)
         VALUES (${spaceId}::uuid, ${accessId}::uuid)
       `;
       await publishSpaceChange(tx, { type: "access.changed", spaceId });
+      return ok();
     });
-    spacesLive.wake();
-    return ok();
+    if (result.ok) spacesLive.wake();
+    return result;
   } catch (e: unknown) {
     const error = e as { code?: string };
     if (error.code === "23505") {

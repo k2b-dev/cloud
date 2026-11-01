@@ -560,9 +560,23 @@ are incomplete. The manifest advertises the supported targets and owners in
 | Function | Responsibility |
 | --- | --- |
 | `manages(tx, context, id)` | Lock and check the person's current manager authority at the target using the supplied transaction. Code never counts as a manager. |
-| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`. |
+| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`; successful dry runs also return `managerUserIds`. |
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
+
+Successful dry-run `code.access.set` results include `managerUserIds`: the current
+people managing the target, including members of manager groups. Core uses these
+IDs to notify managers when a Cloud administrator activates Code. Return an empty
+array when no person manages the target; service accounts are never notification
+recipients. The platform preserves this field in its set result, including dry-run
+retries of existing grants.
+
+`CODE_ACCESS_MAX_MANAGER_USER_IDS` from `@k2b/cloud/contracts` bounds the array
+using the capability result byte budget. The complete set result and its receipt
+must fit that budget too. Refuse with a reason when all managers cannot fit;
+never truncate the notification recipients. Spaces and Mail return manager IDs
+only during dry runs. A Code manager check during a directory update can fail
+transiently; retry after the update finishes.
 
 Cloud calls `manages` inside the same transaction as `grant` or `revoke`, including
 dry runs and retries. Lock the target's authority before reading its current

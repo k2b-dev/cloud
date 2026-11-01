@@ -83,6 +83,8 @@ suite("Spaces Code access", () => {
   const revoke = (id: string, grantId: string) => sql.begin((tx) => spaceCodeAccess.revoke(tx, { id, grantId }));
   const permission = (id: string, context = code) => getSpacePermission({ spaceId: id, subject: context.accessSubject });
 
+  const manages = (context: CapabilityExecutionContext, id: string) => sql.begin((tx) => spaceCodeAccess.manages(tx, context, id));
+
   beforeAll(async () => {
     const uid = `c3b-owner-${suffix}`;
     const [row] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
@@ -140,8 +142,8 @@ suite("Spaces Code access", () => {
 
   test("sets independent grants and removes their access immediately at the capability, single and batched seams", async () => {
     const target = await space();
-    expect(await spaceCodeAccess.manages(ownerContext, target.short_id)).toBe(true);
-    expect(await spaceCodeAccess.manages(code, target.short_id)).toBe(false);
+    expect(await manages(ownerContext, target.short_id)).toBe(true);
+    expect(await manages(code, target.short_id)).toBe(false);
     const read = await grant(target.short_id, code, ["spaces.space.read"]);
     const write = await grant(target.short_id, code, ["spaces.task.create"]);
     expect(read.decision).toEqual({ granted: true, level: "read" });
@@ -268,7 +270,7 @@ suite("Spaces Code access", () => {
       code: "23514",
     });
     expect(await permission(target.id)).toBe("write");
-    expect(await spaceCodeAccess.manages(code, target.short_id)).toBe(false);
+    expect(await manages(code, target.short_id)).toBe(false);
     expect((await list({ subject: code.accessSubject, requiredLevel: "admin" })).some((entry) => entry.id === target.id)).toBe(false);
     expect(await getActorsSpacePermissions(target.id, [{ actor: code.actor, subject: code.accessSubject }])).toEqual(["write"]);
     expect(
@@ -310,5 +312,217 @@ suite("Spaces Code access", () => {
         })
       ).ok,
     ).toBe(false);
+  });
+  test("dry-run reports current direct and nested-group person managers without granting access", async () => {
+    const target = await space();
+    const [person] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile)
+      VALUES (${`spaces-manager-${crypto.randomUUID()}`}, 'local', 'user') RETURNING id`;
+    const [child] = await sql<{ id: string }[]>`INSERT INTO auth.groups (cn, provider, name)
+      VALUES (${`spaces-child-${crypto.randomUUID()}`}, 'local', 'Nested managers') RETURNING id`;
+    if (!person || !child) throw new Error("Missing manager fixture");
+    try {
+      await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${person.id}::uuid, ${child.id}::uuid),
+        (${owner.id}::uuid, ${child.id}::uuid)`;
+      await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${groupId}::uuid, ${child.id}::uuid)`;
+      const [share] = await sql<{ id: string }[]>`INSERT INTO auth.access (group_id, permission)
+        VALUES (${groupId}::uuid, 'admin') RETURNING id`;
+      if (!share) throw new Error("Missing manager share");
+      await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${target.id}::uuid, ${share.id}::uuid)`;
+      const result = await grant(target.short_id, code, ["spaces.space.read"], crypto.randomUUID(), true);
+      expect(result.decision).toEqual({ granted: true, level: "read", managerUserIds: [owner.id, person.id].sort() });
+      expect(await sql`SELECT id FROM auth.access WHERE id = ${result.grantId}::uuid`).toHaveLength(0);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${person.id}::uuid`;
+      await sql`DELETE FROM auth.groups WHERE id = ${child.id}::uuid`;
+    }
+  });
+
+  test("a manager removed after a preflight check cannot grant from stale authority", async () => {
+    const target = await space();
+    const current = ownerContext;
+    expect(await manages(current, target.short_id)).toBe(true);
+    const changed = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const checking = Promise.withResolvers<number>();
+    const change = sql.begin(async (tx) => {
+      await tx`SELECT id FROM spaces.spaces WHERE id = ${target.id}::uuid FOR UPDATE`;
+      await tx`UPDATE auth.access SET permission = 'read' WHERE id IN (
+        SELECT access_id FROM spaces.space_access WHERE space_id = ${target.id}::uuid
+      ) AND user_id = ${owner.id}::uuid`;
+      changed.resolve();
+      await release.promise;
+    });
+    let pending: Promise<boolean> | undefined;
+    try {
+      await Promise.race([
+        changed.promise,
+        change.then(() => {
+          throw new Error("Manager change skipped checkpoint");
+        }),
+      ]);
+      pending = sql.begin(async (tx) => {
+        const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        if (!backend) throw new Error("Missing backend PID");
+        checking.resolve(backend.pid);
+        if (!(await spaceCodeAccess.manages(tx, current, target.short_id))) return false;
+        return (
+          await spaceCodeAccess.grant(tx, {
+            id: target.short_id,
+            principal: principal(code),
+            operations: ["spaces.space.read"],
+            grantId: crypto.randomUUID(),
+            dryRun: false,
+          })
+        ).granted;
+      });
+      const pid = await Promise.race([
+        checking.promise,
+        pending.then(() => {
+          throw new Error("Code check ended before lock acquisition");
+        }),
+      ]);
+      // Observe this transaction blocked on the mutation's target lock before
+      // committing it; a check without a lock must fail this regression guard.
+      const deadline = AbortSignal.timeout(2000);
+      let blocked = false;
+      while (!deadline.aborted) {
+        const [state] = await sql<{ blocked: boolean }[]>`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE pid = ${pid} AND wait_event_type = 'Lock'
+        ) AS blocked`;
+        if (state?.blocked) {
+          blocked = true;
+          break;
+        }
+        await Bun.sleep(10);
+      }
+      expect(blocked).toBe(true);
+      release.resolve();
+      await change;
+      expect(await pending).toBe(false);
+      expect((await grants(code)).some((entry) => entry.id === target.short_id)).toBe(false);
+    } finally {
+      release.resolve();
+      await Promise.allSettled([change, ...(pending ? [pending] : [])]);
+    }
+  });
+
+  test("manager authority stays locked through the adapter write", async () => {
+    const target = await space();
+    await sql.begin(async (tx) => {
+      expect(await spaceCodeAccess.manages(tx, ownerContext, target.short_id)).toBe(true);
+      expect(
+        (
+          await spaceCodeAccess.grant(tx, {
+            id: target.short_id,
+            principal: principal(code),
+            operations: ["spaces.space.read"],
+            grantId: crypto.randomUUID(),
+            dryRun: false,
+          })
+        ).granted,
+      ).toBe(true);
+      await expect(
+        sql.begin(async (other) => {
+          await other`SELECT id FROM spaces.spaces WHERE id = ${target.id}::uuid FOR UPDATE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`SELECT a.id FROM auth.access a JOIN spaces.space_access grants ON grants.access_id = a.id
+          WHERE grants.space_id = ${target.id}::uuid AND a.user_id = ${owner.id}::uuid FOR UPDATE OF a NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`SELECT id FROM auth.users WHERE id = ${owner.id}::uuid FOR UPDATE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`LOCK TABLE auth.groups IN ROW EXCLUSIVE MODE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`LOCK TABLE auth.user_groups_v2 IN ROW EXCLUSIVE MODE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`LOCK TABLE auth.group_groups_v2 IN ROW EXCLUSIVE MODE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+    });
+  });
+  test("manager checks use live group membership instead of the person's cached groups", async () => {
+    const target = await space();
+    const [share] = await sql<{ id: string }[]>`INSERT INTO auth.access (group_id, permission)
+      VALUES (${groupId}::uuid, 'admin') RETURNING id`;
+    if (!share) throw new Error("Missing group manager share");
+    await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${target.id}::uuid, ${share.id}::uuid)`;
+    await sql`UPDATE auth.access SET permission = 'read' WHERE id IN (
+      SELECT access_id FROM spaces.space_access WHERE space_id = ${target.id}::uuid
+    ) AND user_id = ${owner.id}::uuid`;
+    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${owner.id}::uuid, ${groupId}::uuid)`;
+    const current = ownerContext;
+    const stale = { ...current, actor: { kind: "user" as const, user: { ...owner, memberofGroupIds: [groupId] } } };
+    try {
+      expect(await manages(current, target.short_id)).toBe(true);
+      await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${owner.id}::uuid AND group_id = ${groupId}::uuid`;
+      expect(await manages(stale, target.short_id)).toBe(false);
+    } finally {
+      await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${owner.id}::uuid AND group_id = ${groupId}::uuid`;
+    }
+  });
+  test("grant and revoke lock the existing target even when manages is bypassed", async () => {
+    const target = await space();
+    const grantId = crypto.randomUUID();
+    for (const operation of ["grant", "revoke"] as const) {
+      await sql.begin(async (tx) => {
+        if (operation === "grant") {
+          expect(
+            (
+              await spaceCodeAccess.grant(tx, {
+                id: target.short_id,
+                principal: principal(code),
+                operations: ["spaces.space.read"],
+                grantId,
+                dryRun: false,
+              })
+            ).granted,
+          ).toBe(true);
+        } else {
+          expect(await spaceCodeAccess.revoke(tx, { id: target.short_id, grantId })).toBe(true);
+        }
+        await expect(
+          sql.begin(async (other) => {
+            await other`SELECT id FROM spaces.spaces WHERE id = ${target.id}::uuid FOR UPDATE NOWAIT`;
+          }),
+        ).rejects.toThrow(/could not obtain lock/);
+      });
+    }
+  });
+  test("directory writes do not deadlock Code checks or the Cloud-admin bypass", async () => {
+    const target = await space();
+    await sql.begin(async (writer) => {
+      await writer`LOCK TABLE auth.groups, auth.user_groups_v2, auth.group_groups_v2 IN ROW EXCLUSIVE MODE`;
+      await expect(sql.begin((tx) => spaceCodeAccess.manages(tx, ownerContext, target.short_id))).rejects.toMatchObject({ code: "55P03" });
+      // Admin authority is checked by the platform, so the adapter only needs
+      // its target lock and a single-snapshot manager list during preflight.
+      const grantId = crypto.randomUUID();
+      const decision = await sql.begin((tx) =>
+        spaceCodeAccess.grant(tx, {
+          id: target.short_id,
+          principal: principal(code),
+          operations: ["spaces.space.read"],
+          grantId,
+          dryRun: true,
+        }),
+      );
+      expect(decision).toEqual({ granted: true, level: "read", managerUserIds: [owner.id] });
+      expect((await grant(target.short_id, code, ["spaces.space.read"], grantId)).decision.granted).toBe(true);
+      expect(await revoke(target.short_id, grantId)).toBe(true);
+      await writer`SELECT 1`;
+    });
   });
 });
