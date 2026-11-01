@@ -24,8 +24,8 @@ import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
-import { verifyCodeSubmission } from "./authoring-check";
 import * as ownerTransport from "./activation-transport";
+import { verifyCodeSubmission } from "./authoring-check";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { claimCodeWork } from "./dispatch";
 import {
@@ -419,6 +419,40 @@ suiteFor(
     }
     throw new Error("No committed authoring job");
   }
+  test("C13b fetch retains authoring jobs when the claimed run owner is missing", async () => {
+    const code = await fixture(owner, true);
+    const [runId] = await enqueueMany(code, 1);
+    const input = JSON.stringify({ kind: "check", request: checkRequest() });
+    const [job] = await sql<{ id: string }[]>`INSERT INTO code.jobs(kind,owner_id,input,input_bytes,output_bytes,deadline_at)
+      VALUES('check',${owner}::uuid,${input},${Buffer.byteLength(input)},1000,clock_timestamp()+interval '1 minute') RETURNING id`;
+    const registry = spyOn(cloud, "getApp").mockResolvedValue({
+      id: "example",
+      name: "Example",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/example"],
+      baseUrl: "http://example.test",
+      access: { kind: "grants" },
+    });
+    const title = spyOn(ownerTransport, "readCodeResourceOwnerTitle").mockResolvedValue(null);
+    const instanceId = "99999999-9999-4999-8999-999999999999";
+    try {
+      const response = await fetchCodeRuns({ instanceId, freeSlots: 2 }, new AbortController().signal, {
+        queue,
+        sign: async () => {
+          throw new Error("Missing owner must not sign");
+        },
+      });
+      expect(response.runs).toEqual([]);
+      expect(response.jobs?.map((lease) => lease.jobId)).toEqual([job!.id]);
+      expect(await state(runId!)).toMatchObject({ state: "skipped", outcome: "owner_not_found" });
+      const [instance] = await sql`SELECT free_slots FROM code.runner_instances WHERE instance_id=${instanceId}::uuid`;
+      expect(instance?.free_slots).toBe(1);
+    } finally {
+      title.mockRestore();
+      registry.mockRestore();
+    }
+  });
   test("C13b check round-trip preserves permissions and source lines without a bridge token", async () => {
     const expected: CodeCheckResult = {
       ok: true,
@@ -448,6 +482,8 @@ suiteFor(
         JSON.parse(await readCodeJobInput({ jobId: job.jobId, generation: job.generation, leaseKey: job.leaseKey })).request.files,
       ).toEqual(checkRequest().files);
       await completeCodeJob(job, { kind: "check", result: expected });
+      const [stored] = await sql`SELECT jsonb_typeof(result) AS type FROM code.jobs WHERE id=${job.jobId}::uuid`;
+      expect(stored?.type).toBe("object");
       expect(await response).toEqual(expected);
     } finally {
       cancel.abort();
@@ -624,6 +660,7 @@ suiteFor(
       } else {
         kinds.push("run");
         const run = await codeRunnerLease(work.runs[0]!, sign);
+        if (!run) throw new Error("Fixture owner refused");
         await completeCodeRun(await claims(run), "succeeded");
       }
     }
