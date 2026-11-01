@@ -223,10 +223,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         const appType = checker.getTypeAtLocation(base);
         const declarationOwner = checker.getResolvedSignature(node)?.declaration?.parent.parent;
         // Follow the SDK signature, including destructured HTTP methods.
-        if (declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeHttp" && collecting)
-          result.internet = true;
+        const http = declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeHttp";
         const app = appType.aliasSymbol?.name === "CodeApp" || appType.getSymbol()?.name === "CodeApp";
-        if (app && method) {
+        if (http) {
+          if (collecting) result.internet = true;
+        } else if (app && method) {
           const phase = codeSdkPhaseDiagnostic(method);
           if (phase) report(node, phase.code, phase.message);
           if (method === "on") {

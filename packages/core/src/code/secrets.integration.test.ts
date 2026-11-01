@@ -13,6 +13,8 @@ import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateSecrets } from "../migrate/core/code-secrets";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migrateRailPreferences } from "../migrate/core/rail-preferences";
+import { migrate as migrateRailShortcuts } from "../migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
 import { createCodeBridgeHost } from "./bridge";
@@ -74,6 +76,10 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("code_secrets_c11");
     await migrateAuth();
+    await migrateRailPreferences();
+    await migrateRailShortcuts();
+  });
+  beforeAll(async () => {
     await migrateAppApproval();
     await migrateSettings();
     await migrateAudit();
@@ -323,7 +329,9 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
   test("historical binding evidence is immutable, submission refuses foreign evidence and root re-encryption preserves current decryptability", async () => {
     const { codeId, binding } = await fixture();
     await migrateSecrets();
-    await expect(sql`UPDATE code.secret_bindings SET binding='{}'::jsonb WHERE code_id=${codeId}`).rejects.toThrow("immutable");
+    await expect(Promise.resolve(sql`UPDATE code.secret_bindings SET binding='{}'::jsonb WHERE code_id=${codeId}`)).rejects.toThrow(
+      "immutable",
+    );
     const other = await fixture();
     await expect(submit(other.codeId, binding)).rejects.toBeInstanceOf(CodeDataError);
     const before = await sql<{ encrypted: string }[]>`SELECT encrypted FROM code.secrets WHERE code_id=${codeId}`;
