@@ -78,5 +78,12 @@ islands do not load its schemas. `loadCodePage` reads the tab and selection from
 Offer the page in your navigation to the resource's administrators. Others
 with access to its Code reach it by link or from the panel.
 
+The same page shows one personal Code: pass `owner: { codeId }` instead of a
+resource. Core reads that Code by ID; a Code the person may not see shows the
+"no access" state. Personal Code runs as its person, so the page leads with
+the Code's title, says "runs as you" and lists no target access, because the
+Code never gets access of its own. Gustav uses this at
+`/app/assistant/code/<codeId>`.
+
 A panel that declares `code: true` (see [Offer a panel](/en/docs/platform/panels))
 appears as **Edit with <panel>** on the page and on an empty page.

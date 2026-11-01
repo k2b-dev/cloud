@@ -33,6 +33,40 @@ const text = (state: State, locale = "de") =>
     .replaceAll(/<[^>]+>/g, " ")
     .replaceAll(/\s+/g, " ");
 
+const personal = (state: State, locale = "de") =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(CodePage, {
+          data: {
+            ...codePageFixture(state, locale),
+            owner: { kind: "person", ref: null, title: state === "error" ? "" : "Wochenbericht Vertrieb", typeTitle: null },
+            href: "/app/assistant/code/c_woche1",
+          },
+        });
+      },
+    }),
+  )
+    .replaceAll(/<!--[^>]*-->/g, "")
+    .replaceAll(/<[^>]+>/g, " ")
+    .replaceAll(/\s+/g, " ");
+
+describe("personal Code", () => {
+  test("leads with its own title, runs as its person and never lists target access", () => {
+    const page = personal("overview");
+    expect(page).toContain("Wochenbericht Vertrieb");
+    expect(page).toContain("Dein Code · läuft als du");
+    expect(page).toContain("Er nutzt deine Rechte, nicht mehr.");
+    expect(page).not.toContain("Handelt im Namen von");
+    expect(page).not.toContain("an info@moebel-beispiel.de selbst");
+  });
+  test("an unreadable personal Code says so without naming a place", () => {
+    expect(personal("error")).toContain("Dieser Code konnte nicht geladen werden");
+    expect(personal("no-access")).toContain("Nur wer den Code besitzt oder mit wem er geteilt ist, sieht ihn.");
+  });
+});
+
 describe("Code page states", () => {
   test("overview lists automations with schedule, status and last run, and access as operation at target", () => {
     const page = text("overview");

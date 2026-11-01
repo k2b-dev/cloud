@@ -219,20 +219,29 @@ function InlineError(props: { text: string; retry: string }) {
 const Op = (props: { children: string }) => <code class="cloud-code__op">{props.children}</code>;
 
 /** The shared Code page of one resource: automations, access, runs with their calls, versions, switching on. */
+/** Personal Code runs as its person; it has no place that it acts for. */
+const personal = (data: CodePageData) => data.owner.kind === "person";
+
 export default function CodePage(props: { data: CodePageData }) {
   const text = usePageText(() => props.data);
   const t = text.t;
   return (
     <div class="cloud-code" data-tab={props.data.tab}>
-      <h1 class="sr-only">{t().pageTitle({ name: props.data.owner.title })}</h1>
+      {/* A place's own app names it beside the page; personal Code has no place, so its title leads. */}
+      <Show when={personal(props.data)} fallback={<h1 class="sr-only">{t().pageTitle({ name: props.data.owner.title })}</h1>}>
+        <h1 class="cloud-code__title">
+          <i class="ti ti-bolt" aria-hidden="true" />
+          {props.data.owner.title || t().personalErrorTitle}
+        </h1>
+      </Show>
       <Switch>
         <Match when={props.data.state.kind === "error"}>
           <Placeholder
             state="error"
             variant="panel"
             icon="ti ti-cloud-off"
-            title={t().errorTitle({ name: props.data.owner.title })}
-            description={t().errorDescription({ name: props.data.owner.title })}
+            title={personal(props.data) ? t().personalErrorTitle : t().errorTitle({ name: props.data.owner.title })}
+            description={personal(props.data) ? t().personalErrorDescription : t().errorDescription({ name: props.data.owner.title })}
             onRetry={() => refreshCurrentPath()}
           />
         </Match>
@@ -242,7 +251,7 @@ export default function CodePage(props: { data: CodePageData }) {
             variant="panel"
             icon="ti ti-lock"
             title={t().noAccessTitle}
-            description={t().noAccessDescription({ name: props.data.owner.title })}
+            description={personal(props.data) ? t().personalNoAccessDescription : t().noAccessDescription({ name: props.data.owner.title })}
           />
         </Match>
         <Match when={props.data.state.kind === "none"}>
@@ -258,7 +267,8 @@ export default function CodePage(props: { data: CodePageData }) {
 
 function EmptyCode(props: { data: CodePageData; text: PageText }) {
   const t = props.text.t;
-  const command = () => `cld code pull ${props.data.owner.ref.type.split(".")[0]}/${props.data.owner.ref.id}`;
+  const command = () =>
+    props.data.owner.ref ? `cld code pull ${props.data.owner.ref.type.split(".")[0]}/${props.data.owner.ref.id}` : "cld code pull --all";
   return (
     <div class="cloud-code__empty">
       <Placeholder
@@ -339,7 +349,7 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
     <>
       <header class="cloud-code__head">
         <div class="cloud-code__head-text">
-          <p class="cloud-code__lead">{t().actsAs({ name: props.data.owner.title })}</p>
+          <p class="cloud-code__lead">{personal(props.data) ? t().personalLead : t().actsAs({ name: props.data.owner.title })}</p>
           <VersionLine data={props.data} state={props.state} text={props.text} />
         </div>
         <div class="cloud-code__head-actions">
@@ -616,18 +626,20 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
           )}
         </Show>
       </Section>
-      <Section id="cloud-code-access" title={t().access} description={t().accessDescription}>
-        <Show when={props.state.access} fallback={<InlineError text={t().accessFailed} retry={t().tryAgain} />}>
-          {(access) => (
-            <Show
-              when={access().length > 0}
-              fallback={<p class="cloud-code__quiet">{t().accessEmpty({ name: props.data.owner.title })}</p>}
-            >
-              <ul class="cloud-code__list">
-                <For each={access()}>{(row) => <AccessRow row={row} state={props.state} text={props.text} />}</For>
-              </ul>
-            </Show>
-          )}
+      <Section id="cloud-code-access" title={t().access} description={personal(props.data) ? t().personalAccess : t().accessDescription}>
+        <Show when={!personal(props.data)}>
+          <Show when={props.state.access} fallback={<InlineError text={t().accessFailed} retry={t().tryAgain} />}>
+            {(access) => (
+              <Show
+                when={access().length > 0}
+                fallback={<p class="cloud-code__quiet">{t().accessEmpty({ name: props.data.owner.title })}</p>}
+              >
+                <ul class="cloud-code__list">
+                  <For each={access()}>{(row) => <AccessRow row={row} state={props.state} text={props.text} />}</For>
+                </ul>
+              </Show>
+            )}
+          </Show>
         </Show>
       </Section>
       <Section id="cloud-code-pages" title={t().pagesAndRoutes} count={0}>
@@ -1313,7 +1325,9 @@ function ActivationDialog(props: {
     <div class="cloud-code__dialog">
       <p>
         {props.mode === "waiting"
-          ? t().activateIntro({ name: props.data.owner.title })
+          ? personal(props.data)
+            ? t().personalActivateIntro
+            : t().activateIntro({ name: props.data.owner.title })
           : t().reactivateIntro({ name: props.data.owner.title })}
       </p>
       <p class="cloud-code__label">{t().operationAtTarget}</p>

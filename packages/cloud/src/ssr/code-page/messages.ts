@@ -195,6 +195,14 @@ export const codePageMessages = i18n.define({
       emptyTerminal: "In the terminal:",
       noAccessTitle: "You do not see this Code",
       noAccessDescription: ({ name }: Name) => `Only administrators of ${name} and people with access to its Code see it.`,
+      // Personal Code: it runs as its person and has no place of its own.
+      personalLead: "Your Code · runs as you",
+      personalAccess: "It uses your rights, nothing more. What you may do, it may do; it never gets access of its own.",
+      personalErrorTitle: "This Code could not be loaded",
+      personalErrorDescription: "Your chats and running automations are not affected.",
+      personalNoAccessDescription: "Only its owner and people it is shared with see this Code.",
+      personalActivateIntro:
+        "From then on the Code may do exactly these operations with your rights, nothing else. Cloud reads them from the Code.",
       errorTitle: ({ name }: Name) => `The Code of ${name} could not be loaded`,
       errorDescription: ({ name }: Name) => `${name} and running automations are not affected.`,
       // Activation
@@ -375,6 +383,13 @@ export const codePageMessages = i18n.define({
       emptyTerminal: "Im Terminal:",
       noAccessTitle: "Diesen Code siehst du nicht",
       noAccessDescription: ({ name }: Name) => `Nur Admins von ${name} und wer Zugriff auf den Code hat, sehen ihn.`,
+      personalLead: "Dein Code · läuft als du",
+      personalAccess: "Er nutzt deine Rechte, nicht mehr. Was du darfst, darf er auch; eigenen Zugriff bekommt er nie.",
+      personalErrorTitle: "Dieser Code konnte nicht geladen werden",
+      personalErrorDescription: "Deine Chats und laufende Automationen sind nicht betroffen.",
+      personalNoAccessDescription: "Nur wer den Code besitzt oder mit wem er geteilt ist, sieht ihn.",
+      personalActivateIntro:
+        "Ab dann darf der Code genau diese Operationen mit deinen Rechten ausführen, sonst nichts. Cloud liest sie aus dem Code.",
       errorTitle: ({ name }: Name) => `Der Code von ${name} konnte nicht geladen werden`,
       errorDescription: ({ name }: Name) => `${name} und laufende Automationen sind nicht betroffen.`,
       activateTitle: ({ version }: Version) => `Version ${version} einschalten?`,

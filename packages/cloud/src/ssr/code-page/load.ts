@@ -24,6 +24,7 @@ import {
   type CodePageTab,
   type CodePageTarget,
   type CodePageVersion,
+  CodeReadSchema,
   coreQuery,
   ManifestSchema,
   RunListSchema,
@@ -41,13 +42,23 @@ const MANIFEST_CHUNKS = 64;
 /** Distinct targets named on one page; a version has at most 200 operations. */
 const TARGET_LIMIT = 50;
 
+/** The owning resource, or null for personal Code. */
+const ownerRefOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.ref : null);
+const ownerTitleOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.title : "");
+const isOwnRef = (ref: { type: string; id: string }, owner: LoadCodePageOptions["owner"]) => {
+  const own = ownerRefOf(owner);
+  return own !== null && sameRef(ref, own);
+};
 const ReaderViewSchema = z.object({ view: z.object({ title: z.string().min(1) }) });
 const targetKey = (ref: { type: string; id: string }) => `${ref.type}\u0000${ref.id}`;
 const sameRef = (a: { type: string; id: string }, b: { type: string; id: string }) => a.type === b.type && a.id === b.id;
 
 export type LoadCodePageOptions = {
-  /** The resource whose Code this page shows, and its name as the owner app shows it. */
-  owner: { ref: CloudResourceRef; title: string };
+  /**
+   * The resource whose Code this page shows and its name as the owner app shows it, or one personal Code by its ID;
+   * personal Code runs as its person and has no place of its own.
+   */
+  owner: { ref: CloudResourceRef; title: string } | { codeId: string };
   /** This page's path without query, for tabs and "Copy link". */
   href: string;
   /** The person administers the owner, so an empty page offers to create Code. The owner app decides this. */
@@ -112,11 +123,11 @@ const loadTarget = async (
   invoke: CodePageInvoke,
   catalog: ReturnType<typeof catalogCache>,
 ): Promise<CodePageTarget> => {
-  const own = sameRef(ref, owner.ref);
+  const own = isOwnRef(ref, owner);
   const base: CodePageTarget = {
     key: targetKey(ref),
     ref,
-    title: own ? owner.title : null,
+    title: own ? ownerTitleOf(owner) : null,
     typeTitle: null,
     icon: null,
     own,
@@ -291,7 +302,8 @@ const loadReady = async (
     waitingByTarget.set(targetKey(ref), entry);
   }
   const diffPermissions = diffResult?.ok ? diffResult.data.data.data.permissions : [];
-  const refs = new Map<string, { type: string; id: string }>([[targetKey(options.owner.ref), options.owner.ref]]);
+  const ownerRef = ownerRefOf(options.owner);
+  const refs = new Map<string, { type: string; id: string }>(ownerRef ? [[targetKey(ownerRef), ownerRef]] : []);
   for (const row of access ?? []) refs.set(targetKey(row.target), row.target);
   for (const entry of waitingByTarget.values()) refs.set(targetKey(entry.ref), entry.ref);
   for (const permission of diffPermissions) {
@@ -307,10 +319,10 @@ const loadReady = async (
     targets.get(targetKey(ref)) ?? {
       key: targetKey(ref),
       ref,
-      title: sameRef(ref, options.owner.ref) ? options.owner.title : null,
+      title: isOwnRef(ref, options.owner) ? ownerTitleOf(options.owner) : null,
       typeTitle: null,
       icon: null,
-      own: sameRef(ref, options.owner.ref),
+      own: isOwnRef(ref, options.owner),
       deleted: false,
       href: null,
     };
@@ -356,10 +368,10 @@ const loadReady = async (
   const waitingTargets =
     waitingReceipt && waitingManifest
       ? [
-          // The owner is checked on every switch-on, also when the Code only works on itself.
-          ...(waitingByTarget.has(targetKey(options.owner.ref))
+          // A resource owner is checked on every switch-on, also when the Code only works on itself.
+          ...(!ownerRef || waitingByTarget.has(targetKey(ownerRef))
             ? []
-            : [{ target: targetOf(options.owner.ref), operations: [] as string[], isNew: false }]),
+            : [{ target: targetOf(ownerRef), operations: [] as string[], isNew: false }]),
           ...[...waitingByTarget.values()].map((entry) => {
             const present = presentOps.get(targetKey(entry.ref));
             return {
@@ -471,15 +483,23 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     ? visiblePanelProviders(getDisplayRuntimeContext(c).apps, user, locale).find((provider) => provider.code)
     : undefined;
   const tab = readTab(url.searchParams.get("tab"));
-  const appTypeTitle = await getCapabilityCatalogApp(cloudResourceRefAppId(options.owner.ref), locale)
-    .then((app) => {
-      if (!app.ok || !app.data) return null;
-      const localType = options.owner.ref.type.slice(app.data.appId.length + 1);
-      return app.data.manifest.types.find((type) => type.localId === localType)?.title ?? null;
-    })
-    .catch(() => null);
+  const ownerRef = ownerRefOf(options.owner);
+  const appTypeTitle = ownerRef
+    ? await getCapabilityCatalogApp(cloudResourceRefAppId(ownerRef), locale)
+        .then((app) => {
+          if (!app.ok || !app.data) return null;
+          const localType = ownerRef.type.slice(app.data.appId.length + 1);
+          return app.data.manifest.types.find((type) => type.localId === localType)?.title ?? null;
+        })
+        .catch(() => null)
+    : null;
   const base = {
-    owner: { ...options.owner, typeTitle: appTypeTitle },
+    owner: {
+      kind: ownerRef ? ("resource" as const) : ("person" as const),
+      ref: ownerRef,
+      title: ownerTitleOf(options.owner),
+      typeTitle: appTypeTitle,
+    },
     href: options.href,
     tab,
     canManageOwner: options.canManageOwner,
@@ -488,13 +508,23 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     dates: { ...getDateConfig(c), now: new Date().toISOString() },
     activatedNotice: /^\d{1,6}$/.test(url.searchParams.get("activated") ?? "") ? Number(url.searchParams.get("activated")) : null,
   } satisfies Omit<CodePageData, "state">;
-  const listed = await invoke(
-    coreQuery("code.list", { owner: { kind: "resource", ref: options.owner.ref }, limit: 1 }),
-    wrapped(CodeListSchema),
-  ).catch(() => null);
-  if (!listed?.ok) return { ...base, state: { kind: "error" } };
-  const code = listed.data.data.data.items[0];
-  if (!code) return { ...base, state: { kind: options.canManageOwner ? "none" : "no-access" } };
+  let code: z.infer<typeof CodeListSchema>["items"][number] | undefined;
+  if ("ref" in options.owner) {
+    const ownerRefForList = options.owner.ref;
+    const listed = await invoke(
+      coreQuery("code.list", { owner: { kind: "resource", ref: ownerRefForList }, limit: 1 }),
+      wrapped(CodeListSchema),
+    ).catch(() => null);
+    if (!listed?.ok) return { ...base, state: { kind: "error" } };
+    code = listed.data.data.data.items[0];
+    if (!code) return { ...base, state: { kind: options.canManageOwner ? "none" : "no-access" } };
+  } else {
+    // Personal Code is read by its ID; Core answers "not found" for Code the person may not see.
+    const read = await invoke(coreQuery("code.read", { codeId: options.owner.codeId }), wrapped(CodeReadSchema)).catch(() => null);
+    if (!read?.ok) return { ...base, state: { kind: read?.error.status === 404 || read?.error.status === 403 ? "no-access" : "error" } };
+    code = { ...read.data.data.data.code, permission: read.data.data.data.permission };
+    base.owner.title = code.title;
+  }
   try {
     // Like directory search: members see other people's names, guests only their own.
     const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };

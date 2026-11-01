@@ -9,7 +9,12 @@ import type {
 } from "./data";
 
 /** Fictional data only: the mailbox of a furniture shop and a logistics space. */
-const owner = { ref: { type: "mail.mailbox", id: "Mb4kd2" }, title: "info@moebel-beispiel.de", typeTitle: "Mailbox" };
+const owner = {
+  kind: "resource" as const,
+  ref: { type: "mail.mailbox", id: "Mb4kd2" },
+  title: "info@moebel-beispiel.de",
+  typeTitle: "Mailbox",
+};
 const ben = { id: "00000000-0000-4000-8000-0000000000b1", name: "Ben Schulz" };
 const lea = { id: "00000000-0000-4000-8000-0000000000a1", name: "Lea Muster" };
 const own: CodePageTarget = {
