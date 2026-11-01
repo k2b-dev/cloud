@@ -305,6 +305,15 @@ describe("Notes: table formulas", () => {
     await page.locator(".cm-notebook-active-result[data-error]", { hasText: "Unbekannte Spalte" }).waitFor();
   }, 15_000);
 
+  test("cells without a formula keep their Markdown: bold header, literal escapes", async () => {
+    await newNote();
+    await pasteSource("| **Name** | Wert |\n| --- | --- |\n| \\*wörtlich\\* | *kursiv* |\n\nEnde");
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.locator('.k2b-ste-cell[data-r="0"][data-c="0"] strong', { hasText: "Name" }).waitFor();
+    expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').innerText()).toBe("*wörtlich*");
+    await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"] em', { hasText: "kursiv" }).waitFor();
+  }, 15_000);
+
   test("on a phone the suggestions of a cell at the right stay fully visible", async () => {
     await context.close();
     await open(390, 844);

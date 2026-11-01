@@ -1597,16 +1597,6 @@ body.k2b-ui {
   border-radius: inherit;
   background: var(--ink);
 }
-.n-editor .cm-tag-pill {
-  --c: var(--t-emerald);
-  padding: 0 0.4rem;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--c);
-  background: color-mix(in srgb, var(--c) var(--tile), transparent);
-  text-decoration: none;
-}
 
 /* Checklist boxes take the site ink, as in mockup v4. */
 .n-editor .custom-list-task-marker {

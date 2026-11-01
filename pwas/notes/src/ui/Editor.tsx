@@ -5,7 +5,7 @@ import { collab } from "@k2b/editor/collab";
 import type { MarkdownUrlOptions } from "@k2b/editor/markdown";
 import { createNotebookTablePresentation } from "@k2b/editor/markdown/shared-tables";
 import { files as browserFiles } from "@k2b/stdlib/browser";
-import type { TextEditorController, TextEditorControls } from "@k2b/ui/text-editor";
+import { renderInline, type TextEditorController, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -77,10 +77,7 @@ export function NoteEditor(props: {
           .catch(() => {}),
     });
   // Formula results are part of the table's first paint, so this stays out of the lazy presentation chunk.
-  const tablePresentation = createNotebookTablePresentation({
-    locale: preferences.locale,
-    resolveUrl: (kind, ref) => (kind === "tag" ? `/?tag=${encodeURIComponent(ref)}` : ref),
-  });
+  const tablePresentation = createNotebookTablePresentation({ locale: preferences.locale, renderInline });
   // The Notebooks presentation: rendered lists, notices, images, links, formulas and diagrams; editing a block shows its source.
   type Loaded = { md: Presentation["md"]; previews: { extension: Extension; listener: Extension } };
   const [presentation, setPresentation] = createSignal<Loaded>();
