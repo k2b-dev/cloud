@@ -564,12 +564,12 @@ are incomplete. The manifest advertises the supported targets and owners in
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
 
-Successful dry-run `code.access.set` results include `managerUserIds`: the current
-people managing the target, including members of manager groups. Core uses these
-IDs to notify managers when a Cloud administrator activates Code. Return an empty
-array when no person manages the target; service accounts are never notification
-recipients. The platform preserves this field in its set result, including dry-run
-retries of existing grants.
+Successful adapter dry runs identify current human managers in `managerUserIds`,
+including members of manager groups. Return an empty array when no person
+manages the target; service accounts are never notification recipients.
+Generated `code.access.set` answers preserve this field only when the activating
+person may read the target. Core notifications use the separate server-only
+lookup described below, including for Cloud admins who cannot read the target.
 
 `CODE_ACCESS_MAX_MANAGER_USER_IDS` from `@k2b/cloud/contracts` bounds the array
 using the capability result byte budget. The complete set result and its receipt
