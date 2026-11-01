@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.42.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.41.0...npm-ui-v0.42.0) (2026-11-01)
+
+
+### Features
+
+* **notes:** the slash menu and table formulas work as in Notebooks ([#2363](https://github.com/k2b-dev/cloud/issues/2363)) ([a9a277f](https://github.com/k2b-dev/cloud/commit/a9a277ff1136d972d00ae95ec930d18f436a036f))
+* **spaces:** every + opens one menu with the Space's templates ([#2329](https://github.com/k2b-dev/cloud/issues/2329)) ([967d59a](https://github.com/k2b-dev/cloud/commit/967d59a5284ee3814a3f8da27669db01801a94a0))
+* **ui:** menus can search their entries and open from a server-rendered link ([#2320](https://github.com/k2b-dev/cloud/issues/2320)) ([98c50d2](https://github.com/k2b-dev/cloud/commit/98c50d2767588c608b7db6b126f65968d4483965))
+
+
+### Bug Fixes
+
+* **editor:** a checked box shows its check under a strict content policy ([#2370](https://github.com/k2b-dev/cloud/issues/2370)) ([0c67781](https://github.com/k2b-dev/cloud/commit/0c67781d3268793a5d4f3027fa814d26acbf6dd9))
+* **mail:** stop disposed test windows from querying file providers ([#2356](https://github.com/k2b-dev/cloud/issues/2356)) ([40ce1af](https://github.com/k2b-dev/cloud/commit/40ce1af8af7a8323cf32b236da1e693a5eab1c20))
+* **test:** no unit shard runs into its time limit ([#2381](https://github.com/k2b-dev/cloud/issues/2381)) ([3ec64b1](https://github.com/k2b-dev/cloud/commit/3ec64b120f330318e8239bd625a8172ae391e99e))
+* **test:** the first browser test no longer pays the engine's warm-up ([#2365](https://github.com/k2b-dev/cloud/issues/2365)) ([0decf0e](https://github.com/k2b-dev/cloud/commit/0decf0e581af9f036c3d15937a97c3283102815c)), closes [#2149](https://github.com/k2b-dev/cloud/issues/2149) [#2073](https://github.com/k2b-dev/cloud/issues/2073)
+* **ui:** a long task no longer stops the dayHours week's reveal short of a drawer ([#2379](https://github.com/k2b-dev/cloud/issues/2379)) ([c217a52](https://github.com/k2b-dev/cloud/commit/c217a52696a7791a00497f89677938affcb0c057)), closes [#2199](https://github.com/k2b-dev/cloud/issues/2199)
+* **ui:** checked checkboxes keep their rounded corners ([#2360](https://github.com/k2b-dev/cloud/issues/2360)) ([781668c](https://github.com/k2b-dev/cloud/commit/781668c6622074a2b901ffcc42b6b62caa607070))
+* **ui:** settings categories and toolbars separate groups with space, not lines ([#2309](https://github.com/k2b-dev/cloud/issues/2309)) ([c2b1435](https://github.com/k2b-dev/cloud/commit/c2b14356c146df0b9139479f2f74b4c22d3b7c02))
+* **ui:** text no longer jumps when someone types below a table ([#2380](https://github.com/k2b-dev/cloud/issues/2380)) ([814c4fe](https://github.com/k2b-dev/cloud/commit/814c4fe85b66a994c1f14bec80dfa9695f51f476))
+
 ## [0.41.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.40.0...npm-ui-v0.41.0) (2026-11-01)
 
 
