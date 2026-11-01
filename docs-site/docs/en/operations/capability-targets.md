@@ -77,6 +77,17 @@ declarations remain supported when their Type has a reader. This also applies to
 before upgrading if a Type currently declares `access.readable` alone. New
 generated Actions carry `unattended: false`, so older Core readers omit them instead of stripping that restriction.
 
+Adapters implement `manages(tx, context, id)`: manager checks run inside the write
+transaction and retain locks shared with the provider's manager-change paths.
+Update older two-argument adapters before deploying this contract; use the
+supplied connection for every adapter query.
+
+Deploy the updated Core activation transport together with providers that expose
+the generated Code access routes. Dry-run answers reveal only what the person
+may read through the target Type's existing `access.readable`. Core obtains
+Cloud-admin notification recipients through its separate target-bound server
+authority; they are not required in an unreadable person's dry-run answer.
+
 Keep the adapter available while its app has Code grants to remove. Core must
 finish target cleanup before deleting the Code account. Live grants prevent
 account deletion; removing them releases that reference and preserves replay

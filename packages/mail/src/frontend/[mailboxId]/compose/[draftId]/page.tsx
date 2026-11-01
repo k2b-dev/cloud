@@ -17,7 +17,7 @@ import MailComposerPage from "../../../_components/MailComposerPage.island";
 import { mailDraftReturnHref } from "../../../_components/mail-compose-route";
 import { readMailComposerPanesFromCookieHeader, reconcileMailComposerPanes } from "../../../_components/mail-composer-panes";
 import { mailPageMessages } from "../../../pages-messages";
-import { projectComposeData, resolveSsrMailboxId, resolveSsrMailboxResourceId } from "../../../ssr-public-boundary";
+import { pageReadStatus, projectComposeData, resolveSsrMailboxId, resolveSsrMailboxResourceId } from "../../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = mailPageMessages.resolve([getLocale(c)]);
@@ -52,8 +52,8 @@ export default ssr<AuthContext>(async (c) => {
       composeTemplates.listComposeTemplates(context, mailboxId),
       composeTemplates.listComposeSignatureDefaults(context, mailboxId),
     ]);
-  if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
-  if (!draft.ok) return ssr.error(c, draft.error.status);
+  if (!mailbox.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, mailbox.error.status));
+  if (!draft.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, draft.error.status));
   if (!access.ok) return ssr.error(c, 403);
   const publicData = await projectComposeData({
     mailbox: mailbox.data,

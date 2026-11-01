@@ -533,7 +533,7 @@ supports reader checks; it remains independent of the four Code functions.
 
 ```ts
 const itemCodeAccess: CodeAccessAdapter = {
-  manages: (context, id) => itemService.manages(context, id),
+  manages: (tx, context, id) => itemService.managesInTransaction(tx, context, id),
   grant: (tx, input) => itemService.grantCodeAccess(tx, input),
   revoke: (tx, input) => itemService.revokeCodeAccess(tx, input),
   list: (tx, input) => itemService.listCodeAccess(tx, input),
@@ -559,12 +559,35 @@ are incomplete. The manifest advertises the supported targets and owners in
 
 | Function | Responsibility |
 | --- | --- |
-| `manages(context, id)` | Check the person's current manager authority at the target. Code never counts as a manager. |
+| `manages(tx, context, id)` | Lock and check the person's current manager authority at the target using the supplied transaction. Code never counts as a manager. |
 | `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`. |
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
 
-Use only the supplied transaction for adapter reads and writes. Do not publish
+Cloud calls `manages` inside the same transaction as `grant` or `revoke`, including
+dry runs and retries. Lock the target's authority before reading its current
+ownership, grants and membership, and retain the lock until commit or rollback.
+Every path that changes those managers must take a conflicting lock on the same
+rows or tables. For example, lock the target row `FOR UPDATE` if all manager
+changes lock that row too. Locking existing share rows alone does not protect
+missing or newly inserted shares. Include inherited authority and group membership
+in the locking strategy; cached roles or groups from `context` are not a current
+manager check. The platform revalidates and locks Cloud-admin authority separately
+and skips `manages` for a live Cloud admin. Consequently, `grant` and `revoke` must
+lock and check the target themselves, including its existence, rather than assume
+that `manages` ran.
+
+Person listings call `manages` for multiple targets in one transaction, retaining
+each lock until that list finishes. Prefer `FOR SHARE` where every manager-change
+path takes a conflicting lock. When exclusive locks are necessary, order targets
+consistently across adapter lists and all domain paths that lock multiple targets.
+Platform grant/account locks precede adapter target locks. Do not call platform
+grant cleanup while already holding a target lock in a domain transaction; finish
+that transaction first or acquire the platform locks first. Core account inspection
+uses its separate account-scoped authority.
+
+Use only the supplied transaction for adapter reads and writes. Never open a
+separate database connection from `manages`, `grant`, `revoke` or `list`. Do not publish
 events, send notifications, or perform other external effects there. A dry run
 must produce the same decision without effects; Cloud also rolls back its
 transaction. A refusal or exception rolls back the adapter's writes. Code
@@ -573,13 +596,32 @@ independent, even for the same account and target: rolling back a new
 activation must leave older grants intact. Its permission resolver must use
 only its own explicit grants, ignoring public, group and signed-in access.
 
+Dry-run answers reveal only what the person may read. Cloud calls the target
+Type's existing `access.readable` for the activating person, independently of
+manager or Cloud-admin authority. Only a readable target can return `title`
+(from its canonical reader) and `managerUserIds`. A missing reader check means
+no presentation metadata. Refusals for an unreadable target use a generic manager
+message; keep the target ID and the option to copy the Code link.
+
+Successful adapter dry runs return current human managers in `managerUserIds`,
+including administrator-group members. This array shares the existing capability
+result budget (`CODE_ACCESS_MAX_MANAGER_USER_IDS`); refuse an oversized audience
+rather than truncate it. Core obtains Cloud-admin notification recipients through
+its separate target-bound `signCodeAccessNotifications` server authority. That
+lookup always rolls back, grants nothing, and never becomes person-visible
+presentation. The four adapter functions stay the same.
+
 Cloud generates these capabilities once per app:
 
 | Capability | Input | Data |
 | --- | --- | --- |
-| `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level }` or `{ granted: false, reasonCode, reason }` |
+| `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level, readable }` or `{ granted: false, reasonCode, reason, readable }`; readable dry runs may include `title` and `managerUserIds` |
 | `<app>.code.access.list` | `{ principal }` | `{ grantId, target, principal, level }[]` for targets the person manages |
 | `<app>.code.access.rm` | `{ grantId }` | `{ removed: boolean }` |
+
+Generated titles, descriptions and all input-field descriptions include English
+and German presentation. Apps do not need to repeat these translations; any
+field overrides retain the platform's remaining input descriptions.
 
 Resource targets use qualified Types, for example
 `{ type: "inventory.item", id: "item-1" }`; an app target uses

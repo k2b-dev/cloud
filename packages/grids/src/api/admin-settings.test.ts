@@ -30,7 +30,12 @@ test("Grids forwards explicit unreadable replacement and preserves the default 4
   const response = await router.request(`/${key}`, { method: "PUT", headers, body: JSON.stringify({ value: 10 }) });
   expect(response.status).toBe(409);
   expect(await response.json()).toEqual({ code: "setting_unreadable", message: error.message });
-  expect(update).toHaveBeenLastCalledWith({ key, value: 10, replaceUnreadable: undefined });
+  expect(update).toHaveBeenLastCalledWith({
+    key,
+    value: 10,
+    replaceUnreadable: undefined,
+    audit: expect.objectContaining({ action: "settings.update", actor: { userId: user.id } }),
+  });
 
   update.mockResolvedValue(ok(undefined));
   const replaced = await router.request(`/${key}`, {
@@ -39,7 +44,12 @@ test("Grids forwards explicit unreadable replacement and preserves the default 4
     body: JSON.stringify({ value: 10, replaceUnreadable: true }),
   });
   expect(replaced.status).toBe(200);
-  expect(update).toHaveBeenLastCalledWith({ key, value: 10, replaceUnreadable: true });
+  expect(update).toHaveBeenLastCalledWith({
+    key,
+    value: 10,
+    replaceUnreadable: true,
+    audit: expect.objectContaining({ action: "settings.update", actor: { userId: user.id } }),
+  });
 
   update.mockClear();
   const invalid = await router.request(`/${key}`, {

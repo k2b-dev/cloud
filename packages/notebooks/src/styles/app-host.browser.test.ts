@@ -25,7 +25,7 @@ test("Notebooks chrome beside a panel matches a window as wide as its host", asy
   ] as const) {
     const page = await browser.newPage({ viewport: { width: windowWidth, height: 900 }, reducedMotion: "reduce" });
     try {
-      const markup = `<div style="width:100%"><div class="notebook-document-surface" data-full-width><div class="notebook-note-preview__content">Reading column</div></div><div class="notebooks-navigation-toggle">Navigation</div><div class="notebooks-navigation-toggle" data-navigation-hidden>Hidden navigation</div></div>`;
+      const markup = `<div style="width:100%"><div class="notebook-document-surface" data-full-width><div class="notebook-note-preview__content">Reading column</div></div><div class="notebooks-navigation-toggle">Navigation</div></div>`;
       const content = (narrowed: boolean) =>
         `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;display:flex">${narrowed ? `<div style="container:k2b-app-area / inline-size;width:${host}px;flex:none">${markup}</div><aside style="flex:1">Panel</aside>` : markup}</body></html>`;
       const measure = () =>
@@ -47,7 +47,8 @@ test("Notebooks chrome beside a panel matches a window as wide as its host", asy
       expect(besidePanel, `${windowWidth}px window / ${host}px host`).toEqual(await measure());
       expect(besidePanel.measure).toBe(host < 1024 ? "44rem" : "100%");
       expect(besidePanel.readingWidth).toBe(host < 1024 ? 704 : host);
-      expect(besidePanel.navigation).toEqual(host < 1024 ? ["none", "flex"] : ["flex", "flex"]);
+      // From a 48 rem window the toolbar's navigation button always shows: below a 64 rem host it opens the overlay.
+      expect(besidePanel.navigation).toEqual(["flex"]);
     } finally {
       await page.close();
     }

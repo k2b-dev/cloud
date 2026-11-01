@@ -1,6 +1,10 @@
 ---
 name: scheduled-tasks
 description: "Create and manage Assistant routines: one-time reminders, delayed jobs and recurring background work. Use for requests such as remind me tomorrow, check in an hour, every morning, set up a routine, or changing, pausing, resuming and repairing a routine, including missing permissions or failed runs."
+load-tools:
+  - core.ai.task.create
+  - core.ai.tasks.list
+  - core.ai.task.read
 ---
 
 # Create and manage Assistant routines
