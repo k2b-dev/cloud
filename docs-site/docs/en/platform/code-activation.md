@@ -44,6 +44,11 @@ capability invocation.
 | `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after scheduling cancellation |
 | `POST /api/code/access` | `{ codeId }` | Active version's target access observations |
 
+Each access observation names its grant, target, operations and state
+(`present`, `removed`, `unavailable`), plus `activatedBy` and `activatedAt`
+of the activation that created it; the [Code page](/en/docs/platform/code-page)
+shows them.
+
 Generate `activationId` as a UUID once. Reuse it after a lost HTTP response;
 Core returns the existing process. Reusing it for another Code, version or
 activating person returns a conflict. A terminal failure needs a new activation

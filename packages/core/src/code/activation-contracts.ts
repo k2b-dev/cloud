@@ -39,6 +39,10 @@ export const CodeTargetAccessSchema = z
     grantId: z.uuid(),
     target: CodeAccessTargetSchema,
     operations: z.array(z.string()),
+    /** Person whose activation created this grant; null after that account was deleted. */
+    activatedBy: z.uuid().nullable(),
+    /** When that activation became active; null while it has not finished. */
+    activatedAt: z.iso.datetime().nullable(),
     state: z.enum(["present", "removed", "unavailable"]),
   })
   .strict();

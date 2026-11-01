@@ -2749,6 +2749,8 @@ function createMailboxController(props: MailboxControllerProps) {
         return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
       },
       onNavigate: navigateWorkspace,
+      // Mailbox administrators reach its Code; others with access to the Code reach it by link or from the panel.
+      ...(canAdmin() && !assignedOnly() ? { code: { active: false } } : {}),
     }),
     onOpenPlaceRowHiddenChange: setOpenPlaceRowHidden,
     preferences: () => ({

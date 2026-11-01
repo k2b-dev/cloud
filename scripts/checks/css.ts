@@ -18,6 +18,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "base-popover.css",
   "effects.css",
   "approvals.css",
+  "code-page.css",
   "input.css",
   "resource-search.css",
   "file-chooser.css",
