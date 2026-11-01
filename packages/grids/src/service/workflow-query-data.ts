@@ -196,8 +196,18 @@ export const captureWorkflowQueryData = async (
   // on the writer's transaction. Ordinary captures retain a repeatable snapshot;
   // it is not READ ONLY because machine authority takes FOR SHARE locks in it.
   if (transactionClient) return capture(transactionClient);
-  return sql.begin(async (client) => {
-    await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
-    return capture(client);
-  });
+  // A failed query aborts this read-only snapshot, so a failed capture rolls back instead of committing.
+  let failed: Result<WorkflowQueryCapture> | undefined;
+  try {
+    return await sql.begin(async (client) => {
+      await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
+      const captured = await capture(client);
+      if (captured.ok) return captured;
+      failed = captured;
+      throw new Error("Workflow query capture failed");
+    });
+  } catch (error) {
+    if (failed) return failed;
+    throw error;
+  }
 };

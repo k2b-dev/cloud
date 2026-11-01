@@ -32,9 +32,7 @@ describe("minified notebooks bundle", () => {
       `export { reindexAll } from ${JSON.stringify(resolve(import.meta.dir, "note-refs.ts"))};
 export { initializePlatform } from ${JSON.stringify(Bun.resolveSync("@k2b/cloud/start", import.meta.dir))};`,
     );
-    // The reindex renders nothing, so it needs no Solid transform; since Bun 1.4.3 `jsx: preserve` still links
-    // Solid's JSX runtime, which it lacks, and classic JSX needs no import.
-    const bundle = await Bun.build({ entrypoints: [source], outdir, target: "bun", minify: true, jsx: { runtime: "classic" } });
+    const bundle = await Bun.build({ entrypoints: [source], outdir, target: "bun", minify: true });
     expect(bundle.success, bundle.logs.join("\n")).toBe(true);
     const entry = bundle.outputs[0]!.path;
     const script = `const { initializePlatform, reindexAll } = await import(${JSON.stringify(entry)});

@@ -13,7 +13,7 @@ import { nameMatchRank, rankSearchCandidates, type SearchCandidate } from "./sea
 import { SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
 
 const run = async <T>(query: SQLQuery<T>, signal?: AbortSignal): Promise<T> => {
-  const cancel = () => query.cancel();
+  const cancel = () => void query.cancel().catch(() => {});
   try {
     signal?.throwIfAborted();
     signal?.addEventListener("abort", cancel, { once: true });

@@ -136,6 +136,7 @@
   "trustedDependencies": [],
   "patchedDependencies": {
     "hucre@1.1.0": "patches/hucre@1.1.0.patch",
-    "bun-plugin-tailwind@0.1.2": "patches/bun-plugin-tailwind@0.1.2.patch"
+    "bun-plugin-tailwind@0.1.2": "patches/bun-plugin-tailwind@0.1.2.patch",
+    "solid-js@1.9.17": "patches/solid-js@1.9.17.patch"
   }
 }

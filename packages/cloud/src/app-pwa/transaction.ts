@@ -169,7 +169,7 @@ export const withAppPwaTransactionLease = async <T>(
     open = false;
     for (const query of queries) {
       try {
-        query.cancel();
+        void Promise.resolve(query.cancel()).catch(() => {});
       } catch {
         /* Transaction recovery owns a failed cancellation. */
       }
