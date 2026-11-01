@@ -488,9 +488,6 @@ export const createResourceApiToken = async (params: {
   });
 };
 
-/** Scopes only cap a machine's grants, so a full key reaches exactly what the account was granted. */
-const FULL_ACCESS_SCOPES = ["read", "write", "admin"];
-
 /** Static bearer for a standalone principal (kind standalone or agent); the raw token is returned once. */
 export const createStandaloneApiToken = async (params: {
   serviceAccountId: string;
@@ -512,12 +509,7 @@ export const createStandaloneApiToken = async (params: {
       name: params.name,
       expiresAt: params.expiresAt,
       createdBy: params.actor.id,
-      scopes:
-        params.access === "models"
-          ? [AI_INFERENCE_SCOPE]
-          : params.access === "full" && !params.scopes?.length
-            ? FULL_ACCESS_SCOPES
-            : params.scopes,
+      scopes: params.access === "models" ? [AI_INFERENCE_SCOPE] : params.scopes,
     });
 
     return audit.recordResult({

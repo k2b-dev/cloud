@@ -33,7 +33,7 @@ const authorityOf = async (token: string): Promise<RequestAuthority> => {
 
 suite("machine API keys from the administrator route", () => {
   for (const kind of ["standalone", "agent"] as const)
-    test(`${kind}: a full key enters within the account's grants and keeps explicit caps`, async () => {
+    test(`${kind}: a key stores the named scopes and enters only what its rules allow`, async () => {
       const suffix = crypto.randomUUID();
       const [admin] = await sql<{ id: string }[]>`
         INSERT INTO auth.users(uid,provider,profile,admin) VALUES (${`key-admin-${suffix}`},'local','user',true) RETURNING id`;
@@ -55,8 +55,8 @@ suite("machine API keys from the administrator route", () => {
         return (await response.json()) as { token: string; credential: { scopes: string[] } };
       };
       try {
-        // The browser dialog sends access: "full" without scopes.
-        const full = await create({ name: "Full", access: "full" });
+        // The browser dialog names these scopes for "Full access".
+        const full = await create({ name: "Full", access: "full", scopes: ["read", "write", "admin"] });
         expect(full.credential.scopes).toEqual(["read", "write", "admin"]);
         expect(await usableAppIds(await authorityOf(full.token), [signedIn, granted])).toEqual(new Set([signedIn.id]));
 
