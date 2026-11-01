@@ -291,10 +291,12 @@ const listTheme = EditorView.theme({
   ".custom-list-task-marker:checked": {
     borderColor: "var(--k2b-action-solid)",
     backgroundColor: "var(--k2b-action-solid)",
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E")`,
-    backgroundPosition: "center",
+    // Two gradient strokes, not an image: a host's img-src policy may refuse a data: URL, and an input has no reliable pseudo-element in every engine.
+    backgroundImage:
+      "linear-gradient(45deg, transparent 27%, #fff 29.5%, #fff 49.2%, transparent 51.7%), linear-gradient(135deg, transparent 41.1%, #fff 43.6%, #fff 60.6%, transparent 63.1%)",
+    backgroundPosition: "23.08% 0, 68.97% 0",
     backgroundRepeat: "no-repeat",
-    backgroundSize: "100% 100%",
+    backgroundSize: "22% 100%, 42% 100%",
     forcedColorAdjust: "none",
   },
   ".custom-list-task-checked": {
