@@ -74,12 +74,14 @@ const details = {
     {
       grantId: "44444444-4444-4444-8444-444444444444",
       operations: ["spaces.task.create"],
+      automations: ["lieferungenEintragen"],
       activatedBy: { id: "66666666-6666-4666-8666-666666666666", name: "Ben Schulz" },
       activatedAt: "2026-10-28T09:00:00.000Z",
     },
     {
       grantId: "55555555-5555-4555-8555-555555555555",
       operations: ["spaces.task.list"],
+      automations: ["bestelluebersicht"],
       activatedBy: { id: "77777777-7777-4777-8777-777777777777", name: "Mia Koch" },
       activatedAt: "2026-10-21T09:00:00.000Z",
     },
@@ -162,8 +164,11 @@ describe("Code with access in a share dialog", () => {
           });
         }
         expect(loaded.overflow).toBeLessThanOrEqual(0);
+        expect(await tab.locator("[data-code-access-row]").first().textContent()).toContain("spaces.task.create · für „lieferungenEintragen“");
         await tab.getByRole("button", { name: "Zugriff von „Code von info@“ entfernen" }).click();
-        await tab.getByRole("dialog", { name: "Zugriff von „Code von info@“ entfernen?" }).waitFor();
+        const confirm = tab.getByRole("dialog", { name: "Zugriff von „Code von info@“ entfernen?" });
+        await confirm.waitFor();
+        expect(await confirm.textContent()).toContain("„lieferungenEintragen“ kann hier dann nichts mehr tun");
         await shot(tab, `${width}-confirm`);
         await tab.getByRole("button", { name: "Zugriff entfernen", exact: true }).click();
         await tab.waitForFunction(() => document.querySelector("[data-code-access-row][aria-busy=true]") !== null);

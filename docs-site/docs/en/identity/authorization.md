@@ -664,7 +664,11 @@ application that mounts the editor gets the section; it needs no props.
   application shows that application's name to people who may use it. An owner
   the viewer cannot read appears as "Code whose owner you can't see".
 - People who may change access also see each grant's operations, such as
-  `spaces.task.create`, and who switched it on and when. Core returns these
+  `spaces.task.create`, the automations of the running version that use them
+  here ("for “deliveries”"), and who switched it on and when. The automation
+  names come from the [checker](/en/docs/platform/code-checker); a call the
+  checker cannot place adds no name, and the remove confirmation then speaks of
+  "the code" instead of naming automations. Core returns these
   details only for grants the application's own `code.access.list` lists for
   that person, so only at resources they manage. Other viewers see the entry's
   level in the editor's own vocabulary.

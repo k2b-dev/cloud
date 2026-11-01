@@ -30,7 +30,10 @@ export type CodeCheckLimits = z.infer<typeof CodeCheckLimitsSchema>;
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 /** Null id means a dynamic personal/code_run target. Null target means an app-wide operation.
- * Resource-owned Code never produces a dynamic id. A ref contributes another permission for the same operation. */
+ * Resource-owned Code never produces a dynamic id. A ref contributes another permission for the same operation.
+ * entrypoints names, sorted, the manifest entrypoints whose handler contains the call: an inline handler or a
+ * function the schedule names directly. A call the checker cannot place, such as one in a helper the handler
+ * calls, has no entrypoints field; it never guesses. */
 export const CodePermissionSchema = z
   .object({
     operation: z.string().min(1),
@@ -40,6 +43,7 @@ export const CodePermissionSchema = z
       .nullable(),
     file: z.string().min(1),
     line: z.number().int().positive(),
+    entrypoints: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();
 export type CodePermission = z.infer<typeof CodePermissionSchema>;

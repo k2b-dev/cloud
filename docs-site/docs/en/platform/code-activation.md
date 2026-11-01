@@ -58,7 +58,9 @@ appears only when that list returns it, which happens only at targets the person
 manages, and only when Core's record names the same Code account and the same
 target of that application. A refused list shows nothing; an unavailable or
 malformed list fails the request so the dialog can retry. Each detail has
-`grantId`, sorted `operations`, `activatedBy`
+`grantId`, sorted `operations`, sorted `automations` (the running version's
+entrypoints whose calls use these operations at this target, from the checker's
+`permissions[].entrypoints`; empty when none could be placed), `activatedBy`
 (`{ id, name }` or `null`) and `activatedAt` (`null` until the activation
 finishes). Names follow directory visibility: members see other people's names;
 guests see only their own.

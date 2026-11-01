@@ -178,7 +178,14 @@ databaseSuite()("durable Code activation", () => {
       entrypoints: [{ kind: "manual", entrypoint: "run", cron: null, file: "code.ts", line: 1 }],
       policyRows: ["silent_draft"],
       ai: false,
-      permissions: targets.map((id) => ({ operation: `example.${op}`, target: { type: "example.item", id }, file: "code.ts", line: 1 })),
+      // The checker could place the call at A in the run entrypoint, not the one at B.
+      permissions: targets.map((id) => ({
+        operation: `example.${op}`,
+        target: { type: "example.item", id },
+        file: "code.ts",
+        line: 1,
+        ...(id === "A" ? { entrypoints: ["run"] } : {}),
+      })),
     };
     return submitCodeVersion({ codeId: code.id, sourceFiles, bundle, manifest, baseVersionId }, owner);
   }
@@ -893,11 +900,16 @@ databaseSuite()("durable Code activation", () => {
       {
         grantId: atA.grantId,
         operations: ["example.item.change"],
+        automations: ["run"],
         activatedBy: { id: ownerId, name: "Ben Schulz" },
         activatedAt: expect.stringMatching(/^2026-10-31T/),
       },
     ]);
     expect(listed).toEqual([{ appId: "example", operation: "list", input: { principal } }]);
+    // The automation comes from the running version's checker evidence; a call it could not place names none.
+    expect(await readCodeGrantDetails(input, owner, request, { invoke: async () => Response.json({ data: [atB] }) })).toEqual([
+      expect.objectContaining({ grantId: atB.grantId, automations: [] }),
+    ]);
     // A guest sees when, but not another person's name.
     const guest: CodeContext = {
       ...owner,

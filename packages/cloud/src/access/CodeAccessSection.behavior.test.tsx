@@ -453,6 +453,7 @@ describe("Code with access in the shared rights editor", () => {
             {
               grantId: ids.grantInfo,
               operations: ["spaces.task.create"],
+              automations: ["lieferungenEintragen"],
               activatedBy: { id: "66666666-6666-4666-8666-666666666666", name: "Ben Schulz" },
               activatedAt: "2026-10-28T09:00:00.000Z",
             },
@@ -474,10 +475,16 @@ describe("Code with access in the shared rights editor", () => {
         },
       ]);
       expect(view.codeRows().map((row) => row.textContent)).toEqual([
-        "Code von info@moebel-beispiel.despaces.task.createeingeschaltet von Ben Schulz am 28.10.2026Entfernen",
+        "Code von info@moebel-beispiel.despaces.task.create · für „lieferungenEintragen“eingeschaltet von Ben Schulz am 28.10.2026Entfernen",
         "Code von EinkaufAnsehenEntfernen",
       ]);
       expect(view.codeRows()[0]!.querySelector("code")?.textContent).toBe("spaces.task.create");
+      // Removing names the automation that stops working here.
+      view.codeRows()[0]!.querySelector<HTMLButtonElement>("button")!.click();
+      await waitFor(() => view.confirmations.length === 1, "the confirmation");
+      expect(view.confirmations[0]!.content).toStartWith(
+        "„lieferungenEintragen“ kann hier dann nichts mehr tun; seine Läufe scheitern, bis jemand neu einschaltet. Was es schon gibt, bleibt.",
+      );
     } finally {
       view.cleanup();
     }
@@ -492,17 +499,19 @@ describe("Code with access in the shared rights editor", () => {
             {
               grantId: ids.grantInfo,
               operations: ["spaces.task.create", "spaces.task.update"],
+              automations: ["anfragenSortieren", "lieferungenEintragen"],
               activatedBy: null,
               activatedAt: "2026-10-28T09:00:00.000Z",
             },
-            { grantId: ids.grantBase, operations: ["spaces.task.list"], activatedBy: null, activatedAt: null },
+            // The checker could not place this call: no automation line.
+            { grantId: ids.grantBase, operations: ["spaces.task.list"], automations: [], activatedBy: null, activatedAt: null },
           ],
         }),
     });
     try {
       await waitFor(() => view.section()?.getAttribute("aria-busy") === null, "the loaded section");
       expect(view.codeRows().map((row) => row.textContent)).toEqual([
-        "Code von info@moebel-beispiel.despaces.task.create, spaces.task.updateeingeschaltet am 28.10.2026Entfernen",
+        "Code von info@moebel-beispiel.despaces.task.create, spaces.task.update · für „anfragenSortieren“ und „lieferungenEintragen“eingeschaltet am 28.10.2026Entfernen",
         "Code von Einkaufspaces.task.listEntfernen",
       ]);
     } finally {
@@ -548,6 +557,7 @@ describe("Code with access in the shared rights editor", () => {
     const detail = {
       grantId: ids.grantInfo,
       operations: ["spaces.task.create"],
+      automations: [],
       activatedBy: { id: "66666666-6666-4666-8666-666666666666", name: "Ben Schulz" },
       activatedAt: "2026-10-28T09:00:00.000Z",
     };
