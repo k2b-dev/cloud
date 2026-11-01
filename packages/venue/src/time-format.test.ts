@@ -6,8 +6,10 @@ const startsAt = "2026-09-28T12:00:00.000Z";
 const endsAt = "2026-09-28T16:00:00.000Z";
 const originalTimeZone = process.env.TZ;
 
+// Assigning undefined would store the string "undefined", an invalid zone for every later file in this process (#2244).
 afterEach(() => {
-  process.env.TZ = originalTimeZone;
+  if (originalTimeZone === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTimeZone;
 });
 
 describe("Venue time formatting", () => {
