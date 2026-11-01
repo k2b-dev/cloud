@@ -147,8 +147,10 @@ A new behavior rides an existing mechanism before it may add a new one:
   never a hand edit of `.env.example`, documentation, or Compose;
 - a new integration test needs zero configuration; it gates itself on
   `CLOUD_TEST_*` through `scripts/fixtures/test-infra.ts`;
-- a new application touches exactly three files: the workspace list,
-  `compose.dev.yml`, and `compose.prod.yml`;
+- a new application has exactly three source inputs: the workspace list and
+  `scripts/templates/compose.dev.yml` and `scripts/templates/compose.prod.yml`;
+  regenerate Compose files and development keys with
+  `bun scripts/generate-app-deployments.ts`;
 - a new repository rule is one module under `scripts/checks/`, never a new
   `package.json` script or workflow;
 - a new script is a file with `--help`, not a `package.json` entry, unless CI

@@ -1,8 +1,10 @@
 import { type CloudCliText, cliAmbiguityText, localizeCloudCliText } from "@k2b/cloud/cli";
+import { PaginationQuerySchema, parsePagination } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
   type AuthContext,
   auth,
+  expectUserBackedActor,
   getDateConfig,
   getLocale,
   getTimeZone,
@@ -2199,19 +2201,19 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Create template",
-      description: `Create a task or event template. Requires admin access; names are unique per space and kind, and a space keeps at most ${MAX_ITEM_TEMPLATES_PER_KIND} templates per kind.`,
+      description: `Create a task or event template. Requires write access; names are unique per space and kind, and a space keeps at most ${MAX_ITEM_TEMPLATES_PER_KIND} templates per kind.`,
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemTemplateSchema, "Created template"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Space or tag not found"),
         409: jsonResponse(ErrorResponseSchema, "Name taken or template limit reached"),
       },
     }),
     v("json", CreateItemTemplateSchema),
     async (c) => {
-      const { internalId: spaceId, user, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, user, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const data = await resolveTemplateTags(spaceId!, c.req.valid("json"));
       if (!data.ok) return respond(c, data);
@@ -2254,19 +2256,19 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Update template",
       description:
-        "Change template fields; tag and assignee lists are replaced. Requires admin access. Items already created stay as they are.",
+        "Change template fields; tag and assignee lists are replaced. Requires write access. Items already created stay as they are.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemTemplateSchema, "Updated template"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Template or tag not found"),
         409: jsonResponse(ErrorResponseSchema, "Name taken"),
       },
     }),
     v("json", UpdateItemTemplateSchema),
     async (c) => {
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
       if (!template.ok) return respond(c, template);
@@ -2281,16 +2283,16 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Delete template",
-      description: "Delete a template. Requires admin access. Items created from it stay.",
+      description: "Delete a template. Requires write access. Items created from it stay.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Template deleted"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
         404: jsonResponse(ErrorResponseSchema, "Template not found"),
       },
     }),
     async (c) => {
-      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
       if (error) return error;
       const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
       if (!template.ok) return respond(c, template);
@@ -3195,6 +3197,44 @@ const app = new Hono<AuthContext>()
 const adminApp = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
   .get(
+    "/",
+    auth.requireOAuthScope("read", "admin"),
+    describeRoute({
+      tags: ["Spaces Admin"],
+      summary: "List Spaces for access recovery",
+      description: "Lists Space metadata and access counts without calendar export tokens. Requires Cloud admin.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({
+            items: z.array(SpaceSchema.omit({ icalToken: true }).extend({ permissionCount: z.number() })),
+            page: z.number(),
+            perPage: z.number(),
+            total: z.number(),
+            hasNext: z.boolean(),
+            summary: z.object({ total: z.number(), orphaned: z.number(), totalPermissions: z.number() }),
+          }),
+          "Space metadata and access counts",
+        ),
+        403: jsonResponse(ErrorResponseSchema, "Cloud admin required"),
+      },
+    }),
+    v("query", PaginationQuerySchema.extend({ search: z.string().max(200).optional() })),
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const query = c.req.valid("query");
+      const filter = { query: query.search };
+      const [spaces, summary] = await Promise.all([
+        spacesService.space.admin.list({ pagination: parsePagination(query), filter }),
+        spacesService.space.admin.summary({ filter }),
+      ]);
+      return respond(
+        c,
+        ok({ ...spaces, items: await projectSpaces(spaces.items.map(({ icalToken: _icalToken, ...item }) => item)), summary }),
+      );
+    },
+  )
+  .get(
     "/:id/access",
     describeRoute({
       tags: ["Spaces Admin"],
@@ -3322,7 +3362,7 @@ const adminApp = new Hono<AuthContext>()
     async (c) => {
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
-      return respondMessage(c, spacesService.space.remove({ id: spaceId! }), "spaceDeleted");
+      return respondMessage(c, spacesService.space.remove({ id: spaceId!, actorId: expectUserBackedActor(c).id }), "spaceDeleted");
     },
   );
 

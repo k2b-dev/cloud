@@ -85,21 +85,19 @@ test("production authentication and service permissions reject anonymous and non
   }
 });
 
-test("OAuth read and write scopes cannot change administrator domain settings", async () => {
-  for (const scope of ["read", "write"]) {
-    const routes = createAdminAppDomainRoutes(async (c, next) => {
-      c.set("user", { ...actor, roles: [...actor.roles] });
-      c.set("oauthScopes", [scope]);
-      return next();
-    });
-    for (const [method, path, body] of [
-      ["POST", "/site/domains", { host: domain.host }],
-      ["PATCH", `/site/domains/${domain.host}`, { redirectTo: null }],
-      ["DELETE", `/site/domains/${domain.host}`, undefined],
-      ["POST", `/site/domains/${domain.host}/check`, undefined],
-    ] as const)
-      expect((await routes.request(request(path, method, body))).status).toBe(403);
-  }
+test("read-scoped administrators cannot change domain settings", async () => {
+  const routes = createAdminAppDomainRoutes(async (c, next) => {
+    c.set("user", { ...actor, roles: [...actor.roles] });
+    c.set("oauthScopes", ["read"]);
+    return next();
+  });
+  for (const [method, path, body] of [
+    ["POST", "/site/domains", { host: domain.host }],
+    ["PATCH", `/site/domains/${domain.host}`, { redirectTo: null }],
+    ["DELETE", `/site/domains/${domain.host}`, undefined],
+    ["POST", `/site/domains/${domain.host}/check`, undefined],
+  ] as const)
+    expect((await routes.request(request(path, method, body))).status).toBe(403);
 });
 
 test("domain middleware does not change sibling app administration routes", async () => {

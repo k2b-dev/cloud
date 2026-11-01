@@ -1,0 +1,6 @@
+### A conditional tab inside a settings group never appeared
+
+- **What happened:** Mailbox administrators could not rename a mailbox: the mailbox settings showed Organization, Accounts & identities, Folders, Access, and Danger zone, but not General with the name field. In the side rail, "Konten und Identitäten" was cut off.
+- **Root cause:** `SettingsModal` resolves its own children with `children()`, but a group's children were read as they were. Mail wraps General in `<Show>` inside the Mailbox group; in the browser that `<Show>` is an accessor, not a tab definition, so the group dropped it. Server rendering returns the tab directly, so render tests could not see it. The rail kept every label on one line in an 11.5rem column.
+- **Error class:** A slot that collects component definitions reads nested control flow as a value instead of resolving it.
+- **Guard:** `packages/ui/test/settings-modal-groups.behavior.test.tsx` (a `<Show>` tab inside a group appears and follows its condition), `packages/ui/src/layout/settings-modal.browser.test.ts` (a long label fits in two lines at 1440 and in one line in the phone row), and `packages/mail/src/frontend/_components/MailboxSettingsDialog.behavior.test.tsx` (an administrator renames the mailbox in General).

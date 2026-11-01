@@ -36,7 +36,7 @@ Eine Vorlage kann Daten vorschlagen:
 - Die Vorschläge richten sich nach deiner Zeitzone. Bei einer Wochentagsregel bleibt heute für eine ganztägige Aufgabe den ganzen Tag verfügbar. Eine Vorlage mit Uhrzeit bietet heute nur an, solange diese Uhrzeit noch bevorsteht.
 - Die Platzhalter `{{date}}`, `{{weekday}}` und `{{week}}` in Titel und Beschreibung folgen dem gewählten Datum, bis du den Text änderst. Das gilt auch bei **Kein Datum** und bei einer Auswahl im Kalender.
 
-Mit Zugriff **Verwalten** richtest du Vorlagen in den Space-Einstellungen unter **Vorlagen** ein: Name, Vorgaben, Datumsregel und Fälligkeits- oder Startzeit. **Mir zuweisen** weist die Person zu, die den Eintrag anlegt. Eine geänderte oder gelöschte Vorlage ändert keine Einträge, die schon daraus entstanden sind. Alle, die Einträge anlegen können, können die Vorlagen nutzen.
+Mit Zugriff **Bearbeiten** erstellst, änderst und löschst du Vorlagen in den Space-Einstellungen unter **Vorlagen**: Name, optionales Symbol, Vorgaben, Datumsregel und Fälligkeits- oder Startzeit. **Mir zuweisen** weist die Person zu, die den Eintrag anlegt. Eine geänderte oder gelöschte Vorlage ändert keine Einträge, die schon daraus entstanden sind. Alle, die Einträge anlegen können, können die Vorlagen nutzen. Ohne eigenes Symbol verwendet die Vorlage das Standardsymbol für Aufgaben oder Termine.
 
 ## Eintrag strukturieren {icon="point"}
 

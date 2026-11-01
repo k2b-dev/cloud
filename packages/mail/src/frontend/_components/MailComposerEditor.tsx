@@ -144,7 +144,7 @@ export default function MailComposerEditor(props: {
   ]);
 
   return (
-    <div class="min-h-72 flex-1 py-2">
+    <div class="min-h-72 flex-1 pb-2">
       <Show when={usesPanes()} fallback={<div class="h-full min-h-72 overflow-hidden">{writeSurface()}</div>}>
         <Panes
           layout={props.panes()}

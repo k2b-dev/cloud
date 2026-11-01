@@ -139,6 +139,7 @@ describe("Spaces settings", () => {
       spaceId,
       kind: "task" as const,
       name: "Weekly report",
+      icon: null,
       title: "Weekly report {{week}}",
       description: null,
       priority: null,

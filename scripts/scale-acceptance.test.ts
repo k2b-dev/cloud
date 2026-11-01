@@ -14,6 +14,7 @@ import {
   type Replica,
   registryGapAnswer,
   SCALED_APPS,
+  scaleKeySecrets,
 } from "./scale-acceptance";
 import { appIds } from "./workspace";
 
@@ -192,4 +193,14 @@ test("retired replicas may be absent but must still have served a scenario step"
   expect(() =>
     assertBothReplicasServed("app-chat", { a, b, served: new Set([a.id, b.id]) }, new Set(), undefined, new Set([a.id])),
   ).toThrow("no longer running");
+});
+
+test("scale acceptance overrides production secret sources with its disposable run directory", () => {
+  expect(scaleKeySecrets("/tmp/isolated-scale/keys")).toEqual({
+    secrets: {
+      "mail-app-key": { file: "/tmp/isolated-scale/keys/mail.key" },
+      "chat-app-key": { file: "/tmp/isolated-scale/keys/chat.key" },
+      "notebooks-app-key": { file: "/tmp/isolated-scale/keys/notebooks.key" },
+    },
+  });
 });

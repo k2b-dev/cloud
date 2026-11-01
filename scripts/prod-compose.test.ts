@@ -4,7 +4,7 @@ import { appIds } from "./workspace";
 const compose = await Bun.file(new URL("../compose.prod.yml", import.meta.url)).text();
 
 describe("production Compose release set", () => {
-  test("isolates the OAuth broker secret to Core and OAuth in both stacks", async () => {
+  test("isolates the OAuth broker secret to Core during the key-mode rollout in both stacks", async () => {
     for (const file of ["compose.dev.yml", "compose.prod.yml"]) {
       const source = await Bun.file(new URL(`../${file}`, import.meta.url)).text();
       const receivers: string[] = [];
@@ -16,14 +16,21 @@ describe("production Compose release set", () => {
           expect(line.startsWith("      CLOUD_OAUTH_BROKER_SECRET:")).toBeTrue();
           receivers.push(service);
           if (file === "compose.dev.yml") expect(line).toMatch(/:-[a-f0-9]{64}\}/);
-          else expect(line).toContain("${CLOUD_OAUTH_BROKER_SECRET:?CLOUD_OAUTH_BROKER_SECRET is required}");
+          else expect(line).toContain("${CLOUD_OAUTH_BROKER_SECRET:-}");
         }
       }
-      expect(receivers).toEqual(["app-core", "app-oauth"]);
+      expect(receivers).toEqual(["app-core"]);
       expect(source).not.toContain("CLOUD_OAUTH_APP_CREDENTIAL");
       expect(source).not.toContain("CLOUD_MAIL_APP_CREDENTIAL");
       expect(source).not.toMatch(/CLOUD_[A-Z]+_APP_CREDENTIAL/);
     }
+  });
+  test("preserves the gateway host admission and private ingress listener", () => {
+    const gateway = compose.split("  gateway:\n")[1]?.split("  app-gateway-ops:")[0];
+    expect(gateway).toContain('aliases: ["cloud-gateway-${CLOUD_HOST}"]');
+    expect(gateway).toContain("APP_URL: https://${CLOUD_HOST}");
+    expect(gateway).toContain("GATEWAY_INTERNAL_URL: http://cloud-gateway-${CLOUD_HOST}:3000");
+    expect(gateway).toContain('expose: ["3001"]');
   });
   test("requires one immutable tag for every runtime image", () => {
     const images = compose

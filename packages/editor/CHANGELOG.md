@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.4.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.3.1...npm-editor-v0.4.0) (2026-11-01)
+
+
+### Features
+
+* **ui:** live dictation building blocks for composers and editors ([#2296](https://github.com/k2b-dev/cloud/issues/2296)) ([a45cb4f](https://github.com/k2b-dev/cloud/commit/a45cb4f94bf86a533e08e4dbfe32bee626d19c6c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.40.0 to 0.41.0
+
+## [0.3.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.3.0...npm-editor-v0.3.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **editor:** show other people's carets where they are ([#2234](https://github.com/k2b-dev/cloud/issues/2234)) ([06aeab4](https://github.com/k2b-dev/cloud/commit/06aeab4efe052f49d1d2a4437e297734413dcfc0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.39.0 to 0.40.0
+
 ## [0.3.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.2.0...npm-editor-v0.3.0) (2026-10-31)
 
 
