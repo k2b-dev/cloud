@@ -164,7 +164,9 @@ describe("Code with access in a share dialog", () => {
           });
         }
         expect(loaded.overflow).toBeLessThanOrEqual(0);
-        expect(await tab.locator("[data-code-access-row]").first().textContent()).toContain("spaces.task.create · für „lieferungenEintragen“");
+        expect(await tab.locator("[data-code-access-row]").first().textContent()).toContain(
+          "spaces.task.create · für „lieferungenEintragen“",
+        );
         await tab.getByRole("button", { name: "Zugriff von „Code von info@“ entfernen" }).click();
         const confirm = tab.getByRole("dialog", { name: "Zugriff von „Code von info@“ entfernen?" });
         await confirm.waitFor();
