@@ -184,3 +184,26 @@ test("notification transport binds a separate Core-only proof and never uses int
   expect(String(requests.mock.calls[0]![0])).toEndWith("/code-authority/queries/code.access.notifications");
   expect(requests.mock.calls[0]![1]?.headers).toEqual({ authorization: "Bearer notification-token" });
 });
+
+test("missing notification managers refuses definitively while audience outages retry", async () => {
+  inspection();
+  const sign = spyOn(access, "signCodeAccessNotifications").mockResolvedValue("notification-token"),
+    requests = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(Response.json({ code: "MANAGERS_UNAVAILABLE" }, { status: 422 }))
+      .mockResolvedValueOnce(Response.json({ code: "CAPACITY_EXCEEDED" }, { status: 422 }))
+      .mockResolvedValueOnce(Response.json({ code: "APP_UNAVAILABLE" }, { status: 503 }));
+  restores.push(
+    () => sign.mockRestore(),
+    () => requests.mockRestore(),
+  );
+  const { dryRun: _, ...request } = input;
+  await expect(codeActivationTransport.notificationManagers(request)).rejects.toMatchObject({
+    code: "managers_unavailable",
+    retryable: false,
+  });
+  await expect(codeActivationTransport.notificationManagers(request)).rejects.toMatchObject({
+    code: "capacity_exceeded",
+    retryable: false,
+  });
+  await expect(codeActivationTransport.notificationManagers(request)).rejects.toMatchObject({ code: "target_http_503", retryable: true });
+});

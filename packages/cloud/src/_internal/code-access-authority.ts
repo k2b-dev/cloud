@@ -92,7 +92,7 @@ export const createCodeAccessAuthorityRoutes = (appId: string, definitions: Capa
         return c.json({ code: "FORBIDDEN", message: "Core notification authority required" }, 403);
       try {
         const managerUserIds = await readCodeAccessManagers(appId, bindings, claims);
-        if (managerUserIds === null) return c.json({ code: "APP_UNAVAILABLE", message: "Notification audience unavailable" }, 503);
+        if (managerUserIds === null) return c.json({ code: "MANAGERS_UNAVAILABLE", message: "Target must identify its managers" }, 422);
         const data = { data: { managerUserIds } };
         if (new TextEncoder().encode(JSON.stringify(data)).byteLength > CAPABILITY_MAX_RESULT_BYTES)
           return c.json({ code: "CAPACITY_EXCEEDED", message: "Notification audience exceeds the response budget" }, 422);

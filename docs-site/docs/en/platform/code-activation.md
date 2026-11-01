@@ -103,8 +103,9 @@ members. Core obtains this audience through the server-only notification lookup,
 then records one durable notice per manager and target when activation commits.
 Recipients do not enter the target plan or the person's set answer when the
 target is unreadable. A retry repeats preflight and obtains the current audience;
-real sets need not return it. An unavailable audience retries activation, and an
-empty array means there are no human managers. Every adapter, including a
+real sets need not return it. A target that omits the audience refuses activation with
+`managers_unavailable`; a network outage retries. An empty array means there are
+no human managers. Every adapter, including a
 third-party adapter, supplies this audience for Cloud-admin activation. The
 shared capability result budget bounds it; refuse an oversized audience rather
 than truncate it.

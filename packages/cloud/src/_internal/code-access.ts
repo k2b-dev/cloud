@@ -16,7 +16,7 @@ import type {
   CapabilityPresentationCatalog,
   CapabilityQueryDefinition,
 } from "../contracts/capabilities";
-import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceReaderViewSchema } from "../contracts/capabilities";
+import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceReaderViewSchema, CloudResourceReferenceSchema } from "../contracts/capabilities";
 import {
   CodeAccessListDataSchema,
   CodeAccessListInputSchema,
@@ -108,52 +108,64 @@ export const presentCodeAccessDecision = async (
     (!decision.granted && ["proof_invalid", "origin_forbidden", "unsupported_target", "operations_invalid"].includes(decision.reasonCode))
   )
     return base;
-  const type = input.target.type.startsWith(`${appId}.`) ? definitions.types?.[input.target.type.slice(appId.length + 1)] : undefined;
-  const readable = type?.access?.readable;
-  if (!readable) return base;
-  const userId = context.actor.user.id;
-  const principals = await activeResourcePrincipals([{ type: "user", userId }]);
-  if (!principals.length) return base;
-  const readers = await readable(
-    { id: input.target.id, principals },
-    {
-      actor: { kind: "app", appId: "core" },
-      accessSubject: { type: "none" },
-      user: null,
-      locale: context.locale,
-      requestId: context.requestId,
-      origin: context.origin,
-      signal: context.signal,
-    },
-  );
-  if (!readers.some((principal) => principal.type === "user" && principal.userId === userId)) return base;
-  const result: CodeAccessSetData = { ...base, readable: true, ...(!decision.granted ? { reason: decision.reason } : {}) };
-  // Actual writes need no presentation snapshot. Dry runs and refusals can explain a readable target.
-  if (input.dryRun || !decision.granted) {
-    const reader = type.reader ? definitions.queries?.[type.reader] : undefined;
-    const parsed = reader && reader.input.safeParse({ id: input.target.id });
-    if (reader && parsed?.success) {
-      const read = await reader.run(parsed.data, { ...context, target: input.target });
-      const view = read.ok && z.object({ view: CloudResourceReaderViewSchema }).safeParse(read.data.data);
-      if (view && view.success) result.title = view.data.view.title;
+  if (decision.granted && !input.dryRun) return base;
+  try {
+    const type = input.target.type.startsWith(`${appId}.`) ? definitions.types?.[input.target.type.slice(appId.length + 1)] : undefined;
+    const readable = type?.access?.readable;
+    if (!readable) return base;
+    const userId = context.actor.user.id;
+    const principals = await activeResourcePrincipals([{ type: "user", userId }]);
+    if (!principals.length) return base;
+    const readers = await readable(
+      { id: input.target.id, principals },
+      {
+        actor: { kind: "app", appId: "core" },
+        accessSubject: { type: "none" },
+        user: null,
+        locale: context.locale,
+        requestId: context.requestId,
+        origin: context.origin,
+        signal: context.signal,
+      },
+    );
+    if (!readers.some((principal) => principal.type === "user" && principal.userId === userId)) return base;
+    const result: CodeAccessSetData = { ...base, readable: true, ...(!decision.granted ? { reason: decision.reason } : {}) };
+    // Actual writes need no presentation snapshot. Dry runs and refusals can explain a readable target.
+    if (input.dryRun || !decision.granted) {
+      const reader = type.reader ? definitions.queries?.[type.reader] : undefined;
+      const parsed = reader && reader.input.safeParse({ id: input.target.id });
+      if (reader && parsed?.success) {
+        const read = await reader.run(parsed.data, { ...context, target: input.target });
+        const view = read.ok && z.object({ view: CloudResourceReaderViewSchema }).safeParse(read.data.data);
+        if (view && view.success) result.title = view.data.view.title;
+        else if (read.ok) {
+          // Existing canonical readers may publish the label on their matching structured ref.
+          const refs = z.array(CloudResourceReferenceSchema).safeParse(read.data.refs);
+          const ref = refs.success ? refs.data.find((ref) => ref.type === input.target.type && ref.id === input.target.id) : undefined;
+          if (ref?.title) result.title = ref.title;
+        }
+      }
+      let managers = decision.managerUserIds;
+      if (managers === undefined && !decision.granted && decision.reasonCode === "not_manager") {
+        const claims = await verifyCodeAccessProof(input.proof, {
+          appId,
+          target: input.target,
+          operations: input.operations,
+          activatingPerson: userId,
+        });
+        if (claims) managers = (await readCodeAccessManagers(appId, codeAccessBindings(appId, definitions), claims)) ?? undefined;
+      }
+      if (managers !== undefined) result.managerUserIds = managers;
     }
-    let managers = decision.managerUserIds;
-    if (managers === undefined && !decision.granted && decision.reasonCode === "not_manager") {
-      const claims = await verifyCodeAccessProof(input.proof, {
-        appId,
-        target: input.target,
-        operations: input.operations,
-        activatingPerson: userId,
-      });
-      if (claims) managers = (await readCodeAccessManagers(appId, codeAccessBindings(appId, definitions), claims)) ?? undefined;
-    }
-    if (managers !== undefined) result.managerUserIds = managers;
+    // Presentation shares the existing complete envelope budget, including refusal metadata.
+    const receipt = { text: result.granted ? (input.dryRun ? copy.setAvailable : copy.setDone) : result.reason };
+    if (new TextEncoder().encode(JSON.stringify({ data: result, receipt })).byteLength > CAPABILITY_MAX_RESULT_BYTES)
+      return { granted: false, reasonCode: "capacity_exceeded", reason: copy.managerRequired, readable: false };
+    return result;
+  } catch {
+    // Presentation failure must never turn a completed grant into an ambiguous write.
+    return base;
   }
-  // Presentation shares the existing complete envelope budget, including refusal metadata.
-  const receipt = { text: result.granted ? (input.dryRun ? copy.setAvailable : copy.setDone) : result.reason };
-  if (new TextEncoder().encode(JSON.stringify({ data: result, receipt })).byteLength > CAPABILITY_MAX_RESULT_BYTES)
-    return { granted: false, reasonCode: "capacity_exceeded", reason: copy.managerRequired, readable: false };
-  return result;
 };
 
 /** Generated capabilities share ordinary schemas, policy, validation, routing and execution auditing. */
