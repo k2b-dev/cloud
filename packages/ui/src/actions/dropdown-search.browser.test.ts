@@ -49,6 +49,14 @@ render(
       },
     }),
     createComponent(Dropdown.Root, {
+      items: [{ label: "Create", action: choose("create-plain") }],
+      label: "Same label",
+      search: { label: "Title", filter: (query) => [{ label: "Create", action: choose("create:" + query) }] },
+      get children() {
+        return createComponent(Dropdown.Trigger, { variant: "secondary", children: "Same label" });
+      },
+    }),
+    createComponent(Dropdown.Root, {
       items,
       label: "Sheet menu",
       phone: "sheet",
@@ -180,6 +188,20 @@ describe("Dropdown search", () => {
     }
   });
 
+  test("choosing a filtered entry runs its own action, though closing clears the query first", async () => {
+    const page = await load();
+    try {
+      await page.getByRole("button", { name: "Same label" }).click();
+      await settled(page);
+      await page.keyboard.type("Q3");
+      await settled(page);
+      await page.keyboard.press("Enter");
+      expect(await chosen(page)).toEqual(["create:Q3"]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("pointer movement marks the entry under it, and a click chooses it", async () => {
     const page = await load();
     try {
@@ -266,6 +288,22 @@ describe("Dropdown attach", () => {
       });
       expect(prevented).toBe(false);
       expect(await page.getByRole("menu", { name: "New task" }).isVisible()).toBe(false);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("Ctrl+Enter on the link keeps the browser's meaning", async () => {
+    const page = await load();
+    try {
+      const link = page.locator("#server-link");
+      const prevented = await link.evaluate((element) => {
+        const event = new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true });
+        element.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+      expect(prevented).toBe(false);
+      expect(await link.getAttribute("aria-expanded")).toBe("false");
     } finally {
       await page.close();
     }

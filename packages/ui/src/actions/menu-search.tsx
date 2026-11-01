@@ -56,6 +56,12 @@ export function MenuSearch(props: {
   const status = () => (blank() ? "" : (props.search.status?.(props.query(), matches()) ?? messages().searchMatches({ count: matches() })));
 
   const mark = (index: number) => {
+    // An entry that became disabled keeps no stale ID or mark.
+    for (const stale of list.querySelectorAll<HTMLElement>("[role='option']")) {
+      stale.removeAttribute("id");
+      stale.removeAttribute("aria-selected");
+      stale.removeAttribute("data-active");
+    }
     const options = optionsOf(list);
     active = options.length ? (index + options.length) % options.length : 0;
     options.forEach((option, position) => {
@@ -119,6 +125,8 @@ export function MenuSearch(props: {
         role="listbox"
         aria-label={props.label}
         class="k2b-dropdown__list"
+        // A press on an entry leaves the focus in the field, also for an entry that keeps the menu open.
+        onMouseDown={(event) => event.preventDefault()}
         onPointerMove={(event) => {
           const option = (event.target as Element).closest<HTMLElement>("[role='option']");
           const index = option ? optionsOf(list).indexOf(option) : -1;

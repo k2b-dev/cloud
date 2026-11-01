@@ -110,13 +110,15 @@ description contains it, in their sections, and shows "No results" when none
 does. Pass `filter(query)` to return other entries for a query, such as a
 "Blank task "query"" entry that takes the query as a title; `status(query,
 matches)` replaces the announced count. The query resets when the menu closes.
+The field keeps the focus, also after a press on an entry, so a searchable menu
+leaves out `secondary` and `labelAction` buttons, which no key could reach.
 
 ## Adopt a trigger
 
 `attach` hands a menu an element rendered elsewhere as its trigger, such as a
 server-rendered link in a page head. A plain click, Enter, Space, Up, or Down
 opens the menu, and focus returns there when it closes; a modified or middle
-click keeps the link's own meaning. The element gets `aria-expanded` and
+click and Ctrl, Cmd, Shift, or Alt with Enter keep the link's own meaning. The element gets `aria-expanded` and
 `aria-controls`. Render `aria-haspopup` with it on the server, so the HTML says
 it opens a menu before any script runs. `AppWorkspace.Head`'s `primary.popup`
 does that for the head's primary action.

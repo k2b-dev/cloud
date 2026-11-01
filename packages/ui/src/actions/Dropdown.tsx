@@ -330,8 +330,10 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
+            // Read before closing: a searchable menu clears its query as it closes, and the row then shows another entry.
+            const select = props.onSelect;
             if (props.closeOnSelect !== false) menu?.close();
-            props.onSelect?.();
+            select?.();
           }}
         >
           {content}
@@ -351,10 +353,11 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           data-accent={props.variant === "accent" ? "true" : undefined}
           onClick={(event) => {
             // With `onSelect`, a plain click runs it in place of the link; a modified click keeps its browser meaning.
-            if (props.onSelect && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+            const select = props.onSelect;
+            if (select && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
               event.preventDefault();
               menu?.close();
-              props.onSelect();
+              select();
               return;
             }
             menu?.close(false);
@@ -368,8 +371,10 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
 }
 
 function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
+  const menu = useContext(MenuContext);
+  // A searchable menu's field keeps the focus, so a second button in a row could not be reached; it is left out.
   return (
-    <Show when={props.secondary} fallback={<DropdownChoiceRow {...props} />}>
+    <Show when={menu?.role !== "option" && props.secondary} fallback={<DropdownChoiceRow {...props} />}>
       {(secondary) => (
         <div class="k2b-dropdown__pair">
           <DropdownChoiceRow {...props} />
@@ -426,8 +431,9 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
         }
         event.preventDefault();
         event.stopPropagation();
+        const action = props.action;
         if (props.closeOnSelect !== false) menu?.close();
-        props.action();
+        action();
       }}
       onKeyDown={(event: KeyboardEvent) => {
         // A link answers only Enter; as a menu choice it also answers Space, like the button form.
@@ -512,7 +518,10 @@ export function DropdownItems(props: {
               >
                 <Show when={(current() as DropdownSection).sectionLabel}>
                   {(label) => (
-                    <Show when={(current() as DropdownSection).labelAction} fallback={<div class="k2b-dropdown__label">{label()}</div>}>
+                    <Show
+                      when={props.role !== "option" && (current() as DropdownSection).labelAction}
+                      fallback={<div class="k2b-dropdown__label">{label()}</div>}
+                    >
                       {(action) => (
                         <div class="k2b-dropdown__label k2b-dropdown__label--action">
                           <span>{label()}</span>
@@ -785,6 +794,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
 
   const triggerKey = (event: KeyboardEvent) => {
     if (!["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) return;
+    // Ctrl+Enter and the like keep their browser meaning on an adopted link, such as opening it in a new tab.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     event.stopPropagation();
     if (isOpen()) {
