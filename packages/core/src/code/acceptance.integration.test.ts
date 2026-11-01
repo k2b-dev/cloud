@@ -530,8 +530,9 @@ suiteFor(
     const access = await reconcileCodeAccess({ codeId }, author, transport);
     const targetGrant = access.find((grant) => grant.target.type === space.type && grant.target.id === space.id)!;
     expect(await spaces.remove({ grantId: targetGrant.grantId, authority: { context: capabilityContext(ben, "rm") } })).toBe(true);
+    // The Code page can say who removed it: the generated code.access.rm audits the removal with the grant.
     expect(await reconcileCodeAccess({ codeId }, author, transport)).toContainEqual(
-      expect.objectContaining({ target: space, state: "removed" }),
+      expect.objectContaining({ target: space, state: "removed", removedBy: ben.id, removedAt: expect.any(String) }),
     );
     const revoked = await code.run({ codeId, input: null, entrypoint: "monday", idempotencyKey: "c25-revoked" }, author);
     const failed = await completed(codeId, revoked.run.runId);

@@ -47,8 +47,12 @@ capability invocation.
 
 Each access observation names its grant, target, operations and state
 (`present`, `removed`, `unavailable`), plus `activatedBy`, `activatedAt` and
-`activatedVersionId` of the activation that created it; the [Code page](/en/docs/platform/code-page)
-shows them.
+`activatedVersionId` of the activation that created it. A removed grant also
+carries `removedBy` and `removedAt`: the person and time of the newest allowed
+`code.access.rm` audit event for that grant, Code account and target. The
+platform writes that event in the same transaction as the target's removal.
+Both are `null` when no such event exists, for example after audit retention.
+The [Code page](/en/docs/platform/code-page) shows them.
 
 `/api/code/access/target` serves the share dialog's
 [Code with access](/en/docs/identity/authorization#code-with-access) section and
@@ -115,7 +119,10 @@ Dry-run answers reveal only what the person may read. A target's existing
 stable reason code, with “Only someone who manages this target can activate it”
 (“Einschalten kann nur, wer dieses Ziel verwaltet” in German). The Code link
 remains available to copy. Status reads check the current reader again before
-returning a saved title or manager list.
+returning a saved title or manager list. For a reader of the target they also
+return `managers`, `[{ id, name }]` in the target's order, named as the
+directory shows them: members see other people's names, guests only their own.
+Core resolves the names on each read and never saves them.
 
 Cloud-admin notification audiences use a separate Core-only, target-bound
 `signCodeAccessNotifications` proof. Each successful adapter dry run identifies

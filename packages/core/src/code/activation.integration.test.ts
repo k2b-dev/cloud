@@ -453,17 +453,32 @@ databaseSuite()("durable Code activation", () => {
     const next = await start(code, submitted.version.id);
     await run(next.id);
     const active = [...live.keys()][0]!;
+    const removedGrant = live.get(active)!;
     live.delete(active);
     tombstones.add(active);
     sets.length = 0;
+    // Without an audit event of the removal, who removed it stays unknown.
     expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      // The Code page names who confirmed the grant and when, also after the target removed it.
+      expect.objectContaining({ grantId: active, state: "removed", removedBy: null, removedAt: null }),
+    );
+    // The platform's code.access.rm audits each removal; events for another account or target never answer.
+    const audit = (principal: string, target: { type: string; id: string }, at: string) =>
+      sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,metadata,created_at)
+        VALUES('code.access.rm','allowed',${ownerId}::uuid,${target.type},${target.id},
+          ${JSON.stringify({ appId: "example", grantId: active, principal })}::text::jsonb,${at}::timestamptz)`;
+    await audit(crypto.randomUUID(), removedGrant.target, "2026-10-31T11:30:00.000Z");
+    await audit(removedGrant.principal, { type: removedGrant.target.type, id: "elsewhere" }, "2026-10-31T11:40:00.000Z");
+    await audit(removedGrant.principal, removedGrant.target, "2026-10-31T11:20:00.000Z");
+    expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
+      // The Code page names who confirmed the grant and when, and who removed it at the target and when.
       expect.objectContaining({
         grantId: active,
         state: "removed",
         activatedBy: expect.any(String),
         activatedAt: expect.any(String),
         activatedVersionId: expect.any(String),
+        removedBy: ownerId,
+        removedAt: "2026-10-31T11:20:00.000Z",
       }),
     );
     expect(sets).toHaveLength(0);
@@ -750,11 +765,21 @@ databaseSuite()("durable Code activation", () => {
       if (readable) {
         expect(result.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
         expect(saved!.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
+        // A reader of the target also gets the managers' names, as the directory shows them; nothing is saved.
+        await sql`UPDATE auth.users SET display_name='Mia Koch' WHERE id=${nextOwnerId}::uuid`;
+        expect((await status(code, activation.id)).failure?.managers).toEqual([{ id: nextOwnerId, name: "Mia Koch" }]);
+        expect(saved!.failure).not.toHaveProperty("managers");
+        const guest: CodeContext = {
+          ...owner,
+          authority: { ...owner.authority, actor: { kind: "user", user: { ...person(ownerId), roles: ["guest"] } } },
+        };
+        expect((await readCodeActivation({ codeId: code.id, activationId: activation.id }, guest)).failure?.managers).toEqual([]);
         // Losing read access also removes presentation on an existing status response.
         readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
         const hidden = await status(code, activation.id);
         expect(hidden.failure).not.toHaveProperty("title");
         expect(hidden.failure).not.toHaveProperty("managerUserIds");
+        expect(hidden.failure).not.toHaveProperty("managers");
       } else {
         expect(result.failure).toMatchObject({ reason: "Einschalten kann nur, wer dieses Ziel verwaltet" });
         for (const value of [result, saved]) {
@@ -789,7 +814,7 @@ databaseSuite()("durable Code activation", () => {
     });
     expect(JSON.stringify(hidden)).not.toContain("Fixture target");
     expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
-    expect((await status(code, activation.id)).failure).toEqual(failure);
+    expect((await status(code, activation.id)).failure).toEqual({ ...failure, managers: [{ id: nextOwnerId, name: nextOwnerId }] });
   });
   test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
     targetReadable = false;

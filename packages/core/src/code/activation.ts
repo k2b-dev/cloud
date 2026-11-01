@@ -102,7 +102,20 @@ async function visibleReceipt(result: CodeActivation, context: CodeContext): Pro
   }
   if (!readable)
     result.failure = { target: failure.target, code: failure.code, reason: activationManagerRequired(context.locale), readable: false };
+  else if (failure.managerUserIds?.length)
+    result.failure = { ...failure, managers: await managerNames(failure.managerUserIds, person).catch(() => []) };
   return result;
+}
+/** Managers in the target's order, named like the directory: members see other people, guests only themselves. */
+async function managerNames(ids: string[], viewer: { id: string; roles: readonly string[] }) {
+  const visible = viewer.roles.includes("user") ? ids : ids.filter((id) => id === viewer.id);
+  if (!visible.length) return [];
+  const rows = await sql<{ id: string; display_name: string | null; given_name: string | null; sn: string | null; uid: string }[]>`
+    SELECT id, display_name, given_name, sn, uid FROM auth.users WHERE id = ANY(${visible}::uuid[])`;
+  const names = new Map(
+    rows.map((row) => [row.id, row.display_name?.trim() || `${row.given_name ?? ""} ${row.sn ?? ""}`.trim() || row.uid]),
+  );
+  return visible.flatMap((id) => (names.has(id) ? [{ id, name: names.get(id)! }] : []));
 }
 const load = async (id: string, db: SQL = sql) => (await db<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${id}::uuid`)[0];
 const terminal = (state: CodeActivation["state"]) => ["active", "failed", "cancelled"].includes(state);
