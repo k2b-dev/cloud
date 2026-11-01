@@ -1,4 +1,4 @@
-import { children, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
+import { type Accessor, children, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "./scroll-fade";
@@ -37,6 +37,8 @@ type SettingsModalTabDefinition = {
 type SettingsModalGroupDefinition = {
   readonly kind: typeof SETTINGS_MODAL_GROUP;
   readonly props: SettingsModalGroupProps;
+  /** The group's children, created once and resolved like `children()`, so a `<Show>` tab follows its condition. */
+  readonly resolved: Accessor<unknown>;
 };
 
 type SettingsModalFooterDefinition = {
@@ -75,12 +77,9 @@ const isGroupDefinition = (value: unknown): value is SettingsModalGroupDefinitio
 const isFooterDefinition = (value: unknown): value is SettingsModalFooterDefinition =>
   !!value && typeof value === "object" && (value as { kind?: unknown }).kind === SETTINGS_MODAL_FOOTER;
 
-// A group's children are not resolved by `children()`: a control-flow child such as `<Show>` stays an accessor and
-// resolves here, inside the caller's tracking scope, so a conditional tab appears and disappears with its condition.
 const collectTabs = (value: unknown): SettingsModalTabDefinition[] => {
-  if (typeof value === "function" && value.length === 0) return collectTabs(value());
   if (Array.isArray(value)) return value.flatMap(collectTabs);
-  if (isGroupDefinition(value)) return collectTabs(value.props.children);
+  if (isGroupDefinition(value)) return collectTabs(value.resolved());
   return isTabDefinition(value) ? [value] : [];
 };
 
@@ -110,7 +109,10 @@ function SettingsModalTab(props: SettingsModalTabProps): JSX.Element {
 }
 
 function SettingsModalGroup(props: SettingsModalGroupProps): JSX.Element {
-  return { kind: SETTINGS_MODAL_GROUP, props } satisfies SettingsModalGroupDefinition as unknown as JSX.Element;
+  // The modal's own `children()` does not reach into a group. Resolving here keeps the other tabs of a group the same
+  // objects when a conditional tab comes or goes, so the open panel and its unsaved input stay in place.
+  const resolved = children(() => props.children);
+  return { kind: SETTINGS_MODAL_GROUP, props, resolved } satisfies SettingsModalGroupDefinition as unknown as JSX.Element;
 }
 
 function SettingsModalFooter(props: SettingsModalFooterProps): JSX.Element {
@@ -149,7 +151,8 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
     const id = resolvedActiveTabId();
     queueMicrotask(() => tabRefs.get(id)?.scrollIntoView?.({ block: "nearest", inline: "nearest" }));
   });
-  const activeTab = () => tabs().find((tab) => tab.props.id === resolvedActiveTabId()) ?? null;
+  // A memo, so a change elsewhere in the tab list does not create the open panel again.
+  const activeTab = createMemo(() => tabs().find((tab) => tab.props.id === resolvedActiveTabId()) ?? null);
   const resolvedPanelChildren = children(() => activeTab()?.props.children);
   const panelChildren = createMemo(() => splitPanelChildren(resolvedPanelChildren()));
 
@@ -223,7 +226,7 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
                   <span class="k2b-settings__tab-group-label k2b-truncate-fade" aria-hidden="true">
                     {entry.props.title}
                   </span>
-                  <For each={collectTabs(entry.props.children)}>{(tab) => TabButton(tab)}</For>
+                  <For each={collectTabs(entry.resolved())}>{(tab) => TabButton(tab)}</For>
                 </div>
               ) : (
                 TabButton(entry)
