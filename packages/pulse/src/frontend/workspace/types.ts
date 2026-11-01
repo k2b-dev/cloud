@@ -3,6 +3,7 @@ import type { PermissionLevel } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
 import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
 import type { Overview } from "../../overview-contracts";
+import type { DashboardSnapshot } from "./dashboard-client";
 import type { WorkspaceRouteState } from "./routes";
 import type { SavedQuery, SqlClientError, SqlLimits } from "./sql-client";
 
@@ -27,6 +28,7 @@ export type PulseWorkspaceProps = {
   initialSettings?: { maxRawRetentionDays: number; admins: string[] };
   initialPermissions?: { write: boolean; admin: boolean };
   initialOverview?: { data: Overview | null; error: { code: string; message: string } | null };
+  initialDashboards?: DashboardSnapshot;
   initialSql?: { limits: SqlLimits | null; query: SavedQuery | null; error: { code: string; details: SqlClientError["details"] } | null };
   initialSourceScrapes: Record<string, PulseSourceScrape[]>;
   initialSourceApiKeys: Record<string, ResourceApiKey[]>;

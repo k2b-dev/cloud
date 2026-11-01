@@ -55,12 +55,16 @@ const props: PulseWorkspaceProps = {
   initialNow: "2026-01-01T00:00:00.000Z",
   initialOrigin: "https://cloud.example.test",
 };
-const render = (view: "sources" | "coming-back", locale = "en") =>
+const render = (view: "sources" | "dashboards", locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(PulseWorkspace, { ...props, initialRouteState: { view, sourceId: "" } });
+        return createComponent(PulseWorkspace, {
+          ...props,
+          initialRouteState: { view, sourceId: "" },
+          initialDashboards: { items: [], total: 0, nextOffset: null, selected: null, error: null },
+        });
       },
     }),
   );
@@ -75,13 +79,13 @@ test("sources render from their server snapshot without measurement counts or re
   expect(html).not.toContain("No sources");
 });
 
-test("one in-place hint renders in each locale with a sources action", () => {
+test("empty dashboards render SQL and Assistant actions in each locale", () => {
   for (const [locale, title, action] of [
-    ["en", "Dashboards are coming back", "Go to sources"],
-    ["de", "Dashboards kommen zurück", "Zu den Quellen"],
+    ["en", "No dashboard yet", "Open SQL console"],
+    ["de", "Noch kein Dashboard", "SQL-Konsole öffnen"],
   ] as const) {
-    const html = render("coming-back", locale);
-    expect(html.split(title)).toHaveLength(2);
+    const html = render("dashboards", locale);
+    expect(html.split(`<h2>${title}</h2>`)).toHaveLength(2);
     expect(html).toContain(action);
     expect(html).not.toContain("Warehouse importer");
     expect(html).not.toContain("<hr");
@@ -91,8 +95,8 @@ test("one in-place hint renders in each locale with a sources action", () => {
 test("SQL console SSR renders the same initial draft as the controller without browser effects", async () => {
   const { default: SqlConsoleView } = await import("./workspace/SqlConsoleView");
   for (const [locale, title, save, helper] of [
-    ["en", "New query", "Save as", "Helper views: rate, increase, histogram_quantile"],
-    ["de", "Neue Abfrage", "Speichern unter", "Hilfen als Views: rate, increase, histogram_quantile"],
+    ["en", "New query", "Save as", "SQL helpers: bucket, rate, increase, histogram_quantile"],
+    ["de", "Neue Abfrage", "Speichern unter", "SQL-Hilfen: bucket, rate, increase, histogram_quantile"],
   ] as const) {
     const html = renderToString(() =>
       createComponent(LocaleProvider, {

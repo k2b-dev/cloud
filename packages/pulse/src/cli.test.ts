@@ -66,6 +66,7 @@ const base = {
   dataClearCompletedAt: null,
   dataClearFailedAt: null,
   dataClearError: null,
+  memberCount: 3,
   createdAt: "2026-07-07T00:00:00.000Z",
   updatedAt: "2026-07-07T00:00:00.000Z",
 };

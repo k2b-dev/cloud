@@ -480,3 +480,13 @@ test.each(["date", "date-time"] as const)("a shortened date-time requires its pr
   expect(text.rows.find((row) => row.label === "Wann")).toEqual({ label: "Wann", value: start, format });
   expect(text.incomplete).toBe(format === "date");
 });
+
+test("a consent-dependent review does not claim the app always asks", () => {
+  for (const locale of ["en", "de"] as const) {
+    const pending = textFor(locale, message, { ask: undefined, scope: "mail:draft:edit" });
+    expect(pending.reason).toContain(locale === "en" ? "Runs only after you approve it" : "Wird erst nach deiner Freigabe ausgeführt");
+    expect(pending.reason).not.toContain(locale === "en" ? "always asks" : "jedes Mal");
+    const mandatory = textFor(locale, message, { ask: "app_asks" });
+    expect(mandatory.reason).toContain(locale === "en" ? "always asks" : "jedes Mal");
+  }
+});

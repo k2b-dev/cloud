@@ -146,6 +146,8 @@
     "@k2b/cloud-app-notebooks src/frontend/lib/notebook-charts.browser.test.ts": 16.6,
     "@k2b/cloud-app-notebooks src/styles/app-host.browser.test.ts": 4,
     "@k2b/cloud-app-oauth src/frontend/authorization-page.browser.test.ts": 81.5,
+    "@k2b/cloud-app-pulse src/frontend/Dashboard.browser.test.ts": 226.7,
+    "@k2b/cloud-app-pulse src/frontend/PulseMobileHeaders.browser.test.ts": 29.2,
     "@k2b/cloud-app-pulse src/frontend/PulseWorkspace.browser.test.ts": 85.4,
     "@k2b/cloud-app-pulse src/frontend/SqlConsole.browser.test.ts": 61.5,
     "@k2b/cloud-app-pulse src/frontend/WorkspaceClock.browser.test.ts": 0.7,
