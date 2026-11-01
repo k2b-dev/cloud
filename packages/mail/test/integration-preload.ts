@@ -41,4 +41,7 @@ if (testInfra.database && testInfra.nats) {
       await database.drop();
     }
   });
+  const { bindAppEvents } = await import("../../cloud/src/events/app-events");
+  const { mailCapabilities } = await import("../src/capabilities");
+  bindAppEvents("mail", mailCapabilities);
 }

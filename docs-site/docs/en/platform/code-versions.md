@@ -204,3 +204,9 @@ Audit events are `core.code.version.submitted`, `core.code.version.approved`,
 Decision events include both hashes, the manifest and comparison binding,
 request ID, channel and `sole_admin`; a sole-admin approval uses reason
 `self_approved_sole_admin`. Audit events contain no source or bundle bodies.
+
+## Activate a submitted version
+
+Use [Code activation](/en/docs/platform/code-activation) to check owner and target
+authority, create its version mandate, and switch the active version durably.
+Pending or failed activation leaves the current version running.
