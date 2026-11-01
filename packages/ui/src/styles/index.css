@@ -13798,14 +13798,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: relative;
   display: inline-block;
   width: 0;
+  height: 1.15em;
+  vertical-align: -0.2em;
 }
 
 .k2b-ui .k2b-dictation-mark::after {
   position: absolute;
-  top: 0.1em;
+  top: 0;
   left: 0;
   width: 2px;
-  height: 1.15em;
+  height: 100%;
   border-radius: 1px;
   background: var(--k2b-link-accent);
   content: "";
