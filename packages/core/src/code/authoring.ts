@@ -56,6 +56,16 @@ async function pull(codeId: string, context: CodeContext): Promise<CodeAuthoring
     files,
   };
 }
+/** The version is saved by now, so a failed read leaves this field out and never fails the submission. */
+async function runningVersionNumber(codeId: string, context: CodeContext) {
+  try {
+    const { code } = await readCode(codeId, context);
+    if (!code.activeVersionId) return null;
+    return (await readCodeVersion({ codeId, versionId: code.activeVersionId, offset: 0, length: 1 }, context)).version.number;
+  } catch {
+    return undefined;
+  }
+}
 /** Classifications and display names come from current catalog/reader authority, never author-supplied titles. */
 async function describeCheck(
   request: CodeCheckRequest,
@@ -266,7 +276,7 @@ export const codeAuthoringServices = {
       },
       context,
     );
-    return { version: 1, submission };
+    return { version: 1, submission, runningVersion: await runningVersionNumber(input.codeId, context) };
   },
   async submit(input: CodeAuthoringInput<"submit">, context: CodeContext): Promise<CodeAuthoringData<"submit">> {
     return codeAuthoringServices.push(input, context);

@@ -126,6 +126,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
     expect(failure.reason.code).toBe("code_version_conflict");
     const conflict = CodeAuthoringConflictSchema.parse(failure.reason.details);
     expect(conflict.latestVersionId).toBe(success.value.submission.version.id);
+    expect(success.value.runningVersion).toBeNull();
     expect(conflict.files[0]?.path).toBe("code.ts");
     expect(conflict.files[0]?.lines.some((line) => line.kind === "add")).toBe(true);
     const pulled = await codeAuthoringServices.pull({ codeId: common.codeId }, context);

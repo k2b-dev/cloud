@@ -89,6 +89,11 @@ cld code activate ./code/example/box_1234 --activation-id 11111111-1111-4111-811
 cld code run monday ./code/example/box_1234 --key monday-manual-1 --json
 ```
 
+In a terminal, `cld code activate` without flags lists every operation at every
+target, asks once and reports the result; a person drives that. Without a terminal it
+never asks: it refuses unless `--yes` and `--activation-id` are set. As an agent, use
+the flags, and never pass `--yes` for a person who has not seen the list.
+
 Activate uses the project's base version unless `--version <UUID>` is set.
 It requires `--yes` and a caller-chosen `--activation-id`. Reuse that ID after
 a lost response. A returned pending/waiting state is a durable activation
@@ -229,7 +234,7 @@ C19 chat tools use the same schemas and `codeAuthoringServices`.
 | test, simulate | C17 `{version:1, mode, ok, error, diagnostics, cases, trace?}` |
 | push, submit | `{version:1, submission}` |
 | diff | `{version:1, diff}` |
-| activate | `{version:1, activation}` |
+| activate | `{version:1, activation}` (`--json` needs `--yes` and `--activation-id`) |
 | run | `{version:1, run:{runId, duplicate}}` |
 | pull --all | `{version:1, items:[{version:1,config,files}], nextCursor:null}` |
 | status | `{version:1, items:[{code,permission,baseVersionId,baseCurrent,modified,latest}]}` |

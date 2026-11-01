@@ -55,7 +55,14 @@ const check = z
   })
   .strict();
 const pulled = z.object({ version: z.literal(1), config: CodeProjectSchema, files: CodeSourceFilesSchema }).strict();
-const submitted = z.object({ version: z.literal(1), submission: codeVersionContracts.submit.data }).strict();
+const submitted = z
+  .object({
+    version: z.literal(1),
+    submission: codeVersionContracts.submit.data,
+    /** Which version keeps running meanwhile; null when none runs. Added field: consumers may ignore it. */
+    runningVersion: z.number().int().positive().nullable().optional(),
+  })
+  .strict();
 /** Local source compared with its saved base and the current server version. No filesystem paths. */
 export const CodeLocalStatusSchema = z
   .object({
