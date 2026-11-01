@@ -14,7 +14,7 @@ Gustav erzielt die besten Ergebnisse, wenn deine Anfrage das gewünschte Ergebni
 1. **Ergebnis benennen:** Beschreibe, was du erhalten möchtest, etwa eine Zusammenfassung, einen Plan, eine Erklärung, einen Entwurf, einen Vergleich oder eine Codeänderung.
 2. **Ausgangsmaterial angeben:** Füge den relevanten Text ein oder hänge die im Eingabefeld angebotenen Dateien an. Nenne die Stellen, auf die es besonders ankommt.
 3. **Wichtige Vorgaben nennen:** Gib Zielgruppe, Sprache, Länge, Format, Frist oder unveränderliche Inhalte an.
-4. **Um Prüfung bitten:** Bitte Gustav bei wichtigen Ergebnissen, Annahmen, Unsicherheiten oder fehlende Informationen zu benennen, bevor du dich auf die Antwort verlässt.
+4. **Um Prüfung bitten:** Bitte Gustav, bei wichtigen Ergebnissen Annahmen, Unsicherheiten und Lücken zu nennen, bevor du dich darauf verlässt.
 :::
 
 ## Kontext gezielt verwenden {icon="point"}

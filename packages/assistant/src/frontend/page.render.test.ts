@@ -59,6 +59,10 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 beforeEach(() => {
+  // Core's Code queries answer empty unless a test says otherwise; no test reaches a real Core.
+  codeInvoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema");
+  spies.push(codeInvoke);
+  mockCodeQueries([]);
   spies.push(spyOn(ai, "getAiChatQuotas").mockResolvedValue({ enabled: false, balances: [] }));
   spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
   spies.push(spyOn(live.aiLive, "cursor").mockResolvedValue("s6t.cloud-live-core.0"));
@@ -259,8 +263,9 @@ const codeItem = {
   permission: "editor",
 };
 /** Core's public Code queries as the page calls them, with the person's credentials. */
+let codeInvoke: ReturnType<typeof spyOn<typeof capabilityServer, "invokeCapabilityWithDataSchema">>;
 const mockCodeQueries = (items: unknown[], options: { fail?: boolean } = {}) => {
-  const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
+  codeInvoke.mockImplementation(async (invocation, schema) => {
     if (options.fail) return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Core is unavailable", status: 503 } };
     const data =
       invocation.capabilityId === "code.list"
@@ -271,8 +276,7 @@ const mockCodeQueries = (items: unknown[], options: { fail?: boolean } = {}) => 
           };
     return { ok: true, data: { data: schema.parse(data) } };
   });
-  spies.push(invoke);
-  return invoke;
+  return codeInvoke;
 };
 
 test("My apps & automations shows only for a person with Code, and ?code=1 renders their list from the server", async () => {
@@ -296,7 +300,6 @@ test("My apps & automations shows only for a person with Code, and ?code=1 rende
   expect(none).not.toContain('href="/app/assistant?code=1"');
   expect(none).not.toContain("My apps &amp; automations");
 
-  invoke.mockRestore();
   mockCodeQueries([codeItem]);
   const withCode = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(withCode).toContain('href="/app/assistant?code=1"');
@@ -391,4 +394,73 @@ test("a panel conversation selector does not bypass ownership or fall back to an
   expect(response.status).toBe(404);
   expect(lookup).toHaveBeenCalledWith({ shortId: "foreign", ownerUserId: user.id });
   expect(await response.text()).not.toContain(chat.title);
+});
+
+test("the panel names the place's Code from the first paint, through the place's own reader", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
+  const mailbox = { type: "mail.mailbox", id: "m_info" };
+  spies.push(
+    spyOn(capabilityServer, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: {
+        appId: "mail",
+        appName: "Mail",
+        appIcon: "ti ti-mail",
+        appDescription: "Mail.",
+        manifest: {
+          protocolVersion: 2,
+          appId: "mail",
+          manifestHash: "a".repeat(64),
+          types: [{ localId: "mailbox", title: "Mailbox", description: "A mailbox.", icon: "ti ti-mail", reader: "mailbox.read" }],
+          queries: [
+            {
+              localId: "mailbox.read",
+              title: "Read mailbox",
+              description: "Read one mailbox.",
+              inputSchema: {},
+              dataSchema: {},
+              schemaHash: "b".repeat(64),
+              openWorld: false,
+            },
+          ],
+          actions: [],
+          commands: [],
+        },
+      },
+    }),
+  );
+  codeInvoke.mockImplementation(async (invocation, schema) => {
+    const data =
+      invocation.appId === "mail"
+        ? { view: { title: "info@example.test" } }
+        : invocation.capabilityId === "code.list"
+          ? {
+              items: [{ ...codeItem, id: "c_info01", title: "Sort requests", owner: { kind: "resource", ref: mailbox } }],
+              nextCursor: null,
+            }
+          : { items: [], nextCursor: null };
+    const links = invocation.appId === "mail" ? [{ rel: "open" as const, href: "/app/mail/m/info" }] : undefined;
+    return { ok: true, data: { data: schema.parse(data), ...(links ? { links } : {}) } };
+  });
+  const context = { v: 1, seq: 1, pageId: "88888888-8888-4888-8888-888888888888", app: "mail", scope: mailbox };
+  const html = await (
+    await request(`https://cloud.example.test/app/assistant/panel?cloud_panel_context=${encodeURIComponent(JSON.stringify(context))}`)
+  ).text();
+  expect(codeInvoke).toHaveBeenCalledWith(
+    { appId: "core", capabilityId: "code.list", kind: "query", input: { owner: { kind: "resource", ref: mailbox }, limit: 20 } },
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(html).toContain("Sort requests");
+  expect(html).toContain("of info@example.test");
+  expect(html).toContain("Open Mailbox");
+  expect(html).toContain('href="/app/mail/m/info"');
 });

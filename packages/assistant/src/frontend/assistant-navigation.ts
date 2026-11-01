@@ -95,4 +95,8 @@ export const assistantApprovalsOpenFromHref = (href: string): boolean => new URL
 /** The person's own Code: `?code=1`, without a chat or project, so reload and Back keep it. */
 export const ASSISTANT_CODE_HREF = "/app/assistant?code=1";
 
-export const assistantCodeOpenFromHref = (href: string): boolean => new URL(href, URL_BASE).searchParams.get("code") === "1";
+/** Same precedence as the server: a chat, a Project or the approvals view wins over the Code list. */
+export const assistantCodeOpenFromHref = (href: string): boolean => {
+  const params = new URL(href, URL_BASE).searchParams;
+  return params.get("code") === "1" && !params.has("conversation") && !params.has("project") && params.get("approvals") !== "1";
+};

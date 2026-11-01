@@ -37,6 +37,10 @@ describe("Assistant conversation navigation", () => {
   test("leaves the person's Code list for a chat or a Project", () => {
     expect(assistantCodeOpenFromHref(ASSISTANT_CODE_HREF)).toBe(true);
     expect(assistantCodeOpenFromHref("/app/assistant?code=0")).toBe(false);
+    // Reload and Back agree: the server renders the chat, the Project or approvals for these addresses.
+    expect(assistantCodeOpenFromHref("/app/assistant?conversation=chat-1&code=1")).toBe(false);
+    expect(assistantCodeOpenFromHref("/app/assistant?project=prj123&code=1")).toBe(false);
+    expect(assistantCodeOpenFromHref("/app/assistant?approvals=1&code=1")).toBe(false);
     expect(assistantConversationHref(ASSISTANT_CODE_HREF, "chat-1")).toBe("/app/assistant?conversation=chat-1");
     expect(assistantProjectHref(ASSISTANT_CODE_HREF, "prj123")).toBe("/app/assistant?project=prj123");
   });

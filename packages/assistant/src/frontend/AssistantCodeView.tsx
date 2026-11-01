@@ -9,7 +9,7 @@ const badgeTone: Record<CodeStatusTone, StatusTone> = { success: "ok", warning: 
 export function CodeStatusBadge(props: { code: CodeSummary }) {
   const locale = useLocale();
   const status = () => codeStatus(props.code);
-  return <StatusBadge tone={badgeTone[status().tone]} variant="text" label={codeStateLabel(status().key, locale())} />;
+  return <StatusBadge tone={badgeTone[status().tone]} variant="dot" label={codeStateLabel(status().key, locale())} />;
 }
 
 /** The visible word for one Code status. */
@@ -24,16 +24,18 @@ export const codeStateLabel = (key: ReturnType<typeof codeStatus>["key"], locale
   }[key];
 };
 
-/** When the newest run ended or started, or that none ran yet. */
+/** When the newest run ended or started, that none ran yet, or that Core could not say. */
 export const codeRunTime = (code: CodeSummary, locale: string, timeZone: string) => {
+  const t = assistantMessages.resolve([locale]).t;
   const run = code.lastRun;
-  return run ? formatCodeTime(run.endedAt ?? run.createdAt, locale, timeZone) : assistantMessages.resolve([locale]).t.codeNoRun;
+  if (run === undefined) return t.codeRunUnknown;
+  return run ? formatCodeTime(run.endedAt ?? run.createdAt, locale, timeZone) : t.codeNoRun;
 };
 
 /** The line under a Code's name in the panel block: its newest run. */
 export const codeRunLine = (code: CodeSummary, locale: string, timeZone: string) => {
   const t = assistantMessages.resolve([locale]).t;
-  return code.lastRun ? t.codeLastRun({ when: codeRunTime(code, locale, timeZone) }) : t.codeNoRun;
+  return code.lastRun ? t.codeLastRun({ when: codeRunTime(code, locale, timeZone) }) : codeRunTime(code, locale, timeZone);
 };
 
 /**
@@ -49,6 +51,20 @@ export default function AssistantCodeView(props: {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const [page, setPage] = createSignal<CodeSummaryPage | null | undefined>(props.initial);
+  const [more, setMore] = createSignal<"idle" | "loading" | "failed">("idle");
+  // Further pages append below; a failed page keeps what is shown and offers the same request again.
+  const loadMore = async () => {
+    const current = page();
+    if (!current?.nextCursor || more() === "loading") return;
+    setMore("loading");
+    try {
+      const next = await loadCodeSummaries(browserCodeInvoke, { kind: "person", userId: props.userId }, current.nextCursor);
+      setPage({ items: [...current.items, ...next.items], nextCursor: next.nextCursor });
+      setMore("idle");
+    } catch {
+      setMore("failed");
+    }
+  };
   const load = async () => {
     setPage(undefined);
     try {
@@ -70,16 +86,15 @@ export default function AssistantCodeView(props: {
   return (
     <ScrollArea class="min-h-0 flex-1 p-[var(--ui-space-section)]">
       <section class="assistant-code mx-auto flex w-full max-w-3xl flex-col gap-4 pb-8" aria-labelledby="assistant-code-title">
-        <header class="flex min-w-0 flex-wrap items-start gap-3">
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <h1 id="assistant-code-title" class="text-xl font-semibold text-primary">
-              {t().myCode}
-            </h1>
-            <p class="assistant-code__lead text-sm text-secondary">
-              <i class="ti ti-moustache" aria-hidden="true" />
-              {t().codeRunsAsYou}
-            </p>
-          </div>
+        {/* The sidebar marks this place, so the heading is for screen readers; the line and the action lead. */}
+        <h1 id="assistant-code-title" class="sr-only">
+          {t().myCode}
+        </h1>
+        <header class="flex min-w-0 flex-wrap items-center gap-3">
+          <p class="assistant-code__lead min-w-0 flex-1 text-sm text-secondary">
+            <i class="ti ti-moustache" aria-hidden="true" />
+            {t().codeRunsAsYou}
+          </p>
           {createButton()}
         </header>
         <Show
@@ -158,8 +173,17 @@ export default function AssistantCodeView(props: {
                     </For>
                   </ul>
                 </div>
-                <Show when={current().more}>
-                  <p class="text-sm text-secondary">{t().codeMore({ count: current().items.length })}</p>
+                <Show when={current().nextCursor}>
+                  <div class="flex flex-wrap items-center gap-3">
+                    <Button type="button" variant="secondary" size="sm" loading={more() === "loading"} onClick={() => void loadMore()}>
+                      {t().codeLoadMore}
+                    </Button>
+                    <Show when={more() === "failed"}>
+                      <span role="alert" class="text-sm text-danger">
+                        {t().codeLoadMoreFailed}
+                      </span>
+                    </Show>
+                  </div>
                 </Show>
               </Show>
             )}

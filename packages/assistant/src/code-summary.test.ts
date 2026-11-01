@@ -66,10 +66,11 @@ test("lists one owner's Code with its newest run; a missing run history keeps th
     "code.run.list": (input) => (input.codeId === "c_info01" ? { items: [run("failed")], nextCursor: null } : undefined),
   });
   const page = await loadCodeSummaries(core.invoke, { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } });
-  expect(page.more).toBe(true);
-  expect(page.items.map((item) => [item.id, item.state, item.lastRun?.state ?? null])).toEqual([
+  expect(page.nextCursor).toBe("c_info02");
+  expect(page.items.map((item) => [item.id, item.state, item.lastRun === undefined ? "unknown" : (item.lastRun?.state ?? null)])).toEqual([
     ["c_info01", "active", "failed"],
-    ["c_info02", "paused", null],
+    // Core could not read this run history: unknown, not "never ran".
+    ["c_info02", "paused", "unknown"],
   ]);
   expect(core.calls[0]).toEqual({
     capabilityId: "code.list",

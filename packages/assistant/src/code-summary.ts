@@ -24,9 +24,10 @@ const RunListSchema = z.object({
 
 export type CodeOwnerFilter = { kind: "person"; userId: string } | { kind: "resource"; ref: CloudResourceRef };
 export type CodeRunSummary = z.infer<typeof RunListSchema>["items"][number];
-export type CodeSummary = z.infer<typeof CodeItemSchema> & { lastRun: CodeRunSummary | null };
-/** One page of Code the person may see for an owner. `more` means Core has further Code than shown. */
-export type CodeSummaryPage = { items: CodeSummary[]; more: boolean };
+/** `lastRun` is null when the Code never ran, and undefined when Core could not read its run history. */
+export type CodeSummary = z.infer<typeof CodeItemSchema> & { lastRun: CodeRunSummary | null | undefined };
+/** One page of Code the person may see for an owner. `nextCursor` continues the list; null means it is complete. */
+export type CodeSummaryPage = { items: CodeSummary[]; nextCursor: string | null };
 
 /** The server and the browser pass their own capability transport; both call the same public queries. */
 export type CodeQueryInvoke = <T extends z.ZodType>(
@@ -34,7 +35,7 @@ export type CodeQueryInvoke = <T extends z.ZodType>(
   schema: T,
 ) => Promise<CapabilityClientResult<z.output<T>>>;
 
-/** Core pages at most 20 Code items; the UI shows one page and says when there is more. */
+/** Core pages at most 20 Code items; the list loads further pages on request. */
 export const CODE_SUMMARY_LIMIT = 20;
 
 export class CodeSummaryError extends Error {}
@@ -49,20 +50,20 @@ export const hasPersonalCode = async (invoke: CodeQueryInvoke, userId: string): 
 };
 
 /**
- * The first page of Code for one owner, each with its newest run. Core lists only Code the person may read, so a
+ * One page of Code for one owner, each with its newest run. Core lists only Code the person may read, so a
  * resource without readable Code yields no items. Run lookups are bounded by the page size and run in parallel.
  */
-export const loadCodeSummaries = async (invoke: CodeQueryInvoke, owner: CodeOwnerFilter): Promise<CodeSummaryPage> => {
-  const listed = await invoke(query("code.list", { owner, limit: CODE_SUMMARY_LIMIT }), CodeListSchema);
+export const loadCodeSummaries = async (invoke: CodeQueryInvoke, owner: CodeOwnerFilter, cursor?: string): Promise<CodeSummaryPage> => {
+  const listed = await invoke(query("code.list", { owner, limit: CODE_SUMMARY_LIMIT, ...(cursor ? { cursor } : {}) }), CodeListSchema);
   if (!listed.ok) throw new CodeSummaryError(listed.error.message);
   const items = await Promise.all(
     listed.data.data.items.map(async (code): Promise<CodeSummary> => {
       const runs = await invoke(query("code.run.list", { codeId: code.id, limit: 1 }), RunListSchema);
-      // A missing run history does not hide the Code; it shows without a last run.
-      return { ...code, lastRun: runs.ok ? (runs.data.data.items[0] ?? null) : null };
+      // A missing run history does not hide the Code; it shows that its last run is unknown.
+      return { ...code, lastRun: runs.ok ? (runs.data.data.items[0] ?? null) : undefined };
     }),
   );
-  return { items, more: listed.data.data.nextCursor !== null };
+  return { items, nextCursor: listed.data.data.nextCursor };
 };
 
 export type CodeStatusTone = "success" | "warning" | "danger" | "neutral";

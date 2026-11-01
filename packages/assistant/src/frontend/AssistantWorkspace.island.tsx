@@ -2603,6 +2603,15 @@ export default function AssistantWorkspace(props: Props) {
     if (codeOpen()) return "/app/assistant?code=1";
     return assistantConversationHref("/app/assistant", chat.activeConversationId());
   };
+  // "Create in chat" leaves the Code list for the chat first, so creation progress and errors show at the composer.
+  const createFromCodeView = () => {
+    navigationRequest++;
+    setMainView(null);
+    const conversationId = chat.activeConversationId();
+    if (conversationId) commitConversationUrl(conversationId);
+    else navigate(basePath, { scroll: "manual", viewTransition: false });
+    void createAndFocusConversation();
+  };
   const panelAttachDisabled = () =>
     (props.embedded && !workspaceMounted()) ||
     !canUseComposer() ||
@@ -2723,7 +2732,7 @@ export default function AssistantWorkspace(props: Props) {
                         userId={props.userId}
                         timeZone={props.timeZone}
                         initial={codeRendered() ? props.code?.page : undefined}
-                        onCreateInChat={() => void createAndFocusConversation()}
+                        onCreateInChat={createFromCodeView}
                       />
                     </Show>
                     <Show when={props.embedded}>

@@ -671,8 +671,8 @@
   width: 1.75rem;
   height: 1.75rem;
   border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-muted);
-  color: var(--k2b-text-secondary);
+  background: var(--ui-app-selected);
+  color: var(--ui-app-accent-text);
 }
 .assistant-code__narrow {
   display: none;
@@ -742,5 +742,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
+  padding: 0.375rem 0.625rem 0;
+}
+.assistant-code-block__note {
+  margin: 0;
   padding: 0.375rem 0.625rem 0;
 }

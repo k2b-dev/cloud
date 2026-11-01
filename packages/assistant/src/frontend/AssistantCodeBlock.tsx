@@ -8,8 +8,10 @@ import { resolveAssistantCloudResource } from "./AssistantContextContent";
 import { browserCodeInvoke } from "./code-client";
 import { assistantMessages } from "./messages";
 
-/** What the server knew about the panel's place: its Code page, or null when Core could not list it. */
-export type AssistantCodeBlockInitial = { ref: CloudResourceRef; page: CodeSummaryPage | null };
+/** The place's own name, its type's title and its link, read through the place's public reader. */
+export type AssistantCodePlace = { name?: string; type?: string; href?: string };
+/** What the server knew about the panel's place: its Code page (null when Core could not list it) and the place. */
+export type AssistantCodeBlockInitial = { ref: CloudResourceRef; page: CodeSummaryPage | null; place?: AssistantCodePlace };
 
 type BlockState =
   | { kind: "none"; ref?: CloudResourceRef }
@@ -44,7 +46,18 @@ export default function AssistantCodeBlock(props: {
   const t = () => assistantMessages.resolve([locale()]).t;
   const [state, setState] = createSignal<BlockState>(stateFor(props.initial));
   const [open, setOpen] = createSignal(!props.chatOpen);
-  const [place, setPlace] = createSignal<{ name?: string; href?: string }>({});
+  const [editFailed, setEditFailed] = createSignal(false);
+  const edit = async () => {
+    const ref = currentRef();
+    if (!ref) return;
+    setEditFailed(false);
+    try {
+      await props.onEdit({ ...ref });
+    } catch {
+      setEditFailed(true);
+    }
+  };
+  const [place, setPlace] = createSignal<AssistantCodePlace>(props.initial?.place ?? {});
   createEffect(
     on(
       () => props.chatOpen,
@@ -67,7 +80,7 @@ export default function AssistantCodeBlock(props: {
   const resolvePlace = async (ref: CloudResourceRef) => {
     try {
       const resource = await resolveAssistantCloudResource(ref);
-      if (sameRef(currentRef(), ref)) setPlace({ name: resource.name, href: resource.href });
+      if (sameRef(currentRef(), ref)) setPlace({ name: resource.name, type: resource.title, href: resource.href });
     } catch {
       // The block still works without the place's name and link.
     }
@@ -91,6 +104,8 @@ export default function AssistantCodeBlock(props: {
     on(
       () => (state().kind === "none" ? undefined : state().ref),
       (ref, previous) => {
+        // The server already read the place it rendered.
+        if (!previous && props.initial?.place && sameRef(ref, props.initial.ref)) return;
         if (ref && !sameRef(ref, previous)) void resolvePlace(ref);
       },
     ),
@@ -172,13 +187,7 @@ export default function AssistantCodeBlock(props: {
                   </For>
                 </ul>
                 <div class="assistant-code-block__actions">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    disabled={props.disabled}
-                    onClick={() => currentRef() && void props.onEdit({ ...currentRef()! })}
-                  >
+                  <Button type="button" size="sm" variant="secondary" disabled={props.disabled} onClick={() => void edit()}>
                     <i class="ti ti-moustache" aria-hidden="true" />
                     {t().codeEditWithGustav}
                   </Button>
@@ -191,11 +200,16 @@ export default function AssistantCodeBlock(props: {
                         aria-label={place().name ? t().codeOpenPlaceLabel({ title: place().name! }) : undefined}
                       >
                         <i class="ti ti-arrow-right" aria-hidden="true" />
-                        {t().codeOpenPlace}
+                        {t().codeOpenPlace({ type: place().type ?? "" })}
                       </ButtonLink>
                     )}
                   </Show>
                 </div>
+                <Show when={editFailed()}>
+                  <p role="alert" class="assistant-code-block__note text-sm text-danger">
+                    {t().panelAttachFailed}
+                  </p>
+                </Show>
               </>
             )}
           </Show>

@@ -3,7 +3,6 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation } from "@k2b/cloud/ai";
 import type { Browser, Page, Route } from "playwright";
-import { appColorStyle } from "../../../cloud/src/ssr/app-color";
 import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 // Gustav in the Assistant workspace: the renamed footer, "My apps & automations" with the person's own Code, and the
@@ -32,8 +31,14 @@ const fakeLiveSource = `
 export const liveConnection = () => ({ subscribe: () => ({ close() {} }) });
 `;
 const shots = process.env.GUSTAV_SCREENSHOTS?.trim();
-/** Gustav's app color (src/config.ts). */
+/**
+ * Gustav's app color (src/config.ts) with the AA inks and fills Cloud derives from it (appColorStyle in
+ * @k2b/cloud's app-color contract, whose test checks every app accent).
+ */
 const plum = "#8e1b6f";
+const plumColors =
+  "--app-ink-light:#8e1b6f;--app-ink-dark:#bf7dad;--app-selected-light:#f7eff5;--app-selected-dark:#231627;" +
+  "--app-selected-nav-light:#f4e8f1;--app-selected-nav-dark:#261629";
 
 // One fixed clock for fixtures and page; only fictional people and places.
 const now = Date.parse("2026-10-31T10:00:00.000Z");
@@ -100,10 +105,11 @@ const MINE = [
   code("c_stoff1", "Stoffpreise prüfen", "active"),
   code("c_angeb1", "Angebote nachfassen", "paused"),
 ];
-const MAILBOX = [code("c_info01", "Anfragen sortieren", "active"), code("c_info02", "Lieferungen eintragen", "paused")];
+// A place owns at most one Code.
+const MAILBOX = [code("c_info01", "Anfragen sortieren", "paused")];
 const runOf = (codeId: string) => {
   const failed = codeId === "c_stoff1";
-  const minutesAgo = { c_woche1: 7_000, c_rueck1: 60, c_stoff1: 210, c_angeb1: 2_900, c_info01: 25, c_info02: 1_500 }[codeId] ?? 60;
+  const minutesAgo = { c_woche1: 7_000, c_rueck1: 60, c_stoff1: 210, c_angeb1: 2_900, c_info01: 25 }[codeId] ?? 60;
   return {
     id: "77777777-7777-4777-8777-777777777777",
     state: failed ? "failed" : "succeeded",
@@ -152,13 +158,13 @@ const propsOf = (scenario: Scenario, url: URL) => ({
     has: true,
     open: Boolean(scenario.codeOpen),
     ...(scenario.codeOpen
-      ? { page: scenario.listFails ? null : { items: MINE.map((item) => ({ ...item, lastRun: runOf(item.id) })), more: false } }
+      ? { page: scenario.listFails ? null : { items: MINE.map((item) => ({ ...item, lastRun: runOf(item.id) })), nextCursor: null } }
       : {}),
   },
   initialCodeBlock: scenario.panel
     ? {
         ref: mailbox,
-        page: scenario.panelFails ? null : { items: MAILBOX.map((item) => ({ ...item, lastRun: runOf(item.id) })), more: false },
+        page: scenario.panelFails ? null : { items: MAILBOX.map((item) => ({ ...item, lastRun: runOf(item.id) })), nextCursor: null },
       }
     : null,
 });
@@ -296,7 +302,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
         ? `<script type="application/json" id="cloud-panel-context">${JSON.stringify({ v: 1, seq: 1, pageId: "88888888-8888-4888-8888-888888888888", app: "mail", scope: mailbox })}</script>`
         : "";
       // Gustav's plum, scoped like the Cloud shell's app canvas.
-      const appColors = `--app-accent:${plum};${appColorStyle(plum)}`;
+      const appColors = `--app-accent:${plum};${plumColors}`;
       return route.fulfill({
         contentType: "text/html",
         body:
@@ -360,8 +366,8 @@ describe("Gustav", () => {
       try {
         const list = h.page.locator("section.assistant-code");
         await list.getByText("Wochenbericht Vertrieb").waitFor();
-        expect(await list.locator("h1").textContent()).toBe("Meine Apps & Automationen");
-        await expect(list.getByText("Dein Code läuft als du.").count()).resolves.toBe(1);
+        expect(await list.getByRole("heading", { level: 1 }).textContent()).toBe("Meine Apps & Automationen");
+        expect(await list.getByText("Dein Code läuft als du.").count()).toBe(1);
         // The failed run and the pause are the visible statuses; the rest are "An".
         const rows = await list
           .locator("li.assistant-code__row")
@@ -404,9 +410,9 @@ describe("Gustav", () => {
       await block.getByText("Anfragen sortieren").waitFor();
       // The place's own name comes from its reader.
       await block.getByText("von info@moebel-beispiel.de").waitFor();
-      expect(await block.locator("li").count()).toBe(2);
-      await expect(block.getByText("Pausiert").count()).resolves.toBe(1);
-      await expect(block.getByRole("button", { name: "Mit Gustav bearbeiten" }).count()).resolves.toBe(1);
+      expect(await block.locator("li").count()).toBe(1);
+      expect(await block.getByText("Pausiert").count()).toBe(1);
+      expect(await block.getByRole("button", { name: "Mit Gustav bearbeiten" }).count()).toBe(1);
       expect(await block.getByRole("link", { name: "info@moebel-beispiel.de öffnen" }).getAttribute("href")).toBe("/app/mail/m/info");
       // The server already listed this place's Code; the page does not ask Core again.
       expect(h.codeCalls.filter((call) => call === "core.code.list")).toEqual([]);
