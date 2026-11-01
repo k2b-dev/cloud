@@ -5,6 +5,13 @@ export { activateCodeVersion, cancelCodeActivation, processCodeActivation, readC
 export * from "./activation-contracts";
 export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
 export { createCodeCheckRequest } from "./authoring-check";
+export {
+  CODE_ATTENTION_CACHE_MS,
+  type CodeAttentionReason,
+  CodeAttentionReasonSchema,
+  codeAttentionContracts,
+  readCodeAttention,
+} from "./attention";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export * from "./contracts";
 export { CodeJobError } from "./job-errors";

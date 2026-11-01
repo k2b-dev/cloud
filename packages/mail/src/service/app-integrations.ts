@@ -110,18 +110,29 @@ export const searchSpaceItems = (query: string, request: AppIntegrationRequest) 
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
 
 export const linkSpaceItemResource = (
-  input: { itemId: string; reference: { ref: { type: string; id: string }; label: string } },
+  input: { itemId: string; spaceId?: string; reference: { ref: { type: string; id: string }; label: string } },
   request: AppIntegrationRequest,
   idempotencyKey?: string,
 ) =>
   fetchSpaceItemAction({
     itemId: input.itemId,
+    ...(input.spaceId ? { target: { type: "spaces.space", id: input.spaceId } } : {}),
     capabilityId: "item.reference.add",
     request,
     dataSchema: spacesItemResourceReferenceSchema,
-    input,
+    input: { itemId: input.itemId, reference: input.reference },
     ...(idempotencyKey ? { idempotencyKey } : {}),
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
+
+export const readSpaceItemTarget = (itemId: string, request: AppIntegrationRequest) =>
+  fetchAppCapability({
+    appId: "spaces",
+    kind: "query",
+    capabilityId: "item.read",
+    request,
+    dataSchema: z.object({ spaceId: z.string().regex(/^[0-9A-Za-z]{6}$/) }).loose(),
+    input: { id: itemId },
+  }).then((result) => (result.ok ? { ok: true as const, data: { spaceId: result.data.data.spaceId } } : result));
 
 export const createSpaceEventOnce = (
   input: { spaceId: string } & Record<string, unknown>,
@@ -194,12 +205,14 @@ const fetchAppCapability = async <T>(params: {
 /** Resolve the owning Space from its canonical reader before a target-bound item Action. */
 const fetchSpaceItemAction = async <T>(params: {
   itemId: string;
+  target?: { type: string; id: string };
   capabilityId: string;
   request: AppIntegrationRequest;
   dataSchema: z.ZodType<T>;
   input: unknown;
   idempotencyKey?: string;
 }): Promise<AppIntegrationResult<CapabilityResult<T>>> => {
+  if (params.target) return fetchAppCapability({ ...params, appId: "spaces", kind: "action" });
   const item = await fetchAppCapability({
     appId: "spaces",
     kind: "query",

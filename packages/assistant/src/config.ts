@@ -120,7 +120,7 @@ export const app = defineApp({
     section: "primary",
     requiresAuth: true,
   },
-  panel: { href: "/app/assistant/panel", label: "Assistant", icon: "ti ti-sparkles" },
+  panel: { href: "/app/assistant/panel", label: "Assistant", icon: "ti ti-sparkles", code: true },
   openapi: "/api/assistant/openapi.json",
   routes: ["/api/assistant", "/app/assistant", "/public/assistant", "/admin/assistant"],
 });
