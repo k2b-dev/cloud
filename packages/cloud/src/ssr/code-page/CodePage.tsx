@@ -727,9 +727,7 @@ function Overview(props: { data: CodePageData; state: CodePageReady; text: PageT
             <Show when={props.state.active && props.state.internet.active?.length}>
               <p class="cloud-code__label">{t().internetVersion({ version: props.state.active!.number })}</p>
               <ul class="cloud-code__list">
-                <For each={props.state.internet.active ?? []}>
-                  {(origin) => <OriginRow origin={origin} />}
-                </For>
+                <For each={props.state.internet.active ?? []}>{(origin) => <OriginRow origin={origin} />}</For>
               </ul>
             </Show>
             <Show when={props.state.waiting && props.state.internet.waiting?.length}>

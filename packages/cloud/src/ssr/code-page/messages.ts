@@ -143,7 +143,8 @@ export const codePageMessages = i18n.define({
       newOnSwitchOn: ({ version }: Version) => `new when version ${version} is switched on`,
       alsoNew: ({ operations }: { operations: string }) => `adds ${operations}`,
       removed: "Access removed",
-      removedRow: ({ name, today, date, time }: Removal) => `removed${name ? ` by ${name}` : ""} ${today ? "today" : `on ${date}`} at ${time}`,
+      removedRow: ({ name, today, date, time }: Removal) =>
+        `removed${name ? ` by ${name}` : ""} ${today ? "today" : `on ${date}`} at ${time}`,
       removedSentence: ({ name, today, date, time }: Removal) =>
         `${name ?? "Someone"} removed it ${today ? "today" : `on ${date}`} at ${time}.`,
       targetDeleted: "Target deleted",
