@@ -97,6 +97,8 @@ for (const [name, options] of Object.entries(profiles))
         await page.goto(server.url.href + "?state=source");
         await page.locator(".k2b-ste-views").waitFor();
         expect(await page.locator(".k2b-ste-table").count()).toBe(0);
+        // Phones show the toolbar for the focused editor.
+        await page.locator(".cm-content").click();
         await page.getByRole("button", { name: "Tabelle", exact: true }).click();
         expect(await page.evaluate(() => window.sharedComponentHarness.view.state.doc.toString())).toContain("Spalte 1");
         await page.getByRole("radio", { name: "Markdown", exact: true }).focus();

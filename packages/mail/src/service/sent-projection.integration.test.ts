@@ -3099,6 +3099,7 @@ suite("mail sent message projection", () => {
       // The composer's next save still holds the current revision.
       const next = await editInCloud(mailbox, draft.id, saved.revision, `${typed}weiter`);
       expect(next.revision).toBe(saved.revision + 1);
+      await settleDraftImports(mailbox.mailboxId);
     } finally {
       provider.restore();
     }
