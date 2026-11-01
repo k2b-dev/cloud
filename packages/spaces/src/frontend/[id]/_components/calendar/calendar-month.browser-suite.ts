@@ -1146,7 +1146,9 @@ describe(`Spaces month view in ${browserName}`, () => {
       const title = await middle(".k2b-calendar-header__title");
       expect(Math.abs((await middle(".k2b-calendar-header__today")) - title)).toBeLessThanOrEqual(2);
       // New event is the trigger of its "+" menu.
-      expect(Math.abs((await middle(".k2b-calendar-header__actions > .k2b-dropdown > .k2b-dropdown__trigger")) - title)).toBeLessThanOrEqual(2);
+      expect(
+        Math.abs((await middle(".k2b-calendar-header__actions > .k2b-dropdown > .k2b-dropdown__trigger")) - title),
+      ).toBeLessThanOrEqual(2);
       const overflow = await page.evaluate(() => {
         const header = document.querySelector(".k2b-calendar-header")!.getBoundingClientRect();
         return Array.from(document.querySelectorAll(".k2b-calendar-header a, .k2b-calendar-header button")).filter((element) => {

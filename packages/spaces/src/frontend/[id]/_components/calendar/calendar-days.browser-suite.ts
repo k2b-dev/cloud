@@ -9,7 +9,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { CalendarTray } from "../workspace/workspace-types";
 import { parseCalendarRoute } from "./filter";
 import { CALENDAR_DAY_HOURS, type CalendarRange, calendarWindow } from "./range";
@@ -221,7 +221,12 @@ const calendarTemplate = (id: string, kind: "task" | "event", name: string, patc
   ...patch,
 });
 const calendarTemplates: SpaceItemTemplate[] = [
-  calendarTemplate("Tpl001", "event", "Kundentermin", { icon: "ti ti-users", title: "Kundentermin ", timeOfDay: "10:00", durationMinutes: 60 }),
+  calendarTemplate("Tpl001", "event", "Kundentermin", {
+    icon: "ti ti-users",
+    title: "Kundentermin ",
+    timeOfDay: "10:00",
+    durationMinutes: 60,
+  }),
   calendarTemplate("Tpl002", "event", "Lieferantenbesuch", { icon: "ti ti-truck", durationMinutes: 90, location: "Halle 2" }),
   calendarTemplate("Tpl003", "task", "Wochenbericht", {
     icon: "ti ti-report",
@@ -537,15 +542,18 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       const popover = page.locator(".k2b-calendar-popover:popover-open");
       await popover.waitFor();
       const trigger = popover.getByRole("button", { name: "Vorlage" });
+      await settled(page);
       const before = await trigger.boundingBox();
       const footer = await popover.getByRole("button", { name: "Anlegen" }).boundingBox();
       await trigger.click();
       const templates = page.locator(".k2b-dropdown__menu:popover-open");
       await templates.waitFor();
-      expect(await templates.locator(".k2b-dropdown__note").textContent()).toBe("Der gewählte Zeitraum bleibt, die Vorlage füllt den Rest.");
+      expect(await templates.locator(".k2b-dropdown__note").textContent()).toBe(
+        "Der gewählte Zeitraum bleibt, die Vorlage füllt den Rest.",
+      );
       await page.screenshot({ path: join(shots, "plus-quick-create-templates-1440.png") });
       await templates.getByRole("menuitem", { name: /^Lieferantenbesuch/ }).click();
-      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      await settled(page);
       expect(await popover.getByRole("textbox").inputValue()).toBe("Lieferantenbesuch");
       expect(await popover.locator("[data-spaces-quick-create-from]").textContent()).toBe("Ort Halle 2 · Zeit aus dem Zeitraum");
       expect(await popover.locator("[data-spaces-quick-create-when]").textContent()).toBe("Fr 9. Okt · 11:15–12:30");

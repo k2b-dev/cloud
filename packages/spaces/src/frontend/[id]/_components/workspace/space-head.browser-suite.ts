@@ -65,8 +65,16 @@ const template = (id: string, name: string, patch: Partial<SpaceItemTemplate> = 
   ...patch,
 });
 const someTemplates: SpaceItemTemplate[] = [
-  template("Tpl001", "Wochenbericht", { icon: "ti ti-report", checklist: ["a", "b", "c"], dateRule: { type: "weekdays", weekdays: ["FR"] } }),
-  template("Tpl002", "Wareneingang prüfen", { icon: "ti ti-package", checklist: ["a", "b", "c", "d"], dateRule: { type: "offset", days: 1 } }),
+  template("Tpl001", "Wochenbericht", {
+    icon: "ti ti-report",
+    checklist: ["a", "b", "c"],
+    dateRule: { type: "weekdays", weekdays: ["FR"] },
+  }),
+  template("Tpl002", "Wareneingang prüfen", {
+    icon: "ti ti-package",
+    checklist: ["a", "b", "c", "d"],
+    dateRule: { type: "offset", days: 1 },
+  }),
   template("Tpl003", "Reklamation", { icon: "ti ti-alert-triangle", priority: "high", dateRule: { type: "offset", days: 2 } }),
 ];
 const manyTemplates: SpaceItemTemplate[] = [
@@ -350,7 +358,8 @@ const pageHtml = (url: URL, cookie: string | undefined) => {
             people,
             locale: url.searchParams.get("locale") === "de" ? "de" : "en",
             detail: url.searchParams.has("item"),
-            templates: url.searchParams.get("templates") === "12" ? manyTemplates : url.searchParams.get("templates") === "3" ? someTemplates : [],
+            templates:
+              url.searchParams.get("templates") === "12" ? manyTemplates : url.searchParams.get("templates") === "3" ? someTemplates : [],
           }),
         );
   const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
@@ -806,13 +815,9 @@ describe(`Spaces shared head in ${browserName}`, () => {
       await settled(page);
       expect(await primary.getAttribute("aria-expanded")).toBe("true");
       expect(await geometry(page)).toEqual(before);
-      expect(await menu.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.querySelector("span > span")?.textContent))).toEqual([
-        "Leere Aufgabe",
-        "Wochenbericht",
-        "Wareneingang prüfen",
-        "Reklamation",
-        "Vorlage erstellen …",
-      ]);
+      expect(
+        await menu.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.querySelector("span > span")?.textContent)),
+      ).toEqual(["Leere Aufgabe", "Wochenbericht", "Wareneingang prüfen", "Reklamation", "Vorlage erstellen …"]);
       await shot(page, "kanban-head-3.png");
       await page.keyboard.press("Escape");
       await settled(page);
