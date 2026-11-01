@@ -1,4 +1,4 @@
-import { sql } from "@k2b/cloud";
+import { codeOwnerDeleted, sql } from "@k2b/cloud";
 import { createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
@@ -492,8 +492,8 @@ export const deleteMailbox = async (context: MailRequestContext, mailboxId: stri
     async () => {
       const barrier = await withMailboxProviderOperationBarrier(mailboxId, resourceIds, async (assertLeaseActive) => {
         await sql.begin(async (tx) => {
-          const [row] = await tx<{ id: string; name: string; deleted_at: Date | string | null }[]>`
-            SELECT id, name, deleted_at FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR UPDATE
+          const [row] = await tx<{ id: string; short_id: string; name: string; deleted_at: Date | string | null }[]>`
+            SELECT id, short_id, name, deleted_at FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR UPDATE
           `;
           if (!row) {
             const notFound = err.notFound("Mailbox");
@@ -516,6 +516,7 @@ export const deleteMailbox = async (context: MailRequestContext, mailboxId: stri
               updated_at = now()
             WHERE id = ${mailboxId}::uuid
           `;
+          await codeOwnerDeleted(tx, { type: "mail.mailbox", id: row.short_id });
           await tx`UPDATE mail.personal_mailbox_preferences SET large_view = NULL, phone_view = NULL WHERE mailbox_id = ${mailboxId}::uuid`;
           await tx`DELETE FROM mail.personal_mailbox_preferences WHERE mailbox_id = ${mailboxId}::uuid AND pinned_at IS NULL AND hidden_at IS NULL`;
           await tx`

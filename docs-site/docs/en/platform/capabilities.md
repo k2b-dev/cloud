@@ -533,7 +533,7 @@ supports reader checks; it remains independent of the four Code functions.
 
 ```ts
 const itemCodeAccess: CodeAccessAdapter = {
-  manages: (context, id) => itemService.manages(context, id),
+  manages: (tx, context, id) => itemService.managesInTransaction(tx, context, id),
   grant: (tx, input) => itemService.grantCodeAccess(tx, input),
   revoke: (tx, input) => itemService.revokeCodeAccess(tx, input),
   list: (tx, input) => itemService.listCodeAccess(tx, input),
@@ -559,14 +559,53 @@ are incomplete. The manifest advertises the supported targets and owners in
 
 | Function | Responsibility |
 | --- | --- |
-| `manages(context, id)` | Check the person's current manager authority at the target. Code never counts as a manager. |
-| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`. |
+| `manages(tx, context, id)` | Lock and check the person's current manager authority at the target using the supplied transaction. Code never counts as a manager. |
+| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`; successful dry runs also return `managerUserIds`. |
 | `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
 | `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
 
-Use only the supplied transaction for adapter reads and writes. Do not publish
-events, send notifications, or perform other external effects there. A dry run
-must produce the same decision without effects; Cloud also rolls back its
+Successful dry-run `code.access.set` results include `managerUserIds`: the current
+people managing the target, including members of manager groups. Core uses these
+IDs to notify managers when a Cloud administrator activates Code. Return an empty
+array when no person manages the target; service accounts are never notification
+recipients. The platform preserves this field in its set result, including dry-run
+retries of existing grants.
+
+`CODE_ACCESS_MAX_MANAGER_USER_IDS` from `@k2b/cloud/contracts` bounds the array
+using the capability result byte budget. The complete set result and its receipt
+must fit that budget too. Refuse with a reason when all managers cannot fit;
+never truncate the notification recipients. Spaces and Mail return manager IDs
+only during dry runs. A Code manager check during a directory update can fail
+transiently; retry after the update finishes.
+
+Cloud calls `manages` inside the same transaction as `grant` or `revoke`, including
+dry runs and retries. Lock the target's authority before reading its current
+ownership, grants and membership, and retain the lock until commit or rollback.
+Every path that changes those managers must take a conflicting lock on the same
+rows or tables. For example, lock the target row `FOR UPDATE` if all manager
+changes lock that row too. Locking existing share rows alone does not protect
+missing or newly inserted shares. Include inherited authority and group membership
+in the locking strategy; cached roles or groups from `context` are not a current
+manager check. The platform revalidates and locks Cloud-admin authority separately
+and skips `manages` for a live Cloud admin. Consequently, `grant` and `revoke` must
+lock and check the target themselves, including its existence, rather than assume
+that `manages` ran.
+
+Person listings call `manages` for multiple targets in one transaction, retaining
+each lock until that list finishes. Prefer `FOR SHARE` where every manager-change
+path takes a conflicting lock. When exclusive locks are necessary, order targets
+consistently across adapter lists and all domain paths that lock multiple targets.
+Platform grant/account locks precede adapter target locks. Do not call platform
+grant cleanup while already holding a target lock in a domain transaction; finish
+that transaction first or acquire the platform locks first. Core account inspection
+uses its separate account-scoped authority.
+
+Use only the supplied transaction for adapter reads and writes. Never open a
+separate database connection from `manages`, `grant`, `revoke` or `list`. Transactional
+outbox writes, such as access invalidations, are allowed and roll back with the
+grant. Do not deliver events, send notifications, or perform other external
+effects there. A dry run must produce the same decision without effects;
+Cloud also rolls back its
 transaction. A refusal or exception rolls back the adapter's writes. Code
 receives neither `admin` nor a manager role. Keep different grant IDs
 independent, even for the same account and target: rolling back a new
@@ -580,6 +619,17 @@ Cloud generates these capabilities once per app:
 | `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level }` or `{ granted: false, reasonCode, reason }` |
 | `<app>.code.access.list` | `{ principal }` | `{ grantId, target, principal, level }[]` for targets the person manages |
 | `<app>.code.access.rm` | `{ grantId }` | `{ removed: boolean }` |
+
+Successful adapter `grant` decisions can include `managerUserIds`, the current
+human administrators of the target, including administrator group members.
+Return this field on dry runs; Core saves it before applying grants. Core requires it for Cloud-admin activation
+and sends one durable notification per affected target and manager after the
+version becomes active. See [Code activation](/en/docs/platform/code-activation).
+The four adapter functions and signed proof v1 remain unchanged.
+
+Generated titles, descriptions and all input-field descriptions include English
+and German presentation. Apps do not need to repeat these translations; any
+field overrides retain the platform's remaining input descriptions.
 
 Resource targets use qualified Types, for example
 `{ type: "inventory.item", id: "item-1" }`; an app target uses

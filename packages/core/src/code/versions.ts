@@ -245,7 +245,7 @@ export async function submitCodeVersion(
       reviewDigest = approvalReviewDigest(review);
     }
     await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest)
-      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::jsonb,${approvalId}::uuid,${reviewDigest})`;
+      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest})`;
     await audit.record(
       {
         action: "core.code.version.submitted",
@@ -413,7 +413,7 @@ export async function applyCodeVersionDecision(tx: SQL, request: ApprovalRequest
     throw new CodeVersionError("code_comparison_stale", "The reviewed version snapshot changed.");
   if (!request.decidedByUserId || !request.approverAuthEpoch) throw new CodeDataError("FORBIDDEN", "Decision evidence is missing.");
   await tx`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,decided_device_id,auth_epoch)
-    VALUES(${version.id}::uuid,${JSON.stringify(binding)}::jsonb,${request.status === "approved"},${request.soleAdmin},${request.decidedByUserId}::uuid,${request.decidedVia},${request.decidedDeviceId}::uuid,${request.approverAuthEpoch}::bigint)`;
+    VALUES(${version.id}::uuid,${JSON.stringify(binding)}::text::jsonb,${request.status === "approved"},${request.soleAdmin},${request.decidedByUserId}::uuid,${request.decidedVia},${request.decidedDeviceId}::uuid,${request.approverAuthEpoch}::bigint)`;
   await replaceCodePolicyCoverage(version.id, request.status === "approved" ? manifest.policyRows : [], tx);
   if (request.status === "approved") await recordCodeVersionBaseline(code.id, version.id, tx);
   await audit.record(

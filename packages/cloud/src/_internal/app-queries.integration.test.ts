@@ -1,9 +1,10 @@
 import { afterAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { z } from "zod";
 import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { APP_QUERY_REQUESTS_PER_MINUTE, dispatchCapability } from "../api/capabilities";
 import * as executions from "../capabilities/executions";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
-import { defineCapabilities } from "../contracts/capabilities";
+import { CloudResourceReaderViewSchema, defineCapabilities } from "../contracts/capabilities";
 import { redis, sql } from "../runtime/clients";
 import { signAppQueryInvocation } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -15,6 +16,14 @@ import { createAppQueryRoutes } from "./app-queries";
 import { compileCapabilities, invokeCompiledCapability } from "./capabilities";
 
 const database = testInfra.database && testInfra.nats && testInfra.valkey ? await useFreshDatabase("resource_readers") : null;
+const reader = {
+  title: "Read item",
+  description: "Read the authorized item.",
+  input: z.object({ id: z.string().min(1).max(512).describe("Resource ID.") }).strict(),
+  data: z.object({ view: CloudResourceReaderViewSchema }),
+  openWorld: false,
+  run: async () => ({ ok: true as const, data: { data: { view: { title: "Item", permission: "read" as const } } } }),
+};
 if (database) await import("../../../../scripts/fixtures/authorization-preload");
 afterAll(async () => {
   await database?.drop();
@@ -35,10 +44,12 @@ suiteFor(
         "query-provider",
         defineCapabilities({
           protocolVersion: 2,
+          queries: { "item.read": reader },
           types: {
             item: {
               title: "Item",
               description: "An item.",
+              reader: "item.read",
               access: {
                 readable: async (_input, context) => {
                   expect(context).toMatchObject({ actor: { kind: "app", appId }, accessSubject: { type: "none" }, user: null });
@@ -62,7 +73,7 @@ suiteFor(
           workload,
           targetAppId: "query-provider",
           capabilityId: "item.readable",
-          schemaHash: compiled.manifest.queries[0]!.schemaHash,
+          schemaHash: compiled.queries.get("item.readable")!.manifest.schemaHash,
           input: payload,
           requestId: "live-query",
           signer,
@@ -141,10 +152,12 @@ suiteFor(
       let called = 0;
       const compiled = compileCapabilities("provider", {
         protocolVersion: 2,
+        queries: { "item.read": reader },
         types: {
           item: {
             title: "Item",
             description: "Item.",
+            reader: "item.read",
             access: {
               readable: (input) => {
                 called++;
@@ -237,7 +250,8 @@ suiteFor(
         "provider",
         defineCapabilities({
           protocolVersion: 2,
-          types: { item: { title: "Item", description: "Item.", access: { readable: () => [] } } },
+          queries: { "item.read": reader },
+          types: { item: { title: "Item", description: "Item.", reader: "item.read", access: { readable: () => [] } } },
         }),
       );
       await redis.set(keys[1]!, String(APP_QUERY_REQUESTS_PER_MINUTE - 1));

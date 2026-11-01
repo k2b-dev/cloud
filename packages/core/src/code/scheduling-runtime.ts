@@ -79,11 +79,25 @@ export async function fetchCodeRuns(
       const { runs, jobs } = await claimCodeWork(free, request.instanceId, await readCodeRunLimits());
       await ticket.ack();
       if (runs.length || jobs.length) {
-        const leases = [];
-        for (const run of runs) leases.push(await codeRunnerLease(run, dependencies.sign));
-        // Even a lost response consumed these slots until the next signed advertisement.
-        await recordCodeRunner(request.instanceId, free - runs.length - jobs.length);
-        return { runs: leases, jobs };
+        const ownerChecks = new Map<string, Promise<boolean>>();
+        // Parallel bounded reads share one owner check per Code and cannot discard another Code's lease.
+        const prepared = await Promise.all(
+          runs.map(async (run) => {
+            try {
+              return await codeRunnerLease(run, dependencies.sign, { signal: abort, ownerChecks });
+            } catch {
+              logger("core:code-scheduling").warn("code_run_lease_unavailable", { runId: run.id });
+              return null; // Unsent claims recover through expiry; their original attempt/deadline budgets still apply.
+            }
+          }),
+        );
+        const leases = prepared.filter((lease) => lease !== null);
+        try {
+          await recordCodeRunner(request.instanceId, free - leases.length - jobs.length);
+        } catch {
+          logger("core:code-scheduling").warn("code_runner_metrics_unavailable");
+        }
+        if (leases.length || jobs.length) return { runs: leases, jobs };
       }
     }
     return { runs: [] };

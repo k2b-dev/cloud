@@ -1,6 +1,7 @@
 import type { SQL } from "bun";
 import { z } from "zod";
 import type { CapabilityExecutionContext } from "./capabilities";
+import { CAPABILITY_MAX_RESULT_BYTES } from "./capability-limits";
 
 /** A Code target is either a qualified resource type or the whole receiving application. */
 export const CodeAccessTargetSchema = z
@@ -29,8 +30,13 @@ export const CodeAccessLevelSchema = z
   .min(1)
   .max(120)
   .refine((level) => level.toLowerCase() !== "admin", "Code never receives admin");
+/** A serialized UUID costs 39 bytes including quotes/separator. The complete set
+ * response must also fit CAPABILITY_MAX_RESULT_BYTES; the platform checks its envelope.
+ */
+export const CODE_ACCESS_MAX_MANAGER_USER_IDS = Math.floor(CAPABILITY_MAX_RESULT_BYTES / 39);
+const managerUserIdsSchema = z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS);
 export const CodeAccessDecisionSchema = z.discriminatedUnion("granted", [
-  z.object({ granted: z.literal(true), level: CodeAccessLevelSchema }).strict(),
+  z.object({ granted: z.literal(true), level: CodeAccessLevelSchema, managerUserIds: managerUserIdsSchema.optional() }).strict(),
   z.object({ granted: z.literal(false), reason: z.string().min(1).max(1000) }).strict(),
 ]);
 export type CodeAccessDecision = z.infer<typeof CodeAccessDecisionSchema>;
@@ -46,16 +52,35 @@ export type CodeAccessGrant = z.infer<typeof CodeAccessGrantSchema>;
 /**
  * Implement all four functions at a resource type or at code.access.app.
  * Use only the supplied transaction for reads and writes; no external effects.
+ * manages must lock the target's manager authority until this transaction ends,
+ * using the same row/table lock as every path that changes that authority.
+ * Lock before reading current grants, ownership and membership; never rely on
+ * context's cached roles/groups or acquire a separate database connection.
+ * For example, lock the target row FOR UPDATE when all manager mutations lock it
+ * too. Locking existing share rows alone does not protect absent/new shares.
+ * The platform checks installation-admin authority separately in this transaction.
+ * A live Cloud admin bypasses manages. grant/revoke must therefore lock and check
+ * the target themselves, including its existence; do not assume manages ran.
+ * Person listings call manages for multiple targets in one transaction. Prefer
+ * shared locks when all manager changes conflict with them; otherwise use the
+ * same deterministic target-lock order across listings and domain mutations.
+ * Platform grant/account locks precede adapter target locks; never call platform
+ * grant cleanup while already holding a target lock in a domain transaction.
  * grant chooses the smallest non-manager level covering all operations, or refuses.
+ * Successful dry runs include managerUserIds: the current people managing the target,
+ * including inherited group managers, for Core activation notifications.
  * dryRun must return the same decision without effects (the platform also rolls back).
  * Normal target share lists must expose grantId on each Code share so the rights editor
  * can call code.access.rm directly; ordinary shares never carry it.
  * A grantId identifies an explicit Code-only grant; revoke never removes ordinary shares.
+ * Successful dry-run decisions identify current human managers in managerUserIds for
+ * Core Cloud-admin activation notices; real and replayed sets may omit this metadata. Include direct and group administrators;
+ * Core refuses Cloud-admin activation when this metadata is unavailable.
  * Keep grants with different IDs independent, including overlapping grants for the same
  * account and target. Activation rollback removes only its new IDs, preserving older grants.
  */
 export type CodeAccessAdapter = {
-  manages: (context: CapabilityExecutionContext, id: string) => boolean | Promise<boolean>;
+  manages: (tx: SQL, context: CapabilityExecutionContext, id: string) => boolean | Promise<boolean>;
   grant: (
     tx: SQL,
     input: { id: string; principal: string; operations: readonly string[]; grantId: string; dryRun: boolean },
@@ -95,7 +120,9 @@ export const CodeAccessRefusalCodeSchema = z.enum([
 export type CodeAccessRefusalCode = z.infer<typeof CodeAccessRefusalCodeSchema>;
 
 export const CodeAccessSetDataSchema = z.discriminatedUnion("granted", [
-  z.object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema }).strict(),
+  z
+    .object({ granted: z.literal(true), grantId: z.uuid(), level: CodeAccessLevelSchema, managerUserIds: managerUserIdsSchema.optional() })
+    .strict(),
   z.object({ granted: z.literal(false), reasonCode: CodeAccessRefusalCodeSchema, reason: z.string().min(1).max(1000) }).strict(),
 ]);
 export type CodeAccessSetData = z.infer<typeof CodeAccessSetDataSchema>;

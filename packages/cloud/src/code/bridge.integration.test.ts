@@ -252,7 +252,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     };
     const [version] = await sql<
       { id: string }[]
-    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by) VALUES(${codeId},1,${JSON.stringify(files)}::jsonb,${bundle},${checked.hashes.source},${checked.hashes.bundle},${JSON.stringify(checked)}::jsonb,7,7,${userId}::uuid) RETURNING id`;
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by) VALUES(${codeId},1,${JSON.stringify(files)}::text::jsonb,${bundle},${checked.hashes.source},${checked.hashes.bundle},${JSON.stringify(checked)}::text::jsonb,7,7,${userId}::uuid) RETURNING id`;
     await sql`UPDATE code.codes SET active_version_id=${version!.id}::uuid WHERE id=${codeId}`;
     const binding = {
       codeId,
@@ -264,7 +264,11 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       comparisonSourceHash: null,
       comparisonBundleHash: null,
     };
-    await sql`INSERT INTO code.version_submissions(code_id,version_id,binding) VALUES(${codeId},${version!.id}::uuid,${JSON.stringify(binding)}::jsonb)`;
+    await sql`INSERT INTO code.version_submissions(code_id,version_id,binding) VALUES(${codeId},${version!.id}::uuid,${JSON.stringify(binding)}::text::jsonb)`;
+    const [stored] = await sql`SELECT jsonb_typeof(v.source_files) AS source_kind,jsonb_typeof(v.manifest) AS manifest_kind,
+      jsonb_typeof(s.binding) AS binding_kind FROM code.versions v JOIN code.version_submissions s ON s.version_id=v.id
+      WHERE v.id=${version!.id}::uuid`;
+    expect(stored).toMatchObject({ source_kind: "object", manifest_kind: "object", binding_kind: "object" });
     const [run] = await sql<
       { id: string }[]
     >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit) VALUES(${codeId},${version!.id}::uuid,'manual','weekly','running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
