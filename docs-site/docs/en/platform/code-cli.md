@@ -40,7 +40,7 @@ code/
 ```
 
 `code.json` has version 1, `codeId`, `title`, `owner`, `entry` and nullable
-`baseVersionId`. Commands accept the project directory or a file inside it;
+`baseVersionId`. Project commands accept the project directory or a file inside it;
 omitting the path searches upward from the current directory for `code.json`.
 Folder names never derive from titles or addresses. Linked filesystem paths
 are refused. Source collection excludes generated `sdk`, `test`, dependencies,
@@ -155,8 +155,8 @@ example `mail/box_1234`; titles and owners remain in `code.json`. Pull never
 activates Code. It refuses existing project folders. If a later project fails,
 earlier folders remain: inspect them and retry into a new root.
 
-Status discovers every `code.json` below the selected root, or reads one
-project. It compares local source with its saved base and reports the latest
+Status discovers every `code.json` below the selected root (the current
+directory by default), or finds the surrounding project from a source path. It compares local source with its saved base and reports the latest
 server version, approval receipt, active version, execution state, pause reason,
 and whether a newer server base exists. An empty root returns an empty list.
 Duplicate local Code IDs, linked paths, unavailable Code, and unreadable files
@@ -182,7 +182,7 @@ from `contents.content.nextOffset` to continue the text. See
 
 Pause and resume require `--yes` and the same execution-editor authority as
 the Code surface. Phone sessions cannot change execution authority. A version
-must already be active; resume rechecks its approval. Pause stops new admissions;
+must already be active; resume rechecks its approval and is refused in CI. Pause stops new admissions;
 missed events are not replayed. Pending newer versions remain pending.
 
 ## Read and replace policy
@@ -235,7 +235,8 @@ For an existing name, pass its current `binding_revision` from list/set as
 Changed destinations create a new immutable binding revision and require a
 new version submission. Replacing a value applies immediately to all versions
 using that name. One final newline from file/stdin is removed; other bytes
-are preserved. Values must satisfy the server's printable ASCII contract.
+are preserved. Values must satisfy the server's printable ASCII contract. Selected input files
+may be symlinks, including mounted secret files. Use `--from -` for pipes.
 
 List returns names, destinations, binding revisions and `configured`, with
 `nextCursor` for `--cursor`; `--limit` accepts 1–20. Delete requires `--yes`

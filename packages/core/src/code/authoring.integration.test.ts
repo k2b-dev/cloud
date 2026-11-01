@@ -242,7 +242,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       VALUES('c_allapp','app','example','App',${appAccount.id}::uuid,${id}::uuid)`;
     const reader = spyOn(catalog, "getCapabilityCatalogApp").mockResolvedValue({
       ok: false,
-      error: { code: "NOT_FOUND", message: "not installed" },
+      error: { code: "NOT_FOUND", message: "not installed", status: 404 },
     });
     try {
       const items: CodeAuthoringData<"pullAll">["items"] = [];

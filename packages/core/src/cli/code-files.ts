@@ -47,6 +47,7 @@ export async function assertCodeDestination(root: string, owner?: CodeOwner) {
   }
   throw new Error("The resource's local Code folder already exists. Choose a new --out directory.");
 }
+export class CodeProjectNotFoundError extends Error {}
 export async function loadCodeProject(path = ".") {
   let directory = resolve(path);
   await assertCodePath(directory);
@@ -62,7 +63,7 @@ export async function loadCodeProject(path = ".") {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
     }
     const parent = dirname(directory);
-    if (parent === directory) throw new Error("No code.json found. Run cld code init or pull first.");
+    if (parent === directory) throw new CodeProjectNotFoundError("No code.json found. Run cld code init or pull first.");
     directory = parent;
   }
 }
@@ -152,7 +153,12 @@ export async function writeCodeSdk(directory: string, files: Record<string, stri
   }
 }
 /** Discover local projects without traversing links, dependencies or generated output. A project is a traversal boundary. */
-export async function listCodeProjects(root = "code") {
+export async function listCodeProjects(root = ".") {
+  try {
+    return [await loadCodeProject(root)];
+  } catch (error) {
+    if (!(error instanceof CodeProjectNotFoundError)) throw error;
+  }
   const projects: Awaited<ReturnType<typeof loadCodeProject>>[] = [];
   async function visit(directory: string) {
     await assertCodePath(directory);

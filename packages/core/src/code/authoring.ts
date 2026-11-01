@@ -146,8 +146,8 @@ export const codeAuthoringServices = {
   pull: (input: CodeAuthoringInput<"pull">, context: CodeContext) => pull(input.codeId, context),
   async pullAll(input: CodeAuthoringInput<"pullAll">, context: CodeContext): Promise<CodeAuthoringData<"pullAll">> {
     if (!codePerson(context).roles.includes("admin")) throw new CodeDataError("FORBIDDEN", "Cloud administration required for pull --all.");
-    // One Code per page bounds source material. Skip personal/app owners, retaining the opaque list cursor.
-    const page = await listCodes({ cursor: input.cursor, limit: 1 }, context);
+    // One resource Code per page bounds source material; other owner kinds are excluded in the store.
+    const page = await listCodes({ ownerKind: "resource", cursor: input.cursor, limit: 1 }, context);
     const items = [];
     for (const code of page.items) if (code.owner.kind === "resource") items.push(await pull(code.id, context));
     return { version: 1, items, nextCursor: page.nextCursor };

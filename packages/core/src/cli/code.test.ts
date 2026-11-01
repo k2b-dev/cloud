@@ -557,7 +557,7 @@ test("pull --all walks empty cursor pages, writes short-ID layouts and prints on
     return Response.json({ version: 1, items: [pulled], nextCursor: null });
   });
   expect(await code.run(invocation.ctx)).toBe(0);
-  expect(invocation.printed).toEqual([{ version: 1, items: [pulled], nextCursor: null }]);
+  expect(JSON.parse(invocation.printed.join(""))).toEqual({ version: 1, items: [pulled], nextCursor: null });
   expect(await readFile(join(out, "example", "box_1234", "code.ts"), "utf8")).toBe(source);
   expect(await code.run(invocation.ctx)).toBe(1); // Existing source is never overwritten.
 });
@@ -672,7 +672,10 @@ test.each(["pause", "resume", "secret-delete", "policy-update"])("%s refuses an 
       : name === "policy-update"
         ? ["policy", "update"]
         : [name, directory];
-  const invocation = context(args, { "binding-revision": uuid, revision: "3", preset: "open" });
+  const invocation = context(
+    args,
+    name === "secret-delete" ? { "binding-revision": uuid } : name === "policy-update" ? { revision: "3", preset: "open" } : {},
+  );
   expect(await code.run(invocation.ctx)).toBe(1);
   expect(invocation.requests).toEqual([]);
 });
@@ -685,4 +688,57 @@ test("C18b command help has every operation and never reads private input", asyn
   const invocation = context(["help"], {}, "text");
   await code.run(invocation.ctx);
   for (const name of ["status", "runs", "pause", "resume", "policy", "secret"]) expect(invocation.printed.join("\n")).toContain(name);
+});
+
+test("CI may pause but cannot resume execution", async () => {
+  const { directory } = await project();
+  const invocation = context(["resume", directory], { yes: true });
+  invocation.ctx.options.ci = true;
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.requests).toEqual([]);
+  expect(invocation.printed).toEqual([
+    { version: 1, error: { code: "code_cli_input", message: "CI darf Code pushen, aber nie fortsetzen.", details: null } },
+  ]);
+});
+test("status finds the surrounding project from nested source paths", async () => {
+  const { directory } = await project();
+  await mkdir(join(directory, "lib"));
+  await writeFile(join(directory, "lib", "module.ts"), "export {};");
+  for (const path of [directory, join(directory, "lib"), join(directory, "lib", "module.ts")]) {
+    expect((await listCodeProjects(path)).map((project) => project.config.codeId)).toEqual([config.codeId]);
+  }
+});
+test("missing pull ID gets an actionable input error instead of a schema dump", async () => {
+  const invocation = context(["pull"]);
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.requests).toEqual([]);
+  expect(invocation.printed).toEqual([
+    { version: 1, error: { code: "code_cli_input", message: "Gib eine Code-ID oder --all an.", details: null } },
+  ]);
+});
+test("private input files can be selected through symlinks without weakening workspace checks", async () => {
+  const { root, directory } = await project();
+  const privateFile = join(root, "private-value");
+  const linked = join(root, "mounted-value");
+  await writeFile(privateFile, "private-mounted-credential", { mode: 0o600 });
+  await symlink(privateFile, linked);
+  const invocation = context(["secret", "set", "BANK_TOKEN", directory], { from: linked, "binding-revision": uuid }, "json", () =>
+    Response.json({ version: 1, secret: secretMetadata }),
+  );
+  expect(await code.run(invocation.ctx)).toBe(0);
+  expect(invocation.requests[0]?.input.value).toBe("private-mounted-credential");
+  expect(JSON.stringify(invocation.printed)).not.toContain("private-mounted-credential");
+});
+test("pull --all stages one valid JSON value and discards it on a later failure", async () => {
+  const { root } = await project();
+  let calls = 0;
+  const failure = { version: 1, error: { code: "NOT_FOUND", message: "Code not found.", details: null } };
+  const invocation = context(["pull"], { all: true, out: join(root, "partial") }, "json", () =>
+    ++calls === 1
+      ? Response.json({ version: 1, items: [{ version: 1, config, files: { "code.ts": "saved source" } }], nextCursor: config.codeId })
+      : Response.json(failure, { status: 404 }),
+  );
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.printed).toEqual([failure]);
+  expect(await readFile(join(root, "partial", "example", "box_1234", "code.ts"), "utf8")).toBe("saved source");
 });

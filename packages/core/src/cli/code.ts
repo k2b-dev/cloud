@@ -30,6 +30,7 @@ import {
   writeCodeSdk,
 } from "./code-files";
 import { codeOperationCommands } from "./code-operations";
+import { pullAllCode } from "./code-pull";
 import { RemoteCodeError, request } from "./code-request";
 
 function printDiff(ctx: CloudCliContext, files: CodeVersionDiffFile[]) {
@@ -133,21 +134,10 @@ export function buildCodeCli(locale?: string) {
           if (flags.all) {
             if (args.code) throw new Error(t("Use a Code ID or --all.", "Nutze eine Code-ID oder --all."));
             await assertCodePath(resolve(flags.out!));
-            const items: CodeAuthoringData<"pullAll">["items"] = [];
-            let cursor: string | undefined;
-            do {
-              const page = await request(ctx, "pullAll", { cursor });
-              for (const item of page.items) {
-                await writeCodeProject(flags.out!, item.config, item.files);
-                items.push(item);
-              }
-              cursor = page.nextCursor ?? undefined;
-            } while (cursor);
-            const data: CodeAuthoringData<"pullAll"> = { version: 1, items, nextCursor: null };
-            if (!printStructured(ctx, data))
-              ctx.print(t(`Pulled ${items.length} resource Codes.`, `${items.length} Ressourcen-Codes geholt.`));
+            await pullAllCode(ctx, flags.out!);
             return;
           }
+          if (!args.code) throw new Error(t("Supply a Code ID or --all.", "Gib eine Code-ID oder --all an."));
           const codeId = CodeIdSchema.parse(args.code);
           await assertCodePath(resolve(flags.out!));
           const data = await request(ctx, "pull", { codeId });

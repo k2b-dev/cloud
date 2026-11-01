@@ -3,7 +3,7 @@ import { arg, command, confirmFlag, flag, localizeCloudCliText, printStructured 
 import { CODE_AUTHORING_REQUEST_BYTES, type CodeAuthoringData, CodeWorkspaceStatusSchema } from "../code/authoring-contracts";
 import { codePolicyPreset } from "../code/policy-contracts";
 import { codeRunMessages } from "../code/run-messages";
-import { assertCodePath, listCodeProjects, loadCodeProject, readCodeFiles } from "./code-files";
+import { listCodeProjects, loadCodeProject, readCodeFiles } from "./code-files";
 import { request } from "./code-request";
 
 /** Read a bounded private file or stdin stream without putting its contents in arguments or error text. */
@@ -27,7 +27,6 @@ export async function readCodeInput(from: string): Promise<string> {
       reader.releaseLock();
     }
   }
-  await assertCodePath(from);
   const file = await open(from, "r");
   try {
     const stat = await file.stat();
@@ -74,7 +73,11 @@ export function codeOperationCommands(locale?: string) {
         "Compare all local Code with server versions, approval and execution",
         "Alle lokalen Codes mit Versionen, Freigabe und Ausführung auf dem Server vergleichen",
       ),
-      args: { root: arg.optional({ description: t("Checkout root or one project", "Checkout-Wurzel oder einzelnes Projekt") }) },
+      args: {
+        root: arg.optional({
+          description: t("Checkout root or one project (default: .)", "Checkout-Wurzel oder einzelnes Projekt (Standard: .)"),
+        }),
+      },
       async run({ ctx, args }) {
         const items: CodeAuthoringData<"status">["items"] = [];
         for (const project of await listCodeProjects(args.root)) {
@@ -160,6 +163,8 @@ export function codeOperationCommands(locale?: string) {
         args: projectArg,
         flags: { yes: confirmFlag() },
         async run({ ctx, args, flags }) {
+          if (name === "resume" && ctx.options.ci)
+            throw new Error(t("CI may push Code but cannot resume it.", "CI darf Code pushen, aber nie fortsetzen."));
           if (!flags.yes) throw new Error("--yes is required.");
           const { config } = await loadCodeProject(args.project);
           const data = await request(ctx, name, { codeId: config.codeId });
