@@ -18,7 +18,29 @@ const definitions = {
   protocolVersion: 2,
   types: { item: { title: "Item", description: "Fixture item.", reader: "item.read" } },
   queries: { "item.read": { ...operation, input: z.object({ id: z.string().describe("Item ID.") }).strict() } },
-  actions: { "item.change": { ...operation, target: "item", destructive: false, idempotency: "none", policy: { silent: "shared" } } },
+  actions: {
+    "item.change": {
+      ...operation,
+      target: "item",
+      destructive: false,
+      idempotency: "none",
+      policy: { silent: "shared" },
+      review: () => ({
+        ok: true,
+        data: {
+          locale: "en",
+          slots: {},
+          sentence: {
+            action: "Change fixture",
+            running: "Changing fixture",
+            done: "Changed fixture",
+            confirm: "Confirm",
+            decline: "Cancel",
+          },
+        },
+      }),
+    },
+  },
 } satisfies CapabilityDefinitions;
 const catalog = compileCapabilityManifest("example", definitions);
 const code: Code = {
