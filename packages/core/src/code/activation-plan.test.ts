@@ -149,3 +149,19 @@ test("internet grants bind exact origins for personal and resource versions and 
     ).toBe(true);
   }
 });
+
+test("internet and capability grants share the existing mandate budget with a domain error", () => {
+  const origins = Array.from({ length: 50 }, (_, index) => `https://api${index}.example`);
+  for (const candidate of [
+    code,
+    { ...code, owner: { kind: "person" as const, userId: "11111111-1111-4111-8111-111111111111" }, serviceAccountId: null },
+  ]) {
+    expect(() =>
+      buildCodeActivationPlan(
+        candidate,
+        { ...manifest([permission("example.item.change", "A")]), internet: origins, policyRows: ["silent_shared", "internet"] },
+        new Map([["example", catalog]]),
+      ),
+    ).toThrow("mandate grant budget");
+  }
+});

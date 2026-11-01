@@ -58,7 +58,7 @@ export async function requestPublicHttps(
           const value = incoming.headers[name];
           if (typeof value === "string") headers[name] = value;
         }
-        // A redirect never receives a second request or exposes a Location token.
+        // The caller may inspect Location explicitly; this transport never sends a second request.
         if (status >= 300 && status < 400 && status !== 304) {
           finish({
             status,

@@ -18,7 +18,7 @@ const codeComparisonInput = {
   comparisonVersionId: "UUID der genauen Vergleichsversion oder null für einen leeren Ausgangsstand.",
 };
 const codeVersionDecisionInput = {
-  ...codeVersionInput,
+  versionId: codeVersionInput.versionId,
   sourceHash: "Unveränderter SHA-256-Hash des geprüften Quelltexts aus dem Vergleich.",
   bundleHash: "Unveränderter SHA-256-Hash des geprüften Bundles aus dem Vergleich.",
   manifestHash: "Unveränderter SHA-256-Hash des gespeicherten Prüfmanifests.",
@@ -27,7 +27,6 @@ const codeVersionDecisionInput = {
   comparisonBundleHash: "Bundle-Hash der Vergleichsversion oder null für einen leeren Ausgangsstand.",
 };
 const codeVersionSubmissionInput = {
-  ...codeIdInput,
   sourceFiles: "Vollständige Zuordnung relativer Dateipfade zum genauen Quelltext aus der Prüfanfrage.",
   bundle: "Genaues geprüftes UTF-8-ESM-Bundle; nicht umformatieren.",
   manifest: "Vollständiger unveränderter Prüfbeleg mit ursprünglichem Einstieg und Richtlinien-Einstufungen.",
@@ -47,6 +46,7 @@ const codeVersionSubmissionInput = {
   "manifest.permissions[].target.id": "Wörtliche Ziel-ID oder null bei einem dynamischen persönlichen Ziel.",
   "manifest.permissions[].file": "Relative Quelldatei mit dieser Operation.",
   "manifest.permissions[].line": "Quelltextzeile, beginnend bei 1.",
+  "manifest.internet": "Vollständige Liste der genauen HTTPS-Ursprünge dieser Version, auch ohne Secrets.",
   "manifest.ai": "Ob erkannte Aufrufe KI nutzen.",
   "manifest.hashes": "Prüfsummen für Quelltext, erzeugtes SDK und genaues Bundle.",
   "manifest.hashes.source": "SHA-256-Hash des Quelltexts aus der Prüfung.",
@@ -323,6 +323,16 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.secret.set": {
+          title: "Code-Secret setzen",
+          description:
+            "Bearbeiter hinterlegen einen Zugangswert über eine private Eingabe. Neue Ziele gelten erst für neu eingereichte Versionen.",
+        },
+        "code.secret.delete": {
+          title: "Code-Secret-Wert löschen",
+          description:
+            "Bearbeiter löschen den aktuellen Wert für alle Versionen. Die unveränderlichen Zielbindungen bleiben für die Versionsprüfung erhalten.",
+        },
         "code.run": {
           title: "Code ausführen",
           description:
@@ -352,12 +362,10 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "code.pause": {
           title: "Code pausieren",
           description: "Pausiert weitere Ausführung. Die aktive Version bleibt erhalten; verpasste Ereignisse werden nicht nachgeholt.",
-          input: codeIdInput,
         },
         "code.resume": {
           title: "Code fortsetzen",
           description: "Setzt die aktive Version nach Prüfung der aktuellen Richtlinie und Freigabe-Belege fort.",
-          input: codeIdInput,
         },
         "code.policy.update": {
           title: "Code-Richtlinie ändern",

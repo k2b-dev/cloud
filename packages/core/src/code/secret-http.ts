@@ -5,6 +5,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CodeHttpRequest,
   CodeHttpRequestSchema,
+  CodeInternetOriginSchema,
   CodeInternetOriginsSchema,
   type CodeSecretVersionBinding,
   CodeSecretVersionBindingSchema,
@@ -17,6 +18,8 @@ import { z } from "zod";
 import { CODE_SECRET_PURPOSE, codeSecretContext, validateCodeSecretBindings } from "./secrets";
 import { codeSettings } from "./settings";
 
+// Fetch's HTTP-redirect fetch algorithm permits at most 20 redirects per request.
+const MAX_REDIRECTS = 20;
 const deny = (code = "code_http_secret_forbidden"): never => {
   throw new CodeBridgeRefusal(code);
 };
@@ -68,10 +71,7 @@ export function codeSecretHeaderPlan(
 /** Redact raw, prefixed, JSON-escaped, percent-encoded and base64 echoes before any response or observation is constructed.
  * This is bounded byte replacement, preserving binary responses. Remote services must still be trusted with the credential they receive.
  */
-export function redactCodeHttpResponse(
-  response: Awaited<ReturnType<typeof requestPublicHttps>>,
-  inserted: readonly { name: string; value: string; sent: string }[],
-) {
+function secretEchoReplacements(inserted: readonly { name: string; value: string; sent: string }[]) {
   const replacements = new Map<string, string>();
   for (const { name, value, sent } of inserted) {
     for (const text of new Set(
@@ -86,6 +86,13 @@ export function redactCodeHttpResponse(
     ))
       if (text) replacements.set(text, `[secret:${name}]`);
   }
+  return replacements;
+}
+export function redactCodeHttpResponse(
+  response: Awaited<ReturnType<typeof requestPublicHttps>>,
+  inserted: readonly { name: string; value: string; sent: string }[],
+) {
+  const replacements = secretEchoReplacements(inserted);
   // Latin-1 maps response bytes one-to-one; all inserted values and their encodings are ASCII.
   // Native literal matching avoids a JavaScript pattern scan at every response byte.
   const alternatives = [...replacements.keys()]
@@ -119,6 +126,7 @@ const VersionSecretsSchema = z.object({
 /** A declaration never relaxes own-origin or network address protections. The refusal includes only the canonical origin. */
 export function requireCodeHttpOrigin(raw: string, declared: readonly string[], own: readonly string[]): URL {
   const url = codeSecretRequestUrl(raw, own);
+  if (!CodeInternetOriginSchema.safeParse(url.origin).success) return deny("code_http_origin_forbidden");
   if (!declared.includes(url.origin)) throw new CodeBridgeRefusal("code_http_origin_undeclared", 200, url.origin);
   return url;
 }
@@ -135,6 +143,7 @@ export async function dispatchCodeSecretHttp(
   },
   send: typeof requestPublicHttps = requestPublicHttps,
 ): Promise<Response> {
+  const inserted: { name: string; value: string; sent: string }[] = [];
   try {
     const parsedRequest = CodeHttpRequestSchema.safeParse(input.request);
     if (!parsedRequest.success) return deny("code_http_invalid_call");
@@ -146,6 +155,14 @@ export async function dispatchCodeSecretHttp(
     return await withNetworkDeadline(remaining, input.signal, new CodeBridgeRefusal("code_http_timeout"), async (signal) => {
       const prepare = async (request: CodeHttpRequest) => {
         const prepared = await sql.begin(async (tx) => {
+          const [version] = await tx<{ manifest: unknown }[]>`SELECT jsonb_build_object(
+            'secrets',COALESCE(manifest->'secrets','[]'::jsonb),'internet',COALESCE(manifest->'internet','[]'::jsonb)) AS manifest
+            FROM code.versions WHERE code_id=${input.claims.codeId} AND id=${input.claims.versionId}::uuid`;
+          const parsed = VersionSecretsSchema.safeParse(version?.manifest);
+          if (!parsed.success) return deny();
+          const bindings = parsed.data.secrets ?? [];
+          // Classify an undeclared origin before the origin-bound mandate can return a generic refusal.
+          const url = requireCodeHttpOrigin(request.url, parsed.data.internet ?? [], input.ownOrigins);
           const issued = await input.authority.withMandateIssueAuthority(
             {
               mandateId: input.authority.mandateId,
@@ -153,18 +170,10 @@ export async function dispatchCodeSecretHttp(
               ownerAppId: "core",
               targetAppId: "core",
               operation: "runtime.http",
-              input: { url: request.url, origin: codeSecretRequestUrl(request.url, input.ownOrigins).origin, method: request.method },
+              input: { url: request.url, origin: url.origin, method: request.method },
             },
             async () => {
               try {
-                const [version] = await tx<
-                  { manifest: unknown }[]
-                >`SELECT jsonb_build_object('secrets',COALESCE(manifest->'secrets','[]'::jsonb),'internet',COALESCE(manifest->'internet','[]'::jsonb)) AS manifest
-          FROM code.versions WHERE code_id=${input.claims.codeId} AND id=${input.claims.versionId}::uuid`;
-                const parsed = VersionSecretsSchema.safeParse(version?.manifest);
-                if (!parsed.success) return deny();
-                const bindings = parsed.data.secrets ?? [];
-                requireCodeHttpOrigin(request.url, parsed.data.internet ?? [], input.ownOrigins);
                 await validateCodeSecretBindings(input.claims.codeId, bindings, tx);
                 const plan = codeSecretHeaderPlan(request, bindings, input.ownOrigins);
                 const values = new Map<string, string>();
@@ -211,13 +220,12 @@ export async function dispatchCodeSecretHttp(
       };
       // Locks protect issuance, not the remote effect. A slow endpoint must not block pause, revoke or heartbeats.
       signal.throwIfAborted();
-      // The same administrator call budget bounds network hops; a caller can instead use the final URL.
-      const hopBudget = await codeSettings.get("core.code.calls_per_run");
       let current = request;
-      for (let hop = 0; hop < hopBudget; hop++) {
+      for (let redirects = 0; ; redirects++) {
         signal.throwIfAborted();
         // Every hop rechecks current authority, immutable destinations and current secret values before issuance.
         const prepared = await prepare(current);
+        inserted.push(...prepared.inserted);
         const response = await send({
           url: current.url,
           method: current.method,
@@ -228,7 +236,8 @@ export async function dispatchCodeSecretHttp(
           includeRedirectLocation: true,
         });
         if (![301, 302, 303, 307, 308].includes(response.status) || !response.redirectLocation)
-          return Response.json({ ok: true, data: redactCodeHttpResponse(response, prepared.inserted) });
+          return Response.json({ ok: true, data: redactCodeHttpResponse(response, inserted) });
+        if (redirects >= MAX_REDIRECTS) return deny("code_http_redirect_limit");
         const next = new URL(response.redirectLocation, current.url).href;
         requireCodeHttpOrigin(next, prepared.origins, input.ownOrigins);
         const get =
@@ -236,15 +245,18 @@ export async function dispatchCodeSecretHttp(
           ((response.status === 301 || response.status === 302) && current.method === "POST");
         current = { ...current, url: next, ...(get ? { method: "GET" as const, body: undefined } : {}) };
       }
-      return deny("code_http_redirect_limit");
     });
   } catch (error) {
+    // A remote redirect may echo a credential in its hostname, which URL canonicalization lowercases.
+    const origin = error instanceof CodeBridgeRefusal ? error.origin : undefined;
+    const safeOrigin =
+      origin && ![...secretEchoReplacements(inserted).keys()].some((value) => origin.toLowerCase().includes(value.toLowerCase()));
     // Never forward raw request, response, crypto, cancellation or transport exception text.
     return Response.json({
       ok: false,
       error: {
         code: error instanceof CodeBridgeRefusal ? error.code : "code_http_failed",
-        ...(error instanceof CodeBridgeRefusal && error.origin ? { origin: error.origin } : {}),
+        ...(safeOrigin ? { origin } : {}),
       },
     });
   }

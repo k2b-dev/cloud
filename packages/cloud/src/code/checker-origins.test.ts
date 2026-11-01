@@ -2,10 +2,11 @@ import { expect, test } from "bun:test";
 import { CodeInternetOriginSchema, CodeInternetOriginsSchema } from "../contracts/code-internet";
 import { analyzeCode } from "./checker-analysis";
 import { generateCodeSdk } from "./generator";
+import { sdkFixture } from "./sdk.test-fixture";
 import type { CodeSdkMode } from "./types";
 
 function analyze(body: string, mode: CodeSdkMode = "personal", other: Record<string, string> = {}) {
-  const sdk = generateCodeSdk([], mode === "resource" ? { mode, owner: { kind: "app", appId: "example" } } : { mode });
+  const sdk = generateCodeSdk([sdkFixture()], mode === "resource" ? { mode, owner: { kind: "app", appId: "work-shop" } } : { mode });
   return analyzeCode({
     files: {
       ...other,
@@ -91,4 +92,15 @@ test("code_run keeps dynamic HTTP requests for per-call review", () => {
     aiOperations: [],
   });
   expect(result.diagnostics).toEqual([]);
+});
+
+test("internet declarations fit the existing mandate budget, including personal operation grants", () => {
+  const origins = Array.from({ length: 51 }, (_, index) => `https://api${index}.example`);
+  expect(analyze(`http.allow(${JSON.stringify(origins)});`).diagnostics).toContainEqual(
+    expect.objectContaining({ code: "code_http_grant_limit" }),
+  );
+  const result = analyze(`import { work_shop } from "@sdk"; http.allow(${JSON.stringify(origins.slice(0, 49))});
+    const h = work_shop.workshop("one"); h.item.create({ title: "Hello", idempotencyKey: "fixed" }); h.item.move({ itemId: "one", destination: h });`);
+  expect(new Set(result.permissions.map((item) => item.operation)).size).toBe(2);
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "code_http_grant_limit" }));
 });
