@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -14,7 +15,9 @@ import {
   updateAccess,
 } from "@k2b/cloud/server";
 import { accounts, audit, type ServiceAccountKind } from "@k2b/cloud/services";
+import { resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result, tryCatch, unwrap } from "@k2b/stdlib";
+import { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE } from "../app-identity";
 import { auditActorFromRequest, capByCredentialScopes, isResourceBoundToMailbox, type MailRequestContext, userBackedActor } from "./auth";
 
 type SqlClient = typeof sql;
@@ -61,7 +64,7 @@ type DbAccess = {
 export type MailboxAccessScope = "mailbox" | "assigned";
 
 /** A mailbox grant as the access API returns it; `scope` is present only for an assigned-only grant. */
-export type MailboxAccessEntry = AccessEntry & { scope?: "assigned" };
+export type MailboxAccessEntry = AccessEntry & { scope?: "assigned"; grantId?: string };
 
 const principalFromRow = (row: DbAccess): Principal => {
   if (row.user_id) return { type: "user", userId: row.user_id };
@@ -76,6 +79,7 @@ const mapAccess = (row: DbAccess): MailboxAccessEntry => ({
   principal: principalFromRow(row),
   permission: row.permission,
   createdAt: (row.created_at instanceof Date ? row.created_at : new Date(row.created_at)).toISOString(),
+  ...(row.service_account_kind === "code" ? { grantId: row.id } : {}),
   ...(row.scope === "assigned" ? { scope: "assigned" as const } : {}),
 });
 
@@ -271,6 +275,27 @@ export const getMailboxAccess = async (
   db: SqlClient = sql,
 ): Promise<MailboxAccess | null> => accessFromGrants(context, await resolveMailboxGrants(context, mailboxId, false, db));
 
+/** Current mailbox readers in either Mail scope, independent of credential scopes. */
+export const readableMailboxPrincipals = async (
+  mailboxId: string,
+  principals: readonly ResourcePrincipal[],
+): Promise<ResourcePrincipal[]> => {
+  const readers = await resolveResourceReaders(principals);
+  const permissions = await getEffectivePermissions({
+    accessIds: sql`SELECT grants.access_id FROM (${accessRows(mailboxId)}) grants
+      JOIN mail.mailboxes mailbox ON mailbox.id=${mailboxId}::uuid AND mailbox.deleted_at IS NULL`,
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers
+    .filter(
+      ({ binding }, index) =>
+        permissions[index] !== undefined &&
+        permissions[index] !== "none" &&
+        (!binding || (binding.appId === MAIL_APP_ID && binding.resourceType === MAILBOX_RESOURCE_TYPE && binding.resourceId === mailboxId)),
+    )
+    .map((reader) => reader.principal);
+};
+
 /**
  * Requires `required` on the mailbox for a path that applies conversation visibility: it accepts an
  * assigned-only grant too. Callers must then restrict every conversation, message, draft and count
@@ -462,9 +487,11 @@ const authorizeAccessManagement = async (
 /** Every grant on the mailbox in both scopes with display names, managers first. Callers authorize before they read it. */
 export const loadMailboxAccessEntries = async (mailboxId: string): Promise<MailboxAccessEntry[]> => {
   const rows = await sql<DbAccess[]>`
-    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope
+    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at, grants.scope,
+      account.kind AS service_account_kind
     FROM (${accessRows(mailboxId)}) grants
     JOIN auth.access a ON a.id = grants.access_id
+    LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
     ORDER BY (grants.scope = 'assigned'), ${PERMISSION_ORDER()}, a.created_at, a.id
   `;
   return resolveDisplayNames(rows.map(mapAccess));
@@ -591,6 +618,7 @@ const updateMailboxAccessWithAuthority = async (params: {
         const entries = await lockAccessEntries(params.mailboxId, tx);
         const current = entries.find((entry) => entry.id === params.accessId);
         if (!current) unwrap(fail(err.notFound("Mailbox access")));
+        if (current!.service_account_kind === "code") unwrap(fail(err.badInput("Manage Code access through Core using its grantId")));
         const scope = params.scope ?? current!.scope;
         unwrap(assertGrantShape(principalFromRow(current!), params.permission, scope));
         unwrap(ensureAdminRemains(entries, params.accessId, { permission: params.permission, scope }));
@@ -662,6 +690,8 @@ const revokeMailboxAccessWithAuthority = async (params: {
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
         const entries = await lockAccessEntries(params.mailboxId, tx);
+        if (entries.find((entry) => entry.id === params.accessId)?.service_account_kind === "code")
+          unwrap(fail(err.badInput("Manage Code access through Core using its grantId")));
         unwrap(ensureAdminRemains(entries, params.accessId, null));
         await deleteGrantLinks(tx, params.mailboxId, params.accessId);
         unwrap(await deleteAccess({ id: params.accessId }, tx));
