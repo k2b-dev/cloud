@@ -1,11 +1,14 @@
 /** Core-owned Code data contracts and permission-aware services for subsequent Code slices. */
 
+export { CodeCheckResultSchema, CodeTestResultSchema } from "@k2b/cloud/code";
 export * from "./access";
-export { createCodeCheckRequest } from "./authoring-check";
-export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 export * from "./activation-contracts";
 export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
+export { codeAuthoringServices } from "./authoring";
+export { createCodeCheckRequest } from "./authoring-check";
+export * from "./authoring-contracts";
+export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export * from "./contracts";
 export { CodeJobError } from "./job-errors";
 export * from "./policy";

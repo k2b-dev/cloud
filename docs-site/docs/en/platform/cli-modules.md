@@ -34,6 +34,10 @@ Invalid explicit tags still produce an error. Regional tags use normal
 ancestor fallback, so `de-CH` uses German CLI text when no Swiss German
 message exists.
 
+`ctx.options.ci` reports whether the CLI host runs in a CI environment. Modules
+that change interactive authority must refuse those actions in CI. This hint
+grants no server permission; the server still authorizes the credential.
+
 The resolved tag is available as `ctx.options.locale` and is sent as
 `Accept-Language` with every authenticated application request. Without a
 usable locale, `ctx.options.locale` is undefined and CLI text falls back to

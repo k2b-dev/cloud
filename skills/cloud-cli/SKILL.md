@@ -33,6 +33,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 
 | Task | Start with |
 | --- | --- |
+| Develop Code in local files, check permissions, test or submit a version | `cld code reference`, then `cld code help`; pull into a new directory when updating, preserve `baseVersionId`, and use CI credentials only for checks/tests/pushes |
 | Write a note with callouts, tasks, tables, formulas, charts, or data | `cld notebooks reference markdown.md`, then `cld notebooks write "<notebook>:<path>" --from note.md` |
 | Change part of an existing note | `cld notebooks reference`, then `cld notebooks cat <note> --json` and `cld notebooks edit` |
 | Review comments on a note's text, reply with suggestions, or accept them | `cld notebooks reference comments.md`, then `cld notebooks comments list <note> --state open`; the page discussion is `cld notebooks discussion` |

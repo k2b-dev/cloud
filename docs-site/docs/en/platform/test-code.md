@@ -17,7 +17,8 @@ through to a real capability or real data.
 
 The Phase 1 test kit supplies the server contract for `cld code test`,
 `cld code simulate`, and Gustav tools. Their command and tool adapters consume
-the same versioned JSON result. The test kit does not install those adapters.
+the same versioned JSON result. The [Code CLI](/en/docs/platform/code-cli) is served by Core; install it with
+`cld plugins install code`.
 
 ## Write a case
 
