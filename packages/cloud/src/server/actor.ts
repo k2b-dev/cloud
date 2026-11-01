@@ -31,6 +31,22 @@ export const userFromActor = (actor: RequestActor | undefined): ActingUser | nul
  */
 export const isAppSessionActor = (actor: RequestActor | undefined): boolean => actor?.kind === "user" && actor.sessionKind === "app";
 
+/**
+ * The durable work behind an actor, for a domain's own history: the resource `<owning app>.<workload type>` that the
+ * owning app's reader can present, and whom it works for at this moment. Null for a person or credential acting
+ * directly. It grants nothing; a reader still decides per viewer what it shows. Any app with a mandate workload and a
+ * Type of that name gets this, without the consuming app knowing it.
+ */
+export const actorWorkload = (actor: RequestActor | undefined): { type: string; id: string; owner?: string } | null => {
+  const delegation = actor?.delegation;
+  if (!delegation?.workloadType || !delegation.workloadId) return null;
+  return {
+    type: `${delegation.callingAppId}.${delegation.workloadType}`,
+    id: delegation.workloadRun ? `${delegation.workloadId}~${delegation.workloadRun}` : delegation.workloadId,
+    ...(delegation.workloadOwner ? { owner: delegation.workloadOwner } : {}),
+  };
+};
+
 /** Same, read off the request context. */
 export const getUserBackedActor = <T extends AuthContext>(c: Context<T>): ActingUser | null =>
   userFromActor(c.get("actor") as RequestActor | undefined);

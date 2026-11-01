@@ -115,7 +115,9 @@ import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
 import { myTasksMessages } from "../pwa/messages";
 import { spacesService } from "../service";
 import { getActorsSpacePermissions, isSpaceResourceId, permissionFromScopes, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
-import { InvalidActivityCursorError } from "../service/activity";
+import { InvalidActivityCursorError, type SpaceActivityIdentity } from "../service/activity";
+import { presentActivityOrigins } from "../service/activity-origins";
+import { spaceActivityRow } from "../service/activity-timeline";
 import { resolveByteRange } from "../service/byte-range";
 import { loadCalendarEvents, loadCalendarSources } from "../service/calendar-view";
 import type { BoardOrderEntry } from "../service/columns";
@@ -240,6 +242,16 @@ const SpaceActivitySchema = z.object({
   occurrenceCount: z.number().int(),
   createdAt: z.string(),
   lastOccurredAt: z.string(),
+});
+
+/** A worded history row. `origin` names the durable work behind the change, with links only for those who may follow them. */
+const SpaceActivityRowSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  icon: z.string(),
+  sentence: z.string(),
+  count: z.number().int(),
+  origin: z.object({ name: z.string(), href: z.string().nullable(), runHref: z.string().nullable() }).optional(),
 });
 
 const localizeApiResponse = async (c: Context, next: () => Promise<void>) => {
@@ -2881,7 +2893,10 @@ const app = new Hono<AuthContext>()
       summary: "Read task activity",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(z.object({ data: z.array(SpaceActivitySchema), nextCursor: z.string().nullable() }), "Activity page"),
+        200: jsonResponse(
+          z.object({ data: z.array(SpaceActivitySchema.extend({ row: SpaceActivityRowSchema })), nextCursor: z.string().nullable() }),
+          "Activity page",
+        ),
       },
     }),
     v("query", OverviewActivityQuerySchema),
@@ -2897,6 +2912,13 @@ const app = new Hono<AuthContext>()
           itemId: item.data.id,
           ...c.req.valid("query"),
         });
+        const locale = getLocale(c);
+        const authority = auth.getAuthority(c);
+        const origins = await presentActivityOrigins(page.items, authority, locale);
+        const subject = c.get("accessSubject");
+        const viewer: SpaceActivityIdentity =
+          subject.type === "user" ? { kind: "user", id: subject.userId } : { kind: "service_account", id: subject.serviceAccountId };
+        const assigneeId = subject.type === "user" ? subject.userId : subject.serviceAccountId;
         return respond(
           c,
           ok({
@@ -2904,6 +2926,13 @@ const app = new Hono<AuthContext>()
               ...event,
               space: { id: event.space.shortId, name: event.space.name, color: event.space.color },
               item: event.item ? { id: event.item.shortId, title: event.item.title } : null,
+              row: spaceActivityRow(event, {
+                viewer,
+                assigneeId,
+                locale,
+                timeZone: getDateConfig(c).timeZone,
+                origin: origins.get(event.id),
+              }),
             })),
             nextCursor: page.nextCursor,
           }),

@@ -68,6 +68,10 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
       events: { "user.created": { title: "Benutzer erstellt", description: "Eine Benutzeridentität wurde erstmals in Cloud angelegt." } },
       types: {
         code: { title: "Code", description: "Eine unabhängig versionierte Code-Ressource." },
+        "code.version": {
+          title: "Code",
+          description: "Der Code hinter einer Änderung in einer anderen App, genannt über Version und Lauf.",
+        },
         user: { title: "Benutzer", description: "Eine Benutzeridentität in Cloud." },
         "ai.chat": {
           title: "KI-Chat",
@@ -145,6 +149,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             cursor: "Letzte betroffene Code-ID aus nextCursor der vorherigen Seite.",
             limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
           },
+        },
+        "code.version.origin": {
+          title: "Code hinter einer Änderung lesen",
+          description:
+            "Liest Titel, Automation und Links des Codes, der eine Änderung gemacht hat, aus einem core.code.version-Verweis im Verlauf einer anderen App. Nichts für alle, die diesen Code nicht lesen dürfen.",
+          input: { id: "Versions-UUID, optional gefolgt von ~ und einer Lauf-UUID." },
         },
         "code.attention": {
           title: "Aufmerksamkeit für Code prüfen",

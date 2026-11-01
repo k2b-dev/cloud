@@ -45,6 +45,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
           REFERENCES code.versions(id,code_id) ON DELETE SET NULL (active_version_id) DEFERRABLE INITIALLY DEFERRED;
       END IF;
     END $$`.simple();
+    // The owner's title at its last check; history in other apps keeps naming the Code after this.
+    await tx`ALTER TABLE code.codes ADD COLUMN IF NOT EXISTS owner_title TEXT`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.runs (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(), code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
       version_id UUID NOT NULL, trigger TEXT NOT NULL CHECK (trigger IN ('manual','schedule','event','path')),

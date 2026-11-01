@@ -81,6 +81,17 @@ export default function StoreCode(props: { code: CodePageData }) {
 Import the page from its own entry, `@k2b/cloud/ssr/code-page`, so other
 islands do not load its schemas. `loadCodePage` reads the tab and selection from the URL (`?tab=runs&run=<id>`,
 `?tab=versions&version=<id>`), so reload, back and shared links keep the view.
+## Say where the page lives
+
+Declare the mount so links to Code lead to it, for example from the history of
+what the Code changed in another application:
+
+```ts
+code: { owners: ["store"], pages: { store: "/app/inventory/{id}/code" } },
+```
+
+Without it, those links open the resource itself.
+
 ## Show the entry in your navigation
 
 Offer the page as a "Code" entry under the resource. During SSR, call

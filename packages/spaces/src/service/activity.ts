@@ -4,9 +4,13 @@ import { buildSpacePrincipalCondition } from "./access";
 
 type SqlExecutor = typeof sql;
 
+/** The durable work behind a change (`actorWorkload`), kept with the row so the history can present it later. */
+export type SpaceActivityOrigin = { type: string; id: string; owner?: string };
+
 export type SpaceActivityIdentity = {
   kind: "user" | "service_account" | "system";
   id: string | null;
+  origin?: SpaceActivityOrigin;
 };
 
 export type SpaceActivityEvent = {
@@ -102,7 +106,7 @@ export const record = async (
       bucket_started_at, created_at, last_occurred_at
     ) VALUES (
       ${params.spaceId}::uuid, ${params.itemId ?? null}::uuid, ${params.actor.kind}, ${params.actor.id}::uuid,
-      ${action}, ${params.metadata ?? {}}::jsonb, ${params.bucketStartedAt ?? null}, ${occurredAt}, ${occurredAt}
+      ${action}, ${{ ...params.metadata, ...(params.actor.origin ? { origin: params.actor.origin } : {}) }}::jsonb, ${params.bucketStartedAt ?? null}, ${occurredAt}, ${occurredAt}
     )
     ON CONFLICT (item_id, actor_kind, actor_id, action, bucket_started_at)
       WHERE bucket_started_at IS NOT NULL

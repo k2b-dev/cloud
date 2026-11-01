@@ -439,6 +439,10 @@ export type InvocationProvenance = {
   mandateRevision?: number;
   workloadType?: string;
   workloadId?: string;
+  /** One concrete run of this workload, when its owner tracks runs. */
+  workloadRun?: string;
+  /** Display name of whom this workload works for, as its owner saw it when the call was issued. */
+  workloadOwner?: string;
 };
 
 export type UserRequestActor = {

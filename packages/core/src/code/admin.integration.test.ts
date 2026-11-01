@@ -25,9 +25,10 @@ import * as authoringChecks from "./authoring-check";
 import type { CodeSourceFiles } from "./contracts";
 import { readCodePolicySnapshot, updateCodePolicy } from "./policy";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { codeBundleHash, codeSourceHash } from "./store";
+import { codeBundleHash, codeSourceHash, insertCodeRun } from "./store";
 import type { CodeCheckedVersionManifest } from "./version-contracts";
 import { decideCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
+import { readCodeWorkload } from "./workload-reader";
 
 const operation = {
   title: "Read item",
@@ -260,6 +261,30 @@ databaseSuite()("C22 Administration › Code read model", () => {
     expect(await codeAdminOwnerNames(["c_admin1"], reviewer)).toEqual({ c_admin1: "Lea Muster" });
     expect(await listCodeAdminCleanup(reviewer)).toEqual({ items: [], nextCursor: null });
     expect(await readCodeAdminRunners(reviewer)).toMatchObject({ queued: 0, running: 0, instances: 0, freeSlots: 0, runners: [] });
+  });
+
+  test("the Code behind a change reads for those who may read it, and for nobody else", async () => {
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at) VALUES('c_origin','person',${authorId}::uuid,'Wochenbericht',${authorId}::uuid,${fixed})`;
+    const version = await submitCodeVersion(submission("c_origin", "export const c = 3;\nexample.item.change();", null), author);
+    const runId = await insertCodeRun({
+      codeId: "c_origin",
+      versionId: version.version.id,
+      trigger: "schedule",
+      entrypoint: "Lieferungen eintragen",
+      input: null,
+    });
+    const read = await readCodeWorkload(`${version.version.id}~${runId}`, author);
+    expect(read.view).toEqual({ title: "Wochenbericht", context: "Lieferungen eintragen", permission: "write" });
+    // A person's Code has no owner page to link to.
+    expect(read.links).toEqual([]);
+    expect((await readCodeWorkload(version.version.id, author)).view.context).toBeUndefined();
+    for (const id of [
+      `${version.version.id}~${runId}`,
+      "not-a-version",
+      `${version.version.id}~nope`,
+      "e0000000-0000-4000-8000-000000000009",
+    ])
+      await expect(readCodeWorkload(id, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   test("people without the Cloud-admin role read nothing", async () => {

@@ -37,6 +37,10 @@ test("generates one set/list/rm and advertises target and owner contracts", () =
     compileCapabilities("inventory", { ...definitions, presentation: { baseLocale: "EN", translations: {} } }).presentation?.baseLocale,
   ).toBe("en");
   expect(compiled.manifest.code).toEqual({ access: { app: true, types: ["item"] }, owners: ["item"] });
+  expect(
+    compileCapabilities("inventory", { ...definitions, code: { ...definitions.code, pages: { item: "/app/inventory/{id}/code" } } })
+      .manifest.code?.pages,
+  ).toEqual({ item: "/app/inventory/{id}/code" });
   expect(CapabilityManifestSchema.parse(compiled.manifest).code).toEqual(compiled.manifest.code);
   expect(compiled.queries.get("item.readable")?.manifest.appOnly).toBe(true);
   expect(compiled.queries.get("code.access.list")?.manifest.appOnly).toBeUndefined();

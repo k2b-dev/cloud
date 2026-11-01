@@ -53,6 +53,8 @@ export const probeAuthority = (authority: RequestAuthority): InvocationAuthority
           mandate_revision: provenance.mandateRevision,
           workload_type: provenance.workloadType,
           workload_id: provenance.workloadId,
+          ...(provenance.workloadRun ? { workload_run: provenance.workloadRun } : {}),
+          ...(provenance.workloadOwner ? { workload_owner: provenance.workloadOwner } : {}),
         }
       : {}),
   };

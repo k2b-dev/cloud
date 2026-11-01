@@ -75,6 +75,7 @@ describe("Core Code data contracts", () => {
       "code.secret.list",
       "code.version.diff",
       "code.version.diff.read",
+      "code.version.origin",
       "code.version.list",
       "code.version.read",
     ]);
