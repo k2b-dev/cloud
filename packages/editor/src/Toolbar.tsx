@@ -13,7 +13,7 @@ import {
   Toolbar as UiToolbar,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { ariaShortcut, shortcutLabel } from "./actions";
 import { dictationTarget } from "./dictation";
 import type { EditorAction, EditorHandle } from "./editor-state";
@@ -146,13 +146,9 @@ export function Toolbar(props: ToolbarProps) {
     disabled: () => !props.dictation || !props.editor.state() || Boolean(props.editor.state()?.readOnly),
   });
   // A note that turns read-only, or a host that drops the source, ends dictation; the words so far stay.
-  createEffect(
-    on(
-      () => [Boolean(props.dictation), Boolean(props.editor.state()?.readOnly)] as const,
-      () => dictation.end(),
-      { defer: true },
-    ),
-  );
+  // A memo compares the value, so ordinary edits never end it.
+  const dictationScope = createMemo(() => `${Boolean(props.dictation)}:${Boolean(props.editor.state()?.readOnly)}`);
+  createEffect(on(dictationScope, () => dictation.end(), { defer: true }));
   const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
 
   onMount(() => {

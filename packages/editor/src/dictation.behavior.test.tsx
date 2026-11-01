@@ -5,7 +5,7 @@ import { createDomTestHarness } from "../../ui/test/dom";
 const loading = createDomTestHarness();
 const { EditorSelection } = await import("@codemirror/state");
 const { LocaleProvider } = await import("@k2b/ui");
-const { Editor, createEditor, dictationTarget } = await import("./index");
+const { Editor, Toolbar, createEditor, dictationTarget } = await import("./index");
 loading.cleanup();
 
 const mount = (doc: string) => {
@@ -97,5 +97,58 @@ describe("@k2b/editor dictation", () => {
     note.target.insert("mehr");
     note.target.discard();
     expect(note.text()).toBe("Vorher. getippt");
+  });
+
+  test("words from the toolbar's source keep the session live while the note changes", async () => {
+    const dom = createDomTestHarness();
+    let emit: (event: import("@k2b/ui").DictationEvent) => void = () => {};
+    const source: import("@k2b/ui").DictationSource = {
+      devices: async () => [],
+      start: () => {
+        const queue: import("@k2b/ui").DictationEvent[] = [];
+        let wake: (() => void) | undefined;
+        emit = (event) => {
+          queue.push(event);
+          wake?.();
+        };
+        return {
+          events: {
+            async *[Symbol.asyncIterator]() {
+              while (true) {
+                const event = queue.shift();
+                if (event) yield event;
+                else await new Promise<void>((done) => (wake = done));
+              }
+            },
+          },
+          stop: async () => {},
+        };
+      },
+    };
+    let editor!: ReturnType<typeof createEditor>;
+    const dispose = render(() => {
+      editor = createEditor();
+      return (
+        <LocaleProvider locale="en">
+          <Editor editor={editor} label="Note" initialValue="Start" maxLength={10_000} toolbar={false} />
+          <Toolbar editor={editor} groups={[]} dictation={{ source }} />
+        </LocaleProvider>
+      );
+    }, dom.root);
+    try {
+      await settle();
+      editor.view()!.dispatch({ selection: EditorSelection.cursor(5) });
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Dictate"]')!.click();
+      emit({ type: "state", state: "live", maxMs: 600_000 });
+      for (const word of ["one", " two", " three"]) {
+        emit({ type: "text", text: word });
+        await settle();
+      }
+      expect(editor.view()!.state.doc.toString()).toBe("Start one two three");
+      expect(dom.root.querySelector('[role="group"][aria-label="Dictating"]')).not.toBeNull();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
   });
 });
