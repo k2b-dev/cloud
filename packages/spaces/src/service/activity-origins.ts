@@ -1,5 +1,10 @@
 import { type CapabilityCaller, getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
-import { CloudResourceReaderViewSchema, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
+import {
+  CloudResourceReaderViewSchema,
+  CloudResourceRefSchema,
+  cloudResourceRefAppId,
+  resolveCapabilityResourceReader,
+} from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { z } from "zod";
 import type { SpaceActivityEvent, SpaceActivityOrigin } from "./activity";
@@ -17,13 +22,12 @@ export type SpaceActivityOriginView = {
   deleted: boolean;
 };
 
-const OriginSchema = z.object({ type: z.string().min(1).max(200), id: z.string().min(1).max(200) });
 const ReaderSchema = z.object({ view: CloudResourceReaderViewSchema });
 const ORIGIN_READERS = 10;
 const ORIGIN_READ_MS = 1_500;
 
 export const activityOrigin = (event: Pick<SpaceActivityEvent, "metadata">): SpaceActivityOrigin | null => {
-  const parsed = OriginSchema.safeParse(event.metadata.origin);
+  const parsed = CloudResourceRefSchema.safeParse(event.metadata.origin);
   return parsed.success ? parsed.data : null;
 };
 
@@ -71,7 +75,10 @@ export const presentActivityOrigins = async (
       // The row says who acted without naming the work.
     }
   });
-  const expired = new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+  const expired = new Promise<void>((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener("abort", () => resolve(), { once: true });
+  });
   await Promise.race([Promise.all(reads), expired]);
   const result = new Map<string, SpaceActivityOriginView>();
   for (const event of events) {

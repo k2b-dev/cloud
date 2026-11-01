@@ -1,10 +1,11 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Button, DetailPanel, Skeleton } from "@k2b/ui";
-import { createEffect, createSignal, For, type JSX, on, Show } from "solid-js";
+import { createSignal, For, type JSX, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
+import { shouldInvalidateSpacesDetail, subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
 
 /** The newest entries first; older ones wait behind one click, one bounded page at a time. */
 const PAGE_SIZE = 20;
@@ -13,8 +14,6 @@ const COLLAPSED = 4;
 type Props = {
   spaceId: string;
   itemId: string;
-  /** A newer edit reloads the history. */
-  version: string;
   dateConfig?: DateContext;
 };
 
@@ -58,14 +57,11 @@ export default function ItemHistorySection(props: Props) {
       return { rows: page.data.map((entry) => entry.row), nextCursor: page.nextCursor };
     },
     getNextCursor: (page) => page.nextCursor,
+    subscribe: ({ invalidate }) =>
+      subscribeToSpacesDataInvalidation(["detail"], async ({ itemId }) => {
+        if (shouldInvalidateSpacesDetail(props.itemId, itemId)) await invalidate();
+      }),
   });
-  createEffect(
-    on(
-      () => props.version,
-      () => void history.invalidate().catch(() => undefined),
-      { defer: true },
-    ),
-  );
   const rows = () => history.pages().flatMap((page) => page.rows);
   const visible = () => (expanded() ? rows() : rows().slice(0, COLLAPSED));
   const more = () => (!expanded() ? rows().length > COLLAPSED || history.hasMore() : history.hasMore());

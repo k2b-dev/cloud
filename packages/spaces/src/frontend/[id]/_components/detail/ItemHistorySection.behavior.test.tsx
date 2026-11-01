@@ -37,7 +37,7 @@ describe.skipIf(isServer)("A card's history", () => {
         createComponent(LocaleProvider, {
           locale: "de",
           get children() {
-            return createComponent(ItemHistorySection, { spaceId: "abc123", itemId: "def456", version: "1" });
+            return createComponent(ItemHistorySection, { spaceId: "abc123", itemId: "def456" });
           },
         }),
       dom.root,

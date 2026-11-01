@@ -1187,9 +1187,7 @@ export default function ItemDetailPanel(props: Props) {
           </Show>
 
           <Show when={props.commentTarget.itemId} keyed>
-            {(itemId) => (
-              <ItemHistorySection spaceId={props.spaceId} itemId={itemId} version={props.item.updatedAt} dateConfig={props.dateConfig} />
-            )}
+            {(itemId) => <ItemHistorySection spaceId={props.spaceId} itemId={itemId} dateConfig={props.dateConfig} />}
           </Show>
 
           <Show when={props.canWrite || commentsPage().total > 0}>
