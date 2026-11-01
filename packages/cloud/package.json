@@ -56,6 +56,7 @@
     "./browser/resource-picker": "./src/browser/resource-picker.tsx",
     "./browser/composer-insert": "./src/browser/composer-insert.ts",
     "./browser/files": "./src/browser/files.tsx",
+    "./code": "./src/code/index.ts",
     "./capabilities": "./src/capabilities/client.ts",
     "./capabilities/server": "./src/capabilities/server.ts",
     "./capabilities/store": "./src/capabilities/executions.ts",

@@ -1268,13 +1268,15 @@ export class AiTurnExecutor {
     const authorizeBackgroundMandate =
       config.background && config.mandate
         ? async (entry: AiCapabilityCatalogEntry, args: unknown) => {
+            const call = capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args));
             try {
               await aiChatTasks.authorizeCapability({
                 mandate: config.mandate!,
                 appId: entry.appId,
                 capabilityId: entry.operation.localId,
                 kind: entry.kind,
-                input: args,
+                input: call.input,
+                call,
                 policy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
                 approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
               });
