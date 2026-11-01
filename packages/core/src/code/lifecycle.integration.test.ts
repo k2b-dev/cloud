@@ -4,12 +4,17 @@ import { codeOwnerDeleted, sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { accounts } from "@k2b/cloud/services";
 import { z } from "zod";
+import type { CodeAccessProofClaims } from "../../../../scripts/fixtures/code-platform";
+import {
+  codeAccessBindings,
+  compileCapabilities,
+  createCodeAccessAuthorityRoutes,
+  invokeCompiledCapability,
+  codeAccessProofs as proofs,
+  removeCodeAccess,
+  setCodeAccess,
+} from "../../../../scripts/fixtures/code-platform";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { compileCapabilities, invokeCompiledCapability } from "../../../cloud/src/_internal/capabilities";
-import { createCodeAccessAuthorityRoutes } from "../../../cloud/src/_internal/code-access-authority";
-import { codeAccessBindings, removeCodeAccess, setCodeAccess } from "../../../cloud/src/code/access";
-import type { CodeAccessProofClaims } from "../../../cloud/src/code/access-proof";
-import * as proofs from "../../../cloud/src/code/access-proof";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
 import { spaceCodeAccess } from "../../../spaces/src/service/code-access";
 import { migrate as migrateLifecycle } from "../migrate/core/code-lifecycle";

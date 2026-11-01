@@ -19,9 +19,14 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
 import { codeAuthoringServices } from "./authoring";
-import { CodeAuthoringConflictSchema, type CodeAuthoringData, CodeAuthoringErrorSchema, codeAuthoringContracts } from "./authoring-contracts";
-import { codePolicyPreset } from "./policy-contracts";
+import {
+  CodeAuthoringConflictSchema,
+  type CodeAuthoringData,
+  CodeAuthoringErrorSchema,
+  codeAuthoringContracts,
+} from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
+import { codePolicyPreset } from "./policy-contracts";
 import * as hosts from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash } from "./store";

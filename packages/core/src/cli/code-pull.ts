@@ -9,7 +9,7 @@ import { request } from "./code-request";
 /** Keep at most one source page in memory. Stage structured output privately so a failed pull prints one complete error. */
 export async function pullAllCode(ctx: CloudCliContext, root: string) {
   const structured = ctx.options.output !== "text";
-  const pretty = ctx.options.output === "json";
+  const pretty = structured && ctx.options.output !== "jsonl";
   const spool = structured ? join(tmpdir(), `cloud-code-pull-${crypto.randomUUID()}.json`) : null;
   const file = spool ? await open(spool, "wx", 0o600) : null;
   let count = 0;

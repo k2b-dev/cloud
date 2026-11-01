@@ -64,9 +64,9 @@ import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
 import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
-import { listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeSecretContracts } from "./code/secret-contracts";
 import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
+import { listCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -1391,6 +1391,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeVersionSubmission({ ...input, codeId: codeTargetId(context) }, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (input, context) => runCodeQuery(context, (ctx) => submitCodeVersion({ ...input, codeId: codeTargetId(context) }, ctx)),
     },
     "code.version.approve": {
@@ -1442,6 +1446,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { silent: "you" },
+      async review(_input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(codeTargetId(context), true, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (_input, context) => runCodeQuery(context, (ctx) => setCodePaused(codeTargetId(context), true, ctx)),
     },
     "code.resume": {
@@ -1455,6 +1463,10 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       policy: { ask: "keeps_working" },
+      async review(_input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeExecutionChange(codeTargetId(context), false, ctx));
+        return result.ok ? ok(result.data.data) : result;
+      },
       run: (_input, context) => runCodeQuery(context, (ctx) => setCodePaused(codeTargetId(context), false, ctx)),
     },
     "code.policy.update": {
