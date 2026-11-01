@@ -58,6 +58,7 @@ import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { CodeDataError, codePerson } from "./code/access";
+import { codeAttentionContracts, readCodeAttention } from "./code/attention";
 import { codeQueryContracts } from "./code/contracts";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
@@ -821,6 +822,14 @@ export const aiCapabilities = defineCapabilities({
       ...codePolicyContracts.preview,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
+    },
+    "code.attention": {
+      title: "Check Code attention",
+      description:
+        "For one exact owner, list the readable Code that needs someone: a failed latest run, access removed at a target, or a version waiting for approval.",
+      ...codeAttentionContracts.attention,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeAttention(input, ctx)),
     },
     "code.list": {
       title: "List Code",

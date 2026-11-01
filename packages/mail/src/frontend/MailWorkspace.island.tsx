@@ -73,6 +73,7 @@ import { mailAutomationLogMessages } from "./_components/mail-automation-log-mes
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
+import { mailCodeEntry } from "./_components/mail-code-entry";
 import { mailDraftSeedHref } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
@@ -2750,6 +2751,13 @@ function createMailboxController(props: MailboxControllerProps) {
         return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
       },
       onNavigate: navigateWorkspace,
+      // Administrators always reach the mailbox's Code; others once Core said they may see it.
+      code: mailCodeEntry({
+        mailboxAdmin: canAdmin() && !assignedOnly(),
+        // Each loaded mailbox brings its own answer, also after switching mailboxes in place.
+        attention: data.codeAttention ?? null,
+        active: false,
+      }),
     }),
     onOpenPlaceRowHiddenChange: setOpenPlaceRowHidden,
     preferences: () => ({
