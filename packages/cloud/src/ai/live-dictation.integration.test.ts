@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { resolve } from "node:path";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -263,13 +264,18 @@ suite("live dictation server", () => {
     const two = setup({ userId: one.options.userId, limits: one.options.limits, concurrency: 1 });
     await two.start();
     expect(two.messages.at(-1)?.code).toBe("busy_elsewhere");
-    const code = `import { initializeTestPlatform } from "./scripts/fixtures/test-infra";
+    const code = `import { initializeTestPlatform } from ${JSON.stringify(resolve(import.meta.dir, "../../../../scripts/fixtures/test-infra"))};
       await initializeTestPlatform();
-      const { createLiveDictationLimits } = await import("./packages/cloud/src/ai/live-dictation-limits");
-      const { closePlatformClients } = await import("./packages/cloud/src/runtime/clients");
+      const { createLiveDictationLimits } = await import(${JSON.stringify(resolve(import.meta.dir, "live-dictation-limits"))});
+      const { closePlatformClients } = await import(${JSON.stringify(resolve(import.meta.dir, "../runtime/clients"))});
       console.log(JSON.stringify(await createLiveDictationLimits(${JSON.stringify(one.namespace)}).reserve(${JSON.stringify({ userId: one.options.userId, token: "other-process", now: one.clock.now(), concurrency: 1, minutesPerDay: 60, timeZone: "Europe/Berlin" })})));
       await closePlatformClients();`;
-    const child = Bun.spawn([process.execPath, "--no-env-file", "-e", code], { env: process.env, stdout: "pipe", stderr: "pipe" });
+    const child = Bun.spawn([process.execPath, "--no-env-file", "-e", code], {
+      cwd: import.meta.dir,
+      env: process.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const [output, childError, exit] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),

@@ -43,7 +43,6 @@ export const AI_PROVIDER_TYPES: {
   /** The request field a thinking level becomes, shown next to the variant's choice. */
   effortField: string;
 }[] = [
-  { id: "vllm-realtime", url: "required", key: "optional", boundary: "private", headers: false, effortField: "" },
   { id: "openai-compatible", url: "required", key: "optional", boundary: "private", headers: true, effortField: "reasoning_effort" },
   { id: "openrouter", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "reasoning.effort" },
   { id: "openai", url: "optional", key: "required", boundary: "hosted", headers: false, effortField: "reasoning_effort" },
@@ -68,6 +67,7 @@ export const AI_PROVIDER_TYPES: {
     headers: true,
     effortField: "reasoning_effort",
   },
+  { id: "vllm-realtime", url: "required", key: "optional", boundary: "private", headers: false, effortField: "" },
 ];
 
 export const aiProviderTypeInfo = (type: AiProvider["type"]) => AI_PROVIDER_TYPES.find((entry) => entry.id === type)!;
