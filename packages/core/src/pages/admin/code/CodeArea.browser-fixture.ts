@@ -8,38 +8,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { CODE_SETTINGS } from "../../../code/settings";
-import type { SettingFieldDef } from "../settings/_components/setting-field";
-import { CODE_LIMIT_KEYS } from "./area";
-import {
-  FIXTURE_PEOPLE,
-  FIXTURE_VERSIONS,
-  fixtureApprovalDetail,
-  fixtureCodeDetail,
-  fixtureData,
-  fixtureEffective,
-  fixtureRunners,
-} from "./CodeArea.fixture-data";
-import type { CodeAreaData } from "./view";
-
-/** States the captures and tests switch with `?state=`. */
-export const CODE_FIXTURE_STATES = [
-  "normal",
-  "empty",
-  "fail",
-  "noperm",
-  "first",
-  "newer",
-  "own",
-  "sole",
-  "difffail",
-  "approved",
-  "missing",
-  "conflict",
-  "savefail",
-  "saving",
-] as const;
-export type CodeFixtureState = (typeof CODE_FIXTURE_STATES)[number];
+import { CODE_FIXTURE_STATES, codeFixtureData, FIXTURE_PEOPLE, fixtureApprovalDetail, fixtureCodeDetail, fixtureData } from "./CodeArea.fixture-data";
 
 const user: User = {
   id: FIXTURE_PEOPLE.ben,
@@ -60,66 +29,6 @@ const user: User = {
   managesGroupIds: [],
   ipa: null,
 };
-
-const limitEntries = (locale: string): SettingFieldDef[] =>
-  [...CODE_LIMIT_KEYS].map((key) => {
-    const definition = CODE_SETTINGS[key];
-    const de = definition.presentation.translations.de;
-    return {
-      key,
-      label: locale === "de" ? de.label : definition.label,
-      description: locale === "de" ? de.description : definition.description,
-      kind: "number",
-      value: definition.default,
-      default: definition.default,
-      resetValue: definition.default,
-      valueSource: "default",
-      resetValueSource: "default",
-      isCustom: false,
-      unreadable: false,
-      group: "core",
-      min: definition.min,
-      max: definition.max,
-    };
-  });
-
-/** The page data for one fixture state and URL. */
-export function codeFixtureData(state: CodeFixtureState, query: Record<string, string | undefined>, locale = "de"): CodeAreaData {
-  const data = fixtureData();
-  data.limits = limitEntries(locale);
-  if (state === "empty")
-    return {
-      ...data,
-      summary: { approvals: 0, codes: 0, groups: 0, cleanup: 0 },
-      approvals: [],
-      decided: [],
-      codes: { items: [], total: 0, owners: 0, nextCursor: null },
-      cleanup: [],
-      runners: fixtureRunners(true),
-      policy: data.policy !== null && data.policy !== "failed" && data.policy !== "missing" ? { ...data.policy, groups: [] } : data.policy,
-    };
-  if (state === "fail")
-    return { ...data, approvals: "failed", decided: "failed", codes: "failed", policy: "failed", cleanup: "failed", runners: "failed", limits: "failed" };
-  if (query.sec === "approvals" && query.id) {
-    const variant = query.id === FIXTURE_VERSIONS.lieferzeit1 ? "first" : state;
-    data.approval =
-      state === "missing"
-        ? "missing"
-        : fixtureApprovalDetail(
-            variant === "first" || variant === "newer" || variant === "own" || variant === "sole" || variant === "difffail" || variant === "approved"
-              ? variant
-              : "normal",
-          );
-  }
-  if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail();
-  if (query.sec === "code" && query.status) {
-    const codes = data.codes;
-    if (codes !== null && codes !== "failed" && codes !== "missing")
-      data.codes = { ...codes, items: codes.items.filter((code) => code.status === query.status), total: codes.items.filter((code) => code.status === query.status).length };
-  }
-  if (query.sec === "effective" && query.id) data.effective = state === "missing" ? "missing" : fixtureEffective();
-  return data;
-}
 
 export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-code-area-"));
