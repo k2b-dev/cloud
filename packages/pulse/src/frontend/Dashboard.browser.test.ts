@@ -407,6 +407,54 @@ test("loading retains panel slots, per-panel failures retry, outages retain last
   }
 }, 30_000);
 
+test("a slow panel holds neither the others nor the read limit, and a late answer cannot undo lost access", async () => {
+  let release: () => void = () => {};
+  const wait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { tab, panels, requests } = await open();
+  try {
+    await ready(tab);
+    await tab.waitForFunction(() => !document.querySelector('[data-panel][aria-busy="true"]'));
+    const slow = { json: dashboardTestPanelResult(dashboardTestDashboard.definition.panels[0]!), wait };
+    panels.set("requests-now", slow);
+    const before = requests.length;
+    const last = tab.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/panels/hosts"));
+    await tab.clock.runFor(60000);
+    // The first panel never answers, yet every later one finishes through the second read.
+    await last;
+    expect(requests.slice(before).filter((request) => request.path.includes("/panels/")).length).toBe(10);
+    expect(await tab.locator('[data-panel="requests-now"]').getAttribute("aria-busy")).toBe("true");
+    await tab.locator('[data-panel="hosts"][aria-busy="false"]').waitFor();
+    release();
+    await tab.locator('[data-panel="requests-now"][aria-busy="false"]').waitFor();
+  } finally {
+    release();
+    await tab.close();
+  }
+  let answer: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const denied = await open();
+  try {
+    await ready(denied.tab);
+    await denied.tab.waitForFunction(() => !document.querySelector('[data-panel][aria-busy="true"]'));
+    denied.panels.set("requests-now", { json: dashboardTestPanelResult(dashboardTestDashboard.definition.panels[0]!), wait: held });
+    denied.panels.set("errors-now", { status: 403, json: { code: "FORBIDDEN" } });
+    await denied.tab.clock.runFor(60000);
+    await denied.tab.getByText("Dashboard nicht verfügbar", { exact: true }).waitFor();
+    const late = denied.tab.waitForResponse((response) => response.url().includes("/panels/requests-now"));
+    answer();
+    await late;
+    await denied.tab.getByText("Dashboard nicht verfügbar", { exact: true }).waitFor();
+    expect(await denied.tab.locator("[data-panel]").count()).toBe(0);
+  } finally {
+    answer();
+    await denied.tab.close();
+  }
+}, 30_000);
+
 test("cleared data replaces the shown result, while a cache miss for the same data keeps it", async () => {
   const { tab, panels } = await open({});
   try {
