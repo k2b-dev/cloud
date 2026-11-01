@@ -184,7 +184,13 @@ test("foreign calendar response correlation is a field-specific code:false excep
   const action = {
     title: "Record response",
     description: "Correlate a foreign Mail draft.",
-    input: z.object({ mailboxId: z.string(), messageId: z.string(), draftId: z.string() }).strict(),
+    input: z
+      .object({
+        mailboxId: z.string().describe("Foreign mailbox ID."),
+        messageId: z.string().describe("Foreign message ID."),
+        draftId: z.string().describe("Foreign draft ID."),
+      })
+      .strict(),
     data: z.object({}).strict(),
     destructive: false,
     openWorld: false,

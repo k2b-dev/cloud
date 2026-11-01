@@ -47,6 +47,7 @@ const context: CapabilityExecutionContext = {
   user,
   locale: "de",
   requestId: "code-contract",
+  target: { type: "core.code", id: "c_8hw2" },
   origin: "http",
   signal: new AbortController().signal,
 };
@@ -144,7 +145,7 @@ describe("Core Code data contracts", () => {
 test("secret values cannot enter through Assistant, MCP or app capability tools", async () => {
   for (const origin of ["assistant", "mcp", "app"] as const) {
     const result = await aiCapabilities.actions["code.secret.set"].run(
-      { codeId: "c_c11test", name: "API", binding_revision: null, value: "test-only-private-credential" },
+      { name: "API", binding_revision: null, value: "test-only-private-credential" },
       { ...context, origin },
     );
     expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
@@ -156,6 +157,7 @@ test("secret capability declarations compile with private writes and exact delet
   const manifest = compileCapabilityManifest("core", {
     protocolVersion: 2,
     queries: { "code.secret.list": aiCapabilities.queries["code.secret.list"] },
+    types: { code: aiCapabilities.types.code },
     actions: {
       "code.secret.set": aiCapabilities.actions["code.secret.set"],
       "code.secret.delete": aiCapabilities.actions["code.secret.delete"],

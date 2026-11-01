@@ -151,13 +151,9 @@ Cloud validates Skills at start, updates them by content hash, and offers them o
 
 Request AI through `model: { class: "fast" | "balanced" | "thorough" | "maximum" }`; omitted requests mean balanced, and only empty assignments fall back. Read **Models and providers** and **Structured and background AI** for policy, explicit variant IDs and errors.
 ## Build and verify one complete slice
-For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
-especially its machine-composition and design-review guidance. Every Action names the resource it acts on with
-`target`; move its main resource ID out of `input`, use `refs` for additional targets, and check containment of
-child IDs in the owning service. Declare `code: false` when the effect reaches another application. Truly
-application-wide Actions and shared foreign-provider contracts follow the exceptions in that guide.
-Trace real task paths and consumers before choosing result fields or changing contracts;
-keep detailed API rules in that guide. Cloud records one execution row for every
+For capability changes, read **App capabilities** (`/en/docs/platform/capabilities`), including its machine-composition and design-review guidance. Every resource Action names its `target`; move its main resource ID out of `input`, use `refs` for additional targets, and check child containment in the owning service.
+Declare `code: false` when the effect reaches another application. Application-wide Actions and shared foreign-provider contracts follow the exceptions in that guide.
+Trace real task paths and consumers before changing contracts; detailed API rules stay in that guide. Cloud records one execution row for every
 capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
 join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
