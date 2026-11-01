@@ -24,9 +24,9 @@ RUN bun build packages/runner/src/index.ts --target=bun --outfile=/app/runner.js
     && bun build packages/runner/scripts/code-test.ts --target=bun --outfile=/app/code-test.js \
     && bun build packages/cloud/scripts/code-check.ts --target=bun --outfile=/app/checker.js \
     && bun build packages/cloud/scripts/code-check-worker.ts --target=bun --external=@typescript/typescript6 --outfile=/app/check-worker.js \
-    && mkdir -p /app/node_modules/@typescript \
-    && cp -RL packages/cloud/node_modules/@typescript/typescript6 /app/node_modules/@typescript/typescript6 \
-    && bun -e 'import {cp} from "node:fs/promises"; import {dirname} from "node:path"; const shim = dirname(Bun.resolveSync("@typescript/typescript6/package.json", "/app/packages/cloud")); await cp(dirname(Bun.resolveSync("@typescript/old/package.json", shim)), "/app/node_modules/@typescript/old", {recursive:true});' \
+    && mkdir -p /runner-libs/node_modules/@typescript \
+    && cp -RL packages/cloud/node_modules/@typescript/typescript6 /runner-libs/node_modules/@typescript/typescript6 \
+    && bun -e 'import {cp} from "node:fs/promises"; import {dirname} from "node:path"; const shim = dirname(Bun.resolveSync("@typescript/typescript6/package.json", "/app/packages/cloud")); await cp(dirname(Bun.resolveSync("@typescript/old/package.json", shim)), "/runner-libs/node_modules/@typescript/old", {recursive:true});' \
     && bun -e 'import getExePath from "./packages/cloud/node_modules/typescript/lib/getExePath.js"; import {cp} from "node:fs/promises"; import {dirname} from "node:path"; await cp(dirname(getExePath()), "/app/compiler", {recursive:true});' \
     && chmod 755 /app/compiler/tsc
 
@@ -37,7 +37,7 @@ COPY --from=build /app/code-test.js /app/code-test.js
 COPY --from=build /app/checker.js /app/checker.js
 COPY --from=build /app/check-worker.js /app/check-worker.js
 COPY --from=build /app/compiler /app/compiler
-COPY --from=build /app/node_modules/@typescript /app/node_modules/@typescript
+COPY --from=build /runner-libs/node_modules/@typescript /app/node_modules/@typescript
 COPY --from=build /app/job-isolate /app/job-isolate
 COPY --from=build /app/checker-isolate /app/checker-isolate
 COPY --from=build /app/workerd /app/workerd

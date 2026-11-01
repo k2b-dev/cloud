@@ -130,8 +130,15 @@ export type AppPanel = {
   label: string;
   /** Icon class, for example "ti ti-sparkles". */
   icon: string;
+  /**
+   * Tab position, lowest first, as a safe integer. Panels without one follow those with one; ties and the rest go by
+   * their translated label. The first visible panel is the default tab.
+   */
+  order?: number;
   /** Coarse visibility like nav.requiresRoles; the slot grants no access. */
   requiresRoles?: Role[];
+  /** The panel works on the Code of the page's resource with the person, so shared Code pages offer "Edit with <label>". */
+  code?: boolean;
 };
 
 export type AppMeta = {

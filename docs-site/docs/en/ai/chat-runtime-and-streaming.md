@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-21
+updated: 2026-10-31
 ---
 
 # Chat runtime and streaming
@@ -201,8 +201,8 @@ exact public HTTPS source into the conversation, with a readable Markdown copy
 for web pages; it does not browse repositories, authenticate to a website, or
 reach private network targets.
 `calculate` stays loaded because, whenever a turn offers it, the system
-prompt requires it for every amount, sum, or other number the model derives
-itself. A conversation with a fixed tool scope that excludes it, or a model
+prompt requires it for every amount, sum, percentage, or multi-step result the
+model derives itself; simple relative dates such as tomorrow need no call. A conversation with a fixed tool scope that excludes it, or a model
 without tool support, gets neither the tool nor that rule. Surveys, the
 long-form text editor, charts, file writes and presentation, and
 Markdown-to-PDF load on demand. Built-in usage hints remain in the system prompt even while their

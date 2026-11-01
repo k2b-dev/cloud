@@ -1,4 +1,4 @@
-import { getApp, listApps, sql } from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
 import {
   type CapabilityDispatchDependencies,
   type CodeBridgeCall,
@@ -6,19 +6,20 @@ import {
   CodeBridgeRefusal,
   type CodeRunnerDispatchDependencies,
   createCodeRunnerCallRoutes,
-  publicCloudOrigin,
 } from "@k2b/cloud/api";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { RunnerCallResponseSchema } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { ratelimit } from "@k2b/cloud/server";
-import { coreSettings, mandates } from "@k2b/cloud/services";
+import { mandates } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
+import { readCodeOwnOrigins } from "./origins";
 import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
+import { dispatchCodeSecretHttp } from "./secret-http";
 import { codeSettings } from "./settings";
 import { appendCodeCall, findCode, finishCodeCall } from "./store";
 
@@ -63,7 +64,7 @@ async function lockCall(call: CodeBridgeCall, db: SQL) {
     SELECT bundle_hash,source_hash,created_by,jsonb_build_object(
       'version',manifest->'version','hashes',manifest->'hashes',
       'policyRows',manifest->'policyRows') AS manifest,
-      manifest @> ${JSON.stringify({ entrypoints: [{ entrypoint: call.claims.entrypoint }] })}::jsonb AS entrypoint_valid
+      manifest @> ${JSON.stringify({ entrypoints: [{ entrypoint: call.claims.entrypoint }] })}::text::jsonb AS entrypoint_valid
     FROM code.versions WHERE id=${call.claims.versionId}::uuid AND code_id=${code.id}`;
   if (!version || version.bundle_hash !== call.claims.bundleHash) denied("code_bundle_mismatch");
   const manifest = CallVersionSchema.safeParse(version.manifest);
@@ -149,7 +150,7 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
         if ((used?.count ?? 0) >= (run?.calls_limit ?? 0)) denied("code_call_limit");
         try {
           const ordinal = await appendCodeCall(
-            { runId: call.claims.runId, kind: call.kind === "action" ? "action" : "query", call: call.call },
+            { runId: call.claims.runId, kind: call.kind === "query" ? "query" : "action", call: call.call },
             tx,
           );
           // Future db/kv/files writes must use an effectful kind too; query is reserved for reads.
@@ -204,16 +205,7 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
     },
   };
 }
-/** Configured app domains include redirect hosts and remain installation-owned while an app is offline. */
-export async function readCodeOwnOrigins(): Promise<string[]> {
-  const domains = await sql<{ host: string }[]>`SELECT host FROM settings.app_domains`;
-  return [
-    publicCloudOrigin(await coreSettings.get<string>("app.url")),
-    (await getApp("core"))?.baseUrl ?? "http://app-core:3000",
-    ...(await listApps()).map((app) => app.baseUrl),
-    ...domains.map(({ host }) => `https://${host}`),
-  ];
-}
+export { readCodeOwnOrigins } from "./origins";
 /** Mount only in Core; C13 adds the other runner protocol endpoints alongside this route. */
 export const createCodeBridgeRoutes = (overrides: Partial<CodeRunnerDispatchDependencies> = {}) =>
-  createCodeRunnerCallRoutes({ host: createCodeBridgeHost(), ownOrigins: readCodeOwnOrigins, ...overrides });
+  createCodeRunnerCallRoutes({ host: createCodeBridgeHost(), ownOrigins: readCodeOwnOrigins, http: dispatchCodeSecretHttp, ...overrides });

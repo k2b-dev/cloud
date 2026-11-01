@@ -14,23 +14,23 @@ The sidebar lists your active chats as plain rows: pinned chats first, then by t
 :::reference
 - **Chat rows:** Each row shows the chat's title. One icon at the row's end marks a chat that is running, waiting for you, failed, has a new response, or has an active schedule; its tooltip names the state. When a chat waits for you, for example with an open question, that mark is a dot.
 - **Projects:** Use the plus action in the Projects popup to create a Project with a name and optional instructions.
-- **New chat:** Opens an empty chat. When the open chat is still empty, Assistant keeps it instead of creating another one, unless it belongs to a Project, was opened by another app, has a name or description you gave it, or is pinned, done, or archived.
+- **New chat:** Opens an empty chat. When the open chat is still empty, Gustav keeps it instead of creating another one, unless it belongs to a Project, was opened by another app, has a name or description you gave it, or is pinned, done, or archived.
 - **Empty chat:** Choose an optional Project below the centered composer before sending the first message. Starter cards fill an editable request; they never send it automatically.
-- **Project page:** Enter the first message in the standard composer, including files when needed. Assistant creates a private Project chat, sends the message, and then opens the normal chat. Search and scroll through existing Project chats below the composer.
+- **Project page:** Enter the first message in the standard composer, including files when needed. Gustav creates a private Project chat, sends the message, and then opens the normal chat. Search and scroll through existing Project chats below the composer.
 - **Project context:** The Project page shows Project instructions, knowledge, images, files, and references. People with write access can add or edit this shared context from that page.
 - **Search all chats:** Use the sidebar search button to search all saved chats.
 - **All Chats:** Project badges identify Project chats in the paginated history. Search titles and messages, and filter with one menu: all chats, new responses, running, waiting for you, failed, done, or archived.
 - **In this chat:** The sidebar at the right of a chat shows what the chat holds. On large screens it is open; close it with the button in its header and it stays closed until you open it again with the button at the upper right of the chat. On narrower windows that button opens it over the edge of the chat, and on a phone as a sheet that Back closes.
-- **Results first:** Files, Studio apps, and visualizations the assistant created for you are listed first, the newest with the sentence the assistant gave them. Open or download them directly, or select a title to jump to the place in the chat where it was delivered. Older results are grouped by day and, after a week, by month.
+- **Results first:** Files, Studio apps, and visualizations Gustav created for you are listed first, the newest with the sentence Gustav gave them. Open or download them directly, or select a title to jump to the place in the chat where it was delivered. Older results are grouped by day and, after a week, by month.
 - **Nothing moves while you read:** While the pointer or focus is in the sidebar, new results only raise **New · N** in the heading, and other changes show **Update**. They appear when you leave the sidebar or select the control. On a touch screen, the sidebar holds still until you touch outside it.
 - **Your files:** Your uploads and voice recordings. Images open in the image viewer, other files in the workspace.
-- **Sources:** Web pages the assistant read, every web search with what it searched for, and the Cloud items a tool read, one row per request. Select a source to review its destination before opening it in a new tab.
-- **Working files:** Intermediate steps the assistant keeps in the chat folder `temp/`, grouped by what they were for. Once the chat uses more than 70 % of its storage, the row shows how much. You can delete a whole group after confirming; results stored in it are named there, because they are deleted too.
+- **Sources:** Web pages Gustav read, every web search with what it searched for, and the Cloud items a tool read, one row per request. Select a source to review its destination before opening it in a new tab.
+- **Working files:** Intermediate steps Gustav keeps in the chat folder `temp/`, grouped by what they were for. Once the chat uses more than 70 % of its storage, the row shows how much. You can delete a whole group after confirming; results stored in it are named there, because they are deleted too.
 - **Context:** The Project with its instructions, knowledge, files, and references, the Skills the chat used, what was remembered from it, its routines, and Secrets. A Project chat includes its inherited Project context without Project editing actions.
 - **Search:** Use the search button in the sidebar's header to find results, files, and sources in this chat. Escape closes the search.
-- **Delete chat files:** Point at an upload, voice recording, or working file, or reach it with Tab, then select the trash icon at the right; for a result, use its menu. The icon is always visible on touch devices. After you confirm, Assistant removes the file from this chat and closes its open tab. Earlier messages keep their text, but their links to the file no longer open it. Project files are managed on the Project page.
+- **Delete chat files:** Point at an upload, voice recording, or working file, or reach it with Tab, then select the trash icon at the right; for a result, use its menu. The icon is always visible on touch devices. After you confirm, Gustav removes the file from this chat and closes its open tab. Earlier messages keep their text, but their links to the file no longer open it. Project files are managed on the Project page.
 - **Cloud resources:** Choose **+ → Insert from Cloud** to insert a reference to a supported Cloud resource at the text caret. The reference gives the model the same resource as an attachment, without copying its contents into the chat. A chat opened from Mail or another app can begin with one or more resources already attached. Resource links open their owning app in a new tab; every read and Action still checks your current permission there.
-- **Paste a Cloud link:** Paste a link to something in this Cloud, for example from the address bar or **Copy Cloud ID**. Once Assistant recognizes it, the link becomes a resource attachment with its title. A link you may not open stays text. To keep the link as text, paste with **Ctrl+Shift+V** (**⌘+Shift+V** on a Mac).
+- **Paste a Cloud link:** Paste a link to something in this Cloud, for example from the address bar or **Copy Cloud ID**. Once Gustav recognizes it, the link becomes a resource attachment with its title. A link you may not open stays text. To keep the link as text, paste with **Ctrl+Shift+V** (**⌘+Shift+V** on a Mac).
 Chats automatically move to **Done** after seven days without use. Sending a message, a run, or reopening a chat counts as use; opening or reading a chat only marks it as read, and background metadata changes do not count either. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. All active chats appear in the sidebar, followed by **Done** and its **All chats** entry.
 
 - **Finish or continue:** Mark a chat done to move it into **Done**. Stop a running response first. Reopen it or send a new message to continue; files, apps, and pinning remain available.
@@ -40,9 +40,9 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 ## Message actions {icon="point"}
 
 :::reference
-- **Stop:** Stop aborts the running assistant turn for the open chat.
+- **Stop:** Stop aborts the running Gustav turn for the open chat.
 - **Retry:** Retry reruns a user message and replaces later messages in that chat branch.
-- **Continue:** When an answer stops because a step or the model service failed, the chat says why. **Continue** asks the assistant to resume where it stopped; the results so far are kept.
+- **Continue:** When an answer stops because a step or the model service failed, the chat says why. **Continue** asks Gustav to resume where it stopped; the results so far are kept.
 - **Continue in a new chat:** Creates a new chat copied through the selected answer.
 - **Response details:** Shows the model, time, and token usage of one answer.
 - **Compact:** Open the context indicator beside the message input and choose **Compact context** to summarize the current chat context. You can also use `/compact`. Hover previews the details; clicking keeps them open. Press Escape or click outside to close.
@@ -55,12 +55,12 @@ Decide an approval in its chat card or open **Approvals** above **Studio** for t
 Each question shows a sentence with chips for people and objects, Cloud's reason
 for asking, and a preview of what will change. Two buttons name the deed and
 target: one allows it and one declines. An approval applies once to what the
-card shows. If that changes before the Action runs, Assistant asks again. A
+card shows. If that changes before the Action runs, Gustav asks again. A
 reload keeps the reviewed sentence and preview.
 
 While questions are open, **Waiting for you** above the composer lists each one
 in its short form, also those from your other chats with the chat's name.
-Select one to go to its question; Assistant opens that chat if needed and puts
+Select one to go to its question; Gustav opens that chat if needed and puts
 the focus on the question's sentence. A reload returns to that question. When
 more questions wait than the row lists, its last entry opens **Approvals**.
 With a single question in the open chat, the row shows only while that
@@ -75,19 +75,19 @@ website in this chat** remembers that exact website; each later read shows its f
 address and **Revoke**.
 
 One outcome line says running, done, rejected, not run, or unknown. If the app
-provides an outcome check, Assistant runs it once after a lost answer. A known
+provides an outcome check, Gustav runs it once after a lost answer. A known
 result settles the card; a pending or failed check leaves the outcome unknown.
 **Check again** checks only the outcome, never repeats the Action. Without an
 outcome check, there is no repeat button.
 :::
 
-## Conversation-aware Assistant {icon="message-forward"}
+## Conversation-aware Gustav {icon="message-forward"}
 
-Assistant can use its live capabilities when your request depends on chat
+Gustav can use its live capabilities when your request depends on chat
 history. It can search the current chat, find and read another owned chat, and
 find structured Cloud resources previously used in either scope.
 
-If you explicitly ask Assistant to tell, ask, notify, forward, or send exact
+If you explicitly ask Gustav to tell, ask, notify, forward, or send exact
 text to another chat, it can request the `core.ai.chat.message` Action. The approval
 prompt shows the target and exact text before anything is queued. Delivered
 messages appear in the target history with their source chat; they are not
@@ -97,7 +97,7 @@ shown as messages authored by you.
 
 Attach a voice memo like any other file and write your own request, for example:
 “Transcribe this recording and summarize the next steps.” Uploading alone does
-not start transcription. Assistant can save the transcript as a text file in
+not start transcription. Gustav can save the transcript as a text file in
 the chat.
 
 Click the microphone next to Send to dictate. The neutral waveform responds to your
@@ -150,7 +150,7 @@ disappear. Active and queued messages must finish before assignment.
 ## Search chats {icon="search"}
 
 **Search all chats** opens the global search for titles and message content in your
-Assistant chats. **Search this chat** limits it to messages in the open chat. The
+Gustav chats. **Search this chat** limits it to messages in the open chat. The
 removable chip shows the current scope. Selecting a search action in the palette
 updates it in place; removing the chip searches all Cloud apps again.
 

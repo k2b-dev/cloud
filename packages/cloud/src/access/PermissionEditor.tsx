@@ -4,6 +4,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
+import CodeAccessSection, { isCodeAccessEntry } from "./CodeAccessSection";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
@@ -419,10 +420,13 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       if (selection && entries.some((entry) => principalKey(entry.principal) === principalKey(selection.principal))) setDraft(undefined);
     }),
   );
+  // Code accounts get their own section and never count as managers (modell 2, rules 7 and 10).
+  const shareEntries = createMemo(() => entries.filter((entry) => !isCodeAccessEntry(entry)));
+  const codeEntries = createMemo(() => entries.filter(isCodeAccessEntry));
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = createMemo(() => {
     // A grant on part of the resource never manages it.
-    const granted = entries.filter((entry) => entry.id !== pending());
+    const granted = shareEntries().filter((entry) => entry.id !== pending());
     const managers = (props.effectiveEntries?.(granted) ?? granted).filter((entry) => !entry.scope && isManagerEntry(entry));
     return managers.length === 1 ? managers[0]!.id : null;
   });
@@ -524,7 +528,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       </Show>
       {/* Existing entries */}
       <div class={props.expanded ? "flex flex-col" : "flex flex-col gap-1"}>
-        <For each={entries}>
+        <For each={shareEntries()}>
           {(entry) => {
             // A row keeps its principal, so its group coverage is created once per row. Expanded rows name the
             // group's size in their subtitle instead.
@@ -555,7 +559,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
             );
           }}
         </For>
-        <Show when={entries.length === 0}>
+        <Show when={shareEntries().length === 0}>
           <Placeholder align="left" class="px-1 py-2" description={t().noDirectGrants} />
         </Show>
       </div>
@@ -578,6 +582,14 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           onSelect={(principal, display) => void grant(principal, display)}
         />
       </Show>
+      <CodeAccessSection
+        entries={codeEntries()}
+        canEdit={canEdit()}
+        expanded={props.expanded}
+        levelLabel={(entry) => resolveEntryDisplay(entry.permission, entry.scope, allowed(entry.principal), t()).label}
+        manageLabel={resolveEntryDisplay("admin", undefined, allowed({ type: "user", userId: "" }), t()).label}
+        onRemoved={(removed) => setEntries((current) => current.filter((entry) => entry.id !== removed.id))}
+      />
     </div>
   );
 }

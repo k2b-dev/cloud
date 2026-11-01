@@ -142,7 +142,9 @@ const compileSequence = (steps: MailAutomationStep[]): Record<string, unknown>[]
       continue;
     }
     if (step.kind === "link_space_item") {
-      compiled.push({ linkSpaceItem: { conversation: "${{ inputs.conversation }}", item: step.itemId } });
+      compiled.push({
+        linkSpaceItem: { conversation: "${{ inputs.conversation }}", item: step.itemId, ...(step.spaceId ? { space: step.spaceId } : {}) },
+      });
       continue;
     }
     if (step.kind === "create_space_event") {

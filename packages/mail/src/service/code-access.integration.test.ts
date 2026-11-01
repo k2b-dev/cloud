@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
+import type { CapabilityExecutionContext, ResourcePrincipal, User } from "@k2b/cloud/contracts";
 import { serviceAccounts } from "@k2b/cloud/services";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
@@ -72,6 +72,8 @@ suite("Mail mailbox Code access", () => {
   const list = (context: MailRequestContext) => sql.begin((tx) => mailboxCodeAccess.list(tx, { principal: principal(context) }));
   const revoke = (id: string, grantId: string) => sql.begin((tx) => mailboxCodeAccess.revoke(tx, { id, grantId }));
 
+  const manages = (context: CapabilityExecutionContext, id: string) => sql.begin((tx) => mailboxCodeAccess.manages(tx, context, id));
+
   beforeAll(async () => {
     const uid = `c3c-owner-${suffix}`;
     const [row] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
@@ -109,25 +111,24 @@ suite("Mail mailbox Code access", () => {
   });
 
   afterAll(async () => {
-    for (const id of mailboxIds) {
-      const rows = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${id}::uuid`;
-      await sql`DELETE FROM mail.mailboxes WHERE id = ${id}::uuid`;
-      for (const row of rows) await sql`DELETE FROM auth.access WHERE id = ${row.access_id}::uuid`;
-    }
-    for (const id of ordinaryAccessIds) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
-    for (const id of accountIds) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+    const rows = await sql<
+      { access_id: string }[]
+    >`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id=ANY(${sql.array(mailboxIds, "uuid")})`;
+    await sql`DELETE FROM mail.mailboxes WHERE id=ANY(${sql.array(mailboxIds, "uuid")})`;
+    await sql`DELETE FROM auth.access WHERE id=ANY(${sql.array([...ordinaryAccessIds, ...rows.map((row) => row.access_id)], "uuid")})`;
+    await sql`DELETE FROM auth.service_accounts WHERE id=ANY(${sql.array(accountIds, "uuid")})`;
     if (groupId) await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
     if (owner) await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
   });
 
   test("sets independent grants at the public mailbox target; removal changes single and batched resolution immediately", async () => {
     const target = await mailbox();
-    expect(await mailboxCodeAccess.manages(capabilityContext(ownerContext), target.shortId)).toBe(true);
-    expect(await mailboxCodeAccess.manages(capabilityContext(code), target.shortId)).toBe(false);
+    expect(await manages(capabilityContext(ownerContext), target.shortId)).toBe(true);
+    expect(await manages(capabilityContext(code), target.shortId)).toBe(false);
     const read = await grant(target.shortId, code, ["mail.mailbox.read"]);
     const write = await grant(target.shortId, code, ["mail.draft.create"]);
-    expect(read.decision).toMatchObject({ granted: true, level: "read" });
-    expect(write.decision).toMatchObject({ granted: true, level: "write" });
+    expect(read.decision).toEqual({ granted: true, level: "read" });
+    expect(write.decision).toEqual({ granted: true, level: "write" });
     expect(await getMailboxPermission(code, target.id)).toBe("write");
     expect((await mailCapabilities.queries["mailbox.read"].run({ id: target.shortId }, capabilityContext(code))).ok).toBe(true);
     expect((await grant(target.shortId, code, ["mail.draft.create"], write.grantId)).decision).toEqual(write.decision);
@@ -216,6 +217,39 @@ suite("Mail mailbox Code access", () => {
     expect(await revoke(target.shortId, granted.grantId)).toBe(true);
   });
 
+  test("mailbox access.readable follows current Mail grants and excludes foreign Code readers", async () => {
+    const target = await mailbox(),
+      another = await mailbox();
+    const person: ResourcePrincipal = { type: "user", userId: owner.id };
+    const account: ResourcePrincipal = { type: "service_account", serviceAccountId: principal(code) };
+    const readable = mailCapabilities.types.mailbox.access.readable;
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person]);
+    const granted = await grant(target.shortId, code, ["mail.mailbox.read"]);
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person, account]);
+    const [signedIn] = await sql<{ id: string }[]>`INSERT INTO auth.access(authenticated_only,permission) VALUES(true,'read') RETURNING id`;
+    ordinaryAccessIds.push(signedIn!.id);
+    await sql`INSERT INTO mail.mailbox_access(mailbox_id,access_id) VALUES(${another.id}::uuid,${signedIn!.id}::uuid)`;
+    expect(await readable({ id: another.shortId, principals: [account] })).toEqual([]);
+    await revoke(target.shortId, granted.grantId);
+    expect(await readable({ id: target.shortId, principals: [person, account] })).toEqual([person]);
+    const assigned: ResourcePrincipal = { type: "service_account", serviceAccountId: principal(ordinary) };
+    expect(
+      (
+        await grantMailboxAccess({
+          context: ownerContext,
+          mailboxId: target.id,
+          principal: assigned,
+          permission: "read",
+          scope: "assigned",
+        })
+      ).ok,
+    ).toBe(true);
+    expect(await readable({ id: target.shortId, principals: [assigned] })).toEqual([assigned]);
+    expect(await getMailboxPermission(ordinary, target.id)).toBe("none");
+    expect(await getMailboxPermission(ownerContext, target.id)).toBe("admin");
+    await sql`UPDATE mail.mailboxes SET deleted_at=now() WHERE id=${target.id}::uuid`;
+    expect(await readable({ id: target.shortId, principals: [person] })).toEqual([]);
+  });
   test("lists only this account's grants and ignores group, signed-in and public access for Code", async () => {
     const target = await mailbox();
     const first = await grant(target.shortId, code, ["mail.mailbox.read"]);
@@ -246,13 +280,17 @@ suite("Mail mailbox Code access", () => {
     expect(denied.ok).toBe(false);
   });
 
-  test("a Code admin row never substitutes for the last human administrator", async () => {
+  test("Code cannot receive admin or replace the last mailbox administrator", async () => {
     const target = await mailbox();
-    // Deliberately malformed legacy data must not let a human remove the last real admin.
-    const [bad] = await sql<{ id: string }[]>`INSERT INTO auth.access (service_account_id, permission)
-      VALUES (${principal(code)}::uuid, 'admin') RETURNING id`;
-    if (!bad) throw new Error("Missing malformed grant");
-    await sql`INSERT INTO mail.mailbox_access (mailbox_id, access_id) VALUES (${target.id}::uuid, ${bad.id}::uuid)`;
+    // Bun SQL queries are lazy; start them before a rejection matcher observes their state.
+    await expect(
+      sql`INSERT INTO auth.access (service_account_id, permission)
+      VALUES (${principal(code)}::uuid, 'admin')`.execute(),
+    ).rejects.toMatchObject({ errno: "23514" });
+    const write = await grant(target.shortId, code, ["mail.draft.create"]);
+    await expect(sql`UPDATE auth.access SET permission = 'admin' WHERE id = ${write.grantId}::uuid`.execute()).rejects.toMatchObject({
+      errno: "23514",
+    });
     const [admin] = await sql<{ id: string }[]>`SELECT a.id FROM mail.mailbox_access ma JOIN auth.access a ON a.id = ma.access_id
       WHERE ma.mailbox_id = ${target.id}::uuid AND a.user_id = ${owner.id}::uuid`;
     if (!admin) throw new Error("Missing admin");
@@ -270,7 +308,221 @@ suite("Mail mailbox Code access", () => {
         })
       ).ok,
     ).toBe(false);
-    expect(await mailboxCodeAccess.manages(capabilityContext(code), target.shortId)).toBe(false);
-    expect((await list(code)).some((entry) => entry.grantId === bad.id)).toBe(false);
+    expect(await manages(capabilityContext(code), target.shortId)).toBe(false);
+    expect((await list(code)).every((entry) => entry.level === "read" || entry.level === "write")).toBe(true);
+  });
+  test("dry-run reports current direct and nested-group person managers without granting access", async () => {
+    const target = await mailbox();
+    const [person] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile)
+      VALUES (${`mail-manager-${crypto.randomUUID()}`}, 'local', 'user') RETURNING id`;
+    const [child] = await sql<{ id: string }[]>`INSERT INTO auth.groups (cn, provider, name)
+      VALUES (${`mail-child-${crypto.randomUUID()}`}, 'local', 'Nested managers') RETURNING id`;
+    if (!person || !child) throw new Error("Missing manager fixture");
+    try {
+      await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${person.id}::uuid, ${child.id}::uuid),
+        (${owner.id}::uuid, ${child.id}::uuid)`;
+      await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${groupId}::uuid, ${child.id}::uuid)`;
+      const [share] = await sql<{ id: string }[]>`INSERT INTO auth.access (group_id, permission)
+        VALUES (${groupId}::uuid, 'admin') RETURNING id`;
+      if (!share) throw new Error("Missing manager share");
+      await sql`INSERT INTO mail.mailbox_access (mailbox_id, access_id) VALUES (${target.id}::uuid, ${share.id}::uuid)`;
+      const result = await grant(target.shortId, code, ["mail.mailbox.read"], crypto.randomUUID(), true);
+      expect(result.decision).toEqual({ granted: true, level: "read", managerUserIds: [owner.id, person.id].sort() });
+      expect(await sql`SELECT id FROM auth.access WHERE id = ${result.grantId}::uuid`).toHaveLength(0);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${person.id}::uuid`;
+      await sql`DELETE FROM auth.groups WHERE id = ${child.id}::uuid`;
+    }
+  });
+
+  test("a manager removed after a preflight check cannot grant from stale authority", async () => {
+    const target = await mailbox();
+    const current = capabilityContext(ownerContext);
+    expect(await manages(current, target.shortId)).toBe(true);
+    const changed = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const checking = Promise.withResolvers<number>();
+    const change = sql.begin(async (tx) => {
+      await tx`SELECT id FROM mail.mailboxes WHERE id = ${target.id}::uuid FOR UPDATE`;
+      await tx`UPDATE auth.access SET permission = 'read' WHERE id IN (
+        SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${target.id}::uuid
+      ) AND user_id = ${owner.id}::uuid`;
+      changed.resolve();
+      await release.promise;
+    });
+    let pending: Promise<boolean> | undefined;
+    try {
+      await Promise.race([
+        changed.promise,
+        change.then(() => {
+          throw new Error("Manager change skipped checkpoint");
+        }),
+      ]);
+      pending = sql.begin(async (tx) => {
+        const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        if (!backend) throw new Error("Missing backend PID");
+        checking.resolve(backend.pid);
+        if (!(await mailboxCodeAccess.manages(tx, current, target.shortId))) return false;
+        return (
+          await mailboxCodeAccess.grant(tx, {
+            id: target.shortId,
+            principal: principal(code),
+            operations: ["mail.mailbox.read"],
+            grantId: crypto.randomUUID(),
+            dryRun: false,
+          })
+        ).granted;
+      });
+      const pid = await Promise.race([
+        checking.promise,
+        pending.then(() => {
+          throw new Error("Code check ended before lock acquisition");
+        }),
+      ]);
+      // Observe this transaction blocked on the mutation's target lock before
+      // committing it; a check without a lock must fail this regression guard.
+      const deadline = AbortSignal.timeout(2000);
+      let blocked = false;
+      while (!deadline.aborted) {
+        const [state] = await sql<{ blocked: boolean }[]>`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE pid = ${pid} AND wait_event_type = 'Lock'
+        ) AS blocked`;
+        if (state?.blocked) {
+          blocked = true;
+          break;
+        }
+        await Bun.sleep(10);
+      }
+      expect(blocked).toBe(true);
+      release.resolve();
+      await change;
+      expect(await pending).toBe(false);
+      expect((await list(code)).some((entry) => entry.id === target.shortId)).toBe(false);
+    } finally {
+      release.resolve();
+      await Promise.allSettled([change, ...(pending ? [pending] : [])]);
+    }
+  });
+
+  test("manager authority stays locked through the adapter write", async () => {
+    const target = await mailbox();
+    await sql.begin(async (tx) => {
+      expect(await mailboxCodeAccess.manages(tx, capabilityContext(ownerContext), target.shortId)).toBe(true);
+      expect(
+        (
+          await mailboxCodeAccess.grant(tx, {
+            id: target.shortId,
+            principal: principal(code),
+            operations: ["mail.mailbox.read"],
+            grantId: crypto.randomUUID(),
+            dryRun: false,
+          })
+        ).granted,
+      ).toBe(true);
+      await expect(
+        sql.begin(async (other) => {
+          await other`SELECT id FROM mail.mailboxes WHERE id = ${target.id}::uuid FOR UPDATE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`SELECT a.id FROM auth.access a JOIN mail.mailbox_access grants ON grants.access_id = a.id
+          WHERE grants.mailbox_id = ${target.id}::uuid AND a.user_id = ${owner.id}::uuid FOR UPDATE OF a NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`SELECT id FROM auth.users WHERE id = ${owner.id}::uuid FOR UPDATE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`LOCK TABLE auth.groups IN ROW EXCLUSIVE MODE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`LOCK TABLE auth.user_groups_v2 IN ROW EXCLUSIVE MODE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+      await expect(
+        sql.begin(async (other) => {
+          await other`LOCK TABLE auth.group_groups_v2 IN ROW EXCLUSIVE MODE NOWAIT`;
+        }),
+      ).rejects.toThrow(/could not obtain lock/);
+    });
+  });
+  test("manager checks use live group membership instead of the person's cached groups", async () => {
+    const target = await mailbox();
+    const [share] = await sql<{ id: string }[]>`INSERT INTO auth.access (group_id, permission)
+      VALUES (${groupId}::uuid, 'admin') RETURNING id`;
+    if (!share) throw new Error("Missing group manager share");
+    await sql`INSERT INTO mail.mailbox_access (mailbox_id, access_id) VALUES (${target.id}::uuid, ${share.id}::uuid)`;
+    await sql`UPDATE auth.access SET permission = 'read' WHERE id IN (
+      SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${target.id}::uuid
+    ) AND user_id = ${owner.id}::uuid`;
+    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${owner.id}::uuid, ${groupId}::uuid)`;
+    const current = capabilityContext(ownerContext);
+    const stale = { ...current, actor: { kind: "user" as const, user: { ...owner, memberofGroupIds: [groupId] } } };
+    try {
+      expect(await manages(current, target.shortId)).toBe(true);
+      await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${owner.id}::uuid AND group_id = ${groupId}::uuid`;
+      expect(await manages(stale, target.shortId)).toBe(false);
+    } finally {
+      await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${owner.id}::uuid AND group_id = ${groupId}::uuid`;
+    }
+  });
+  test("grant and revoke lock the existing target even when manages is bypassed", async () => {
+    const target = await mailbox();
+    const grantId = crypto.randomUUID();
+    for (const operation of ["grant", "revoke"] as const) {
+      await sql.begin(async (tx) => {
+        if (operation === "grant") {
+          expect(
+            (
+              await mailboxCodeAccess.grant(tx, {
+                id: target.shortId,
+                principal: principal(code),
+                operations: ["mail.mailbox.read"],
+                grantId,
+                dryRun: false,
+              })
+            ).granted,
+          ).toBe(true);
+        } else {
+          expect(await mailboxCodeAccess.revoke(tx, { id: target.shortId, grantId })).toBe(true);
+        }
+        await expect(
+          sql.begin(async (other) => {
+            await other`SELECT id FROM mail.mailboxes WHERE id = ${target.id}::uuid FOR UPDATE NOWAIT`;
+          }),
+        ).rejects.toThrow(/could not obtain lock/);
+      });
+    }
+  });
+  test("directory writes do not deadlock Code checks or the Cloud-admin bypass", async () => {
+    const target = await mailbox();
+    await sql.begin(async (writer) => {
+      await writer`LOCK TABLE auth.groups, auth.user_groups_v2, auth.group_groups_v2 IN ROW EXCLUSIVE MODE`;
+      await expect(sql.begin((tx) => mailboxCodeAccess.manages(tx, capabilityContext(ownerContext), target.shortId))).rejects.toMatchObject(
+        { errno: "55P03" },
+      );
+      // Admin authority is checked by the platform, so the adapter only needs
+      // its target lock and a single-snapshot manager list during preflight.
+      const grantId = crypto.randomUUID();
+      const decision = await sql.begin((tx) =>
+        mailboxCodeAccess.grant(tx, {
+          id: target.shortId,
+          principal: principal(code),
+          operations: ["mail.mailbox.read"],
+          grantId,
+          dryRun: true,
+        }),
+      );
+      expect(decision).toEqual({ granted: true, level: "read", managerUserIds: [owner.id] });
+      expect((await grant(target.shortId, code, ["mail.mailbox.read"], grantId)).decision.granted).toBe(true);
+      expect(await revoke(target.shortId, grantId)).toBe(true);
+      await writer`SELECT 1`;
+    });
   });
 });

@@ -26,6 +26,7 @@ import { type AuditActor, audit, serviceAccountUsesOwnGrants } from "@k2b/cloud/
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { spacesEvents } from "./app-events";
@@ -155,6 +156,7 @@ import {
 import * as activity from "./service/activity";
 import { spaceActivityRow } from "./service/activity-timeline";
 import { CalendarSourceError, listSourceCalendars, readSourceEvents } from "./service/calendar-source";
+import { spaceCodeAccess } from "./service/code-access";
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
@@ -433,6 +435,11 @@ const reviewItemCreate = async (
   const t = spacesMessages(context.locale);
   const access = await requireSpace(context.target?.id ?? "", context, "write");
   if (!access.ok) return access;
+  // A task without a column lands in the first open one; the person sees which before approving.
+  const defaultColumn =
+    kind === "task" && input.columnId === undefined ? await spacesService.column.firstOpen({ spaceId: access.data.internalId }) : null;
+  if (kind === "task" && input.columnId === undefined && !defaultColumn)
+    return capabilityFail(context, err.badInput("This Space has no open column for new tasks"), "noOpenSpaceColumn");
   const title = input.title ?? t.template;
   const rememberable = input.templateId === undefined && !input.assigneeIds?.length;
   return ok({
@@ -442,6 +449,7 @@ const reviewItemCreate = async (
         : t.reviewCreateEvent({ title, space: access.data.space.name }),
     details: [
       { label: t.space, value: access.data.space.name },
+      ...(defaultColumn ? [{ label: t.column, value: defaultColumn.name }] : []),
       ...(input.title !== undefined ? [{ label: t.title, value: input.title }] : []),
       ...(input.templateId !== undefined ? [{ label: t.fromTemplate, value: input.templateId }] : []),
       ...("startsAt" in input && input.startsAt ? [{ label: t.starts, value: input.startsAt, format: "date-time" as const }] : []),
@@ -1703,7 +1711,7 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
   audited(actionAudit(context, "task.create", "space", context.target?.id ?? ""), async () => {
     const access = await requireSpace(context.target?.id ?? "", context, "write");
     if (!access.ok) return access;
-    const { templateId, date, timeZone, noDate, ...explicit } = input;
+    const { templateId, date, timeZone, noDate, columnId: requestedColumnId, ...explicit } = input;
     const filled = await fillFromTemplate(
       { templateId, date, timeZone, noDate, at: explicit.deadline },
       "task",
@@ -1712,10 +1720,14 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
     );
     if (!filled.ok) return filled;
     const [columnIds, tagIds] = await Promise.all([
-      spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [explicit.columnId]),
+      requestedColumnId === undefined
+        ? spacesService.column.firstOpen({ spaceId: access.data.internalId }).then((column) => (column ? [column.id] : []))
+        : spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [requestedColumnId]),
       spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, explicit.tagIds ?? []),
     ]);
     const columnId = columnIds?.[0];
+    if (requestedColumnId === undefined && !columnId)
+      return capabilityFail(context, err.badInput("This Space has no open column for new tasks"), "noOpenSpaceColumn");
     if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
     const draft: Partial<TemplateItemDraft> = filled.data?.item ?? {};
     const { location: _location, url: _url, startsAt: _startsAt, endsAt: _endsAt, allDay: _allDay, ...defaults } = draft;
@@ -2354,7 +2366,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "A permission-scoped collaboration space.",
       icon: "ti ti-layout-kanban",
       reader: "space.read",
-      access: { readable: readableSpace },
+      access: { readable: readableSpace, ...spaceCodeAccess },
       pages: ["/app/spaces/:id"],
     },
     item: {
@@ -2576,6 +2588,10 @@ export const spacesCapabilities = defineCapabilities({
       run: runSpaceList,
     },
     "space.read": {
+      codeResourceTitle: async (tx: SQL, id: string) => {
+        const [space] = await tx<{ name: string }[]>`SELECT name FROM spaces.spaces WHERE short_id=${id}`;
+        return space?.name ?? null;
+      },
       title: "Read space",
       description:
         "Read one spaces.space ref returned by space.list or space.search, including column and tag IDs required by filtered lists and item Actions.",
@@ -3046,7 +3062,7 @@ export const spacesCapabilities = defineCapabilities({
       target: "space",
       title: "Create task",
       description:
-        "Create one task in an explicitly selected writable Space and column. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
+        "Create one task in an explicitly selected writable Space. Without columnId it goes to the Space's first open column, the first one in board order that is not marked done; name a column only when the user asks for one. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
       input: TaskCreateInputSchema,
       data: TaskDataSchema,
       destructive: false,

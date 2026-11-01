@@ -1,6 +1,16 @@
 ---
 name: cloud-spaces
 description: "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, assignees, blockers, comments, reactions, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue."
+load-tools:
+  - spaces.item.search
+  - spaces.space.browse
+  - spaces.task.list
+  - spaces.task.focus
+  - spaces.event.agenda
+  - spaces.item.read
+  - spaces.task.create
+  - spaces.task.update
+  - spaces.task.set-completed
 ---
 
 # Work with Cloud Spaces
@@ -11,7 +21,7 @@ Follow the user's request and loaded Skills. Load only needed capabilities; reus
 
 - For text lookup across Spaces, use `spaces.item.search`. For overdue, assigned or inactive tasks use `spaces.task.focus`; filter at the server instead of enumerating every Space.
 - For a date-bounded calendar use `spaces.event.agenda`. Follow every cursor, including after an empty page: pagination groups series with their overrides. Collect all pages and sort by startsAt for a chronological agenda. Use returned occurrences; do not expand recurrence rules yourself or equate a series anchor with the next occurrence.
-- Select a writable Space through `spaces.space.browse`. A known Space can be listed directly with `spaces.task.list` or `spaces.event.list`. Read `spaces.space.read` for a requested column, tag IDs or configuration.
+- Select a writable Space through `spaces.space.browse`. A known Space can be listed directly with `spaces.task.list` or `spaces.event.list`. Read `spaces.space.read` for explicit column/tag IDs or configuration; task creation needs no column lookup.
 - List entries show at most three assignees and tags: when `assigneeCount` is larger than the number of `assignees`, state the total (for example "3 of 11") or read the item before naming everyone. `relationsTruncated` signals that a relation preview is partial.
 - Use `YYYY-MM-DD` deadlines without a named time. Use each entry's `overdue` to call a task overdue; a completed task is never overdue, so never infer it from `deadline` alone.
 - Read a selected `spaces.item.read` before changing its content or deleting it. Use a task for work and an event only with explicit valid start and end. Select assignees from `spaces.space.assignee.list`, never inferred names or invented IDs. It lists people and service accounts (`kind`); an agent's claim assigns that agent.
@@ -19,7 +29,7 @@ Follow the user's request and loaded Skills. Load only needed capabilities; reus
 ## Make focused changes
 
 - Resource-bound Space Actions take the flat `space` target; item, template, column, tag, and blocker IDs must belong to it.
-- Create tasks with `spaces.task.create`; omit `columnId` for the first open column. Events use `spaces.event.create`. Keep titles actionable and descriptions focused, with real line breaks, never the two characters `\n`.
+- Create with `spaces.task.create` or `spaces.event.create`; events need a column, tasks default to the first open column. Put actionable titles and durable context in the description; use real line breaks, never the two characters `\n`.
 - Change task or event fields with `spaces.task.update` or `spaces.event.update`; use `spaces.task.set-completed` for completion or reopening.
 - Respect active blockers before completing a task. Use `spaces.task.blocker.list` when details matter and `spaces.task.blocks.list` for the opposite direction. Dependencies must be real prerequisites between tasks in the same Space.
 - Use `spaces.task.checklist.list`, `spaces.task.checklist.create`, `spaces.task.checklist.update` and `spaces.task.checklist.delete` for simple subtasks: labels and completion, without separate assignees.

@@ -1,6 +1,8 @@
 import { lazySync, sql } from "@k2b/cloud";
 import { isAppSessionActor } from "@k2b/cloud/server";
 import { audit, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
+import { MandatePolicyV1Schema } from "@k2b/cloud/services/mandates";
+import { parsePgJsonValue } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
@@ -64,6 +66,7 @@ export type IncomingAutomation = {
   workflowVersionId: string;
   name: string;
   enabled: boolean;
+  authorizationState?: "ready" | "needs_attention";
   scope: MailAutomationScope;
   steps: MailAutomationStep[];
   latestBackfillOperationId: string | null;
@@ -93,6 +96,7 @@ type IncomingAutomationRow = {
   created_at: Date | string;
   updated_at: Date | string;
   mandate_id: string | null;
+  authorization_state: "ready" | "needs_attention";
 };
 
 type AutomationActor = { kind: "user" | "service_account"; id: string };
@@ -121,7 +125,7 @@ const incomingAutomationColumns = () => sql`
   automation.revision,
   automation.created_at,
   automation.updated_at
-  , automation.mandate_id
+  , automation.mandate_id, automation.authorization_state
 `;
 
 const mandateAuthority = (context: MailRequestContext) => {
@@ -173,6 +177,31 @@ const revokeAutomationMandate = async (mandateId: string, reason: string, db: Sq
   const current = await mandates.get(mandateId, { db });
   if (!current) return ok(null);
   return mandates.revoke({ mandateId, expectedRevision: current.revision, authority: mandateWorkloadAuthority, reason }, { db });
+};
+
+/** The normal mandate service cannot parse an unreadable policy; retain that payload while retiring its binding. */
+const revokeUnreadableAutomationMandate = async (
+  context: MailRequestContext,
+  automationId: string,
+  mandateId: string,
+  db: SqlClient,
+): Promise<void> => {
+  const rows = await db`UPDATE auth.mandates SET state = 'revoked', revision = revision + 1, updated_at = now(),
+    revoked_at = now(), revoked_by_app_id = 'mail', revoke_reason = 'Unreadable incoming automation authorization retired'
+    WHERE id = ${mandateId}::uuid AND owner_app_id = 'mail' AND workload_type = 'incoming.automation'
+      AND workload_id = ${automationId} AND state <> 'revoked' RETURNING id`;
+  if (!rows.length) return;
+  await audit.record(
+    {
+      action: "mandate.revoke",
+      outcome: "allowed",
+      actor: auditActorFromRequest(context),
+      target: { type: "mandate", id: mandateId },
+      requestId: context.requestId,
+      metadata: { ownerAppId: "mail", workloadId: automationId, reason: "Unreadable incoming automation authorization retired" },
+    },
+    db,
+  );
 };
 
 const syncAutomationMandateEnabled = async (
@@ -249,6 +278,7 @@ const mapIncomingAutomation = (row: IncomingAutomationRow): StoredIncomingAutoma
       workflowVersionId: row.workflow_version_id,
       name: row.name,
       enabled: row.enabled,
+      authorizationState: row.authorization_state,
       scope: parseJson(row.scope),
       steps: parseJson(row.steps),
       latestBackfillOperationId: row.latest_backfill_operation_id,
@@ -1257,7 +1287,7 @@ export const createIncomingAutomation = async (params: {
         INSERT INTO mail.incoming_automations AS automation (
           id, short_id, mailbox_id, workflow_id, name, normalized_name, scope,
           steps, enabled, created_by_actor_kind, created_by_actor_id,
-          mandate_id
+          mandate_id, capability_target_version
         ) VALUES (
           ${automationId}::uuid,
           ${shortId},
@@ -1270,7 +1300,7 @@ export const createIncomingAutomation = async (params: {
           ${parsed.data.enabled},
           ${actor.kind},
           ${actor.id}::uuid,
-          ${mandate?.id ?? null}::uuid
+          ${mandate?.id ?? null}::uuid, 1
         )
         RETURNING ${incomingAutomationColumns()}
       `,
@@ -1345,7 +1375,8 @@ export const updateIncomingAutomation = async (params: {
       );
       const definitionChanged = sha256Json(current.scope) !== sha256Json(scope.data) || sha256Json(current.steps) !== sha256Json(steps);
       const enabledChanged = current.enabled !== parsed.data.enabled;
-      const changed = current.name !== name || definitionChanged || enabledChanged;
+      const reconfirm = current.authorizationState === "needs_attention";
+      const changed = current.name !== name || definitionChanged || enabledChanged || reconfirm;
       if (!changed) {
         return { automation: current, activityId: null as string | null };
       }
@@ -1353,16 +1384,54 @@ export const updateIncomingAutomation = async (params: {
         unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
       }
       const needsSpaces = incomingAutomationHasSpaces(steps);
+      // Read recovery identity independently of policy parsing: an unreadable old policy must still have a way out.
+      const [recovery] =
+        reconfirm && current.mandateId
+          ? await tx<
+              {
+                owner_app_id: string;
+                workload_type: string;
+                workload_id: string;
+                subject_kind: string;
+                subject_user_id: string | null;
+                state: string;
+                policy: unknown;
+              }[]
+            >`SELECT owner_app_id, workload_type, workload_id, subject_kind, subject_user_id, state, policy
+        FROM auth.mandates WHERE id = ${current.mandateId}::uuid FOR UPDATE`
+          : [];
+      const ownedRecovery =
+        recovery?.owner_app_id === "mail" && recovery.workload_type === "incoming.automation" && recovery.workload_id === current.id;
+      const unreadableRecovery = recovery !== undefined && !MandatePolicyV1Schema.safeParse(parsePgJsonValue(recovery.policy)).success;
       let mandateId = current.mandateId;
       if (needsSpaces && current.mandateId) {
-        if (definitionChanged) unwrap(await updateAutomationMandate(params.context, current.mandateId, steps, tx));
+        if (reconfirm && (!ownedRecovery || recovery?.state === "revoked" || unreadableRecovery)) {
+          if (
+            ownedRecovery &&
+            (recovery.subject_kind !== "user" || recovery.subject_user_id !== mandateAuthority(params.context)?.userId)
+          ) {
+            unwrap(fail(err.forbidden("Confirming Spaces access requires the user who originally authorized it")));
+          }
+          if (ownedRecovery && unreadableRecovery) {
+            await revokeUnreadableAutomationMandate(params.context, current.id, current.mandateId, tx);
+          }
+          mandateId = unwrap(await createAutomationMandate(params.context, params.automationId, steps, tx)).id;
+        } else if (definitionChanged || reconfirm) {
+          unwrap(await updateAutomationMandate(params.context, current.mandateId, steps, tx));
+        }
       } else if (needsSpaces) {
         mandateId = unwrap(await createAutomationMandate(params.context, params.automationId, steps, tx)).id;
       } else if (!needsSpaces) {
-        if (current.mandateId) unwrap(await revokeAutomationMandate(current.mandateId, "Spaces actions removed", tx));
+        if (current.mandateId && !(reconfirm && !ownedRecovery)) {
+          if (reconfirm && unreadableRecovery) {
+            await revokeUnreadableAutomationMandate(params.context, current.id, current.mandateId, tx);
+          } else {
+            unwrap(await revokeAutomationMandate(current.mandateId, "Spaces actions removed", tx));
+          }
+        }
         mandateId = null;
       }
-      if (mandateId && (enabledChanged || mandateId !== current.mandateId)) {
+      if (mandateId && (enabledChanged || mandateId !== current.mandateId || reconfirm)) {
         unwrap(await syncAutomationMandateEnabled(params.context, mandateId, parsed.data.enabled, tx));
       }
       if (definitionChanged || enabledChanged) unwrap(await rejectActiveBackfillMutation(current));
@@ -1400,6 +1469,7 @@ export const updateIncomingAutomation = async (params: {
           normalized_name = lower(regexp_replace(${name}, '\\s+', ' ', 'g')),
           scope = ${scope.data}::jsonb,
           steps = ${steps}::jsonb,
+          authorization_state = 'ready',
           enabled = ${parsed.data.enabled},
           latest_backfill_operation_id = CASE WHEN ${definitionChanged} THEN NULL ELSE latest_backfill_operation_id END,
           mandate_id = ${needsSpaces ? mandateId : null}::uuid,
@@ -1450,6 +1520,9 @@ export const setIncomingAutomationEnabled = async (params: {
         return { automation: current, activityId: null as string | null };
       }
       unwrap(await rejectActiveBackfillMutation(current));
+      if (parsed.data.enabled && current.authorizationState === "needs_attention") {
+        unwrap(fail(err.badInput("Open Edit automation, choose its Spaces destinations again, and save to confirm before enabling.")));
+      }
       if (parsed.data.enabled) {
         const validation = await validateMailWorkflowSource({
           context: params.context,
@@ -1530,7 +1603,20 @@ export const deleteIncomingAutomation = async (params: {
         unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
       }
       if (current.mandateId) {
-        unwrap(await revokeAutomationMandate(current.mandateId, "Incoming automation deleted", tx));
+        if (current.authorizationState === "needs_attention") {
+          const [owned] = await tx<{ policy: unknown }[]>`SELECT policy FROM auth.mandates
+            WHERE id = ${current.mandateId}::uuid AND owner_app_id = 'mail'
+              AND workload_type = 'incoming.automation' AND workload_id = ${current.id} FOR UPDATE`;
+          if (owned) {
+            if (MandatePolicyV1Schema.safeParse(parsePgJsonValue(owned.policy)).success) {
+              unwrap(await revokeAutomationMandate(current.mandateId, "Incoming automation deleted", tx));
+            } else {
+              await revokeUnreadableAutomationMandate(params.context, current.id, current.mandateId, tx);
+            }
+          }
+        } else {
+          unwrap(await revokeAutomationMandate(current.mandateId, "Incoming automation deleted", tx));
+        }
       }
       unwrap(await rejectActiveBackfillMutation(current));
       unwrap(

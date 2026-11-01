@@ -283,6 +283,17 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
         },
+        "mailbox.readable": {
+          title: "Leser für Postfach prüfen",
+          description: "Prüfen, welche aktuellen Konten dieses Postfach lesen dürfen; ohne Grenzen einzelner Anmeldedaten.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
         "mailbox.read": {
           title: "Postfach lesen",
           description:

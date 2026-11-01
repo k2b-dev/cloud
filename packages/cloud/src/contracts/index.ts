@@ -10,6 +10,7 @@ export * from "./calendar-view";
 export * from "./capabilities";
 export * from "./capability-compatibility";
 export * from "./code-access";
+export * from "./code-secrets";
 export * from "./code-version";
 export * from "./commands";
 export * from "./contact-directory";

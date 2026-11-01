@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mountAiSkillInstructionLinks } from "@k2b/cloud/ai";
+import { aiSkillLoadTools, mountAiSkillInstructionLinks } from "@k2b/cloud/ai";
 import { SKILLS } from "./skills";
 
 test("ships its Skills with every reference linked from the instructions", () => {
@@ -101,6 +101,17 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   for (const match of [assistant?.instructions, scheduled?.instructions].join("\n").matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
     expect(declaredCoreCapabilities.has(match[1]!)).toBeTrue();
   }
+});
+
+test("Skills load only Core capabilities that exist", async () => {
+  const coreSource = await Bun.file(new URL("../../core/src/capabilities.ts", import.meta.url)).text();
+  const declared = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `core.${match[1]!}`));
+  const loaded = Object.fromEntries(SKILLS.map((skill) => [skill.name, aiSkillLoadTools(skill.extraFrontmatter)]));
+  // Code tools depend on the job, so the code Skills name them in their instructions instead.
+  expect(loaded["assistant-code-mode"]).toEqual([]);
+  expect(loaded["assistant-data-analysis"]).toEqual([]);
+  for (const name of ["cloud-assistant", "scheduled-tasks", "skill-creator"]) expect(loaded[name]!.length).toBeGreaterThan(0);
+  for (const name of Object.values(loaded).flat()) expect(declared).toContain(name);
 });
 
 test("code mode mounts its links when loaded and retains its Cloud type reference", () => {

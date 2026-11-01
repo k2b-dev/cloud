@@ -1,4 +1,5 @@
 import { logger } from "@k2b/cloud/services";
+import type { CodeAttention } from "@k2b/cloud/ssr/code-page";
 import { fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import type { AutomationLogItem } from "../contracts";
@@ -151,6 +152,8 @@ const workspaceMessage = (message: MessageDetail): MailWorkspaceMessage => {
 };
 
 export type MailboxPageData = {
+  /** Core's answer about the mailbox's Code, added by the SSR page and the workspace route; null when it did not answer in time. */
+  codeAttention?: CodeAttention | null;
   viewPreference: MailViewPreference;
   doneTodayCounts: MailDoneTodayCounts;
   receivingAddress: string | null;
@@ -812,6 +815,38 @@ export const loadMailboxListView = async (params: MailboxListParams): Promise<Re
     permission: permission.data.permission,
     access: { scope: permission.data.scope, permission: permission.data.permission },
     savedViews: savedViewResult.ok ? savedViewResult.data : [],
+  });
+};
+
+/** The mailbox's own sidebar beside its Code page: folders, counts, and the person's access, without any list. */
+export type MailboxCodePageData = {
+  mailbox: Mailbox;
+  access: MailboxAccess;
+  folders: MailFolderView[];
+  viewCounts: ConversationViewCounts;
+  scheduledCount: number;
+  receivingAddress: string | null;
+};
+
+export const loadMailboxCodePageData = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailboxCodePageData>> => {
+  const access = await requireMailboxAccess(context, mailboxId, "read");
+  if (!access.ok) return fail(access.error);
+  const [mailbox, folders, viewCounts, scheduledCount, receivingAddress] = await Promise.all([
+    mailboxes.getMailbox(context, mailboxId),
+    messages.listFolders(context, mailboxId),
+    messages.getConversationViewCounts({ context, mailboxId }),
+    scheduledSends.countScheduledSends({ context, mailboxId }),
+    mailboxes.getMailboxReceivingAddress(mailboxId),
+  ]);
+  if (!mailbox.ok) return fail(mailbox.error);
+  return ok({
+    mailbox: mailbox.data,
+    access: access.data,
+    // Counts are a convenience beside the Code page; a failed count shows none instead of failing the page.
+    folders: folders.ok ? folders.data : [],
+    viewCounts: viewCounts.ok ? viewCounts.data : EMPTY_VIEW_COUNTS,
+    scheduledCount: scheduledCount.ok ? scheduledCount.data : 0,
+    receivingAddress,
   });
 };
 

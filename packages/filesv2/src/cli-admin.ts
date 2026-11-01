@@ -184,13 +184,15 @@ export function adminCommands(locale?: string) {
         de: "Ohne token oder bei leerem token bleibt der gespeicherte Token erhalten. Wenn unreadable true ist, ist ein nicht leerer Token zum Ersetzen der Konfiguration erforderlich. Verwende --input-file oder --stdin, damit Secrets nicht in Argumenten stehen.",
       }),
       flags: {
+        yes,
         input: flag.input({
           required: true,
           description: t({ en: "Configuration JSON (file or stdin only)", de: "Konfigurations-JSON (nur Datei oder stdin)" }),
         }),
       },
-      examples: ["cld filesv2 admin configuration set --input-file ./filesv2.json"],
+      examples: ["cld filesv2 admin configuration set --input-file ./filesv2.json --yes"],
       async run({ ctx, flags }) {
+        requireYes(flags.yes);
         if (flags.input.source === "value")
           throw new Error(
             t({ en: "Use --input-file or --stdin for configuration.", de: "Verwende --input-file oder --stdin für die Konfiguration." }),

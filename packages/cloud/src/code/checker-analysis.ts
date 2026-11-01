@@ -9,6 +9,7 @@ export type CodeAnalysis = {
   permissions: CodePermission[];
   entrypoints: CodeVersionManifest["entrypoints"];
   ai: boolean;
+  internet?: boolean;
   modules: string[];
 };
 const root = "/code/";
@@ -220,8 +221,13 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       } else if (signatureInSdk(node)) {
         const method = path.at(-1);
         const appType = checker.getTypeAtLocation(base);
+        const declarationOwner = checker.getResolvedSignature(node)?.declaration?.parent.parent;
+        // Follow the SDK signature, including destructured HTTP methods.
+        const http = declarationOwner && ts.isTypeAliasDeclaration(declarationOwner) && declarationOwner.name.text === "CodeHttp";
         const app = appType.aliasSymbol?.name === "CodeApp" || appType.getSymbol()?.name === "CodeApp";
-        if (app && method) {
+        if (http) {
+          if (collecting) result.internet = true;
+        } else if (app && method) {
           const phase = codeSdkPhaseDiagnostic(method);
           if (phase) report(node, phase.code, phase.message);
           if (method === "on") {

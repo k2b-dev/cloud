@@ -322,6 +322,7 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
           staleComparison: false,
           files: [{ path: "code.ts", lines: [{ kind: "add", text: "new" }] }],
           permissions: [],
+          secrets: [],
           policyRows: [],
         },
       },
@@ -355,7 +356,8 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
   for (const record of records) {
     const run = context(record.args, record.flags, output, () => Response.json(record.data));
     run.ctx.options.ci = false;
-    expect(await code.run(run.ctx)).not.toBe(1);
+    const exit = await code.run(run.ctx);
+    expect(exit, JSON.stringify({ command: record.args, errors: run.errors, output: run.printed })).not.toBe(1);
     expect(run.errors).toEqual([]);
     if (output === "text") expect(run.printed.join("\n")).toBe(record.text);
     else expect(run.printed).toEqual([record.data]);
@@ -433,7 +435,7 @@ test("nested source directories named test or build survive pull and push collec
 test.each(["diff", "activate"])("%s explains a missing base without sending an invalid version", async (command) => {
   const { root } = await project();
   const directory = await writeCodeProject(join(root, "unsaved"), { ...config, baseVersionId: null }, { "code.ts": source });
-  const run = context([command, directory], { yes: true, "activation-id": uuid });
+  const run = context([command, directory], command === "activate" ? { yes: true, "activation-id": uuid } : {});
   expect(await code.run(run.ctx)).toBe(1);
   expect(run.requests).toEqual([]);
   expect(run.printed).toEqual([
