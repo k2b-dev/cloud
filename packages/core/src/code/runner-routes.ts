@@ -62,14 +62,18 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
           }
         }
         if (body && typeof body === "object" && "jobId" in body) {
-          const proof = RunnerJobProofSchema.safeParse(body);
+          const proof = RunnerJobProofSchema.safeParse({
+            jobId: body.jobId,
+            generation: "generation" in body ? body.generation : null,
+            leaseKey: "leaseKey" in body ? body.leaseKey : null,
+          });
           if (path === RUNNER_PATHS.complete) {
             const complete = RunnerJobCompleteSchema.safeParse(body);
-            if (!complete.success) return c.json({ code: "code_invalid_call" }, 400);
-            await completeCodeJob(complete.data, complete.data.result);
+            if (!proof.success) return c.json({ code: "code_invalid_call" }, 400);
+            await completeCodeJob(proof.data, complete.success ? complete.data.result : { kind: "error", code: "code_job_failed" });
             return c.body(null, 204);
           }
-          if (!proof.success) return c.json({ code: "code_invalid_call" }, 400);
+          if (!proof.success || !RunnerJobProofSchema.safeParse(body).success) return c.json({ code: "code_invalid_call" }, 400);
           if (path === RUNNER_PATHS.heartbeat) return c.json(await heartbeatCodeJob(proof.data));
           if (path === RUNNER_PATHS.jobInput)
             return c.body(await readCodeJobInput(proof.data), 200, { "Content-Type": "application/json" });

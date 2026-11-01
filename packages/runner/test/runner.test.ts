@@ -2,6 +2,7 @@ import { expect, jest, test } from "bun:test";
 import type { RunnerBridge, RunnerCompleteRequest, RunnerLease, RunnerLeaseProof } from "@k2b/cloud/code/runner";
 import { BundleCache, bundleHash } from "../src/cache";
 import type { RunnerEngine } from "../src/engine";
+import { reserveJobIdentities } from "../src/identities";
 import { Runner } from "../src/runner";
 import { config, lease, source } from "./fixtures";
 
@@ -311,5 +312,16 @@ test("C13b jobs and runs consume one shared advertised slot budget", async () =>
     finish.resolve();
     await running;
     jest.useRealTimers();
+  }
+});
+
+test("C13b successfully reaped job ranges are reused without consuming production identities", () => {
+  const first = reserveJobIdentities();
+  const expected = first.first;
+  first.release();
+  for (let index = 0; index < 40000; index++) {
+    const next = reserveJobIdentities();
+    expect(next.first).toBe(expected);
+    next.release();
   }
 });

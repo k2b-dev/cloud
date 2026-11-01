@@ -36,6 +36,23 @@ export const CODE_SETTINGS = {
       },
     },
   },
+  "core.code.runner_job_slots": {
+    kind: "number",
+    integer: true,
+    min: 1,
+    max: 64,
+    default: 1,
+    label: "Authoring slots per runner",
+    description: "Maximum simultaneous authoring roles per replica, within its shared slots and host memory/process allocation.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Prüfplätze je Runner",
+          description: "Maximale gleichzeitige Prüfrollen innerhalb der geteilten Plätze und der Speicher- und Prozessbudgets des Hosts.",
+        },
+      },
+    },
+  },
   "core.code.test_cases": {
     kind: "number",
     integer: true,

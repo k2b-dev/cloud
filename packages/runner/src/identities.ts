@@ -6,3 +6,20 @@ export function allocateRunnerIdentities(count = 1) {
   nextUid += count;
   return first;
 }
+
+const reapedJobRanges: number[] = [];
+/** Recycle only after the namespace init and launcher are reaped; no process or private tmpfs survives.
+ * Production identities are never recycled and never overlap an allocated job range. */
+export function reserveJobIdentities() {
+  const first = reapedJobRanges.pop() ?? allocateRunnerIdentities(65536);
+  let released = false;
+  return {
+    first,
+    release: () => {
+      if (!released) {
+        released = true;
+        reapedJobRanges.push(first);
+      }
+    },
+  };
+}

@@ -311,16 +311,44 @@ mount and network namespaces, an empty environment, private `/proc` and
 bounded `/tmp`. The job's separate lease key stays in the supervisor; no
 bridge token reaches the job or is issued for it.
 
-Use the checked-in `packages/runner/seccomp.json` profile from both Compose
-templates. It permits the launcher's specific namespace creation and mount
-setup without host `SYS_ADMIN`; workerd's own mandatory filter still applies.
-The templates disable Docker's outer AppArmor profile for this service so
-namespace-local mounts can succeed. Hosts must permit unprivileged user
-namespaces and namespace-local proc/tmpfs mounts; an AppArmor policy that
-restricts user namespaces needs an operator-managed exception for this image.
-The launcher fails closed if any namespace or mount cannot be established.
-CI's native image tests use this same envelope and exercise check, fake test,
-simulation and namespace placement.
+Before starting runners, install the supplied AppArmor policy once on each
+Linux Docker host:
+
+```sh
+sudo apparmor_parser -r packages/runner/apparmor.profile
+```
+
+Both Compose templates require that named policy and the checked-in seccomp
+profile. They remove Docker's locked system-path submounts so a job can mount
+its private procfs; the named policy preserves read-only kernel controls and
+blocks access to sensitive proc/sysfs paths. It permits only the proc/tmpfs
+mount targets and private-mount propagation needed by job setup. No host
+`SYS_ADMIN` is granted. After setup, both roles inherit a mandatory seccomp
+filter that refuses further namespace creation and mount operations. Workerd
+retains its own independent mandatory filter.
+
+Hosts need AppArmor with user-namespace mediation, user namespaces and
+namespace-local proc/tmpfs mounts. Docker user-namespace remapping needs an
+outer UID/GID range large enough for the supervisor's distinct production
+identities and 65,536-ID job ranges; the usual 65,536-ID remap is insufficient.
+Successful jobs reuse their range only after the namespace is empty. A helper
+that dies abnormally does not release its range. Exhausting identities stops
+acquisition and exits the supervisor so its container can restart.
+
+The runner probes isolation before polling. A missing profile, unsupported
+namespace/mount setup or failed mandatory filter logs
+`runner_job_isolation_unavailable` and refuses startup. CI uses the same
+profile and container envelope. The local profile syntax check cannot replace
+this image verification.
+
+Administration defaults to one simultaneous authoring role per runner,
+within its four shared slots. Increase the authoring-slot setting only with
+a corresponding container memory/process allocation. Each role has a
+32-thread/process limit per Linux identity; compiler children use two Go
+execution threads. Checker memory also respects the runner process-memory
+setting. Retain headroom for the supervisor, cache and production workerd
+groups when budgeting a replica. These controls bound authoring load;
+container-wide exhaustion can still interrupt active work.
 
 `RunnerFetchResponse.jobs` contains `RunnerJobLease` values. The signed
 `RUNNER_PATHS.jobInput` route returns bounded input; the existing heartbeat

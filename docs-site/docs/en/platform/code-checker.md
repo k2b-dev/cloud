@@ -152,6 +152,7 @@ The exact bundle and static manifest evidence must match; a forged or stale
 client result is refused. This check grants no execution permission.
 
 `CodeJobError.code` is `code_job_busy`, `code_job_request_limit`,
-`code_job_time_limit`, `code_job_cancelled`, or `code_job_failed`. Busy means
+`code_job_output_limit`, `code_job_time_limit`, `code_job_cancelled`, or
+`code_job_failed`. Busy means
 retry later. Administration > Code bounds pending jobs and queue allowance;
 no caller waits indefinitely. Forward the request's cancellation signal.

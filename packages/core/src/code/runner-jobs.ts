@@ -87,10 +87,11 @@ export async function heartbeatCodeJob(proof: RunnerJobProof) {
 export async function completeCodeJob(proof: RunnerJobProof, result: RunnerJobResult) {
   return sql.begin(async (db) => {
     const row = await fence(proof, db);
-    const parsed = RunnerJobResultSchema.parse(result);
-    if (Buffer.byteLength(JSON.stringify(parsed)) > row.output_bytes) throw new CodeJobError("code_job_request_limit");
+    const validation = RunnerJobResultSchema.safeParse(result);
+    let parsed: RunnerJobResult = validation.success ? validation.data : { kind: "error", code: "code_job_failed" };
+    if (Buffer.byteLength(JSON.stringify(parsed)) > row.output_bytes) parsed = { kind: "error", code: "code_job_output_limit" };
     if (parsed.kind !== "error" && (parsed.kind !== row.kind || (parsed.kind !== "check" && parsed.result.mode !== row.kind)))
-      throw new CodeJobError("code_job_failed");
+      parsed = { kind: "error", code: "code_job_failed" };
     await db`UPDATE code.jobs SET state=${parsed.kind === "error" ? "failed" : "succeeded"},result=${JSON.stringify(parsed)}::jsonb,input=NULL,lease_expires_at=NULL,lease_key_hash=NULL WHERE id=${proof.jobId}::uuid`;
   });
 }
@@ -98,7 +99,7 @@ export async function completeCodeJob(proof: RunnerJobProof, result: RunnerJobRe
 export async function reconcileCodeJobs() {
   const attempts = await codeSettings.get("core.code.automatic_attempts");
   await sql`UPDATE code.jobs SET state=CASE WHEN deadline_at<=clock_timestamp() OR generation>=${attempts} THEN 'failed' ELSE 'queued' END,
-    result=CASE WHEN deadline_at<=clock_timestamp() OR generation>=${attempts} THEN '{"kind":"error","code":"code_job_time_limit"}'::jsonb ELSE NULL END,
+    result=CASE WHEN deadline_at<=clock_timestamp() THEN '{"kind":"error","code":"code_job_time_limit"}'::jsonb WHEN generation>=${attempts} THEN '{"kind":"error","code":"code_job_failed"}'::jsonb ELSE NULL END,
     lease_expires_at=NULL,lease_key_hash=NULL
     WHERE id IN(SELECT id FROM code.jobs WHERE (state='running' AND lease_expires_at<=clock_timestamp()) OR (state='queued' AND deadline_at<=clock_timestamp()) ORDER BY deadline_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)`;
   await sql`INSERT INTO code.job_outbox(job_id) SELECT id FROM code.jobs WHERE state='queued' ORDER BY created_at,id LIMIT 100 ON CONFLICT DO NOTHING`;
@@ -131,8 +132,7 @@ async function submitJob(input: CodeRunnerJobInput, context: CodeContext): Promi
       const [row] = await sql<{ state: string; result: unknown }[]>`SELECT state,result FROM code.jobs WHERE id=${job.id}::uuid`;
       if (row?.result) {
         const result = RunnerJobResultSchema.parse(row.result);
-        if (result.kind === "error")
-          throw new CodeJobError(result.code === "code_job_time_limit" ? "code_job_time_limit" : "code_job_failed");
+        if (result.kind === "error") throw new CodeJobError(result.code);
         return result;
       }
       if (!row || row.state === "cancelled") throw new CodeJobError("code_job_cancelled");

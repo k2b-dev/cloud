@@ -1,8 +1,9 @@
 import { test as bunTest, expect } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { CODE_CHECK_LIMITS, CodeCheckResultSchema, type CodeTestLimits } from "@k2b/cloud/code";
 import type { RunnerJobLease } from "@k2b/cloud/code/runner";
 import { allocateRunnerIdentities } from "../src/identities";
-import { executeRunnerJob } from "../src/jobs";
+import { executeRunnerJob, probeJobIsolation } from "../src/jobs";
 import { config } from "./fixtures";
 import { ACCEPTANCE_SOURCE, now, sdk, target } from "./test-kit.fixtures";
 
@@ -96,5 +97,58 @@ test("C13b job init has private proc/tmp and inherits no credentials or network"
     clearTimeout(timer);
     if (child.exitCode === null) child.kill("SIGKILL");
     await child.exited;
+  }
+}, 10000);
+
+test("C13b production startup probe confirms namespace setup and irreversible mount/userns denial", async () => {
+  await probeJobIsolation();
+}, 10000);
+test("C13b killing the launcher terminates its namespace init", async () => {
+  const child = Bun.spawn(
+    [
+      "/app/job-isolate",
+      String(allocateRunnerIdentities(65536)),
+      String(1024 * 1024),
+      process.execPath,
+      "--no-env-file",
+      "/app/job-probe.js",
+      "--hold",
+    ],
+    { env: {}, stdout: "pipe", stderr: "ignore" },
+  );
+  const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+  const reader = child.stdout.getReader();
+  try {
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    const pid = Number((await readFile(`/proc/${child.pid}/task/${child.pid}/children`, "utf8")).trim().split(" ")[0]);
+    expect(pid).toBeGreaterThan(1);
+    child.kill("SIGKILL");
+    await child.exited;
+    const until = performance.now() + 2000;
+    let stopped = false;
+    while (performance.now() < until) {
+      try {
+        const status = await readFile(`/proc/${pid}/stat`, "utf8");
+        if (/\) Z /.test(status)) {
+          stopped = true;
+          break;
+        }
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+          stopped = true;
+          break;
+        }
+        throw error;
+      }
+      await Bun.sleep(10);
+    }
+    expect(stopped).toBe(true);
+  } finally {
+    clearTimeout(timer);
+    if (child.exitCode === null) child.kill("SIGKILL");
+    await child.exited;
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }, 10000);

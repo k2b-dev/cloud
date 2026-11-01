@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include "namespace-filter.h"
 
 /* A checker only parses and bundles data: no source module is executed.
  * Drop environment and network before starting either compiler or the trusted analysis/build worker. */
@@ -52,6 +53,7 @@ int main(int argc, char **argv) {
   };
   struct sock_fprog program = { .len = sizeof(rules) / sizeof(rules[0]), .filter = rules };
   if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program)) return 126;
+  if (constrain_namespaces()) return 126;
   char *empty_env[] = {NULL};
   execve(argv[1], argv + 1, empty_env);
   perror("checker_exec");

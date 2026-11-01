@@ -45,7 +45,13 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
   const run = async (command: string[]) => {
     if (signal?.aborted) throw new Error("code_check_cancelled");
     if (performance.now() >= deadline) throw new Error("code_check_time_limit");
-    const child = Bun.spawn([host.isolate, ...command], { cwd: directory, env: {}, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    const child = Bun.spawn([host.isolate, ...command], {
+      cwd: directory,
+      env: { GOMAXPROCS: "2" },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     let reason: string | undefined;
     let outputBytes = 0;
     const stop = (code: string) => {

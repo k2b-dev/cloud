@@ -19,7 +19,10 @@ export async function migrate(db: SQL = sql) {
       job_id UUID NOT NULL UNIQUE REFERENCES code.jobs(id) ON DELETE CASCADE,
       attempts INTEGER NOT NULL DEFAULT 0,next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),claimed_until TIMESTAMPTZ,last_error TEXT)`;
     await tx`CREATE OR REPLACE FUNCTION code.wake_job() RETURNS TRIGGER AS $$ BEGIN
-      IF NEW.state='queued' THEN INSERT INTO code.job_outbox(job_id) VALUES(NEW.id) ON CONFLICT DO NOTHING; END IF;
+      IF NEW.state='queued' THEN INSERT INTO code.job_outbox(job_id) VALUES(NEW.id) ON CONFLICT DO NOTHING;
+      ELSIF TG_OP='UPDATE' AND OLD.state='running' AND NEW.state<>'running' THEN
+        INSERT INTO code.job_outbox(job_id) SELECT id FROM code.jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1 ON CONFLICT DO NOTHING;
+      END IF;
       RETURN NEW; END $$ LANGUAGE plpgsql`;
     await tx`CREATE OR REPLACE TRIGGER wake_job AFTER INSERT OR UPDATE OF state ON code.jobs FOR EACH ROW EXECUTE FUNCTION code.wake_job()`;
   });

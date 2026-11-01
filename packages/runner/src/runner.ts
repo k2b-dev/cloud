@@ -37,6 +37,13 @@ export class Runner {
     readonly log = (code: string) => console.warn(code),
     readonly executeJob = executeRunnerJob,
   ) {}
+  #isolationFailure(error: unknown) {
+    if (error instanceof Error && error.message === "runner_isolation_uid_exhausted") {
+      this.log("runner_isolation_uid_exhausted");
+      process.exitCode = 1;
+      this.stop();
+    }
+  }
   stop() {
     this.#poll.abort();
   }
@@ -126,11 +133,29 @@ export class Runner {
       try {
         controller.signal.throwIfAborted();
         if (!this.bridge.jobInput || !this.bridge.jobHeartbeat || !this.bridge.jobComplete) throw new Error("runner_job_transport_missing");
-        const input = await this.bridge.jobInput(proof, controller.signal, lease.inputBytes);
+        const input = await (async () => {
+          while (!controller.signal.aborted) {
+            try {
+              return await this.bridge.jobInput!(proof, controller.signal, lease.inputBytes);
+            } catch (error) {
+              if (error instanceof RunnerLeaseLostError) {
+                controller.abort();
+                throw error;
+              }
+              if (!controller.signal.aborted) this.log("runner_job_input_unavailable");
+              await pause(this.#config.retryMs, controller.signal);
+            }
+          }
+          throw controller.signal.reason;
+        })();
         result = await this.executeJob(lease, input, this.#config, controller.signal);
-      } catch {
+      } catch (error) {
+        this.#isolationFailure(error);
         if (controller.signal.aborted) return;
-        result = { kind: "error", code: "code_job_failed" };
+        result = {
+          kind: "error",
+          code: error instanceof Error && error.message === "runner_response_too_large" ? "code_job_output_limit" : "code_job_failed",
+        };
       }
       while (!controller.signal.aborted) {
         try {
@@ -232,6 +257,7 @@ export class Runner {
       const result = await this.engine.run(lease, controller.signal);
       if (!controller.signal.aborted) outcome = result;
     } catch (error) {
+      this.#isolationFailure(error);
       if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) outcome = "lease_lost";
       /* A failed attempt is recorded without bundle exceptions or payloads. */
     } finally {

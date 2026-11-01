@@ -360,6 +360,42 @@ suiteFor(
       catalog.mockRestore();
     }
   });
+  test.each(["oversized", "wrong-kind"] as const)("C13b rejected %s result is terminal and wakes pending jobs", async (variant) => {
+    const cancel = new AbortController();
+    const pending = createRunnerCodeCheckHost({ ...context(), signal: cancel.signal }).check(checkRequest());
+    const settled = pending.catch((error) => error);
+    try {
+      await pendingJob();
+      const job = (await claimCodeWork(1, crypto.randomUUID(), await readCodeRunLimits())).jobs[0]!;
+      if (variant === "oversized") {
+        await sql`UPDATE code.jobs SET output_bytes=100 WHERE id=${job.jobId}::uuid`;
+        await completeCodeJob(job, {
+          kind: "check",
+          result: { ok: false, diagnostics: [{ code: "test", message: "x".repeat(100), file: "code.ts", line: 1, column: 1 }] },
+        });
+      } else
+        await completeCodeJob(job, {
+          kind: "simulate",
+          result: { version: 1, mode: "simulate", ok: true, error: null, diagnostics: [], cases: [] },
+        });
+      expect(await settled).toMatchObject({ code: variant === "oversized" ? "code_job_output_limit" : "code_job_failed" });
+      await expect(readCodeJobInput(job)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    } finally {
+      cancel.abort();
+      await settled;
+    }
+  });
+  test("C13b authoring role cap is enforced across polls for one runner", async () => {
+    const input = JSON.stringify({ kind: "check", request: checkRequest() });
+    for (let n = 0; n < 3; n++)
+      await sql`INSERT INTO code.jobs(kind,owner_id,input,input_bytes,output_bytes,deadline_at) VALUES('check',${owner}::uuid,${input},${Buffer.byteLength(input)},1000,clock_timestamp()+interval '1 minute')`;
+    const instance = crypto.randomUUID();
+    const first = await claimCodeWork(3, instance, await readCodeRunLimits());
+    expect(first.jobs).toHaveLength(1);
+    expect((await claimCodeWork(3, instance, await readCodeRunLimits())).jobs).toHaveLength(0);
+    await completeCodeJob(first.jobs[0]!, { kind: "check", result: { ok: false, diagnostics: [] } });
+    expect((await claimCodeWork(3, instance, await readCodeRunLimits())).jobs).toHaveLength(1);
+  });
   test("C13b killed checker requeues; the old generation cannot read or complete", async () => {
     const controller = new AbortController();
     const pending = createRunnerCodeCheckHost({ ...context(), signal: controller.signal }).check(checkRequest());

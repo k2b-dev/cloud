@@ -18,3 +18,5 @@ console.log(
     network,
   }),
 );
+
+if (Bun.argv.includes("--hold")) await Bun.sleep(60000);

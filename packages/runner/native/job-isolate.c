@@ -11,6 +11,9 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include "namespace-filter.h"
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -41,6 +44,9 @@ static int child(void *pointer) {
   struct __user_cap_data_struct caps[2]={{.effective=runtime,.permitted=runtime},{0}};
   REQUIRE(syscall(SYS_capset,&header,caps));
   REQUIRE(prctl(PR_SET_NO_NEW_PRIVS,1,0,0,0));
+  struct rlimit threads={32,32},core={0,0};
+  REQUIRE(setrlimit(RLIMIT_NPROC,&threads)); REQUIRE(setrlimit(RLIMIT_CORE,&core));
+  REQUIRE(constrain_namespaces());
   REQUIRE(syscall(SYS_close_range,3U,~0U,0));
   char *empty_env[]={NULL};
   execve(args->command[0],args->command,empty_env);
@@ -54,6 +60,14 @@ static void mapping(pid_t pid,const char *name,unsigned long first) {
   REQUIRE(close(file));
 }
 int main(int argc,char **argv) {
+  if(argc==2&&!strcmp(argv[1],"--verify-role")) {
+    extern char **environ;
+    struct stat tmp;
+    if(getpid()!=1 || getppid()!=0 || environ[0] || stat("/tmp",&tmp) || tmp.st_uid!=0)return 126;
+    errno=0;if(syscall(SYS_unshare,CLONE_NEWUSER)!=-1 || errno!=EPERM)return 126;
+    errno=0;if(mount(NULL,"/",NULL,MS_PRIVATE,NULL)!=-1 || errno!=EPERM)return 126;
+    return 0;
+  }
   if(argc==2&&!strcmp(argv[1],"--help")){puts("Usage: job-isolate FIRST_UID TMP_BYTES EXECUTABLE [ARGS...] (supervisor only)");return 0;}
   if(argc<4||geteuid()!=0)return 126;
   char *end;unsigned long first=strtoul(argv[1],&end,10);if(*end||first<20000||first>0x7fffffffUL-65536)return 126;

@@ -60,7 +60,7 @@ export const authenticateSignedAppRequest = async (
     signal.throwIfAborted();
     const copy = c.req.raw.clone();
     const reader = copy.body?.getReader();
-    const bytes = new Uint8Array(maxBodyBytes);
+    let bytes = new Uint8Array(Math.min(4096, maxBodyBytes));
     let total = 0;
     if (reader) {
       const cancel = () => {
@@ -74,9 +74,14 @@ export const authenticateSignedAppRequest = async (
         while (true) {
           const chunk = await reader.read();
           if (chunk.done) break;
-          if (total + chunk.value.byteLength > bytes.byteLength) {
+          if (total + chunk.value.byteLength > maxBodyBytes) {
             cancel();
             return tooLarge();
+          }
+          if (total + chunk.value.byteLength > bytes.byteLength) {
+            const grown = new Uint8Array(Math.min(maxBodyBytes, Math.max(total + chunk.value.byteLength, bytes.byteLength * 2)));
+            grown.set(bytes);
+            bytes = grown;
           }
           bytes.set(chunk.value, total);
           total += chunk.value.byteLength;
