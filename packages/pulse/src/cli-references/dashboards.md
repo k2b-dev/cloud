@@ -17,8 +17,8 @@ Create `traffic.json`:
         "id": "visits",
         "title": "Page views",
         "kind": "number",
-        "sql": "SELECT count() AS visits FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to",
-        "columns": ["visits"],
+        "sql": "SELECT count() AS value FROM events WHERE kind = 'page_view' AND ts >= :from AND ts < :to",
+        "columns": ["value"],
         "width": "third"
       }
     ]
@@ -30,8 +30,14 @@ Create `traffic.json`:
 cld pulse dashboards save --base <base-id> --file traffic.json --idempotency-key website-v1 --json
 cld pulse dashboards list --base <base-id> --json
 cld pulse dashboards get <dashboard-id> --base <base-id> --json
+cld pulse dashboards panels <dashboard-id> --base <base-id>
 cld pulse dashboards panel <dashboard-id> visits --base <base-id> --range 7d --json
 ```
+
+`packages/pulse/examples/website-dashboard.json` is a complete website
+dashboard with totals, a time series, a country map, and top pages. Add a panel
+by reading the dashboard with `get`, adding it to `definition.panels`, and
+saving the whole definition.
 
 To update, add `expectedRevision` from `get` to the JSON and pass
 `--dashboard <dashboard-id>`. Reuse an idempotency key only for retries of the
@@ -75,7 +81,7 @@ only.
 
 ```sh
 cld pulse dashboards publish <dashboard-id> --base <base-id> \
-  --expected-revision 1 --columns '{"visits":["visits"]}' --yes \
+  --expected-revision 1 --columns '{"visits":["value"]}' --yes \
   --idempotency-key website-public-v1 --json
 cld pulse dashboards unpublish <dashboard-id> --base <base-id> --expected-revision 2 --yes
 cld pulse dashboards delete <dashboard-id> --base <base-id> --expected-revision 3 --yes

@@ -136,6 +136,16 @@ describe("pulse CLI", () => {
     expect(lines[0]).toBe(`Ops123 (${baseId})`);
   });
 
+  test("lists the panels of a dashboard", async () => {
+    const panels = [{ id: "views", title: "Page views", kind: "number", section: "", width: "third" }];
+    const { ctx, calls, tables } = createContext(["dashboards", "panels", "Dash01"], { base: baseId }, [
+      jsonResponse({ id: "Dash01", name: "Website", definition: { panels } }),
+    ]);
+    await pulseCli.run(ctx);
+    expect(calls.map((call) => call.path)).toEqual([`/api/pulse/bases/${baseId}/dashboards/Dash01`]);
+    expect(JSON.stringify(tables)).toContain("Page views");
+  });
+
   test("rejects an ambiguous exact six-character base name after an ID miss", async () => {
     const matches = [
       { ...base, id: "Base02", name: "Ops123" },
