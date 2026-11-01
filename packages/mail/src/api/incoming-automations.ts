@@ -14,7 +14,7 @@ import {
 } from "../contracts";
 import { incomingAutomationIssues, summarizeIncomingAutomationIssues } from "../incoming-automation-issues";
 import { incomingAutomations, type MailRequestContext } from "../service";
-import { getCalendarSpace, listCalendarDestinations, searchSpaceItems } from "../service/app-integrations";
+import { getCalendarSpace, listCalendarDestinations, readSpaceItemTarget, searchSpaceItems } from "../service/app-integrations";
 import {
   internalMailboxId,
   internalParams,
@@ -79,6 +79,15 @@ export default new Hono<MailApiContext>()
       const allowed = await authorizeAutomationConfiguration(c);
       if (!allowed.ok) return respondPublic(c, allowed);
       return respondIntegration(c, await searchSpaceItems(c.req.valid("query").query, integrationRequest(c)));
+    },
+  )
+  .get(
+    "/mailboxes/:mailboxId/incoming-automations/spaces/items/:itemId",
+    v("param", mailboxParamSchema.extend({ itemId: ResourceShortIdSchema })),
+    async (c) => {
+      const allowed = await authorizeAutomationConfiguration(c);
+      if (!allowed.ok) return respondPublic(c, allowed);
+      return respondIntegration(c, await readSpaceItemTarget(c.req.valid("param").itemId, integrationRequest(c)));
     },
   )
   .get("/mailboxes/:mailboxId/incoming-automations/spaces/destinations", v("param", mailboxParamSchema), async (c) => {
