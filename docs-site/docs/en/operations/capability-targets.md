@@ -59,10 +59,11 @@ transaction and retain locks shared with the provider's manager-change paths.
 Update older two-argument adapters before deploying this contract; use the
 supplied connection for every adapter query.
 
-Deploy Spaces and Mail with the `managerUserIds` set-result field before enabling
-Cloud-admin activation in Core. A successful dry-run identifies the current
-person managers, including nested manager-group members. Core refuses Cloud-admin
-activation when the target cannot identify its managers. No new configuration or
+Deploy Spaces and Mail with `managerUserIds` on adapter dry runs and the generated
+Core-only notification lookup before enabling Cloud-admin activation in Core.
+The audience contains current human managers, including nested manager-group
+members. Person-visible dry-run answers include these IDs only for readable
+targets. An unavailable server-side audience leaves activation waiting for retry. No new configuration or
 migration is needed for this result field. A target with more managers than the
 capability response budget allows refuses preflight with a reason; reduce that
 target's manager audience before trying again. During a directory update, retry
