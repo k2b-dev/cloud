@@ -463,19 +463,6 @@ const loadReady = async (
       code.permission,
       (runId) => loadCodeRunCalls(invoke, code.id, runId, 0, MISSING_ACCESS_BATCH),
     );
-  const originsOf = (manifest: z.infer<typeof ManifestSchema> | null) =>
-    [...new Set((manifest?.secrets ?? []).map((binding) => binding.origin))].sort();
-  const activeOrigins = originsOf(activeManifest);
-  const waitingOrigins = originsOf(waitingManifest);
-  const usesInternet = [activeManifest, waitingManifest].some((manifest) => manifest?.policyRows?.includes("internet"));
-  const internet =
-    activeOrigins.length > 0 || waitingOrigins.length > 0 || usesInternet
-      ? {
-          origins: [...new Set([...activeOrigins, ...waitingOrigins])].sort(),
-          newOrigins: waitingOrigins.filter((origin) => !activeOrigins.includes(origin)),
-          unbound: usesInternet && activeOrigins.length === 0 && waitingOrigins.length === 0,
-        }
-      : null;
   const versions = receipts.map((receipt) => versionView(receipt, people, code.activeVersionId));
   const activeVersion =
     versions.find((version) => version.active) ??
@@ -502,11 +489,18 @@ const loadReady = async (
       versions.find((version) => version.id === selectedVersionId) ??
       (selectedVersionId === activeVersion?.id ? activeVersion : null) ??
       (olderSelected ? versionView({ version: olderSelected }, people, code.activeVersionId) : null);
+    const selectedManifest =
+      selectedVersionId === code.activeVersionId
+        ? activeManifest
+        : selectedVersionId === waitingReceipt?.version.id
+          ? waitingManifest
+          : await loadManifest(invoke, code.id, selectedVersionId);
     if (selected)
       diff = {
         version: selected,
         comparison: comparisonId ? (numbers.get(comparisonId) ?? "unknown") : null,
         staleComparison: value.staleComparison,
+        internet: selectedManifest ? (selectedManifest.internet ?? []) : null,
         files: value.files,
         permissions: value.permissions.map((permission) => ({
           operation: permission.operation,
@@ -526,8 +520,11 @@ const loadReady = async (
     active: activeVersion,
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
     automations,
+    internet: {
+      active: activeManifest ? (activeManifest.internet ?? []) : code.activeVersionId ? null : [],
+      waiting: waitingManifest ? (waitingManifest.internet ?? []) : waitingReceipt ? null : [],
+    },
     access: accessRows,
-    internet,
     attentionReasons: attentionResult?.ok
       ? (attentionResult.data.data.data.items.find((item) => item.codeId === code.id)?.reasons ?? [])
       : null,

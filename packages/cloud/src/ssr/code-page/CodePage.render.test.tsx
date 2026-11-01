@@ -97,6 +97,9 @@ describe("Code page states", () => {
     const page = text("overview");
     expect(page).toContain("Handelt im Namen von info@moebel-beispiel.de, nicht als Person");
     expect(page).toContain("Version 4");
+    expect(page).toContain("Ursprünge im Internet");
+    expect(page).toContain("https://bank.example");
+    expect(page).toContain("https://status.example:8443");
     expect(page).toContain("eingeschaltet von Ben Schulz am");
     expect(page).toContain("alle 15 Minuten");
     expect(page).toContain("montags 07:00");
@@ -118,12 +121,12 @@ describe("Code page states", () => {
     expect(page).toContain("Neu in Version 5 · aus");
   });
 
-  test("internet origins from the reviewed bindings are listed, new ones marked", () => {
+  test("manifest internet origins are listed, new ones marked", () => {
     const page = text("internet");
-    expect(page).toContain("Internet 2");
+    expect(page).toContain("Ursprünge im Internet");
     expect(page).toContain("https://api.spedition-probe.example");
     expect(page).toContain("https://tracking.example:8443 neu beim Einschalten von Version 5");
-    expect(text("overview")).not.toContain("Internet");
+    expect(text("no-internet")).not.toContain("Ursprünge im Internet");
   });
 
   test("a version waiting for approval cannot be switched on", () => {
@@ -414,4 +417,12 @@ describe("Code page helpers", () => {
     expect(summarizeCallResult("x".repeat(400))?.length).toBe(160);
     expect(summarizeCallResult(null)).toBeNull();
   });
+});
+
+test("internet lists distinguish running/waiting versions, historical selection, no destinations and load failure", () => {
+  expect(text("waiting")).toContain("https://new.example");
+  expect(text("versions")).toContain("https://version.example:8443");
+  expect(text("no-internet")).not.toContain("Ursprünge im Internet");
+  expect(text("internet-failed")).toContain("Die Ursprünge im Internet konnten nicht geladen werden.");
+  expect(text("internet-failed")).toContain("Erneut versuchen");
 });

@@ -81,6 +81,9 @@ export const behaviorTest = /\.behavior\.test\.tsx?$/;
 /** Leaves browser behavior tests out of a package's own `bun test` run; the runner runs them in browser mode. */
 export const behaviorIgnore = "--path-ignore-patterns=**/*.behavior.test.*";
 
+/** Package scripts that split its unit suite for CI shards. */
+export const testPartPrefix = "test:part:";
+
 const readPackageJson = (path: string): PackageJson => JSON.parse(readFileSync(path, "utf8")) as PackageJson;
 
 /** Test files of one workspace, relative to `cwd`, as this runner discovers them. */
@@ -114,7 +117,13 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
 
   const behaviorCommand = (paths: string[]) => ["bun", "--no-env-file", `--cwd=${workspaceRoot}`, "test", ...preload, ...browser, ...paths];
 
-  const add = async (name: string, cwd: string, packageCommand: string[] | null, integrationCommand: string[] | null) => {
+  const add = async (
+    name: string,
+    cwd: string,
+    packageCommand: string[] | null,
+    integrationCommand: string[] | null,
+    parts: string[] = [],
+  ) => {
     if (options.browser) {
       for (const file of await listBrowserFiles(cwd)) {
         const command = behaviorTest.test(file) ? behaviorCommand([join(cwd, file)]) : ["bun", "test", ...preload, file];
@@ -137,7 +146,10 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
     }
     const files = await listTestFiles(cwd);
     const behavior = files.filter((path) => behaviorTest.test(path));
-    if (packageCommand) suites.push({ name, cwd, command: packageCommand });
+    // A package too slow for one shard names its parts; together they run what its `test` script runs.
+    if (parts.length > 0) {
+      for (const part of parts) suites.push({ name: `${name} ${part.slice(testPartPrefix.length)}`, cwd, command: ["bun", "run", part] });
+    } else if (packageCommand) suites.push({ name, cwd, command: packageCommand });
     else if (files.length > behavior.length) suites.push({ name, cwd, command: ["bun", "test", ...preload, behaviorIgnore] });
     if (behavior.length > 0) {
       suites.push({ name: `${name} behavior`, cwd, command: behaviorCommand(behavior.map((path) => join(cwd, path))) });
@@ -152,6 +164,7 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
       cwd,
       pkg.scripts?.test ? ["bun", "run", "test"] : null,
       pkg.scripts?.["test:integration"] ? ["bun", "run", "test:integration"] : null,
+      Object.keys(pkg.scripts ?? {}).filter((script) => script.startsWith(testPartPrefix)),
     );
   }
   await add("workspace root tests", join(workspaceRoot, "tests"), null, null);

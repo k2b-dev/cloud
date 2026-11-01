@@ -182,6 +182,7 @@ export function approvalReviewProps(
       : null,
     nextHref: next ? codeAreaHref({ sec: "approvals", id: next.versionId }) : null,
     internet: detail.internet,
+    secrets: detail.secrets,
     codeHref: codeAreaHref({ sec: "code", id: detail.code.id }),
     listHref: codeAreaHref({ sec: "approvals" }),
   };

@@ -179,7 +179,7 @@ const messages = i18n.define({
           ask_sensitive: "Sensibel",
           ask_app_asks: "App fragt nach",
           ai: "KI-Nutzung",
-          internet: "Internet",
+          internet: "Ins Internet",
         })[row],
       chat: "Chat",
       targetChat: "Zielchat",

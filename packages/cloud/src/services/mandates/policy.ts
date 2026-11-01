@@ -161,6 +161,8 @@ export const capabilityGrantAllows = (
     input: unknown;
     call?: NormalizedCapabilityCall;
     codeAccount?: boolean;
+    /** Personal Code may use dynamic targets with an operation-only grant. Explicit target/refs stay binding. */
+    codeVersion?: boolean;
   },
 ): boolean =>
   grant.appId === input.appId &&
@@ -171,8 +173,11 @@ export const capabilityGrantAllows = (
     (!input.call
       ? grant.target === undefined && grant.refs === undefined
       : (grant.target === undefined
-          ? input.call.target === null && (!input.codeAccount || input.kind !== "action")
-          : equalJson(grant.target, input.call.target)) && equalJson(grant.refs ?? {}, input.call.refs))) &&
+          ? (input.call.target === null || (input.codeVersion === true && !input.codeAccount)) &&
+            (!input.codeAccount || input.kind !== "action")
+          : equalJson(grant.target, input.call.target)) &&
+        ((grant.refs === undefined && input.codeVersion === true && !input.codeAccount) ||
+          equalJson(grant.refs ?? {}, input.call.refs)))) &&
   Object.entries(grant.fixedInput).every(
     ([key, value]) =>
       input.input !== null &&
@@ -321,6 +326,7 @@ export const mandatePolicyAllows = (
             input: input.input,
             call: input.call,
             codeAccount: input.codeAccount,
+            codeVersion: input.codeVersion,
           }),
       )
     )

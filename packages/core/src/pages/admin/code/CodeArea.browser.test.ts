@@ -46,7 +46,7 @@ test("approving sends the unchanged hash binding, shows the result and lowers th
   await goto(review);
   expect(await sidebarCode().innerText()).toContain("4");
   await page.getByText("„Bezieht Personen ein“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.").waitFor();
-  await page.getByText("https://api.buchhaltung-beispiel.de").waitFor();
+  await page.getByText("https://api.buchhaltung-beispiel.de", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Version 3 freigeben" }).click();
   await page.getByText("Version 3 ist freigegeben.").waitFor();
   await page.waitForLoadState("load");
