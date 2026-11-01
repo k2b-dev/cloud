@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { migrateAppBootstrap } from "./app-bootstrap";
 import { migrateAppKeys } from "./app-keys";
 import { migrateAppMigration } from "./app-migration";
+import { enrollDevelopmentAppKeys } from "./development-app-keys";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 import { migratePosix } from "./posix";
 import { migrate as migrateServiceAccountGroupManagers } from "./service-account-group-managers";
@@ -823,6 +824,7 @@ export const migrate = async (): Promise<void> => {
   await migrateAppKeys();
   await migrateAppMigration();
   await migrateAppBootstrap();
+  await enrollDevelopmentAppKeys(sql);
   console.log("  ✓ auth.service_account_credentials table");
   await sql`
     CREATE TABLE IF NOT EXISTS auth.app_workload_instances (

@@ -46,6 +46,7 @@ const keyListResponse = z.object({
       fingerprint: z.string(),
       status: z.enum(["active", "expired", "revoked"]),
       accountStatus: z.enum(["active", "disabled"]),
+      usable: z.boolean(),
       createdAt: z.iso.datetime(),
       createdBy: z.uuid().nullable(),
       expiresAt: z.iso.datetime().nullable(),

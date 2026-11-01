@@ -150,12 +150,25 @@ test("all four formats preserve the same private key and --all needs an explicit
   await seedState(outDir);
   expect(renderAppKeyArtifact("inventory", privateKey, "file")).toBe(privateKey + "\n");
   expect(renderAppKeyArtifact("inventory", privateKey, "env")).toBe(`CLOUD_APP_KEY=${privateKey}\n`);
-  expect(renderAppKeyArtifact("inventory", privateKey, "compose")).toContain(`CLOUD_APP_KEY: "${privateKey}"`);
-  expect(renderAppKeyArtifact("inventory", privateKey, "k8s-secret")).toContain(`stringData:\n  CLOUD_APP_KEY: "${privateKey}"`);
+  expect(renderAppKeyArtifact("inventory", privateKey, "compose")).toContain("CLOUD_APP_KEY_FILE: /run/secrets/inventory.key");
+  expect(renderAppKeyArtifact("inventory", privateKey, "compose")).not.toContain(privateKey);
+  expect(renderAppKeyArtifact("inventory", privateKey, "k8s-secret")).toContain(`stringData:\n  app.key: "${privateKey}"`);
   for (const format of ["env", "compose", "k8s-secret"] as const) {
     const result = await enrollAppKey({ ...input(outDir), format });
     expect((await stat(result.file)).mode & 0o777).toBe(0o600);
-    expect(await readFile(result.file, "utf8")).toBe(renderAppKeyArtifact("inventory", privateKey, format));
+    expect(await readFile(result.file, "utf8")).toBe(renderAppKeyArtifact("inventory", privateKey, format, result.keyFile));
+    if (format === "compose") {
+      const compose = Bun.YAML.parse(await readFile(result.file, "utf8")) as {
+        services: Record<string, { environment: Record<string, string>; secrets: { source: string; target: string }[] }>;
+        secrets: Record<string, { file: string }>;
+      };
+      const service = compose.services["app-inventory"]!;
+      const mount = service.secrets[0]!;
+      expect(service.environment.CLOUD_APP_KEY_FILE).toBe(`/run/secrets/${mount.target}`);
+      expect(compose.secrets[mount.source]!.file).toBe(join(outDir, "inventory.key"));
+      expect(await readFile(compose.secrets[mount.source]!.file, "utf8")).toBe(privateKey + "\n");
+      expect((await stat(join(outDir, "inventory.key"))).mode & 0o777).toBe(0o600);
+    }
   }
   expect(await resolveAppKeyApps(["inventory", "oauth", "inventory"], false)).toEqual(["inventory", "oauth"]);
   expect(await resolveAppKeyApps([], true, "inventory,oauth")).toEqual(["inventory", "oauth"]);
