@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import { suiteFor, useMigratedDatabase } from "../../../../../scripts/fixtures/test-infra";
-import { compileCapabilities, invokeCompiledCapability } from "../../_internal/capabilities";
+import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../../_internal/capabilities";
 import * as registry from "../../_internal/registry";
 import { aiChatTasks } from "../../ai/chat-tasks";
 import { aiConversations } from "../../ai/store";
@@ -121,7 +121,11 @@ suite("Code version and person routine target mandates", () => {
           signal: c.req.raw.signal,
         },
       });
-      return result.ok ? Response.json(result.data) : Response.json(result.error, { status: result.error.status });
+      const serialized = serializeCapabilityProviderResult(result, { nonIdempotentAction: true });
+      return new Response(serialized.body, {
+        status: serialized.status,
+        headers: { "content-type": "application/json" },
+      });
     },
   );
   const invoke = (mandate: { id: string; revision: number }, targetId: string) =>
@@ -232,7 +236,9 @@ suite("Code version and person routine target mandates", () => {
     accessByTarget.set("a", [authenticated!.id]);
     const before = ran;
     try {
-      expect((await invoke(codeMandate, "a")).status).toBe(403);
+      const denied = await invoke(codeMandate, "a");
+      expect(denied.status).toBe(403);
+      expect(await denied.json()).toEqual({ code: "FORBIDDEN", message: "No resource access" });
       expect(ran).toBe(before);
     } finally {
       accessByTarget.set("a", [writeAccessId]);
@@ -326,6 +332,10 @@ suite("Code version and person routine target mandates", () => {
     expect((await invoke(mandate, "b")).status).toBe(403);
     expect(fetched).toBe(before);
     accessByTarget.set("a", [writeAccessId]);
-    expect((await invoke(mandate, "a")).status).toBe(403);
+    const beforeDenied = ran;
+    const denied = await invoke(mandate, "a");
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ code: "FORBIDDEN", message: "No resource access" });
+    expect(ran).toBe(beforeDenied);
   });
 });
