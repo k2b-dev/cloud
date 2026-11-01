@@ -239,3 +239,11 @@ its return value, and gives `cloud` only the `call` method. The SDK bundler
 must produce this module boundary. `RunnerEngine` (`load`, `run`, `kill`,
 `close`) and `SandboxCall` are exported from `packages/runner/src/engine.ts`
 for the attack tests and simulation kit; no application imports that package.
+
+## Run tests without effects
+
+The same runner image includes a separate `code-test.js` stdin/stdout role.
+It uses the production workerd engine with a fake-only bridge and no app key
+or Core connection. Core checks the source first and sends the immutable
+bundle with declarative fixtures and host budgets. See [Test Code](/en/docs/platform/test-code)
+for the request, result schema, and isolation requirements.

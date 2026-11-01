@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { capabilityHash } from "../_internal/capability-schemas";
 import type { CodeAnalysis } from "./checker-analysis";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodeCheckResult, CodePermission } from "./checker-contract";
 import { CODE_CHECK_LIMITS, CodeCheckLimitsSchema, CodeVersionManifestSchema } from "./checker-contract";
+import { codeSdkHash } from "./sdk-hash";
 
 /** Trusted executable paths provided by the runner image. isolate is mandatory and fails closed: no unsandboxed fallback.
  * compiler is the native tsgo binary (not its Node launcher); worker is code-check-worker.ts with its compiler libraries. */
@@ -163,7 +163,7 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
       ai: analysis.ai,
       hashes: {
         source: sha256(JSON.stringify({ entry: request.entry, files: names.map((name) => [name, request.files[name]]) })),
-        sdk: capabilityHash(request.sdk),
+        sdk: codeSdkHash(request.sdk),
         bundle: sha256(bundle),
       },
     });
