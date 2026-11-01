@@ -17,6 +17,7 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
+import * as authoringChecks from "./authoring-check";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -152,7 +153,10 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       if (recordBaseline) await recordCodeVersionBaseline(code.id, version.version.id, tx);
     });
   }
+  let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   beforeAll(async () => {
+    // Transaction/policy suite uses immutable checker fixtures; runner transport is covered by C13b.
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_versions");
     await migrateAuth();
@@ -192,11 +196,29 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   });
   afterAll(async () => {
     dispose?.();
+    serverCheck?.mockRestore();
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     setSystemTime();
   });
 
+  test("submission awaits the binding check and persists no version when it fails", async () => {
+    const code = await newCode();
+    const draft = input(code, "binding check refused");
+    const failure = new Error("Authoritative checker refused the submission");
+    serverCheck.mockClear();
+    serverCheck.mockRejectedValueOnce(failure);
+    try {
+      await expect(submitCodeVersion(draft, author)).rejects.toBe(failure);
+      expect(serverCheck).toHaveBeenCalledTimes(1);
+      expect(serverCheck).toHaveBeenCalledWith(draft, author);
+      expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
+      expect(await sql`SELECT version_id FROM code.version_submissions WHERE code_id=${code.id}`).toHaveLength(0);
+    } finally {
+      serverCheck.mockReset();
+      serverCheck.mockResolvedValue();
+    }
+  });
   test("forward migration is additive and idempotent over filled version evidence", async () => {
     const code = await newCode(),
       submission = await submitCodeVersion(input(code, "one"), author);

@@ -44,7 +44,13 @@ test("runner has an application image and both Compose templates isolate its net
     expect(runner.secrets).toEqual([{ source: "runner-app-key", target: "/run/runner-key/source" }]);
     expect(runner.cap_drop).toEqual(["ALL"]);
     expect(runner.cap_add).toEqual(["SETUID", "SETGID", "KILL", "CHOWN", "DAC_OVERRIDE"]);
-    expect(runner.security_opt).toEqual(["no-new-privileges:true"]);
+    expect(runner.security_opt).toEqual([
+      "no-new-privileges:true",
+      "seccomp=./packages/runner/seccomp.json",
+      "apparmor=cloud-code-runner",
+      "systempaths=unconfined",
+    ]);
+    expect(runner.init).toBe(true);
     expect(runner.pid).toBeUndefined();
     expect(runner.read_only).toBe(true);
     expect(runner.tmpfs).toEqual(["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]);
@@ -85,6 +91,10 @@ test("hostile runner CI is path-filtered and required by the gate", async () => 
   expect(commands).toContain("--network host");
   expect(commands).toContain("--read-only --cap-drop ALL");
   expect(commands).toContain("--security-opt no-new-privileges");
+  expect(commands).toContain("--init");
+  expect(commands).toContain("sudo apparmor_parser -r packages/runner/apparmor.profile");
+  expect(commands).toContain("--security-opt seccomp=packages/runner/seccomp.json");
+  expect(commands).toContain("--security-opt apparmor=cloud-code-runner --security-opt systempaths=unconfined");
   expect(commands.match(/! grep -qE/g)).toHaveLength(2);
   expect(commands).toContain('! grep -qF C14_OUTPUT_CANARY "$RUNNER_TEMP/runner-native.log"');
   expect(commands).toContain("--kill-after=5s");
