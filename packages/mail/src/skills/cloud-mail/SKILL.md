@@ -1,6 +1,12 @@
 ---
 name: cloud-mail
 description: "Use for work involving the user's Cloud mailboxes: finding, reading, summarizing, organizing, drafting, replying to, forwarding, sending, scheduling, or unsubscribing from email. Load it whenever a request involves Cloud Mail, an inbox, a mailbox, a message, or an email conversation."
+load-tools:
+  - mail.conversation.focus
+  - mail.search
+  - mail.conversation.read
+  - mail.message.read-content
+  - mail.draft.create
 ---
 
 # Work with Cloud Mail

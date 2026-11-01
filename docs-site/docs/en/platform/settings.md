@@ -223,3 +223,14 @@ invalidation fails, the next start retries it and cached values still expire.
 
 See [Verify request caches](/en/docs/contributing/request-cache-tests) for the
 isolated integration command and its CI coverage.
+
+## Keep custom administration on its owning API
+
+A setting with `envBootstrap` or `envFallback` can be repaired through
+`cld admin settings set --app <id>`. Declare `adminWrite: "application"`
+when writes must instead use an application API for connection checks,
+rescheduling or a stronger OAuth scope. The internal generic setter then
+rejects that key, including for an administrator. Supply a named CLI command
+for the owning API; environment diagnostics remain readable without values.
+For example, Assistant's rsql target allowlist uses `assistant studio-admin
+configure`, preserving its connection preflight.

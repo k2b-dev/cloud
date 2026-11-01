@@ -3,6 +3,8 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
 import { notebooksWorkspace } from "../../../../lib/workspace-events";
+import { presencePeerId } from "../../../lib/presence-peer";
+import { NOTE_SOFT_NAVIGATED_EVENT, PRESENCE_EVENT, SYNC_STATE_REQUEST_EVENT } from "../detail/events";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "./workspace-events";
 
 class FakeWebSocket {
@@ -92,13 +94,19 @@ describe("WorkspaceEventBridge", () => {
     dom.cleanup();
   });
 
-  const mount = async () => {
+  const mount = async (initialNoteId: string | null = "Note01") => {
     const { default: WorkspaceEventBridge } = await import("./WorkspaceEventBridge.island");
     const host = dom.document.createElement("div");
     dom.root.append(host);
     disposers.push(
       render(
-        () => createComponent(WorkspaceEventBridge, { notebookId: NOTEBOOK_ID, appUrl: "http://localhost", initialCursor: null }),
+        () =>
+          createComponent(WorkspaceEventBridge, {
+            notebookId: NOTEBOOK_ID,
+            appUrl: "http://localhost",
+            initialCursor: null,
+            initialNoteId,
+          }),
         host,
       ),
     );
@@ -128,6 +136,109 @@ describe("WorkspaceEventBridge", () => {
   };
 
   const reloadAction = () => Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Reload");
+
+  test("an opened reader watches presence and forwards only its current note, including late panel mounts", async () => {
+    const seen: unknown[] = [];
+    const listener = (event: Event) => seen.push((event as CustomEvent).detail);
+    window.addEventListener(PRESENCE_EVENT, listener);
+    try {
+      await mount();
+      const socket = latestSocket();
+      socket.open();
+      socket.message(WS.ready, { notebookId: NOTEBOOK_ID });
+      expect(socket.sent.map((raw) => JSON.parse(raw))).toContainEqual({
+        type: "notes.workspace.presence.watch",
+        payload: { noteId: "Note01", presencePeerId: presencePeerId() },
+      });
+      const participants = [
+        {
+          userId: "11111111-1111-4111-8111-111111111111",
+          displayName: "Reader",
+          avatarHash: null,
+          color: "#123456",
+          peerCount: 1,
+          joinedAt: "2026-10-31T12:00:00.000Z",
+        },
+      ];
+      socket.message("notes.presence.snapshot", { noteId: "Note01", participants });
+      expect(seen.at(-1)).toEqual(participants);
+      window.dispatchEvent(new CustomEvent(SYNC_STATE_REQUEST_EVENT));
+      expect(seen.slice(-2)).toEqual([participants, participants]);
+      window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId: "Note02" } }));
+      expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ type: "notes.workspace.presence.watch", payload: { noteId: "Note02" } });
+      expect(seen.at(-1)).toEqual([]);
+      socket.message("notes.presence.changed", { noteId: "Note01", participants });
+      expect(seen.at(-1)).toEqual([]);
+      socket.message("notes.presence.changed", { noteId: "Note02", participants });
+      expect(seen.at(-1)).toEqual(participants);
+      socket.close(1006);
+      expect(seen.at(-1)).toEqual([]);
+      runReconnect();
+      latestSocket().open();
+      latestSocket().message(WS.ready, { notebookId: NOTEBOOK_ID });
+      expect(JSON.parse(latestSocket().sent.at(-1)!)).toMatchObject({ payload: { noteId: "Note02" } });
+      // A callback queued on the previous connection cannot restore stale people.
+      socket.message("notes.presence.changed", { noteId: "Note02", participants });
+      expect(seen.at(-1)).toEqual([]);
+    } finally {
+      window.removeEventListener(PRESENCE_EVENT, listener);
+    }
+  });
+
+  test("a delayed close from an unmounted bridge cannot clear the new page's participants", async () => {
+    const seen: unknown[] = [];
+    const listener = (event: Event) => seen.push((event as CustomEvent).detail);
+    window.addEventListener(PRESENCE_EVENT, listener);
+    try {
+      await mount();
+      const oldSocket = latestSocket();
+      oldSocket.open();
+      const delayedClose = oldSocket.onclose;
+      oldSocket.onclose = null;
+      for (const dispose of disposers.splice(0)) dispose();
+      await mount();
+      latestSocket().open();
+      latestSocket().message(WS.ready, { notebookId: NOTEBOOK_ID });
+      const participants = [
+        {
+          userId: "11111111-1111-4111-8111-111111111111",
+          displayName: "Reader",
+          color: "#123456",
+          peerCount: 1,
+          joinedAt: "2026-10-31T12:00:00.000Z",
+        },
+      ];
+      latestSocket().message("notes.presence.snapshot", { noteId: "Note01", participants });
+      expect(seen.at(-1)).toEqual(participants);
+      delayedClose?.({ code: 1000, reason: "" });
+      expect(seen.at(-1)).toEqual(participants);
+      expect(pendingReconnects()).toHaveLength(0);
+    } finally {
+      window.removeEventListener(PRESENCE_EVENT, listener);
+    }
+  });
+
+  test("recentering a graph does not open a reader presence watch", async () => {
+    await mount(null);
+    const socket = latestSocket();
+    socket.open();
+    socket.message(WS.ready, { notebookId: NOTEBOOK_ID });
+    const initial = [...socket.sent];
+    window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId: "Note02" } }));
+    expect(socket.sent).toEqual(initial);
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ type: "notes.workspace.presence.watch", payload: { noteId: null } });
+  });
+
+  test("a failed opened-note watch leaves the workspace connected without reloading", async () => {
+    await mount();
+    const socket = latestSocket();
+    socket.open();
+    socket.message(WS.ready, { notebookId: NOTEBOOK_ID });
+    socket.message(WS.error, { noteId: "Note01", code: "ACCESS_DENIED", message: "Access denied" });
+    expect(socket.readyState).toBe(FakeWebSocket.OPEN);
+    expect(reload).not.toHaveBeenCalled();
+    expect(pendingReconnects()).toHaveLength(0);
+  });
 
   test("a sign-in failure reloads once and then offers a manual reload instead of looping", async () => {
     await mount();

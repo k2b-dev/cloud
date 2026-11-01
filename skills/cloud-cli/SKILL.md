@@ -81,6 +81,10 @@ app's additional restriction, and never select administrator repair. After an
 uncertain write, read `access list` before retrying. Fixed-rule apps have no
 editable list; all built-ins keep fixed rules in the first rollout.
 
+## Admin diagnostics and configuration
+
+An agent using an administrator person's normal `cld login` profile can read admin diagnostics and configure routine admin settings with the default `read write` scopes. The person must still be an administrator on every request; a standalone client's scopes do not supply that role. Start with `cld admin reference`. Read [Administrator operations](references/administration.md) for setting discovery, protected secret input, app-owned commands and short-lived approval for dangerous actions.
+
 ## Installed modules
 
 `cld` keeps this table current after every plugin install, update, and removal. The columns are Profile (`*` for package plugins), Module, Version, Summary, and Start. Open the Start file for the module and profile you operate. Package plugins carry references too; `cld <module> reference [file]` prints the same files for every installed module.

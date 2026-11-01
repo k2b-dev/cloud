@@ -5,7 +5,7 @@ section: Operations
 order: 1138
 description: JetStream storage reserved for Notebook live editing, how it is sized, and how per-note topics from older releases are retired.
 tags: [notebooks, nats, jetstream, storage, migration]
-updated: 2026-10-26
+updated: 2026-10-31
 ---
 
 # Size and migrate the Notebook document log
@@ -227,3 +227,30 @@ Shutdown closes the annotation pool after the workers drain.
 Soft-deleted comments and replies remain restorable during their author's
 original ten-minute mutation window. Later writes purge expired deleted rows
 in bounded batches for that note or thread.
+
+For device storage failures and explicit tab-only editing, see
+[Keep unconfirmed input on the device](../data/shared-text-documents#keep-unconfirmed-input-on-the-device).
+
+## Recover workspace updates after a broker outage
+
+Notebooks saves workspace hints in `notebooks.workspace_outbox` in the same
+Postgres transaction as the change. Every replica starts a dispatcher that
+publishes pending hints to the existing `cloud:notebooks:events:workspace`
+topic. A restart resumes committed rows. A failed publication keeps its row
+and retries until the broker accepts it, using the platform outbox's default
+batch size, claim timeout and backoff. See [Deliver an outbox](/en/docs/data/migrations-and-transactions#deliver-an-outbox).
+Each workspace write wakes the dispatcher after its transaction commits, so
+healthy delivery starts immediately. The dispatcher also checks every second
+to recover pending hints after a crash or failed wake.
+
+When open notes or sidebars lag behind saved changes, inspect the pending
+rows' `attempts`, `next_attempt_at` and `last_error`, and the
+`notebooks:workspace-events` log. Delivered rows are deleted. Pending deletion
+hints remain even after their notebook is removed.
+
+Delivery is at least once. Each row's ID is the broker idempotency key;
+retries within the broker's default two-minute window produce one retained
+event. Later repeats are safe: hints carry references or absolute favorite
+state, and readers reload canonical state. Topic cursors and the existing
+24-hour replay window remain unchanged. When a socket cannot replay its
+cursor, it still sends `workspace.invalidated` so the reader reloads.

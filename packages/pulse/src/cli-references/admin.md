@@ -1,6 +1,10 @@
 # Connect the Pulse data store
 
-Only a Cloud admin can use these commands. A Pulse base grant does not grant
+Only a person with the current Cloud admin role can use these commands.
+Normal `read write` login covers reads, policy, limits and internal targets.
+Mutations require `--yes`. Store PUT/check/setup SQL and base recovery/deletion
+retain explicit `admin` scope; see `cld admin reference` for temporary browser
+or device approval. A Pulse base grant does not grant
 store administration. Without a saved ClickHouse connection, Pulse data APIs return
 `PULSE_STORE_NOT_CONFIGURED`. Pulse administration and other Cloud apps remain available.
 
@@ -15,7 +19,7 @@ store administration. Without a saved ClickHouse connection, Pulse data APIs ret
 3. Generate the setup script:
 
    ```sh
-   cld pulse admin store setup-sql --user pulse_service --password-file /private/pulse.password
+   cld pulse admin store setup-sql --user pulse_service --password-file /private/pulse.password --yes
    ```
 
    Run the output as the ClickHouse admin using `clickhouse-client --multiquery`
@@ -26,9 +30,9 @@ store administration. Without a saved ClickHouse connection, Pulse data APIs ret
 4. Check and save the connection:
 
    ```sh
-   cld pulse admin store set --url http://clickhouse:8123 --user pulse_service --password-file /private/pulse.password
+   cld pulse admin store set --url http://clickhouse:8123 --user pulse_service --password-file /private/pulse.password --yes
    cld pulse admin store get --json
-   cld pulse admin store check
+   cld pulse admin store check --yes
    ```
 
 `set` runs the full check before writing any settings. On a failed check, the
@@ -74,18 +78,18 @@ save runs, and `INVALID_INPUT` for a malformed address, user or password.
 
 ```sh
 cld pulse admin policy get
-cld pulse admin policy set --base-creation everyone --max-bases 200 --max-raw-retention-days 730 --default-profile normal --default-queries-per-hour 600
+cld pulse admin policy set --base-creation everyone --max-bases 200 --max-raw-retention-days 730 --default-profile normal --default-queries-per-hour 600 --yes
 cld pulse admin bases list --limit 50 --offset 0 --query operations
 cld pulse admin bases limits Base01
-cld pulse admin bases limits Base01 --profile small --values-per-minute 2000 --bytes-per-minute 5242880 --storage-bytes 5000000000 --max-series 50000 --max-event-kinds 2000 --max-state-keys 2000 --queries-per-hour 600
+cld pulse admin bases limits Base01 --profile small --values-per-minute 2000 --bytes-per-minute 5242880 --storage-bytes 5000000000 --max-series 50000 --max-event-kinds 2000 --max-state-keys 2000 --queries-per-hour 600 --yes
 cld pulse admin bases retry Base01
 cld pulse admin bases recheck Base01
 cld pulse admin bases recreate Base01 --yes
 cld pulse admin orphans list --limit 50
 cld pulse admin orphans delete pulse_00000000000040008000000000000000 --yes
 cld pulse admin targets list --base Base01
-cld pulse admin targets add --base Base01 web-01:9100
-cld pulse admin targets remove <targetId>
+cld pulse admin targets add --base Base01 web-01:9100 --yes
+cld pulse admin targets remove <targetId> --yes
 ```
 
 Policy defaults use `--default-values-per-minute`, `--default-bytes-per-minute`,

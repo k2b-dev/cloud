@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { audit } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
 import { SQL } from "bun";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
@@ -12,7 +13,11 @@ useUnitClients();
 let restoreCache: () => void;
 beforeEach(() => {
   const invalidate = spyOn(settings, "invalidateSettingsCache").mockResolvedValue();
-  restoreCache = () => invalidate.mockRestore();
+  const record = spyOn(audit, "record").mockResolvedValue();
+  restoreCache = () => {
+    invalidate.mockRestore();
+    record.mockRestore();
+  };
 });
 afterEach(() => restoreCache());
 
@@ -53,6 +58,13 @@ for (const token of [undefined, ""]) {
       expect(write).toHaveBeenCalledWith("assistant.rsql_url", "", tx, { replaceUnreadable: false });
       expect(write).toHaveBeenCalledTimes(token === undefined ? 1 : 2);
       if (token !== undefined) expect(write).toHaveBeenCalledWith("assistant.rsql_api_token", token, tx, { replaceUnreadable: false });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "assistant.database.configure",
+          metadata: { fields: token === undefined ? ["url"] : ["url", "token"] },
+        }),
+        tx,
+      );
     } finally {
       for (const spy of [read, write, begin]) spy.mockRestore();
       await client.close();

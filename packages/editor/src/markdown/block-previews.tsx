@@ -251,7 +251,7 @@ class QueryBlockWidget extends WidgetType {
     if (this.placeholder) return this.placeholder.estimatedHeight;
     if (this.chart) return 66 + (this.chart.subtitle ? 44 : 28) + 8 + (this.chart.kind === "stat" ? 160 : 288);
     // Query tables have 14px / 21px text, 16px cell padding and row dividers;
-    // controls, widget padding/border and table spacing add 65px.
+    // controls, widget padding/border and table spacing add 65px, the space around the frame 16px.
     // The truncated count paragraph inherits 16px / 1.6 text (25.6px) in
     // `.cm-query-block-preview.notebook-book-content` and 1rem block margins
     // from app.css. Its top margin collapses with the table's bottom margin,
@@ -263,7 +263,7 @@ class QueryBlockWidget extends WidgetType {
       : this.html?.includes('class="notebook-query-pager"')
         ? 36
         : 0;
-    return rows ? rows * 38 + 65 + countHeight : 120;
+    return rows ? rows * 38 + 81 + countHeight : 136;
   }
 }
 
