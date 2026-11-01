@@ -54,7 +54,14 @@ suite("Code version and person routine target mandates", () => {
         destructive: false,
         openWorld: false,
         idempotency: "none",
-        approval: "none",
+        policy: { silent: "shared" },
+        review: async (_, context) =>
+          ok({
+            locale: "en",
+            sentence: { action: "Write folder", running: "Writing folder", done: "Wrote folder", confirm: "Write", decline: "Cancel" },
+            slots: {},
+            scope: `folder:${context.target!.id}`,
+          }),
         run: async (_, context) => {
           const permission = await getEffectivePermission({
             accessIds: accessByTarget.get(context.target!.id) ?? [],
@@ -314,7 +321,7 @@ suite("Code version and person routine target mandates", () => {
       kind: "action",
       input: call.input,
       call,
-      approval: "none",
+      policy: compiled.manifest.policies?.write,
     });
     await expect(
       aiChatTasks.authorizeCapability({
@@ -324,7 +331,7 @@ suite("Code version and person routine target mandates", () => {
         kind: "action",
         input: call.input,
         call: { ...call, target: { ...call.target, id: "b" } },
-        approval: "none",
+        policy: compiled.manifest.policies?.write,
       }),
     ).rejects.toMatchObject({ code: "MANDATE_POLICY_DENIED" });
     expect((await invoke(mandate, "a")).status).toBe(200);
