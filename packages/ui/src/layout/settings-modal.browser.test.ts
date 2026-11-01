@@ -206,6 +206,21 @@ describe("@k2b/ui SettingsModal separation", () => {
     });
   }
 
+  test("forced colours keep a line beside the desktop rail, where rail and panel both become Canvas", async () => {
+    const page = await browser.newPage({ viewport: viewports.desktop });
+    try {
+      await page.emulateMedia({ forcedColors: "active" });
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style></head>` +
+          `<body class="k2b-ui"><div style="height:86vh;display:flex;flex-direction:column">${crowdedModal()}</div></body></html>`,
+      );
+      await settled(page);
+      expect(await page.locator(".k2b-settings__rail").evaluate((rail) => getComputedStyle(rail).borderRightStyle)).toBe("solid");
+    } finally {
+      await page.close();
+    }
+  });
+
   test("the phone row fades out into the last category it cuts", async () => {
     const page = await browser.newPage({ viewport: viewports.phone });
     try {
