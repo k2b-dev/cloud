@@ -6,11 +6,13 @@ import {
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability } from "../../packages/cloud/src/_internal/capabilities";
+import { createCodeAccessAuthorityRoutes } from "../../packages/cloud/src/_internal/code-access-authority";
 import { codeAccessBindings, listCodeAccess, removeCodeAccess, setCodeAccess } from "../../packages/cloud/src/code/access";
 
 /** Checked callable boundary for loading another app's fixture under its own tsconfig aliases. */
 export const AcceptanceProviderSchema = z.object({
   manifest: CapabilityManifestSchema,
+  authority: z.function({ input: [z.instanceof(Request)], output: z.promise(z.instanceof(Response)) }),
   invoke: z.function({ input: [z.unknown()], output: z.promise(z.instanceof(Response)) }),
   set: z.function({ input: [z.unknown()], output: z.promise(CodeAccessSetDataSchema) }),
   list: z.function({ input: [z.unknown()], output: z.promise(CodeAccessListDataSchema) }),
@@ -24,8 +26,10 @@ export type AcceptanceProvider = z.infer<typeof AcceptanceProviderSchema>;
 export function acceptanceProvider(appId: string, definitions: CapabilityDefinitions) {
   const compiled = compileCapabilities(appId, definitions);
   const bindings = codeAccessBindings(appId, definitions);
+  const authority = createCodeAccessAuthorityRoutes(appId, definitions);
   return {
     manifest: compiled.manifest,
+    authority: async (request: Request) => authority.fetch(request),
     async invoke(input: Omit<Parameters<typeof reviewCompiledCapability>[0], "compiled"> & { kind: "query" | "action"; review?: boolean }) {
       const params = { ...input, compiled };
       const result = input.review ? await reviewCompiledCapability(params) : await invokeCompiledCapability(params);

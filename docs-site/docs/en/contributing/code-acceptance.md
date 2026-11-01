@@ -39,8 +39,11 @@ coordination. A barrier requires both supervisors to accept work. The checker
 runs through its native isolation launcher. Only fixture source is imported
 by the in-process execution engine; the separate Runner isolation tests own
 workerd confinement. Provider delivery and external HTTP responses stay in
-process while the real capability compiler, domain services, signatures,
-mandates and call bridge execute.
+process. Action delivery uses the real invocation middleware, signature
+verification, current mandate resolution and domain services. Owner titles use
+the signed account-inspection route. Catalog and person-reader transport is
+replaced by direct fixture delivery; its network authentication is outside this
+suite. Core's call bridge and app proof verification execute.
 
 These are acceptance expectations, not a record of a successful run. A passing
 integration job on the combined branch is required before accepting the slice.
