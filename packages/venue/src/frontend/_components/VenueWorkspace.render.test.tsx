@@ -845,7 +845,7 @@ describe("Venue shift detail and schedule", () => {
 
   test("links every calendar date to the venue's own day east of UTC", () => {
     // Berlin is ahead of UTC, so the calendar's day starts at 22:00 or 23:00 UTC of the day before. The clock stands at
-    // a moment when Berlin already has the next day, so "today" is checked on the venue's day, not on the run's (#2244).
+    // a moment when Berlin already has the next day, so "today" is checked on the venue's day, not on the run's (#2300).
     setSystemTime(new Date("2026-10-31T23:42:52Z"));
     try {
       const hrefOf = (html: string, pattern: RegExp) => html.match(pattern)?.[1]?.replaceAll("&amp;", "&");
