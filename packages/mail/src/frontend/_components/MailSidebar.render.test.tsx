@@ -223,4 +223,33 @@ describe("Mail sidebar", () => {
       "folder:Fold04": null,
     });
   });
+
+  test("the open mailbox lists Code after Sent for those who may see it, also in the phone navigation", () => {
+    const folders = [
+      folder("Fold01", "Inbox", "inbox", 4, 1),
+      folder("Fold02", "Sent", "sent", 9, 0),
+      folder("Fold03", "Archive", "archive", 3, 0),
+    ];
+    const without = renderSidebar({ open: openMailboxFixture({ folders }) });
+    expect(without).not.toContain('href="/app/mail/Box001/code"');
+    const html = renderSidebar({ open: openMailboxFixture({ folders, code: { active: true, attention: true } }) });
+    const group = html.slice(html.indexOf("mail-sidebar-folders"));
+    // Inbox, Sent, then Code, then More: the folder rows keep their places.
+    expect(group.indexOf('title="Sent"')).toBeLessThan(group.indexOf('href="/app/mail/Box001/code"'));
+    expect(group.indexOf('href="/app/mail/Box001/code"')).toBeLessThan(group.indexOf(">More<"));
+    // The shared status: a warning dot, and the phrase in the row's accessible name.
+    expect(html).toContain('class="k2b-app-workspace__sidebar-status-attention"');
+    expect(html).toContain(", Code needs attention<");
+    // While Code is open, the mailbox row itself is not the current place.
+    type Entry = { id: string; active?: boolean; href?: string; description?: string; children?: Entry[] };
+    const json = /<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)?.[1];
+    const flatten = (entries: Entry[]): Entry[] => entries.flatMap((entry) => [entry, ...flatten(entry.children ?? [])]);
+    const entries = flatten((JSON.parse(json ?? "{}") as { items: Entry[] }).items);
+    expect(entries.find((entry) => entry.id === "code")).toMatchObject({
+      href: "/app/mail/Box001/code",
+      active: true,
+      description: "Code needs attention",
+    });
+    expect(entries.find((entry) => entry.id === "mailbox:Box001")?.active).toBe(false);
+  });
 });

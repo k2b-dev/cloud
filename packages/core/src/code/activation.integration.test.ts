@@ -475,7 +475,14 @@ databaseSuite()("durable Code activation", () => {
     tombstones.add(active);
     sets.length = 0;
     expect(await reconcileCodeAccess({ codeId: code.id }, owner, transport)).toContainEqual(
-      expect.objectContaining({ grantId: active, state: "removed" }),
+      // The Code page names who confirmed the grant and when, also after the target removed it.
+      expect.objectContaining({
+        grantId: active,
+        state: "removed",
+        activatedBy: expect.any(String),
+        activatedAt: expect.any(String),
+        activatedVersionId: expect.any(String),
+      }),
     );
     expect(sets).toHaveLength(0);
     expect(live.has(active)).toBe(false);
@@ -776,11 +783,15 @@ databaseSuite()("durable Code activation", () => {
       if (readable) {
         expect(result.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
         expect(saved!.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
+        // The page needs names; they exist only in the answer to someone who just passed the reader check.
+        expect(result.failure?.managerNames).toHaveLength(1);
+        expect(saved!.failure).not.toHaveProperty("managerNames");
         // Losing read access also removes presentation on an existing status response.
         readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
         const hidden = await status(code, activation.id);
         expect(hidden.failure).not.toHaveProperty("title");
         expect(hidden.failure).not.toHaveProperty("managerUserIds");
+        expect(hidden.failure).not.toHaveProperty("managerNames");
       } else {
         expect(result.failure).toMatchObject({ reason: "Einschalten kann nur, wer dieses Ziel verwaltet" });
         for (const value of [result, saved]) {
@@ -835,7 +846,14 @@ databaseSuite()("durable Code activation", () => {
     });
     expect(JSON.stringify(hidden)).not.toContain("Fixture target");
     expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
-    expect((await status(code, activation.id)).failure).toEqual(failure);
+    expect((await status(code, activation.id)).failure).toEqual({ ...failure, managerNames: [nextOwnerId] });
+    // A guest who may read the target learns no other person's name, as in directory search.
+    const guest = {
+      ...owner,
+      authority: { ...owner.authority, actor: { kind: "user" as const, user: { ...person(ownerId), roles: ["guest" as const] } } },
+    };
+    const asGuest = await readCodeActivation({ codeId: code.id, activationId: activation.id }, guest);
+    expect(asGuest.failure).not.toHaveProperty("managerNames");
   });
   test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
     targetReadable = false;

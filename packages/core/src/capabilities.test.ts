@@ -304,6 +304,7 @@ describe("Core AI capabilities", () => {
       "ai.task.read",
       "ai.task.run.read",
       "ai.tasks.list",
+      "code.attention",
       "code.list",
       "code.policy.effective",
       "code.policy.preview",
