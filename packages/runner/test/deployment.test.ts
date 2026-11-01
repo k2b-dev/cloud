@@ -86,6 +86,7 @@ test("hostile runner CI is path-filtered and required by the gate", async () => 
   expect(commands).toContain("--read-only --cap-drop ALL");
   expect(commands).toContain("--security-opt no-new-privileges");
   expect(commands.match(/! grep -qE/g)).toHaveLength(2);
+  expect(commands).toContain('! grep -qF C14_OUTPUT_CANARY "$RUNNER_TEMP/runner-native.log"');
   expect(commands).toContain("--kill-after=5s");
   const changes = workflow.jobs.changes!.steps!.map((step) => step.run ?? "").join("\n");
   expect(changes).toContain('echo "runner=$(match "$shared|^packages/runner/|^compose');

@@ -848,6 +848,8 @@ jobs:
             cloud-runner:attacks bun --no-env-file test \
             /app/hostile.test.js /app/isolation.test.js /app/engine.test.js /app/shutdown.test.js 2>&1 | tee "$RUNNER_TEMP/runner-native.log"
           ! grep -qE '\(skip\)|[1-9][0-9]* skip' "$RUNNER_TEMP/runner-native.log"
+          # Hostile console output and return values must never reach a log.
+          ! grep -qF C14_OUTPUT_CANARY "$RUNNER_TEMP/runner-native.log"
       - name: Attack the real signed bridge and bounded SIGTERM drain
         run: |
           set -euo pipefail

@@ -207,6 +207,9 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
     const called = Promise.withResolvers<void>();
     let fetches = 0;
     let providerCalls = 0;
+    // Monotonic host time; both clocks seen by the runner are frozen at NOW.
+    let leasedAt = 0;
+    let completedAt = 0;
     const responses: { status: number; body: unknown }[] = [];
     const routes = createCodeRunnerCallRoutes({
       host: createCodeBridgeHost(), // Real Postgres fencing/observations and real Valkey limiter.
@@ -237,7 +240,10 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
         if (path === RUNNER_PATHS.config)
           return Response.json({ ...config, slots: 1, bridgeConcurrency: options.flood ? 33 : config.bridgeConcurrency });
         if (path === RUNNER_PATHS.fetch) {
-          if (++fetches === 1) return Response.json({ runs: [lease] });
+          if (++fetches === 1) {
+            leasedAt = performance.now();
+            return Response.json({ runs: [lease] });
+          }
           await new Promise<void>((done) => {
             if (request.signal.aborted) done();
             else request.signal.addEventListener("abort", () => done(), { once: true });
@@ -247,6 +253,7 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
         if (path === RUNNER_PATHS.bundle) return new Response(source);
         if (path === RUNNER_PATHS.heartbeat) return Response.json({ leaseExpiresAt: lease.deadlineAt });
         if (path === RUNNER_PATHS.complete) {
+          completedAt = performance.now();
           complete.resolve(RunnerCompleteRequestSchema.parse(await request.json()));
           return Response.json({});
         }
@@ -321,7 +328,12 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       if (options.drain) expect(fetches).toBe(1);
       expect(providerCalls).toBe(0);
       const rows = await sql<{ result: unknown }[]>`SELECT result FROM code.calls WHERE run_id=${run!.id}::uuid ORDER BY ordinal`;
-      return { outcome: result.outcome, responses, observations: rows.map((row) => row.result) };
+      return {
+        outcome: result.outcome,
+        responses,
+        observations: rows.map((row) => row.result),
+        attemptMs: completedAt - leasedAt,
+      };
     } finally {
       try {
         await docker("rm", "--force", name);
@@ -432,6 +444,10 @@ suiteFor("database", "valkey")("hostile bundles through the real image and Core 
       export async function main(input, cloud) { await probe(input, cloud); await new Promise(resolve => setTimeout(resolve, 60_000)); }`;
     const result = await execute(source, { drain: true });
     expect(result.outcome).toBe("wall_clock_limit");
+    // The 1.5 s deadline timer starts once the lease arrives. Two seconds cover
+    // terminating workerd and reporting; a drain that waits for the bundle does not fit.
+    expect(result.attemptMs).toBeGreaterThanOrEqual(1400);
+    expect(result.attemptMs).toBeLessThan(3500);
     expect(result.responses).toEqual([{ status: 200, body: refusal("code_disabled") }]);
   }, 30_000);
 });

@@ -119,8 +119,11 @@ test("giant call input is refused before the supervisor callback and giant resul
         try { await cloud.call('oversized', null); throw new Error('ESCAPE'); }
         catch (error) { await cloud.call('report', error.message); }
         // The entrypoint discards return values and workerd stderr goes to /dev/null.
-        console.log('x'.repeat(128 * 1024));
-        return 'x'.repeat(128 * 1024);
+        // runner-attacks fails if this canary appears anywhere in the job log.
+        const canary = ['C14', 'OUTPUT', 'CANARY'].join('_');
+        console.log(canary.repeat(16 * 1024));
+        console.error(canary.repeat(16 * 1024));
+        return canary.repeat(16 * 1024);
       }`,
       async (operation, input) => {
         if (operation === "oversized") return "x".repeat(config.bridgeBytes * 2);
