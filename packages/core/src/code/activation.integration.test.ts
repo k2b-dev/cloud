@@ -87,6 +87,7 @@ const catalog = compileCapabilityManifest("example", {
 databaseSuite()("durable Code activation", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
+    readersSpy: ReturnType<typeof spyOn<typeof provider, "readResourcePrincipals">>,
     catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
   let ordinal = 0;
   const live = new Map<string, CodeAccessGrant>(),
@@ -94,6 +95,7 @@ databaseSuite()("durable Code activation", () => {
   const sets: Array<{ id: string; dryRun: boolean; grantId: string; person: string }> = [];
   const removals: string[] = [];
   let ownerAdministrator = ownerId;
+  let targetReadable = true;
   let denyDry: string | null = null,
     denySet: string | null = null,
     crashAt: string | null = null,
@@ -107,7 +109,14 @@ databaseSuite()("durable Code activation", () => {
         return { granted: false, reasonCode: "not_manager", reason: "Owner administrator changed." };
       if (tombstones.has(input.item.grantId)) return { granted: false, reasonCode: "removed", reason: "Removed by the target manager." };
       if (input.item.target.id === (input.dryRun ? denyDry : denySet))
-        return { granted: false, reasonCode: "not_manager", reason: "Only this target is blocked." };
+        return {
+          granted: false,
+          reasonCode: "not_manager",
+          reason: "Only this target is blocked.",
+          readable: targetReadable,
+          title: "Fixture target",
+          managerUserIds: [nextOwnerId],
+        };
       if (!input.dryRun && input.item.target.id === crashAt && !crashAfter) throw new CodeActivationTransportError("crash", true);
       const existing = live.get(input.item.grantId);
       if (existing) return { granted: true, grantId: existing.grantId, level: existing.level };
@@ -119,13 +128,22 @@ databaseSuite()("durable Code activation", () => {
           level: "write",
         });
       if (!input.dryRun && input.item.target.id === crashAt && crashAfter) throw new CodeActivationTransportError("lost_response", true);
-      return { granted: true, grantId: input.item.grantId, level: "write", managerUserIds: [ownerId] };
+      return {
+        granted: true,
+        grantId: input.item.grantId,
+        level: "write",
+        readable: targetReadable,
+        title: "Fixture target",
+        managerUserIds: [ownerId],
+      };
     },
+    notificationManagers: async () => [ownerId],
     list: async (_app, principal) => {
       if (listDown) throw new Error("Provider offline");
       return [...live.values()].filter((g) => g.principal === principal);
     },
-    remove: async (_app, _principal, grantId) => {
+    remove: async (appId, _principal, grantId) => {
+      expect(appId).toBe("example");
       removals.push(grantId);
       live.delete(grantId);
       tombstones.add(grantId);
@@ -172,6 +190,10 @@ databaseSuite()("durable Code activation", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();
+    readersSpy = spyOn(provider, "readResourcePrincipals").mockImplementation(async (input) => ({
+      state: "checked",
+      readable: [...input.principals],
+    }));
     await migrateAppApproval();
     await migrateSettings();
     await migrateAudit();
@@ -194,6 +216,7 @@ databaseSuite()("durable Code activation", () => {
   });
   beforeEach(() => {
     ownerAdministrator = ownerId;
+    targetReadable = true;
     live.clear();
     tombstones.clear();
     sets.length = 0;
@@ -204,6 +227,7 @@ databaseSuite()("durable Code activation", () => {
   afterAll(async () => {
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
+    readersSpy?.mockRestore();
     await database?.drop();
     setSystemTime();
   });
@@ -699,6 +723,115 @@ databaseSuite()("durable Code activation", () => {
     expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE workload_id=${first.version.id}`)[0]!.state).toBe(
       "revoked",
     );
+  });
+  test("unreadable target refusal persists and returns neither title nor managers; readable refusal keeps both", async () => {
+    for (const readable of [false, true]) {
+      targetReadable = readable;
+      const code = await newCode(),
+        submitted = await version(code, ["B"]),
+        activation = await start(code, submitted.version.id);
+      denyDry = "B";
+      await run(activation.id);
+      const result = await status(code, activation.id);
+      expect(result.state).toBe("failed");
+      expect(result.failure).toMatchObject({ target: { type: "example.item", id: "B" }, code: "not_manager", readable });
+      const [saved] = await sql<
+        { failure: unknown; plan: unknown }[]
+      >`SELECT failure,plan FROM code.activations WHERE id=${activation.id}::uuid`;
+      expect(JSON.stringify(saved!.plan)).not.toContain("managerUserIds");
+      expect(JSON.stringify(saved!.plan)).not.toContain("Fixture target");
+      if (readable) {
+        expect(result.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
+        expect(saved!.failure).toMatchObject({ title: "Fixture target", managerUserIds: [nextOwnerId] });
+        // Losing read access also removes presentation on an existing status response.
+        readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
+        const hidden = await status(code, activation.id);
+        expect(hidden.failure).not.toHaveProperty("title");
+        expect(hidden.failure).not.toHaveProperty("managerUserIds");
+      } else {
+        expect(result.failure).toMatchObject({ reason: "Einschalten kann nur, wer dieses Ziel verwaltet" });
+        for (const value of [result, saved]) {
+          expect(JSON.stringify(value)).not.toContain("Fixture target");
+          expect(JSON.stringify(value)).not.toContain(nextOwnerId);
+          expect(JSON.stringify(value)).not.toContain("managerUserIds");
+        }
+      }
+    }
+  });
+  test("saved answers without a reader decision use the current viewer's read access", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["B"]),
+      activation = await start(code, submitted.version.id);
+    denyDry = "B";
+    await run(activation.id);
+    const failure = {
+      target: { type: "example.item", id: "B" },
+      code: "not_manager",
+      reason: "Fixture target requires management",
+      title: "Fixture target",
+      managerUserIds: [nextOwnerId],
+    };
+    await sql`UPDATE code.activations SET failure=${JSON.stringify(failure)}::text::jsonb WHERE id=${activation.id}::uuid`;
+    readersSpy.mockResolvedValueOnce({ state: "checked", readable: [] });
+    const hidden = await status(code, activation.id);
+    expect(hidden.failure).toEqual({
+      target: failure.target,
+      code: failure.code,
+      reason: "Einschalten kann nur, wer dieses Ziel verwaltet",
+      readable: false,
+    });
+    expect(JSON.stringify(hidden)).not.toContain("Fixture target");
+    expect(JSON.stringify(hidden)).not.toContain(nextOwnerId);
+    expect((await status(code, activation.id)).failure).toEqual(failure);
+  });
+  test("unreadable Cloud-admin activation uses server-only recipients and still sends each notice once", async () => {
+    targetReadable = false;
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id, administrator);
+    await run(activation.id);
+    expect((await status(code, activation.id)).state).toBe("active");
+    const [saved] = await sql<{ plan: unknown }[]>`SELECT plan FROM code.activations WHERE id=${activation.id}::uuid`;
+    expect(JSON.stringify(saved!.plan)).not.toContain("managerUserIds");
+    expect(JSON.stringify(saved!.plan)).not.toContain("Fixture target");
+    expect(
+      await sql`SELECT grant_id FROM code.target_grants WHERE activation_id=${activation.id}::uuid AND cardinality(manager_user_ids)>0`,
+    ).toHaveLength(0);
+    const delivered: string[] = [];
+    const notify = async (input: { userId: string; target: { id: string } }) => {
+      expect(input.userId).toBe(ownerId);
+      delivered.push(input.target.id);
+    };
+    await cleanupCodeActivation(code.id, transport, notify);
+    await cleanupCodeActivation(code.id, transport, notify);
+    expect(delivered.sort()).toEqual(["A", code.owner.kind === "resource" ? code.owner.ref.id : ""].sort());
+    expect(
+      await sql`SELECT target FROM code.activation_notices WHERE activation_id=${activation.id}::uuid AND jsonb_typeof(target)<>'object'`,
+    ).toHaveLength(0);
+  });
+  test("persisted target objects route rollback to the provider and remove every newly applied grant", async () => {
+    const code = await newCode(),
+      submitted = await version(code),
+      activation = await start(code, submitted.version.id);
+    denySet = "B";
+    await run(activation.id);
+    expect((await status(code, activation.id)).state).toBe("failed");
+    const rows = await sql<
+      { target: { type: string; id: string }; state: string }[]
+    >`SELECT target,state FROM code.target_grants WHERE activation_id=${activation.id}::uuid ORDER BY target->>'id'`;
+    expect(rows.map((row) => row.target)).toEqual([
+      { type: "example.item", id: "A" },
+      { type: "example.item", id: "B" },
+    ]);
+    expect(rows.every((row) => row.state === "released")).toBe(true);
+    expect(removals).toHaveLength(2);
+    expect(live.size).toBe(0);
+    const [saved] = await sql<
+      { authority: unknown; plan: unknown; failure: unknown; mandate_policy: unknown }[]
+    >`SELECT authority,plan,failure,mandate_policy FROM code.activations WHERE id=${activation.id}::uuid`;
+    expect(Array.isArray(saved!.plan)).toBe(true);
+    expect(typeof saved!.failure).toBe("object");
+    expect(typeof saved!.mandate_policy).toBe("object");
   });
   test("Cloud-admin activation changes no personal shares and emits one durable notice per affected target", async () => {
     const code = await newCode(),
