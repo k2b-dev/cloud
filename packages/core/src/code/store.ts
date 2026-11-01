@@ -265,7 +265,9 @@ const mapVersion = (row: VersionRow): CodeVersion => ({
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
 });
-/** Save the full executable snapshot once. C8/C16 supply the final manifest at insertion; never fill it by UPDATE. */
+/** Internal storage primitive for C8's transaction; CLI, chat and all push callers must use submitCodeVersion.
+ * Save the full executable snapshot once; never fill the manifest by UPDATE.
+ */
 export const createCodeVersion = async (
   input: {
     codeId: string;

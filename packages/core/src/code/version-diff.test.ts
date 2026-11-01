@@ -55,6 +55,14 @@ describe("C8 complete CodeDiff and submission contracts", () => {
     expect(join(file!.lines, "new")).toBe(after);
     expect(file!.lines).toHaveLength(8000);
   });
+  test("replacement mode is deterministic and preserves all rows for chunked reads", () => {
+    const before = { "a.ts": "first\nold\nlast\n" },
+      after = { "a.ts": "first\nnew\nlast\n" };
+    const files = codeVersionDiff(before, after, "replacement");
+    expect(files).toEqual(codeVersionDiff(before, after, "replacement"));
+    expect(join(files[0]!.lines, "old")).toBe(before["a.ts"]);
+    expect(join(files[0]!.lines, "new")).toBe(after["a.ts"]);
+  });
   test("checked manifest requires exact hashes, classifications, targets and source evidence", () => {
     const sourceFiles = { "a.ts": "hello" },
       bundle = "bundle";

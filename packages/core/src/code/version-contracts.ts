@@ -84,6 +84,18 @@ export const codeVersionContracts = {
       })
       .strict(),
   },
+  diffRead: {
+    input: z
+      .object({
+        codeId: CodeIdSchema,
+        versionId: z.uuid(),
+        comparisonVersionId: z.uuid().nullable(),
+        offset: z.number().int().nonnegative().default(0),
+        length: z.number().int().min(1).max(16_384).default(16_384),
+      })
+      .strict(),
+    data: z.object({ content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).strict() }).strict(),
+  },
   list: {
     input: z
       .object({

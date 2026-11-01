@@ -1,5 +1,11 @@
 import { sql } from "@k2b/cloud";
-import { type CapabilityActionCallReview, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
+import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
+import {
+  CAPABILITY_MAX_RESULT_BYTES,
+  type CapabilityActionCallReview,
+  CapabilityActionCallReviewSchema,
+  capabilityActionPolicy,
+} from "@k2b/cloud/contracts";
 import { isAppSessionActor } from "@k2b/cloud/server";
 import { audit, canRepairAppAccess } from "@k2b/cloud/services";
 import {
@@ -16,11 +22,22 @@ import {
 } from "@k2b/cloud/services/approvals";
 import type { SQL } from "bun";
 import type { z } from "zod";
-import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
-import { type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
+import { type CodeContext, CodeDataError, CodeOwnerUnavailableError, codePerson, requireCodePermission } from "./access";
+import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
+import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
-import { codeBundleHash, codeSourceHash, createCodeVersion, findCode, lockCodeForEdit, readCode, readCodeVersion } from "./store";
+import { codeSettings } from "./settings";
+import {
+  codeBundleHash,
+  codeSourceHash,
+  codeTextChunk,
+  createCodeVersion,
+  findCode,
+  lockCodeForEdit,
+  readCode,
+  readCodeVersion,
+} from "./store";
 import {
   CodeCheckedVersionManifestSchema,
   type CodeVersionBinding,
@@ -117,6 +134,27 @@ function reviewFor(
     },
   };
 }
+async function validateOperationRows(manifest: z.infer<typeof CodeCheckedVersionManifestSchema>, context: CodeContext) {
+  if (Buffer.byteLength(JSON.stringify(manifest)) > (await codeSettings.get("core.code.manifest_bytes")))
+    throw new CodeDataError("BAD_INPUT", "Code manifest exceeds storage limits.");
+  for (const appId of new Set(manifest.permissions.map((permission) => permission.operation.split(".")[0]!))) {
+    context.signal?.throwIfAborted();
+    const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority);
+    if (!catalog.ok) throw new CodeOwnerUnavailableError("Operation catalog is unavailable. Retry submission.");
+    if (!catalog.data) throw new CodeVersionError("code_manifest_invalid", "Operation catalog is unavailable.");
+    for (const permission of manifest.permissions.filter((permission) => permission.operation.startsWith(`${appId}.`))) {
+      const localId = permission.operation.slice(appId.length + 1);
+      const query = catalog.data.manifest.queries.find((operation) => operation.localId === localId);
+      const action = catalog.data.manifest.actions.find((operation) => operation.localId === localId);
+      if ((!query && !action) || query?.stream || action?.stream || action?.code === false)
+        throw new CodeVersionError("code_manifest_invalid", "Manifest operation is unavailable to Code.");
+      const row = codePolicyRow(query ? "query" : "action", capabilityActionPolicy(catalog.data.manifest, localId));
+      if (row === "ask_sends") throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
+      if (!manifest.policyRows.includes(row))
+        throw new CodeVersionError("code_manifest_invalid", "Manifest classifications do not cover the current operation policy.");
+    }
+  }
+}
 /** Submit the exact checked source and bundle atomically. Pending approval never changes the running version. */
 export async function submitCodeVersion(
   raw: z.input<typeof codeVersionContracts.submit.input>,
@@ -140,6 +178,7 @@ export async function submitCodeVersion(
       throw new CodeVersionError("code_manifest_invalid", "Permission source location does not exist.");
   }
   await readCode(input.codeId, context);
+  await validateOperationRows(input.manifest, context);
   return sql.begin(async (tx) => {
     // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
     const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r
@@ -155,6 +194,10 @@ export async function submitCodeVersion(
       throw new CodeVersionError("code_version_conflict", messages(context).t.conflict, {
         latestVersionId: latest?.id ?? null,
         files: codeVersionDiff(before?.source_files ?? {}, after?.source_files ?? {}),
+        diffRead: {
+          query: "core.code.version.diff.read",
+          input: { codeId: code.id, versionId: latest?.id ?? null, comparisonVersionId: input.baseVersionId },
+        },
       });
     }
     await approvals.cancel(
@@ -238,6 +281,24 @@ export async function diffCodeVersion(input: z.infer<typeof codeVersionContracts
     };
   });
 }
+/** Bounded, deterministic UTF-16 chunks of the complete CodeDiffFile[] JSON, including every row.
+ * Assemble all chunks before rendering. Changed files use full replacement rows so immutable inputs always yield identical chunks.
+ */
+export async function readCodeVersionDiff(input: z.infer<typeof codeVersionContracts.diffRead.input>, context: CodeContext) {
+  await readCode(input.codeId, context);
+  return sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+    const version = await versionSnapshot(input.codeId, input.versionId, tx);
+    const comparison = input.comparisonVersionId ? await versionSnapshot(input.codeId, input.comparisonVersionId, tx) : null;
+    return {
+      content: codeTextChunk(
+        JSON.stringify(codeVersionDiff(comparison?.source_files ?? {}, version.source_files, "replacement")),
+        input.offset,
+        input.length,
+      ),
+    };
+  });
+}
 async function submissionFor(codeId: string, versionId: string, context: CodeContext, db: SQL = sql): Promise<CodeVersionSubmission> {
   const { version } = await readCodeVersion({ codeId, versionId, offset: 0, length: 1 }, context);
   const [row] = await db<SubmissionRow[]>`
@@ -292,15 +353,26 @@ export async function listCodeVersions(input: z.infer<typeof codeVersionContract
   const rows = await sql<(SubmissionRow & { version: unknown; number: number })[]>`
     SELECT v.number,s.*,r.status,(r.expires_at>statement_timestamp()) AS unexpired,d.approved,d.sole_admin,d.decided_by,d.decided_at,
       jsonb_build_object('id',v.id,'codeId',v.code_id,'number',v.number,
-        'files',ARRAY(SELECT jsonb_object_keys(v.source_files) ORDER BY 1),
+        'files',ARRAY(SELECT path FROM jsonb_object_keys(v.source_files) path ORDER BY path COLLATE "C"),
         'sourceHash',v.source_hash,'bundleHash',v.bundle_hash,'sourceBytes',v.source_bytes,'bundleBytes',v.bundle_bytes,
         'manifestAvailable',v.manifest IS NOT NULL,'createdBy',v.created_by,'createdAt',to_char(v.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) AS version
     FROM code.versions v JOIN code.version_submissions s ON s.version_id=v.id
       LEFT JOIN approvals.requests r ON r.id=s.approval_id LEFT JOIN code.version_decisions d ON d.version_id=v.id
     WHERE v.code_id=${input.codeId} AND (${input.before ?? null}::int IS NULL OR v.number<${input.before ?? null})
     ORDER BY v.number DESC LIMIT ${input.limit + 1}`;
-  const items = rows.slice(0, input.limit).map((row) => submissionReceipt(CodeVersionSchema.parse(row.version), row, context));
-  return { items, nextBefore: rows.length > input.limit ? rows[input.limit - 1]!.number : null };
+  const items: CodeVersionSubmission[] = [];
+  for (const row of rows.slice(0, input.limit)) {
+    const version = CodeVersionSchema.parse(row.version);
+    version.files.sort();
+    const item = submissionReceipt(version, row, context);
+    // Reserve the existing inline-content budget for the capability envelope and cursors.
+    if (Buffer.byteLength(JSON.stringify([...items, item])) > CAPABILITY_MAX_RESULT_BYTES - CODE_INLINE_JSON_BYTES) {
+      if (!items.length) throw new CodeDataError("BAD_INPUT", "Version metadata exceeds the response budget.");
+      break;
+    }
+    items.push(item);
+  }
+  return { items, nextBefore: rows.length > items.length ? items.at(-1)!.version.number : null };
 }
 
 /** C5 invokes this only for its winning decision. Both domain evidence and audit commit with the platform request. */

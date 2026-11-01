@@ -66,6 +66,7 @@ import {
   decideCodeVersion,
   diffCodeVersion,
   listCodeVersions,
+  readCodeVersionDiff,
   reviewCodeVersionDecision,
   setCodePaused,
   submitCodeVersion,
@@ -718,6 +719,13 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "code.version.diff.read": {
+      title: "Read complete Code comparison",
+      description: "Read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
+      ...codeVersionContracts.diffRead,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersionDiff(input, ctx)),
+    },
     "code.version.diff": {
       title: "Compare Code version",
       description: "Read full file rows against the last approved or activated version, with exact decision binding.",

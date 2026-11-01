@@ -1,4 +1,4 @@
-import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
 import { ZodError } from "zod";
 import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "./access";
@@ -13,13 +13,19 @@ export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: 
     return ok({ data: await run(contextFor(context)) });
   } catch (error) {
     if (error instanceof ZodError) return fail(err.badInput("Invalid Code input."));
-    if (error instanceof CodeVersionError)
+    if (error instanceof CodeVersionError) {
+      let details = error.details;
+      if (details && Buffer.byteLength(JSON.stringify(details)) > CAPABILITY_MAX_RESULT_BYTES / 2) {
+        const { files: _files, ...locator } = details;
+        details = locator;
+      }
       return fail({
         code: error.code,
         message: error.message,
         status: error.code === "code_sends_not_yet" || error.code === "code_manifest_invalid" ? (400 as const) : (409 as const),
-        ...(error.details ? { details: error.details } : {}),
+        ...(details ? { details } : {}),
       });
+    }
     if (error instanceof CodeOwnerUnavailableError)
       return fail(err.internal("Code owner is unavailable. Try again after its application recovers."));
     if (!(error instanceof CodeDataError)) throw error;

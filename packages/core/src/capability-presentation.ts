@@ -23,6 +23,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.version.diff.read": {
+          title: "Vollständigen Code-Vergleich lesen",
+          description:
+            "Liest begrenzte Abschnitte des vollständigen CodeDiff-JSON zweier unveränderlicher Versionen. Vor der Anzeige vollständig zusammensetzen.",
+        },
         "code.version.diff": {
           title: "Code-Version vergleichen",
           description:

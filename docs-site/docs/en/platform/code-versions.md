@@ -29,7 +29,7 @@ approval. `status: "pending"` has a platform approval request. Neither status
 changes the active version.
 
 Core checks the source and bundle hashes, source locations, manifest
-classifications and current policy before committing. A forbidden row returns
+classifications against the current capability catalog, and current policy before committing. A forbidden row returns
 `code_policy_never`. Unattended `ask_sends` is refused with
 `code_sends_not_yet` in Phase 1, even under the Open preset. Sending without a
 person is reserved for Phase 3.
@@ -38,13 +38,16 @@ If someone pushed first, submission returns `code_version_conflict` with
 “Neuere Version vorhanden” in German, `details.latestVersionId` and the
 complete `details.files` difference from the requested base to the latest
 saved version. Review and reconcile those changes, then submit with that base.
-The failed push saves neither a version nor an approval request.
+The failed push saves neither a version nor an approval request. Conflict details
+also contain `diffRead: { query, input }`. If the full rows exceed the transport
+budget, the error retains its stable code, latest ID and this complete-diff
+reader instead of embedding the rows.
 
 ### Checker manifest
 
 `CodeCheckedVersionManifestSchema` and `CodeCheckedVersionManifest` are exported
 from `@k2b/cloud/contracts` and re-exported by Core's `code/index.ts`. The host
-copies these fields unchanged from C16's `checkCode` result:
+copies these fields unchanged from the checker's `checkCode` result:
 
 - `version: 1`;
 - `entrypoints`: `{ kind: "schedule" | "manual", entrypoint, cron, file, line }`;
@@ -54,12 +57,13 @@ copies these fields unchanged from C16's `checkCode` result:
 - `ai`: whether detected calls use AI;
 - `hashes`: lowercase SHA-256 digests for `source`, `sdk` and `bundle`.
 
-The trusted host adds `entry` from the original `CodeCheckRequest.entry` and
+The host adds `entry` from the original `CodeCheckRequest.entry` and
 unique `policyRows` from operation metadata, including every used classification
-and any AI or internet use. Keep the checker's permission rows and entrypoints
+and any AI or internet use. Core resolves each declared operation in the current
+catalog and refuses missing classifications or operations unavailable to Code. Keep the checker's permission rows and entrypoints
 unchanged; locations are one-based. Core validates their source locations.
 
-Source hashing matches C16: SHA-256 over UTF-8
+Source hashing matches the checker: SHA-256 over UTF-8
 `JSON.stringify({ entry, files })`, where `files` contains sorted `[path, content]`
 pairs. SDK hashing covers recursively key-sorted SDK JSON. Bundle hashing covers
 the exact UTF-8 bundle. The manifest is saved at version creation and cannot be
@@ -88,6 +92,16 @@ for that transport fails visibly rather than returning a partial diff. The
 stored approval content contains the complete comparison, readable through
 [the shared approval content route](/en/docs/identity/approvals#approval-routes).
 For source inspection, `core.code.version.read` also provides bounded chunks.
+
+For any comparison, including versions without an approval request, use
+`core.code.version.diff.read({ codeId, versionId, comparisonVersionId, offset?,
+length? })`. The comparison ID is another version of the same Code or null for
+an empty tree. It returns `{ content: { text, nextOffset } }`: bounded UTF-16
+chunks of the complete `CodeDiffFile[]` JSON. Follow `nextOffset` until null and
+parse the concatenated text before rendering. Changed files use full replacement
+rows in this reader, making chunks deterministic; unchanged files retain `same`
+rows. No source row or file is omitted. `length` defaults to and is at most
+16,384. Readers need the same Code read permission as source inspection.
 
 A binding contains `codeId`, `versionId`, `sourceHash`, `bundleHash`,
 `manifestHash`, `comparisonVersionId`, `comparisonSourceHash` and
@@ -142,7 +156,8 @@ epoch prevents subsequent use of that approval.
 
 `core.code.version.list({ codeId, before?, limit? })` returns newest-first
 submission receipts and `nextBefore`. `before` is an exclusive version number;
-`limit` defaults to 20 and accepts at most 50. Decision receipts survive pruning
+`limit` defaults to 20 and accepts at most 50. Pages may stop earlier at the
+transport byte budget; follow `nextBefore` until null. Decision receipts survive pruning
 of transient platform approval requests. An undecided expired request has
 `status: "expired"`; submit again to request a new review.
 
@@ -156,18 +171,20 @@ Activate a version before using either operation.
 ## Maintainer integration
 
 Core owns the services and tables. Other applications consume capabilities.
+Every push caller uses `submitCodeVersion`; `createCodeVersion` is an internal
+storage primitive and does not implement submission or approval lifecycle.
 `packages/core/src/code/index.ts` exports:
 
 - `codeVersionContracts`, `CodeVersionBinding`, `CodeVersionSubmission`,
   `CodeVersionDecision`, `CodeVersionDiffFile` and their schemas;
 - `submitCodeVersion`, `diffCodeVersion`, `listCodeVersions`,
-  `decideCodeVersion` and `setCodePaused` for permission-aware callers;
+  `decideCodeVersion`, `readCodeVersionDiff` and `setCodePaused` for permission-aware callers;
 - `startCodeVersionApprovals` and `applyCodeVersionDecision` for the lifecycle
-  owner of the C5 decision handler;
+  owner of the platform decision handler;
 - `requireCodeVersionApproval(code, versionId, tx)` for activation and dispatch.
   Hold policy then Code locks, or use one consistent read snapshot. This checks
   current classifications, hashes, decision and device/sign-out revocation;
-- `recordCodeVersionBaseline(codeId, versionId, tx)` for C9 to call only in
+- `recordCodeVersionBaseline(codeId, versionId, tx)` for activation to call only in
   the transaction of a successful activation, after acquiring the Code lock.
   It records comparison history and grants no execution or resource authority.
 

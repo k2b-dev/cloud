@@ -1,8 +1,12 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import * as provider from "@k2b/cloud/capabilities/server";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { User } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
+import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -12,15 +16,17 @@ import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
-import type { Code } from "./contracts";
+import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
-import { addCodeShare, codeBundleHash, codeSourceHash, findCode, readCode } from "./store";
+import { addCodeShare, codeBundleHash, codeSourceHash, findCode, readCode, readCodeVersion } from "./store";
 import type { CodeCheckedVersionManifest, CodeVersionSubmission } from "./version-contracts";
+import { codeVersionDiff } from "./version-diff";
 import {
   decideCodeVersion,
   diffCodeVersion,
   listCodeVersions,
+  readCodeVersionDiff,
   recordCodeVersionBaseline,
   requireCodeVersionApproval,
   reviewCodeVersionDecision,
@@ -29,6 +35,23 @@ import {
   submitCodeVersion,
 } from "./versions";
 
+const operation = {
+  title: "Fixture",
+  description: "Fixture operation.",
+  openWorld: false,
+  input: z.object({}).strict(),
+  data: z.object({}).strict(),
+  run: () => ({ ok: true as const, data: { data: {} } }),
+};
+const catalog = compileCapabilityManifest("example", {
+  protocolVersion: 2,
+  queries: { "item.read": operation },
+  actions: {
+    "item.change": { ...operation, destructive: false, idempotency: "none", policy: { silent: "shared" } },
+    "item.delete": { ...operation, destructive: true, idempotency: "none", policy: { ask: "deletes" } },
+    "item.send": { ...operation, destructive: false, idempotency: "none", policy: { ask: "sends" } },
+  },
+});
 const fixed = new Date("2026-10-31T12:00:00.000Z");
 const authorId = "11111111-1111-4111-8111-111111111111";
 const reviewerId = "22222222-2222-4222-8222-222222222222";
@@ -65,8 +88,8 @@ const context = (id = authorId): CodeContext => ({
 const author = context(),
   reviewer = context(reviewerId);
 const input = (code: Code, source: string, baseVersionId: string | null = null, rows: CodePolicyRow[] = ["silent_shared"]) => {
-  const sourceFiles = { "code.ts": source, "same.ts": "export const unchanged = true;\n" },
-    bundle = `bundle:${source}`;
+  const sourceFiles: CodeSourceFiles = { "code.ts": source, "same.ts": "export const unchanged = true;\n" };
+  const bundle = `bundle:${source}`;
   const manifest: CodeCheckedVersionManifest = {
     version: 1,
     entry: "code.ts",
@@ -90,6 +113,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let dispose: (() => void) | undefined;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
   let ordinal = 0;
   async function newCode(): Promise<Code> {
     const id = `c_c8${String(++ordinal).padStart(4, "0")}`;
@@ -124,6 +148,16 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       if (!definition) throw new Error(`Unexpected setting ${key}`);
       return definition.default;
     });
+    catalogSpy = spyOn(provider, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: {
+        appId: "example",
+        appName: "Example",
+        appIcon: "ti ti-code",
+        appDescription: "Fixture",
+        manifest: catalog,
+      },
+    });
     dispose = startCodeVersionApprovals();
   });
   beforeEach(async () => {
@@ -133,6 +167,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   afterAll(async () => {
     dispose?.();
     settingsSpy?.mockRestore();
+    catalogSpy?.mockRestore();
     await database?.drop();
     setSystemTime();
   });
@@ -375,6 +410,63 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${reviewerId}::uuid,${reviewerId},'local','user',true) ON CONFLICT(id) DO NOTHING`;
     }
   });
+  test("complete comparison JSON is readable in stable bounded chunks even above the capability budget", async () => {
+    const code = await newCode(),
+      first = await submitCodeVersion(input(code, "before", null, ["read"]), author);
+    const next = await submitCodeVersion(input(code, "after\n".repeat(40_000), first.version.id, ["read"]), author);
+    const chunks: string[] = [];
+    let offset = 0;
+    for (;;) {
+      const result = await readCodeVersionDiff(
+        { codeId: code.id, versionId: next.version.id, comparisonVersionId: first.version.id, offset, length: 16_384 },
+        author,
+      );
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+      chunks.push(result.content.text);
+      if (result.content.nextOffset === null) break;
+      offset = result.content.nextOffset;
+    }
+    const complete = chunks.join("");
+    expect(Buffer.byteLength(complete)).toBeGreaterThan(CAPABILITY_MAX_RESULT_BYTES);
+    expect(JSON.parse(complete)).toEqual(
+      codeVersionDiff(input(code, "before").sourceFiles, input(code, "after\n".repeat(40_000)).sourceFiles, "replacement"),
+    );
+  });
+  test("history pages obey the byte budget and preserve read's file ordering", async () => {
+    const code = await newCode();
+    let previous: string | null = null;
+    for (let n = 0; n < 8; n++) {
+      const draft = input(code, `version ${n}`, previous, ["read"]);
+      for (let file = 0; file < 90; file++) draft.sourceFiles[`${file}_${"a".repeat(480)}.ts`] = "x";
+      draft.sourceFiles["B.ts"] = "B";
+      draft.sourceFiles["a.ts"] = "a";
+      draft.sourceFiles["😀.ts"] = "unicode";
+      draft.sourceFiles["\uE000.ts"] = "private use";
+      draft.manifest.hashes.source = codeSourceHash(draft.sourceFiles, draft.manifest.entry);
+      previous = (await submitCodeVersion(draft, author)).version.id;
+    }
+    const page = await listCodeVersions({ codeId: code.id, limit: 50 }, author);
+    expect(page.items.length).toBeGreaterThan(0);
+    expect(page.items.length).toBeLessThan(8);
+    expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+    expect(page.items[0]?.version.files).toEqual(
+      (await readCodeVersion({ codeId: code.id, versionId: previous!, offset: 0, length: 1 }, author)).version.files,
+    );
+    const following = await listCodeVersions({ codeId: code.id, limit: 50, before: page.nextBefore! }, author);
+    expect([...page.items, ...following.items].map((item) => item.version.number)).toEqual([8, 7, 6, 5, 4, 3, 2, 1]);
+  });
+  test("catalog classifications cannot be understated and sends remain refused when omitted from policyRows", async () => {
+    const code = await newCode();
+    for (const [operation, codeExpected] of [
+      ["example.item.delete", "code_manifest_invalid"],
+      ["example.item.send", "code_sends_not_yet"],
+    ]) {
+      const draft = input(code, "understated", null, ["read"]);
+      draft.manifest.permissions[0]!.operation = operation!;
+      await expect(submitCodeVersion(draft, author)).rejects.toMatchObject({ code: codeExpected });
+    }
+    expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
+  });
   test("two concurrent pushes from the same base yield one complete version and one conflict with the full difference", async () => {
     const code = await newCode(),
       base = await submitCodeVersion(input(code, "base", null, ["read"]), author);
@@ -413,6 +505,16 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   test("policy veto and bad checker locations leave neither a saved version nor an approval", async () => {
     const code = await newCode(),
       bad = input(code, "bad");
+    const missingEntry = input(code, "bad");
+    missingEntry.manifest.entry = "missing.ts";
+    missingEntry.manifest.hashes.source = codeSourceHash(missingEntry.sourceFiles, "missing.ts");
+    await expect(submitCodeVersion(missingEntry, author)).rejects.toMatchObject({ code: "code_manifest_invalid" });
+    const badEntrypoint = input(code, "bad");
+    badEntrypoint.manifest.entrypoints[0]!.file = "missing.ts";
+    await expect(submitCodeVersion(badEntrypoint, author)).rejects.toMatchObject({ code: "code_manifest_invalid" });
+    badEntrypoint.manifest.entrypoints[0]!.file = "code.ts";
+    badEntrypoint.manifest.entrypoints[0]!.line = 100;
+    await expect(submitCodeVersion(badEntrypoint, author)).rejects.toMatchObject({ code: "code_manifest_invalid" });
     bad.manifest.permissions[0]!.line = 100;
     await expect(submitCodeVersion(bad, author)).rejects.toMatchObject({ code: "code_manifest_invalid" });
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='silent_shared'`;

@@ -30,7 +30,7 @@ export const CodePolicyManifestSchema = z.object({
 });
 /** Checked immutable version classifications; policyRows contains each used row once. */
 export type CodePolicyManifest = z.infer<typeof CodePolicyManifestSchema>;
-/** C16 checker permission, retaining separate source rows for targets and refs. Null id is a dynamic personal target. */
+/** Checker permission, retaining separate source rows for targets and refs. Null id is a dynamic personal target. */
 export const CodeVersionPermissionSchema = z
   .object({
     operation: z.string().min(1),
@@ -42,9 +42,9 @@ export const CodeVersionPermissionSchema = z
     line: z.number().int().positive(),
   })
   .strict();
-/** One permission emitted by C16, with its source location. */
+/** One permission emitted by the checker, with its source location. */
 export type CodeVersionPermission = z.infer<typeof CodeVersionPermissionSchema>;
-/** C16's immutable manifest plus the host's original check entry and C7 policyRows.
+/** The checker's immutable manifest plus the host's original check entry and policyRows.
  * Copy version/entrypoints/permissions/ai/hashes unchanged from checkCode's result.
  * entry comes from CodeCheckRequest.entry; policyRows comes from trusted operation metadata.
  * A manifest is evidence, never execution authority: dispatch checks each actual call.
@@ -72,5 +72,5 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
     if (manifest.ai && !manifest.policyRows.includes("ai"))
       ctx.addIssue({ code: "custom", message: "AI classification missing from policyRows" });
   });
-/** C16 evidence enriched by the trusted host for submission, activation, CLI and chat tools. */
+/** Checker evidence enriched by the trusted host for submission, activation, CLI and chat tools. */
 export type CodeCheckedVersionManifest = z.infer<typeof CodeCheckedVersionManifestSchema>;
