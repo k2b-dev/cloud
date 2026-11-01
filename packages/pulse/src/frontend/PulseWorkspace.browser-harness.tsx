@@ -1,6 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { render } from "solid-js/web";
+import PublicDashboard from "./PublicDashboard.island";
 import PulseOverview from "./PulseOverview.island";
 import PulseWorkspace from "./PulseWorkspace.island";
 import type { PulseWorkspaceProps } from "./workspace/types";
@@ -9,7 +10,13 @@ import type { PulseWorkspaceProps } from "./workspace/types";
 // overview when `overview` is set.
 const snapshot = (
   window as unknown as {
-    __pulse: { locale: string; props: PulseWorkspaceProps; overview?: ComponentProps<typeof PulseOverview>; deferMount?: boolean };
+    __pulse: {
+      locale: string;
+      props: PulseWorkspaceProps;
+      overview?: ComponentProps<typeof PulseOverview>;
+      publicDashboard?: ComponentProps<typeof PublicDashboard>;
+      deferMount?: boolean;
+    };
   }
 ).__pulse;
 const root = document.getElementById("root");
@@ -21,7 +28,13 @@ const mount = () => {
   render(
     () => (
       <LocaleProvider locale={snapshot.locale}>
-        {overview ? <PulseOverview {...overview} /> : <PulseWorkspace {...snapshot.props} />}
+        {snapshot.publicDashboard ? (
+          <PublicDashboard {...snapshot.publicDashboard} />
+        ) : overview ? (
+          <PulseOverview {...overview} />
+        ) : (
+          <PulseWorkspace {...snapshot.props} />
+        )}
       </LocaleProvider>
     ),
     root,

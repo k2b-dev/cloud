@@ -51,18 +51,31 @@ describe("compression boundaries", () => {
   }
 });
 
-test("every existing workspace address mounts a page and keeps its authentication guard", async () => {
+test("every current workspace address mounts a page and keeps its authentication guard", async () => {
   for (const path of [
     "/base",
+    "/base/sql",
+    "/base/sql/query",
     "/base/dashboards",
+    "/base/dashboards/dashboard",
+    "/base/sources/source",
+    "/base/sources",
+  ]) {
+    const response = await pages.request(path);
+    expect(response.status).toBeLessThan(500);
+    expect(response.status).not.toBe(404);
+    expect(pages.router.match("GET", path)[0].some(([[, route]]) => route.method === "GET")).toBe(true);
+    expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
+  }
+});
+
+test("the fresh Pulse workspace does not register removed legacy addresses", () => {
+  for (const path of [
     "/base/query-reference",
     "/base/events",
     "/base/metrics",
     "/base/states",
     "/base/dashboards/dashboard/edit",
-    "/base/dashboards/dashboard",
-    "/base/sources/source",
-    "/base/sources",
     "/base/resources/resource",
     "/base/resources",
     "/base/explorer",
@@ -77,10 +90,6 @@ test("every existing workspace address mounts a page and keeps its authenticatio
     "/base/resources/type/resource",
     "/base/query-reference/old-topic",
   ]) {
-    const response = await pages.request(path);
-    expect(response.status).toBeLessThan(500);
-    expect(response.status).not.toBe(404);
-    expect(pages.router.match("GET", path)[0].some(([[, route]]) => route.method === "GET")).toBe(true);
-    expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
+    expect(pages.router.match("GET", path)[0].some(([[, route]]) => route.method === "GET")).toBe(false);
   }
 });

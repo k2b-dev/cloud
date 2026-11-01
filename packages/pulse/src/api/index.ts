@@ -6,6 +6,7 @@ import adminRoutes from "./routes/admin";
 import alertsRoutes from "./routes/alerts";
 import baseAdminRoutes from "./routes/base-admin";
 import basesRoutes from "./routes/bases";
+import dashboardsRoutes, { publicDashboardRoutes } from "./routes/dashboards";
 import ingestRoutes from "./routes/ingest";
 import overviewRoutes from "./routes/overview";
 import sourcesRoutes from "./routes/sources";
@@ -27,11 +28,13 @@ const app = new Hono<AuthContext>()
   })
   .use(rateLimit())
   .route("/", ingestRoutes)
+  .route("/", publicDashboardRoutes)
   .use(auth.requireRole("authenticated"))
   .route("/admin/store", adminRoutes)
   .route("/admin", baseAdminRoutes)
   .route("/", basesRoutes)
   .route("/", sourcesRoutes)
+  .route("/", dashboardsRoutes)
   .route("/", sqlRoutes)
   .route("/", alertsRoutes)
   .route("/", overviewRoutes);

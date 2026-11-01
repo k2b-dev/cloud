@@ -181,3 +181,6 @@ Metrics sources require an endpoint; scraping applies only to metrics sources.
 Source-token commands apply only to HTTP ingest sources. For `admin store`,
 `admin policy`, `admin bases`, `admin orphans`, and `admin targets`, use the
 [Administration reference](admin.md).
+
+For JSON plus SQL panels, publication, revisions and retry keys, read
+[Dashboards](dashboards.md). Commands: `dashboards list|get|save|panel|publish|unpublish|delete`.

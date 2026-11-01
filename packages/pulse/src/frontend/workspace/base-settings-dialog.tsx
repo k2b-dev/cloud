@@ -45,6 +45,7 @@ type BaseSettingsDialogOptions = {
   onTabChange?: (tab: PulseSettingsTab) => void;
   onCloseRequestReady?: (request: () => Promise<boolean>) => void;
   loading: Accessor<boolean>;
+  refreshBase: () => Promise<void>;
   updateBaseSettings: (
     base: PulseBase,
     input: {
@@ -228,7 +229,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       });
       const refreshAccess = async () => {
         try {
-          await access.invalidate();
+          await Promise.all([access.invalidate(), options.refreshBase()]);
         } catch {
           if (!disposed) toast.error(t().accessChangedRefreshFailed);
         }
