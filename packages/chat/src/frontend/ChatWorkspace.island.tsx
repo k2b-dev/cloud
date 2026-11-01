@@ -1,3 +1,4 @@
+import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
 import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
 import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
@@ -116,6 +117,8 @@ type Sends = ReturnType<typeof createChatSends>;
 export type ChatWorkspaceProps = {
   /** The same workspace served without the Cloud shell in its provider route. */
   embedded?: boolean;
+  /** Live dictation is set up and allowed for this person; the composer then shows Dictate. */
+  liveDictation?: boolean;
   /** The Cloud app's Chat below `/pwa/chat`: the list beside the open chat from 64 rem, one after the other below. */
   app?: boolean;
   archived?: boolean;
@@ -151,6 +154,8 @@ export type ChatWorkspaceProps = {
   /** The line about this device above the chats that this device showed last; the browser checks it again. */
   deviceNotice?: DeviceNotice;
 };
+
+const liveDictationSource = createLiveDictationSource({ app: "chat" });
 
 const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>, view: ThreadView): OpenChat => ({
   id: open.conversation.id,
@@ -2263,6 +2268,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         <Show when={conversation()}>
           {(current) => (
             <ChatConversation
+              dictation={props.liveDictation ? liveDictationSource : undefined}
               actions={
                 <>
                   <Show when={props.embedded}>

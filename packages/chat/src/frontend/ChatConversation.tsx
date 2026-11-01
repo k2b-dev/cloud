@@ -10,6 +10,7 @@ import {
   type ChatComposerPeople,
   type ChatComposerReply,
   type ChatMention,
+  type DictationSource,
   EmojiPicker,
   FileDropTarget,
   IconButtonLink,
@@ -89,6 +90,8 @@ export type ChatFeedItem = {
 };
 
 export type ChatConversationProps = {
+  /** Live dictation into the draft; without a source there is no microphone. */
+  dictation?: DictationSource;
   /** The chat's own commands at the end of the header, such as its info. */
   actions?: JSX.Element;
   listHref?: string;
@@ -748,6 +751,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         <div class="chat-conversation__composer" data-k2b-shell-bottom>
           <Chat.Composer
             variant="conversation"
+            dictation={props.dictation ? { source: props.dictation } : undefined}
             value={props.draft}
             onValueChange={props.onDraftChange}
             onSubmit={async ({ text, attachments, mentions: typed }) => {
