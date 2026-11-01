@@ -15,6 +15,7 @@ import {
 import { sql } from "../runtime/clients";
 import { hasInstallationAdminInTransaction } from "../services/accounts/users";
 import { audit } from "../services/audit";
+import { codeAccessMessages } from "../shared/code-access-messages";
 import { verifyCodeAccessProof } from "./access-proof";
 
 /** Core-mediated person calls only. In particular, personal Code's mandate is still Code origin. */
@@ -119,6 +120,16 @@ class RollbackDecision extends Error {
   }
 }
 
+/** Check the exact generated set envelope before committing any target writes. */
+const boundSetResult = (data: CodeAccessSetData, context: CapabilityExecutionContext, dryRun: boolean): CodeAccessSetData => {
+  if (!data.granted) return data;
+  const copy = codeAccessMessages(context.locale);
+  const body = { data, receipt: { text: dryRun ? copy.setAvailable : copy.setDone } };
+  return new TextEncoder().encode(JSON.stringify(body)).byteLength <= CAPABILITY_MAX_RESULT_BYTES
+    ? data
+    : decisionNo("capacity_exceeded", "Target manager list exceeds the Code access response budget");
+};
+
 /** Target-side set: proof validation precedes authority, all adapter writes and audit are atomic. */
 export const setCodeAccess = async (
   appId: string,
@@ -185,7 +196,26 @@ export const setCodeAccess = async (
         const result = live
           ? { granted: true as const, grantId: claims.grantId, level: live.level }
           : decisionNo("removed", "Code access was removed; activate again to restore it");
-        if (input.dryRun) throw new RollbackDecision(result);
+        if (input.dryRun) {
+          if (!live) throw new RollbackDecision(result);
+          // A retry still needs the target's current managers for Core notifications.
+          const decision = CodeAccessDecisionSchema.parse(
+            await adapter.grant(tx, {
+              id: input.target.id,
+              principal: claims.principal,
+              operations: input.operations,
+              grantId: claims.grantId,
+              dryRun: true,
+            }),
+          );
+          throw new RollbackDecision(
+            boundSetResult(
+              decision.granted ? { ...decision, grantId: claims.grantId } : { ...decision, reasonCode: "adapter_refused" },
+              context,
+              true,
+            ),
+          );
+        }
         return result;
       }
       const decision = CodeAccessDecisionSchema.parse(
@@ -197,10 +227,12 @@ export const setCodeAccess = async (
           dryRun: input.dryRun === true,
         }),
       );
-      const result: CodeAccessSetData = decision.granted
-        ? { ...decision, grantId: claims.grantId }
-        : { ...decision, reasonCode: "adapter_refused" };
-      if (!decision.granted || (input.dryRun && input.operations.length === 0)) throw new RollbackDecision(result);
+      const result = boundSetResult(
+        decision.granted ? { ...decision, grantId: claims.grantId } : { ...decision, reasonCode: "adapter_refused" },
+        context,
+        input.dryRun === true,
+      );
+      if (!decision.granted || !result.granted || (input.dryRun && input.operations.length === 0)) throw new RollbackDecision(result);
       const previous = await tx<
         GrantRow[]
       >`SELECT * FROM capabilities.code_access_grants WHERE app_id = ${appId} AND principal = ${claims.principal}::uuid AND NOT revoked LIMIT ${maxListGrants + 1}`;

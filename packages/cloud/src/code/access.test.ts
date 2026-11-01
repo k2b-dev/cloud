@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { SQL } from "bun";
 import { createCodeAccessAuthorityRoutes } from "../_internal/code-access-authority";
 import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext } from "../contracts/capabilities";
-import type { CodeAccessAdapter } from "../contracts/code-access";
+import { CODE_ACCESS_MAX_MANAGER_USER_IDS, type CodeAccessAdapter, CodeAccessDecisionSchema } from "../contracts/code-access";
 import type { User } from "../contracts/shared";
 import * as accountUsers from "../services/accounts/users";
 import { audit } from "../services/audit";
@@ -468,4 +468,39 @@ test("a list exactly at the result byte budget remains readable", async () => {
   }));
   grants = expected.map((grant) => ({ grantId: grant.grantId, id: grant.target.id, level: grant.level }));
   expect(await listCodeAccess("inventory", bindings(), principal, { listPrincipal: principal }, deps.db)).toEqual(expected);
+});
+
+test("dry-run set preserves managerUserIds, including retries of an existing grant", async () => {
+  const original = adapter.grant;
+  adapter.grant = async (tx, request) => {
+    const decision = await original(tx, request);
+    return decision.granted ? { ...decision, managerUserIds: [person.id] } : decision;
+  };
+  const expected = { granted: true as const, grantId, level: "write", managerUserIds: [person.id] };
+  expect(await setCodeAccess("inventory", bindings(), { ...input, dryRun: true }, context, deps)).toEqual(expected);
+  expect(await setCodeAccess("inventory", bindings(), input, context, deps)).toEqual(expected);
+  expect(await setCodeAccess("inventory", bindings(), { ...input, dryRun: true }, context, deps)).toEqual(expected);
+});
+
+test("oversized manager metadata refuses before committing writes, including the set envelope", async () => {
+  const managers = Array.from(
+    { length: CODE_ACCESS_MAX_MANAGER_USER_IDS },
+    (_, index) => `55555555-5555-4555-8555-${index.toString().padStart(12, "0")}`,
+  );
+  expect(CodeAccessDecisionSchema.safeParse({ granted: true, level: "read", managerUserIds: [...managers, person.id] }).success).toBe(
+    false,
+  );
+  const original = adapter.grant;
+  adapter.grant = async (tx, request) => {
+    const decision = await original(tx, request);
+    return decision.granted ? { ...decision, managerUserIds: managers } : decision;
+  };
+  for (const dryRun of [true, false]) {
+    expect(await setCodeAccess("inventory", bindings(), { ...input, dryRun }, context, deps)).toMatchObject({
+      granted: false,
+      reasonCode: "capacity_exceeded",
+    });
+    expect(grants).toHaveLength(0);
+    expect(rows).toHaveLength(0);
+  }
 });
