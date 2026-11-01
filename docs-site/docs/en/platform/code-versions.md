@@ -18,7 +18,13 @@ activate a version or grant resource access.
 
 ## Submit a version
 
-`core.code.version.submit` accepts `codeId`, `sourceFiles`, `bundle`,
+Resource Actions (`code.version.submit`, `code.version.approve`,
+`code.version.reject`, `code.pause`, `code.resume`) require
+`target: { type: "core.code", id: codeId }` beside domain `input`. Flat chat and
+MCP tools use `code`. Remove `codeId` from their inputs; Queries and exported
+service schemas keep it.
+
+`core.code.version.submit` accepts `sourceFiles`, `bundle`,
 `manifest` and `baseVersionId`. Use the latest saved version's UUID as the base,
 or null for the first push. The caller needs Code editor access and a write
 credential. Phone sessions cannot submit lasting Code authority.
@@ -134,8 +140,8 @@ manifest and full source difference. Existing approval surfaces show it as
 passive plain JSON; the Code administration surface can render its full file
 rows as `CodeDiff`.
 
-`core.code.version.approve(binding)` and
-`core.code.version.reject(binding)` use that same platform request and current
+`core.code.version.approve` and `core.code.version.reject` (with the binding
+fields other than `codeId` in input and the Code as target) use that same platform request and current
 Cloud-admin authority. Shared approval cards and Cloud Login call the same
 transactional owner handler. The first decision wins; repeating the same
 accepted decision returns its existing receipt.
@@ -177,8 +183,8 @@ transport byte budget; follow `nextBefore` until null. Decision receipts survive
 of transient platform approval requests. An undecided expired request has
 `status: "expired"`; submit again to request a new review.
 
-`core.code.pause({ codeId })` pauses future execution of the active version.
-`core.code.resume({ codeId })` checks current policy and live approval evidence
+`core.code.pause` at the Code target pauses future execution of the active version.
+`core.code.resume` at the same target checks current policy and live approval evidence
 before resuming that same version. Events arriving during the pause are not
 replayed. A pending newer version remains pending. Cloud administrators and
 Code editors may pause or resume with write authority; phone sessions cannot.

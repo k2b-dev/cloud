@@ -28,12 +28,15 @@ response by reading metadata before replacing the value again.
 Cloud administrators can inspect approved bindings in version-review content;
 the editor-only list does not grant them access to current secret metadata.
 
+Set and delete capability calls name `target: { type: "core.code", id: codeId }`;
+omit `codeId` from their domain `input`. Flat tools use `code`. The list Query
+and internal service schemas keep `codeId`.
+
 Set receives this JSON input through a private editor or CLI input field.
 Read the value from stdin; never put it in command arguments or a chat tool:
 
 ```json
 {
-  "codeId": "c_example",
   "name": "API",
   "binding_revision": null,
   "value": "fictional-example-value",
@@ -56,7 +59,7 @@ Set returns `{ secret }`, containing `name`, `binding_revision`, `origin`,
 Follow the cursor to read all metadata. Neither operation returns a value or
 ciphertext. There is no value-reading operation.
 
-Delete receives `codeId`, `name` and `binding_revision`, and returns
+Delete receives `name` and `binding_revision` at the Code target, and returns
 `{ deleted: true }`. Its capability uses the shared delete approval, with a
 metadata-only review and a required idempotency key. It clears the value for every version immediately.
 Metadata remains with `configured: false`, so old approval evidence remains

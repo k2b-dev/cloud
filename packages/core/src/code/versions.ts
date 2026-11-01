@@ -5,6 +5,7 @@ import {
   type CapabilityActionCallReview,
   CapabilityActionCallReviewSchema,
   capabilityActionPolicy,
+  type NormalizedCapabilityCall,
 } from "@k2b/cloud/contracts";
 import { isAppSessionActor } from "@k2b/cloud/server";
 import { audit, canRepairAppAccess } from "@k2b/cloud/services";
@@ -109,6 +110,12 @@ function bindingFor(codeId: string, version: Snapshot, comparison: Snapshot | nu
   };
 }
 const sameBinding = (a: CodeVersionBinding, b: CodeVersionBinding) => approvalArgsDigest(a) === approvalArgsDigest(b);
+const approvalCall = ({ codeId, ...input }: CodeVersionBinding): NormalizedCapabilityCall => ({
+  capability: "core.code.version.approve",
+  target: { type: "core.code", id: codeId },
+  refs: {},
+  input,
+});
 const messages = (context: Pick<CodeContext, "locale">) => codeVersionMessages.resolve(context.locale ? [context.locale] : []);
 const codeReviewSlot = (code: Code) => ({
   kind: "object" as const,
@@ -292,7 +299,7 @@ export async function submitCodeVersion(
           authorUserId: author.id,
           approverRole: "admin",
           sentence: review.sentence.action,
-          input: binding,
+          input: approvalCall(binding),
           review,
           expiresInMs: APPROVAL_MAX_WAIT_MS,
         },
@@ -462,7 +469,7 @@ export async function applyCodeVersionDecision(tx: SQL, request: ApprovalRequest
     binding.manifestHash !== submission.binding.manifestHash
   )
     throw new CodeVersionError("code_hash_mismatch", "Approval hashes do not match the immutable version.");
-  if (!sameBinding(binding, submission.binding) || request.argsDigest !== approvalArgsDigest(binding))
+  if (!sameBinding(binding, submission.binding) || request.argsDigest !== approvalArgsDigest(approvalCall(binding)))
     throw new CodeVersionError("code_comparison_stale", "The comparison changed. Submit and review a new version.");
   if (
     !request.details ||
