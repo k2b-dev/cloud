@@ -354,6 +354,7 @@ export type AiTurnErrorCode =
   | "context_full"
   | "time_limit"
   | "step_limit"
+  | "capability_changed"
   | "wait_expired"
   | "interrupted"
   | "not_allowed"
