@@ -6,6 +6,14 @@ import type { Finding, Rule } from "./rule";
 
 // Structured settings use their owning service, rather than bypassing hooks with a raw setting write.
 const structured: Readonly<Record<string, { file: string; command: string }>> = Object.fromEntries([
+  ...[
+    "core.code.source_bytes",
+    "core.code.source_files",
+    "core.code.bundle_bytes",
+    "core.code.manifest_bytes",
+    "core.code.payload_bytes",
+    "core.code.calls_per_run",
+  ].map((key) => [key, { file: "packages/cloud/src/cli/admin/administration.ts", command: "settings apply" }]),
   ...["assistant.storage_file_mib", "assistant.storage_total_mib"].map((key) => [
     key,
     { file: "packages/assistant/src/cli/code.ts", command: "studio-admin storage-configure" },
