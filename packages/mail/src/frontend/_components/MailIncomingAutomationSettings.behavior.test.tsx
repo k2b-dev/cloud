@@ -117,3 +117,35 @@ test.skipIf(isServer)("continues a limited retry backfill with another retry ins
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("shows a paused automation's target confirmation and its recovery action", async () => {
+  const { Settings, LocaleProvider } = modules!;
+  const dom = createDomTestHarness();
+  const dispose = render(
+    () => (
+      <LocaleProvider locale="en">
+        <Settings
+          mailboxId="Box001"
+          catalog={{ folders: [], assignableUsers: [] }}
+          initialAutomations={[{ ...automation, enabled: false, authorizationState: "needs_attention", latestBackfillOperationId: null }]}
+        />
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  try {
+    expect(dom.root.textContent).toContain("Needs attention");
+    expect(dom.root.textContent).toContain("choose its Spaces destinations again, and save");
+    expect(dom.root.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled).toBe(true);
+    const edit = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Edit automation",
+    );
+    expect(edit).toBeDefined();
+    edit!.click();
+    for (let i = 0; i < 100 && !dom.document.body.textContent?.includes("Edit incoming automation"); i++) await Bun.sleep(10);
+    expect(dom.document.body.textContent).toContain("Edit incoming automation");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
