@@ -2,7 +2,7 @@
 title: Code storage
 navTitle: Code storage
 section: Operations
-order: 1254
+order: 1253
 description: Back up Code versions and understand run retention and storage budgets.
 tags: [operations, code, postgres]
 updated: 2026-10-31
@@ -25,7 +25,3 @@ Core sweeps at most 1,000 terminal runs per minute per replica, starting at
 30 days after the run ends. It deletes their capability-call records with
 them and preserves queued or running attempts. A failed sweep is logged and
 retried on the next minute. Versions are retained until their Code is deleted.
-
-Policy revisions, group rules and durable pause work share the same schema.
-See [Code policy operations](/en/docs/operations/code-policy) for execution
-budgets and recovery from a failed pause batch.

@@ -2,16 +2,13 @@
 title: Code data model
 navTitle: Code data model
 section: Platform services
-order: 960
+order: 568
 description: Understand Code ownership, immutable versions, Query access and run retention.
 tags: [code, capabilities, data, permissions]
 updated: 2026-10-31
 ---
 
 # Code data model
-
-A Code exposes `pauseReason`, `pauseRows` and `pausePolicyRevision` alongside its
-state so people can identify a policy pause.
 
 A Code has one owner and a fixed `codeId`, such as `c_8hw2`. Saving a new
 version preserves that identity. Core stores Code, its versions and its runs
@@ -67,11 +64,8 @@ activation owns those grants.
 A version stores all source files, the exact UTF-8 bundle, `sourceHash`,
 `bundleHash` and a checked-version manifest slot. Source paths are relative
 POSIX paths. Source, bundle and jsonb inputs reject NUL characters and malformed Unicode
-with `BAD_INPUT`. Results preserve their exact JSON text, including escaped NUL.
-Submitted versions use the checker's entry-bound source hash, described in
-[Code versions and approval](/en/docs/platform/code-versions#checker-manifest).
-Unsubmitted storage snapshots hash compact JSON of sorted `[path, content]`
-pairs. The bundle hash is SHA-256 of the exact bundle bytes.
+with `BAD_INPUT`. Results preserve their exact JSON text, including escaped NUL. The source hash is SHA-256 of compact JSON containing the sorted
+`[path, content]` pairs; the bundle hash is SHA-256 of the exact bundle bytes.
 
 The source, bundle, hashes and manifest are immutable. The checker and
 submission services supply the final manifest when inserting a version. The
@@ -148,13 +142,9 @@ service.
 | `core.code.bundle_bytes` | 4 MiB | 16 MiB |
 | `core.code.manifest_bytes` | 1 MiB of JSON | 4 MiB |
 | `core.code.payload_bytes` | 32 KiB per run input or normalized call input | 32 KiB |
-| `core.code.calls_per_run` | 200 | 1,000 |
+| `core.code.calls_per_run` | 1,000 | 1,000 |
 
-The [Code policy](/en/docs/platform/code-policy) controls which classifications
-can run. [Code policy operations](/en/docs/operations/code-policy) lists the
-registered execution, AI, database and concurrency budgets.
-
-All storage settings require positive integers. New versions use current limits; a
+All settings require positive integers. New versions use current limits; a
 run pins its call and payload limits at creation. Smaller settings do not
 rewrite existing versions or active runs. Transport budgets bound the file
 count and input maximums. Run/call input admission uses Postgres's `jsonb::text`
