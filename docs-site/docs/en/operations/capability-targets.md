@@ -62,6 +62,43 @@ coordinated migration before this branch is released.
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the declaration, invocation and digest contract.
 
+## Enable target-side Code access
+
+Upgrade Core before deploying providers with Code access adapters. Core's
+capability migration creates `capabilities.code_access_grants`, the platform's
+routing and replay index. Applications keep owning their actual permission
+rows. No new environment settings are required; proofs use Core's existing
+invocation signing keys and public invocation JWKS.
+
+Deploy each provider with all four adapter functions together. A type with
+`access`, or a type named in `code.owners`, must have a declared reader or the
+provider refuses startup with the type's name. Existing `readable`-only
+declarations remain supported when their Type has a reader. This also applies to third-party providers: add a canonical reader
+before upgrading if a Type currently declares `access.readable` alone. New
+generated Actions carry `unattended: false`, so older Core readers omit them instead of stripping that restriction.
+
+Adapters implement `manages(tx, context, id)`: manager checks run inside the write
+transaction and retain locks shared with the provider's manager-change paths.
+Update older two-argument adapters before deploying this contract; use the
+supplied connection for every adapter query.
+
+Deploy the updated Core activation transport together with providers that expose
+the generated Code access routes. Dry-run answers reveal only what the person
+may read through the target Type's existing `access.readable`. Core obtains
+Cloud-admin notification recipients through its separate target-bound server
+authority; they are not required in an unreadable person's dry-run answer.
+
+Keep the adapter available while its app has Code grants to remove. Core must
+finish target cleanup before deleting the Code account. Live grants prevent
+account deletion; removing them releases that reference and preserves replay
+tombstones. An unavailable target returns a retryable cleanup failure.
+Core can inspect and remove a disabled Code account's grants; setting new
+grants requires an active account. Generated access calls require explicit
+operation-bound Core editor admission.
+
+See [Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target)
+for the adapter and Core proof contracts.
+
 ## Converted application Actions
 
 Notebooks binds note, comment and annotation Actions to the notebook. Pulse

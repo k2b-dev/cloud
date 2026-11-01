@@ -16,7 +16,11 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { type CatalogSubscription, projectAppEventCatalog, readEventCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { isPersonVisibleCapabilityQuery, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import {
+  isPersonVisibleCapabilityAction,
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityManifestPresentation,
+} from "../_internal/capabilities";
 import { capabilitySentenceText } from "../_internal/capability-sentences";
 import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import {
@@ -309,7 +313,9 @@ const orderedCapabilityEntries = function* (app: CapabilityRegistryEntry): Gener
   kind: "queries" | "actions";
   operation: CapabilityQueryManifest | CapabilityActionManifest;
 }> {
-  for (const operation of [...app.manifest.actions].sort((left, right) => left.localId.localeCompare(right.localId))) {
+  for (const operation of app.manifest.actions
+    .filter(isPersonVisibleCapabilityAction)
+    .sort((left, right) => left.localId.localeCompare(right.localId))) {
     yield { app, kind: "actions", operation };
   }
   for (const operation of app.manifest.queries
@@ -376,7 +382,7 @@ const findCapabilityTool = async (
   const operations = kind === "query" ? app.manifest.queries : app.manifest.actions;
   const projectedKind = kind === "query" ? "queries" : "actions";
   const operation = operations.find((candidate) => capabilityToolName(appId, projectedKind, candidate.localId) === name);
-  if (operation) return projectTool(app, projectedKind, operation);
+  if (operation && !operation.localId.startsWith("code.access.")) return projectTool(app, projectedKind, operation);
   return null;
 };
 

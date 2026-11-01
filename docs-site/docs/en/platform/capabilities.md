@@ -524,6 +524,182 @@ readers keep the Type and ordinary reader. Calling applications declare
 and limits are described in
 [App-to-app reader checks](/en/docs/platform/app-to-app-queries).
 
+### Code access at the target
+
+To let resource-owned Code act on one of your resources, add all four
+`CodeAccessAdapter` functions to the Type's existing `access` object. Import
+`CodeAccessAdapter` from `@k2b/cloud`. Keep `readable` there when your app
+supports reader checks; it remains independent of the four Code functions.
+
+```ts
+const itemCodeAccess: CodeAccessAdapter = {
+  manages: (tx, context, id) => itemService.managesInTransaction(tx, context, id),
+  grant: (tx, input) => itemService.grantCodeAccess(tx, input),
+  revoke: (tx, input) => itemService.revokeCodeAccess(tx, input),
+  list: (tx, input) => itemService.listCodeAccess(tx, input),
+};
+
+// Inside defineCapabilities():
+types: {
+  item: {
+    title: "Inventory item", description: "One inventory item.",
+    reader: "item.read",
+    access: { readable: readableItem, ...itemCodeAccess },
+  },
+},
+code: { owners: ["item"] },
+```
+
+`code.access.app` accepts the same adapter when the entire app can be a target.
+For that adapter, `id` is the app ID. `code.owners` names local Types whose
+resources may own Code. Every Type with `access` and every owner Type needs a
+reader; Cloud refuses to start if a reader is missing or the four functions
+are incomplete. The manifest advertises the supported targets and owners in
+`code: { access: { app, types }, owners }`.
+
+| Function | Responsibility |
+| --- | --- |
+| `manages(tx, context, id)` | Lock and check the person's current manager authority at the target using the supplied transaction. Code never counts as a manager. |
+| `grant(tx, { id, principal, operations, grantId, dryRun })` | Choose the smallest non-manager level covering the operations. Return `{ granted: true, level }` or `{ granted: false, reason }`. |
+| `revoke(tx, { id, grantId })` | Remove only that explicit Code grant and return whether it was removed. Never remove an ordinary share. |
+| `list(tx, { principal })` | Return current explicit grants of that Code account as `{ grantId, id, level }[]`. |
+
+Cloud calls `manages` inside the same transaction as `grant` or `revoke`, including
+dry runs and retries. Lock the target's authority before reading its current
+ownership, grants and membership, and retain the lock until commit or rollback.
+Every path that changes those managers must take a conflicting lock on the same
+rows or tables. For example, lock the target row `FOR UPDATE` if all manager
+changes lock that row too. Locking existing share rows alone does not protect
+missing or newly inserted shares. Include inherited authority and group membership
+in the locking strategy; cached roles or groups from `context` are not a current
+manager check. The platform revalidates and locks Cloud-admin authority separately
+and skips `manages` for a live Cloud admin. Consequently, `grant` and `revoke` must
+lock and check the target themselves, including its existence, rather than assume
+that `manages` ran.
+
+Person listings call `manages` for multiple targets in one transaction, retaining
+each lock until that list finishes. Prefer `FOR SHARE` where every manager-change
+path takes a conflicting lock. When exclusive locks are necessary, order targets
+consistently across adapter lists and all domain paths that lock multiple targets.
+Platform grant/account locks precede adapter target locks. Do not call platform
+grant cleanup while already holding a target lock in a domain transaction; finish
+that transaction first or acquire the platform locks first. Core account inspection
+uses its separate account-scoped authority.
+
+Use only the supplied transaction for adapter reads and writes. Never open a
+separate database connection from `manages`, `grant`, `revoke` or `list`. Do not publish
+events, send notifications, or perform other external effects there. A dry run
+must produce the same decision without effects; Cloud also rolls back its
+transaction. A refusal or exception rolls back the adapter's writes. Code
+receives neither `admin` nor a manager role. Keep different grant IDs
+independent, even for the same account and target: rolling back a new
+activation must leave older grants intact. Its permission resolver must use
+only its own explicit grants, ignoring public, group and signed-in access.
+
+Dry-run answers reveal only what the person may read. Cloud calls the target
+Type's existing `access.readable` for the activating person, independently of
+manager or Cloud-admin authority. Only a readable target can return `title`
+(from its canonical reader) and `managerUserIds`. A missing reader check means
+no presentation metadata. Refusals for an unreadable target use a generic manager
+message; keep the target ID and the option to copy the Code link.
+
+Successful adapter dry runs return current human managers in `managerUserIds`,
+including administrator-group members. This array shares the existing capability
+result budget (`CODE_ACCESS_MAX_MANAGER_USER_IDS`); refuse an oversized audience
+rather than truncate it. Core obtains Cloud-admin notification recipients through
+its separate target-bound `signCodeAccessNotifications` server authority. That
+lookup always rolls back, grants nothing, and never becomes person-visible
+presentation. The four adapter functions stay the same.
+
+Cloud generates these capabilities once per app:
+
+| Capability | Input | Data |
+| --- | --- | --- |
+| `<app>.code.access.set` | `{ proof, target, operations, dryRun? }` | `{ granted: true, grantId, level, readable }` or `{ granted: false, reasonCode, reason, readable }`; readable dry runs may include `title` and `managerUserIds` |
+| `<app>.code.access.list` | `{ principal }` | `{ grantId, target, principal, level }[]` for targets the person manages |
+| `<app>.code.access.rm` | `{ grantId }` | `{ removed: boolean }` |
+
+Generated titles, descriptions and all input-field descriptions include English
+and German presentation. Apps do not need to repeat these translations; any
+field overrides retain the platform's remaining input descriptions.
+
+Resource targets use qualified Types, for example
+`{ type: "inventory.item", id: "item-1" }`; an app target uses
+`{ type: "app", id: "inventory" }`. Operations are unique qualified capability
+IDs. An empty operation set is accepted only with `dryRun: true` to check the owner
+during activation.
+Core calls `invokeCodeAccess({ request, appId, operation, input, authority, locale?, review? })`
+from `@k2b/cloud/capabilities/server` after checking owner/editor authority.
+Only that explicit Core path issues the signed, operation-bound `code_access`
+invocation claim. Generic HTTP, AI, MCP and sandbox transports never issue it;
+the `code.access.*` namespace is reserved and excluded from their person catalogs. App reader-check
+authority (`resources:readers`) cannot use them. Code-origin calls, including
+personal Code acting under a mandate, and mobile app sessions are refused.
+`set` and `rm` declare `policy: { ask: "changes_access" }`, `unattended: false`
+and `code: false`. Their proof/grant identity supplies retry safety, so they do
+not accept a separate idempotency key.
+
+`set` verifies Core's proof and the person's current manager authority, with a
+Cloud-admin override requiring a session or the OAuth `admin` scope. Permission
+writes and access audit events commit in one transaction. Retrying the same `grantId` returns its existing grant. Removing
+access leaves a tombstone, so replaying an activation proof cannot restore it;
+restoration requires a new activation and grant identity. Real `set` refusals
+have a separate denied audit event; dry runs create no permission or access-audit
+rows. Stable `reasonCode` values are `origin_forbidden`, `proof_invalid`,
+`not_manager`, `removed`, `binding_conflict`, `account_inactive`,
+`unsupported_target`, `operations_invalid`, `adapter_refused` and
+`capacity_exceeded`. Keep the
+application's human-facing refusal reason separate from these recovery codes.
+
+Normal target share lists expose `grantId` for each Code share so the rights
+editor can remove it directly. Cloud lists only live, ledger-backed grants and
+enforces the existing 256 KiB capability result budget; adapters must keep their
+account lists within that budget. Operation IDs must belong to the receiving
+app. Actions and Queries with an explicit target must name the target Type in
+`target` or `refs`; targetless Queries leave the resource-level decision to
+`grant`. App targets admit the app's declared operations. Actions with
+`code: false` cannot receive a Code grant. Before committing a new grant,
+Cloud checks that the complete account list will still fit the result budget;
+`capacity_exceeded` requires removing unused grants before retrying.
+
+#### Core activation and cleanup contracts
+
+Core imports `signCodeAccessProof`, `verifyCodeAccessProof`,
+`CodeAccessProofInput` and `CodeAccessProofClaims` from
+`@k2b/cloud/capabilities/server`. Applications implement adapters; they never
+issue activation proofs.
+
+The version-1 proof is an RS256 JWT signed with Core's invocation-purpose key,
+with `typ: "cloud-code-access+jwt"` and `token_use: "code_access"`. Its claims
+bind `codeId`, `versionId`, `activationId`, `activatingPerson`, `principal`,
+`grantId`, `target` and the complete `operations` set. It also carries `ver`,
+`iss`, target-app `aud`, `iat`, `nbf` and `exp`; lifetime is exactly 30 seconds,
+with the same two-second clock tolerance as invocation tokens. The verifier rejects changes to the person, target
+or operations. Core persists the grant identity before issuing a proof and
+reuses it when reissuing an expired proof for the same activation.
+
+For owner deletion, Core uses `signCodeAccessCleanup(appId, principal)` to
+issue a separate 30-second token with `token_use: "code_access_cleanup"`.
+Post `{ grantId }` with this bearer token directly to the target app's
+`/api/_internal/capabilities/v1/code-authority/actions/code.access.rm` endpoint.
+It invokes the same transactional removal and audit path. That authority can
+only remove grants of the bound Code account at that app; it cannot grant,
+list, act as a person, or remove another account's access. Retry a failed
+removal with a fresh token and the same grant ID. Delete the account only
+after its target cleanup succeeds. A live-grant foreign key prevents premature
+account deletion. Removal releases that reference while retaining the replay
+tombstone, so deletion cannot lose the routing information for a live grant.
+
+For activation reconciliation, Core calls `signCodeAccessList(appId, principal)`
+after checking the person's authority at the Code's owner, then posts
+`{ principal }` with that bearer token to
+`/api/_internal/capabilities/v1/code-authority/queries/code.access.list`.
+`verifyCodeAccessList` accepts only this separate `code_access_list` token use.
+It returns all current grants of that account, even when it is disabled,
+including unchanged foreign targets the person no longer manages. It cannot
+grant or remove access. This keeps existing permissions reusable while new
+or broader permissions still require current target-manager authority.
+
 ### Resource links
 
 The owning application returns a root-relative semantic link with `rel: "open"`

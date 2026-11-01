@@ -1,4 +1,5 @@
 import {
+  isPersonVisibleCapabilityAction,
   isPersonVisibleCapabilityQuery,
   resolveCapabilityActionWording,
   resolveCapabilityManifestPresentation,
@@ -57,6 +58,7 @@ export const getCapabilityCatalogApp = async (
               manifest: {
                 ...manifest,
                 queries: manifest.queries.filter(isPersonVisibleCapabilityQuery),
+                actions: manifest.actions.filter(isPersonVisibleCapabilityAction),
               },
             }
           : null,
@@ -174,6 +176,8 @@ export async function transferCapabilityStream(
   return caller.transport ? caller.transport(request) : fetch(request, { redirect: "error" });
 }
 
+export { invokeCodeAccess } from "../code/access-core";
+export * from "../code/access-proof";
 export type { CapabilityInvocationBody, NormalizedCapabilityCall } from "../contracts/capabilities";
 export {
   CALENDAR_VIEW_MAX_RANGE_MS,

@@ -92,5 +92,24 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
   `.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_capabilities_claims_created ON capabilities.idempotency_claims(created_at)`.simple();
 
+  // Routing/replay index only. The application's adapter owns the actual permission.
+  // Tombstones prevent an activation retry from undoing a removal at the target.
+  await sql`
+    CREATE TABLE IF NOT EXISTS capabilities.code_access_grants (
+      app_id TEXT NOT NULL,
+      grant_id UUID NOT NULL,
+      principal UUID NOT NULL,
+      live_principal UUID REFERENCES auth.service_accounts(id) ON DELETE RESTRICT,
+      CONSTRAINT code_access_live_account CHECK ((revoked AND live_principal IS NULL) OR (NOT revoked AND live_principal IS NOT NULL AND live_principal = principal)),
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      binding_hash TEXT NOT NULL,
+      level TEXT NOT NULL,
+      revoked BOOLEAN NOT NULL DEFAULT false,
+      PRIMARY KEY (app_id, grant_id)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_code_access_principal ON capabilities.code_access_grants (app_id, principal)`.simple();
+
   console.log("  ✓ capability execution history");
 };

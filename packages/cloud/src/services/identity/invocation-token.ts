@@ -68,6 +68,8 @@ const InvocationPayloadBaseSchema = z
       .array(ScopeSchema)
       .max(100)
       .refine((scopes) => new Set(scopes).size === scopes.length, "Scopes must be unique"),
+    /** Explicit Core activation/rights-editor admission, never inherited by child invocations. */
+    code_access: z.enum(["set", "list", "rm"]).optional(),
     op: OperationSchema,
     schema_hash: SchemaHashSchema,
     ver: z.literal(CLOUD_INVOCATION_PROTOCOL_VERSION),
@@ -95,6 +97,23 @@ const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSc
   ) {
     context.addIssue({ code: "custom", message: "Invocation lifetime is invalid" });
   }
+
+  if (
+    claims.code_access &&
+    (claims.act.sub !== "app:core" ||
+      claims.principal_type !== "user" ||
+      !["session", "oauth"].includes(claims.credential_kind) ||
+      claims.session_kind ||
+      claims.parent_invocation_id ||
+      claims.workload_type ||
+      !(claims.code_access === "list"
+        ? claims.op === "capability.query:code.access.list"
+        : [
+            `capability.action.review:code.access.${claims.code_access}`,
+            `capability.action.run:code.access.${claims.code_access}`,
+          ].includes(claims.op)))
+  )
+    context.addIssue({ code: "custom", message: "Invalid Core Code access admission" });
 
   if (claims.principal_type === "user") {
     if (claims.access_subject_type !== "user" || claims.access_subject_id !== claims.sub || claims.delegated_user_id !== undefined) {
@@ -208,6 +227,8 @@ export const signInvocationToken = async (params: {
   callingAppId: string;
   operation: string;
   schemaHash: string | null;
+  /** Core activation/rights-editor only. Never populate from request data or AI tool calls. */
+  codeAccess?: "set" | "list" | "rm";
   authority: InvocationAuthority;
   requestId?: string;
   parent?: CloudInvocationClaims;
@@ -234,6 +255,7 @@ export const signInvocationToken = async (params: {
   const requestId = normalizeInvocationRequestId(params.requestId);
   const claims = InvocationPayloadSchema.parse({
     ...params.authority,
+    ...(params.codeAccess ? { code_access: params.codeAccess } : {}),
     iss: issuer,
     aud: `app:${params.targetAppId}`,
     token_use: "invocation",
