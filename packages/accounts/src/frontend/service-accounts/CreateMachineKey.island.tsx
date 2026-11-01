@@ -6,6 +6,9 @@ import { createSignal, Show } from "solid-js";
 import { z } from "zod";
 import { useAccountsMessages } from "../messages";
 
+/** What "Full access" names on the wire; the server never fills in scopes. */
+const FULL_ACCESS_SCOPES = ["read", "write", "admin"];
+
 export function CreateMachineKeyDialog(props: {
   modelsAvailable: boolean;
   close: () => void;
@@ -27,7 +30,12 @@ export function CreateMachineKeyDialog(props: {
       const response = await coreClient.admin.identity["service-accounts"][":id"]["api-keys"]
         .$post({
           param: { id },
-          json: { name: name().trim(), access: access(), expiresAt: expiry },
+          json: {
+            name: name().trim(),
+            access: access(),
+            ...(access() === "full" ? { scopes: FULL_ACCESS_SCOPES } : {}),
+            expiresAt: expiry,
+          },
         })
         .catch(() => {
           setUncertain(true);
