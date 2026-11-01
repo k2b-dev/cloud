@@ -38,7 +38,10 @@ import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
 import { aiAssignmentFixture, aiSettingsFixture } from "./model-fixture";
+import { userResourceContext } from "./projects.test-fixture";
 import * as settings from "./settings";
+import { createCloudAiLoadSkillTool } from "./skill-tool";
+import { aiSkills } from "./skills";
 import { prepareAiTools } from "./tools";
 import type { AiModelProfile } from "./types";
 
@@ -797,6 +800,64 @@ describe("AI capability catalog", () => {
     const map = (await resolver()).find((tool) => tool.def.name === "core__query__map_dot_style")!;
     expect(await map.execute({ theme: "light" }, context)).toEqual(result);
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  test("load_skill loads the tools its Skill lists through the same checks as load_tools", async () => {
+    const venue = capabilityApp("venue", "Venue");
+    const other = capabilityApp("other", "Other");
+    spyOn(aiSkills, "loadForTurn").mockResolvedValue({
+      name: "venue-booking",
+      description: "Book venues.",
+      revision: 1,
+      instructions: "List venues first.",
+      files: [],
+      loadTools: ["venue.list", "venue.create", "other.list", "calculate", "missing.list"],
+      loadedAt: "2026-10-31T12:00:00.000Z",
+    });
+    const execute = mock(async () => ({ data: [] }));
+    const resolver = createAiToolResolver({
+      conversationId: "skill-tools",
+      actor,
+      staticTools: [createCloudAiLoadSkillTool(userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" }))],
+      // The chat's fixed scope excludes other.list; a Skill cannot widen it.
+      allowedTools: ["load_skill", "venue.list", "venue.create"],
+      runtimeContext: { turnId: "22222222-2222-4222-8222-222222222222" },
+      store: createRunToolStore([]),
+      listRegistry: async () => [venue, other],
+      execute,
+    });
+    const context = {
+      signal: new AbortController().signal,
+      requestApproval: async () => false,
+      requestClientTool: async () => {
+        throw new Error("Unexpected client tool");
+      },
+    };
+    const first = await resolver();
+    expect(first.map((tool) => tool.def.name)).not.toContain("venue__query__list");
+    const loadSkill = first.find((tool) => tool.def.name === "load_skill")!;
+    expect(await loadSkill.execute({ name: "venue-booking" }, context)).toMatchObject({
+      name: "venue-booking",
+      tools: {
+        loaded: [
+          { name: "venue.list", call: "venue__query__list" },
+          { name: "venue.create", call: "venue__action__create" },
+        ],
+        alreadyLoaded: [],
+        unavailable: [
+          { name: "other.list", reason: "not_allowed" },
+          { name: "calculate", reason: "unknown" },
+          { name: "missing.list", reason: "unknown" },
+        ],
+        evicted: [],
+      },
+    });
+    const next = (await resolver()).map((tool) => tool.def.name);
+    expect(next).toContain("venue__query__list");
+    expect(next).toContain("venue__action__create");
+    expect(next).not.toContain("other__query__list");
+    // Loading the tools runs nothing; every later call is still authorized by its app.
+    expect(execute).not.toHaveBeenCalled();
   });
 
   test.each(["scope", "mandate", "hidden", "offline"] as const)("search fallback preserves %s exclusions", async (exclusion) => {

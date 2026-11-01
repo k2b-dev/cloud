@@ -193,6 +193,23 @@ lost leases. Work committed before a publisher or Core restart remains in the
 Postgres outbox. The repair pass republishes waiting work after lost or expired
 queue wakeups; brief transport outages do not discard queued runs.
 
+## Configure runner budgets
+
+Change these settings in Administration › Code or through `cld settings apply`.
+Restart runner replicas after changing their configuration. Acquisition requests
+may take the long-poll duration plus the transport timeout.
+
+| Setting | Default | Controls |
+| --- | --- | --- |
+| `core.code.automatic_attempts` | `3` | Maximum lease generations before a possible Action; the original deadline still applies. |
+| `core.code.runner_slots` | `4` | Concurrent runs per replica. |
+| `core.code.runner_poll_ms` | `20000` | Maximum acquisition request duration, in milliseconds. |
+| `core.code.runner_transport_ms` | `30000` | Runner request timeout, in milliseconds. |
+| `core.code.runner_retry_ms` | `1000` | Delay before retrying a failed transport request, in milliseconds. |
+| `core.code.runner_cache_bytes` | `33554432` | In-memory bundle cache per replica, in bytes. |
+| `core.code.runner_bridge_concurrency` | `4` | Simultaneous bridge calls per run. |
+| `core.code.runner_process_memory_bytes` | `134217728` | Memory budget per organization and trust-tier process, in bytes. |
+
 ## Stop and recover
 
 SIGTERM and SIGINT cancel the outstanding long-poll and stop further

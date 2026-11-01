@@ -23,7 +23,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         seq             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         id              UUID NOT NULL UNIQUE,
         app_id          TEXT NOT NULL CHECK (char_length(app_id) BETWEEN 1 AND 80),
-        kind            TEXT NOT NULL CHECK (kind IN ('event', 'live')),
+        kind            TEXT NOT NULL CHECK (kind IN ('event', 'live', 'code_owner_deleted')),
         ordering_key    TEXT NOT NULL CHECK (char_length(ordering_key) BETWEEN 1 AND 600),
         coalesce_key    TEXT CHECK (coalesce_key IS NULL OR (kind = 'live' AND char_length(coalesce_key) <= 700)),
         payload         JSONB NOT NULL
@@ -35,6 +35,13 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `.simple();
+    await tx`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='events.outbox'::regclass
+        AND conname='outbox_kind_check' AND pg_get_constraintdef(oid) LIKE '%code_owner_deleted%') THEN
+        ALTER TABLE events.outbox DROP CONSTRAINT outbox_kind_check;
+        ALTER TABLE events.outbox ADD CONSTRAINT outbox_kind_check CHECK(kind IN ('live','event','code_owner_deleted'));
+      END IF;
+    END $$`.simple();
     // Unreleased main images claimed through these two.
     await tx`DROP INDEX IF EXISTS events.idx_events_outbox_claim, events.idx_events_outbox_order`.simple();
     // A claim walks one application's rows in seq order and probes each key for a claimed row or

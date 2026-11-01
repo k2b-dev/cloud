@@ -54,6 +54,12 @@ Code availability, and their hashes change in these baselines; result contracts,
 query inputs, idempotency inventory, and future evolution checks remain active.
 See the [Spaces and Contacts migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#spaces-and-contacts-actions-name-their-container).
 
+The combined Spaces target and default-column contract makes `task.create`
+`columnId` optional while keeping its fixed `space` target and omitting
+`input.spaceId`. Only that column schema, its description, and the corresponding
+hashes change in the Spaces baseline. Omitted columns select the first open
+column in numeric rank and public-ID order; other evolution checks remain active.
+
 The coordinated Code target migration moves Notebooks, Pulse, Venue, and
 Weather Actions from resource IDs in input to their declared resource target.
 These baselines update only the existing Actions' target declarations, removed

@@ -55,6 +55,12 @@ export type CodeAccessCleanupClaims = z.infer<typeof CodeAccessCleanupClaimsSche
 export const CodeAccessListClaimsSchema = base.extend({ token_use: z.literal("code_access_list"), principal: z.uuid() }).strict();
 export type CodeAccessListClaims = z.infer<typeof CodeAccessListClaimsSchema>;
 
+/** Target-bound, Core-only lookup for notification recipients; never person-visible presentation. */
+export const CodeAccessNotificationClaimsSchema = CodeAccessProofClaimsSchema.extend({
+  token_use: z.literal("code_access_notifications"),
+}).strict();
+export type CodeAccessNotificationClaims = z.infer<typeof CodeAccessNotificationClaimsSchema>;
+
 type SignOptions = { issuer?: string; signer?: PreparedIdentitySigner; now?: Date };
 export type CodeAccessVerifyOptions = { issuer?: string; key?: JWTVerifyGetKey; now?: Date };
 const keys = new Map<string, JWTVerifyGetKey>();
@@ -99,6 +105,24 @@ export const signCodeAccessCleanup = (targetAppId: string, principal: string, op
 /** Core-only inspection authority, after checking the person's access to the owning Code. */
 export const signCodeAccessList = (targetAppId: string, principal: string, options: SignOptions = {}): Promise<string> =>
   sign(targetAppId, { token_use: "code_access_list", principal: z.uuid().parse(principal) }, options);
+
+/** Core activation uses this only for its server-side Cloud-admin notification audience. */
+export const signCodeAccessNotifications = async (
+  targetAppId: string,
+  input: CodeAccessProofInput,
+  options: SignOptions = {},
+): Promise<string> => {
+  const parsed = CodeAccessProofClaimsSchema.omit({
+    ver: true,
+    iss: true,
+    aud: true,
+    iat: true,
+    nbf: true,
+    exp: true,
+    token_use: true,
+  }).parse(input);
+  return sign(targetAppId, { ...parsed, token_use: "code_access_notifications" }, options);
+};
 
 const verify = async (token: string, targetAppId: string, options: CodeAccessVerifyOptions) => {
   if (Buffer.byteLength(token) > 64 * 1024) return null;
@@ -172,5 +196,15 @@ export const verifyCodeAccessList = async (
   options: CodeAccessVerifyOptions = {},
 ): Promise<CodeAccessListClaims | null> => {
   const parsed = CodeAccessListClaimsSchema.safeParse(await verify(token, targetAppId, options));
+  return parsed.success ? parsed.data : null;
+};
+
+/** Notification authority cannot grant, remove, inspect grants, or invoke a person capability. */
+export const verifyCodeAccessNotifications = async (
+  token: string,
+  targetAppId: string,
+  options: CodeAccessVerifyOptions = {},
+): Promise<CodeAccessNotificationClaims | null> => {
+  const parsed = CodeAccessNotificationClaimsSchema.safeParse(await verify(token, targetAppId, options));
   return parsed.success ? parsed.data : null;
 };
