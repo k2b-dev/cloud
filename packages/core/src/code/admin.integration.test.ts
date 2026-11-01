@@ -146,7 +146,11 @@ databaseSuite()("C22 Administration › Code read model", () => {
     expect(first.status).toBe("pending");
 
     expect(await readCodeAdminSummary(reviewer)).toEqual({ approvals: 1, codes: 1, groups: 0, cleanup: 0 });
-    const [item] = await listCodeAdminApprovals(reviewer);
+    const {
+      items: [item],
+      nextCursor,
+    } = await listCodeAdminApprovals(reviewer);
+    expect(nextCursor).toBeNull();
     expect(item).toMatchObject({
       codeId: "c_admin1",
       versionId: first.version.id,
@@ -191,7 +195,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
     });
 
     await decideCodeVersion(first.binding, true, reviewer);
-    expect(await listCodeAdminApprovals(reviewer)).toEqual([]);
+    expect(await listCodeAdminApprovals(reviewer)).toEqual({ items: [], nextCursor: null });
     expect(await listCodeAdminDecided(reviewer)).toEqual([
       expect.objectContaining({ versionId: first.version.id, approved: true, soleAdmin: false, decidedBy: "Ben Schulz" }),
     ]);
@@ -215,7 +219,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
       groups: ["Buchhaltung"],
     });
     expect(await codeAdminOwnerNames(["c_admin1"], reviewer)).toEqual({ c_admin1: "Lea Muster" });
-    expect(await listCodeAdminCleanup(reviewer)).toEqual([]);
+    expect(await listCodeAdminCleanup(reviewer)).toEqual({ items: [], nextCursor: null });
     expect(await readCodeAdminRunners(reviewer)).toMatchObject({ queued: 0, running: 0, instances: 0, freeSlots: 0, runners: [] });
   });
 

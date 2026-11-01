@@ -130,6 +130,9 @@ export const codeAdminMessages = i18n.define({
       rejectConfirm: "Reject version",
       cancel: "Cancel",
       decideFailed: "Not decided. Nothing changed.",
+      unknownTitle: "The answer did not arrive.",
+      unknownDecideSub: "The decision may have been saved. Reload to see the current state before deciding again.",
+      unknownPolicySub: "The policy may have been saved. Load the current policy before saving again.",
       decideConflict: "This version changed in the meantime. Reload to see the current state.",
       decideForbidden: "Your sign-in cannot decide this version. Sign in again in the browser and retry.",
       reload: "Reload",
@@ -172,7 +175,8 @@ export const codeAdminMessages = i18n.define({
       confirmTitle: ({ n }: N) => (n === 1 ? "Pause 1 Code?" : `Pause ${n} Code?`),
       confirmLead: "This Code runs today without approval and pauses after saving:",
       confirmMore: ({ n }: N) => `and ${n} more`,
-      confirmTail: "It runs again once an admin approves a version under the new policy. Events during the pause are not replayed.",
+      confirmTail:
+        "It runs again when the policy allows its classifications again, or after a changed version is approved and switched on. Events during the pause are not replayed.",
       confirmSave: ({ n }: N) => (n === 1 ? "Save and pause 1" : `Save and pause ${n}`),
       savedTitle: "Saved.",
       savedPaused: ({ n }: N) =>
@@ -405,6 +409,10 @@ export const codeAdminMessages = i18n.define({
       rejectConfirm: "Version ablehnen",
       cancel: "Abbrechen",
       decideFailed: "Nicht entschieden. Nichts wurde geändert.",
+      unknownTitle: "Die Antwort ist nicht angekommen.",
+      unknownDecideSub:
+        "Die Entscheidung ist vielleicht gespeichert. Lade neu, um den aktuellen Stand zu sehen, bevor du erneut entscheidest.",
+      unknownPolicySub: "Die Richtlinie ist vielleicht gespeichert. Lade die aktuelle Richtlinie, bevor du erneut speicherst.",
       decideConflict: "Diese Version hat sich inzwischen geändert. Lade neu, um den aktuellen Stand zu sehen.",
       decideForbidden:
         "Mit dieser Anmeldung kannst du diese Version nicht entscheiden. Melde dich im Browser neu an und versuche es erneut.",
@@ -448,10 +456,10 @@ export const codeAdminMessages = i18n.define({
       confirmLead: "Dieser Code läuft heute ohne Freigabe und pausiert nach dem Speichern:",
       confirmMore: ({ n }: N) => `und ${n} weitere`,
       confirmTail:
-        "Er läuft wieder, sobald ein Admin eine Version unter der neuen Richtlinie freigibt. Ereignisse in der Pause holt Cloud nicht nach.",
+        "Er läuft wieder, wenn die Richtlinie seine Einstufungen wieder erlaubt oder eine geänderte Version freigegeben und eingeschaltet ist. Ereignisse in der Pause holt Cloud nicht nach.",
       confirmSave: ({ n }: N) => `Speichern und ${n} pausieren`,
       savedTitle: "Gespeichert.",
-      savedPaused: ({ n }: N) => `${n} Code pausiert, weil er jetzt eine Freigabe braucht.`,
+      savedPaused: ({ n }: N) => `${n} Code pausiert, weil die neue Richtlinie seine Einstufungen nicht mehr automatisch erlaubt.`,
       savedNone: "Kein Code pausiert.",
       showPaused: "Pausierten Code ansehen",
       saveFailedTitle: "Nicht gespeichert.",

@@ -29,7 +29,7 @@ const VALUES: CodePolicyValue[] = ["automatic", "admin", "never"];
 const VALUE_ICON: Record<CodePolicyValue, string> = { automatic: "ti ti-circle-check", admin: "ti ti-user-shield", never: "ti ti-ban" };
 const PreviewSchema = codePolicyContracts.preview.data.extend({ owners: z.record(z.string(), z.string().nullable()) });
 type Preview = z.infer<typeof PreviewSchema>;
-type Status = { kind: "idle" } | { kind: "saved"; paused: number } | { kind: "failed" } | { kind: "conflict" };
+type Status = { kind: "idle" } | { kind: "saved"; paused: number } | { kind: "failed" } | { kind: "unknown" } | { kind: "conflict" };
 
 const keyOf = (rule: Pick<CodePolicyRule, "groupId" | "row">) => `${rule.groupId ?? ""}:${rule.row}`;
 const canonical = (definition: CodePolicyDefinition) =>
@@ -59,12 +59,20 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   const [revision, setRevision] = createSignal(props.revision);
   const [baseline, setBaseline] = createSignal<CodePolicyDefinition>(props.definition);
   const [draft, setDraft] = createSignal<CodePolicyDefinition>(props.definition);
-  const [preview, setPreview] = createSignal<Preview | null>(null);
+  // The preview answers exactly one draft at one revision; saving submits only that snapshot.
+  const [preview, setPreview] = createSignal<{ key: string; revision: number; definition: CodePolicyDefinition; result: Preview } | null>(
+    null,
+  );
   const [previewState, setPreviewState] = createSignal<"idle" | "loading" | "failed">("idle");
   const [saving, setSaving] = createSignal(false);
   const [status, setStatus] = createSignal<Status>({ kind: "idle" });
 
   const dirty = createMemo(() => canonical(draft()) !== canonical(baseline()));
+  const draftKey = () => `${revision()}|${canonical(draft())}`;
+  const ready = () => {
+    const current = preview();
+    return current !== null && current.key === draftKey() ? current : null;
+  };
   const changedRows = createMemo(() =>
     CODE_POLICY_ROWS.filter((row) => cellOf(draft(), props.groupId, row) !== cellOf(baseline(), props.groupId, row)),
   );
@@ -90,10 +98,16 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
       timer = setTimeout(() => {
         const current = new AbortController();
         controller = current;
-        postCodeAdmin("policy/preview", { revision: revision(), definition: draft(), limit: 20 }, PreviewSchema, current.signal)
+        const snapshot = { key: draftKey(), revision: revision(), definition: draft() };
+        postCodeAdmin(
+          "policy/preview",
+          { revision: snapshot.revision, definition: snapshot.definition, limit: 20 },
+          PreviewSchema,
+          current.signal,
+        )
           .then((result) => {
             if (current.signal.aborted) return;
-            setPreview(result);
+            setPreview({ ...snapshot, result });
             setPreviewState("idle");
           })
           .catch((error: unknown) => {
@@ -115,10 +129,12 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   };
 
   const save = async () => {
-    const paused = preview()?.total ?? 0;
+    const checked = ready();
+    if (saving() || !checked) return;
+    const paused = checked.result.total;
     if (paused > 0) {
-      const items = preview()?.items ?? [];
-      const owners = preview()?.owners ?? {};
+      const items = checked.result.items;
+      const owners = checked.result.owners;
       const confirmed = await prompts.confirm(
         <div class="grid gap-3 text-sm">
           <p>{t().confirmLead}</p>
@@ -141,13 +157,14 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
         </div>,
         { title: t().confirmTitle({ n: paused }), confirmText: t().confirmSave({ n: paused }), cancelText: t().cancel },
       );
-      if (!confirmed) return;
+      // A change made while the dialog was open needs its own preview and confirmation.
+      if (!confirmed || ready() !== checked) return;
     }
     setSaving(true);
     try {
       const result = await postCodeAdmin(
         "policy/update",
-        { revision: revision(), definition: draft() },
+        { revision: checked.revision, definition: checked.definition },
         codePolicyContracts.update.data.extend({ policy: CodePolicySchema }),
       );
       setRevision(result.policy.revision);
@@ -155,7 +172,14 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
       setDraft(result.policy.definition);
       setStatus({ kind: "saved", paused });
     } catch (error) {
-      setStatus(error instanceof CodeAdminRequestError && error.status === 409 ? { kind: "conflict" } : { kind: "failed" });
+      // Only a refusal proves nothing changed; a lost answer may follow a committed save.
+      setStatus(
+        error instanceof CodeAdminRequestError && error.status === 409
+          ? { kind: "conflict" }
+          : error instanceof CodeAdminRequestError && error.status >= 400 && error.status < 500
+            ? { kind: "failed" }
+            : { kind: "unknown" },
+      );
     } finally {
       setSaving(false);
     }
@@ -258,6 +282,23 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
             }
           />
         </Show>
+        <Show when={status().kind === "unknown"}>
+          <NoticeCard
+            tone="warning"
+            title={t().unknownTitle}
+            detail={
+              <>
+                <p>{t().unknownPolicySub}</p>
+                <div class="mt-2">
+                  <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
+                    <i class="ti ti-refresh" aria-hidden="true" />
+                    {t().showTheirs}
+                  </Button>
+                </div>
+              </>
+            }
+          />
+        </Show>
         <Show when={status().kind === "failed"}>
           <NoticeCard
             tone="danger"
@@ -266,7 +307,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
               <>
                 <p>{t().saveFailedSub}</p>
                 <div class="mt-2">
-                  <Button size="sm" variant="secondary" onClick={() => void save()}>
+                  <Button size="sm" variant="secondary" disabled={!ready() || saving()} onClick={() => void save()}>
                     <i class="ti ti-refresh" aria-hidden="true" />
                     {t().retrySave}
                   </Button>
@@ -356,8 +397,11 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
       <div class="sticky bottom-0 flex min-h-14 flex-wrap items-center gap-2 bg-(--k2b-surface) px-2 py-3" aria-live="polite">
         <Show when={dirty()}>
           <span class="text-sm">{t().changes({ n: changeCount() })}</span>
-          <span class="text-sm font-medium" classList={{ "text-(--k2b-warning-text)": (preview()?.total ?? 0) > 0 }}>
-            <Show when={previewState() === "idle" && preview()} fallback={previewState() === "failed" ? t().previewFailed : t().checking}>
+          <span class="text-sm font-medium" classList={{ "text-(--k2b-warning-text)": (ready()?.result.total ?? 0) > 0 }}>
+            <Show
+              when={previewState() === "idle" && ready()?.result}
+              fallback={previewState() === "failed" ? t().previewFailed : t().checking}
+            >
               {(result) => (
                 <>
                   <i class="ti ti-player-pause" aria-hidden="true" /> {t().pauses({ n: result().total })}
@@ -369,8 +413,8 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
           <Button variant="secondary" disabled={saving()} onClick={() => edit(baseline())}>
             {t().discard}
           </Button>
-          <Button loading={saving()} disabled={previewState() !== "idle" || !preview()} onClick={() => void save()}>
-            {(preview()?.total ?? 0) > 0 ? t().save : t().saveNow}
+          <Button loading={saving()} disabled={!ready()} onClick={() => void save()}>
+            {(ready()?.result.total ?? 0) > 0 ? t().save : t().saveNow}
           </Button>
         </Show>
       </div>

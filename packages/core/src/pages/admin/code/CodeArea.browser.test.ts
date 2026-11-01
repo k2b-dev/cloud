@@ -103,31 +103,61 @@ test("a policy change previews what pauses, confirms the list and saves at the r
   const dialog = page.getByRole("dialog");
   await dialog.getByText("Lieferschein bei Abschluss").waitFor();
   await dialog.getByRole("button", { name: "Speichern und 3 pausieren" }).click();
-  await page.getByText("3 Code pausiert, weil er jetzt eine Freigabe braucht.").waitFor();
+  await page.getByText("3 Code pausiert, weil die neue Richtlinie seine Einstufungen nicht mehr automatisch erlaubt.").waitFor();
   const update = fixture.requests.find((request) => request.path === "policy/update");
   expect(update?.body).toMatchObject({ revision: 7, definition: { preset: "custom" } });
   expect(JSON.stringify(update?.body)).toContain('{"groupId":null,"row":"ask_deletes","value":"automatic"}');
 });
 
-test("a concurrent policy change keeps my change and rechecks it on the newer revision", async () => {
+test("a concurrent policy change keeps my change, rechecks it on the newer revision and saves both", async () => {
   await goto("sec=policy&state=conflict");
   await page.getByRole("radiogroup", { name: "Wert für Löscht" }).getByRole("radio", { name: "Automatisch" }).click();
   await page.getByText("Ein anderer Admin hat die Richtlinie inzwischen geändert.").waitFor();
   expect(await page.locator('[data-row="ask_deletes"]').getAttribute("data-changed")).toBe("true");
-  const recheck = page.waitForRequest((request) => request.url().endsWith("/policy/preview") && request.postDataJSON()?.revision === 9);
   await page.getByRole("button", { name: "Meine Änderung neu prüfen" }).click();
-  await recheck;
-  expect(await page.locator('[data-row="ask_deletes"]').getAttribute("data-changed")).toBe("true");
+  const bar = page.locator('[aria-live="polite"]').last();
+  await bar.getByText("3 Code pausieren").waitFor();
+  expect(await page.getByText("Ein anderer Admin hat die Richtlinie inzwischen geändert.").count()).toBe(0);
+  await bar.getByRole("button", { name: "Speichern …" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Speichern und 3 pausieren" }).click();
+  await page.getByText("Gespeichert.").waitFor();
+  const update = fixture.requests.find((request) => request.path === "policy/update");
+  expect(update?.body).toMatchObject({ revision: 9 });
+  const saved = JSON.stringify(update?.body);
+  expect(saved).toContain('{"groupId":null,"row":"ask_deletes","value":"automatic"}');
+  expect(saved).toContain('{"groupId":null,"row":"ask_cannot_undo","value":"automatic"}');
 });
 
-test("a failed save keeps the change and offers to save again", async () => {
+test("a refused save keeps the change; saving again previews and confirms the current draft", async () => {
   await goto("sec=policy&state=savefail");
+  await page.getByRole("radiogroup", { name: "Wert für Löscht" }).getByRole("radio", { name: "Automatisch" }).click();
+  const bar = page.locator('[aria-live="polite"]').last();
+  await bar.getByRole("button", { name: "Speichern …" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Speichern und 3 pausieren" }).click();
+  await page.getByText("Nicht gespeichert.").waitFor();
+  expect(await page.locator('[data-row="ask_deletes"]').getAttribute("data-changed")).toBe("true");
+  await page.getByRole("radiogroup", { name: "Wert für Sensibel" }).getByRole("radio", { name: "Automatisch" }).click();
+  await bar.getByText("2 Änderungen").waitFor();
+  await bar.getByText("3 Code pausieren").waitFor();
+  await page.getByRole("button", { name: "Erneut speichern" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Speichern und 3 pausieren" }).click();
+  await page.getByText("Gespeichert.").waitFor();
+  const saved = JSON.stringify(fixture.requests.filter((request) => request.path === "policy/update").at(-1)?.body);
+  expect(saved).toContain('{"groupId":null,"row":"ask_deletes","value":"automatic"}');
+  expect(saved).toContain('{"groupId":null,"row":"ask_sensitive","value":"automatic"}');
+});
+
+test("a lost answer never claims that nothing changed", async () => {
+  await goto("sec=policy&state=lost");
   await page.getByRole("radiogroup", { name: "Wert für Löscht" }).getByRole("radio", { name: "Automatisch" }).click();
   await page.locator('[aria-live="polite"]').last().getByRole("button", { name: "Speichern …" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Speichern und 3 pausieren" }).click();
-  await page.getByText("Nicht gespeichert.").waitFor();
-  await page.getByRole("button", { name: "Erneut speichern" }).waitFor();
-  expect(await page.locator('[data-row="ask_deletes"]').getAttribute("data-changed")).toBe("true");
+  await page.getByText("Die Antwort ist nicht angekommen.").waitFor();
+  expect(await page.getByText("Nicht gespeichert.").count()).toBe(0);
+  await goto(`${review}&state=lost`);
+  await page.getByRole("button", { name: "Version 3 freigeben" }).click();
+  await page.getByText("Die Entscheidung ist vielleicht gespeichert.", { exact: false }).waitFor();
+  expect(await page.getByText("Nichts wurde geändert.", { exact: false }).count()).toBe(0);
 });
 
 test("a phone shows one level with its decision bar in reach", async () => {

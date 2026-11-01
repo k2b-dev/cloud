@@ -68,12 +68,15 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       setDone(result.status === "approved" ? "approved" : result.status === "rejected" ? "rejected" : null);
       if (result.status !== "approved" && result.status !== "rejected") reloadCodeArea();
     } catch (error) {
+      // Only a refusal proves nothing changed; a lost answer may follow a committed decision.
       setFailure(
-        error instanceof CodeAdminRequestError && error.status === 409
-          ? t().decideConflict
-          : error instanceof CodeAdminRequestError && error.status === 403
-            ? t().decideForbidden
-            : t().decideFailed,
+        !(error instanceof CodeAdminRequestError) || error.status < 400 || error.status >= 500
+          ? `${t().unknownTitle} ${t().unknownDecideSub}`
+          : error.status === 409
+            ? t().decideConflict
+            : error.status === 403
+              ? t().decideForbidden
+              : t().decideFailed,
       );
     } finally {
       setBusy(null);

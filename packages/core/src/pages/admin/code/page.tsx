@@ -56,7 +56,11 @@ export default ssr<AuthContext>(async (c) => {
         summary,
         approvals:
           sec === "approvals"
-            ? await attempt(() => (query.tab === "decided" ? Promise.resolve([]) : listCodeAdminApprovals(context)))
+            ? await attempt(() =>
+                query.tab === "decided"
+                  ? Promise.resolve({ items: [], nextCursor: null })
+                  : listCodeAdminApprovals(context, { cursor: query.after }),
+              )
             : null,
         decided: sec === "approvals" && query.tab === "decided" ? await attempt(() => listCodeAdminDecided(context)) : null,
         approval: sec === "approvals" && query.id ? await attempt(() => readCodeAdminApproval(query.id ?? "", context)) : null,
@@ -67,7 +71,7 @@ export default ssr<AuthContext>(async (c) => {
         code: sec === "code" && query.id ? await attempt(() => readCodeAdminCode(query.id ?? "", context)) : null,
         policy: sec === "policy" || sec === "groups" || sec === "effective" ? await attempt(() => readCodeAdminPolicy(context)) : null,
         effective: sec === "effective" && query.id ? await attempt(() => readCodeAdminEffective(query.id ?? "", context)) : null,
-        cleanup: sec === "cleanup" ? await attempt(() => listCodeAdminCleanup(context)) : null,
+        cleanup: sec === "cleanup" ? await attempt(() => listCodeAdminCleanup(context, { cursor: query.after })) : null,
         runners: sec === "runners" ? await attempt(() => readCodeAdminRunners(context)) : null,
         limits:
           sec === "limits"

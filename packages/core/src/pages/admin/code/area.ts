@@ -16,7 +16,7 @@ export type CodeAreaQuery = {
   status?: CodeAdminCodeStatus;
   app?: string;
   q?: string;
-  /** Opaque list cursor for the next page of all Code. */
+  /** Opaque list cursor for the next page of approvals, all Code or cleanup. */
   after?: string;
 };
 
@@ -32,13 +32,22 @@ export const codeAreaHref = (query: CodeAreaQuery): string => {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CODE_ID = /^c_[a-z0-9]{4,16}$/;
 const APP = /^[a-z][a-z0-9-]{0,79}$/;
+const APPROVAL_AFTER = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z\|[0-9a-f-]{36}$/;
+/** Title cursor bound: 200 title code units at most six JSON bytes each (escape or UTF-8), plus the ID, in base64url. */
+const CODE_CURSOR_MAX = Math.ceil(((200 * 6 + 64) * 4) / 3);
 
 export const parseCodeAreaQuery = (query: Record<string, string | undefined>): CodeAreaQuery => {
   const sec = CODE_AREA_SECTIONS.find((section) => section === query.sec);
   if (!sec) return {};
   const id = query.id ?? "";
   if (sec === "approvals")
-    return { sec, ...(query.tab === "decided" ? { tab: "decided" as const } : {}), ...(UUID.test(id) ? { id } : {}) };
+    return {
+      sec,
+      ...(query.tab === "decided" ? { tab: "decided" as const } : {}),
+      ...(UUID.test(id) ? { id } : {}),
+      ...(query.tab !== "decided" && query.after && APPROVAL_AFTER.test(query.after) ? { after: query.after } : {}),
+    };
+  if (sec === "cleanup") return { sec, ...(query.after && UUID.test(query.after) ? { after: query.after } : {}) };
   if (sec === "code") {
     const status = STATUSES.find((value) => value === query.status);
     const q = query.q?.trim().slice(0, 100);
@@ -48,7 +57,7 @@ export const parseCodeAreaQuery = (query: Record<string, string | undefined>): C
       ...(status ? { status } : {}),
       ...(query.app && APP.test(query.app) ? { app: query.app } : {}),
       ...(q ? { q } : {}),
-      ...(query.after && query.after.length <= 400 ? { after: query.after } : {}),
+      ...(query.after && query.after.length <= CODE_CURSOR_MAX && /^[\w-]+$/.test(query.after) ? { after: query.after } : {}),
     };
   }
   if (sec === "groups" || sec === "effective") return { sec, ...(UUID.test(id) ? { id } : {}) };

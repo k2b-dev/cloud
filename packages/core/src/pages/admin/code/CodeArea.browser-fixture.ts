@@ -150,6 +150,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     const body: unknown = await request.json().catch(() => null);
     requests.push({ path, body });
     if (state === "saving" && path !== "policy/preview") return new Promise(() => {});
+    if (path === "decide" && state === "lost") return Response.json({ message: "Gateway timeout" }, { status: 504 });
     if (path === "decide") {
       const decision = body && typeof body === "object" && "approved" in body ? body.approved : null;
       const detail = fixtureApprovalDetail();
@@ -169,10 +170,12 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       });
     }
     if (path === "policy/preview") {
-      if (state === "conflict") return Response.json({ code: "CONFLICT", message: "Code policy changed." }, { status: 409 });
+      const revision = body && typeof body === "object" && "revision" in body ? body.revision : null;
+      if (state === "conflict" && revision !== 9)
+        return Response.json({ code: "CONFLICT", message: "Code policy changed." }, { status: 409 });
       return Response.json({
         data: {
-          revision: 7,
+          revision: state === "conflict" ? 9 : 7,
           total: 3,
           items: [
             { codeId: "c_woche", title: "Wochenbericht Vertrieb", rows: ["ask_deletes"], reason: "policy_changed" },
@@ -185,7 +188,9 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       });
     }
     if (path === "policy/update") {
-      if (state === "savefail") return Response.json({ code: "UNAVAILABLE", message: "Database unavailable" }, { status: 503 });
+      if (state === "savefail" && !requests.some((request) => request.path === "policy/update" && request !== requests.at(-1)))
+        return Response.json({ code: "BAD_INPUT", message: "Policy group not found." }, { status: 400 });
+      if (state === "lost") return Response.json({ code: "UNAVAILABLE", message: "Gateway timeout" }, { status: 504 });
       const definition = body && typeof body === "object" && "definition" in body ? body.definition : null;
       return Response.json({
         data: {
@@ -195,9 +200,14 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       });
     }
     if (path === "policy/read") {
+      // Another admin saved "Nicht rückgängig: Automatisch" in the meantime.
       const data = fixtureData();
       const policy = data.policy !== null && data.policy !== "failed" && data.policy !== "missing" ? data.policy.policy : null;
-      return Response.json({ data: { policy: { ...policy, revision: 9 } } });
+      if (!policy) return Response.json({ code: "UNAVAILABLE" }, { status: 503 });
+      const rules = policy.definition.rules.map((rule) =>
+        rule.groupId === null && rule.row === "ask_cannot_undo" ? { ...rule, value: "automatic" as const } : rule,
+      );
+      return Response.json({ data: { policy: { ...policy, revision: 9, definition: { preset: "custom", rules } } } });
     }
     return Response.json({ code: "NOT_FOUND", message: "Synthetic fixture: not available" }, { status: 404 });
   };

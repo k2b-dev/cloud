@@ -116,6 +116,8 @@ export type CodeAdminEffective = {
 };
 
 const PAGE = 20;
+/** Opaque approval page cursor: request time with microseconds and request UUID. */
+const APPROVAL_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z\|[0-9a-f-]{36}$/;
 /** Shared budget for list summaries; exhaustion shows file counts instead of line totals. */
 const SUMMARY_BUDGET_MS = 150;
 
@@ -185,8 +187,13 @@ export async function readCodeAdminSummary(context: CodeContext): Promise<CodeAd
 }
 
 /** Open version requests, newest first, bounded to one page. */
-export async function listCodeAdminApprovals(context: CodeContext): Promise<CodeAdminApproval[]> {
+export async function listCodeAdminApprovals(
+  context: CodeContext,
+  page: { cursor?: string } = {},
+): Promise<{ items: CodeAdminApproval[]; nextCursor: string | null }> {
   requireCodePolicyAdmin(context);
+  const [at, id] = page.cursor?.split("|") ?? [];
+  const after = at && id && APPROVAL_CURSOR.test(page.cursor ?? "") ? { at, id } : null;
   const rows = await sql<
     {
       approval_id: string;
@@ -202,11 +209,12 @@ export async function listCodeAdminApprovals(context: CodeContext): Promise<Code
       author_id: string | null;
       author_name: string | null;
       created_at: Date;
+      cursor_time: string;
       source_files: CodeSourceFiles;
       manifest: unknown;
       comparison_files: CodeSourceFiles | null;
     }[]
-  >`SELECT s.approval_id,s.code_id,s.version_id,v.number,c.title,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
+  >`SELECT to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time,s.approval_id,s.code_id,s.version_id,v.number,c.title,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
       v.created_by AS author_id,COALESCE(NULLIF(u.display_name,''),u.uid) AS author_name,r.created_at,v.source_files,v.manifest,
       cmp.source_files AS comparison_files
     FROM code.version_submissions s JOIN approvals.requests r ON r.id=s.approval_id
@@ -214,10 +222,11 @@ export async function listCodeAdminApprovals(context: CodeContext): Promise<Code
       LEFT JOIN auth.users u ON u.id=v.created_by
       LEFT JOIN code.versions cmp ON cmp.id=(s.binding->>'comparisonVersionId')::uuid
     WHERE r.status='pending' AND r.expires_at>now()
-    ORDER BY r.created_at DESC,r.id DESC LIMIT ${PAGE}`;
+      AND (${after?.at ?? null}::timestamptz IS NULL OR (r.created_at,r.id) < (${after?.at ?? null}::timestamptz,${after?.id ?? null}::uuid))
+    ORDER BY r.created_at DESC,r.id DESC LIMIT ${PAGE + 1}`;
   const deadline = performance.now() + SUMMARY_BUDGET_MS;
   const items: CodeAdminApproval[] = [];
-  for (const row of rows) {
+  for (const row of rows.slice(0, PAGE)) {
     const owner = ownerOf(row);
     const manifest = parseManifest(row.manifest);
     items.push({
@@ -232,7 +241,8 @@ export async function listCodeAdminApprovals(context: CodeContext): Promise<Code
       stat: codeAdminDiffStat(row.comparison_files, row.source_files, deadline),
     });
   }
-  return items;
+  const last = rows[PAGE - 1];
+  return { items, nextCursor: rows.length > PAGE && last ? `${last.cursor_time}|${last.approval_id}` : null };
 }
 
 /** Recently decided versions, including the sole-admin label from C8. */
@@ -482,7 +492,7 @@ export async function listCodeAdminCodes(
   context: CodeContext,
 ): Promise<{ items: CodeAdminCode[]; total: number; owners: number; nextCursor: string | null }> {
   requireCodePolicyAdmin(context);
-  const after = filter.cursor ? decodeCursor(filter.cursor) : null;
+  const after = filter.cursor ? decodeCodeAdminCursor(filter.cursor) : null;
   const status = filter.status ?? null;
   const app = filter.app ?? null;
   const q = filter.q?.trim() ? `%${filter.q.trim().replace(/[\\%_]/g, (char) => `\\${char}`)}%` : null;
@@ -501,11 +511,11 @@ export async function listCodeAdminCodes(
     items,
     total: count?.total ?? 0,
     owners: count?.owners ?? 0,
-    nextCursor: rows.length > PAGE && last ? encodeCursor({ title: last.title, id: last.id }) : null,
+    nextCursor: rows.length > PAGE && last ? encodeCodeAdminCursor({ title: last.title, id: last.id }) : null,
   };
 }
-const encodeCursor = (value: { title: string; id: string }) => Buffer.from(JSON.stringify(value)).toString("base64url");
-const decodeCursor = (value: string): { title: string; id: string } | null => {
+export const encodeCodeAdminCursor = (value: { title: string; id: string }) => Buffer.from(JSON.stringify(value)).toString("base64url");
+export const decodeCodeAdminCursor = (value: string): { title: string; id: string } | null => {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString());
     return parsed && typeof parsed === "object" && "title" in parsed && "id" in parsed
@@ -605,8 +615,11 @@ export async function readCodeAdminEffective(userId: string, context: CodeContex
 }
 
 /** Waiting cleanup jobs (C10) across all Code. */
-export async function listCodeAdminCleanup(context: CodeContext): Promise<CodeCleanupJob[]> {
-  return (await listCodeCleanupJobs({ limit: 50 }, context)).items;
+export async function listCodeAdminCleanup(
+  context: CodeContext,
+  page: { cursor?: string } = {},
+): Promise<{ items: CodeCleanupJob[]; nextCursor: string | null }> {
+  return listCodeCleanupJobs({ limit: 50, ...(page.cursor ? { cursor: page.cursor } : {}) }, context);
 }
 
 /** Runner capacity (C13) for the replaceable runner section. */

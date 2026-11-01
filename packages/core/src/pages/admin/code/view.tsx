@@ -41,14 +41,14 @@ import type { CodeAdminMessages } from "./messages";
 export type Loaded<T> = T | "failed" | "missing" | null;
 export type CodeAreaData = {
   summary: Loaded<CodeAdminSummary>;
-  approvals: Loaded<CodeAdminApproval[]>;
+  approvals: Loaded<{ items: CodeAdminApproval[]; nextCursor: string | null }>;
   decided: Loaded<CodeAdminDecided[]>;
   approval: Loaded<CodeAdminApprovalDetail>;
   codes: Loaded<{ items: CodeAdminCode[]; total: number; owners: number; nextCursor: string | null }>;
   code: Loaded<CodeAdminCodeDetail>;
   policy: Loaded<CodeAdminPolicy>;
   effective: Loaded<CodeAdminEffective>;
-  cleanup: Loaded<CodeCleanupJob[]>;
+  cleanup: Loaded<{ items: CodeCleanupJob[]; nextCursor: string | null }>;
   runners: Loaded<CodeRunnerMetrics>;
   limits: Loaded<SettingFieldDef[]>;
 };
@@ -213,6 +213,15 @@ export function CodeAreaView(props: Props) {
     />
   );
   const hint = (icon: string, text: string) => <Placeholder icon={icon} description={text} />;
+  /** The next page of a list; its URL holds the cursor, so reload keeps the page. */
+  const moreLink = (cursor: string | null, href: (after: string) => string): JSX.Element =>
+    cursor ? (
+      <div class="px-2 py-2">
+        <ButtonLink variant="secondary" size="sm" href={href(cursor)}>
+          {t.more}
+        </ButtonLink>
+      </div>
+    ) : undefined;
 
   if (props.noPermission || !props.data)
     return (
@@ -323,9 +332,10 @@ export function CodeAreaView(props: Props) {
         </>
       );
     }
-    const approvals = data.approvals;
-    if (!ok(approvals)) return failure;
-    if (!approvals.length)
+    const page = data.approvals;
+    if (!ok(page)) return failure;
+    const approvals = page.items;
+    if (!approvals.length && !query.after)
       return (
         <>
           {approvalsTabs()}
@@ -350,7 +360,7 @@ export function CodeAreaView(props: Props) {
             {(entry) => (
               <AppWorkspace.SidebarItem
                 variant="object"
-                href={codeAreaHref({ sec: "approvals", id: entry.versionId })}
+                href={codeAreaHref({ sec: "approvals", id: entry.versionId, after: query.after })}
                 active={query.id === entry.versionId}
                 description={
                   entry.stat.first
@@ -369,6 +379,7 @@ export function CodeAreaView(props: Props) {
             )}
           </For>
         </AppWorkspace.SidebarSection>
+        {moreLink(page.nextCursor, (after) => codeAreaHref({ sec: "approvals", after }))}
       </>
     );
   };
@@ -377,18 +388,20 @@ export function CodeAreaView(props: Props) {
     if (detail === null) return hint("ti ti-git-compare", t.chooseVersion);
     if (detail === "missing") return missing(t.closedTitle, { sec: "approvals" });
     if (detail === "failed") return failure;
-    const list = ok(data.approvals) ? data.approvals : [];
+    const list = ok(data.approvals) ? data.approvals.items : [];
     return <CodeApprovalReview {...approvalReviewProps(t, detail, list, when)} />;
   };
   const approvalPosition = (): JSX.Element => {
-    const list = ok(data.approvals) ? data.approvals : [];
+    const list = ok(data.approvals) ? data.approvals.items : [];
     const index = list.findIndex((entry) => entry.versionId === query.id);
     if (index < 0 || query.tab === "decided") return undefined;
     const previous = list[index - 1];
     const next = list[index + 1];
     return (
       <span class="flex items-center gap-1">
-        <span class="text-xs text-(--k2b-text-muted) tabular-nums">{t.xOfY({ i: index + 1, n: list.length })}</span>
+        <span class="text-xs text-(--k2b-text-muted) tabular-nums">
+          {t.xOfY({ i: index + 1, n: Math.max(list.length, summary?.approvals ?? 0) })}
+        </span>
         <Show
           when={previous}
           fallback={
@@ -398,7 +411,11 @@ export function CodeAreaView(props: Props) {
           }
         >
           {(entry) => (
-            <IconButtonLink label={t.previous} size="sm" href={codeAreaHref({ sec: "approvals", id: entry().versionId })}>
+            <IconButtonLink
+              label={t.previous}
+              size="sm"
+              href={codeAreaHref({ sec: "approvals", id: entry().versionId, after: query.after })}
+            >
               <i class="ti ti-chevron-up" aria-hidden="true" />
             </IconButtonLink>
           )}
@@ -412,7 +429,7 @@ export function CodeAreaView(props: Props) {
           }
         >
           {(entry) => (
-            <IconButtonLink label={t.next} size="sm" href={codeAreaHref({ sec: "approvals", id: entry().versionId })}>
+            <IconButtonLink label={t.next} size="sm" href={codeAreaHref({ sec: "approvals", id: entry().versionId, after: query.after })}>
               <i class="ti ti-chevron-down" aria-hidden="true" />
             </IconButtonLink>
           )}
@@ -466,7 +483,7 @@ export function CodeAreaView(props: Props) {
               {(code) => (
                 <AppWorkspace.SidebarItem
                   variant="object"
-                  href={codeAreaHref({ sec: "code", id: code.id, status: query.status, app: query.app, q: query.q })}
+                  href={codeAreaHref({ sec: "code", id: code.id, status: query.status, app: query.app, q: query.q, after: query.after })}
                   active={query.id === code.id}
                   description={
                     <span class="inline-flex items-center gap-1.5">
@@ -482,19 +499,7 @@ export function CodeAreaView(props: Props) {
               )}
             </For>
           </AppWorkspace.SidebarSection>
-          <Show when={codes.nextCursor}>
-            {(cursor) => (
-              <div class="px-2 py-2">
-                <ButtonLink
-                  variant="secondary"
-                  size="sm"
-                  href={codeAreaHref({ sec: "code", status: query.status, app: query.app, q: query.q, after: cursor() })}
-                >
-                  {t.more}
-                </ButtonLink>
-              </div>
-            )}
-          </Show>
+          {moreLink(codes.nextCursor, (after) => codeAreaHref({ sec: "code", status: query.status, app: query.app, q: query.q, after }))}
         </Show>
       </>
     );
@@ -788,13 +793,18 @@ export function CodeAreaView(props: Props) {
     );
   }
   const cleanupSection = (): JSX.Element => {
-    const jobs = data.cleanup;
-    if (!ok(jobs)) return failure;
+    const page = data.cleanup;
+    if (!ok(page)) return failure;
+    const jobs = page.items;
     return (
       <div class="grid content-start gap-4 px-2 pt-1 pb-6">
         <p class="text-sm text-(--k2b-text-muted)">{t.cleanupLead}</p>
-        <Show when={jobs.length} fallback={<Placeholder icon="ti ti-recycle" title={t.emptyCleanup} description={t.emptyCleanupSub} />}>
+        <Show
+          when={jobs.length || query.after}
+          fallback={<Placeholder icon="ti ti-recycle" title={t.emptyCleanup} description={t.emptyCleanupSub} />}
+        >
           {cleanupTable(jobs)}
+          {moreLink(page.nextCursor, (after) => codeAreaHref({ sec: "cleanup", after }))}
         </Show>
       </div>
     );
@@ -883,7 +893,7 @@ export function CodeAreaView(props: Props) {
     if (section === "policy") return policyHead();
     if (section === "groups") return policy ? t.groupsSub({ n: policy.groups.length }) : undefined;
     if (section === "effective") return t.effectiveSub;
-    if (section === "cleanup") return ok(data.cleanup) ? t.cleanupSub({ n: data.cleanup.length }) : undefined;
+    if (section === "cleanup") return summary ? t.cleanupSub({ n: summary.cleanup }) : undefined;
     if (section === "limits") return t.limitsSub;
     if (section === "runners") return t.runnersSub;
     return undefined;

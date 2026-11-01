@@ -514,14 +514,14 @@ export const fixtureRunners = (empty = false): CodeRunnerMetrics =>
 /** Every part loaded; tests replace single parts to reach a state. */
 export const fixtureData = (): CodeAreaData => ({
   summary: fixtureSummary(),
-  approvals: fixtureApprovals(),
+  approvals: { items: fixtureApprovals(), nextCursor: null },
   decided: fixtureDecided(),
   approval: null,
   codes: { items: fixtureCodes(), total: 8, owners: 5, nextCursor: null },
   code: null,
   policy: fixturePolicy(),
   effective: null,
-  cleanup: fixtureCleanup(),
+  cleanup: { items: fixtureCleanup(), nextCursor: null },
   runners: fixtureRunners(),
   limits: [],
 });
@@ -542,6 +542,7 @@ export const CODE_FIXTURE_STATES = [
   "conflict",
   "savefail",
   "saving",
+  "lost",
 ] as const;
 export type CodeFixtureState = (typeof CODE_FIXTURE_STATES)[number];
 
@@ -575,10 +576,10 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
     return {
       ...data,
       summary: { approvals: 0, codes: 0, groups: 0, cleanup: 0 },
-      approvals: [],
+      approvals: { items: [], nextCursor: null },
       decided: [],
       codes: { items: [], total: 0, owners: 0, nextCursor: null },
-      cleanup: [],
+      cleanup: { items: [], nextCursor: null },
       runners: fixtureRunners(true),
       policy: data.policy !== null && data.policy !== "failed" && data.policy !== "missing" ? { ...data.policy, groups: [] } : data.policy,
     };
