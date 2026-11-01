@@ -17,7 +17,14 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
-import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
+import {
+  activateCodeVersion,
+  cancelCodeActivation,
+  checkCodeActivation,
+  previewCodeActivation,
+  processCodeActivation,
+  readCodeActivation,
+} from "./activation";
 import { cleanupCodeActivation, codeActivationCleanupOutbox, reconcileCodeAccess } from "./activation-maintenance";
 import { type CodeActivationTransport, CodeActivationTransportError } from "./activation-transport";
 import * as authoringChecks from "./authoring-check";
@@ -343,6 +350,20 @@ databaseSuite()("durable Code activation", () => {
     expect(blocked.allowed).toEqual({ allowed: false, reason: "credential" });
     expect(blocked.rows.every((item) => item.check === "has" || item.check === "unknown")).toBe(true);
     expect(sets).toHaveLength(0);
+  });
+  test("an application that cannot list its grants leaves its targets unchecked, not the whole preview", async () => {
+    const code = await newCode(),
+      submitted = await version(code);
+    listDown = true;
+    try {
+      const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+      expect(preview.rows.filter((row) => !row.own).map((row) => [row.target.id, row.check])).toEqual([
+        ["A", "unknown"],
+        ["B", "unknown"],
+      ]);
+    } finally {
+      listDown = false;
+    }
   });
   test("the preview refuses someone who may not edit the Code", async () => {
     const code = await newCode(),
@@ -859,6 +880,65 @@ databaseSuite()("durable Code activation", () => {
     expect([...live.keys()]).toEqual(grants);
     expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id} AND state='granted'`).toHaveLength(grants.length);
     expect(await sql`SELECT id FROM code.activations WHERE id=${activation.id}::uuid`).toHaveLength(1);
+  });
+  test("the check before the click asks every target like an activation and writes nothing", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A", "B"]);
+    denyDry = "B";
+    sets.length = 0;
+    const answer = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+    expect(sets.every((set) => set.dryRun)).toBe(true);
+    expect(answer.targets.find((item) => item.target.id === "A")).toEqual({
+      target: { type: "example.item", id: "A" },
+      state: "granted",
+      failure: null,
+    });
+    const refused = answer.targets.find((item) => item.target.id === "B")!;
+    expect(refused).toMatchObject({ state: "refused", failure: { code: "not_manager", title: "Fixture target", readable: true } });
+    expect(refused.failure?.managerNames).toHaveLength(1);
+    expect(await sql`SELECT id FROM code.activations WHERE code_id=${code.id}`).toHaveLength(0);
+    expect(await sql`SELECT grant_id FROM code.target_grants WHERE code_id=${code.id}`).toHaveLength(0);
+    // The check never tells an ID's title or managers to someone who may not read that target.
+    targetReadable = false;
+    const hidden = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps);
+    const unreadable = hidden.targets.find((item) => item.target.id === "B")!;
+    expect(unreadable.failure).toMatchObject({ code: "not_manager", readable: false });
+    expect(JSON.stringify(unreadable)).not.toContain("Fixture target");
+    expect(JSON.stringify(unreadable)).not.toContain(nextOwnerId);
+    // A target that does not answer leaves the decision to activating.
+    targetReadable = true;
+    const silent = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+      ...deps,
+      transport: {
+        ...transport,
+        set: async () => {
+          throw new CodeActivationTransportError("target_unavailable", true);
+        },
+      },
+    });
+    expect(silent.targets.every((item) => item.state === "unknown" && item.failure === null)).toBe(true);
+    // An application that cannot list its grants leaves its targets unknown instead of guessing that they are new.
+    sets.length = 0;
+    const unlisted = await checkCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, {
+      ...deps,
+      transport: {
+        ...transport,
+        list: async () => {
+          throw new CodeActivationTransportError("target_unavailable", true);
+        },
+      },
+    });
+    expect(unlisted.targets.find((item) => item.target.id === "A")).toMatchObject({ state: "unknown", failure: null });
+    expect(unlisted.targets.find((item) => item.target.id === "B")).toMatchObject({ state: "unknown", failure: null });
+    expect(sets.some((set) => set.id === "A" || set.id === "B")).toBe(false);
+    // Only a person who could start this activation may ask.
+    await expect(
+      checkCodeActivation(
+        { codeId: code.id, versionId: submitted.version.id },
+        { ...owner, authority: { ...owner.authority, credentialKind: "api_key" } },
+        deps,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
   test("unreadable target refusal persists and returns neither title nor managers; readable refusal keeps both", async () => {
     for (const readable of [false, true]) {

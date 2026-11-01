@@ -369,8 +369,12 @@ type RunRow = {
   created_at: Date;
   started_at: Date | null;
   ended_at: Date | null;
+  rerun_of: string | null;
+  rerun_by: string | null;
+  rerun_by_name: string | null;
 };
-const mapRun = (row: RunRow): CodeRun => ({
+/** Like directory search: members see other people's names, guests only their own. */
+const mapRun = (row: RunRow, viewer: { id: string; roles: readonly string[] }): CodeRun => ({
   id: row.id,
   codeId: row.code_id,
   versionId: row.version_id,
@@ -381,6 +385,8 @@ const mapRun = (row: RunRow): CodeRun => ({
   createdAt: row.created_at.toISOString(),
   startedAt: row.started_at?.toISOString() ?? null,
   endedAt: row.ended_at?.toISOString() ?? null,
+  rerunOf: row.rerun_of,
+  rerunByName: row.rerun_by && (viewer.roles.includes("user") || row.rerun_by === viewer.id) ? row.rerun_by_name : null,
 });
 /** Public run metadata deliberately has no input, output or calls. */
 export const listCodeRuns = async (input: { codeId: string; cursor?: string; limit: number }, context: CodeContext) => {
@@ -388,13 +394,15 @@ export const listCodeRuns = async (input: { codeId: string; cursor?: string; lim
   const [at, id] = input.cursor?.split("|") ?? [];
   const rows = await sql<
     (RunRow & { cursor_time: string })[]
-  >`SELECT id,code_id,version_id,trigger,entrypoint,state,outcome,created_at,started_at,ended_at,
-    to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
-    FROM code.runs WHERE code_id = ${input.codeId}
-    AND (${at ?? null}::timestamptz IS NULL OR (created_at,id) < (${at ?? null}::timestamptz,${id ?? null}::uuid))
-    ORDER BY created_at DESC,id DESC LIMIT ${input.limit + 1}`;
+  >`SELECT r.id,r.code_id,r.version_id,r.trigger,r.entrypoint,r.state,r.outcome,r.created_at,r.started_at,r.ended_at,r.rerun_of,r.rerun_by,
+    COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),''),u.uid) AS rerun_by_name,
+    to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+    FROM code.runs r LEFT JOIN auth.users u ON u.id = r.rerun_by WHERE r.code_id = ${input.codeId}
+    AND (${at ?? null}::timestamptz IS NULL OR (r.created_at,r.id) < (${at ?? null}::timestamptz,${id ?? null}::uuid))
+    ORDER BY r.created_at DESC,r.id DESC LIMIT ${input.limit + 1}`;
+  const viewer = codePerson(context);
   return {
-    items: rows.slice(0, input.limit).map(mapRun),
+    items: rows.slice(0, input.limit).map((row) => mapRun(row, viewer)),
     nextCursor: rows.length > input.limit ? `${rows[input.limit - 1]!.cursor_time}|${rows[input.limit - 1]!.id}` : null,
   };
 };
@@ -412,9 +420,12 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
   const { permission } = await readCode(input.codeId, context);
   const [row] = await sql<
     RunRow[]
-  >`SELECT id,code_id,version_id,trigger,entrypoint,state,outcome,created_at,started_at,ended_at FROM code.runs WHERE code_id = ${input.codeId} AND id = ${input.runId}::uuid`;
+  >`SELECT r.id,r.code_id,r.version_id,r.trigger,r.entrypoint,r.state,r.outcome,r.created_at,r.started_at,r.ended_at,r.rerun_of,r.rerun_by,
+    COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),''),u.uid) AS rerun_by_name
+    FROM code.runs r LEFT JOIN auth.users u ON u.id = r.rerun_by WHERE r.code_id = ${input.codeId} AND r.id = ${input.runId}::uuid`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code run not found.");
-  if (permission === "reader") return { run: mapRun(row), contents: null };
+  const viewer = codePerson(context);
+  if (permission === "reader") return { run: mapRun(row, viewer), contents: null };
   const [payload] = await sql<
     { input: CodeCall["result"]; output: CodeCall["result"] }[]
   >`SELECT input,output FROM code.runs WHERE id = ${input.runId}::uuid`;
@@ -433,7 +444,7 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
   const inputChunked = bytes(jsonText(payload.input)) > CODE_INLINE_JSON_BYTES;
   const outputChunked = bytes(jsonText(payload.output)) > CODE_INLINE_JSON_BYTES;
   return {
-    run: mapRun(row),
+    run: mapRun(row, viewer),
     contents: {
       input: inputChunked ? null : payload.input,
       output: outputChunked ? null : payload.output,

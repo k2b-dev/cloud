@@ -371,6 +371,13 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   };
   let editorRoot: HTMLDivElement | undefined;
   let principalPickerHost: HTMLDivElement | undefined;
+  /** Someone looking for a Code here learns why it never shows up, and how it gets access. */
+  const searchEmpty = () => (
+    <>
+      <p class="font-medium text-primary">{t().searchNobody}</p>
+      <p class="mt-0.5">{t().searchNeverCode}</p>
+    </>
+  );
   const focusPrincipalPicker = () => {
     queueMicrotask(() => {
       if (!disposed && canEdit() && !busy()) principalPickerHost?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
@@ -457,6 +464,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                   serviceAccountStatus={props.serviceAccountStatus ?? "active"}
                   placeholder={props.placeholder}
                   signedIn={props.signedIn}
+                  empty={searchEmpty()}
                   disabled={saving()}
                   onSelect={(principal, display) => {
                     if (!canStart()) return;
@@ -577,6 +585,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           serviceAccountStatus={props.serviceAccountStatus ?? "active"}
           placeholder={props.placeholder}
           signedIn={props.signedIn}
+          empty={searchEmpty()}
           readOnly={grantPending()}
           disabled={updating() !== null || revoking() !== null}
           onSelect={(principal, display) => void grant(principal, display)}

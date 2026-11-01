@@ -71,6 +71,10 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
       events: { "user.created": { title: "Benutzer erstellt", description: "Eine Benutzeridentität wurde erstmals in Cloud angelegt." } },
       types: {
         code: { title: "Code", description: "Eine unabhängig versionierte Code-Ressource." },
+        "code.version": {
+          title: "Code",
+          description: "Der Code hinter einer Änderung in einer anderen App, genannt über Version und Lauf.",
+        },
         user: { title: "Benutzer", description: "Eine Benutzeridentität in Cloud." },
         "ai.chat": {
           title: "KI-Chat",
@@ -148,6 +152,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             cursor: "Letzte betroffene Code-ID aus nextCursor der vorherigen Seite.",
             limit: "Maximale Anzahl betroffener Codes auf dieser Seite; höchstens 50.",
           },
+        },
+        "code.version.origin": {
+          title: "Code hinter einer Änderung lesen",
+          description:
+            "Liest Titel, Automation und Links des Codes, der eine Änderung gemacht hat, aus einem core.code.version-Verweis im Verlauf einer anderen App. Nichts für alle, die diesen Code nicht lesen dürfen.",
+          input: { id: "Versions-UUID, optional gefolgt von ~ und einer Lauf-UUID." },
         },
         "code.summary": {
           title: "Code eines Besitzers zusammenfassen",
@@ -387,6 +397,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
             input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
+            rerunOf: "Der fehlgeschlagene Lauf dieses Codes und Einstiegs, den dieser Lauf erneut startet.",
           },
         },
         "code.secret.set": {

@@ -23,7 +23,9 @@ import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeSecretsTab } from "./CodeSecrets";
 import { loadCodeRunCalls } from "./calls";
 import {
+  ActivationCheckSchema,
   ActivationSchema,
+  type CodeActivationCheck,
   type CodeActivationStatus,
   type CodePageAccessRow,
   type CodePageActivationRow,
@@ -82,6 +84,25 @@ const activationRequest = async (
     return parsed.success ? { ok: true, data: parsed.data.data } : { ok: false, message: null, definite: false };
   } catch {
     return { ok: false, message: null, definite: false };
+  }
+};
+
+/** Asks each target before the click. Null when Core cannot say; switching on then decides, as it always does. */
+const loadActivationCheck = async (codeId: string, versionId: string): Promise<CodeActivationCheck["targets"] | null> => {
+  try {
+    const response = await fetch("/api/code/activation/check", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ codeId, versionId }),
+      // The same patience as following an activation; after that, switching on decides.
+      signal: AbortSignal.timeout(ACTIVATION_POLLS * ACTIVATION_POLL_MS),
+    });
+    if (!response.ok) return null;
+    const parsed = wrapped(ActivationCheckSchema).safeParse(await response.json());
+    return parsed.success ? parsed.data.data.targets : null;
+  } catch {
+    return null;
   }
 };
 
@@ -188,7 +209,7 @@ function EditWithPanel(props: { data: CodePageData; t: CodePageMessages; size?: 
     <Show when={props.data.editor}>
       {(panel) => (
         <Button type="button" size={props.size} variant="secondary" onClick={() => openPanel(panel().provider)}>
-          <i class="ti ti-sparkles" aria-hidden="true" />
+          <i class={panel().icon} aria-hidden="true" />
           {props.t.editWith({ name: panel().label })}
         </Button>
       )}
@@ -313,7 +334,7 @@ function EmptyCode(props: { data: CodePageData; text: PageText }) {
           <Show when={props.data.editor}>
             {(editor) => (
               <Button type="button" variant="primary" onClick={() => openPanel(editor().provider)}>
-                <i class="ti ti-sparkles" aria-hidden="true" />
+                <i class={editor().icon} aria-hidden="true" />
                 {t().createWith({ name: editor().label })}
               </Button>
             )}
@@ -404,7 +425,7 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
           <Show when={editor() && props.data.editor}>
             {(panel) => (
               <Button type="button" variant="secondary" onClick={() => openPanel(panel().provider)}>
-                <i class="ti ti-sparkles" aria-hidden="true" />
+                <i class={panel().icon} aria-hidden="true" />
                 {t().editWith({ name: panel().label })}
               </Button>
             )}
@@ -979,6 +1000,7 @@ function Runs(props: { data: CodePageData; state: CodePageReady; text: PageText 
                             props.text.when(run.createdAt),
                             triggerLabel(run, t()),
                             run.versionNumber ? t().runVersion({ version: run.versionNumber }) : null,
+                            run.rerunByName ? t().rerunBy({ name: run.rerunByName }) : run.rerunOf ? t().rerunUnnamed : null,
                           ]
                             .filter(Boolean)
                             .join(" · ")}
@@ -1059,7 +1081,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
         capabilityId: "code.run",
         kind: "action",
         target: { type: "core.code", id: props.state.code.id },
-        input: { entrypoint: run().entrypoint, input: props.detail.input ?? null },
+        input: { entrypoint: run().entrypoint, input: props.detail.input ?? null, rerunOf: run().id },
         // One rerun per failed run, also after a lost response or a double click.
         idempotencyKey: `rerun:${run().id}`,
       },
@@ -1070,6 +1092,23 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
     toast.success(t().rerunStarted);
     documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.data.runId }));
   };
+  const canViewWithPanel = () => props.state.permission === "editor" && props.data.editor !== null;
+  /** Looking at a failed run with the panel; the panel reads this page's place as its context. */
+  const viewWithPanelButton = () => (
+    <Show when={canViewWithPanel() && props.data.editor}>
+      {(panel) => (
+        <Button type="button" size="sm" variant="secondary" onClick={() => openPanel(panel().provider)}>
+          <i class={panel().icon} aria-hidden="true" />
+          {t().viewWith({ name: panel().label })}
+        </Button>
+      )}
+    </Show>
+  );
+  const viewWithPanel = () => (
+    <Show when={canViewWithPanel()}>
+      <div class="cloud-code__note-actions">{viewWithPanelButton()}</div>
+    </Show>
+  );
   const target = (call: CodePageCall) => {
     if (!call.target) return null;
     const known = [
@@ -1101,6 +1140,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
               props.text.when(run().createdAt),
               run().versionNumber ? t().runVersion({ version: run().versionNumber! }) : null,
               triggerLabel(run(), t()),
+              run().rerunByName ? t().rerunBy({ name: run().rerunByName! }) : run().rerunOf ? t().rerunUnnamed : null,
             ]
               .filter(Boolean)
               .join(" · ")}
@@ -1114,14 +1154,20 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
           fallback={
             <Show
               when={beforeFirstAction()}
-              fallback={<NoticeCard tone="danger" icon="ti ti-circle-x" title={t().stateFailed} detail={outcomeText() ?? undefined} />}
+              fallback={
+                <NoticeCard tone="danger" icon="ti ti-circle-x" title={t().stateFailed} detail={outcomeText() ?? undefined}>
+                  {viewWithPanel()}
+                </NoticeCard>
+              }
             >
               <NoticeCard
                 tone="danger"
                 icon="ti ti-circle-x"
                 title={t().failedBeforeFirstTitle}
                 detail={[outcomeText(), t().failedBeforeFirst].filter(Boolean).join(". ")}
-              />
+              >
+                {viewWithPanel()}
+              </NoticeCard>
             </Show>
           }
         >
@@ -1131,12 +1177,15 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
             title={t().failedAfterFirstTitle}
             detail={[outcomeText(), t().failedAfterFirst].filter(Boolean).join(". ")}
           >
-            <Show when={canRerun()}>
+            <Show when={canRerun() || canViewWithPanel()}>
               <div class="cloud-code__note-actions">
-                <Button type="button" size="sm" variant="secondary" loading={rerunning()} onClick={() => void rerun()}>
-                  <i class="ti ti-repeat" aria-hidden="true" />
-                  {t().rerun}
-                </Button>
+                <Show when={canRerun()}>
+                  <Button type="button" size="sm" variant="secondary" loading={rerunning()} onClick={() => void rerun()}>
+                    <i class="ti ti-repeat" aria-hidden="true" />
+                    {t().rerun}
+                  </Button>
+                </Show>
+                {viewWithPanelButton()}
               </div>
             </Show>
           </NoticeCard>
@@ -1144,6 +1193,13 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
       </Show>
       <Show when={run().state !== "failed" && run().outcome && run().outcome !== "succeeded"}>
         <p class="cloud-code__quiet">{t().outcome({ code: run().outcome! })}</p>
+      </Show>
+      <Show when={run().rerunOf}>
+        {(original) => (
+          <p class="cloud-code__quiet">
+            <a href={withQuery(props.data.href, { tab: "runs", run: original() })}>{t().rerunOf({ run: shortId(original()) })}</a>
+          </p>
+        )}
       </Show>
       <Show when={calls()} fallback={<p class="cloud-code__quiet">{t().callsHidden}</p>}>
         {(list) => (
@@ -1346,6 +1402,8 @@ function ActivationDialog(props: {
 }) {
   const t = props.text.t;
   const [view, setView] = createSignal<ActivationView>({ kind: "idle" });
+  const [checking, setChecking] = createSignal(false);
+  const [checked, setChecked] = createSignal<CodeActivationCheck["targets"]>([]);
   let disposed = false;
   onCleanup(() => {
     disposed = true;
@@ -1434,24 +1492,59 @@ function ActivationDialog(props: {
   };
   // A dialog opened while an earlier attempt is unresolved continues with that attempt.
   if (resumed) void check();
+  // Otherwise each target answers first, so a refusal shows before the click; the button waits for that answer.
+  else if (props.data.activation.allowed) {
+    setChecking(true);
+    void loadActivationCheck(props.state.code.id, props.version.id).then((targets) => {
+      if (disposed) return;
+      setChecking(false);
+      setChecked(targets ?? []);
+      const refused = (targets ?? []).filter((item) => item.state === "refused" && item.failure);
+      const first = refused.find((item) => item.failure?.code === "not_manager") ?? refused[0];
+      if (first) setView({ kind: "failed", failure: first.failure, message: null });
+    });
+  }
+  const verdict = (row: CodePageActivationRow) =>
+    checked().find((item) => item.target.type === row.target.ref.type && item.target.id === row.target.ref.id);
   const targetByRef = (ref: { type: string; id: string } | null | undefined) =>
     ref ? (rows().find((row) => row.target.ref.type === ref.type && row.target.ref.id === ref.id)?.target ?? null) : null;
-  const rowRight = (row: CodePageActivationRow): JSX.Element => {
+  const rowBlocked = (row: CodePageActivationRow) => {
     const failed = failedTarget();
-    if (blocked() && failed && failed.type === row.target.ref.type && failed.id === row.target.ref.id)
+    const answer = verdict(row);
+    return (
+      (blocked() && failed?.type === row.target.ref.type && failed.id === row.target.ref.id) ||
+      (answer?.state === "refused" && answer.failure?.code === "not_manager")
+    );
+  };
+  const rowRight = (row: CodePageActivationRow): JSX.Element => {
+    if (rowBlocked(row))
       return (
         <span class="cloud-code__bad">
           <i class="ti ti-lock" aria-hidden="true" /> {t().notAdmin}
         </span>
       );
-    if (row.target.own && props.data.canManageOwner)
+    const answer = verdict(row);
+    if (answer?.state === "refused")
+      return (
+        <span class="cloud-code__bad">
+          <i class="ti ti-alert-triangle" aria-hidden="true" /> {t().refusedAtTarget}
+        </span>
+      );
+    if ((row.target.own && props.data.canManageOwner) || answer?.state === "granted")
       return (
         <span class="cloud-code__ok">
-          <i class="ti ti-check" aria-hidden="true" /> {t().youManage({ name: props.data.owner.title })}
+          <i class="ti ti-check" aria-hidden="true" />{" "}
+          {t().youManage({ name: row.target.own ? props.data.owner.title : props.text.targetName(row.target) })}
         </span>
       );
     if (!row.isNew)
       return <span class="text-dimmed">{t().alreadyHas({ version: props.state.active?.number ?? props.version.number })}</span>;
+    if (checking())
+      return (
+        <span class="text-secondary">
+          <i class="ti ti-loader-2 animate-spin" aria-hidden="true" /> {t().checkingTarget}
+        </span>
+      );
     return <span class="text-secondary">{t().checkedAtTarget}</span>;
   };
   /**
@@ -1506,12 +1599,7 @@ function ActivationDialog(props: {
       <ul class="cloud-code__list">
         <For each={rows()}>
           {(row) => (
-            <li
-              class="cloud-code__row cloud-code__row--access"
-              data-blocked={
-                blocked() && failedTarget()?.type === row.target.ref.type && failedTarget()?.id === row.target.ref.id ? "" : undefined
-              }
-            >
+            <li class="cloud-code__row cloud-code__row--access" data-blocked={rowBlocked(row) ? "" : undefined}>
               <span class="cloud-code__kind" aria-hidden="true">
                 <i class={row.target.icon ?? (row.target.own ? "ti ti-home" : "ti ti-target-arrow")} />
               </span>
@@ -1599,7 +1687,7 @@ function ActivationDialog(props: {
         <Button
           type="button"
           variant="primary"
-          disabled={!props.data.activation.allowed || blocked() || busy()}
+          disabled={!props.data.activation.allowed || blocked() || busy() || checking()}
           loading={busy() && view().kind === "progress" && (view() as { state: string }).state !== "waiting"}
           onClick={() => void (view().kind === "unknown" ? check() : start())}
         >

@@ -669,6 +669,8 @@ const runMetadata = {
   createdAt: serverCode.createdAt,
   startedAt: serverCode.createdAt,
   endedAt: serverCode.createdAt,
+  rerunOf: null,
+  rerunByName: null,
 };
 const secretMetadata = {
   name: "BANK_TOKEN",

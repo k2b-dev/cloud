@@ -651,7 +651,10 @@ before confirmation finishes, the pending change is not sent.
 ### Code with access
 
 Entries of a `code` service account never appear as ordinary rows, and
-`PrincipalPicker` never offers Code accounts. `PermissionEditor` lists them in
+`PrincipalPicker` never offers Code accounts. A search in `PermissionEditor`
+that finds nobody says so and adds that Code is never listed there; `empty` on
+`PrincipalPicker` sets that text. During a search, the picker lists "everyone"
+entries only when their label matches. `PermissionEditor` lists Code accounts in
 its own "Code with access" section below the people and groups. Every
 application that mounts the editor gets the section; it needs no props.
 

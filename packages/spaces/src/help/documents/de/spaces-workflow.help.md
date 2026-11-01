@@ -91,6 +91,8 @@ Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand: e
 5. **Erledigte Arbeit abschließen:** Nimm abgeschlossene Einträge aus den aktiven Ansichten, damit die offenen Listen übersichtlich bleiben.
 :::
 
+Der **Verlauf** einer Karte zeigt, wer sie angelegt und geändert hat, auch wenn das Code war, etwa „Angelegt von Code von info@“. Darfst du diesen Code lesen, führt der Name zum Code und „Lauf öffnen“ zum Lauf.
+
 Du kannst einen eigenen Kommentar bis zu zehn Minuten nach dem Veröffentlichen bearbeiten oder löschen. Kommentare anderer Personen bleiben unverändert, auch für Personen mit Zugriff **Verwalten**.
 
 ## Mit einem Emoji reagieren {icon="mood-plus"}

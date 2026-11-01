@@ -41,7 +41,11 @@ run ID, and request digest and are deleted with the Code. Reusing a key with a
 different entrypoint or input returns a conflict.
 
 “Run again” (“Erneut ausführen”) uses a new request key and the currently
-active version. Capability calls with an idempotency key can return their
+active version, and passes the failed run's ID as optional `rerunOf`. Core
+accepts only a failed run of the same Code and entrypoint. `core.code.run.list`
+and `core.code.run.read` then return `rerunOf` and `rerunByName` on the new run:
+the name follows directory visibility, is resolved on read, and is `null` when
+hidden. `rerunOf` becomes `null` when the failed run reaches retention. Capability calls with an idempotency key can return their
 previous result within that capability's supported deduplication period.
 Calls declaring `idempotency: "none"` execute again. Review the recorded calls
 before retrying a run that may have changed data.

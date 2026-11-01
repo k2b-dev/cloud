@@ -87,7 +87,12 @@ export type CodeAccessAdapter = {
 };
 /** App-wide admission and resource types whose resources may own Code. */
 export type CodeAccessDeclaration = CodeAccessAdapter | { manages?: never; grant?: never; revoke?: never; list?: never };
-export type CapabilityCodeDefinition = { access?: { app?: CodeAccessAdapter }; owners?: readonly string[] };
+export type CapabilityCodeDefinition = {
+  access?: { app?: CodeAccessAdapter };
+  owners?: readonly string[];
+  /** Where each owner type mounts the shared Code page, with `{id}` for the resource. Links to Code lead there. */
+  pages?: Readonly<Record<string, string>>;
+};
 
 export const CodeAccessSetInputSchema = z
   .object({
@@ -146,6 +151,15 @@ export const CapabilityCodeManifestSchema = z
   .object({
     access: z.object({ app: z.boolean(), types: z.array(z.string().min(1).max(100)).max(200) }).strict(),
     owners: z.array(z.string().min(1).max(100)).max(200),
+    pages: z
+      .record(
+        z.string().min(1).max(100),
+        z
+          .string()
+          .max(500)
+          .regex(/^\/[^\\\u0000-\u001f\u007f]*\{id\}[^\\\u0000-\u001f\u007f]*$/),
+      )
+      .optional(),
   })
   .strict();
 export type CapabilityCodeManifest = z.infer<typeof CapabilityCodeManifestSchema>;

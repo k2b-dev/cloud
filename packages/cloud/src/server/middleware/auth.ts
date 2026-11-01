@@ -38,6 +38,7 @@ export type InvocationProvenance = {
   mandateRevision?: number;
   workloadType?: string;
   workloadId?: string;
+  workloadRun?: string;
 };
 
 export type UserRequestActor = {

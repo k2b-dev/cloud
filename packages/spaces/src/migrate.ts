@@ -807,6 +807,7 @@ export const migrate = async (): Promise<void> => {
     ALTER TABLE spaces.columns ALTER COLUMN short_id SET NOT NULL;
     ALTER TABLE spaces.columns DROP CONSTRAINT IF EXISTS columns_short_id_format;
     ALTER TABLE spaces.columns ADD CONSTRAINT columns_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$');
+    ALTER TABLE spaces.items ADD COLUMN IF NOT EXISTS created_by_workload BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE spaces.items ALTER COLUMN short_id SET NOT NULL;
     ALTER TABLE spaces.items DROP CONSTRAINT IF EXISTS items_short_id_format;
     ALTER TABLE spaces.items ADD CONSTRAINT items_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$');

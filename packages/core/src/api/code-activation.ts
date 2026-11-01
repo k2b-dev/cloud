@@ -2,7 +2,13 @@ import { type AuthContext, auth, getLocale, middleware, v } from "@k2b/cloud/ser
 import { Hono } from "hono";
 import { ZodError } from "zod";
 import { type CodeContext, CodeDataError } from "../code/access";
-import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, readCodeActivation } from "../code/activation";
+import {
+  activateCodeVersion,
+  cancelCodeActivation,
+  checkCodeActivation,
+  previewCodeActivation,
+  readCodeActivation,
+} from "../code/activation";
 import { codeActivationContracts } from "../code/activation-contracts";
 import { reconcileCodeAccess } from "../code/activation-maintenance";
 import { listCodeCleanupJobs } from "../code/lifecycle";
@@ -55,6 +61,13 @@ export const createCodeActivationRoutes = () => {
       middleware.openapi({ tags: ["Code"], summary: "Check what switching on a Code version would do for this person" }),
       v("json", codeActivationContracts.preview.input),
       (c) => run(context(c), (ctx) => previewCodeActivation(c.req.valid("json"), ctx)),
+    )
+    .post(
+      "/activation/check",
+      auth.requireOAuthScope("write", "admin"),
+      middleware.openapi({ tags: ["Code"], summary: "Ask each target whether this person could switch a Code version on" }),
+      v("json", codeActivationContracts.check.input),
+      (c) => run(context(c), (ctx) => checkCodeActivation(c.req.valid("json"), ctx)),
     )
     .post(
       "/activation/read",
