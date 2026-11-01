@@ -12,6 +12,8 @@ export type CloudCliOptions = {
   server: string;
   token: string;
   output: CloudCliOutputMode;
+  /** Host reports CI so modules can refuse interactive authority changes. Never grants server permission. */
+  ci?: boolean;
   /** Explicit request locale selected by the CLI entry point. */
   locale?: string;
 };
