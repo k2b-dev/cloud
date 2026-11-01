@@ -222,7 +222,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lesen Sie einen von delivery.list oder draft.send zurückgegebenen mail.delivery ref, einschließlich seines aktuellen Planungsstatus.",
           input: {
-            id: "Exaktes mail.delivery ID, zurückgegeben von „Geplante Zustellungen auflisten“ oder einer typisierten Ressource ref.",
+            id: "Exaktes mail.delivery ID, zurückgegeben von „Wartende Zustellungen auflisten“ oder einer typisierten Ressource ref.",
           },
         },
         "draft.list": {
