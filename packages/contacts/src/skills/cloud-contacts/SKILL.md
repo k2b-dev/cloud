@@ -14,6 +14,8 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Maintain: `contacts.contact.create`, `contacts.contact.update`, `contacts.contact.move`, `contacts.contact.delete`, `contacts.favorite.set`, `contacts.tag.change`, and `contacts.note.create`.
 
 Load only the needed capabilities and reuse returned typed IDs unchanged.
+For every Contacts Action, supply the flat `book` target. Moving also needs
+`targetBookId` for the destination book; both books require write access.
 
 ## Normal flows
 

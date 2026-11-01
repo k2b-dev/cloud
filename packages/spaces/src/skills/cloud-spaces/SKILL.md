@@ -5,7 +5,7 @@ description: "Use for work involving Cloud Spaces: finding, reading, creating, o
 
 # Work with Cloud Spaces
 
-Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them. Load only the needed capabilities and reuse returned typed IDs unchanged.
+Follow the user's request and loaded Skills. Load only needed capabilities; reuse returned typed IDs unchanged.
 
 ## Start from the user's task
 
@@ -18,14 +18,15 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 
 ## Make focused changes
 
+- Resource-bound Space Actions take the flat `space` target; item, template, column, tag, and blocker IDs must belong to it.
 - Create with `spaces.task.create` or `spaces.event.create`; supply the chosen Space and a valid column. Put actionable titles and durable context in the description, without copying unrelated source material; write descriptions with real line breaks, never the two characters `\n`.
 - Change task or event fields with `spaces.task.update` or `spaces.event.update`; use `spaces.task.set-completed` for completion or reopening.
 - Respect active blockers before completing a task. Use `spaces.task.blocker.list` when details matter and `spaces.task.blocks.list` for the opposite direction. Dependencies must be real prerequisites between tasks in the same Space.
-- Simple subtasks use `spaces.task.checklist.list`, `spaces.task.checklist.create`, `spaces.task.checklist.update` and `spaces.task.checklist.delete`. Keep each entry to a label and completion state; do not turn checklist entries into independent assigned tasks.
+- Use `spaces.task.checklist.list`, `spaces.task.checklist.create`, `spaces.task.checklist.update` and `spaces.task.checklist.delete` for simple subtasks: labels and completion, without separate assignees.
 - Use `spaces.reaction.add` and `spaces.reaction.remove` with `{ itemId, emoji }` (one emoji) to set your own reaction. They are idempotent intents, not toggles, need write access, and notify nobody. An item holds at most 20 different emoji.
 - Use comments for discussion; read before replacing or deleting them. For tag replacement, preserve tags not included in the requested change.
 - Use `spaces.item.reference.find` to find existing items for a source resource. Link on creation through references rather than a redundant second mutation. For an existing item use `spaces.item.reference.add`; use `spaces.item.link-candidate.search` when a writable target is unknown.
-- Use `spaces.event.create` for interactive creation. Never blindly retry an uncertain mutation.
+- Never blindly retry an uncertain mutation.
 
 ## Templates
 

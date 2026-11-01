@@ -10,6 +10,23 @@ updated: 2026-10-31
 
 # Deprecations and migrations
 
+## Spaces and Contacts Actions name their container
+
+Move `spaceId` out of Spaces creation and calendar-import inputs into
+`target: { type: "spaces.space", id: spaceId }`. All resource Actions require
+that Space target, including changes to existing items and templates.
+
+Contacts Actions require `target: { type: "contacts.book", id: bookId }`.
+Remove `bookId` from `contact.create` input. For `contact.move`, pass the
+source book as the target and the destination as
+`refs: { targetBookId: { type: "contacts.book", id: destinationBookId } }`.
+The contact-directory create contract uses the same book target.
+
+Flat chat and MCP calls use `space` or `book` alongside domain fields;
+`targetBookId` remains a flat destination argument for moves. Upgrade Mail
+with the providers. See [capability targets](/en/docs/operations/capability-targets)
+for rollout constraints and retained person-call behavior.
+
 ## Mail capabilities name their mailbox
 
 The coordinated Code migration intentionally changes Mail's mailbox-scoped

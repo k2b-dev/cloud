@@ -5,7 +5,7 @@ section: Platform services
 order: 557
 description: Implement the provider-neutral contact-directory contract so Mail can use your application for recipients and participant contacts.
 tags: [capabilities, contacts, mail, contracts]
-updated: 2026-10-16
+updated: 2026-10-31
 ---
 
 # Provide a contact directory
@@ -31,7 +31,15 @@ input and result schemas are compatible with the contract.
 | `listWritableBooks` | Query | `ContactDirectoryBookListInputSchema` | `ContactDirectoryBookListDataSchema` | Choosing where **New contact** saves. Optional. | `book.list` |
 | `create` | Action | `ContactDirectoryCreateInputSchema` | `ContactDirectoryCreateDataSchema` | **New contact** in conversation details. Optional. | `contact.create` |
 
-`contactDirectory` bundles the kind and both schemas of each function, and
+`contactDirectory` bundles the kind and both schemas of each function.
+`create` declares the fixed local target Type `book`. The consumer sends
+`target: { type: "<provider-app>.book", id: selectedBookId }` beside the
+contact fields in `input`; `ContactDirectoryCreateInputSchema` no longer
+contains `bookId`. Providers declare that Type even when they expose only
+one collection. `CapabilityContract.target` checks this coordinate alongside
+the input and result schemas; a different target or additional refs do not
+match the directory contract.
+
 `CONTACT_DIRECTORY_FUNCTIONS` lists the function names. The `create` Action
 must declare `idempotency: "required"`. None of the functions may stream its
 result.
@@ -141,6 +149,9 @@ administrator saves the mapping. A capability is compatible when:
 
 - **Kind.** It is a Query or Action as listed above; the `create` Action
   requires an idempotency key; it does not stream.
+- **Target.** The `create` Action declares the local `book` Type as its
+  target and no additional refs. Other directory functions have no target
+  or refs.
 - **Input.** Your input accepts everything the contract may send. You may
   require only fields that the contract always sends; a closed input must
   declare every contract field; numeric and array bounds must include the
