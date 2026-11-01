@@ -1047,6 +1047,9 @@ state.
 
 Record security-sensitive mutations with [Audit events](/en/docs/platform/audit-events).
 
+The [Code SDK](/en/docs/platform/code-sdk) generates target-specific handles
+from these contracts, with typed refs and idempotency keys.
+
 ### Name the resource an operation acts on
 
 Declare `target` when an Action acts on a resource. It names a local Type of

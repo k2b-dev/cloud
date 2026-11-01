@@ -1,7 +1,8 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
-import type { CapabilityActionPolicy } from "../../contracts/capabilities";
+import { getApp } from "../../_internal/registry";
+import type { CapabilityActionPolicy, NormalizedCapabilityCall } from "../../contracts/capabilities";
 import { CapabilityAppIdSchema } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import { isAccountCategoryAllowed } from "../account-category-policy";
@@ -15,6 +16,8 @@ export {
   type CapabilityGrant,
   CapabilityGrantSchema,
   CapabilityGrantsSchema,
+  CODE_VERSION_MANDATE_WORKLOAD_TYPE,
+  type CodeVersionMandateBinding,
   capabilityGrantAllows,
   isMandatePolicyNarrowing,
   MANDATE_POLICY_MAX_IDENTIFIERS,
@@ -139,7 +142,7 @@ type MandateRow = {
   revoke_reason: string | null;
 };
 
-type MandateCurrentRow = MandateRow & { subject_active: boolean; not_expired: boolean };
+type MandateCurrentRow = MandateRow & { subject_active: boolean; not_expired: boolean; service_account_kind: string | null };
 
 const UUID = z.string().uuid();
 const WorkloadTypeSchema = z
@@ -208,7 +211,7 @@ const validSubject = async (subject: MandateSubject, db: SQL): Promise<boolean> 
     SELECT EXISTS (
       SELECT 1 FROM auth.service_accounts
       WHERE id = ${subject.id}::uuid
-        AND kind IN ('resource_bound', 'standalone', 'agent')
+        AND kind IN ('resource_bound', 'standalone', 'agent', 'code')
         AND status = 'active'
     ) AS active
   `;
@@ -222,6 +225,15 @@ const subjectAppAccess = async (
   groupsAdmin?: readonly string[],
 ): Promise<boolean> => {
   try {
+    if (subject.type === "service_account") {
+      const [account] = await db<{ kind: string }[]>`SELECT kind FROM auth.service_accounts WHERE id = ${subject.id}::uuid`;
+      // Code has no human entry grant. Admission here only checks app availability;
+      // the signed mandate invocation still needs its own resource grant in the target.
+      if (account?.kind === "code") {
+        for (const appId of new Set(appIds)) if (!(await getApp(appId))) return false;
+        return true;
+      }
+    }
     const authority = await resolveIssuanceAuthority(
       {
         sub: subject.id,
@@ -362,6 +374,11 @@ const createMandateInDb = async (
     return fail(err.badInput("Mandate expiry must be in the future"));
   }
   if (!(await validSubject(input.subject, db))) return fail(err.forbidden("Mandate subject is not active"));
+  if (input.subject.type === "service_account") {
+    const [account] = await db<{ kind: string }[]>`SELECT kind FROM auth.service_accounts WHERE id = ${input.subject.id}::uuid`;
+    if (account?.kind === "code" && (input.ownerAppId !== "core" || input.workloadType !== "code.version"))
+      return fail(err.forbidden("Code requires a Core version mandate"));
+  }
   const ownerConfirmation = input.confirmation === "owner";
   if (ownerConfirmation) {
     // Serialize quota decisions across Core replicas; expired registrations do
@@ -662,6 +679,7 @@ export const validateMandateIssueAuthority = async (
     operation: string;
     actionApproval?: "none" | "approved";
     input?: unknown;
+    call?: NormalizedCapabilityCall;
     capabilityPolicy?: CapabilityActionPolicy;
     capabilityApproval?: "none" | "rememberable" | "always";
     expectedRevision?: number;
@@ -682,13 +700,13 @@ export const validateMandateIssueAuthority = async (
   }
   const db = options.db ?? sql;
   const [row] = await db<MandateCurrentRow[]>`
-    SELECT mandate.*,
+    SELECT mandate.*, service_account.kind AS service_account_kind,
       (mandate.expires_at IS NULL OR mandate.expires_at > now()) AS not_expired,
       CASE mandate.subject_kind
         WHEN 'user' THEN user_account.id IS NOT NULL
           AND (user_account.account_expires IS NULL OR user_account.account_expires > now())
         WHEN 'service_account' THEN service_account.id IS NOT NULL
-          AND service_account.kind IN ('resource_bound', 'standalone', 'agent')
+          AND service_account.kind IN ('resource_bound', 'standalone', 'agent', 'code')
           AND service_account.status = 'active'
         ELSE false
       END AS subject_active
@@ -723,6 +741,9 @@ export const validateMandateIssueAuthority = async (
       operation: operation.data,
       actionApproval: input.actionApproval ?? "none",
       input: input.input,
+      call: input.call,
+      codeAccount: row.service_account_kind === "code",
+      codeVersion: row.owner_app_id === "core" && row.workload_type === "code.version",
       capabilityApproval: input.capabilityApproval,
       capabilityPolicy: input.capabilityPolicy,
     })
@@ -730,6 +751,8 @@ export const validateMandateIssueAuthority = async (
     return denyMandateIssue(err.forbidden(MANDATE_POLICY_DENIED_MESSAGE));
   }
   const mandate = mapMandate(row);
+  if (row.service_account_kind === "code" && (mandate.ownerAppId !== "core" || mandate.workloadType !== "code.version"))
+    return denyMandateIssue(err.forbidden("Code requires a Core version mandate"));
   if (!(await subjectAppAccess(mandate.subject, [mandate.ownerAppId, target.data], db, options.groupsAdmin))) {
     return denyMandateIssue(err.forbidden("App access was denied. Ask someone who manages access before running this mandate."));
   }

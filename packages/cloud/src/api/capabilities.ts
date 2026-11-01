@@ -524,9 +524,9 @@ const runCapabilityDispatch = async (
   }
   const invocationBody = capabilityInvocationBody(call);
   const boundCall = operation.target !== undefined || operation.refs !== undefined;
-  // Legacy mandates constrain domain input only. C2 adds target-aware grants; never discard a coordinate here.
-  if (boundCall && (params.mandate || params.parentInvocation?.credential_kind === "mandate"))
-    return errorResponse("MANDATE_POLICY_DENIED", "This capability requires a target-aware mandate", 403);
+  // A mandate-derived nested call must return through the same current-policy check.
+  if (params.parentInvocation?.credential_kind === "mandate" && !params.mandate)
+    return errorResponse("MANDATE_POLICY_DENIED", "A current mandate is required", 403);
 
   if ((params.mandate || params.parentInvocation) && operation.stream)
     return errorResponse("STREAM_UNSUPPORTED_AUTHORITY", "Streams require an interactive user or service-account request", 403);
@@ -584,7 +584,8 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     operation: invocationOperation,
                     actionApproval: mandate.actionApproval ?? "none",
-                    input: params.input,
+                    input: input.data,
+                    call,
                     capabilityApproval: "approval" in operation ? (operation.approval ?? "always") : "always",
                     capabilityPolicy: capabilityActionPolicy(entry.manifest, params.capabilityId),
                     requestId,

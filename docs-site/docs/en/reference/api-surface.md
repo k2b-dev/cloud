@@ -46,6 +46,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
+| `@k2b/cloud/code` | Preview, platform-owned | [Generate and host the typed Code SDK](/en/docs/platform/code-sdk) |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
 | `@k2b/cloud/config` | Supported, server-only | Typed environment registries |
 
@@ -183,7 +184,7 @@ Use the capability guide to choose the narrow API:
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
 - [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
-- [Background mandates](/en/docs/identity/background-mandates): `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core, with legacy workload credentials retained for this release.
+- [Background mandates](/en/docs/identity/background-mandates): `CapabilityGrant`, `TaskGrant`, `CodeVersionMandateBinding` and `CODE_VERSION_MANDATE_WORKLOAD_TYPE` from `@k2b/cloud/services` define durable operation/target grants and per-version bindings; `sendAppRequest` from `@k2b/cloud/services/identity` signs final worker requests to Core, with legacy workload credentials retained for this release.
 - [Resource types and discussions](/en/docs/platform/resource-types-and-discussions): `resolveResourceReaders` and `ResourceReader` from `@k2b/cloud/services/identity` resolve current account subjects and resource bindings for provider-owned reader checks.
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)
@@ -322,6 +323,7 @@ inferring support from autocomplete.
 | `@k2b/cloud/ai` | Structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
 | `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
+| `@k2b/cloud/code` | Preview SDK generation and hosting | Generated `@sdk` modules run in Code; the generator and host controls are platform-owned |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
 
 For theme-aware server work, `readThemeFromCookieHeader()` returns a resolved
