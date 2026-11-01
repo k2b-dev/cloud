@@ -137,10 +137,8 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "code", run: migrateCode },
     { name: "code-policy", run: migrateCodePolicy },
     { name: "code-versions", run: migrateCodeVersions },
-    { name: "code-scheduling", run: migrateCodeScheduling },
-    { name: "code-jobs", run: migrateCodeJobs },
     { name: "code-activation", run: migrateCodeActivation },
-    { name: "code-secrets", run: migrateCodeSecrets },
+    { name: "code-scheduling", run: migrateCodeScheduling },
     { name: "known-apps", run: migrateKnownApps },
     { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },
@@ -194,9 +192,12 @@ export const startCoreServices = async (
     stopWorkflowEventRetention = startWorkflowEventRetention();
     stopCodeRunRetention = startCodeRunRetention();
     codePolicyPauseOutbox.start();
-    stopCodeScheduling = await startCodeScheduling();
     codeActivationOutbox.start();
     codeActivationCleanupOutbox.start();
+    codeOwnerDeletedOutbox.start();
+    codeAccessCleanupOutbox.start();
+    codeDeletionOutbox.start();
+    stopCodeScheduling = await startCodeScheduling();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({

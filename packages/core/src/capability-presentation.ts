@@ -327,20 +327,10 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Startet den aktiven geprüften Code. Derselbe Anfrageschlüssel liefert den bestehenden Lauf; ein neuer Schlüssel startet erneut.",
           input: {
-            codeId: "Code-ID aus code.list oder code.read.",
-            entrypoint: "Benannter Einstieg aus dem aktiven geprüften Code-Manifest.",
-            input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
+            ...codeIdInput,
+            entrypoint: "Name des erklärten Einstiegspunkts der aktiven Version.",
+            input: "JSON-Eingabe für den Einstiegspunkt.",
           },
-        },
-        "code.secret.set": {
-          title: "Code-Secret speichern",
-          description:
-            "Bearbeiter speichern einen privaten Zugangswert, ohne ihn zurückzulesen. Geänderte Ziele gelten erst mit einer neuen Version. Werte nur über CLI oder private Eingabefelder übergeben.",
-        },
-        "code.secret.delete": {
-          title: "Code-Secret-Wert löschen",
-          description:
-            "Bearbeiter entfernen den aktuellen Wert für alle Versionen. Unveränderliche Zielbindungen bleiben als Freigabe-Belege erhalten.",
         },
         "code.version.submit": {
           title: "Code-Version einreichen",
