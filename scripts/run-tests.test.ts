@@ -10,6 +10,7 @@ import {
   planShards,
   runTestCommand,
   selectSuites,
+  shardTimeNotice,
   suiteWeight,
   type TestSuite,
   type TestWeights,
@@ -446,6 +447,15 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
 }
+
+test("a shard's time asks for fresh weights before it fails", () => {
+  expect(shardTimeNotice("shard 1/5", 14.9, 20)).toBeUndefined();
+  expect(shardTimeNotice("shard 1/5", 16, undefined)).toBeUndefined();
+  const warning = shardTimeNotice("shard 1/5", 15.1, 20);
+  expect(warning).toStartWith("::warning title=Test shard above its target::shard 1/5 took 15.1 min");
+  expect(warning).toContain("bun scripts/test-weights.ts --run <id>");
+  expect(shardTimeNotice("shard 1/5", 20.1, 20)).toStartWith("::error title=Test shard over its time limit::");
+});
 
 test("a package's test parts run every file: the rest part excludes exactly what the other parts name", async () => {
   for (const [workspace, part, name] of [
