@@ -236,15 +236,19 @@ export async function reviewCodeVersionSubmission(
     throw new CodeDataError("BAD_INPUT", "The complete submission review exceeds the approval content budget.");
   return review;
 }
-const SUBMISSION_EVIDENCE_MS = 15_000;
+/** Capability Actions end after 30 seconds; the rest of that stays for the transaction. */
+const SUBMISSION_BUDGET_MS = 25_000;
 /** Run the author's fixtures once for reviewers. Their result informs the decision; a failure never refuses the version. */
 async function submissionEvidence(
   input: { codeId: string; sourceFiles: Record<string, string>; manifest: { entry: string }; tests?: Record<string, string> },
   context: CodeContext,
+  startedAt: number,
 ): Promise<CodeVersionEvidence> {
   if (!input.tests || !Object.keys(input.tests).length) return NO_TESTS_EVIDENCE;
-  // Fixtures may never cost the submission itself: capability Actions end after 30 seconds, and the checks ran before this.
-  const budget = AbortSignal.timeout(SUBMISSION_EVIDENCE_MS);
+  // Fixtures may never cost the submission itself: they get only what the required checks left of its budget.
+  const remaining = SUBMISSION_BUDGET_MS - (performance.now() - startedAt);
+  if (remaining <= 0) return unavailableEvidence("code_test_runner_unavailable");
+  const budget = AbortSignal.timeout(remaining);
   const bounded: CodeContext = { ...context, signal: context.signal ? AbortSignal.any([context.signal, budget]) : budget };
   try {
     const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, bounded);
@@ -261,12 +265,13 @@ export async function submitCodeVersion(
   raw: z.input<typeof codeVersionContracts.submit.input>,
   context: CodeContext,
 ): Promise<CodeVersionSubmission> {
+  const startedAt = performance.now();
   const input = checkedSubmission(raw, context);
   const author = codePerson(context, true);
   const { code: authorizedCode } = await readCode(input.codeId, context);
   await validateOperationRows(input.manifest, context, authorizedCode.owner.kind);
   await verifyCodeSubmission(input, context);
-  const evidence = await submissionEvidence(input, context);
+  const evidence = await submissionEvidence(input, context, startedAt);
   return sql.begin(async (tx) => {
     // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
     const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r
