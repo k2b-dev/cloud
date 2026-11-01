@@ -51,8 +51,19 @@ describe("buildAdminGroups", () => {
         { href: "/admin/base", icon: "ti-adjustments", label: locale === "de" ? "Grundeinstellungen" : "Base settings" },
         { href: "/admin/signin", icon: "ti-shield-lock", label: locale === "de" ? "Anmeldung & Sicherheit" : "Sign-in & security" },
         { href: "/admin/ai", icon: "ti-sparkles", label },
+        { href: "/admin/code", icon: "ti-code", label: "Code" },
       ]);
     }
+  });
+  it("shows open Code-version approvals on the Code entry as waiting, and nothing at zero", () => {
+    const code = (count?: number, locale = "de") =>
+      buildAdminGroups([], locale, { codeApprovals: count })
+        .flatMap((group) => group.links)
+        .find((link) => link.href === "/admin/code");
+    expect(code(3)?.waiting).toEqual({ count: 3, label: "3 offen" });
+    expect(code(1, "en")?.waiting).toEqual({ count: 1, label: "1 waiting" });
+    expect(code(0)?.waiting).toBeUndefined();
+    expect(code()?.waiting).toBeUndefined();
   });
   it("leaves declared AI tools to the AI area instead of the sidebar", () => {
     const groups = buildAdminGroups([
@@ -71,6 +82,7 @@ describe("buildAdminGroups", () => {
       { href: "/admin/base", icon: "ti-adjustments", label: "Base settings" },
       { href: "/admin/signin", icon: "ti-shield-lock", label: "Sign-in & security" },
       { href: "/admin/ai", icon: "ti-sparkles", label: "AI" },
+      { href: "/admin/code", icon: "ti-code", label: "Code" },
     ]);
     expect(groups.some((group) => group.label === "Example tools")).toBe(false);
     expect(groups.flatMap((group) => group.links).filter((link) => link.href === "/admin/example")).toHaveLength(0);
@@ -95,6 +107,7 @@ describe("buildAdminGroups", () => {
       { href: "/admin/base", icon: "ti-adjustments", label: "Base settings" },
       { href: "/admin/signin", icon: "ti-shield-lock", label: "Sign-in & security" },
       { href: "/admin/ai", icon: "ti-sparkles", label: "AI" },
+      { href: "/admin/code", icon: "ti-code", label: "Code" },
     ]);
   });
 
@@ -117,7 +130,13 @@ describe("buildAdminGroups", () => {
       }),
     ]);
     const area = groups.find((group) => group.label === "Cloud")!;
-    expect(area.links.map((link) => link.href)).toEqual(["/admin/base", "/admin/signin", "/admin/ai", "/admin/observability"]);
+    expect(area.links.map((link) => link.href)).toEqual([
+      "/admin/base",
+      "/admin/signin",
+      "/admin/ai",
+      "/admin/code",
+      "/admin/observability",
+    ]);
     expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
     expect(groups.some((group) => group.label === "App administration")).toBe(false);
     const links = groups.flatMap((group) => group.links);
@@ -129,7 +148,7 @@ describe("buildAdminGroups", () => {
       buildAdminGroups([], "de")
         .find((group) => group.label === "Cloud")
         ?.links.map((link) => link.label),
-    ).toEqual(["Grundeinstellungen", "Anmeldung & Sicherheit", "KI"]);
+    ).toEqual(["Grundeinstellungen", "Anmeldung & Sicherheit", "KI", "Code"]);
   });
 
   it("opens the first contributed Observability page when no app owns the area start", () => {

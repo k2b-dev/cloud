@@ -36,6 +36,8 @@ export default function PrincipalPicker(props: {
   allowAuthenticated?: boolean;
   /** Defaults to true; disable only for a documented user-backed workflow. */
   allowServiceAccounts?: boolean;
+  /** Directory kinds on offer, such as only groups for a group rule; defaults to people and groups. */
+  kinds?: readonly ("user" | "group")[];
   /** Optional directory filters for the resource's accepted credential kinds. */
   serviceAccountKinds?: ServiceAccountKind[];
   serviceAccountStatus?: ServiceAccountStatus;
@@ -82,7 +84,8 @@ export default function PrincipalPicker(props: {
     if (search.length >= 2) {
       const url = new URL("/api/accounts/entities", window.location.origin);
       url.searchParams.set("search", search);
-      url.searchParams.set("kinds", props.allowServiceAccounts !== false ? "user,group,service_account" : "user,group");
+      const kinds = (props.kinds ?? ["user", "group"]).join(",");
+      url.searchParams.set("kinds", props.allowServiceAccounts !== false ? `${kinds},service_account` : kinds);
       if (props.allowServiceAccounts !== false && props.serviceAccountKinds?.length) {
         url.searchParams.set("service_account_kinds", props.serviceAccountKinds.join(","));
       }

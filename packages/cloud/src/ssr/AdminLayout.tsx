@@ -20,6 +20,7 @@ type AdminLayoutContext = {
   get(key: "runtime"): RuntimeContext;
   get(key: "settings"): Record<string, any>;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
+  get(key: "adminCodeApprovals"): number | undefined;
   req: { raw: { headers: Headers; url: string } };
 };
 type Props = {
@@ -48,7 +49,7 @@ export default function AdminLayout(props: Props) {
   return (
     <Layout c={c} fullWidth fullPage title={breadcrumbs}>
       <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
-        <AdminSidebar currentPath={currentPath} apps={runtime.apps} />
+        <AdminSidebar currentPath={currentPath} apps={runtime.apps} codeApprovals={c.get("adminCodeApprovals")} />
         <AppWorkspace.Content>
           {props.ownMain ? (
             props.children
