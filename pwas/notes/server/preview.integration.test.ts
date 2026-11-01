@@ -1,0 +1,220 @@
+import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { SQL } from "bun";
+import * as Y from "yjs";
+import { createDisposableDatabase, databaseSuite } from "../../../scripts/fixtures/test-infra";
+import { createNotesApp } from "./app";
+import { migrate } from "./database";
+import { linkMetadata, previewMeta, renderPreview } from "./preview";
+import { NotesService } from "./service";
+import { NotesStore } from "./store";
+import { mountWebsite } from "./website";
+
+const origin = "https://notes.example.test";
+const index = '<html><head><title>k2b notes</title><!--og--></head><body><div id="app"></div></body></html>';
+const content =
+  '# A & "quoted" title\n\nText with <img src=x onerror=alert(1)> & symbols.\n\n![remote](https://invalid.example.test/private.png)\n\n| Month | Total |\n| --- | --- |\n| Jan | 12 |\n| Feb | 20 |';
+
+test("metadata escapes text and uses the read capability for both preview images", () => {
+  const html = linkMetadata(index, "edit-link", "read-link", origin, content);
+  expect(html).toContain('og:url" content="https://notes.example.test/p/edit-link"');
+  expect(html).toContain('og:image" content="https://notes.example.test/p/read-link/preview.png"');
+  expect(html).toContain("A &amp; &quot;quoted&quot; title");
+  expect(html).not.toContain("<img");
+  expect(html).not.toContain("onerror");
+  expect(html.match(/<title>/g)?.length).toBe(1);
+});
+
+test("metadata keeps titles and excerpts in plain text after removing markup", () => {
+  expect(previewMeta("# Hallo <b>Welt</b>\n").title).toBe("Hallo Welt");
+  const content = "# <scr<script>ipt>alert(1)</script>\n\n<scr<script>ipt>description</script>";
+  const meta = previewMeta(content);
+  expect(meta.title).not.toContain("<");
+  expect(meta.excerpt).not.toContain("<");
+  expect(previewMeta("# Weg -> Ziel\n").title).toBe("Weg -> Ziel");
+  const html = linkMetadata(index, "edit-link", "read-link", origin, content);
+  expect(html).not.toContain("<script>");
+});
+
+test("renderer creates a local 1200 by 630 PNG without fetching note URLs", async () => {
+  const original = globalThis.fetch;
+  let fetched = false;
+  globalThis.fetch = Object.assign(
+    () => {
+      fetched = true;
+      throw new Error("unexpected_network");
+    },
+    { preconnect: original.preconnect },
+  );
+  try {
+    const png = await renderPreview(content);
+    const bytes = Buffer.from(png);
+    expect(bytes.subarray(1, 4).toString()).toBe("PNG");
+    expect(bytes.readUInt32BE(16)).toBe(1200);
+    expect(bytes.readUInt32BE(20)).toBe(630);
+    expect(fetched).toBe(false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("metadata bounds work and XML rendering tolerates control characters and lone surrogates", async () => {
+  for (const token of ["<", "[", "](", "![", " ", "`", "|---|\n"])
+    expect(previewMeta("# Title\n\n" + token.repeat(Math.ceil(2_097_152 / token.length))).title).toBe("Title");
+  const png = await renderPreview("# A\u0000\ud800B\n\nText\uffff");
+  expect(Buffer.from(png).subarray(1, 4).toString()).toBe("PNG");
+});
+
+test("chart previews render inside the image margins", async () => {
+  const png = await renderPreview("# Budget\n\n| Item | Euro |\n| --- | ---: |\n| Travel | 18 |\n| Food | 24 |\n");
+  const context = createCanvas(1200, 630).getContext("2d");
+  context.drawImage(await loadImage(png), 0, 0);
+  const margin = context.getImageData(1140, 0, 60, 630).data;
+  expect(margin.every((channel) => channel === 255)).toBe(true);
+  expect(context.getImageData(666, 500, 534, 130).data.every((channel) => channel === 255)).toBe(true);
+  expect(context.getImageData(666, 180, 470, 310).data.some((channel) => channel !== 255)).toBe(true);
+});
+
+databaseSuite()("Notes static website and previews", () => {
+  let database: Awaited<ReturnType<typeof createDisposableDatabase>>;
+  let db: SQL;
+  let directory: string;
+  let service: NotesService;
+  let app: ReturnType<typeof createNotesApp>;
+  let links: { readId: string; editId: string };
+  beforeAll(async () => {
+    database = await createDisposableDatabase("notes_preview");
+    db = new SQL(database.url);
+    await migrate(db);
+    directory = await mkdtemp(join(tmpdir(), "notes-preview-"));
+    await Bun.write(join(directory, "index.html"), index);
+    await Bun.write(join(directory, "app.js"), "export const app = true;");
+    await Bun.write(join(directory, "sw.js"), "self.addEventListener('fetch', () => {});");
+    await Bun.write(join(directory, "assets", "main-01234567.js"), "export const built = true;");
+    await Bun.write(join(directory, "assets", "styles-abcdef0123456789.css"), "body { color: black; }");
+    await Bun.write(join(directory, "assets", "unhashed.js"), "export const unhashed = true;");
+    await Bun.write(join(directory, "private.map"), "source map");
+  });
+  beforeEach(async () => {
+    setSystemTime(new Date("2026-10-30T12:00:00Z"));
+    service = new NotesService(new NotesStore(db, 1024 ** 3), { storageBytes: 1024 ** 3, maxConnections: 50, maxOpenPads: 5 });
+    await service.start();
+    const doc = new Y.Doc();
+    doc.clientID = 1;
+    doc.getText("text").insert(0, content);
+    links = await service.create(Y.encodeStateAsUpdate(doc), "192.0.2.1");
+    doc.destroy();
+    app = createNotesApp(async () => true, service, { origin });
+    await mountWebsite(app, service, { origin }, directory, 5);
+  });
+  afterEach(async () => {
+    await service.stop();
+    await db`TRUNCATE pads CASCADE`;
+  });
+  afterAll(async () => {
+    setSystemTime();
+    await db.close();
+    await database.drop();
+    await rm(directory, { recursive: true, force: true });
+  });
+  test("GET and HEAD serve escaped HTML and checked assets without database mutations", async () => {
+    const [before] = await db`SELECT row_to_json(pads)::text AS state FROM pads WHERE read_id=${links.readId}`;
+    for (const token of [links.readId, links.editId]) {
+      const response = await app.request(`/p/${token}`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain(`${origin}/p/${links.readId}/preview.png`);
+      expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+    }
+    const head = await app.request(`/p/${links.readId}/preview.png`, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    const first = await app.request(`/p/${links.readId}/preview.png`);
+    const second = await app.request(`/p/${links.readId}/preview.png`);
+    expect(first.headers.get("Content-Type")).toBe("image/png");
+    expect(new Uint8Array(await first.arrayBuffer())).toEqual(new Uint8Array(await second.arrayBuffer()));
+    expect((await app.request(`/p/${links.editId}/preview.png`)).status).toBe(404);
+    const [after] = await db`SELECT row_to_json(pads)::text AS state FROM pads WHERE read_id=${links.readId}`;
+    expect(after).toEqual(before);
+    const [cache] = await db`SELECT count(*)::int AS count FROM pad_previews`;
+    expect(cache.count).toBe(0);
+    expect((await app.request("/app.js")).headers.get("Content-Type")).toContain("javascript");
+    expect((await app.request("/n/local-id")).status).toBe(200);
+    expect((await app.request("/private.map")).status).toBe(404);
+    expect((await app.request("/api/unknown")).status).toBe(404);
+    expect((await app.request("/missing.js")).status).toBe(404);
+  });
+  test("only existing hashed build assets are immutable and the service worker revalidates", async () => {
+    await service.upload(links.editId, {
+      key: "fixture",
+      name: "fixture.pdf",
+      bytes: new TextEncoder().encode("%PDF-1.7\n"),
+      type: "application/pdf",
+      declaredType: "application/pdf",
+    });
+    for (const method of ["GET", "HEAD"])
+      for (const [path, cache] of [
+        ["/sw.js", "no-cache"],
+        ["/assets/main-01234567.js", "public, max-age=31536000, immutable"],
+        ["/assets/styles-abcdef0123456789.css", "public, max-age=31536000, immutable"],
+        ["/assets/unhashed.js", "private, no-store"],
+        ["/assets/missing-01234567.js", "private, no-store"],
+        ["/app.js", "private, no-store"],
+        ["/", "private, no-store"],
+        [`/p/${links.readId}`, "private, no-store"],
+        [`/p/${links.readId}/preview.png`, "private, no-store"],
+        [`/api/pads/${links.readId}`, "private, no-store"],
+        [`/api/pads/${links.readId}/files/fixture`, "private, no-store"],
+        ["/api/admin/session", "private, no-store"],
+      ]) {
+        const response = await app.request(path!, { method });
+        expect(response.headers.get("Cache-Control")).toBe(cache!);
+        expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+        expect(response.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+        expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+        expect(response.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+      }
+  });
+  test("administrator HTML and APIs are disabled without an operator password", async () => {
+    for (const method of ["GET", "HEAD"])
+      for (const path of ["/admin", "/admin/", "/admin/session", "/api/admin/session"])
+        expect((await app.request(path, { method })).status).toBe(404);
+    const options = {
+      origin,
+      adminPasswordHash: await Bun.password.hash("fixture-only-operator-password", {
+        algorithm: "argon2id",
+        memoryCost: 8192,
+        timeCost: 1,
+      }),
+    };
+    const enabled = createNotesApp(async () => true, service, options);
+    await mountWebsite(enabled, service, options, directory, 5);
+    const response = await enabled.request("/admin");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(index);
+    expect((await enabled.request("/admin", { method: "HEAD" })).status).toBe(200);
+  });
+  test("overload and unexpected failures keep the recoverable SPA shell", async () => {
+    const read = service.read.bind(service);
+    try {
+      service.read = async () => {
+        throw new Error("fixture_unavailable");
+      };
+      const response = await app.request(`/p/${links.readId}`);
+      expect(response.status).toBe(500);
+      expect(await response.text()).toBe(index);
+    } finally {
+      service.read = read;
+    }
+  });
+  test("cached images are inaccessible after deletion, including requests with the edit capability", async () => {
+    expect((await app.request(`/p/${links.readId}/preview.png`)).status).toBe(200);
+    await service.remove(links.editId);
+    const response = await app.request(`/p/${links.readId}`);
+    expect(response.status).toBe(410);
+    expect(await response.text()).not.toContain("og:title");
+    expect((await app.request(`/p/${links.readId}/preview.png`)).status).toBe(410);
+  });
+});

@@ -15,6 +15,8 @@ const createPad = z.strictObject({
   title: z.string().max(200).optional(),
 });
 
+const presenceQuery = z.strictObject({ readIds: z.array(z.string().regex(/^[0-9A-Za-z]{22}$/)).max(limits.presencePads) });
+
 export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesService, options?: HttpOptions) => {
   const app = new Hono<{ Bindings: NotesBindings }>();
   app.use("*", async (c, next) => {
@@ -22,10 +24,10 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
     c.header("Referrer-Policy", "no-referrer");
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("X-Content-Type-Options", "nosniff");
-    c.header("Cache-Control", "private, no-store");
+    if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "private, no-store");
     c.header(
       "Content-Security-Policy",
-      "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      `default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'${options ? ` ${options.origin.replace(/^http/, "ws")}` : ""}; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`,
     );
   });
   app.onError((error, c) => {
@@ -59,6 +61,12 @@ export const createNotesApp = (ready: () => Promise<boolean>, service?: NotesSer
           peers: limits.peersPerPad,
         },
       });
+    });
+    app.post("/api/presence", async (c) => {
+      service.rates.take("presence", ip(c), limits.presencePerMinute, 60_000);
+      const parsed = presenceQuery.safeParse(await boundedJson(c.req.raw, limits.presencePads * 25 + 64));
+      if (!parsed.success) throw new NotesError("invalid_presence");
+      return c.json(await service.presence(parsed.data.readIds));
     });
     app.post("/api/pads", async (c) => {
       service.rates.take("create_request", ip(c), limits.createPerHour, 3_600_000);

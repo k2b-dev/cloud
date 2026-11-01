@@ -22,7 +22,9 @@
     "y-protocols": "catalog:",
     "yjs": "catalog:",
     "zod": "catalog:",
-    "file-type": "21.3.4"
+    "file-type": "21.3.4",
+    "@napi-rs/canvas": "1.0.9",
+    "@fontsource/ibm-plex-sans": "5.3.0"
   },
   "devDependencies": {
     "@babel/core": "8.0.6",
