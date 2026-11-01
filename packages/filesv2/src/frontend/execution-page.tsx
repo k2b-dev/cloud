@@ -6,10 +6,12 @@ import { apiError, describeError } from "../api/api-error";
 import { ssr } from "../config";
 import { requestCall } from "../files-call";
 import { filesService } from "../service";
+import { browserMessages } from "./browser-messages";
 import ExecutionDetails from "./ExecutionDetails";
 import { executionMessages } from "./execution-messages";
 import { executionUrl, hasRun } from "./execution-url";
 import { filesMessages } from "./messages";
+import { activityUrl } from "./urls";
 
 const log = logger("filesv2:execution");
 
@@ -19,13 +21,15 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = executionMessages.resolve([locale]);
   const files = filesMessages.resolve([locale]).t.files;
+  const activity = browserMessages.resolve([locale]).t.activity;
   const timeZone = getTimeZone(c);
   try {
     const entry = await filesService.activityEntry({ ...requestCall(c), requestAbort: c.req.raw.signal }, { activityId: activityId.data });
     // A formerly full entry may now have only a disappearance projection. Do not recover stripped context.
     if (!hasRun(entry.execution)) return ssr.error(c, 404);
     return () => (
-      <Layout c={c} title={[{ title: files, href: "/app/filesv2" }, { title: t.title }]}>
+      // A record page has no sidebar and no close of its own: Activity, where its entry is listed, is the way up.
+      <Layout c={c} title={[{ title: files, href: "/app/filesv2" }, { title: activity, href: activityUrl() }, { title: t.title }]}>
         <ExecutionDetails entry={entry} timeZone={timeZone} />
       </Layout>
     );
