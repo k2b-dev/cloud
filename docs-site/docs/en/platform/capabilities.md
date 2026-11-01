@@ -1673,11 +1673,11 @@ Cloud validates the declaration at startup:
   `idempotency: "required"`;
 - every provider-owned Type used by `refs` or Universal Search is declared;
 - an app may declare at most 200 Types, 200 Queries, and 200 Actions;
-- the deterministic live manifest may not exceed 256 KiB.
+- the deterministic live manifest may not exceed 384 KiB.
 
 Every invocation transport caps the complete JSON request and result at 256
 KiB. The paginated discovery catalog has a separate 2 MiB page limit because
-one valid manifest may itself approach 256 KiB. Provider endpoints validate and
+one valid manifest may itself approach 384 KiB. Provider endpoints validate and
 serialize invocation results within the 256 KiB bound before returning them.
 Keep individual field limits comfortably below that envelope; large files,
 exports, and document bodies belong in app-owned upload or download APIs
