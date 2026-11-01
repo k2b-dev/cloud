@@ -888,12 +888,16 @@ test("sidebar list errors distinguish failure from emptiness and retry the first
       expect(await navigation.getByText("Noch kein Dashboard", { exact: true }).count()).toBe(0);
       expect(await navigation.getByRole("alert").count()).toBe(1);
       listReply({ status: 503, json: { code: "REQUEST_FAILED" } });
+      const listAnswer = () => tab.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/dashboards"));
+      const failedRetry = listAnswer();
       await navigation.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
-      await navigation.getByRole("button", { name: "Erneut versuchen", exact: true }).waitFor({ state: "visible" });
+      await failedRetry;
       listReply({ json: { items: dashboardTestSnapshot.items, total: 2, nextOffset: null } });
       await navigation.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
-      await navigation.getByRole("link", { name: dashboardTestDashboard.name, exact: true }).waitFor();
-      expect(await navigation.getByRole("alert").count()).toBe(0);
+      // The selected dashboard is listed before the answer arrives; only the list's other entry and the
+      // alert's end show that the retry has finished. The old message stays while the request runs.
+      await navigation.getByRole("link", { name: dashboardTestKinds.name, exact: true }).waitFor();
+      await navigation.getByRole("alert").waitFor({ state: "detached" });
       expect(
         requests
           .filter((request) => new URL(request.path).pathname.endsWith("/dashboards"))
