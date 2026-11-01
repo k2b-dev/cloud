@@ -82,9 +82,8 @@ const receipt = (row: ActivationRow): CodeActivation => ({
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
 });
-async function visibleReceipt(row: ActivationRow, context: CodeContext): Promise<CodeActivation> {
-  const result = receipt(row),
-    failure = result.failure;
+async function visibleReceipt(result: CodeActivation, context: CodeContext): Promise<CodeActivation> {
+  const failure = result.failure;
   if (!failure?.target || failure.readable === undefined) return result;
   const person = codePerson(context);
   let readable = false;
@@ -173,13 +172,13 @@ export async function activateCodeVersion(
   if (!proof || proof.kind !== context.authority.credentialKind || proof.kind === "api_key")
     throw new CodeDataError("FORBIDDEN", "Activation needs verified credential revocation coordinates.");
   const authority = savedAuthoritySchema.parse({ userId: person.id, scopes: context.authority.scopes, proof });
-  return sql.begin(async (tx) => {
+  const result = await sql.begin(async (tx) => {
     const existing = await load(input.activationId, tx);
     if (existing) {
       if (existing.code_id !== input.codeId || existing.version_id !== input.versionId || existing.activating_person !== person.id)
         throw new CodeDataError("CONFLICT", "Activation identity belongs to another request.");
       await authorizedCode(input.codeId, context, tx);
-      return visibleReceipt(existing, context);
+      return receipt(existing);
     }
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     const code = await authorizedCode(input.codeId, context, tx);
@@ -203,8 +202,9 @@ export async function activateCodeVersion(
     if (inserted.code_id !== input.codeId || inserted.version_id !== input.versionId || inserted.activating_person !== person.id)
       throw new CodeDataError("CONFLICT", "Activation identity belongs to another request.");
     await tx`INSERT INTO code.activation_outbox(code_id,activation_id) VALUES(${code.id},${input.activationId}::uuid) ON CONFLICT DO NOTHING`;
-    return visibleReceipt((await load(input.activationId, tx))!, context);
+    return receipt((await load(input.activationId, tx))!);
   });
+  return visibleReceipt(result, context);
 }
 /** Permission-aware process status for CLI and resource Code pages. */
 export async function readCodeActivation(
@@ -216,7 +216,7 @@ export async function readCodeActivation(
   await requireCodePermission(code, context);
   const row = await load(input.activationId);
   if (!row || row.code_id !== code.id) throw new CodeDataError("NOT_FOUND", "Activation not found.");
-  return visibleReceipt(row, context);
+  return visibleReceipt(receipt(row), context);
 }
 async function state(id: string, value: CodeActivation["state"], failure: CodeActivationFailure | null = null) {
   await sql`UPDATE code.activations SET state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE ${value} END,failure=CASE WHEN cancel_requested THEN failure ELSE ${failure === null ? null : JSON.stringify(failure)}::text::jsonb END,updated_at=now() WHERE id=${id}::uuid`;
@@ -560,7 +560,7 @@ export async function cancelCodeActivation(
   input: z.infer<typeof codeActivationContracts.cancel.input>,
   context: CodeContext,
 ): Promise<CodeActivation> {
-  return sql.begin(async (tx) => {
+  const result = await sql.begin(async (tx) => {
     await authorizedCode(input.codeId, context, tx);
     const [row] = await tx<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${input.activationId}::uuid FOR UPDATE`;
     if (!row || row.code_id !== input.codeId) throw new CodeDataError("NOT_FOUND", "Activation not found.");
@@ -579,6 +579,7 @@ export async function cancelCodeActivation(
           tx,
         );
     }
-    return visibleReceipt((await load(row.id, tx))!, context);
+    return receipt((await load(row.id, tx))!);
   });
+  return visibleReceipt(result, context);
 }

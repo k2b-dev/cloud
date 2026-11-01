@@ -135,15 +135,21 @@ export const codeActivationTransport: CodeActivationTransport = {
       target: item.target,
       operations: item.operations,
     });
-    const data = await decode(
-      await fetch(new URL("/api/_internal/capabilities/v1/code-authority/queries/code.access.notifications", app.baseUrl), {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}` },
-        redirect: "error",
-        signal: AbortSignal.timeout(30_000),
-      }),
-      z.object({ managerUserIds: z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS) }).strict(),
-    );
+    const response = await fetch(new URL("/api/_internal/capabilities/v1/code-authority/queries/code.access.notifications", app.baseUrl), {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (response.status === 422) {
+      const refusal = z.object({ code: z.enum(["MANAGERS_UNAVAILABLE", "CAPACITY_EXCEEDED"]) }).safeParse(await body(response));
+      if (!refusal.success) throw new CodeActivationTransportError("target_response_invalid", true);
+      throw new CodeActivationTransportError(
+        refusal.data.code === "MANAGERS_UNAVAILABLE" ? "managers_unavailable" : "capacity_exceeded",
+        false,
+      );
+    }
+    const data = await decode(response, z.object({ managerUserIds: z.array(z.uuid()).max(CODE_ACCESS_MAX_MANAGER_USER_IDS) }).strict());
     return data.managerUserIds;
   },
   list: async (appId, principal) => decode(await authorityRequest(appId, "list", principal, { principal }), CodeAccessListDataSchema),
