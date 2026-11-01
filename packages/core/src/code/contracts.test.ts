@@ -13,6 +13,7 @@ import { CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
 import { CodeOwnerSchema, CodeRunCursorSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
 import { runCodeQuery } from "./queries";
 import { codeSourceHash, codeTextChunk } from "./store";
+import { CodeVersionError } from "./versions";
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -66,11 +67,18 @@ describe("Core Code data contracts", () => {
       "code.read",
       "code.run.list",
       "code.run.read",
+      "code.version.diff",
+      "code.version.diff.read",
+      "code.version.list",
       "code.version.read",
     ]);
     expect(
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
-    ).toEqual([{ id: "code.policy.update", code: false }]);
+    ).toEqual(
+      ["code.pause", "code.policy.update", "code.resume", "code.version.approve", "code.version.reject", "code.version.submit"].map(
+        (id) => ({ id, code: false }),
+      ),
+    );
   });
   test("owner union has exactly one opaque identity; source paths cannot escape the source tree", () => {
     expect(CodeOwnerSchema.parse({ kind: "resource", ref: { type: "example.mailbox", id: "m_1234" } })).toEqual({
@@ -177,4 +185,17 @@ test("owner-provider failures return a recoverable Query error", async () => {
     expect(result.error.code).toBe("INTERNAL");
     expect(result.error.message).toContain("Try again");
   }
+});
+
+test("large base conflicts retain their stable refusal and complete-diff reader", async () => {
+  const diffRead = { query: "core.code.version.diff.read", input: { codeId: "c_test" } };
+  const result = await runCodeQuery(context, async () => {
+    throw new CodeVersionError("code_version_conflict", "Newer version", {
+      latestVersionId: user.id,
+      files: "x".repeat(CAPABILITY_MAX_RESULT_BYTES),
+      diffRead,
+    });
+  });
+  expect(result).toMatchObject({ ok: false, error: { code: "code_version_conflict", details: { latestVersionId: user.id, diffRead } } });
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
 });

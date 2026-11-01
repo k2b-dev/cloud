@@ -1,27 +1,22 @@
-import { CAPABILITY_ASK_REASONS, type CapabilityActionPolicy } from "@k2b/cloud/contracts";
+import {
+  CAPABILITY_ASK_REASONS,
+  type CapabilityActionPolicy,
+  CODE_POLICY_ROWS,
+  type CodePolicyRow,
+  CodePolicyRowSchema,
+} from "@k2b/cloud/contracts";
+
+export {
+  CODE_POLICY_ROWS,
+  type CodePolicyManifest,
+  CodePolicyManifestSchema,
+  type CodePolicyRow,
+  CodePolicyRowSchema,
+} from "@k2b/cloud/contracts";
+
 import { z } from "zod";
 import { CodeIdSchema, CodeOwnerSchema } from "./contracts";
 
-/** Classification rows shared by the checker, activation, dispatcher and administration. */
-export const CODE_POLICY_ROWS = [
-  "read",
-  "silent_you",
-  "silent_draft",
-  "silent_shared",
-  "ask_sends",
-  "ask_deletes",
-  "ask_cannot_undo",
-  "ask_involves_people",
-  "ask_changes_access",
-  "ask_keeps_working",
-  "ask_sensitive",
-  "ask_app_asks",
-  "ai",
-  "internet",
-] as const;
-export const CodePolicyRowSchema = z.enum(CODE_POLICY_ROWS);
-/** Stable call classification shared by checker, activation, dispatcher and administration. */
-export type CodePolicyRow = z.infer<typeof CodePolicyRowSchema>;
 /** Transport values for Automatisch / Admin gibt frei / Nie. */
 export const CodePolicyValueSchema = z.enum(["automatic", "admin", "never"]);
 /** Automatic execution, version-bound Cloud-admin approval, or an unconditional veto. */
@@ -94,15 +89,6 @@ export function codePolicyRow(kind: "query" | "action" | "ai" | "internet", poli
   const reason = CAPABILITY_ASK_REASONS.find((reason) => reason === policy.ask);
   return reason ? CodePolicyRowSchema.parse(`ask_${reason}`) : "ask_app_asks";
 }
-/** Required checked-manifest field. Missing/invalid classifications fail closed in the pause sweep. */
-export const CodePolicyManifestSchema = z.object({
-  policyRows: z
-    .array(CodePolicyRowSchema)
-    .max(CODE_POLICY_ROWS.length)
-    .refine((rows) => new Set(rows).size === rows.length, "Policy classifications must be unique"),
-});
-/** Checked immutable version classifications; policyRows contains each used row once. */
-export type CodePolicyManifest = z.infer<typeof CodePolicyManifestSchema>;
 const revision = z.number().int().positive().describe("Revision from policy.read; stale drafts are rejected.");
 const pageInput = {
   cursor: CodeIdSchema.optional().describe("Last affected Code ID from nextCursor."),

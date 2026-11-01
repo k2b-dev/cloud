@@ -472,3 +472,12 @@ again instead of running. See
 for the initial upgrade order. See
 [Decide pending approvals in Cloud](/en/docs/operations/deployment-requirements#decide-pending-approvals-in-cloud)
 for the list routes and ACP channel upgrade.
+
+### Refuse a changed domain review
+
+A registered kind owner may throw `ApprovalDecisionConflictError` when a review
+is stale or no longer valid. The decision transaction rolls back. The shared
+browser decision route returns `409` with the owner's stable code and message;
+Cloud Login leaves the request undecided and reports a conflict. Unexpected
+owner failures remain errors. Core's [Code versions](/en/docs/platform/code-versions)
+use this path for changed hashes, superseded versions and stale comparisons.
