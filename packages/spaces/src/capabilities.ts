@@ -155,6 +155,7 @@ import {
 import * as activity from "./service/activity";
 import { spaceActivityRow } from "./service/activity-timeline";
 import { CalendarSourceError, listSourceCalendars, readSourceEvents } from "./service/calendar-source";
+import { spaceCodeAccess } from "./service/code-access";
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
@@ -2354,7 +2355,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "A permission-scoped collaboration space.",
       icon: "ti ti-layout-kanban",
       reader: "space.read",
-      access: { readable: readableSpace },
+      access: { readable: readableSpace, ...spaceCodeAccess },
       pages: ["/app/spaces/:id"],
     },
     item: {

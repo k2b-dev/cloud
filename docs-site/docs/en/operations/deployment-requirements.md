@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-31
+updated: 2026-11-01
 ---
 
 # Deployment requirements
@@ -1008,6 +1008,15 @@ needed. Verify source discovery and one authorized event read after upgrading;
 a healthy container alone does not prove that the caller can read a calendar.
 The aggregate reader has a 42-day view range, 100-calendar selection,
 60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
+
+### Enable Code access to Spaces
+
+Deploy Spaces with the platform and Core that provide
+[Code access at the target](/en/docs/platform/capabilities#code-access-at-the-target).
+Spaces registers `space` as a Code target and uses its existing access tables
+and live outbox; this adds no Spaces migration, service, or configuration.
+Verify a grant on one disposable Space, access removal, and refusal at another
+Space shared with all signed-in users. Normal person sharing keeps its behavior.
 
 ### Upgrade Spaces task deadlines
 

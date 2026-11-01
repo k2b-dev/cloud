@@ -77,6 +77,20 @@ declarations remain supported when their Type has a reader. This also applies to
 before upgrading if a Type currently declares `access.readable` alone. New
 generated Actions carry `unattended: false`, so older Core readers omit them instead of stripping that restriction.
 
+Adapters implement `manages(tx, context, id)`: manager checks run inside the write
+transaction and retain locks shared with the provider's manager-change paths.
+Update older two-argument adapters before deploying this contract; use the
+supplied connection for every adapter query.
+
+Deploy Spaces and Mail with the `managerUserIds` set-result field before enabling
+Cloud-admin activation in Core. A successful dry-run identifies the current
+person managers, including nested manager-group members. Core refuses Cloud-admin
+activation when the target cannot identify its managers. No new configuration or
+migration is needed for this result field. A target with more managers than the
+capability response budget allows refuses preflight with a reason; reduce that
+target's manager audience before trying again. During a directory update, retry
+a transiently unavailable manager check after the update finishes.
+
 Keep the adapter available while its app has Code grants to remove. Core must
 finish target cleanup before deleting the Code account. Live grants prevent
 account deletion; removing them releases that reference and preserves replay
