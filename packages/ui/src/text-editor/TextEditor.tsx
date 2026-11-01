@@ -2,7 +2,7 @@ import { history, historyKeymap, redo, undo } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { clipboard } from "@k2b/stdlib/solid";
-import { createEffect, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import {
   Dropdown,
@@ -389,13 +389,9 @@ export function TextEditor(props: TextEditorProps) {
     disabled: () => !props.dictation || Boolean(props.readOnly) || mode() === "plain",
   });
   // A field that turns read-only or plain hides the toolbar; dictation then ends and the words so far stay.
-  createEffect(
-    on(
-      () => [Boolean(props.dictation), Boolean(props.readOnly), mode() === "plain"] as const,
-      () => dictation.end(),
-      { defer: true },
-    ),
-  );
+  // A memo compares the value, so ordinary edits never end it.
+  const dictationScope = createMemo(() => `${Boolean(props.dictation)}:${Boolean(props.readOnly)}:${mode() === "plain"}`);
+  createEffect(on(dictationScope, () => dictation.end(), { defer: true }));
   const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
   const menuBlocked = () => !!props.loading || !ready() || recovery() !== undefined;
   const blocked = () => !!props.readOnly || menuBlocked();

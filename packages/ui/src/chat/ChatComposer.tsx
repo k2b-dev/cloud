@@ -1085,13 +1085,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const dictating = () => Boolean(props.dictation) && dictationBarShown(liveDictation);
   // Dictation belongs to one draft in one editable field: another draft, a field that turns read-only or a host that
   // drops the source ends it; the words so far stay.
-  createEffect(
-    on(
-      () => [props.draftKey, Boolean(props.dictation), editBlocked()] as const,
-      () => liveDictation.end(),
-      { defer: true },
-    ),
-  );
+  // Memos compare values, so typing and arriving words never end it.
+  const dictationField = createMemo(() => `${Boolean(props.dictation)}:${editBlocked()}`);
+  const dictationDraft = createMemo(() => props.draftKey);
+  createEffect(on([dictationField, dictationDraft], () => liveDictation.end(), { defer: true }));
   /** Closes the list opened from "+"; `refocus` gives the field its focus and the selection it had when "+" was pressed. */
   const endAddSearch = (refocus: boolean) => {
     const search = addSearch();
