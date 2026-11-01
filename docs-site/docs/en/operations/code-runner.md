@@ -195,20 +195,25 @@ queue wakeups; brief transport outages do not discard queued runs.
 
 ## Configure runner budgets
 
-Change these settings in Administration › Code or through `cld settings apply`.
+Change these settings in Administration › Code or through `cld admin settings apply`.
 Restart runner replicas after changing their configuration. Acquisition requests
 may take the long-poll duration plus the transport timeout.
 
 | Setting | Default | Controls |
 | --- | --- | --- |
 | `core.code.automatic_attempts` | `3` | Maximum lease generations before a possible Action; the original deadline still applies. |
-| `core.code.runner_slots` | `4` | Concurrent runs per replica. |
+| `core.code.runner_slots` | `4` | Shared concurrent runs and authoring jobs per replica. |
 | `core.code.runner_poll_ms` | `20000` | Maximum acquisition request duration, in milliseconds. |
 | `core.code.runner_transport_ms` | `30000` | Runner request timeout, in milliseconds. |
 | `core.code.runner_retry_ms` | `1000` | Delay before retrying a failed transport request, in milliseconds. |
 | `core.code.runner_cache_bytes` | `33554432` | In-memory bundle cache per replica, in bytes. |
 | `core.code.runner_bridge_concurrency` | `4` | Simultaneous bridge calls per run. |
 | `core.code.runner_process_memory_bytes` | `134217728` | Memory budget per organization and trust-tier process, in bytes. |
+| `core.code.runner_job_slots` | `1` | Simultaneous authoring jobs within the replica's shared slots. |
+| `core.code.job_pending` | `100` | Installation-wide queued and running authoring jobs before admission returns busy. |
+| `core.code.job_wait_ms` | `30000` | Queue allowance added to the role's work budget, in milliseconds. |
+| `core.code.test_cases` | `64` | Declarative fixtures per test job. |
+| `core.code.test_runs` | `200` | Total fixture invocations per test job. |
 
 ## Stop and recover
 
@@ -358,14 +363,6 @@ must produce this module boundary. `RunnerEngine` (`load`, `run`, `kill`,
 `close`) and `SandboxCall` are exported from `packages/runner/src/engine.ts`
 for the attack tests and simulation kit; no application imports that package.
 
-## Run tests without effects
-
-The same runner image includes a separate `code-test.js` stdin/stdout role.
-It uses the production workerd engine with a fake-only bridge and no app key
-or Core connection. Core checks the source first and sends the immutable
-bundle with declarative fixtures and host budgets. See [Test Code](/en/docs/platform/test-code)
-for the request, result schema, and isolation requirements.
-
 When a running attempt ends, Core commits a dispatch wakeup for waiting work
 of the same owner. A backlog held by the per-Code or per-owner concurrency
 limit can continue as soon as capacity frees up; lease recovery is not needed
@@ -468,20 +465,3 @@ and complete routes accept `RunnerJobProof` and `RunnerJobComplete`.
 `RunnerJobResultSchema` validates check/test/simulate results in both runner
 and Core. Job generations and random lease keys are fenced in Postgres, so
 any Core replica can serve them. Retries retain the original deadline.
-When a running attempt ends, Core commits a dispatch wakeup for waiting work
-of the same owner. A backlog held by the per-Code or per-owner concurrency
-limit can continue as soon as capacity frees up; lease recovery is not needed
-for ordinary progress. Schedule registration scans bounded database pages on
-each Core reconciliation pass, using stable Code/entrypoint identities.
-
-Core starts serving without waiting for every schedule to register. Each
-reconciliation pass isolates definition failures by Code and logs the Code ID
-and error; healthy Codes continue to register. Accepted ticks are retained for
-seven days. Schedule receipts have the same retention and older ticks are
-rejected. Manual-start receipts remain permanent.
-
-New runner identities have a shared registration limit derived from the
-installation ingress setting and the telemetry cleanup budget (at most 20 per
-second). Existing identities continue polling and heartbeating independently
-of this registration budget. A burst of new replicas retries registration;
-inactive telemetry is removed after its poll-plus-lease freshness window.

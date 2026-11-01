@@ -841,13 +841,15 @@ jobs:
       - name: Attack the workerd shell and native process boundary
         run: |
           set -euo pipefail
+          sudo apparmor_parser -r packages/runner/apparmor.profile
           bun build packages/runner/test/hostile.test.ts --target=bun --external=bun:test --outfile="$RUNNER_TEMP/hostile.test.js"
           # Public RFC 8032 vector; 0444 deliberately tests protection of the mount's parent.
           install -m 0444 packages/runner/test/runner-key.fixture "$RUNNER_TEMP/runner-attacks.key"
           trap 'docker rm --force code-c14-native >/dev/null 2>&1 || true' EXIT
-          timeout --kill-after=5s --signal=TERM 90s docker run --rm --name code-c14-native --network host --read-only --cap-drop ALL \
+          timeout --kill-after=5s --signal=TERM 90s docker run --rm --init --name code-c14-native --network host --read-only --cap-drop ALL \
             --cap-add SETUID --cap-add SETGID --cap-add KILL --cap-add CHOWN --cap-add DAC_OVERRIDE \
-            --security-opt no-new-privileges --memory 1g --pids-limit 256 \
+            --security-opt no-new-privileges --security-opt seccomp=packages/runner/seccomp.json \
+            --security-opt apparmor=cloud-code-runner --security-opt systempaths=unconfined --memory 1g --pids-limit 256 \
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777 \
             --env CLOUD_APP_KEY_FILE=/run/runner-key/source \
             --volume "$RUNNER_TEMP/runner-attacks.key:/run/runner-key/source:ro" \

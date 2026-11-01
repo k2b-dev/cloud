@@ -4,7 +4,6 @@ export * from "./access";
 export { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 export * from "./activation-contracts";
 export { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
-export { createCodeCheckRequest } from "./authoring-check";
 export {
   CODE_ATTENTION_CACHE_MS,
   type CodeAttentionReason,
@@ -12,6 +11,7 @@ export {
   codeAttentionContracts,
   readCodeAttention,
 } from "./attention";
+export { createCodeCheckRequest } from "./authoring-check";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export * from "./contracts";
 export { CodeJobError } from "./job-errors";
