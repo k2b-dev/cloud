@@ -13,9 +13,9 @@ export {
   readCodeAttention,
 } from "./attention";
 export { codeAuthoringServices } from "./authoring";
-export { type CodeAutomation, CodeAutomationSchema, codeAutomationContracts, listCodeAutomations } from "./automations";
 export { createCodeCheckRequest } from "./authoring-check";
 export * from "./authoring-contracts";
+export { type CodeAutomation, CodeAutomationSchema, codeAutomationContracts, listCodeAutomations } from "./automations";
 export { createCodeBridgeHost, createCodeBridgeRoutes, requireCodeRunFence } from "./bridge";
 export * from "./contracts";
 export { CodeJobError } from "./job-errors";

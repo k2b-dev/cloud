@@ -106,7 +106,8 @@ service: check the source, save an immutable version, and request any required
 Cloud-admin approval. The active version keeps running. Both send the local
 `baseVersionId`; a successful save advances that field in `code.json`.
 `--base-version-id <UUID|null>` supplies an explicit base and cannot force an
-overwrite.
+overwrite. The new version uses each [secret's](/en/docs/platform/code-secrets)
+current destination.
 
 A concurrent save returns `code_version_conflict`, “Neuere Version vorhanden”
 in German, and the complete difference. The failed command leaves local files
@@ -121,6 +122,7 @@ unchanged lines and files. Its default is the project's base version;
 ## Activate or start a schedule
 
 ```sh
+cld code activate ./code/example/box_1234
 cld code activate ./code/example/box_1234 --activation-id 11111111-1111-4111-8111-111111111111 --yes --json
 cld code run monday ./code/example/box_1234 --key monday-manual-1 --json
 ```
@@ -130,6 +132,19 @@ administration, and a normal person's session or personal OAuth credential.
 Phone sessions, API keys and machine identities are refused by Core. The CLI
 also refuses activation when its host reports CI. CI can check, test and push
 with its granted credential; keep personal interactive credentials out of CI.
+
+In a terminal, `activate` lists every operation at every target with what is
+new and whether you administer it, and asks `Einschalten? [j/N]` (`Switch on?
+[y/N]`) once. Anything but yes changes nothing and exits 1. When a target
+refuses you, it stops before the question, names who manages the target if you
+may read it, and prints a link to the place that holds the Code. It then waits
+a bounded time for the result; if Core is still working, it prints the
+activation ID to check again.
+
+Without a terminal, in scripts and with `--json`, it never asks and never waits:
+it refuses without `--yes` and without `--activation-id`. `--json` keeps the
+receipt below, without the list. `--yes` skips only the question. A person
+who was refused stays refused either way, because Core checks every target.
 
 `--version` overrides the project's base version. Reuse `--activation-id`
 after a lost response. The returned [activation receipt](/en/docs/platform/code-activation)
@@ -262,7 +277,7 @@ returns a durable receipt, not completion of background work.
 | sdk pull | `{version:1, files}` |
 | check | `{version:1, result, manifest, permissions}` |
 | test, simulate | C17 `{version:1, mode, ok, error, diagnostics, cases, trace?}` |
-| push, submit | `{version:1, submission}` |
+| push, submit | `{version:1, submission, runningVersion?}` (`runningVersion`: the version that keeps running, or null when none runs; absent when it could not be read) |
 | diff | `{version:1, diff}` |
 | activate | `{version:1, activation}` |
 | run | `{version:1, run:{runId, duplicate}}` |

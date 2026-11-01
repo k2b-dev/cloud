@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodeInternetOriginsSchema } from "./code-internet";
 import { CodeSecretVersionBindingSchema } from "./code-secrets";
 
 const hash = z
@@ -80,7 +81,7 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
     .refine((items) => new Set(items.map((item) => item.name)).size === items.length, "Secret names must be unique")
     .optional()
     .describe("Exact secret bindings reviewed with this version; absent means no secret access."),
-  internet: z.boolean().optional().describe("Whether static SDK calls use public HTTPS."),
+  internet: CodeInternetOriginsSchema.optional().describe("Every exact HTTPS origin declared by this version, with or without secrets."),
   ai: z.boolean().describe("Whether detected operations use AI."),
   hashes: z
     .object({ source: hash, sdk: hash, bundle: hash })
@@ -89,7 +90,7 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
 })
   .strict()
   .superRefine((manifest, ctx) => {
-    if (manifest.internet && !manifest.policyRows.includes("internet"))
+    if (manifest.internet?.length && !manifest.policyRows.includes("internet"))
       ctx.addIssue({ code: "custom", message: "Internet classification missing from policyRows" });
     if (manifest.secrets?.length && !manifest.policyRows.includes("internet"))
       ctx.addIssue({ code: "custom", message: "Secret bindings require internet classification" });

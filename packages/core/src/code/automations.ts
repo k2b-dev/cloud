@@ -4,7 +4,7 @@ import { CloudResourceReaderViewSchema, CodeCheckedVersionManifestSchema, resolv
 import { z } from "zod";
 import type { CodeContext } from "./access";
 import { targetApp, targetKey } from "./activation-plan";
-import { CODE_ATTENTION_ACCESS_BUDGET_MS, cachedCodeAttentionReasons, scanCodeAccess } from "./attention";
+import { CODE_ATTENTION_ACCESS_BUDGET_MS, type CodeAttentionReason, cachedCodeAttentionReasons, scanCodeAccess } from "./attention";
 import { CodeIdSchema, codeQueryContracts } from "./contracts";
 import { codeRunScheduler, codeScheduleId } from "./scheduling-runtime";
 import { readCode } from "./store";
@@ -167,7 +167,7 @@ export async function listCodeAutomations(
   const lastRun = new Map(runs.map((run) => [run.entrypoint, run]));
 
   // Core's cached attention says whether a target answered "removed"; only then the targets are asked again.
-  const reasons = await cachedCodeAttentionReasons(code, context).catch(() => []);
+  const reasons = await cachedCodeAttentionReasons(code, context).catch((): CodeAttentionReason[] => []);
   const scanned = reasons.includes("access_missing")
     ? await Promise.race([scanCodeAccess(code, context), Bun.sleep(CODE_ATTENTION_ACCESS_BUDGET_MS).then(() => [])])
     : [];

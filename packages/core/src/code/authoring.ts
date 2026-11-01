@@ -12,7 +12,7 @@ import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolic
 import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 import { startCodeRun } from "./scheduling";
-import { deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./secrets";
+import { checkCodeSecretBinding, currentCodeSecretBindings, deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./secrets";
 import { codeSourceHash, createCode, listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./store";
 import { simulateCode, testCode } from "./testing";
 import { diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion } from "./versions";
@@ -56,6 +56,16 @@ async function pull(codeId: string, context: CodeContext): Promise<CodeAuthoring
     files,
   };
 }
+/** The version is saved by now, so a failed read leaves this field out and never fails the submission. */
+async function runningVersionNumber(codeId: string, context: CodeContext) {
+  try {
+    const { code } = await readCode(codeId, context);
+    if (!code.activeVersionId) return null;
+    return (await readCodeVersion({ codeId, versionId: code.activeVersionId, offset: 0, length: 1 }, context)).version.number;
+  } catch {
+    return undefined;
+  }
+}
 /** Classifications and display names come from current catalog/reader authority, never author-supplied titles. */
 async function describeCheck(
   request: CodeCheckRequest,
@@ -67,6 +77,7 @@ async function describeCheck(
   if (!result.ok) return { version: 1, result, manifest: null, permissions: [] };
   const policyRows = new Set<CodePolicyRow>();
   if (result.manifest.ai) policyRows.add("ai");
+  if (result.manifest.internet?.length) policyRows.add("internet");
   const permissions: CodeAuthoringPermission[] = [];
   const catalogs = new Map<string, Awaited<ReturnType<typeof getCapabilityCatalogApp>>>();
   const targets = new Map<string, { title: string | null; typeTitle: string | null }>();
@@ -216,6 +227,9 @@ export const codeAuthoringServices = {
   async secretDelete(input: CodeAuthoringInput<"secretDelete">, context: CodeContext): Promise<CodeAuthoringData<"secretDelete">> {
     return { version: 1, ...(await deleteCodeSecret(input, context)) };
   },
+  async secretCheck(input: CodeAuthoringInput<"secretCheck">, context: CodeContext): Promise<CodeAuthoringData<"secretCheck">> {
+    return { version: 1, ...(await checkCodeSecretBinding(input, context)) };
+  },
   async sdk(input: CodeAuthoringInput<"sdk">, context: CodeContext): Promise<CodeAuthoringData<"sdk">> {
     const { sdk } = await createCodeCheckRequest(input.codeId, {}, "code.ts", context);
     return {
@@ -256,20 +270,33 @@ export const codeAuthoringServices = {
   async push(input: CodeAuthoringInput<"push">, context: CodeContext): Promise<CodeAuthoringData<"push">> {
     const checked = await check(input, context, false);
     if (!checked.result.ok || !checked.manifest) throw new CodeDataError("BAD_INPUT", "Code check failed. Run check to see diagnostics.");
+    // The checker reads source and cannot see destinations; the host selects them, and approval reviews them.
+    const secrets = await currentCodeSecretBindings(input.codeId);
     const submission = await submitCodeVersion(
       {
         codeId: input.codeId,
         sourceFiles: input.files,
         bundle: checked.result.bundle,
-        manifest: checked.manifest,
+        manifest: secrets.length
+          ? { ...checked.manifest, secrets, policyRows: [...new Set([...checked.manifest.policyRows, "internet" as const])].sort() }
+          : checked.manifest,
         baseVersionId: input.baseVersionId,
       },
       context,
     );
-    return { version: 1, submission };
+    return { version: 1, submission, runningVersion: await runningVersionNumber(input.codeId, context) };
   },
   async submit(input: CodeAuthoringInput<"submit">, context: CodeContext): Promise<CodeAuthoringData<"submit">> {
     return codeAuthoringServices.push(input, context);
+  },
+  async resubmit(input: CodeAuthoringInput<"resubmit">, context: CodeContext): Promise<CodeAuthoringData<"resubmit">> {
+    const latest = await pull(input.codeId, context);
+    if (latest.config.baseVersionId !== input.baseVersionId)
+      throw new CodeDataError("CONFLICT", "A newer Code version exists. Read the current state before submitting again.");
+    return codeAuthoringServices.push(
+      { codeId: input.codeId, entry: latest.config.entry, files: latest.files, baseVersionId: input.baseVersionId },
+      context,
+    );
   },
   async diff(input: CodeAuthoringInput<"diff">, context: CodeContext): Promise<CodeAuthoringData<"diff">> {
     return { version: 1, diff: await diffCodeVersion(input, context) };

@@ -445,7 +445,7 @@ test("HTTP and secret placeholders compile and mark internet use without grantin
   );
   expect(result).toMatchObject({ ok: true });
   if (result.ok) {
-    expect(result.manifest.internet).toBe(true);
+    expect(result.manifest.internet).toEqual(["https://api.example"]);
     expect(result.manifest.permissions).toEqual([]);
   }
 });
@@ -463,5 +463,5 @@ test("destructured HTTP methods retain internet evidence through their SDK signa
     'import { app, http } from "@sdk"; const { fetch: send } = http; app.schedule("0 8 * * 1", async () => { await send("https://api.example/v1"); }); export default app;',
   );
   expect(result).toMatchObject({ ok: true });
-  if (result.ok) expect(result.manifest.internet).toBe(true);
+  if (result.ok) expect(result.manifest.internet).toEqual(["https://api.example"]);
 });

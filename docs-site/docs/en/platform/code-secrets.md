@@ -28,6 +28,11 @@ response by reading metadata before replacing the value again.
 Cloud administrators can inspect approved bindings in version-review content;
 the editor-only list does not grant them access to current secret metadata.
 
+Editors manage the same secrets on the **Secrets** tab of the
+[Code page](/en/docs/platform/code-page) or with
+[`cld code secret`](/en/docs/platform/code-cli). All of them reach these
+services; none can read a value back.
+
 Set and delete capability calls name `target: { type: "core.code", id: codeId }`;
 omit `codeId` from their domain `input`. Flat tools use `code`. The list Query
 and internal service schemas keep `codeId`.
@@ -56,6 +61,8 @@ ASCII header text. The complete input must fit `core.code.payload_bytes`.
 Set returns `{ secret }`, containing `name`, `binding_revision`, `origin`,
 `pathPrefix`, `headers` and `configured`. List receives `codeId`, optional
 `cursor`, and `limit` (1–20, default 20), and returns `{ items, nextCursor }`.
+Its items add `valueSetBy` and `valueSetAt`: who last wrote the value and when,
+`null` for a value written before Cloud recorded this.
 Follow the cursor to read all metadata. Neither operation returns a value or
 ciphertext. There is no value-reading operation.
 
@@ -66,15 +73,29 @@ Metadata remains with `configured: false`, so old approval evidence remains
 readable. Set a replacement value to recover. Deleting the Code removes its
 values and binding history through the Code's database foreign keys.
 
+Before a value travels, `POST /api/code/authoring/secretCheck` with
+`{ codeId, binding }` answers editors `{ version: 1, allowed }`. `allowed` is false for this
+installation's own addresses, which set also refuses.
+
 Core exports `codeSecretContracts`, `CodeSecretMetadataSchema`,
-`CodeSecretMetadata`, `setCodeSecret`, `listCodeSecrets`, `reviewCodeSecretDeletion`
-and `deleteCodeSecret`
+`CodeSecretMetadata`, `CodeSecretListItemSchema`, `CodeSecretListItem`,
+`setCodeSecret`, `listCodeSecrets`, `checkCodeSecretBinding`,
+`currentCodeSecretBindings`, `reviewCodeSecretDeletion` and `deleteCodeSecret`
 from `packages/core/src/code/index.ts` for its CLI and editor hosts. These
 services take `CodeContext` and enforce the same authority on every surface.
 
 ## Bind the destination to a version
 
-Copy the selected metadata into `manifest.secrets`, omitting `configured`:
+`cld code push`, `cld code submit`, Gustav's submit tool and the Code page's
+**Secrets** tab select the current binding of every secret that has a value and add
+the `internet` policy row. A deleted value stays out of new versions. On the
+page, `POST /api/code/authoring/resubmit` with `{ codeId, baseVersionId }`
+submits the latest source again against that base and refuses with `CONFLICT`
+when a newer version exists.
+
+A caller of `core.code.version.submit` selects bindings itself: copy
+the metadata into `manifest.secrets`, omitting `configured`, `valueSetBy` and
+`valueSetAt`:
 
 ```json
 {
@@ -85,7 +106,7 @@ Copy the selected metadata into `manifest.secrets`, omitting `configured`:
     "pathPrefix": "/v1",
     "headers": ["authorization"]
   }],
-  "internet": true,
+  "internet": ["https://api.example.com:8443"],
   "policyRows": ["internet"]
 }
 ```
@@ -122,9 +143,30 @@ app.schedule("0 8 * * 1", async () => {
 `secrets.API` is the opaque string `[secret:API]`. It never contains the
 credential. `http.fetch` accepts a URL and optional `method`, `headers` and
 UTF-8 `body`. Its result is `{ status, headers, body }`, with a base64 body so
-binary responses survive the JSON bridge. Its checker evidence marks
-`internet: true`; the trusted host includes the `internet` policy row when
-submitting it.
+binary responses survive the JSON bridge.
+
+Every version, including personal Code, declares its exact HTTPS origins in
+`manifest.internet`. The checker reads literal URLs and literal origins before
+a dynamic path, such as ``http.fetch(`https://api.example.com/items/${id}`)``.
+For a dynamic origin or a redirect destination, declare a literal list:
+
+```ts
+http.allow(["https://api.example.com", "https://downloads.example.com:8443"]);
+```
+
+An origin is scheme, host and effective port. Use HTTPS without wildcards,
+credentials, paths or a trailing slash. `http.allow` declares destinations; it
+does not send a request or grant authority. A dynamic origin without this list
+produces `code_http_origin_dynamic`, with a hint to use `http.allow`.
+`CodeInternetOriginSchema` and `CodeInternetOriginsSchema` from
+`@k2b/cloud/contracts` validate canonical origins and unique origin lists.
+
+The trusted host adds the `internet` policy row for a nonempty list. The
+“Admin approval” preset requires an administrator to approve those versions.
+Approval and the resource's Code page show the complete list, including
+requests without secrets. A changed list needs a new version approval under
+that policy. A missing or empty list permits no internet requests. One-shot
+`code_run` in Gustav continues to request approval for each HTTP call.
 
 Core injects values only into header placeholders. It refuses placeholders
 in a URL or body, unknown names, unapproved headers, duplicate header names,
@@ -150,16 +192,31 @@ A request already issued may finish after a value replacement, delete or pause. 
 "http"` grant; fixed origin, URL and method restrictions still apply.
 The version's secret binding narrows this grant further.
 
-Current activation does not yet issue HTTP grants. Activated versions therefore
-receive `code_http_forbidden` for HTTP calls until
-[declared-origin activation support](https://github.com/k2b-dev/cloud/pull/2349)
-is available. Storing values and approving bindings are available independently.
+Core sends requests through `requestPublicHttps`, with public-address
+validation and pinned DNS on every hop, bounded response bytes, the run's
+remaining deadline, and cancellation. Every request and redirect must match
+`manifest.internet`; an undeclared origin returns `code_http_origin_undeclared`
+with that canonical `origin`. The runner includes the origin in the error,
+unless it contains an inserted credential echo.
+Declared origins never permit private/internal hosts or private DNS answers.
 
-Core sends one request through `requestPublicHttps`, with public-address
-validation, pinned DNS, bounded response bytes, the run's remaining deadline,
-and cancellation. It follows no redirects and performs no retries. HTTP is
+Redirects recheck the origin list and secret origin/path/header bindings
+before sending another request. A cross-origin redirect cannot carry a secret
+bound to the previous origin. Redirect destinations follow the same path
+restrictions as direct requests: fragments and percent-encoded paths are
+refused. Headers set directly by Code are reused for a declared redirect;
+secret placeholders must pass their binding checks again.
+
+One `http.fetch` follows at most 20 redirects,
+matching the Fetch redirect limit; exhaustion returns `code_http_redirect_limit`. Use the final URL to avoid a
+redirect chain. Core performs no retries. HTTP is
 recorded as a possible Action so attempt recovery cannot automatically repeat
 an external write.
+
+Internet origins share the existing mandate budget of 50 grants with capability
+operations. The checker rejects origin lists beyond that budget and counts
+personal operation grants when internet access is declared. Activation also
+checks the complete grant plan.
 
 Call observations retain placeholders. Core redacts raw, prefixed,
 JSON-escaped, percent-encoded and base64 credential echoes from response bytes

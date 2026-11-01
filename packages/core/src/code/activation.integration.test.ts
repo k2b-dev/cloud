@@ -312,7 +312,7 @@ databaseSuite()("durable Code activation", () => {
       expect(row(unreadable.rows, "B")).toMatchObject({ check: "blocked", title: null, typeTitle: null, managers: [] });
     } finally {
       targetReadable = true;
-      await sql`UPDATE auth.users SET display_name=NULL, given_name=NULL WHERE id=${nextOwnerId}::uuid`;
+      await sql`UPDATE auth.users SET display_name=NULL, given_name='' WHERE id=${nextOwnerId}::uuid`;
     }
   });
   test("the preview of a running or replaced version asks no target; a credential that cannot switch on is told and asks none", async () => {
@@ -328,7 +328,10 @@ databaseSuite()("durable Code activation", () => {
     const replaced = await previewCodeActivation({ codeId: code.id, versionId: second.version.id }, owner, deps);
     expect(replaced).toMatchObject({ latest: third.version.number, rows: [] });
     expect(sets).toHaveLength(0);
-    const apiKey: CodeContext = { ...owner, authority: { ...owner.authority, credentialKind: "api_key", credentialProof: undefined } };
+    const apiKey: CodeContext = {
+      ...owner,
+      authority: { ...owner.authority, credentialKind: "api_key", scopes: ["write"], credentialProof: undefined },
+    };
     const blocked = await previewCodeActivation({ codeId: code.id, versionId: third.version.id }, apiKey, deps);
     expect(blocked.allowed).toEqual({ allowed: false, reason: "credential" });
     expect(blocked.rows.every((item) => item.check === "has" || item.check === "unknown")).toBe(true);

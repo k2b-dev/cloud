@@ -97,6 +97,9 @@ describe("Code page states", () => {
     const page = text("overview");
     expect(page).toContain("Handelt im Namen von info@moebel-beispiel.de, nicht als Person");
     expect(page).toContain("Version 4");
+    expect(page).toContain("Ursprünge im Internet");
+    expect(page).toContain("https://bank.example");
+    expect(page).toContain("https://status.example:8443");
     expect(page).toContain("eingeschaltet von Ben Schulz am");
     expect(page).toContain("alle 15 Minuten");
     expect(page).toContain("montags 07:00");
@@ -119,12 +122,12 @@ describe("Code page states", () => {
     expect(page).toContain("Neu in Version 5 · aus");
   });
 
-  test("internet origins from the reviewed bindings are listed, new ones marked", () => {
+  test("manifest internet origins are listed, new ones marked", () => {
     const page = text("internet");
-    expect(page).toContain("Internet 2");
+    expect(page).toContain("Ursprünge im Internet");
     expect(page).toContain("https://api.spedition-probe.example");
     expect(page).toContain("https://tracking.example:8443 neu beim Einschalten von Version 5");
-    expect(text("overview")).not.toContain("Internet");
+    expect(text("no-internet")).not.toContain("Ursprünge im Internet");
   });
 
   test("a version waiting for approval cannot be switched on", () => {
@@ -170,6 +173,42 @@ describe("Code page states", () => {
     expect(page).toContain("Fehlgeschlagen nach dem ersten Aufruf.");
     expect(page).toContain("Erneut ausführen");
     expect(page).toContain("Zeitüberschreitung nach 10 s");
+  });
+
+  test("secrets show where a value may go, who set it and every next step, never a value", () => {
+    const page = text("secrets");
+    expect(page).toContain("LAGER_TOKEN");
+    expect(page).toContain("2 Secrets · Werte nie sichtbar");
+    expect(page).toContain("https://api.lager-beispiel.de/v2/");
+    expect(page).toContain("authorization");
+    expect(page).toContain("[secret:LAGER_TOKEN]");
+    expect(page).toContain("gesetzt von Ben Schulz");
+    expect(page).toContain("Version 4 (aktiv)");
+    expect(page).toContain("Wert ersetzen …");
+    expect(page).toContain("Bindung ändern");
+    expect(page).toContain("Löschen …");
+    expect(html("secrets")).not.toContain('type="password"');
+    expect(text("secrets", "en")).toContain("Only sent to");
+  });
+
+  test("secrets keep empty, error and result states with a way forward", () => {
+    expect(text("secrets-empty")).toContain("Noch keine Secrets");
+    expect(text("secrets-empty")).toContain("Secret anlegen");
+    expect(text("secrets-error")).toContain("Die Secrets konnten nicht geladen werden");
+    expect(text("secrets-error")).toContain("Die Werte sind unverändert gespeichert.");
+    expect(text("secrets-replaced")).toContain("Wert ersetzt.");
+    expect(text("secrets-submitted")).toContain("Version 5 ist eingereicht.");
+    expect(text("secrets-submitted")).toContain("Bis dahin läuft Version 4 mit der alten Bindung.");
+    expect(text("secrets-unsubmitted")).toContain("Noch nutzt keine Version diese Bindung.");
+    expect(text("secrets-unsubmitted")).toContain("Version 5 einreichen");
+    const deleted = text("secrets-deleted");
+    expect(deleted).toContain("Wert setzen …");
+    expect(deleted).not.toContain("Löschen …");
+  });
+
+  test("the secrets tab is offered to editors only", () => {
+    expect(html("overview")).toContain("tab=secrets");
+    expect(html("reader")).not.toContain("tab=secrets");
   });
 
   test("readers see runs without their contents and no actions", () => {
@@ -415,4 +454,12 @@ describe("Code page helpers", () => {
     expect(summarizeCallResult("x".repeat(400))?.length).toBe(160);
     expect(summarizeCallResult(null)).toBeNull();
   });
+});
+
+test("internet lists distinguish running/waiting versions, historical selection, no destinations and load failure", () => {
+  expect(text("waiting")).toContain("https://new.example");
+  expect(text("versions")).toContain("https://version.example:8443");
+  expect(text("no-internet")).not.toContain("Ursprünge im Internet");
+  expect(text("internet-failed")).toContain("Die Ursprünge im Internet konnten nicht geladen werden.");
+  expect(text("internet-failed")).toContain("Erneut versuchen");
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodeInternetOriginSchema } from "../contracts/code-internet";
 import { CodeCheckResultSchema } from "./checker-contract";
 import { CodeTestResultSchema } from "./test-contract";
 
@@ -113,8 +114,10 @@ export type RunnerCompleteRequest = z.infer<typeof RunnerCompleteRequestSchema>;
 /** The only sandbox binding. The supervisor attaches identity; code cannot select a token, run or generation. */
 export const RunnerCallRequestSchema = RunnerLeaseProofSchema.extend({ operation: id, input: z.json() }).strict();
 export type RunnerCallRequest = z.infer<typeof RunnerCallRequestSchema>;
-/** Stable codes only: exception messages and transport payloads never enter the sandbox. */
-export const RunnerCallErrorSchema = z.object({ code: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/) }).strict();
+/** Stable codes plus a validated refused HTTPS origin; raw exception messages never enter the sandbox. */
+export const RunnerCallErrorSchema = z
+  .object({ code: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/), origin: CodeInternetOriginSchema.optional() })
+  .strict();
 /** Domain refusals use this envelope even when HTTP succeeds; non-2xx responses indicate transport failure. */
 export const RunnerCallResponseSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), data: z.json() }).strict(),
@@ -129,8 +132,12 @@ export class RunnerLeaseLostError extends Error {
 }
 /** A validated, payload-free Core refusal, preserved as the sandbox Error.message. */
 export class RunnerCallError extends Error {
-  constructor(readonly code: string) {
-    super(RunnerCallErrorSchema.parse({ code }).code);
+  constructor(
+    readonly code: string,
+    readonly origin?: string,
+  ) {
+    const error = RunnerCallErrorSchema.parse({ code, origin });
+    super(error.origin ? `${error.code}: ${error.origin}` : error.code);
   }
 }
 /** Transport-neutral seam used by C13 and the C14/C17 mock bridge. No database or queue client belongs here. */

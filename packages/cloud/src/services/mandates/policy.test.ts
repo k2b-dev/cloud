@@ -484,3 +484,36 @@ test("only trusted Core Code version issuance may use Core runtime.http grants",
   expect(mandatePolicyAllows(policy, { ...call, codeVersion: true, operation: "runtime.database" })).toBe(false);
   expect(mandatePolicyAllows(policy, { ...call, codeVersion: true, appId: "other" })).toBe(false);
 });
+
+test("personal Code operation grants retain dynamic targets alongside HTTP grants, while explicit restrictions bind", () => {
+  const target = { type: "demo.book", id: "dynamic" };
+  const call = { capability: "demo.move", target, refs: { destination: { ...target, id: "other" } }, input: { allowed: true } };
+  const grant = { kind: "action" as const, appId: "demo", capabilityId: "move", fixedInput: { allowed: true } };
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["core", "demo"],
+    operations: ["runtime.http", "capability.action.run:move"],
+    actions: "preapproved",
+    grants: [grant, { kind: "http", fixedInput: { origin: "https://api.example" } }],
+  });
+  const input = {
+    appId: "demo",
+    operation: "capability.action.run:move",
+    actionApproval: "none" as const,
+    codeVersion: true,
+    codeAccount: false,
+    capabilityPolicy: { silent: "shared" as const },
+    call,
+    input: call.input,
+  };
+  expect(mandatePolicyAllows(policy, input)).toBe(true);
+  expect(mandatePolicyAllows(policy, { ...input, codeVersion: false })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...input, codeAccount: true })).toBe(false);
+  expect(mandatePolicyAllows(policy, { ...input, input: { allowed: false } })).toBe(false);
+  for (const restricted of [
+    { ...grant, target: { ...target, id: "fixed" } },
+    { ...grant, refs: {} },
+  ]) {
+    expect(mandatePolicyAllows({ ...policy, grants: [restricted] }, input)).toBe(false);
+  }
+});

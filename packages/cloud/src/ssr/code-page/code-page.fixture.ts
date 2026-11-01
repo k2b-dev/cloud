@@ -4,6 +4,7 @@ import type {
   CodePageData,
   CodePageReady,
   CodePageRun,
+  CodePageSecret,
   CodePageTarget,
   CodePageVersion,
 } from "./data";
@@ -109,7 +110,7 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   active: v4,
   waiting: null,
   attentionReasons: null,
-  internet: null,
+  internet: { active: ["https://bank.example", "https://status.example:8443"], waiting: ["https://bank.example", "https://new.example"] },
   automations: [
     {
       entrypoint: "anfragenSortieren",
@@ -139,11 +140,14 @@ const ready = (overrides: Partial<CodePageReady> = {}): CodePageReady => ({
   run: null,
   diff: null,
   selectionFailed: false,
+  secrets: null,
   ...overrides,
 });
 
 export const codePageFixture = (
   state:
+    | "no-internet"
+    | "internet-failed"
     | "overview"
     | "waiting"
     | "approval"
@@ -158,6 +162,13 @@ export const codePageFixture = (
     | "waiting-unreadable"
     | "internet"
     | "reader"
+    | "secrets"
+    | "secrets-empty"
+    | "secrets-error"
+    | "secrets-replaced"
+    | "secrets-submitted"
+    | "secrets-unsubmitted"
+    | "secrets-deleted"
     | "activated"
     | "empty"
     | "no-access"
@@ -356,9 +367,8 @@ export const codePageFixture = (
           waiting: v5,
           waitingTargets,
           internet: {
-            origins: ["https://api.spedition-probe.example", "https://tracking.example:8443"],
-            newOrigins: ["https://tracking.example:8443"],
-            unbound: false,
+            active: ["https://api.spedition-probe.example"],
+            waiting: ["https://api.spedition-probe.example", "https://tracking.example:8443"],
           },
         }),
       };
@@ -379,6 +389,10 @@ export const codePageFixture = (
           ],
         }),
       };
+    case "no-internet":
+      return { ...base, tab: "overview", state: ready({ internet: { active: [], waiting: [] } }) };
+    case "internet-failed":
+      return { ...base, tab: "overview", state: ready({ internet: { active: null, waiting: [] } }) };
     case "versions-failed":
       return { ...base, tab: "overview", state: ready({ waiting: v5, waitingTargets, versionsFailed: true }) };
     case "reader":
@@ -393,6 +407,44 @@ export const codePageFixture = (
           run: { run: runs[3]!, calls: null, nextCallCursor: null, input: null, inputTooLarge: false },
         }),
       };
+    case "secrets":
+    case "secrets-empty":
+    case "secrets-error":
+    case "secrets-replaced":
+    case "secrets-submitted":
+    case "secrets-unsubmitted":
+    case "secrets-deleted": {
+      const secret: CodePageSecret = {
+        name: "LAGER_TOKEN",
+        binding_revision: "00000000-0000-4000-8000-0000000000c1",
+        origin: "https://api.lager-beispiel.de",
+        pathPrefix: "/v2/",
+        headers: ["authorization"],
+        configured: state !== "secrets-deleted",
+        valueSetBy: ben,
+        valueSetAt: "2026-10-20T09:00:00.000Z",
+        usedIn: [{ number: 4, state: "active" }],
+        unsubmitted: state === "secrets-unsubmitted",
+      };
+      const notice = state === "secrets-replaced" ? "replaced" : state === "secrets-submitted" ? "submitted" : null;
+      return {
+        ...base,
+        tab: "secrets",
+        state: ready({
+          waiting: state === "secrets-submitted" ? { ...v5, status: "pending" } : null,
+          secrets:
+            state === "secrets-error"
+              ? null
+              : {
+                  items: state === "secrets-empty" ? [] : [secret, { ...secret, name: "WETTER_KEY", usedIn: [], unsubmitted: false }],
+                  more: false,
+                  selected: state === "secrets-empty" ? null : secret.name,
+                  notice,
+                  latest: { id: "00000000-0000-4000-8000-0000000000d4", number: 4 },
+                },
+        }),
+      };
+    }
     case "versions":
       return {
         ...base,
@@ -404,6 +456,7 @@ export const codePageFixture = (
             version: v5,
             comparison: 4,
             staleComparison: false,
+            internet: ["https://version.example:8443"],
             files: [
               {
                 path: "code.ts",

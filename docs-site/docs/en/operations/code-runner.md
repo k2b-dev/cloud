@@ -495,3 +495,16 @@ same authoring services and runner jobs as `cld code`. They need the runner
 pool; adding chat tools does not move user-code execution into Core. A busy
 or unavailable runner produces the shared versioned failure result. Chat
 submission saves a version; activation remains a human action.
+
+## Review internet destinations
+
+Each Code version declares its exact HTTPS origins in `manifest.internet`,
+including personal Code and requests without secrets. Under the “Admin
+approval” policy preset, review the full list in Administration › Code before
+approving the version. Changing the list requires a new version approval.
+The resource's Code page also shows the running and waiting versions' lists.
+
+Keep Core, checker SDK and runner images on the same release: manifests use
+origin arrays, and a refused request can report a validated `origin` alongside
+its stable error code. See [Code secrets](/en/docs/platform/code-secrets) for
+literal declarations, redirect checks and network protections.

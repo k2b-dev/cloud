@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import type { z } from "zod";
 import {
+  automationStatus,
   type CodeQueryInvoke,
   type CodeRunSummary,
   type CodeSummary,
-  automationStatus,
   codeStatus,
   countOwnRunsSince,
   hasPersonalCode,

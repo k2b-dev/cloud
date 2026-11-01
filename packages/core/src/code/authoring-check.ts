@@ -56,7 +56,8 @@ export async function verifyCodeSubmission(
   const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, context);
   const checked = await createRunnerCodeCheckHost(context).check(request, context.signal);
   if (!checked.ok) throw new CodeDataError("BAD_INPUT", "The authoritative server check failed. Run check again.");
-  const { entry: _entry, policyRows: _policyRows, ...evidence } = input.manifest;
+  // Only source-derived evidence is compared; the host selects secret bindings, and validateCodeSecretBindings checks those.
+  const { entry: _entry, policyRows: _policyRows, secrets: _secrets, ...evidence } = input.manifest;
   if (input.bundle !== checked.bundle || approvalArgsDigest(evidence) !== approvalArgsDigest(checked.manifest))
     throw new CodeDataError("CONFLICT", "The server check differs from the submitted bundle or manifest. Refresh the SDK and check again.");
 }

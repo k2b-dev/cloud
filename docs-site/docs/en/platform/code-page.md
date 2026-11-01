@@ -26,12 +26,21 @@ third-party application get the same page. It never names an application.
   again. The automation that needs it shows **Access missing**; the others keep
   running. Only the whole Code can be paused. A deleted target, all access
   removed, and paused Code each show what fails and how to recover. Internet
-  origins the Code may call with its credentials come from the bindings
-  reviewed with the version; new ones are marked.
+  origins come from the full `manifest.internet` list reviewed with each version,
+  including calls without a secret. Running and waiting versions list their own
+  origins; new ones are marked. Historical versions show their reviewed list too.
 - **Runs:** each run with its trigger, version and state, including skipped
   schedule ticks. A run lists its calls in order with their result. A run that
   failed after its first action offers **Run again**, once per failed run; a
   run that failed earlier was already retried by Core.
+- **Secrets (editors only):** each secret's name, the address, path and headers
+  that may receive it, who last set the value and which versions use it; never
+  the value. Editors create a secret, replace a value, change a binding or
+  delete a value. Replacing needs no approval. A new binding submits a new
+  version, and the running version keeps its old binding until that one is
+  switched on. A binding change asks for the value again: Cloud never moves a
+  stored value to a new address unasked. Deleting always asks first. See
+  [Code secrets](/en/docs/platform/code-secrets).
 - **Versions:** each version with its approval state, including
   "self-approved (only administrator)", and the selected version's full code
   difference and permissions.
@@ -82,7 +91,7 @@ export default function StoreCode(props: { code: CodePageData }) {
 
 Import the page from its own entry, `@k2b/cloud/ssr/code-page`, so other
 islands do not load its schemas. `loadCodePage` reads the tab and selection from the URL (`?tab=runs&run=<id>`,
-`?tab=versions&version=<id>`), so reload, back and shared links keep the view.
+`?tab=secrets&secret=<name>`, `?tab=versions&version=<id>`), so reload, back and shared links keep the view.
 ## Show the entry in your navigation
 
 Offer the page as a "Code" entry under the resource. During SSR, call
