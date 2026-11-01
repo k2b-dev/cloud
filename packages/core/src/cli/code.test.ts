@@ -518,7 +518,7 @@ test.each(["json", "jsonl"] as const)("C18b %s success contracts remain unchange
     {
       args: ["secret", "list", directory],
       flags: {},
-      data: { version: 1, items: [secretMetadata], nextCursor: "NEXT" },
+      data: { version: 1, items: [{ ...secretMetadata, valueSetBy: null, valueSetAt: null }], nextCursor: "NEXT" },
       key: "secretList",
     },
     {

@@ -204,7 +204,8 @@ A new name requires `--binding` with a destination definition:
 For an existing name, pass its current `binding_revision` from list/set as
 `--binding-revision <UUID>`. Omit `--binding` to retain the destination.
 Changed destinations create a new immutable binding revision and require a
-new version submission. Replacing a value applies immediately to all versions
+new version submission; `push` and `submit` then use each secret's current
+destination, and a deleted value stays out. Replacing a value applies immediately to all versions
 using that name. One final newline from file/stdin is removed; other bytes
 are preserved. Values must satisfy the server's printable ASCII contract. Selected input files
 may be symlinks, including mounted secret files. Use `--from -` for pipes.

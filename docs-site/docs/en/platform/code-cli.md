@@ -106,7 +106,8 @@ service: check the source, save an immutable version, and request any required
 Cloud-admin approval. The active version keeps running. Both send the local
 `baseVersionId`; a successful save advances that field in `code.json`.
 `--base-version-id <UUID|null>` supplies an explicit base and cannot force an
-overwrite.
+overwrite. The new version uses each [secret's](/en/docs/platform/code-secrets)
+current destination.
 
 A concurrent save returns `code_version_conflict`, “Neuere Version vorhanden”
 in German, and the complete difference. The failed command leaves local files

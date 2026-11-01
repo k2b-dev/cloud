@@ -50,7 +50,7 @@ const PermissionSchema = z.object({
 /** The parts of the checked version manifest the page shows. */
 export const ManifestSchema = z.object({
   /** Reviewed secret bindings (C11): each names the exact HTTPS origin a credential may reach. */
-  secrets: z.array(z.object({ origin: z.string() })).optional(),
+  secrets: z.array(z.object({ name: z.string(), binding_revision: z.string(), origin: z.string() })).optional(),
   policyRows: z.array(z.string()).optional(),
   entrypoints: z.array(z.object({ kind: z.enum(["schedule", "manual"]), entrypoint: z.string(), cron: z.string().nullable() })),
   permissions: z.array(PermissionSchema),
@@ -122,6 +122,20 @@ export const ActivationSchema = z.object({
 });
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
+/** Metadata only: Core has no operation that returns a secret's value. */
+const SecretSchema = z.object({
+  name: z.string(),
+  binding_revision: z.string(),
+  origin: z.string(),
+  pathPrefix: z.string(),
+  headers: z.array(z.string()),
+  configured: z.boolean(),
+});
+export const SecretListSchema = z.object({
+  items: z.array(SecretSchema.extend({ valueSetBy: z.string().nullable(), valueSetAt: z.string().nullable() })),
+  nextCursor: z.string().nullable(),
+});
+export const SecretSetSchema = z.object({ secret: SecretSchema });
 
 /** What the owner's navigation shows: an entry when the person may see this Code, and a warning dot when it needs someone. */
 export type CodeAttention = { visible: boolean; attention: boolean };
@@ -231,7 +245,27 @@ export type CodePageDiff = {
   files: z.infer<typeof VersionDiffSchema>["files"];
   permissions: { operation: string; target: CodePageTarget | null; file: string; line: number }[];
 };
-export type CodePageTab = "overview" | "runs" | "versions";
+/** One secret of this Code: where its value may go and who wrote it, never the value. */
+export type CodePageSecret = z.infer<typeof SecretSchema> & {
+  valueSetBy: CodePagePerson | null;
+  valueSetAt: string | null;
+  /** The running and the waiting version, when they use this name. */
+  usedIn: { number: number; state: "active" | "waiting" }[];
+  /** No saved version uses this destination yet, so submitting one is still open. Null when that could not be read. */
+  unsubmitted: boolean | null;
+};
+/** What just happened on the secrets tab, from the URL, so a reload keeps it. */
+export type CodeSecretNotice = "replaced" | "submitted" | "saved" | "submit-failed";
+export type CodePageSecrets = {
+  items: CodePageSecret[];
+  /** More secrets than one page loads; `cld code secret list` reads them all. */
+  more: boolean;
+  selected: string | null;
+  notice: CodeSecretNotice | null;
+  /** The newest saved version, which a new destination is submitted against. */
+  latest: { id: string; number: number } | null;
+};
+export type CodePageTab = "overview" | "runs" | "secrets" | "versions";
 export type CodePageReady = {
   kind: "ready";
   code: z.infer<typeof CodeSchema>;
@@ -261,6 +295,8 @@ export type CodePageReady = {
   diff: CodePageDiff | null;
   /** The selected version or run could not be read. */
   selectionFailed: boolean;
+  /** Only on the secrets tab, which only editors reach; null there when Core could not list them. */
+  secrets: CodePageSecrets | null;
 };
 export type CodePageState = { kind: "none" } | { kind: "no-access" } | { kind: "error" } | CodePageReady;
 /** Serializable initial data from `loadCodePage`, rendered unchanged by the server and the browser. */
