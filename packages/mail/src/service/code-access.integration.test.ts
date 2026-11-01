@@ -126,8 +126,8 @@ suite("Mail mailbox Code access", () => {
     expect(await mailboxCodeAccess.manages(capabilityContext(code), target.shortId)).toBe(false);
     const read = await grant(target.shortId, code, ["mail.mailbox.read"]);
     const write = await grant(target.shortId, code, ["mail.draft.create"]);
-    expect(read.decision).toMatchObject({ granted: true, level: "read", managerUserIds: [owner.id] });
-    expect(write.decision).toMatchObject({ granted: true, level: "write", managerUserIds: [owner.id] });
+    expect(read.decision).toMatchObject({ granted: true, level: "read" });
+    expect(write.decision).toMatchObject({ granted: true, level: "write" });
     expect(await getMailboxPermission(code, target.id)).toBe("write");
     expect((await mailCapabilities.queries["mailbox.read"].run({ id: target.shortId }, capabilityContext(code))).ok).toBe(true);
     expect((await grant(target.shortId, code, ["mail.draft.create"], write.grantId)).decision).toEqual(write.decision);

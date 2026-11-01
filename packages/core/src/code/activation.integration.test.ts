@@ -4,6 +4,7 @@ import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
@@ -16,7 +17,7 @@ import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
 import { activateCodeVersion, cancelCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
-import { cleanupCodeActivation, reconcileCodeAccess } from "./activation-maintenance";
+import { cleanupCodeActivation, codeActivationCleanupOutbox, reconcileCodeAccess } from "./activation-maintenance";
 import { type CodeActivationTransport, CodeActivationTransportError } from "./activation-transport";
 import type { Code } from "./contracts";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -107,6 +108,8 @@ databaseSuite()("durable Code activation", () => {
       if (input.item.target.id === (input.dryRun ? denyDry : denySet))
         return { granted: false, reasonCode: "not_manager", reason: "Only this target is blocked." };
       if (!input.dryRun && input.item.target.id === crashAt && !crashAfter) throw new CodeActivationTransportError("crash", true);
+      const existing = live.get(input.item.grantId);
+      if (existing) return { granted: true, grantId: existing.grantId, level: existing.level };
       if (!input.dryRun)
         live.set(input.item.grantId, {
           grantId: input.item.grantId,
@@ -129,6 +132,7 @@ databaseSuite()("durable Code activation", () => {
   };
   const deps = {
     transport,
+    catalog: async () => catalog,
     restoreAuthority: async (row: { activating_person: string | null }) =>
       revoked ? null : row.activating_person === adminId ? administrator : context(row.activating_person ?? ownerId),
   };
@@ -218,6 +222,18 @@ databaseSuite()("durable Code activation", () => {
     expect((await findCode(code.id))!.activeVersionId).toBeNull();
     expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
   });
+  test("an unregistered target fails visibly before target effects", async () => {
+    const code = await newCode(),
+      submitted = await version(code),
+      activation = await start(code, submitted.version.id);
+    await processCodeActivation(activation.id, { ...deps, catalog: async () => null });
+    expect(await status(code, activation.id)).toMatchObject({
+      state: "failed",
+      failure: { code: "target_unavailable", target: { type: "example.item", id: "A" } },
+    });
+    expect(sets).toHaveLength(0);
+    expect(live.size).toBe(0);
+  });
   test("personal activation creates its owner's version mandate without resource grants", async () => {
     const id = `c_c9p${String(++ordinal).padStart(4, "0")}`;
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by) VALUES(${id},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
@@ -281,7 +297,8 @@ databaseSuite()("durable Code activation", () => {
     const code = await newCode(),
       submitted = await version(code),
       activation = await start(code, submitted.version.id);
-    await Promise.all([run(activation.id), run(activation.id)]);
+    await Promise.allSettled([run(activation.id), run(activation.id)]);
+    await run(activation.id);
     expect((await status(code, activation.id)).state).toBe("active");
     expect(sets.filter((set) => !set.dryRun).map((set) => set.id)).toEqual(["A", "B"]);
     expect(live.size).toBe(2);
@@ -308,7 +325,8 @@ databaseSuite()("durable Code activation", () => {
         return deps.restoreAuthority(row);
       },
     });
-    await Promise.all([firstRun, secondRun]);
+    await Promise.allSettled([firstRun, secondRun]);
+    await run(b.id);
     expect((await status(code, b.id)).state).toBe("active");
     expect((await findCode(code.id))!.activeVersionId).toBe(next.version.id);
     expect(sets.filter((set) => !set.dryRun).map((set) => set.id)).toEqual(["A", "B"]);
@@ -475,6 +493,59 @@ databaseSuite()("durable Code activation", () => {
       start(code, submitted.version.id, { ...owner, authority: { ...owner.authority, credentialKind: "api_key", scopes: ["write"] } }),
     ).rejects.toThrow("browser");
   });
+  test("production authority restore reads a real session and stops after its revocation", async () => {
+    const code = await newCode(),
+      submitted = await version(code),
+      signIn = await createTestBrowserSignIn(ownerId);
+    const signed: CodeContext = {
+      ...owner,
+      authority: {
+        ...owner.authority,
+        credentialProof: {
+          kind: "session",
+          userId: ownerId,
+          sid: signIn.sid,
+          authEpoch: 0,
+          expiresAt: "2099-01-01T00:00:00Z",
+        },
+      },
+    };
+    const activation = await start(code, submitted.version.id, signed);
+    crashAt = "B";
+    await expect(processCodeActivation(activation.id, { transport, catalog: deps.catalog })).rejects.toThrow("crash");
+    expect(live.size).toBe(1);
+    await sql`UPDATE auth.session_families SET revoked_at=now() WHERE sid=${signIn.sid}::uuid`;
+    await processCodeActivation(activation.id, { transport, catalog: deps.catalog });
+    expect((await status(code, activation.id)).failure?.code).toBe("authority_revoked");
+    expect(live.size).toBe(0);
+  });
+  test("a pending non-admin activation requires a fresh explicit process after administrator promotion", async () => {
+    const code = await newCode(),
+      submitted = await version(code),
+      signIn = await createTestBrowserSignIn(ownerId);
+    const signed: CodeContext = {
+      ...owner,
+      authority: {
+        ...owner.authority,
+        credentialProof: {
+          kind: "session",
+          userId: ownerId,
+          sid: signIn.sid,
+          authEpoch: 0,
+          expiresAt: "2099-01-01T00:00:00Z",
+        },
+      },
+    };
+    const activation = await start(code, submitted.version.id, signed);
+    try {
+      await sql`UPDATE auth.users SET admin=TRUE WHERE id=${ownerId}::uuid`;
+      await processCodeActivation(activation.id, { transport, catalog: deps.catalog });
+      expect(await status(code, activation.id)).toMatchObject({ state: "failed", failure: { code: "authority_changed" } });
+      expect(live.size).toBe(0);
+    } finally {
+      await sql`UPDATE auth.users SET admin=FALSE WHERE id=${ownerId}::uuid`;
+    }
+  });
   test("revoked activating authority compensates its grants without needing the revoked credential", async () => {
     const code = await newCode(),
       submitted = await version(code),
@@ -484,6 +555,119 @@ databaseSuite()("durable Code activation", () => {
     revoked = true;
     await run(activation.id);
     expect((await status(code, activation.id)).state).toBe("failed");
+    expect(live.size).toBe(0);
+  });
+  test("cleanup preserves the grants of a waiting activation", async () => {
+    const code = await newCode(),
+      first = await version(code, ["A"]),
+      active = await start(code, first.version.id);
+    await run(active.id);
+    const next = await version(code, ["B", "C"], first.version.id),
+      pending = await start(code, next.version.id);
+    crashAt = "C";
+    await expect(run(pending.id)).rejects.toThrow();
+    const waitingIds = [...live.keys()];
+    await cleanupCodeActivation(code.id, transport, async () => {});
+    expect([...live.keys()]).toEqual(waitingIds);
+    crashAt = null;
+    await run(pending.id);
+    expect((await status(code, pending.id)).state).toBe("active");
+  });
+  test("a cleanup delivery cannot consume a new cleanup request committed before its acknowledgement", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      active = await start(code, submitted.version.id);
+    await run(active.id);
+    const [row] = await sql<
+      { id: string; attempts: number; code_id: string; activation_id: null }[]
+    >`SELECT * FROM code.activation_outbox WHERE code_id=${code.id} AND kind='cleanup'`;
+    expect(row).toBeDefined();
+    await codeActivationCleanupOutbox.dispatch(row!, async () => {
+      await cleanupCodeActivation(code.id, transport, async () => {});
+      await sql`INSERT INTO code.activation_outbox(code_id,kind) VALUES(${code.id},'cleanup')`;
+    });
+    expect(await sql`SELECT id FROM code.activation_outbox WHERE code_id=${code.id} AND kind='cleanup'`).toHaveLength(1);
+  });
+  test("enqueue and cancellation return while a worker is inside a target request", async () => {
+    const code = await newCode(),
+      first = await version(code, ["A"]),
+      next = await version(code, ["B"], first.version.id);
+    const active = await start(code, first.version.id),
+      entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    const worker = processCodeActivation(active.id, {
+      ...deps,
+      transport: {
+        ...transport,
+        set: async (input, ctx) => {
+          if (!input.dryRun) {
+            entered.resolve();
+            await release.promise;
+          }
+          return transport.set(input, ctx);
+        },
+      },
+    });
+    try {
+      await entered.promise;
+      const queued = await start(code, next.version.id);
+      expect(queued.state).toBe("pending");
+      expect((await cancelCodeActivation({ codeId: code.id, activationId: active.id }, owner)).state).toBe("rolling_back");
+      await expect(run(queued.id)).rejects.toThrow("activation_busy");
+    } finally {
+      release.resolve();
+      await worker;
+    }
+    expect((await status(code, active.id)).state).toBe("cancelled");
+    expect(live.size).toBe(0);
+  });
+  test("cancellation after the final checkpoint prevents the active-version commit", async () => {
+    const code = await newCode(),
+      submitted = await version(code, ["A"]),
+      activation = await start(code, submitted.version.id);
+    let cancelled = false;
+    await processCodeActivation(activation.id, {
+      ...deps,
+      transport: {
+        ...transport,
+        list: async (app, principal) => {
+          if (live.size && !cancelled) {
+            cancelled = true;
+            await cancelCodeActivation({ codeId: code.id, activationId: activation.id }, owner);
+          }
+          return transport.list(app, principal);
+        },
+      },
+    });
+    expect(cancelled).toBe(true);
+    expect(await status(code, activation.id)).toMatchObject({ state: "cancelled", failure: { code: "cancelled" } });
+    expect((await findCode(code.id))!.activeVersionId).toBeNull();
+    expect(await sql`SELECT id FROM auth.mandates WHERE workload_id=${submitted.version.id}`).toHaveLength(0);
+    expect(live.size).toBe(0);
+  });
+  test("cancellation during rollback preserves the target's original refusal", async () => {
+    const code = await newCode(),
+      submitted = await version(code),
+      activation = await start(code, submitted.version.id);
+    denySet = "B";
+    await expect(
+      processCodeActivation(activation.id, {
+        ...deps,
+        transport: {
+          ...transport,
+          remove: async () => {
+            throw new Error("Cleanup offline");
+          },
+        },
+      }),
+    ).rejects.toThrow("Cleanup offline");
+    const refused = { target: { type: "example.item", id: "B" }, code: "not_manager" };
+    expect(await cancelCodeActivation({ codeId: code.id, activationId: activation.id }, owner)).toMatchObject({
+      state: "rolling_back",
+      failure: refused,
+    });
+    await run(activation.id);
+    expect(await status(code, activation.id)).toMatchObject({ state: "failed", failure: refused });
     expect(live.size).toBe(0);
   });
   test("old versions retain grants and mandate until their last queued or running run finishes", async () => {
@@ -536,8 +720,14 @@ databaseSuite()("durable Code activation", () => {
     await run(activation.id);
     expect((await status(code, activation.id)).state).toBe("cancelled");
     expect(live.size).toBe(0);
+    await sql`ALTER TABLE code.activations DROP COLUMN cancel_requested`;
+    await sql`CREATE INDEX activation_outbox_cleanup ON code.activation_outbox(id) WHERE kind='cleanup'`;
     await migrateActivation();
     await migrateActivation();
+    expect(await sql`SELECT id FROM code.activations WHERE cancel_requested`).toHaveLength(0);
+    expect(
+      (await sql<{ index: string | null }[]>`SELECT to_regclass('code.activation_outbox_cleanup')::text AS index`)[0]!.index,
+    ).toBeNull();
     expect((await status(code, activation.id)).state).toBe("cancelled");
   });
 });

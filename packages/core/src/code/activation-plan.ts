@@ -32,7 +32,7 @@ export const targetApp = (target: CodeAccessTarget): string => (target.type === 
 export const ownerTarget = (code: Code): CodeAccessTarget | null =>
   code.owner.kind === "resource" ? code.owner.ref : code.owner.kind === "app" ? { type: "app", id: code.owner.appId } : null;
 
-/** One entry per operation at a target; queries retain operation-only mandate grants. Ref combinations contain only explicitly declared pairs. */
+/** One entry per operation at a target; queries retain operation-only mandate grants. Flat checker rows authorize operation/target sets; refs use their type-matching combinations, bounded by the mandate budget. */
 export function buildCodeActivationPlan(
   code: Code,
   manifest: CodeCheckedVersionManifest,
@@ -52,13 +52,7 @@ export function buildCodeActivationPlan(
     const catalog = catalogs.get(appId!);
     const query = catalog?.queries.find((q) => q.localId === localId);
     const action = catalog?.actions.find((a) => a.localId === localId);
-    if (
-      (!query && !action) ||
-      query?.stream ||
-      action?.stream ||
-      (code.owner.kind !== "person" && action?.code === false) ||
-      localId.startsWith("code.access.")
-    )
+    if ((!query && !action) || query?.stream || action?.stream || action?.code === false || localId.startsWith("code.access."))
       throw new CodeDataError("BAD_INPUT", "An operation is unavailable to this Code version.");
     apps.add(appId!);
     operations.add(`${query ? "capability.query" : "capability.action.run"}:${localId}`);

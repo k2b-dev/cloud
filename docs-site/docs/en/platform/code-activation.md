@@ -48,7 +48,9 @@ Generate `activationId` as a UUID once. Reuse it after a lost HTTP response;
 Core returns the existing process. Reusing it for another Code, version or
 activating person returns a conflict. A terminal failure needs a new activation
 ID after its cause has been resolved. Read routes require access to the Code;
-mutation routes retain the credential's write scope.
+mutation routes retain the credential's write scope. Enqueue and cancellation
+record intent without waiting for the worker's target requests. Explicit
+activation also resumes paused Code after all activation checks succeed.
 
 Status contains `id`, `codeId`, `versionId`, `state`, `failure`, `mandateId`,
 `createdAt` and `updatedAt`. Timestamps use ISO 8601 UTC. `failure` is null or
@@ -69,13 +71,16 @@ A cancelled or failed activation leaves older grants and the previous active
 version intact. Revoking or expiring the activating credential stops the process
 and schedules compensation. Core stores revocation coordinates and scopes,
 never the original cookie or bearer token, and reloads the person's current
-identity before continuing.
+identity before continuing. If a non-admin is promoted to Cloud administrator while
+activation is pending, start a fresh activation so its notifications follow the
+Cloud-admin path.
 
 ## How target permissions are applied
 
 Core serializes activations for each Code. It saves the target plan and each new
 `grantId` before issuing [Code access proofs](/en/docs/platform/capabilities#code-access-at-the-target).
-It first calls `set` with `dryRun` for the owner and all new or broader targets.
+A busy worker retries without holding a database connection while waiting for
+another worker. It first calls `set` with `dryRun` for the owner and all new or broader targets.
 Only after every preflight succeeds does it apply grants. A crash or lost
 response repeats `set` with the saved grant identity, preventing duplicates.
 
@@ -85,18 +90,26 @@ Each target adapter must keep grants with different IDs independent.
 
 For Cloud-admin notifications, a successful adapter `grant` decision includes
 `managerUserIds`, the current concrete human administrators, including members
-of administrator groups. Return these IDs on dry runs too. Core refuses a
+of administrator groups. Return these IDs on dry runs; Core persists that
+audience before applying grants, so retries and real sets may omit it. Core refuses a
 Cloud-admin activation when the audience is unavailable; an empty list means the
 target has no human managers. This additive field belongs to `CodeAccessDecision`
 and `CodeAccessSetData`; the four adapter functions and proof v1 stay unchanged.
-Mail's mailbox adapter supplies this audience through the shared access resolver.
+Every target adapter, including third-party adapters, must supply this audience
+for Cloud-admin activation. Mail's mailbox adapter supplies bounded UUID pages
+through the shared access resolver, without scanning the whole user directory.
+If that audience exceeds the capability result budget, Mail refuses the dry run;
+this limit also applies to activation by an ordinary owner administrator.
 
 ## Version mandates and old runs
 
 Core stores one `code.version` mandate per immutable version under owner app
 `core`. Its subject is the personal owner or the resource's Code account.
 Resource Actions receive `CapabilityGrant` pairs with exact targets and reference
-maps; Queries receive operation grants. Personal Code uses operation authority,
+maps; Queries receive operation grants. The checker supplies flat
+operation/target sets, without primary/ref roles. Where several literals match a
+declared target Type, activation permits their type-matching combinations; every
+such target still needs its own grant. The mandate budget bounds combinations. Personal Code uses operation authority,
 with its current resource rights checked at execution. The existing mandate
 policy budgets apply; versions exceeding them fail before any target effects.
 An existing mandate is reused only while active, unexpired and unchanged.
@@ -124,9 +137,18 @@ schemas. CLI and resource UI integrations use `activateCodeVersion`,
 `readCodeActivation`, `cancelCodeActivation` and `reconcileCodeAccess` with the
 same `CodeContext` used by the other Code services. Lifecycle and runner
 integrations can call `cleanupCodeActivation` after state changes; the durable
-cleanup worker also retries while old runs remain open.
+cleanup worker also retries while old runs remain open. For owner deletion,
+first block new work, clear `activeVersionId`, and let unfinished activations
+compensate and open runs finish or be cancelled. Run cleanup to completion before
+deleting Code, versions or activation records: reused grants are owned by their
+original journal row, so that journal must not be pruned independently.
 
 `processCodeActivation` is the trusted worker entry point. Applications do not
-call it or issue access proofs themselves. Core starts both outbox workers with
+call it or issue access proofs themselves. `readCodeActivationManifest` from `@k2b/cloud/capabilities/server` is a Core-only
+registry reader: plan construction does not require the activating person to
+hold entry access to every already-authorized target app. It grants no resource
+access and must not be exposed through a generic caller transport.
+
+Core starts both outbox workers with
 its normal lifecycle. Their failed jobs retain attempts and the last error;
 cleanup runs separately so a draining version does not block new activations.

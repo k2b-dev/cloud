@@ -96,3 +96,15 @@ test("resource Code rejects dynamic targets and unavailable operations before an
     "unavailable",
   );
 });
+
+test("code:false cannot be activated by resource or personal Code", () => {
+  const restricted = { ...catalog, actions: catalog.actions.map((action) => ({ ...action, code: false as const })) };
+  for (const candidate of [
+    code,
+    { ...code, owner: { kind: "person" as const, userId: "11111111-1111-4111-8111-111111111111" }, serviceAccountId: null },
+  ]) {
+    expect(() =>
+      buildCodeActivationPlan(candidate, manifest([permission("example.item.change", "A")]), new Map([["example", restricted]])),
+    ).toThrow("unavailable");
+  }
+});

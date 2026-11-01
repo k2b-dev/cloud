@@ -1,5 +1,5 @@
 import { type CodeAccessGrant, sql } from "@k2b/cloud";
-import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
+import { readCodeActivationManifest } from "@k2b/cloud/capabilities/server";
 import { type CapabilityManifest, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { isAppSessionActor, type RequestAuthority } from "@k2b/cloud/server";
 import { accounts, audit, canRepairAppAccess } from "@k2b/cloud/services";
@@ -54,6 +54,7 @@ type ActivationRow = {
   authority: unknown;
   locale: string;
   cloud_admin: boolean;
+  cancel_requested: boolean;
   state: CodeActivation["state"];
   failure: unknown;
   plan: unknown;
@@ -94,24 +95,23 @@ async function restoreAuthority(row: ActivationRow): Promise<CodeContext | null>
   const user = await accounts.users.get({ id: userId });
   if (!user || (user.accountExpires && Date.parse(user.accountExpires) <= Date.now())) return null;
   const authority: RequestAuthority = {
-    actor: {
-      kind: "user",
-      user: row.cloud_admin ? user : { ...user, roles: user.roles.filter((role) => role !== "admin") },
-    },
+    actor: { kind: "user", user },
     accessSubject: { type: "user", userId },
     credentialKind: proof.kind,
     scopes,
     credentialProof: proof,
   };
+  if (!row.cloud_admin && canRepairAppAccess(authority))
+    refuse(null, "authority_changed", "The activating person's authority changed. Start a fresh activation to confirm administrator use.");
   return { authority, locale: row.locale, requestId: row.id };
 }
 /** Test effects are injected only at Core's network/revocation seams. All durable state still uses Postgres. */
 export type CodeActivationDependencies = {
   transport: CodeActivationTransport;
   restoreAuthority: typeof restoreAuthority;
-  catalog: typeof getCapabilityCatalogApp;
+  catalog: typeof readCodeActivationManifest;
 };
-const defaults: CodeActivationDependencies = { transport: codeActivationTransport, restoreAuthority, catalog: getCapabilityCatalogApp };
+const defaults: CodeActivationDependencies = { transport: codeActivationTransport, restoreAuthority, catalog: readCodeActivationManifest };
 
 function activationPerson(context: CodeContext) {
   const person = codePerson(context, true),
@@ -138,7 +138,7 @@ async function authorizedCode(codeId: string, context: CodeContext, db: SQL = sq
     throw new CodeDataError("FORBIDDEN", "Only the personal owner can activate personal Code.");
   return code;
 }
-/** Enqueue once. Parallel requests for a Code serialize at the same lock as the worker. No target mutation occurs on this request. */
+/** Enqueue once without waiting on target effects. The unique process identity fences duplicate requests. */
 export async function activateCodeVersion(
   raw: z.input<typeof codeActivationContracts.activate.input>,
   context: CodeContext,
@@ -150,7 +150,6 @@ export async function activateCodeVersion(
     throw new CodeDataError("FORBIDDEN", "Activation needs verified credential revocation coordinates.");
   const authority = savedAuthoritySchema.parse({ userId: person.id, scopes: context.authority.scopes, proof });
   return sql.begin(async (tx) => {
-    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey(input.codeId)},0))`;
     const existing = await load(input.activationId, tx);
     if (existing) {
       if (existing.code_id !== input.codeId || existing.version_id !== input.versionId || existing.activating_person !== person.id)
@@ -161,10 +160,25 @@ export async function activateCodeVersion(
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     const code = await authorizedCode(input.codeId, context, tx);
     await requireCodeVersionApproval(code, input.versionId, tx);
-    await tx`INSERT INTO code.activations(id,code_id,version_id,activating_person,authority,locale,cloud_admin)
+    const created = await tx`INSERT INTO code.activations(id,code_id,version_id,activating_person,authority,locale,cloud_admin)
       VALUES(${input.activationId}::uuid,${code.id},${input.versionId}::uuid,${person.id}::uuid,${JSON.stringify(authority)}::jsonb,
-        ${context.locale ?? "en"},${person.roles.includes("admin") && canRepairAppAccess(context.authority)})`;
-    await tx`INSERT INTO code.activation_outbox(code_id,activation_id) VALUES(${code.id},${input.activationId}::uuid)`;
+        ${context.locale ?? "en"},${person.roles.includes("admin") && canRepairAppAccess(context.authority)}) ON CONFLICT(id) DO NOTHING RETURNING id`;
+    if (created.length)
+      await audit.record(
+        {
+          action: "core.code.activation.started",
+          outcome: "allowed",
+          actor: { userId: person.id },
+          target: { type: "code", id: code.id },
+          requestId: input.activationId,
+          metadata: { versionId: input.versionId },
+        },
+        tx,
+      );
+    const inserted = (await load(input.activationId, tx))!;
+    if (inserted.code_id !== input.codeId || inserted.version_id !== input.versionId || inserted.activating_person !== person.id)
+      throw new CodeDataError("CONFLICT", "Activation identity belongs to another request.");
+    await tx`INSERT INTO code.activation_outbox(code_id,activation_id) VALUES(${code.id},${input.activationId}::uuid) ON CONFLICT DO NOTHING`;
     return receipt((await load(input.activationId, tx))!);
   });
 }
@@ -181,7 +195,7 @@ export async function readCodeActivation(
   return receipt(row);
 }
 async function state(id: string, value: CodeActivation["state"], failure: CodeActivationFailure | null = null) {
-  await sql`UPDATE code.activations SET state=${value},failure=${failure === null ? null : JSON.stringify(failure)}::jsonb,updated_at=now() WHERE id=${id}::uuid`;
+  await sql`UPDATE code.activations SET state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE ${value} END,failure=CASE WHEN cancel_requested THEN failure ELSE ${failure === null ? null : JSON.stringify(failure)}::jsonb END,updated_at=now() WHERE id=${id}::uuid`;
 }
 class ActivationRefused extends Error {
   constructor(readonly failure: CodeActivationFailure) {
@@ -192,6 +206,7 @@ function refuse(target: CodeActivationFailure["target"], code: string, reason: s
   throw new ActivationRefused({ target, code, reason });
 }
 async function checkpoint(row: ActivationRow, deps: CodeActivationDependencies): Promise<{ code: Code; context: CodeContext }> {
+  if ((await load(row.id))?.cancel_requested) refuse(null, "cancelled", "Activation cancelled.");
   const context = await deps.restoreAuthority(row);
   if (!context) refuse(null, "authority_revoked", "The activating credential has expired or was revoked. Activate again after signing in.");
   const code = await authorizedCode(row.code_id, context!);
@@ -208,21 +223,22 @@ async function liveGrants(code: Code, targets: readonly { target: { type: string
       for (const grant of await transport.list(app, code.serviceAccountId)) live.set(grant.grantId, grant);
   return live;
 }
-async function prepare(
-  row: ActivationRow,
-  code: Code,
-  context: CodeContext,
-  deps: CodeActivationDependencies,
-): Promise<CodeActivationTarget[]> {
+async function prepare(row: ActivationRow, code: Code, deps: CodeActivationDependencies): Promise<CodeActivationTarget[]> {
   const [version] = await sql<
     { manifest: unknown }[]
   >`SELECT manifest FROM code.versions WHERE id=${row.version_id}::uuid AND code_id=${code.id}`;
   const manifest = CodeCheckedVersionManifestSchema.parse(version?.manifest);
   const catalogs = new Map<string, CapabilityManifest>();
   for (const appId of new Set(manifest.permissions.map((p) => p.operation.split(".")[0]!))) {
-    const catalog = await deps.catalog(appId, context.locale, context.authority);
-    if (!catalog.ok || !catalog.data) throw new CodeActivationTransportError("target_catalog_unavailable", true);
-    catalogs.set(appId, catalog.data.manifest);
+    const catalog = await deps.catalog(appId);
+    const missingTarget = manifest.permissions.find((p) => p.operation.startsWith(`${appId}.`))?.target;
+    if (!catalog)
+      refuse(
+        missingTarget?.id ? { type: missingTarget.type, id: missingTarget.id } : { type: "app", id: appId },
+        "target_unavailable",
+        "The target operation catalog is unavailable. Activate again after the application is ready.",
+      );
+    catalogs.set(appId, catalog);
   }
   const built = buildCodeActivationPlan(code, manifest, catalogs);
   const prior = await sql<
@@ -244,7 +260,7 @@ async function prepare(
     plan.push({ ...item, grantId: reusable?.grant_id ?? crypto.randomUUID(), reused: Boolean(reusable), owner: false });
   }
   await sql.begin(async (tx) => {
-    await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::jsonb,mandate_policy=${JSON.stringify(built.policy)}::jsonb,state='preflight',updated_at=now() WHERE id=${row.id}::uuid`;
+    await tx`UPDATE code.activations SET plan=${JSON.stringify(plan)}::jsonb,mandate_policy=${JSON.stringify(built.policy)}::jsonb,state=CASE WHEN cancel_requested THEN 'rolling_back' ELSE 'preflight' END,updated_at=now() WHERE id=${row.id}::uuid`;
     for (const item of plan.filter((item) => !item.reused && !item.owner))
       await tx`INSERT INTO code.target_grants(grant_id,code_id,activation_id,target,operations,state)
         VALUES(${item.grantId}::uuid,${code.id},${row.id}::uuid,${JSON.stringify(item.target)}::jsonb,${item.operations}::text[],'planned')`;
@@ -260,7 +276,20 @@ async function rollback(row: ActivationRow, code: Code, deps: CodeActivationDepe
     if (code.serviceAccountId) await deps.transport.remove(targetApp(grant.target), code.serviceAccountId, grant.grant_id);
     await sql`UPDATE code.target_grants SET state='released' WHERE grant_id=${grant.grant_id}::uuid`;
   }
-  await sql`UPDATE code.activations SET state=CASE WHEN failure->>'code'='cancelled' THEN 'cancelled' ELSE 'failed' END,authority=NULL,updated_at=now() WHERE id=${row.id}::uuid`;
+  await sql.begin(async (tx) => {
+    await tx`UPDATE code.activations SET state=CASE WHEN failure->>'code'='cancelled' THEN 'cancelled' ELSE 'failed' END,authority=NULL,updated_at=now() WHERE id=${row.id}::uuid`;
+    await audit.record(
+      {
+        action: "core.code.activation.stopped",
+        outcome: "allowed",
+        actor: row.activating_person ? { userId: row.activating_person } : null,
+        target: { type: "code", id: code.id },
+        requestId: row.id,
+        metadata: { versionId: row.version_id, failure: row.failure },
+      },
+      tx,
+    );
+  });
 }
 /** Worker owns a session advisory lock across separately committed checkpoints; process death releases the lock, never the journal. */
 export async function processCodeActivation(activationId: string, overrides?: Partial<CodeActivationDependencies>): Promise<void> {
@@ -268,8 +297,13 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
     row = await load(activationId);
   if (!row || terminal(row.state)) return;
   const lock = await sql.reserve();
+  let acquired = false;
   try {
-    await lock`SELECT pg_advisory_lock(hashtextextended(${lockKey(row.code_id)},0))`;
+    const [held] = await lock<
+      { acquired: boolean }[]
+    >`SELECT pg_try_advisory_lock(hashtextextended(${lockKey(row.code_id)},0)) AS acquired`;
+    if (!held?.acquired) throw new CodeActivationTransportError("activation_busy", true);
+    acquired = true;
     const current = await load(activationId);
     if (!current || terminal(current.state)) return;
     const existingCode = await findCode(row.code_id);
@@ -281,8 +315,7 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
     let failedTarget: CodeActivationFailure["target"] = null;
     try {
       const { code, context } = await checkpoint(current, deps);
-      const plan =
-        current.plan === null ? await prepare(current, code, context, deps) : z.array(activationTargetSchema).parse(current.plan);
+      const plan = current.plan === null ? await prepare(current, code, deps) : z.array(activationTargetSchema).parse(current.plan);
       // Run every preflight before the first write, including after a restart. Owner authority is always checked.
       for (const item of plan.filter((item) => item.owner || !item.reused)) {
         failedTarget = item.target;
@@ -361,9 +394,11 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
       await sql.begin(async (tx) => {
         await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
         await tx`SELECT id FROM code.codes WHERE id=${code.id} FOR UPDATE`;
-        const locked = await authorizedCode(code.id, checked.context, tx);
+        const locked = await findCode(code.id, tx);
+        if (!locked || locked.state === "deleting") refuse(null, "code_unavailable", "Code is being deleted.");
         await requireCodeVersionApproval(locked, row.version_id, tx);
-        const saved = (await load(row.id, tx))!;
+        const [saved] = await tx<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${row.id}::uuid FOR UPDATE`;
+        if (!saved || saved.cancel_requested) refuse(null, "cancelled", "Activation cancelled.");
         const [priorMandate] = await tx<
           { id: string }[]
         >`SELECT id FROM auth.mandates WHERE owner_app_id='core' AND workload_type='code.version'
@@ -389,7 +424,7 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
         if (!mandate) {
           const created = await mandates.create(
             {
-              authority: { kind: "admin", userId: row.activating_person! },
+              authority: { kind: code.owner.kind === "person" ? "interactive" : "admin", userId: row.activating_person! },
               subject,
               ownerAppId: "core",
               workloadType: "code.version",
@@ -455,25 +490,35 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
     }
   } finally {
     try {
-      await lock`SELECT pg_advisory_unlock(hashtextextended(${lockKey(row.code_id)},0))`;
+      if (acquired) await lock`SELECT pg_advisory_unlock(hashtextextended(${lockKey(row.code_id)},0))`;
     } finally {
       lock.release();
     }
   }
 }
-/** Cancellation serializes with activation. Cleanup is durable and never requires the old activating credential. */
+/** Cancellation records intent immediately. The next checkpoint compensates without requiring the old credential. */
 export async function cancelCodeActivation(
   input: z.infer<typeof codeActivationContracts.cancel.input>,
   context: CodeContext,
 ): Promise<CodeActivation> {
   return sql.begin(async (tx) => {
-    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey(input.codeId)},0))`;
     await authorizedCode(input.codeId, context, tx);
-    const row = await load(input.activationId, tx);
+    const [row] = await tx<ActivationRow[]>`SELECT * FROM code.activations WHERE id=${input.activationId}::uuid FOR UPDATE`;
     if (!row || row.code_id !== input.codeId) throw new CodeDataError("NOT_FOUND", "Activation not found.");
-    if (!terminal(row.state)) {
-      await tx`UPDATE code.activations SET state='rolling_back',failure=${JSON.stringify({ target: null, code: "cancelled", reason: "Activation cancelled." })}::jsonb,updated_at=now() WHERE id=${row.id}::uuid`;
-      await tx`INSERT INTO code.activation_outbox(code_id,activation_id) VALUES(${row.code_id},${row.id}::uuid) ON CONFLICT DO NOTHING`;
+    if (!terminal(row.state) && row.state !== "rolling_back") {
+      await tx`UPDATE code.activations SET cancel_requested=TRUE,state='rolling_back',failure=${JSON.stringify({ target: null, code: "cancelled", reason: "Activation cancelled." })}::jsonb,updated_at=now() WHERE id=${row.id}::uuid`;
+      if (!row.cancel_requested)
+        await audit.record(
+          {
+            action: "core.code.activation.cancel_requested",
+            outcome: "allowed",
+            actor: { userId: activationPerson(context).id },
+            target: { type: "code", id: row.code_id },
+            requestId: row.id,
+            metadata: { versionId: row.version_id },
+          },
+          tx,
+        );
     }
     return receipt((await load(row.id, tx))!);
   });

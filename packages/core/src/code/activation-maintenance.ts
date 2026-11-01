@@ -65,8 +65,13 @@ export async function cleanupCodeActivation(
   }) => Promise<void> = sendNotice,
 ): Promise<void> {
   const lock = await sql.reserve();
+  let acquired = false;
   try {
-    await lock`SELECT pg_advisory_lock(hashtextextended(${`core.code.activation:${codeId}`},0))`;
+    const [held] = await lock<
+      { acquired: boolean }[]
+    >`SELECT pg_try_advisory_lock(hashtextextended(${`core.code.activation:${codeId}`},0)) AS acquired`;
+    if (!held?.acquired) throw new Error("Code activation is busy; cleanup will retry");
+    acquired = true;
     const code = await findCode(codeId);
     if (!code) return;
     const notices = await sql<{ activation_id: string; target: { type: string; id: string }; user_id: string; locale: string }[]>`
@@ -86,6 +91,7 @@ export async function cleanupCodeActivation(
     const obsolete = await sql<
       TargetRow[]
     >`SELECT g.* FROM code.target_grants g WHERE g.code_id=${codeId} AND g.state IN ('granted','removed')
+      AND EXISTS(SELECT 1 FROM code.activations a WHERE a.id=g.activation_id AND a.state IN ('active','failed','cancelled'))
       AND NOT EXISTS(SELECT 1 FROM code.version_grants vg WHERE vg.grant_id=g.grant_id AND
         (vg.version_id=${code.activeVersionId}::uuid OR EXISTS(SELECT 1 FROM code.runs r WHERE r.version_id=vg.version_id AND r.state IN ('queued','running'))))
       ORDER BY g.grant_id LIMIT 50`;
@@ -109,7 +115,8 @@ export async function cleanupCodeActivation(
       if (!revoked.ok) throw new Error("Code version mandate cleanup must retry");
     }
     const [remaining] = await sql<{ pending: boolean }[]>`SELECT (
-      EXISTS(SELECT 1 FROM code.target_grants g WHERE g.code_id=${codeId} AND g.state IN ('granted','removed') AND NOT EXISTS
+      EXISTS(SELECT 1 FROM code.target_grants g WHERE g.code_id=${codeId} AND g.state IN ('granted','removed')
+        AND EXISTS(SELECT 1 FROM code.activations a WHERE a.id=g.activation_id AND a.state IN ('active','failed','cancelled')) AND NOT EXISTS
         (SELECT 1 FROM code.version_grants vg WHERE vg.grant_id=g.grant_id AND vg.version_id=${code.activeVersionId}::uuid))
       OR EXISTS(SELECT 1 FROM code.runs r WHERE r.code_id=${codeId} AND r.version_id IS DISTINCT FROM ${code.activeVersionId}::uuid AND r.state IN ('queued','running'))
     ) AS pending`;
@@ -117,7 +124,7 @@ export async function cleanupCodeActivation(
       throw new Error("Superseded Code versions are draining; cleanup will retry");
   } finally {
     try {
-      await lock`SELECT pg_advisory_unlock(hashtextextended(${`core.code.activation:${codeId}`},0))`;
+      if (acquired) await lock`SELECT pg_advisory_unlock(hashtextextended(${`core.code.activation:${codeId}`},0))`;
     } finally {
       lock.release();
     }

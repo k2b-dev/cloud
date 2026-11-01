@@ -8,12 +8,13 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`CREATE TABLE IF NOT EXISTS code.activations (
       id UUID PRIMARY KEY, code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
       version_id UUID NOT NULL, activating_person UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      authority JSONB, locale TEXT NOT NULL, cloud_admin BOOLEAN NOT NULL,
+      authority JSONB, locale TEXT NOT NULL, cloud_admin BOOLEAN NOT NULL, cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
       state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','preflight','applying','waiting','rolling_back','failed','active','cancelled')),
       failure JSONB, plan JSONB, mandate_policy JSONB, mandate_id UUID REFERENCES auth.mandates(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       FOREIGN KEY(version_id,code_id) REFERENCES code.versions(id,code_id) ON DELETE CASCADE
     )`.simple();
+    await tx`ALTER TABLE code.activations ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE`.simple();
     await tx`CREATE INDEX IF NOT EXISTS activations_code ON code.activations(code_id,created_at DESC,id)`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.target_grants (
       grant_id UUID PRIMARY KEY, code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
@@ -41,8 +42,8 @@ export async function migrate(db: SQL = sql): Promise<void> {
       sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
       attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(), claimed_until TIMESTAMPTZ, last_error TEXT
     )`.simple();
+    await tx`DROP INDEX IF EXISTS code.activation_outbox_cleanup`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS activation_outbox_process ON code.activation_outbox(activation_id) WHERE activation_id IS NOT NULL`.simple();
-    await tx`CREATE UNIQUE INDEX IF NOT EXISTS activation_outbox_cleanup ON code.activation_outbox(code_id) WHERE activation_id IS NULL`.simple();
     await tx`CREATE INDEX IF NOT EXISTS activation_outbox_order ON code.activation_outbox(code_id,sequence)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS activation_outbox_busy ON code.activation_outbox(code_id,sequence) WHERE claimed_until IS NOT NULL OR attempts>0`.simple();
   });

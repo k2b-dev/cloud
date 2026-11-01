@@ -296,12 +296,19 @@ export const removeCodeAccess = async (
   return db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${appId}:${grantId}`}, 0))`;
     const existing = await find(tx, appId, grantId);
-    if (!existing) return false;
+    if (!existing) {
+      if (!("cleanupPrincipal" in authority)) return false;
+      // Fence a delayed set even when cleanup wins the grant lock before its first insert.
+      // A revoked row routes no live access and needs no adapter or live-account FK.
+      await tx`INSERT INTO capabilities.code_access_grants(app_id,grant_id,principal,target_type,target_id,binding_hash,level,revoked,live_principal)
+        VALUES(${appId},${grantId}::uuid,${authority.cleanupPrincipal}::uuid,${"app"},${appId},${"cleanup"},${"read"},TRUE,NULL)`;
+      return true;
+    }
+    if ("cleanupPrincipal" in authority && existing.principal !== authority.cleanupPrincipal) return false;
+    if (existing.revoked) return true;
     const target = { type: existing.target_type, id: existing.target_id };
     const adapter = targetAdapter(bindings, appId, target);
     if (!adapter) throw new Error(`Code access cleanup requires the declared adapter for ${target.type}`);
-    if ("cleanupPrincipal" in authority && existing.principal !== authority.cleanupPrincipal) return false;
-    if (existing.revoked) return true;
     const removed = await adapter.revoke(tx, { id: target.id, grantId });
     if (!removed && (await adapter.list(tx, { principal: existing.principal })).some((entry) => entry.grantId === grantId))
       throw new Error("Code access adapter refused to remove an existing grant");
