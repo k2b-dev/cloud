@@ -1580,7 +1580,7 @@ function IncomingAutomationEditor(props: {
       />
       <PanelDialog.Body>
         <Show when={props.automation?.authorizationState === "needs_attention"}>
-          <NoticeCard tone="warning" title={messages().automationNeedsAttention}>
+          <NoticeCard tone="warning" icon="ti ti-alert-triangle" title={messages().automationNeedsAttention}>
             {messages().automationTargetConfirmation}
           </NoticeCard>
         </Show>
@@ -1673,7 +1673,10 @@ function IncomingAutomationEditor(props: {
         </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <span class="min-w-0 flex-1 text-xs text-dimmed">{enabled() ? messages().appliesToNewMessages : messages().savedInactive}</span>
+        {/* A real basis lets the footer move the buttons below the hint on a phone instead of squeezing the hint under them. */}
+        <span class="min-w-0 flex-[1_1_12rem] text-xs text-dimmed">
+          {enabled() ? messages().appliesToNewMessages : messages().savedInactive}
+        </span>
         <div class="flex items-center gap-2">
           <Button type="button" size="sm" variant="secondary" disabled={save.loading()} onClick={() => void closeSafely()}>
             {messages().cancel}
@@ -1965,187 +1968,205 @@ export default function MailIncomingAutomationSettings(props: {
     { id: "menu", header: "", value: (automation) => automation.id, cellClass: "w-12", headerClass: "w-12" },
   ]);
 
+  const needingAttention = createMemo(() => automations().filter((automation) => automation.authorizationState === "needs_attention"));
+  const editAutomation = (automation: IncomingAutomation) =>
+    void openIncomingAutomationEditor({
+      mailboxId: props.mailboxId,
+      catalog: props.catalog,
+      automation,
+      onSaved: upsert,
+      onBackfillStarted: rememberBackfill,
+    });
+
   return (
-    <section class="paper overflow-hidden">
-      <div class="flex flex-wrap items-start justify-between gap-3 px-3 py-3">
-        <div>
-          <h2 class="text-xs font-semibold text-primary">{messages().incomingAutomations}</h2>
-          <p class="mt-0.5 text-[11px] text-dimmed">{messages().guidedFlowCount({ count: automations().length })}</p>
-        </div>
-        <Button
-          size="sm"
-          type="button"
-          onClick={() =>
-            void openIncomingAutomationEditor({
-              mailboxId: props.mailboxId,
-              catalog: props.catalog,
-              onSaved: upsert,
-              onBackfillStarted: rememberBackfill,
-            })
+    <>
+      {/* One notice above the list, however many automations wait: each is marked in its row and edited from there. */}
+      <Show when={needingAttention().length > 0}>
+        <NoticeCard
+          tone="warning"
+          icon="ti ti-alert-triangle"
+          title={
+            needingAttention().length === 1
+              ? messages().automationNeedsYou({ name: needingAttention()[0]!.name })
+              : messages().automationsNeedYou({ count: needingAttention().length })
           }
         >
-          <i class="ti ti-plus" aria-hidden="true" /> {messages().createAutomation}
-        </Button>
-      </div>
-      <DataTable
-        rows={automations()}
-        columns={columns()}
-        getRowId={(automation) => automation.id}
-        class="overflow-x-auto"
-        tableClass={automations().length > 0 ? "w-full min-w-[48rem] text-xs" : "w-full text-xs"}
-        hoverRows
-        empty={messages().noIncomingAutomations}
-        renderCell={({ row, col, render }) => {
-          if (col.id === "name" && row.authorizationState === "needs_attention") {
-            return (
-              <div class="space-y-1">
-                <span>{row.name}</span>
-                <StatusBadge tone="warning" label={messages().automationNeedsAttention} />
-                <p class="text-dimmed">{messages().automationTargetConfirmation}</p>
-                <Button
-                  size="sm"
-                  variant="input"
-                  onClick={() =>
-                    void openIncomingAutomationEditor({
-                      mailboxId: props.mailboxId,
-                      catalog: props.catalog,
-                      automation: row,
-                      onSaved: upsert,
-                      onBackfillStarted: rememberBackfill,
-                    })
+          <p>{messages().automationTargetConfirmation}</p>
+          <Show when={needingAttention().length === 1}>
+            <div class="mt-2">
+              <Button size="sm" variant="secondary" onClick={() => editAutomation(needingAttention()[0]!)}>
+                {messages().editAutomation}
+              </Button>
+            </div>
+          </Show>
+        </NoticeCard>
+      </Show>
+      <section class="paper overflow-hidden">
+        <div class="flex flex-wrap items-start justify-between gap-3 px-3 py-3">
+          <div>
+            <h2 class="text-xs font-semibold text-primary">{messages().incomingAutomations}</h2>
+            <p class="mt-0.5 text-[11px] text-dimmed">{messages().guidedFlowCount({ count: automations().length })}</p>
+          </div>
+          <Button
+            size="sm"
+            type="button"
+            onClick={() =>
+              void openIncomingAutomationEditor({
+                mailboxId: props.mailboxId,
+                catalog: props.catalog,
+                onSaved: upsert,
+                onBackfillStarted: rememberBackfill,
+              })
+            }
+          >
+            <i class="ti ti-plus" aria-hidden="true" /> {messages().createAutomation}
+          </Button>
+        </div>
+        <DataTable
+          rows={automations()}
+          columns={columns()}
+          getRowId={(automation) => automation.id}
+          class="overflow-x-auto"
+          tableClass={automations().length > 0 ? "w-full min-w-[48rem] text-xs" : "w-full text-xs"}
+          hoverRows
+          empty={messages().noIncomingAutomations}
+          renderCell={({ row, col, render }) => {
+            if (col.id === "name" && row.authorizationState === "needs_attention") {
+              // What to do stands in the notice above; the row only marks which automation it is.
+              return (
+                <div class="flex min-w-0 flex-col items-start gap-1">
+                  <span class="max-w-full truncate">{row.name}</span>
+                  <StatusBadge tone="warning" label={messages().automationNeedsAttention} />
+                </div>
+              );
+            }
+            if (col.id === "enabled") {
+              return (
+                <Switch
+                  label={
+                    <>
+                      <span aria-hidden="true">{row.enabled ? messages().active : messages().inactive}</span>
+                      <span class="sr-only">
+                        {row.enabled ? messages().disableNamed({ name: row.name }) : messages().enableNamed({ name: row.name })}
+                      </span>
+                    </>
                   }
+                  value={() => row.enabled}
+                  disabled={toggle.loading() || backfillLocksAutomation(row) || row.authorizationState === "needs_attention"}
+                  onValueChange={(enabled) => toggle.mutate({ automation: row, enabled })}
+                />
+              );
+            }
+            if (col.id === "backfill") {
+              if (hasAi(row.steps)) return <span class="text-dimmed">{messages().futureOnly}</span>;
+              const backfill = backfills()[row.id];
+              if (row.latestBackfillOperationId && !loadedBackfills().has(row.id))
+                return <span class="text-dimmed">{messages().loading}</span>;
+              if (row.latestBackfillOperationId && !backfill) return <span class="text-dimmed">{messages().historyExpired}</span>;
+              if (!backfill) return <span class="text-dimmed">{messages().notRun}</span>;
+              const accepted = backfill.alreadyAcceptedCount + backfill.newlyAcceptedCount;
+              if (activeBackfillStates.has(backfill.state)) {
+                const progress = { accepted: formatNumber(accepted), total: formatNumber(backfill.candidateCount) };
+                return (
+                  <StatusBadge
+                    tone="running"
+                    label={backfill.retryFailed ? messages().retryProgress(progress) : messages().backfillProgress(progress)}
+                  />
+                );
+              }
+              if (backfill.state === "completed") {
+                const count = formatNumber(backfill.newlyAcceptedCount);
+                return (
+                  <StatusBadge
+                    tone="ok"
+                    label={backfill.retryFailed ? messages().retryCompleted({ count }) : messages().completedNew({ count })}
+                  />
+                );
+              }
+              if (backfill.state === "limited") {
+                const progress = { count: formatNumber(backfill.newlyAcceptedCount), remaining: formatNumber(backfill.remainingCount) };
+                return (
+                  <StatusBadge
+                    tone="warning"
+                    label={backfill.retryFailed ? messages().retryLimited(progress) : messages().limitedNew(progress)}
+                  />
+                );
+              }
+              if (backfill.state === "failed") return <StatusBadge tone="warning" label={messages().failed} />;
+              return <StatusBadge tone="neutral" label={messages().canceled} />;
+            }
+            if (col.id === "menu") {
+              const backfill = backfills()[row.id];
+              const active = backfillLocksAutomation(row);
+              return (
+                <Dropdown.Root
+                  position="bottom-left"
+                  items={[
+                    ...(!active
+                      ? [
+                          {
+                            label: messages().editAutomation,
+                            icon: "ti ti-pencil",
+                            action: () =>
+                              void openIncomingAutomationEditor({
+                                mailboxId: props.mailboxId,
+                                catalog: props.catalog,
+                                automation: row,
+                                onSaved: upsert,
+                                onBackfillStarted: rememberBackfill,
+                              }),
+                          },
+                        ]
+                      : []),
+                    ...(row.enabled && !hasAi(row.steps) && !active
+                      ? [
+                          // Continue a retry with another retry: a normal backfill skips messages an earlier backfill handed over, even failed ones.
+                          backfill?.retryFailed
+                            ? {
+                                label: messages().retryFailedMessages,
+                                icon: "ti ti-refresh",
+                                action: () => startBackfill.mutate({ automation: row, retryFailed: true }),
+                              }
+                            : {
+                                label:
+                                  backfill || row.latestBackfillOperationId ? messages().runBackfillAgain : messages().applyToExistingMail,
+                                icon: "ti ti-database-import",
+                                action: () => startBackfill.mutate({ automation: row, retryFailed: false }),
+                              },
+                        ]
+                      : []),
+                    ...(backfill && active
+                      ? [
+                          {
+                            label: messages().cancelBackfill,
+                            icon: "ti ti-player-stop",
+                            variant: "danger" as const,
+                            action: () => cancelBackfill.mutate(backfill),
+                          },
+                        ]
+                      : []),
+                    ...(!active
+                      ? [
+                          {
+                            label: messages().deleteAutomation,
+                            icon: "ti ti-trash",
+                            variant: "danger" as const,
+                            action: () => remove.mutate(row),
+                          },
+                        ]
+                      : []),
+                  ]}
                 >
-                  {messages().editAutomation}
-                </Button>
-              </div>
-            );
-          }
-          if (col.id === "enabled") {
-            return (
-              <Switch
-                label={
-                  <>
-                    <span aria-hidden="true">{row.enabled ? messages().active : messages().inactive}</span>
-                    <span class="sr-only">
-                      {row.enabled ? messages().disableNamed({ name: row.name }) : messages().enableNamed({ name: row.name })}
-                    </span>
-                  </>
-                }
-                value={() => row.enabled}
-                disabled={toggle.loading() || backfillLocksAutomation(row) || row.authorizationState === "needs_attention"}
-                onValueChange={(enabled) => toggle.mutate({ automation: row, enabled })}
-              />
-            );
-          }
-          if (col.id === "backfill") {
-            if (hasAi(row.steps)) return <span class="text-dimmed">{messages().futureOnly}</span>;
-            const backfill = backfills()[row.id];
-            if (row.latestBackfillOperationId && !loadedBackfills().has(row.id))
-              return <span class="text-dimmed">{messages().loading}</span>;
-            if (row.latestBackfillOperationId && !backfill) return <span class="text-dimmed">{messages().historyExpired}</span>;
-            if (!backfill) return <span class="text-dimmed">{messages().notRun}</span>;
-            const accepted = backfill.alreadyAcceptedCount + backfill.newlyAcceptedCount;
-            if (activeBackfillStates.has(backfill.state)) {
-              const progress = { accepted: formatNumber(accepted), total: formatNumber(backfill.candidateCount) };
-              return (
-                <StatusBadge
-                  tone="running"
-                  label={backfill.retryFailed ? messages().retryProgress(progress) : messages().backfillProgress(progress)}
-                />
+                  <Dropdown.Trigger iconOnly size="sm" type="button" variant="ghost" label={messages().actionsFor({ name: row.name })}>
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
               );
             }
-            if (backfill.state === "completed") {
-              const count = formatNumber(backfill.newlyAcceptedCount);
-              return (
-                <StatusBadge
-                  tone="ok"
-                  label={backfill.retryFailed ? messages().retryCompleted({ count }) : messages().completedNew({ count })}
-                />
-              );
-            }
-            if (backfill.state === "limited") {
-              const progress = { count: formatNumber(backfill.newlyAcceptedCount), remaining: formatNumber(backfill.remainingCount) };
-              return (
-                <StatusBadge
-                  tone="warning"
-                  label={backfill.retryFailed ? messages().retryLimited(progress) : messages().limitedNew(progress)}
-                />
-              );
-            }
-            if (backfill.state === "failed") return <StatusBadge tone="warning" label={messages().failed} />;
-            return <StatusBadge tone="neutral" label={messages().canceled} />;
-          }
-          if (col.id === "menu") {
-            const backfill = backfills()[row.id];
-            const active = backfillLocksAutomation(row);
-            return (
-              <Dropdown.Root
-                position="bottom-left"
-                items={[
-                  ...(!active
-                    ? [
-                        {
-                          label: messages().editAutomation,
-                          icon: "ti ti-pencil",
-                          action: () =>
-                            void openIncomingAutomationEditor({
-                              mailboxId: props.mailboxId,
-                              catalog: props.catalog,
-                              automation: row,
-                              onSaved: upsert,
-                              onBackfillStarted: rememberBackfill,
-                            }),
-                        },
-                      ]
-                    : []),
-                  ...(row.enabled && !hasAi(row.steps) && !active
-                    ? [
-                        // Continue a retry with another retry: a normal backfill skips messages an earlier backfill handed over, even failed ones.
-                        backfill?.retryFailed
-                          ? {
-                              label: messages().retryFailedMessages,
-                              icon: "ti ti-refresh",
-                              action: () => startBackfill.mutate({ automation: row, retryFailed: true }),
-                            }
-                          : {
-                              label:
-                                backfill || row.latestBackfillOperationId ? messages().runBackfillAgain : messages().applyToExistingMail,
-                              icon: "ti ti-database-import",
-                              action: () => startBackfill.mutate({ automation: row, retryFailed: false }),
-                            },
-                      ]
-                    : []),
-                  ...(backfill && active
-                    ? [
-                        {
-                          label: messages().cancelBackfill,
-                          icon: "ti ti-player-stop",
-                          variant: "danger" as const,
-                          action: () => cancelBackfill.mutate(backfill),
-                        },
-                      ]
-                    : []),
-                  ...(!active
-                    ? [
-                        {
-                          label: messages().deleteAutomation,
-                          icon: "ti ti-trash",
-                          variant: "danger" as const,
-                          action: () => remove.mutate(row),
-                        },
-                      ]
-                    : []),
-                ]}
-              >
-                <Dropdown.Trigger iconOnly size="sm" type="button" variant="ghost" label={messages().actionsFor({ name: row.name })}>
-                  <i class="ti ti-dots" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-            );
-          }
-          return render(col.value instanceof Function ? col.value(row) : col.value ? row[col.value] : undefined);
-        }}
-      />
-    </section>
+            return render(col.value instanceof Function ? col.value(row) : col.value ? row[col.value] : undefined);
+          }}
+        />
+      </section>
+    </>
   );
 }
